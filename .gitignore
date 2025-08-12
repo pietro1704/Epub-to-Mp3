@@ -22,6 +22,23 @@ output/
 build/
 dist/
 .preview/
+.preview.*
+**.mp3o
+# ...existing code...
+
+# Preview files and MP3
+.preview/
+.preview.*
+*.mp3
+*/*.mp3
+**/*.mp3
+**/*.epub
+**/*.pdf
+
+# Book folders containing MP3s
+**/livro*/
+**/book*/
+**/audiobook*/
 
 # Virtual environments
 venv/
