@@ -1,0 +1,8 @@
+ebooklib
+beautifulsoup4
+edge-tts  # Microsoft TTS - rápido e gratuito
+TTS       # Coqui TTS - opcional
+piper-tts # Piper TTS - opcional
+langdetect
+tqdm
+PyPDF2
