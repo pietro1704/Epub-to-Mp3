@@ -9,6 +9,7 @@ Converte um EPUB em arquivos MP3 por capítulo usando diferentes engines TTS:
 - Piper (100% local CLI)
 
 Sistema de cache automático para retomar conversões e trocar modelos.
+Com pausas naturais entre títulos, capítulos e parágrafos.
 """
 
 import argparse
@@ -66,14 +67,136 @@ def _html_title(soup: BeautifulSoup) -> str | None:
             return h.get_text(strip=True)
     return None
 
+def _is_subtitle(text: str) -> bool:
+    """Detecta se um texto é subtítulo/data."""
+    if len(text) > 200:  # Textos muito longos não são subtítulos
+        return False
+    
+    # Padrões de data e subtítulos
+    patterns = [
+        r'^\d+\s*de\s+(janeiro|fevereiro|março|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro)',
+        r'^capítulo\s+[ivx\d]+',
+        r'^diário\s+de',
+        r'^\([^)]*\)$',  # Texto entre parênteses
+        r'^\d+\s*$',     # Números isolados
+        r'^[A-Z\s]{3,}$', # Texto todo maiúsculo (como TAQUIGRAFADO)
+    ]
+    
+    text_lower = text.lower()
+    for pattern in patterns:
+        if re.search(pattern, text_lower):
+            return True
+    
+    # Se tem poucas palavras e não é uma frase completa
+    words = text.split()
+    if len(words) <= 6 and not text.endswith('.'):
+        return True
+    
+    return False
+
 def _extract_text(html_bytes: bytes) -> Tuple[str | None, str]:
-    """Extrai título e texto limpo do HTML."""
+    """Extrai título e texto limpo do HTML preservando estrutura hierárquica."""
     soup = BeautifulSoup(html_bytes, "html.parser")
     title = _html_title(soup)
+    
+    # Remove scripts e styles
     for bad in soup(["script", "style"]):
         bad.decompose()
-    text = soup.get_text(" ", strip=True)
-    return title, text
+    
+    # Lista para armazenar todos os elementos de texto em ordem
+    text_elements = []
+    
+    # Função recursiva para extrair texto preservando ordem e estrutura
+    def extract_recursive(element, depth=0):
+        if hasattr(element, 'name') and element.name:
+            # Elementos de título (h1-h6)
+            if element.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6']:
+                text = element.get_text(strip=True)
+                if text:
+                    text_elements.append(('header', text, depth))
+                    text_elements.append(('pause', '', depth))
+                return
+            
+            # Parágrafos e divs
+            elif element.name in ['p', 'div']:
+                # Verifica se tem sub-elementos importantes
+                has_children = any(child.name in ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div'] 
+                                 for child in element.find_all() if hasattr(child, 'name'))
+                
+                if has_children:
+                    # Processa filhos recursivamente
+                    for child in element.children:
+                        if hasattr(child, 'name'):
+                            extract_recursive(child, depth + 1)
+                        elif child.string and child.string.strip():
+                            text_elements.append(('text', child.string.strip(), depth))
+                else:
+                    # Elemento folha, pega texto direto
+                    text = element.get_text(strip=True)
+                    if text:
+                        # Verifica se é subtítulo/data
+                        if _is_subtitle(text):
+                            text_elements.append(('pause', '', depth))
+                            text_elements.append(('subtitle', text, depth))
+                            text_elements.append(('pause', '', depth))
+                        else:
+                            text_elements.append(('text', text, depth))
+                return
+            
+            # Quebras de linha
+            elif element.name == 'br':
+                text_elements.append(('pause', '', depth))
+                return
+        
+        # Para elementos sem tag ou outros casos, processa filhos
+        if hasattr(element, 'children'):
+            for child in element.children:
+                if hasattr(child, 'name'):
+                    extract_recursive(child, depth)
+                elif hasattr(child, 'string') and child.string and child.string.strip():
+                    text = child.string.strip()
+                    if text:
+                        if _is_subtitle(text):
+                            text_elements.append(('pause', '', depth))
+                            text_elements.append(('subtitle', text, depth))
+                            text_elements.append(('pause', '', depth))
+                        else:
+                            text_elements.append(('text', text, depth))
+    
+    # Processa o documento inteiro
+    extract_recursive(soup.body if soup.body else soup)
+    
+    # Se não capturou nada estruturado, usa método tradicional
+    if not text_elements:
+        all_text = soup.get_text(" ", strip=True)
+        if all_text:
+            text_elements = [('text', all_text, 0)]
+    
+    # Monta texto final com pausas
+    final_parts = []
+    last_type = None
+    
+    for elem_type, text, depth in text_elements:
+        if elem_type == 'pause':
+            # Evita pausas duplas
+            if last_type != 'pause':
+                final_parts.append('... ...')
+        elif elem_type in ['header', 'subtitle']:
+            final_parts.append(text)
+        elif elem_type == 'text':
+            final_parts.append(text)
+        
+        last_type = elem_type
+    
+    # Junta tudo
+    result_text = ' '.join(final_parts)
+    
+    # Limpeza final
+    result_text = re.sub(r'(\.\.\. \.\.\.){3,}', '... ... ...', result_text)  # Max 3 pausas
+    result_text = re.sub(r'\s+', ' ', result_text)  # Remove espaços múltiplos
+    result_text = result_text.strip()
+    
+    return title, result_text
 
 def read_epub(epub_path: Path) -> Tuple[str, str | None, List[Tuple[str, str]]]:
     """Lê EPUB e extrai metadados e capítulos."""
@@ -255,62 +378,94 @@ def preview_coqui_voice(model_name: str) -> None:
         print(f"❌ Erro ao gerar preview Coqui: {e}")
 
 def chunk_text(text: str, max_chars: int = 1500) -> List[str]:
-    """Divide texto em chunks menores respeitando pontuação."""
+    """Divide texto em chunks menores respeitando pontuação e pausas naturais."""
     if len(text) <= max_chars:
         return [text]
     
     chunks = []
     
-    # Tenta dividir por parágrafos primeiro
-    paragraphs = text.split('\n\n')
+    # Primeiro divide por pausas longas (títulos/subtítulos)
+    major_sections = re.split(r'(\.\.\. \.\.\.)', text)
     current_chunk = ""
     
-    for paragraph in paragraphs:
-        paragraph = paragraph.strip()
-        if not paragraph:
+    for section in major_sections:
+        if section == "... ...":
+            # Preserva pausas nos chunks
+            if current_chunk:
+                current_chunk += " " + section
             continue
             
-        # Se parágrafo cabe no chunk atual
-        if len(current_chunk) + len(paragraph) + 2 <= max_chars:
+        section = section.strip()
+        if not section:
+            continue
+        
+        # Se seção cabe no chunk atual
+        if len(current_chunk) + len(section) + 10 <= max_chars:
             if current_chunk:
-                current_chunk += "\n\n" + paragraph
+                current_chunk += " " + section
             else:
-                current_chunk = paragraph
+                current_chunk = section
         else:
             # Salva chunk atual se não vazio
             if current_chunk:
-                chunks.append(current_chunk)
+                chunks.append(current_chunk.strip())
                 current_chunk = ""
             
-            # Se parágrafo é maior que limite, divide por frases
-            if len(paragraph) > max_chars:
-                sentences = re.split(r'[.!?]+', paragraph)
+            # Se seção é maior que limite, divide por parágrafos
+            if len(section) > max_chars:
+                paragraphs = section.split('\n\n')
                 temp_chunk = ""
                 
-                for sentence in sentences:
-                    sentence = sentence.strip()
-                    if not sentence:
+                for paragraph in paragraphs:
+                    paragraph = paragraph.strip()
+                    if not paragraph:
                         continue
                         
-                    if len(temp_chunk) + len(sentence) + 2 <= max_chars:
+                    if len(temp_chunk) + len(paragraph) + 2 <= max_chars:
                         if temp_chunk:
-                            temp_chunk += ". " + sentence
+                            temp_chunk += "\n\n" + paragraph
                         else:
-                            temp_chunk = sentence
+                            temp_chunk = paragraph
                     else:
                         if temp_chunk:
-                            chunks.append(temp_chunk + ".")
-                        temp_chunk = sentence
+                            chunks.append(temp_chunk)
+                        
+                        # Se parágrafo ainda é muito grande, divide por frases
+                        if len(paragraph) > max_chars:
+                            sentences = re.split(r'[.!?]+', paragraph)
+                            sent_chunk = ""
+                            
+                            for sentence in sentences:
+                                sentence = sentence.strip()
+                                if not sentence:
+                                    continue
+                                    
+                                if len(sent_chunk) + len(sentence) + 2 <= max_chars:
+                                    if sent_chunk:
+                                        sent_chunk += ". " + sentence
+                                    else:
+                                        sent_chunk = sentence
+                                else:
+                                    if sent_chunk:
+                                        chunks.append(sent_chunk + ".")
+                                    sent_chunk = sentence
+                            
+                            if sent_chunk:
+                                temp_chunk = sent_chunk + "."
+                            else:
+                                temp_chunk = ""
+                        else:
+                            temp_chunk = paragraph
                 
                 if temp_chunk:
-                    current_chunk = temp_chunk + "."
+                    current_chunk = temp_chunk
             else:
-                current_chunk = paragraph
+                current_chunk = section
     
     if current_chunk:
-        chunks.append(current_chunk)
+        chunks.append(current_chunk.strip())
     
-    return chunks
+    return [chunk for chunk in chunks if chunk.strip()]
 
 # ========== ENGINES TTS ==========
 
