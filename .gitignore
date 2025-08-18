@@ -30,6 +30,7 @@ dist/
 .preview/
 .preview.*
 *.mp3
+*.wav
 */*.mp3
 **/*.mp3
 **/*.epub
