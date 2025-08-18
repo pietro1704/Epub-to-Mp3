@@ -1,8 +1,28 @@
-ebooklib
-beautifulsoup4
-edge-tts  # Microsoft TTS - rápido e gratuito
-TTS       # Coqui TTS - opcional
-piper-tts # Piper TTS - opcional
-langdetect
+# Dependências core
+beautifulsoup4>=4.12.0
+ebooklib>=0.18
+PyPDF2>=3.0.0
+
+# PyTorch (deixa pip resolver a melhor versão para macOS)
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# Edge-TTS (sempre funciona, instalar primeiro)
+edge-tts>=6.1.0
+
+# Coqui TTS (deixa pip resolver dependências automaticamente)
+TTS
+
+# Interface (sem versão específica para evitar conflitos)
 tqdm
-PyPDF2
+
+# Dependências opcionais
+librosa
+soundfile
+numpy
+scipy
+
+# Desenvolvimento (opcional)
+pytest
+black
+flake8
