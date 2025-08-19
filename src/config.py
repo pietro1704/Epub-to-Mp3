@@ -135,3 +135,105 @@ SUBTITLE_PATTERNS = [
     r'^Exemplos:',
     r'^Aporia:',
 ]
+
+# Adição ao src/config.py - Configurações expandidas do Piper
+
+# Configurações expandidas de modelos Piper com informações detalhadas
+PIPER_MODELS_DETAILED = {
+    # Modelos Português Brasil - Masculinos
+    "pt_BR-faber-medium.onnx": {
+        "name": "Faber",
+        "gender": "Masculino",
+        "quality": "Médio",
+        "speed": "Médio",
+        "description": "Voz masculina natural, recomendada ⭐",
+        "size_mb": 63,
+        "sample_rate": 22050,
+        "recommended": True
+    },
+    "pt_BR-faber-low.onnx": {
+        "name": "Faber",
+        "gender": "Masculino", 
+        "quality": "Baixo",
+        "speed": "Rápido",
+        "description": "Voz masculina mais rápida",
+        "size_mb": 20,
+        "sample_rate": 22050,
+        "recommended": False
+    },
+    "pt_BR-edresson-low.onnx": {
+        "name": "Edresson",
+        "gender": "Masculino",
+        "quality": "Baixo", 
+        "speed": "Rápido",
+        "description": "Voz masculina alternativa",
+        "size_mb": 20,
+        "sample_rate": 22050,
+        "recommended": False
+    },
+    
+    # Modelos Português Brasil - Femininos (se disponíveis)
+    "pt_BR-mel-medium.onnx": {
+        "name": "Mel",
+        "gender": "Feminino",
+        "quality": "Médio",
+        "speed": "Médio", 
+        "description": "Voz feminina suave",
+        "size_mb": 63,
+        "sample_rate": 22050,
+        "recommended": True
+    },
+    "pt_BR-luana-medium.onnx": {
+        "name": "Luana",
+        "gender": "Feminino",
+        "quality": "Médio",
+        "speed": "Médio",
+        "description": "Voz feminina clara",
+        "size_mb": 63, 
+        "sample_rate": 22050,
+        "recommended": True
+    },
+    
+    # Modelos Português Portugal
+    "pt-pt_female-tugao-medium.onnx": {
+        "name": "Tugão",
+        "gender": "Feminino",
+        "quality": "Médio", 
+        "speed": "Médio",
+        "description": "Português europeu feminino",
+        "size_mb": 63,
+        "sample_rate": 22050,
+        "recommended": False
+    },
+    
+    # Modelos genéricos/personalizados
+    "custom-voice.onnx": {
+        "name": "Personalizado", 
+        "gender": "Variável",
+        "quality": "Variável",
+        "speed": "Variável",
+        "description": "Modelo personalizado",
+        "size_mb": 0,
+        "sample_rate": 22050,
+        "recommended": False
+    }
+}
+
+# URLs para download automático dos modelos mais populares
+PIPER_MODEL_URLS = {
+    "pt_BR-faber-medium.onnx": {
+        "url": "https://github.com/rhasspy/piper/releases/download/v1.2.0/pt_BR-faber-medium.tar.gz",
+        "config_url": "https://github.com/rhasspy/piper/releases/download/v1.2.0/pt_BR-faber-medium.onnx.json"
+    },
+    "pt_BR-faber-low.onnx": {
+        "url": "https://github.com/rhasspy/piper/releases/download/v1.2.0/pt_BR-faber-low.tar.gz", 
+        "config_url": "https://github.com/rhasspy/piper/releases/download/v1.2.0/pt_BR-faber-low.onnx.json"
+    }
+}
+
+# Filtros para seleção
+PIPER_FILTERS = {
+    "gender": ["Masculino", "Feminino", "Todos"],
+    "quality": ["Alto", "Médio", "Baixo", "Todos"],
+    "language": ["PT-BR", "PT-PT", "Todos"]
+}

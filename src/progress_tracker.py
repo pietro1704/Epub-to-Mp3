@@ -1,16 +1,17 @@
 """
 src/progress_tracker.py
 
-Classe para rastreamento de progresso com ETA preciso e estatísticas em tempo real.
+Classe para rastreamento de progresso com barra visual e ETA preciso.
 """
 
 import time
+import sys
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List
 
 
 class ProgressTracker:
-    """Rastreia progresso com ETA preciso e múltiplas métricas."""
+    """Rastreia progresso e calcula ETA com barra visual para conversão de capítulos."""
     
     def __init__(self, total_items: int, total_chars: int = 0):
         """
@@ -26,16 +27,8 @@ class ProgressTracker:
         self.completed_chars = 0
         self.start_time = time.time()
         self.item_start_time = None
-        
-        # Listas para histórico
-        self.speeds: List[float] = []  # chars/segundo
-        self.item_times: List[float] = []  # tempo por item
-        self.completion_times: List[float] = []  # timestamps de conclusão
-        
-        # Métricas avançadas
-        self.fastest_speed = 0.0
-        self.slowest_speed = float('inf')
-        self.current_speed = 0.0
+        self.speeds: List[float] = []  # Lista de velocidades (chars/segundo)
+        self.item_times: List[float] = []  # Tempos por item
         
     def start_item(self) -> None:
         """Marca início de processamento de um item."""
@@ -43,149 +36,105 @@ class ProgressTracker:
         
     def complete_item(self, char_count: int) -> None:
         """
-        Marca conclusão de um item com métricas detalhadas.
+        Marca conclusão de um item e atualiza barra de progresso.
         
         Args:
             char_count: Número de caracteres processados neste item
         """
-        current_time = time.time()
-        
         if self.item_start_time:
-            elapsed = current_time - self.item_start_time
-            self.item_times.append(elapsed)
-            
-            if elapsed > 0 and char_count > 0:
+            elapsed = time.time() - self.item_start_time
+            if elapsed > 0:
                 speed = char_count / elapsed
                 self.speeds.append(speed)
-                self.current_speed = speed
-                
-                # Atualiza métricas de velocidade
-                self.fastest_speed = max(self.fastest_speed, speed)
-                if speed > 0:  # Evita divisão por zero
-                    self.slowest_speed = min(self.slowest_speed, speed)
-                
-                # Mantém apenas últimas 10 velocidades para média móvel
-                if len(self.speeds) > 10:
+                self.item_times.append(elapsed)
+                # Mantém apenas últimas 5 velocidades para média móvel
+                if len(self.speeds) > 5:
                     self.speeds.pop(0)
+                if len(self.item_times) > 5:
+                    self.item_times.pop(0)
         
         self.completed_items += 1
         self.completed_chars += char_count
-        self.completion_times.append(current_time)
         
-        # Limpa timestamp do item
-        self.item_start_time = None
+        # Atualiza barra de progresso
+        self.update_progress_bar()
+        
+    def update_progress_bar(self) -> None:
+        """Atualiza barra de progresso visual em tempo real."""
+        percentage = (self.completed_items / self.total_items) * 100
+        
+        # Barra de progresso visual
+        bar_length = 30
+        filled_length = int(bar_length * self.completed_items // self.total_items)
+        bar = '█' * filled_length + '░' * (bar_length - filled_length)
+        
+        # Informações de progresso
+        elapsed = self.get_elapsed()
+        eta = self.get_eta()
+        speed = self.get_speed()
+        
+        # Linha de progresso completa
+        progress_line = (
+            f"\r📊 [{bar}] {percentage:5.1f}% "
+            f"({self.completed_items}/{self.total_items}) | "
+            f"⏱️ {elapsed} | ETA: {eta} | {speed}"
+        )
+        
+        # Escreve linha sem quebra
+        sys.stdout.write(progress_line)
+        sys.stdout.flush()
+        
+        # Se completou, adiciona quebra de linha
+        if self.completed_items >= self.total_items:
+            print()  # Nova linha após completar
     
-    def get_eta_by_items(self) -> str:
+    def get_eta(self, remaining_chars: int = 0) -> str:
         """
-        Calcula ETA baseado em items processados.
+        Calcula ETA baseado na velocidade média.
         
+        Args:
+            remaining_chars: Caracteres restantes para processamento mais preciso
+            
         Returns:
             String formatada com o ETA (HH:MM:SS)
         """
-        if self.completed_items == 0:
+        if not self.item_times:
             return "Calculando..."
         
-        elapsed = time.time() - self.start_time
-        avg_time_per_item = elapsed / self.completed_items
+        # Usa média das últimas execuções para ETA mais preciso
+        avg_time_per_item = sum(self.item_times) / len(self.item_times)
         remaining_items = self.total_items - self.completed_items
         
         if remaining_items <= 0:
-            return "Concluído"
+            return "00:00:00"
         
         seconds_remaining = remaining_items * avg_time_per_item
-        eta = datetime.now() + timedelta(seconds=seconds_remaining)
-        return eta.strftime("%H:%M:%S")
-    
-    def get_eta_by_chars(self, remaining_chars: Optional[int] = None) -> str:
-        """
-        Calcula ETA baseado em caracteres (mais preciso).
         
-        Args:
-            remaining_chars: Caracteres restantes específicos
-            
-        Returns:
-            String formatada com o ETA
-        """
-        if not self.speeds:
-            return "Calculando..."
-        
-        # Usa média ponderada das últimas velocidades (mais peso para recentes)
-        if len(self.speeds) >= 3:
-            weights = [1, 2, 3][-len(self.speeds):]
-            weighted_avg = sum(s * w for s, w in zip(self.speeds, weights)) / sum(weights)
-        else:
-            weighted_avg = sum(self.speeds) / len(self.speeds)
-        
-        if remaining_chars is None:
-            remaining_chars = self.total_chars - self.completed_chars
-        
-        if remaining_chars <= 0:
-            return "Concluído"
-        
-        seconds_remaining = remaining_chars / weighted_avg if weighted_avg > 0 else 0
-        
-        if seconds_remaining > 86400:  # Mais de 1 dia
-            days = int(seconds_remaining // 86400)
-            hours = int((seconds_remaining % 86400) // 3600)
-            return f"{days}d {hours}h"
+        # Se temos chars restantes, usa velocidade também
+        if remaining_chars > 0 and self.speeds:
+            avg_speed = sum(self.speeds) / len(self.speeds)
+            seconds_by_chars = remaining_chars / avg_speed
+            # Média ponderada entre os dois métodos
+            seconds_remaining = (seconds_remaining + seconds_by_chars) / 2
         
         eta = datetime.now() + timedelta(seconds=seconds_remaining)
         return eta.strftime("%H:%M:%S")
     
-    def get_best_eta(self, remaining_chars: Optional[int] = None) -> str:
-        """
-        Retorna o melhor ETA disponível.
-        
-        Args:
-            remaining_chars: Caracteres restantes específicos
-            
-        Returns:
-            ETA mais preciso baseado nos dados disponíveis
-        """
-        if self.speeds and len(self.speeds) >= 2:
-            return self.get_eta_by_chars(remaining_chars)
-        else:
-            return self.get_eta_by_items()
-    
-    def get_current_speed(self) -> str:
-        """
-        Retorna velocidade atual formatada.
-        
-        Returns:
-            String com velocidade atual
-        """
-        if not self.speeds:
-            return "---"
-        
-        return f"{self.current_speed:.0f} chars/s"
-    
-    def get_average_speed(self) -> str:
+    def get_speed(self) -> str:
         """
         Retorna velocidade média formatada.
         
         Returns:
-            String com velocidade média
+            String com velocidade em chars/s
         """
         if not self.speeds:
-            return "---"
+            return "--- chars/s"
         
         avg_speed = sum(self.speeds) / len(self.speeds)
-        return f"{avg_speed:.0f} chars/s"
-    
-    def get_speed_range(self) -> str:
-        """
-        Retorna faixa de velocidade (min-max).
-        
-        Returns:
-            String com velocidades mínima e máxima
-        """
-        if not self.speeds or len(self.speeds) < 2:
-            return "---"
-        
-        if self.slowest_speed == float('inf'):
-            self.slowest_speed = min(self.speeds)
-        
-        return f"{self.slowest_speed:.0f}-{self.fastest_speed:.0f} chars/s"
+        if avg_speed >= 1000:
+            return f"{avg_speed/1000:.1f}k chars/s"
+        else:
+            return f"{avg_speed:.0f} chars/s"
     
     def get_elapsed(self) -> str:
         """
@@ -195,18 +144,16 @@ class ProgressTracker:
             String com tempo decorrido (Xh Ym Zs)
         """
         elapsed = time.time() - self.start_time
+        hours = int(elapsed // 3600)
+        minutes = int((elapsed % 3600) // 60)
+        seconds = int(elapsed % 60)
         
-        if elapsed >= 3600:  # 1+ hora
-            hours = int(elapsed // 3600)
-            minutes = int((elapsed % 3600) // 60)
-            seconds = int(elapsed % 60)
-            return f"{hours}h {minutes}m {seconds}s"
-        elif elapsed >= 60:  # 1+ minuto
-            minutes = int(elapsed // 60)
-            seconds = int(elapsed % 60)
-            return f"{minutes}m {seconds}s"
+        if hours > 0:
+            return f"{hours}h{minutes:02d}m{seconds:02d}s"
+        elif minutes > 0:
+            return f"{minutes}m{seconds:02d}s"
         else:
-            return f"{int(elapsed)}s"
+            return f"{seconds}s"
     
     def get_progress_percentage(self) -> float:
         """
@@ -219,89 +166,64 @@ class ProgressTracker:
             return 0.0
         return (self.completed_items / self.total_items) * 100.0
     
-    def get_char_progress_percentage(self) -> float:
+    def get_detailed_stats(self) -> dict:
         """
-        Retorna porcentagem de progresso baseada em caracteres.
+        Retorna estatísticas detalhadas do progresso.
         
         Returns:
-            Porcentagem de 0.0 a 100.0
+            Dicionário com todas as estatísticas
         """
-        if self.total_chars == 0:
-            return 0.0
-        return (self.completed_chars / self.total_chars) * 100.0
-    
-    def get_throughput_stats(self) -> dict:
-        """
-        Retorna estatísticas detalhadas de throughput.
-        
-        Returns:
-            Dicionário com estatísticas completas
-        """
-        elapsed = time.time() - self.start_time
-        
-        stats = {
-            "items_completed": self.completed_items,
-            "total_items": self.total_items,
-            "chars_completed": self.completed_chars,
-            "total_chars": self.total_chars,
-            "elapsed_seconds": elapsed,
-            "elapsed_formatted": self.get_elapsed(),
-            "progress_pct": self.get_progress_percentage(),
-            "char_progress_pct": self.get_char_progress_percentage(),
-            "current_speed": self.current_speed,
-            "average_speed": sum(self.speeds) / len(self.speeds) if self.speeds else 0,
-            "fastest_speed": self.fastest_speed,
-            "slowest_speed": self.slowest_speed if self.slowest_speed != float('inf') else 0,
-            "eta_items": self.get_eta_by_items(),
-            "eta_chars": self.get_eta_by_chars(),
-            "eta_best": self.get_best_eta()
-        }
-        
-        # Estatísticas adicionais
-        if self.item_times:
-            stats["avg_time_per_item"] = sum(self.item_times) / len(self.item_times)
-            stats["fastest_item"] = min(self.item_times)
-            stats["slowest_item"] = max(self.item_times)
-        
-        if elapsed > 0:
-            stats["items_per_hour"] = (self.completed_items / elapsed) * 3600
-            stats["chars_per_hour"] = (self.completed_chars / elapsed) * 3600
-        
-        return stats
-    
-    def get_efficiency_metrics(self) -> dict:
-        """
-        Calcula métricas de eficiência do processamento.
-        
-        Returns:
-            Dicionário com métricas de eficiência
-        """
-        if not self.speeds or not self.item_times:
-            return {}
-        
-        # Variabilidade da velocidade
-        avg_speed = sum(self.speeds) / len(self.speeds)
-        speed_variance = sum((s - avg_speed) ** 2 for s in self.speeds) / len(self.speeds)
-        speed_std_dev = speed_variance ** 0.5
-        
-        # Consistência (menor desvio = mais consistente)
-        consistency = max(0, 100 - (speed_std_dev / avg_speed * 100)) if avg_speed > 0 else 0
-        
-        # Tendência de velocidade (melhorando/piorando)
-        if len(self.speeds) >= 3:
-            recent_avg = sum(self.speeds[-3:]) / 3
-            early_avg = sum(self.speeds[:3]) / 3
-            trend = ((recent_avg - early_avg) / early_avg * 100) if early_avg > 0 else 0
-        else:
-            trend = 0
+        remaining_chars = sum(
+            len(ch[1]) for ch in getattr(self, 'chapters', [])
+            if hasattr(self, 'chapters')
+        ) if hasattr(self, 'chapters') else 0
         
         return {
-            "consistency_pct": consistency,
-            "speed_variance": speed_variance,
-            "speed_trend_pct": trend,
-            "avg_speed": avg_speed,
-            "speed_stability": "Alta" if consistency > 80 else "Média" if consistency > 60 else "Baixa"
+            "completed_items": self.completed_items,
+            "total_items": self.total_items,
+            "completed_chars": self.completed_chars,
+            "total_chars": self.total_chars,
+            "progress_percentage": self.get_progress_percentage(),
+            "elapsed_time": self.get_elapsed(),
+            "current_speed": self.get_speed(),
+            "eta": self.get_eta(remaining_chars),
+            "avg_speed": sum(self.speeds) / len(self.speeds) if self.speeds else 0,
+            "estimated_total_time": self._estimate_total_time()
         }
+    
+    def _estimate_total_time(self) -> str:
+        """Estima tempo total baseado no progresso atual."""
+        if self.completed_items == 0:
+            return "Calculando..."
+        
+        elapsed = time.time() - self.start_time
+        estimated_total = elapsed * (self.total_items / self.completed_items)
+        
+        hours = int(estimated_total // 3600)
+        minutes = int((estimated_total % 3600) // 60)
+        seconds = int(estimated_total % 60)
+        
+        if hours > 0:
+            return f"{hours}h{minutes:02d}m{seconds:02d}s"
+        elif minutes > 0:
+            return f"{minutes}m{seconds:02d}s"
+        else:
+            return f"{seconds}s"
+    
+    def show_final_summary(self) -> None:
+        """Mostra resumo final detalhado."""
+        print(f"\n🎯 RESUMO FINAL:")
+        print(f"   ✅ Concluído: {self.completed_items}/{self.total_items} capítulos")
+        print(f"   ⏱️ Tempo total: {self.get_elapsed()}")
+        print(f"   📊 Caracteres processados: {self.completed_chars:,}")
+        
+        if self.speeds:
+            avg_speed = sum(self.speeds) / len(self.speeds)
+            print(f"   ⚡ Velocidade média: {avg_speed:.0f} chars/s")
+        
+        if self.item_times:
+            avg_time = sum(self.item_times) / len(self.item_times)
+            print(f"   📈 Tempo médio por capítulo: {avg_time:.1f}s")
     
     def reset(self) -> None:
         """Reseta o tracker para um novo processamento."""
@@ -311,45 +233,29 @@ class ProgressTracker:
         self.item_start_time = None
         self.speeds.clear()
         self.item_times.clear()
-        self.completion_times.clear()
-        self.fastest_speed = 0.0
-        self.slowest_speed = float('inf')
-        self.current_speed = 0.0
-    
-    def pause(self) -> None:
-        """Pausa o tracking (para pausas manuais)."""
-        if self.item_start_time:
-            # Salva tempo parcial do item atual
-            elapsed = time.time() - self.item_start_time
-            self.item_start_time = None
-    
-    def resume(self) -> None:
-        """Resume o tracking após uma pausa."""
-        if not self.item_start_time:
-            self.item_start_time = time.time()
-    
-    def print_progress_bar(self, width: int = 40) -> None:
+        
+    def print_chapter_start(self, idx: int, title: str, char_count: int) -> None:
         """
-        Imprime uma barra de progresso visual.
+        Imprime informações do início do capítulo com estimativas.
         
         Args:
-            width: Largura da barra em caracteres
+            idx: Índice do capítulo
+            title: Título do capítulo
+            char_count: Número de caracteres
         """
-        progress = self.get_progress_percentage()
-        filled = int(width * progress / 100)
-        bar = "█" * filled + "░" * (width - filled)
-        print(f"[{bar}] {progress:.1f}%")
-    
-    def get_summary_line(self) -> str:
-        """
-        Retorna linha de resumo concisa para exibição contínua.
+        display_title = title[:40] + ('...' if len(title) > 40 else '')
         
-        Returns:
-            String com resumo do progresso
-        """
-        pct = self.get_progress_percentage()
-        elapsed = self.get_elapsed()
-        eta = self.get_best_eta()
-        speed = self.get_average_speed()
+        print(f"\n🎙️ [{idx:03d}/{self.total_items}] {display_title}")
+        print(f"    📝 {char_count:,} caracteres", end="")
         
-        return f"📊 {self.completed_items}/{self.total_items} ({pct:.1f}%) | ⏱️ {elapsed} | 🎯 ETA: {eta} | ⚡ {speed}"
+        # Estima tempo baseado em histórico
+        if self.item_times:
+            avg_time = sum(self.item_times) / len(self.item_times)
+            estimated_time = char_count / (sum(self.speeds) / len(self.speeds)) if self.speeds else avg_time
+            print(f" | ~{estimated_time:.0f}s estimado")
+        else:
+            print(" | primeira execução")
+        
+        # Mostra progresso geral se não for o primeiro
+        if self.completed_items > 0:
+            self.update_progress_bar()

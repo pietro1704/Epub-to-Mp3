@@ -1,7 +1,7 @@
 """
 src/tts/piper_engine.py
 
-Engine TTS para Piper (100% local CLI).
+Engine TTS para Piper (100% local CLI) - Nome de classe corrigido.
 """
 
 import subprocess
@@ -9,10 +9,25 @@ from pathlib import Path
 from typing import Dict, Any
 
 
-class TTSEngine:
-    """Interface base para engines TTS."""
+class PiperTTSEngine:  # ← CORRIGIDO: era TTSEngine
+    """Engine TTS usando Piper CLI (100% local)."""
     
-    def chunk_text(self, text: str, max_chars: int):
+    def __init__(self, config: Dict[str, Any]):
+        """
+        Inicializa o engine Piper TTS.
+        
+        Args:
+            config: Configuração com model_path
+        """
+        self.model_path = config.get('model_path')
+        self.sample_rate = config.get('ar', 22050)
+        self.channels = config.get('ac', 1)
+        self.bitrate = config.get('bitrate', '32k')
+        
+        if not self.model_path or not self.model_path.exists():
+            raise FileNotFoundError(f"Modelo Piper não encontrado: {self.model_path}")
+    
+    def chunk_text(self, text: str, max_chars: int = 1500):
         """Divide texto em chunks menores respeitando pontuação."""
         if len(text) <= max_chars:
             return [text]
@@ -99,51 +114,6 @@ class TTSEngine:
             chunks.append(current_chunk.strip())
         
         return [chunk for chunk in chunks if chunk.strip()]
-
-
-class AudioConverter:
-    """Utilitário para conversão de áudio usando ffmpeg."""
-    
-    @staticmethod
-    def convert_wav_to_mp3(wav_path: Path, mp3_path: Path, 
-                          sample_rate: int = 22050, channels: int = 1, 
-                          bitrate: str = "32k") -> None:
-        """Converte WAV para MP3 usando ffmpeg."""
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", str(wav_path),
-            "-ar", str(sample_rate),
-            "-ac", str(channels),
-            "-b:a", bitrate,
-            "-loglevel", "error",
-            str(mp3_path),
-        ]
-        
-        try:
-            result = subprocess.run(cmd, capture_output=True, timeout=120)
-            if result.returncode != 0:
-                raise RuntimeError(f"ffmpeg falhou: {result.stderr.decode()}")
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("Timeout na conversão MP3")
-
-
-class PiperTTSEngine(TTSEngine):
-    """Engine TTS usando Piper CLI (100% local)."""
-    
-    def __init__(self, config: Dict[str, Any]):
-        """
-        Inicializa o engine Piper TTS.
-        
-        Args:
-            config: Configuração com model_path
-        """
-        self.model_path = config.get('model_path')
-        self.sample_rate = config.get('ar', 22050)
-        self.channels = config.get('ac', 1)
-        self.bitrate = config.get('bitrate', '32k')
-        
-        if not self.model_path or not self.model_path.exists():
-            raise FileNotFoundError(f"Modelo Piper não encontrado: {self.model_path}")
     
     def synthesize(self, text: str, output_path: Path) -> None:
         """
@@ -174,14 +144,30 @@ class PiperTTSEngine(TTSEngine):
                 raise RuntimeError(f"Piper falhou: {result.stderr}")
             
             # Converte WAV para MP3
-            AudioConverter.convert_wav_to_mp3(
-                wav_tmp, output_path,
-                self.sample_rate, self.channels, self.bitrate
-            )
+            self._convert_wav_to_mp3(wav_tmp, output_path)
             
         finally:
             if wav_tmp.exists():
                 wav_tmp.unlink()
+    
+    def _convert_wav_to_mp3(self, wav_path: Path, mp3_path: Path) -> None:
+        """Converte WAV para MP3 usando ffmpeg."""
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", str(wav_path),
+            "-ar", str(self.sample_rate),
+            "-ac", str(self.channels),
+            "-b:a", self.bitrate,
+            "-loglevel", "error",
+            str(mp3_path),
+        ]
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=120)
+            if result.returncode != 0:
+                raise RuntimeError(f"ffmpeg falhou: {result.stderr.decode()}")
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Timeout na conversão MP3")
     
     def validate_dependencies(self) -> None:
         """Valida dependências do Piper."""
