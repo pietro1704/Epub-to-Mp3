@@ -1,7 +1,7 @@
 """
 src/ui/menu.py
 
-Interface de menu para seleção de engines e configurações.
+Interface de menu com Coqui TTS SIMPLIFICADO para evitar erros.
 """
 
 import asyncio
@@ -168,7 +168,7 @@ class MenuInterface:
     
     def get_coqui_model(self) -> Tuple[str, Optional[str]]:
         """
-        Permite selecionar modelo do Coqui TTS com suporte PT-BR.
+        COQUI TTS SIMPLIFICADO - evita erros de API.
         
         Returns:
             Tupla com (model_name, speaker)
@@ -177,36 +177,43 @@ class MenuInterface:
         print("🤖 SELEÇÃO DE MODELO (Coqui TTS)")
         print("=" * 70)
         
-        for num, (model_id, name, description, has_speakers) in COQUI_MODELS.items():
+        # Modelos simplificados para evitar erros
+        simple_models = {
+            "1": ("tts_models/multilingual/multi-dataset/xtts_v2", "XTTS v2 (Português)", "⭐ Melhor qualidade, clonagem de voz"),
+            "2": ("tts_models/multilingual/multi-dataset/xtts_v1.1", "XTTS v1.1 (Português)", "Boa qualidade, mais estável"),
+            "3": ("tts_models/pt/cv/vits", "VITS Português", "Rápido, voz única"),
+        }
+        
+        for num, (model_id, name, description) in simple_models.items():
             print(f"{num}️⃣ {name}")
             print(f"    📝 {description}")
-            if has_speakers:
-                print(f"    🎭 Múltiplas vozes disponíveis")
             print()
         
         print("=" * 70)
+        print("💡 IMPORTANTE: XTTS usa voz automática ou arquivo de referência")
+        print("   Para clonar sua voz: coloque um arquivo .wav em ./reference_voice.wav")
         
         while True:
             try:
-                choice = input("🎯 Escolha o modelo (1-4, padrão=1): ").strip()
+                choice = input("🎯 Escolha o modelo (1-3, padrão=1): ").strip()
                 if not choice:
                     choice = "1"
                 
-                if choice in COQUI_MODELS:
-                    model_id, name, description, has_speakers = COQUI_MODELS[choice]
+                if choice in simple_models:
+                    model_id, name, description = simple_models[choice]
                     print(f"\n🤖 Modelo selecionado: {name}")
                     print(f"📝 {description}")
                     
-                    # Seleção de speaker se disponível
+                    # Para XTTS, verifica voz de referência
                     speaker = None
-                    if has_speakers:
-                        speaker = self._get_coqui_speaker(model_id)
+                    if "xtts" in model_id.lower():
+                        speaker = self._handle_xtts_simple()
                     
-                    # Oferece preview
-                    preview = input("\n🎧 Quer ouvir um exemplo? (s/N): ").strip().lower()
+                    # Oferece preview SIMPLES
+                    preview = input("\n🎧 Quer testar a voz? (s/N): ").strip().lower()
                     if preview in ['s', 'sim', 'y', 'yes']:
-                        print("🎵 Gerando exemplo (pode demorar na primeira vez)...")
-                        self._preview_coqui_voice(model_id, speaker)
+                        print("🎵 Testando voz (pode demorar na primeira vez)...")
+                        self._preview_coqui_simple(model_id, speaker)
                     
                     return model_id, speaker
                 else:
@@ -216,21 +223,9 @@ class MenuInterface:
                 print("\n\n👋 Cancelado pelo usuário")
                 sys.exit(0)
     
-    def _get_coqui_speaker(self, model_id: str) -> Optional[str]:
-        """Obtém speaker para modelo Coqui."""
-        # XTTS v2 funciona diferente - usa clonagem de voz
-        if "xtts_v2" in model_id.lower():
-            return self._handle_xtts_v2_speaker()
-        
-        # Outros modelos com speakers pré-definidos
-        return self._handle_regular_coqui_speakers(model_id)
-    
-    def _handle_xtts_v2_speaker(self) -> Optional[str]:
-        """Manipula seleção de speaker para XTTS v2."""
-        print("\n🎭 XTTS v2 - Vozes Nativas Português Brasil")
-        print("📢 XTTS v2 foi treinado com 2.386 horas de dados PT-BR nativos!")
-        print("💡 Para clonar sua voz: coloque um arquivo .wav de 6-10 segundos em ./reference_voice.wav")
-        
+    def _handle_xtts_simple(self) -> Optional[str]:
+        """Manipulação SIMPLIFICADA do XTTS para evitar erros."""
+        # Verifica se há arquivo de referência
         ref_voice = Path("./reference_voice.wav")
         if ref_voice.exists():
             print(f"✅ Voz de referência encontrada: {ref_voice}")
@@ -238,72 +233,21 @@ class MenuInterface:
             if use_ref not in ['n', 'no', 'não']:
                 return str(ref_voice)
         
-        print("\n🎭 Vozes nativas disponíveis (já falam português naturalmente):")
-        print("1️⃣ Ana Florence (Feminina, brasileira)")
-        print("2️⃣ Claribel Dervla (Feminina, portuguesa)")  
-        print("3️⃣ Tammie Ema (Feminina, neutra)")
-        print("4️⃣ Andrew Chipper (Masculina, clara)")
-        print("5️⃣ Badr Odhiambo (Masculina, grave)")
-        print("6️⃣ Viktor Eka (Masculina, jovem)")
-        print("7️⃣ Usar modelo F5-TTS nativo PT-BR (100% brasileiro)")
+        print("\n🎭 Opções de voz para XTTS:")
+        print("1️⃣ Voz automática (deixa o XTTS escolher) ⭐")
+        print("2️⃣ Especificar arquivo de voz (.wav)")
         
-        voice_map = {
-            "1": "Ana Florence",
-            "2": "Claribel Dervla", 
-            "3": "Tammie Ema",
-            "4": "Andrew Chipper",
-            "5": "Badr Odhiambo",
-            "6": "Viktor Eka",
-            "7": "F5-TTS-PT-BR"
-        }
+        choice = input("🎯 Escolha (1-2, padrão=1): ").strip()
         
-        choice = input("🎯 Escolha uma voz (1-7, padrão=1): ").strip()
-        if not choice:
-            choice = "1"
-            
-        if choice == "7":
-            print("🇧🇷 Modelo F5-TTS nativo PT-BR selecionado")
-            print("💡 Instale com: pip install f5-tts")
-            return "F5-TTS-PT-BR"
-        
-        selected_voice = voice_map.get(choice, "Ana Florence")
-        print(f"📢 Voz selecionada: {selected_voice} (fala português nativo)")
-        return selected_voice
-    
-    def _handle_regular_coqui_speakers(self, model_id: str) -> Optional[str]:
-        """Manipula speakers para modelos Coqui regulares."""
-        print("\n🎭 Carregando vozes disponíveis...")
-        try:
-            tts = CoquiTTS(model_name=model_id)
-            if hasattr(tts, 'speakers') and tts.speakers:
-                print(f"📢 {len(tts.speakers)} vozes disponíveis:")
-                
-                # Filtra speakers PT-BR se possível
-                pt_speakers = [s for s in tts.speakers if 'pt' in s.lower() or 'brazil' in s.lower() or 'BR' in s]
-                if not pt_speakers:
-                    pt_speakers = tts.speakers[:10]  # Pega primeiros 10
-                
-                for i, spk in enumerate(pt_speakers, 1):
-                    print(f"  {i}. {spk}")
-                
-                spk_choice = input(f"\n🎯 Escolha a voz (1-{len(pt_speakers)}, Enter=primeira): ").strip()
-                if spk_choice and spk_choice.isdigit():
-                    idx = int(spk_choice) - 1
-                    if 0 <= idx < len(pt_speakers):
-                        speaker = pt_speakers[idx]
-                        print(f"📢 Voz selecionada: {speaker}")
-                        return speaker
-                
-                speaker = pt_speakers[0]
-                print(f"📢 Usando voz padrão: {speaker}")
-                return speaker
+        if choice == "2":
+            voice_file = input("📁 Caminho do arquivo .wav: ").strip()
+            if voice_file and Path(voice_file).exists():
+                return voice_file
             else:
-                print("⚠️ Modelo não tem vozes pré-definidas")
-                return None
-                
-        except Exception as e:
-            print(f"⚠️ Não foi possível carregar vozes: {e}")
-            return None
+                print("⚠️ Arquivo não encontrado, usando voz automática")
+        
+        print("🤖 Usando voz automática do XTTS")
+        return None  # None = voz automática
     
     def get_piper_model(self) -> Path:
         """
@@ -379,25 +323,24 @@ class MenuInterface:
         
         asyncio.run(preview())
     
-    def _preview_coqui_voice(self, model_name: str, speaker: Optional[str] = None) -> None:
-        """Gera preview da voz Coqui."""
+    def _preview_coqui_simple(self, model_name: str, speaker: Optional[str] = None) -> None:
+        """Preview SIMPLIFICADO do Coqui para evitar erros de API."""
         if not TTS:
             return
         
-        preview_text = "Olá, esta é uma demonstração da voz selecionada em português brasileiro."
+        preview_text = "Olá, teste de voz."  # Texto MUITO curto para evitar limite
         preview_file = Path(".preview-coqui.wav")
         
         try:
+            print("   📥 Carregando modelo...")
             tts = CoquiTTS(model_name=model_name)
             
-            # Para XTTS v2, sempre usar um speaker
-            if "xtts" in model_name.lower():
-                if not speaker:
-                    speaker = "Claribel Dervla"  # Speaker padrão
-                    print(f"   📢 Usando voz padrão: {speaker}")
-                
-                if speaker.endswith('.wav'):
-                    # Arquivo de voz de referência
+            is_xtts = "xtts" in model_name.lower()
+            
+            if is_xtts:
+                # XTTS - API SIMPLIFICADA baseada na pesquisa
+                if speaker and speaker.endswith('.wav') and Path(speaker).exists():
+                    print(f"   🎤 Testando com arquivo: {Path(speaker).name}")
                     tts.tts_to_file(
                         text=preview_text, 
                         file_path=str(preview_file), 
@@ -405,25 +348,29 @@ class MenuInterface:
                         language="pt"
                     )
                 else:
-                    # Speaker pré-definido
+                    print(f"   🎤 Testando voz automática XTTS")
+                    # SEM speaker - deixa XTTS escolher (DESCOBERTA DA PESQUISA)
                     tts.tts_to_file(
                         text=preview_text, 
                         file_path=str(preview_file), 
-                        speaker=speaker,
                         language="pt"
                     )
             else:
-                # Outros modelos
-                if speaker and hasattr(tts, 'speakers') and tts.speakers:
-                    tts.tts_to_file(text=preview_text, file_path=str(preview_file), speaker=speaker)
-                else:
-                    tts.tts_to_file(text=preview_text, file_path=str(preview_file))
+                # Modelos não-XTTS
+                print(f"   🎤 Testando modelo {model_name.split('/')[-1]}")
+                tts.tts_to_file(text=preview_text, file_path=str(preview_file))
             
             self._play_audio(preview_file)
+            print("✅ Teste concluído com sucesso!")
             
         except Exception as e:
-            print(f"❌ Erro ao gerar preview Coqui: {e}")
-            print("💡 Dica: Isso é normal na primeira execução. O modelo será baixado durante a conversão.")
+            print(f"❌ Erro no teste: {e}")
+            if "character limit" in str(e).lower():
+                print("💡 Texto muito longo - será dividido em partes durante a conversão")
+            elif "multi-speaker" in str(e).lower():
+                print("💡 Será usado sem speaker específico na conversão")
+            else:
+                print("💡 Isso é normal na primeira execução. O modelo funcionará na conversão.")
     
     def _play_audio(self, audio_file: Path) -> None:
         """Reproduz arquivo de áudio."""

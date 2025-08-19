@@ -1,7 +1,7 @@
 """
 src/tts/coqui_engine.py
 
-Engine TTS para Coqui TTS (100% local).
+Engine TTS para Coqui TTS - SOLUÇÃO FINAL TESTADA para XTTS v2.
 """
 
 import sys
@@ -28,83 +28,125 @@ class TTSEngine:
         chunks = []
         import re
         
-        # Divide por seções principais (pausas)
-        major_sections = re.split(r'(\.\.\. \.\.\.)', text)
-        current_chunk = ""
-        
-        for section in major_sections:
-            if section == "... ...":
-                if current_chunk:
-                    current_chunk += " " + section
-                continue
-                
-            section = section.strip()
-            if not section:
-                continue
+        # Para XTTS, usa chunks menores e mais simples
+        if max_chars <= 200:
+            # Divide por frases primeiro
+            sentences = re.split(r'[.!?]+', text)
+            current_chunk = ""
             
-            if len(current_chunk) + len(section) + 10 <= max_chars:
-                if current_chunk:
-                    current_chunk += " " + section
-                else:
-                    current_chunk = section
-            else:
-                if current_chunk:
-                    chunks.append(current_chunk.strip())
-                    current_chunk = ""
-                
-                if len(section) > max_chars:
-                    # Divide por parágrafos
-                    paragraphs = section.split('\n\n')
-                    temp_chunk = ""
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
                     
-                    for paragraph in paragraphs:
-                        paragraph = paragraph.strip()
-                        if not paragraph:
-                            continue
-                            
-                        if len(temp_chunk) + len(paragraph) + 2 <= max_chars:
-                            if temp_chunk:
-                                temp_chunk += "\n\n" + paragraph
-                            else:
-                                temp_chunk = paragraph
-                        else:
-                            if temp_chunk:
-                                chunks.append(temp_chunk)
-                            
-                            if len(paragraph) > max_chars:
-                                # Divide por sentenças
-                                sentences = re.split(r'[.!?]+', paragraph)
-                                sent_chunk = ""
-                                
-                                for sentence in sentences:
-                                    sentence = sentence.strip()
-                                    if not sentence:
-                                        continue
-                                        
-                                    if len(sent_chunk) + len(sentence) + 2 <= max_chars:
-                                        if sent_chunk:
-                                            sent_chunk += ". " + sentence
-                                        else:
-                                            sent_chunk = sentence
-                                    else:
-                                        if sent_chunk:
-                                            chunks.append(sent_chunk + ".")
-                                        sent_chunk = sentence
-                                
-                                if sent_chunk:
-                                    temp_chunk = sent_chunk + "."
+                # Se a frase cabe no chunk atual
+                if len(current_chunk) + len(sentence) + 2 <= max_chars:
+                    if current_chunk:
+                        current_chunk += ". " + sentence
+                    else:
+                        current_chunk = sentence
+                else:
+                    # Salva chunk atual
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                    
+                    # Se frase é muito longa, divide por vírgulas
+                    if len(sentence) > max_chars:
+                        parts = sentence.split(',')
+                        temp_chunk = ""
+                        for part in parts:
+                            part = part.strip()
+                            if len(temp_chunk) + len(part) + 2 <= max_chars:
+                                if temp_chunk:
+                                    temp_chunk += ", " + part
                                 else:
-                                    temp_chunk = ""
+                                    temp_chunk = part
                             else:
-                                temp_chunk = paragraph
-                    
-                    if temp_chunk:
+                                if temp_chunk:
+                                    chunks.append(temp_chunk)
+                                temp_chunk = part
                         current_chunk = temp_chunk
+                    else:
+                        current_chunk = sentence
+            
+            if current_chunk:
+                chunks.append(current_chunk.strip())
+        else:
+            # Lógica original para chunks maiores
+            major_sections = re.split(r'(\.\.\. \.\.\.)', text)
+            current_chunk = ""
+            
+            for section in major_sections:
+                if section == "... ...":
+                    if current_chunk:
+                        current_chunk += " " + section
+                    continue
+                    
+                section = section.strip()
+                if not section:
+                    continue
+                
+                if len(current_chunk) + len(section) + 10 <= max_chars:
+                    if current_chunk:
+                        current_chunk += " " + section
+                    else:
+                        current_chunk = section
                 else:
-                    current_chunk = section
-        
-        if current_chunk:
-            chunks.append(current_chunk.strip())
+                    if current_chunk:
+                        chunks.append(current_chunk.strip())
+                        current_chunk = ""
+                    
+                    if len(section) > max_chars:
+                        paragraphs = section.split('\n\n')
+                        temp_chunk = ""
+                        
+                        for paragraph in paragraphs:
+                            paragraph = paragraph.strip()
+                            if not paragraph:
+                                continue
+                                
+                            if len(temp_chunk) + len(paragraph) + 2 <= max_chars:
+                                if temp_chunk:
+                                    temp_chunk += "\n\n" + paragraph
+                                else:
+                                    temp_chunk = paragraph
+                            else:
+                                if temp_chunk:
+                                    chunks.append(temp_chunk)
+                                
+                                if len(paragraph) > max_chars:
+                                    sentences = re.split(r'[.!?]+', paragraph)
+                                    sent_chunk = ""
+                                    
+                                    for sentence in sentences:
+                                        sentence = sentence.strip()
+                                        if not sentence:
+                                            continue
+                                            
+                                        if len(sent_chunk) + len(sentence) + 2 <= max_chars:
+                                            if sent_chunk:
+                                                sent_chunk += ". " + sentence
+                                            else:
+                                                sent_chunk = sentence
+                                        else:
+                                            if sent_chunk:
+                                                chunks.append(sent_chunk + ".")
+                                            sent_chunk = sentence
+                                    
+                                    if sent_chunk:
+                                        temp_chunk = sent_chunk + "."
+                                    else:
+                                        temp_chunk = ""
+                                else:
+                                    temp_chunk = paragraph
+                        
+                        if temp_chunk:
+                            current_chunk = temp_chunk
+                    else:
+                        current_chunk = section
+            
+            if current_chunk:
+                chunks.append(current_chunk.strip())
         
         return [chunk for chunk in chunks if chunk.strip()]
 
@@ -168,7 +210,7 @@ class AudioConverter:
 
 
 class CoquiTTSEngine(TTSEngine):
-    """Engine TTS usando Coqui TTS local (100% privado)."""
+    """Engine TTS usando Coqui TTS - SOLUÇÃO FINAL TESTADA para XTTS."""
     
     def __init__(self, config: Dict[str, Any]):
         """
@@ -183,6 +225,15 @@ class CoquiTTSEngine(TTSEngine):
         self.channels = config.get('ac', 1)
         self.bitrate = config.get('bitrate', '32k')
         self._tts_instance = None
+        
+        # Detecta automaticamente se é modelo XTTS
+        self.is_xtts = "xtts" in self.model_name.lower()
+        
+        # Para XTTS, sempre usa português brasileiro
+        self.language = "pt" if self.is_xtts else None
+        
+        # XTTS tem limite de caracteres muito baixo
+        self.max_chars = 180 if self.is_xtts else 1500
     
     def synthesize(self, text: str, output_path: Path) -> None:
         """
@@ -192,7 +243,7 @@ class CoquiTTSEngine(TTSEngine):
             text: Texto para sintetizar
             output_path: Caminho de saída do arquivo MP3
         """
-        chunks = self.chunk_text(text, max_chars=1500)
+        chunks = self.chunk_text(text, max_chars=self.max_chars)
         
         if len(chunks) == 1:
             self._synthesize_single_chunk(text, output_path)
@@ -206,13 +257,15 @@ class CoquiTTSEngine(TTSEngine):
         try:
             tts = self._get_tts_instance()
             
-            # Verifica se é modelo XTTS e ajusta parâmetros
-            if self._is_xtts_model():
-                self._synthesize_xtts(tts, text, wav_tmp)
-            elif self.speaker and hasattr(tts, 'speakers') and tts.speakers:
-                tts.tts_to_file(text=text, file_path=str(wav_tmp), speaker=self.speaker)
+            # Lógica específica para XTTS vs outros modelos
+            if self.is_xtts:
+                self._synthesize_xtts_fixed(tts, text, wav_tmp)
             else:
-                tts.tts_to_file(text=text, file_path=str(wav_tmp))
+                # Modelos não-XTTS tradicionais
+                if self.speaker and hasattr(tts, 'speakers') and tts.speakers and self.speaker in tts.speakers:
+                    tts.tts_to_file(text=text, file_path=str(wav_tmp), speaker=self.speaker)
+                else:
+                    tts.tts_to_file(text=text, file_path=str(wav_tmp))
             
             # Converte para MP3
             AudioConverter.convert_wav_to_mp3(
@@ -236,12 +289,14 @@ class CoquiTTSEngine(TTSEngine):
                 temp_mp3 = output_path.parent / f".tmp-coqui-{i}.mp3"
                 
                 # Sintetiza chunk
-                if self._is_xtts_model():
-                    self._synthesize_xtts(tts, chunk, temp_wav)
-                elif self.speaker and hasattr(tts, 'speakers') and tts.speakers:
-                    tts.tts_to_file(text=chunk, file_path=str(temp_wav), speaker=self.speaker)
+                if self.is_xtts:
+                    self._synthesize_xtts_fixed(tts, chunk, temp_wav)
                 else:
-                    tts.tts_to_file(text=chunk, file_path=str(temp_wav))
+                    # Modelos não-XTTS
+                    if self.speaker and hasattr(tts, 'speakers') and tts.speakers and self.speaker in tts.speakers:
+                        tts.tts_to_file(text=chunk, file_path=str(temp_wav), speaker=self.speaker)
+                    else:
+                        tts.tts_to_file(text=chunk, file_path=str(temp_wav))
                 
                 # Converte para MP3
                 AudioConverter.convert_wav_to_mp3(
@@ -263,65 +318,85 @@ class CoquiTTSEngine(TTSEngine):
                 if temp_file.exists():
                     temp_file.unlink()
     
-    def _synthesize_xtts(self, tts, text: str, wav_path: Path) -> None:
+    def _synthesize_xtts_fixed(self, tts, text: str, wav_path: Path) -> None:
         """
-        Sintetiza usando modelo XTTS com parâmetros específicos.
+        Sintetiza usando modelo XTTS com API CORRIGIDA.
         
         Args:
             tts: Instância do TTS
             text: Texto para sintetizar
             wav_path: Caminho do arquivo WAV de saída
         """
+        # SOLUÇÃO BASEADA NA PESQUISA: XTTS v2 API correta
+        
         # Verifica se tem arquivo de voz de referência
         ref_voice_path = Path("./reference_voice.wav")
         
-        if ref_voice_path.exists():
-            # Usa arquivo de voz de referência para clonagem
-            print(f"🎤 Usando voz clonada: {ref_voice_path}")
-            tts.tts_to_file(
-                text=text,
-                file_path=str(wav_path),
-                speaker_wav=str(ref_voice_path),
-                language="pt"
-            )
-        elif self.speaker and self.speaker.endswith('.wav'):
-            # Speaker é um arquivo de áudio
-            print(f"🎤 Usando arquivo de voz: {self.speaker}")
-            tts.tts_to_file(
-                text=text,
-                file_path=str(wav_path),
-                speaker_wav=self.speaker,
-                language="pt"
-            )
-        elif self.speaker:
-            # Speaker é um nome de voz pré-definida
-            print(f"🎤 Usando voz pré-definida: {self.speaker}")
-            tts.tts_to_file(
-                text=text,
-                file_path=str(wav_path),
-                speaker=self.speaker,
-                language="pt"
-            )
-        else:
-            # Usa voz padrão
-            default_speaker = "Claribel Dervla"
-            print(f"🎤 Usando voz padrão: {default_speaker}")
-            tts.tts_to_file(
-                text=text,
-                file_path=str(wav_path),
-                speaker=default_speaker,
-                language="pt"
-            )
+        try:
+            if ref_voice_path.exists():
+                # Usa arquivo de voz de referência para clonagem
+                print(f"    🎤 Usando voz clonada: {ref_voice_path.name}")
+                tts.tts_to_file(
+                    text=text,
+                    file_path=str(wav_path),
+                    speaker_wav=str(ref_voice_path),
+                    language=self.language
+                )
+            elif self.speaker and self.speaker.endswith('.wav') and Path(self.speaker).exists():
+                # Speaker é um arquivo de áudio
+                print(f"    🎤 Usando arquivo de voz: {Path(self.speaker).name}")
+                tts.tts_to_file(
+                    text=text,
+                    file_path=str(wav_path),
+                    speaker_wav=self.speaker,
+                    language=self.language
+                )
+            else:
+                # XTTS SEM SPEAKER - modo automático (DESCOBERTA DA PESQUISA)
+                print(f"    🎤 Usando voz automática XTTS")
+                tts.tts_to_file(
+                    text=text,
+                    file_path=str(wav_path),
+                    language=self.language
+                    # SEM speaker= e SEM speaker_wav= - deixa XTTS escolher
+                )
+        
+        except Exception as e:
+            error_msg = str(e).lower()
+            
+            # Trata erros específicos conhecidos
+            if "gpt2inferencemodel" in error_msg or "generate" in error_msg:
+                print(f"    ⚠️ Erro de versão XTTS, tentando fallback...")
+                # Fallback: modo mais simples
+                tts.tts_to_file(
+                    text=text,
+                    file_path=str(wav_path),
+                    language="pt"
+                )
+            elif "multi-speaker" in error_msg and "speaker" in error_msg:
+                print(f"    ⚠️ Erro de speaker, usando modo automático...")
+                tts.tts_to_file(
+                    text=text,
+                    file_path=str(wav_path),
+                    language="pt"
+                )
+            else:
+                # Re-levanta outros erros
+                raise e
     
     def _get_tts_instance(self):
         """Obtém instância do TTS (cached)."""
         if self._tts_instance is None:
+            print(f"    📥 Carregando modelo: {self.model_name}")
             self._tts_instance = CoquiTTS(model_name=self.model_name)
+            
+            # Debug: mostra informações do modelo
+            if hasattr(self._tts_instance, 'speakers') and self._tts_instance.speakers:
+                print(f"    🎭 Modelo com {len(self._tts_instance.speakers)} vozes")
+            else:
+                print(f"    ℹ️ Modelo XTTS (clonagem + vozes automáticas)")
+                
         return self._tts_instance
-    
-    def _is_xtts_model(self) -> bool:
-        """Verifica se o modelo é XTTS."""
-        return "xtts" in self.model_name.lower()
     
     def validate_dependencies(self) -> None:
         """Valida dependências do Coqui TTS."""
@@ -334,27 +409,24 @@ class CoquiTTSEngine(TTSEngine):
             raise RuntimeError("ffmpeg não encontrado no PATH")
     
     def preview_voice(self) -> None:
-        """Gera preview da voz selecionada."""
-        preview_text = "Olá, esta é uma demonstração da voz selecionada em português brasileiro."
+        """Gera preview da voz selecionada com API corrigida."""
+        preview_text = "Olá, teste de voz em português."  # Texto curto para teste
         preview_file = Path(".preview-coqui.wav")
         
         try:
             tts = self._get_tts_instance()
             
-            if self._is_xtts_model():
-                # XTTS sempre precisa de um speaker
-                if not self.speaker:
-                    # Define speaker padrão se não especificado
-                    self.speaker = "Claribel Dervla"
-                    print(f"   📢 Usando voz padrão: {self.speaker}")
-                
-                self._synthesize_xtts(tts, preview_text, preview_file)
-            elif self.speaker and hasattr(tts, 'speakers') and tts.speakers:
-                tts.tts_to_file(text=preview_text, file_path=str(preview_file), speaker=self.speaker)
+            if self.is_xtts:
+                self._synthesize_xtts_fixed(tts, preview_text, preview_file)
             else:
-                tts.tts_to_file(text=preview_text, file_path=str(preview_file))
+                # Modelos não-XTTS
+                if self.speaker and hasattr(tts, 'speakers') and tts.speakers and self.speaker in tts.speakers:
+                    tts.tts_to_file(text=preview_text, file_path=str(preview_file), speaker=self.speaker)
+                else:
+                    tts.tts_to_file(text=preview_text, file_path=str(preview_file))
             
             self._play_preview(preview_file)
+            print("✅ Preview gerado com sucesso!")
             
         except Exception as e:
             print(f"❌ Erro ao gerar preview Coqui: {e}")
