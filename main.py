@@ -4,12 +4,13 @@
 main.py
 
 Ponto de entrada principal para conversão de EPUB/PDF em MP3 usando TTS.
-Versão corrigida e funcional.
+Versão melhorada com ETA em tempo real e --no-cache funcional.
 """
 
 import argparse
 import sys
 import os
+import time
 from pathlib import Path
 
 # Adiciona o diretório src ao path
@@ -22,6 +23,47 @@ from converter import EbookToAudioConverter
 from progress_tracker import ProgressTracker
 from ui.menu import MenuInterface
 from config import Config
+
+
+def get_engine_folder_name(engine: str, engine_config: dict) -> str:
+    """
+    Gera nome da pasta baseado no engine e configurações.
+    
+    Returns:
+        String como "EdgeTTS_Francisca_pt-BR" ou "CoquiTTS_XTTS_v2"
+    """
+    if engine == "edge":
+        voice = engine_config.get('voice', 'Unknown')
+        # Extrai nome da voz: pt-BR-FranciscaNeural -> Francisca_pt-BR
+        if '-' in voice:
+            parts = voice.split('-')
+            if len(parts) >= 3:
+                lang = f"{parts[0]}-{parts[1]}"  # pt-BR
+                voice_name = parts[2].replace('Neural', '')  # Francisca
+                return f"EdgeTTS_{voice_name}_{lang}"
+        return f"EdgeTTS_{voice}"
+    
+    elif engine == "coqui":
+        model_name = engine_config.get('model_name', 'Unknown')
+        # tts_models/multilingual/multi-dataset/xtts_v2 -> XTTS_v2
+        model_short = model_name.split('/')[-1] if '/' in model_name else model_name
+        speaker = engine_config.get('speaker')
+        if speaker and not speaker.endswith('.wav'):
+            return f"CoquiTTS_{model_short}_{speaker}"
+        return f"CoquiTTS_{model_short}"
+    
+    elif engine == "piper":
+        model_path = engine_config.get('model_path')
+        if model_path:
+            # pt_BR-faber-medium.onnx -> Piper_faber_medium_pt-BR
+            model_name = model_path.stem  # Remove .onnx
+            if model_name.startswith('pt_BR-'):
+                model_clean = model_name.replace('pt_BR-', '').replace('-', '_')
+                return f"PiperTTS_{model_clean}_pt-BR"
+            return f"PiperTTS_{model_name}"
+        return "PiperTTS_Unknown"
+    
+    return f"{engine.upper()}TTS"
 
 
 def parse_arguments():
@@ -62,7 +104,7 @@ def parse_arguments():
     parser.add_argument(
         "--no-cache", 
         action="store_true", 
-        help="Força reprocessamento do arquivo (ignora cache)"
+        help="Força reprocessamento completo (ignora cache e MP3s existentes)"
     )
     
     parser.add_argument(
@@ -115,30 +157,6 @@ def main():
         ebook_reader = EbookReader()
         menu = MenuInterface()
         
-        # Gerencia cache
-        book_title_preview = args.file_path.stem
-        existing_cache = cache_manager.check_existing_cache(book_title_preview)
-        
-        if existing_cache and not args.no_cache:
-            print(f"📂 Usando cache existente: {existing_cache}")
-            try:
-                metadata, chapters = cache_manager.load_from_cache(existing_cache)
-                book_title = metadata["title"]
-                author = None
-                print(f"✅ Cache carregado: {len(chapters)} capítulos")
-            except Exception as e:
-                print(f"⚠️ Erro no cache ({e}), reprocessando arquivo...")
-                book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
-                cache_manager.create_cache_structure(book_title, chapters)
-        else:
-            if args.no_cache and existing_cache:
-                print(f"🔄 Flag --no-cache: ignorando cache e reprocessando arquivo")
-            
-            # Lê arquivo e cria/atualiza cache
-            book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
-            cache_manager.create_cache_structure(book_title, chapters)
-            print(f"✅ {file_ext.upper()} processado e cache atualizado")
-        
         # Seleção de engine via menu se não especificado
         if not args.engine:
             args.engine = menu.show_engine_menu()
@@ -176,15 +194,43 @@ def main():
                 print(f"\n❌ ERRO: {e}")
                 sys.exit(1)
         
+        # Gerencia cache com --no-cache funcional
+        book_title_preview = args.file_path.stem
+        existing_cache = cache_manager.check_existing_cache(book_title_preview)
+        
+        if existing_cache and not args.no_cache:
+            print(f"📂 Usando cache existente: {existing_cache}")
+            try:
+                metadata, chapters = cache_manager.load_from_cache(existing_cache)
+                book_title = metadata["title"]
+                author = None
+                print(f"✅ Cache carregado: {len(chapters)} capítulos")
+            except Exception as e:
+                print(f"⚠️ Erro no cache ({e}), reprocessando arquivo...")
+                book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
+                cache_manager.create_cache_structure(book_title, chapters)
+        else:
+            if args.no_cache and existing_cache:
+                print(f"🔄 Flag --no-cache: ignorando cache e reprocessando arquivo")
+            
+            # Lê arquivo e cria/atualiza cache
+            book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
+            cache_manager.create_cache_structure(book_title, chapters)
+            print(f"✅ {file_ext.upper()} processado e cache atualizado")
+        
+        # Gera nome da pasta com engine+voz
+        engine_folder_suffix = get_engine_folder_name(args.engine, engine_config)
+        enhanced_book_title = f"{book_title}_{engine_folder_suffix}"
+        
         # Configuração global
         config = Config(
             engine=args.engine,
             engine_config=engine_config,
-            book_title=book_title,
+            book_title=enhanced_book_title,  # Nome melhorado
             author=author,
             chapters=chapters,
             output_format=file_ext.upper(),
-            force_reprocess=args.no_cache  # Passa flag --no-cache
+            force_reprocess=args.no_cache  # Passa flag --no-cache corretamente
         )
         
         # Inicializa conversor
