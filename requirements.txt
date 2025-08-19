@@ -1,28 +1,104 @@
-# Dependências core
+# Dependências compatíveis para EbookToAudio com XTTS
+# Versões testadas para evitar conflitos de dependências
+
+# =============================================================================
+# CORE TTS ENGINES 
+# =============================================================================
+TTS
+edge-tts>=6.1.0
+
+# Transformers compatível com XTTS (CRÍTICO - não alterar)
+# Versão 4.40.2 resolve erro: 'GPT2InferenceModel' object has no attribute 'generate'
+transformers==4.40.2
+tokenizers>=0.19.0,<0.20.0
+
+# =============================================================================
+# PYTORCH E ÁUDIO
+# =============================================================================
+# PyTorch (deixa pip resolver a melhor versão para seu sistema)
+torch>=2.0.0
+torchaudio>=2.0.0
+
+# NumPy compatível com TODAS as dependências
+# Versão <2.0.0 resolve conflitos com: gruut, f5-tts, numba, unstructured
+numpy>=1.24.0,<2.0.0
+
+# Audio processing
+soundfile
+librosa
+scipy
+
+# =============================================================================
+# PROCESSAMENTO DE EBOOKS
+# =============================================================================
 beautifulsoup4>=4.12.0
 ebooklib>=0.18
 PyPDF2>=3.0.0
 
-# PyTorch (deixa pip resolver a melhor versão para macOS)
-torch>=2.0.0
-torchaudio>=2.0.0
-
-# Edge-TTS (sempre funciona, instalar primeiro)
-edge-tts>=6.1.0
-
-# Coqui TTS (deixa pip resolver dependências automaticamente)
-TTS
-
-# Interface (sem versão específica para evitar conflitos)
+# =============================================================================
+# INTERFACE E PROGRESS
+# =============================================================================
 tqdm
 
-# Dependências opcionais
-librosa
-soundfile
-numpy
-scipy
+# =============================================================================
+# DEPENDÊNCIAS DE SISTEMA (versões compatíveis)
+# =============================================================================
+# Pandas >=2.0.0 resolve conflito com pephubclient
+pandas>=2.0.0,<3.0.0
 
-# Desenvolvimento (opcional)
+# Requests compatível com open-webui
+requests>=2.32.0,<3.0.0
+
+# aiohttp compatível com open-webui  
+aiohttp>=3.11.0,<4.0.0
+
+# Pydantic compatível com open-webui
+pydantic>=2.10.0,<3.0.0
+
+# fsspec compatível com datasets
+fsspec>=2023.1.0,<=2025.3.0
+
+# packaging compatível com langfuse
+packaging>=23.2,<24.0
+
+# =============================================================================
+# DESENVOLVIMENTO (OPCIONAL)
+# =============================================================================
 pytest
 black
 flake8
+
+# =============================================================================
+# RESOLVENDO CONFLITOS IDENTIFICADOS:
+# =============================================================================
+# ✅ transformers==4.40.2 (vs sentence-transformers que quer >=4.41.0)
+# ✅ numpy<2.0.0 (vs numpy 2.3.2 que quebra gruut, f5-tts, numba, unstructured)  
+# ✅ pandas>=2.0.0 (vs pandas 1.5.3 que quebra pephubclient)
+# ✅ fsspec<=2025.3.0 (vs fsspec 2025.7.0 que quebra datasets)
+# ✅ packaging<24.0 (vs packaging 25.0 que quebra langfuse)
+# ✅ aiohttp compatível (vs aiohttp 3.12.15 que quebra open-webui)
+# ✅ pydantic compatível (vs versões divergentes)
+# ✅ requests compatível (vs versões divergentes)
+
+# =============================================================================
+# INSTRUÇÕES DE INSTALAÇÃO:
+# =============================================================================
+# 1. REMOVA conflitos primeiro:
+#    pip uninstall transformers numpy pandas fsspec packaging -y
+#
+# 2. INSTALE versões compatíveis:
+#    pip install -r requirements.txt
+#
+# 3. FORCE transformers se necessário:
+#    pip install transformers==4.40.2 --force-reinstall
+#
+# 4. TESTE a instalação:
+#    python test_xtts_versions_fixed.py
+#
+# 5. Se houver problemas, execute:
+#    python resolve_dependencies.py
+
+# =============================================================================
+# ALTERNATIVA RÁPIDA (resolve tudo automaticamente):
+# =============================================================================
+# python resolve_dependencies.py
