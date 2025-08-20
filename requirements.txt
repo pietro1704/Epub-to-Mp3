@@ -9,7 +9,7 @@ edge-tts>=6.1.0
 
 # Transformers compatível com XTTS (CRÍTICO - não alterar)
 # Versão 4.40.2 resolve erro: 'GPT2InferenceModel' object has no attribute 'generate'
-transformers==4.40.2
+transformers==4.53.0
 tokenizers>=0.19.0,<0.20.0
 
 # =============================================================================
@@ -71,7 +71,7 @@ flake8
 # =============================================================================
 # RESOLVENDO CONFLITOS IDENTIFICADOS:
 # =============================================================================
-# ✅ transformers==4.40.2 (vs sentence-transformers que quer >=4.41.0)
+# ✅ transformers==4.53.0 (vs sentence-transformers que quer >=4.41.0)
 # ✅ numpy<2.0.0 (vs numpy 2.3.2 que quebra gruut, f5-tts, numba, unstructured)  
 # ✅ pandas>=2.0.0 (vs pandas 1.5.3 que quebra pephubclient)
 # ✅ fsspec<=2025.3.0 (vs fsspec 2025.7.0 que quebra datasets)
@@ -90,7 +90,7 @@ flake8
 #    pip install -r requirements.txt
 #
 # 3. FORCE transformers se necessário:
-#    pip install transformers==4.40.2 --force-reinstall
+#    pip install transformers==4.53.0 --force-reinstall
 #
 # 4. TESTE a instalação:
 #    python test_xtts_versions_fixed.py
