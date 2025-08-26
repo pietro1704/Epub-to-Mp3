@@ -4,13 +4,12 @@
 main.py
 
 Ponto de entrada principal para conversão de EPUB/PDF em MP3 usando TTS.
-Versão melhorada com ETA em tempo real e --no-cache funcional.
+Versão com padrões: Edge-TTS + Voz Antonio (masculino).
 """
 
 import argparse
 import sys
 import os
-import time
 from pathlib import Path
 
 # Adiciona o diretório src ao path
@@ -22,54 +21,14 @@ from tts_factory import TTSFactory
 from converter import EbookToAudioConverter
 from progress_tracker import ProgressTracker
 from ui.menu import MenuInterface
-from config import Config
-
-
-def get_engine_folder_name(engine: str, engine_config: dict) -> str:
-    """
-    Gera nome da pasta baseado no engine e configurações.
-    
-    Returns:
-        String como "EdgeTTS_Francisca_pt-BR" ou "CoquiTTS_XTTS_v2"
-    """
-    if engine == "edge":
-        voice = engine_config.get('voice', 'Unknown')
-        # Extrai nome da voz: pt-BR-FranciscaNeural -> Francisca_pt-BR
-        if '-' in voice:
-            parts = voice.split('-')
-            if len(parts) >= 3:
-                lang = f"{parts[0]}-{parts[1]}"  # pt-BR
-                voice_name = parts[2].replace('Neural', '')  # Francisca
-                return f"EdgeTTS_{voice_name}_{lang}"
-        return f"EdgeTTS_{voice}"
-    
-    elif engine == "coqui":
-        model_name = engine_config.get('model_name', 'Unknown')
-        # tts_models/multilingual/multi-dataset/xtts_v2 -> XTTS_v2
-        model_short = model_name.split('/')[-1] if '/' in model_name else model_name
-        speaker = engine_config.get('speaker')
-        if speaker and not speaker.endswith('.wav'):
-            return f"CoquiTTS_{model_short}_{speaker}"
-        return f"CoquiTTS_{model_short}"
-    
-    elif engine == "piper":
-        model_path = engine_config.get('model_path')
-        if model_path:
-            # pt_BR-faber-medium.onnx -> Piper_faber_medium_pt-BR
-            model_name = model_path.stem  # Remove .onnx
-            if model_name.startswith('pt_BR-'):
-                model_clean = model_name.replace('pt_BR-', '').replace('-', '_')
-                return f"PiperTTS_{model_clean}_pt-BR"
-            return f"PiperTTS_{model_name}"
-        return "PiperTTS_Unknown"
-    
-    return f"{engine.upper()}TTS"
+from config import Config, EDGE_VOICES
 
 
 def parse_arguments():
     """Configura e processa argumentos da linha de comando."""
     parser = argparse.ArgumentParser(
-        description="Converte EPUB/PDF em MP3s por capítulo usando TTS"
+        description="Converte EPUB/PDF em MP3s por capítulo usando TTS",
+        epilog="Padrões: Engine=Edge-TTS, Voz=Antonio (masculino)"
     )
     
     parser.add_argument(
@@ -81,12 +40,14 @@ def parse_arguments():
     parser.add_argument(
         "--engine", 
         choices=["edge", "coqui", "piper"], 
-        help="Engine TTS (se não especificado, mostra menu)"
+        default="edge",  # Padrão: Edge-TTS
+        help="Engine TTS (padrão: edge)"
     )
     
     parser.add_argument(
         "--voice", 
-        help="Voz específica (Edge-TTS)"
+        default="pt-BR-AntonioNeural",  # Padrão: Antonio (voz 9)
+        help="Voz específica Edge-TTS (padrão: pt-BR-AntonioNeural)"
     )
     
     parser.add_argument(
@@ -104,7 +65,7 @@ def parse_arguments():
     parser.add_argument(
         "--no-cache", 
         action="store_true", 
-        help="Força reprocessamento completo (ignora cache e MP3s existentes)"
+        help="Força reprocessamento do arquivo (ignora cache)"
     )
     
     parser.add_argument(
@@ -133,6 +94,12 @@ def parse_arguments():
         help="Pula validação"
     )
     
+    parser.add_argument(
+        "--menu", 
+        action="store_true", 
+        help="Força exibição do menu de seleção"
+    )
+    
     return parser.parse_args()
 
 
@@ -157,15 +124,56 @@ def main():
         ebook_reader = EbookReader()
         menu = MenuInterface()
         
-        # Seleção de engine via menu se não especificado
-        if not args.engine:
+        # Gerencia cache
+        book_title_preview = args.file_path.stem
+        existing_cache = cache_manager.check_existing_cache(book_title_preview)
+        
+        if existing_cache and not args.no_cache:
+            print(f"📂 Usando cache existente: {existing_cache}")
+            try:
+                metadata, chapters = cache_manager.load_from_cache(existing_cache)
+                book_title = metadata["title"]
+                author = None
+                print(f"✅ Cache carregado: {len(chapters)} capítulos")
+            except Exception as e:
+                print(f"⚠️ Erro no cache ({e}), reprocessando arquivo...")
+                book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
+                cache_manager.create_cache_structure(book_title, chapters)
+        else:
+            if args.no_cache and existing_cache:
+                print(f"🔄 Flag --no-cache: ignorando cache e reprocessando arquivo")
+            
+            # Lê arquivo e cria/atualiza cache
+            book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
+            cache_manager.create_cache_structure(book_title, chapters)
+            print(f"✅ {file_ext.upper()} processado e cache atualizado")
+        
+        # Seleção de engine e configuração
+        if args.menu:
+            # Força menu mesmo com padrões
             args.engine = menu.show_engine_menu()
+        
+        # Mostra configuração padrão se não forçar menu
+        if not args.menu:
+            print(f"\n🎙️ CONFIGURAÇÃO PADRÃO")
+            print("=" * 50)
+            print(f"Engine: {args.engine.upper()}")
+            if args.engine == "edge":
+                # Encontra nome da voz para exibição
+                voice_name = "Antonio - Masculino, padrão"
+                for num, (voice_id, description) in EDGE_VOICES.items():
+                    if voice_id == args.voice:
+                        voice_name = description
+                        break
+                print(f"Voz: {voice_name}")
+            print("💡 Use --menu para selecionar outras opções")
+            print("=" * 50)
         
         # Configuração específica por engine
         tts_factory = TTSFactory()
         
         if args.engine == "edge":
-            voice = args.voice or menu.get_edge_voice()
+            voice = args.voice if not args.menu else menu.get_edge_voice()
             engine_config = {
                 "voice": voice,
                 "bitrate": args.bitrate,
@@ -192,45 +200,24 @@ def main():
                 tts_engine.validate_dependencies()
             except Exception as e:
                 print(f"\n❌ ERRO: {e}")
+                print("\n💡 SOLUÇÕES:")
+                if "edge-tts" in str(e).lower():
+                    print("• pip install edge-tts")
+                elif "ffmpeg" in str(e).lower():
+                    print("• Ubuntu/Debian: sudo apt install ffmpeg")
+                    print("• macOS: brew install ffmpeg")
+                    print("• Windows: baixe de https://ffmpeg.org/")
                 sys.exit(1)
-        
-        # Gerencia cache com --no-cache funcional
-        book_title_preview = args.file_path.stem
-        existing_cache = cache_manager.check_existing_cache(book_title_preview)
-        
-        if existing_cache and not args.no_cache:
-            print(f"📂 Usando cache existente: {existing_cache}")
-            try:
-                metadata, chapters = cache_manager.load_from_cache(existing_cache)
-                book_title = metadata["title"]
-                author = None
-                print(f"✅ Cache carregado: {len(chapters)} capítulos")
-            except Exception as e:
-                print(f"⚠️ Erro no cache ({e}), reprocessando arquivo...")
-                book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
-                cache_manager.create_cache_structure(book_title, chapters)
-        else:
-            if args.no_cache and existing_cache:
-                print(f"🔄 Flag --no-cache: ignorando cache e reprocessando arquivo")
-            
-            # Lê arquivo e cria/atualiza cache
-            book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
-            cache_manager.create_cache_structure(book_title, chapters)
-            print(f"✅ {file_ext.upper()} processado e cache atualizado")
-        
-        # Gera nome da pasta com engine+voz
-        engine_folder_suffix = get_engine_folder_name(args.engine, engine_config)
-        enhanced_book_title = f"{book_title}_{engine_folder_suffix}"
         
         # Configuração global
         config = Config(
             engine=args.engine,
             engine_config=engine_config,
-            book_title=enhanced_book_title,  # Nome melhorado
+            book_title=book_title,
             author=author,
             chapters=chapters,
             output_format=file_ext.upper(),
-            force_reprocess=args.no_cache  # Passa flag --no-cache corretamente
+            force_reprocess=args.no_cache  # Passa flag --no-cache
         )
         
         # Inicializa conversor
