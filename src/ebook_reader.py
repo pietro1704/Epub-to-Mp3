@@ -24,6 +24,12 @@ from typing import Dict, List, Optional, Tuple, Union
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+try:
+    import pypdf
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
 XML_NS = {
     "ocf": "urn:oasis:names:tc:opendocument:xmlns:container",
     "opf": "http://www.idpf.org/2007/opf",
@@ -152,7 +158,7 @@ class Chapter:
 
 @dataclass
 class HierarchicalChapter:
-    index: int
+    index: Union[int, str]
     title: str
     level: int
     play_order: int
@@ -291,6 +297,166 @@ def _inject_footnotes_inline(
 
     return A_TAG.sub(repl, html)
 
+def _detect_page_breaks_and_structure(chapters: List[Chapter]) -> List[HierarchicalChapter]:
+    """
+    Detecta quebras de página e cria estrutura de capítulos/subcapítulos baseada nelas.
+    Lógica agnóstica que funciona com qualquer livro:
+    - Cada arquivo HTML separado = potencial quebra de página
+    - Se arquivo termina com </div> e próximo começa diferente = quebra confirmada
+    - Tenta usar títulos do toc.ncx como estrutura principal
+    - Subcapítulos sem nome ganham prévia do texto
+    """
+    if not chapters:
+        return []
+    
+    hierarchical_chapters = []
+    current_chapter_group = []
+    chapter_counter = 1
+    
+    # Agrupa capítulos por padrões de quebra de página
+    for i, chapter in enumerate(chapters):
+        current_chapter_group.append(chapter)
+        
+        # Detecta quebra de página:
+        # 1. Mudança significativa no nome do arquivo (diferentes base names)
+        # 2. Conteúdo termina com tags de fechamento de seção (div, section, etc.)
+        # 3. Próximo capítulo começa com título/cabeçalho
+        is_page_break = False
+        
+        # Verifica se é o último capítulo
+        if i == len(chapters) - 1:
+            is_page_break = True
+        else:
+            next_chapter = chapters[i + 1]
+            
+            # Quebra por mudança de arquivo base
+            current_base = _extract_base_filename(chapter.source_path)
+            next_base = _extract_base_filename(next_chapter.source_path)
+            
+            if current_base != next_base:
+                is_page_break = True
+            
+            # Quebra por padrões de HTML (div fechado + novo início)
+            elif chapter.text.rstrip().endswith(('</div>', '</section>', '</article>')):
+                # Verifica se próximo capítulo começa com título ou cabeçalho
+                next_text_start = next_chapter.text.strip()[:200]
+                if any(pattern in next_text_start.upper() for pattern in 
+                      ['CAPÍTULO', 'CHAPTER', 'PARTE', 'LIVRO', 'SEÇÃO']):
+                    is_page_break = True
+        
+        # Se detectou quebra, processa o grupo atual
+        if is_page_break and current_chapter_group:
+            hier_chapter = _create_hierarchical_chapter_from_group(
+                current_chapter_group, chapter_counter
+            )
+            hierarchical_chapters.append(hier_chapter)
+            current_chapter_group = []
+            chapter_counter += 1
+    
+    return hierarchical_chapters
+
+def _extract_base_filename(file_path: str) -> str:
+    """Extrai nome base do arquivo, removendo numeração split."""
+    basename = os.path.basename(file_path)
+    # Remove padrões como _split_001, _001, etc.
+    base_clean = re.sub(r'_(?:split_)?\d+\.', '.', basename)
+    base_clean = re.sub(r'\.(html|htm|xhtml).*$', '', base_clean)
+    return base_clean
+
+def _create_hierarchical_chapter_from_group(chapter_group: List[Chapter], chapter_num: int) -> HierarchicalChapter:
+    """Cria capítulo hierárquico a partir de um grupo de capítulos sequenciais."""
+    if len(chapter_group) == 1:
+        # Capítulo simples
+        chapter = chapter_group[0]
+        title = chapter.name if not chapter.name.endswith('.html') else f"Capítulo {chapter_num}"
+        
+        return HierarchicalChapter(
+            index=chapter_num,
+            title=title,
+            level=1,
+            play_order=chapter_num,
+            src=chapter.source_path,
+            original_id=f"chapter-{chapter_num}",
+            char_count=len(chapter.text),
+            estimated_duration=len(chapter.text) / 1000 * 0.6,
+            children=[]
+        )
+    else:
+        # Capítulo com subcapítulos
+        main_chapter = chapter_group[0]
+        total_chars = sum(len(ch.text) for ch in chapter_group)
+        
+        # Título principal - usa o primeiro capítulo válido ou padrão
+        main_title = main_chapter.name
+        if main_title.endswith('.html') or not main_title.strip():
+            main_title = f"Capítulo {chapter_num}"
+        
+        children = []
+        for i, subchapter in enumerate(chapter_group[1:], 1):
+            sub_title = subchapter.name
+            
+            # Se subcapítulo não tem nome descritivo, adiciona prévia do texto
+            if sub_title.endswith('.html') or not sub_title.strip() or len(sub_title) < 5:
+                text_preview = _extract_text_preview(subchapter.text, 4)
+                sub_title = f"Seção {i}" + (f" - {text_preview}" if text_preview else "")
+            
+            child = HierarchicalChapter(
+                index=f"{chapter_num}.{i}",
+                title=sub_title,
+                level=2,
+                play_order=chapter_num * 100 + i,
+                src=subchapter.source_path,
+                original_id=f"chapter-{chapter_num}-{i}",
+                char_count=len(subchapter.text),
+                estimated_duration=len(subchapter.text) / 1000 * 0.6,
+                children=[]
+            )
+            children.append(child)
+        
+        return HierarchicalChapter(
+            index=chapter_num,
+            title=main_title,
+            level=1,
+            play_order=chapter_num,
+            src=main_chapter.source_path,
+            original_id=f"chapter-{chapter_num}",
+            char_count=len(main_chapter.text),  # Só o primeiro
+            estimated_duration=len(main_chapter.text) / 1000 * 0.6,
+            children=children
+        )
+
+def _extract_text_preview(text: str, max_words: int = 4) -> str:
+    """Extrai prévia significativa do texto para usar como nome de subcapítulo."""
+    if not text or not text.strip():
+        return ""
+    
+    # Remove quebras de linha e normaliza espaços
+    clean_text = re.sub(r'\s+', ' ', text.strip())
+    
+    # Pega as primeiras palavras significativas
+    words = clean_text.split()
+    meaningful_words = []
+    
+    for word in words[:20]:  # Analisa até 20 palavras
+        # Filtra palavras muito curtas e comuns
+        if (len(word) > 2 and 
+            word.lower() not in ['que', 'com', 'para', 'uma', 'mas', 'por', 'ser', 'ter', 
+                               'ele', 'ela', 'seu', 'sua', 'dos', 'das', 'nos', 'nas', 
+                               'essa', 'esse', 'está', 'eram', 'teve', 'foi', 'isso', 
+                               'isto', 'como', 'mais', 'muito', 'bem', 'ainda', 'onde',
+                               'quando', 'porque', 'então', 'assim', 'depois', 'antes']):
+            meaningful_words.append(word)
+            if len(meaningful_words) >= max_words:
+                break
+    
+    if meaningful_words:
+        preview = ' '.join(meaningful_words)
+        # Remove pontuação final
+        preview = preview.rstrip('.,;:!?')
+        return preview
+    
+    return ""
+
 def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) -> List[HierarchicalChapter]:
     """
     Parseia o toc.ncx para extrair estrutura hierárquica dos capítulos.
@@ -337,7 +503,7 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                 
                 # Extrai título
                 nav_label = nav_point.find('ncx:navLabel/ncx:text', ns)
-                title = nav_label.text.strip() if nav_label is not None else f"Capítulo {i}"
+                nav_title = nav_label.text.strip() if nav_label is not None else f"Capítulo {i}"
                 
                 
                 # Extrai src
@@ -410,6 +576,13 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                         if False:  # Debug desabilitado
                             print(f"   Total chars: {char_count}")
                 
+                # Encontra o título real do capítulo a partir do mapeamento de capítulos
+                actual_title = nav_title  # Fallback para nav title
+                if matching_chapter:
+                    actual_title = matching_chapter.name
+                elif normalized_src in src_to_chapter:
+                    actual_title = src_to_chapter[normalized_src].name
+                
                 # Calcula index hierárquico
                 if parent_index:
                     hierarchical_index = f"{parent_index}.{i}"
@@ -419,7 +592,7 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                 # Cria HierarchicalChapter
                 hier_chapter = HierarchicalChapter(
                     index=hierarchical_index,
-                    title=title,
+                    title=actual_title,
                     level=level,
                     play_order=play_order,
                     src=src,
@@ -448,7 +621,7 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                 
                 # Extrai título
                 nav_label = nav_point.find('ncx:navLabel/ncx:text', ns)
-                title = nav_label.text.strip() if nav_label is not None else f"Capítulo {i}"
+                nav_title = nav_label.text.strip() if nav_label is not None else f"Capítulo {i}"
                 
                 
                 # Extrai src
@@ -521,13 +694,20 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                         if False:  # Debug desabilitado
                             print(f"   Total chars: {char_count}")
                 
+                # Encontra o título real do capítulo a partir do mapeamento de capítulos
+                actual_title = nav_title  # Fallback para nav title
+                if matching_chapter:
+                    actual_title = matching_chapter.name
+                elif normalized_src in src_to_chapter:
+                    actual_title = src_to_chapter[normalized_src].name
+                
                 # Calcula index hierárquico
                 hierarchical_index = f"{parent_index}.{i}"
                 
                 # Cria HierarchicalChapter
                 hier_chapter = HierarchicalChapter(
                     index=hierarchical_index,
-                    title=title,
+                    title=actual_title,
                     level=level,
                     play_order=play_order,
                     src=src,
@@ -793,7 +973,19 @@ def read_epub(path: str) -> Book:
                 raw_html = _read_zip_text(zf, src_path)
 
             # Nome do capítulo: primeiro heading, senão o nome do arquivo
-            name = extract_first_heading(raw_html) or os.path.basename(src_path)
+            heading_name = extract_first_heading(raw_html)
+            if heading_name:
+                name = heading_name
+            else:
+                # Fallback para nome do arquivo, mas limpa padrões index_split
+                filename = os.path.basename(src_path)
+                # Remove padrões como index_split_014.html e index_split_014.html.txt
+                name = re.sub(r'index_split_\d+\.html(\.txt)?', 'Capítulo sem título', filename)
+                # Se ainda contém extensões, remove elas
+                name = re.sub(r'\.(html|htm|xhtml)$', '', name)
+                # Se nome ficou vazio ou muito genérico, usa índice
+                if not name or name in ['Capítulo sem título', '']:
+                    name = f"Capítulo {chap_idx}"
 
             # Injeta notas inline
             html_with_notes = _inject_footnotes_inline(
@@ -833,6 +1025,66 @@ def read_epub(path: str) -> Book:
             chapters=chapters,
         )
 
+def read_pdf(path: str) -> Book:
+    """Lê um PDF e retorna um Book com páginas como capítulos."""
+    if not PDF_AVAILABLE:
+        raise ImportError("Biblioteca 'pypdf' não instalada. Execute: pip install pypdf")
+    
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"Arquivo não encontrado: {path}")
+    
+    try:
+        with open(path, 'rb') as pdf_file:
+            pdf_reader = pypdf.PdfReader(pdf_file)
+            
+            # Metadados básicos
+            book_title = "PDF Document"
+            book_author = ""
+            
+            if pdf_reader.metadata:
+                book_title = pdf_reader.metadata.get('/Title', book_title)
+                book_author = pdf_reader.metadata.get('/Author', book_author)
+            
+            # Se não conseguir metadados, usa o nome do arquivo
+            if book_title == "PDF Document":
+                book_title = os.path.splitext(os.path.basename(path))[0]
+            
+            chapters = []
+            
+            # Cada página vira um "capítulo"
+            for page_num, page in enumerate(pdf_reader.pages, start=1):
+                try:
+                    text = page.extract_text()
+                    if text.strip():  # Só adiciona se tem conteúdo
+                        chapters.append(
+                            Chapter(
+                                index=page_num,
+                                name=f"Página {page_num}",
+                                source_path=f"page_{page_num}",
+                                text=text.strip(),
+                            )
+                        )
+                except Exception as e:
+                    print(f"⚠️  Erro ao extrair texto da página {page_num}: {e}")
+                    # Adiciona capítulo vazio mesmo se der erro
+                    chapters.append(
+                        Chapter(
+                            index=page_num,
+                            name=f"Página {page_num} (erro na extração)",
+                            source_path=f"page_{page_num}",
+                            text="",
+                        )
+                    )
+            
+            return Book(
+                title=book_title,
+                author=book_author,
+                chapters=chapters,
+            )
+            
+    except Exception as e:
+        raise ValueError(f"Erro ao processar PDF: {e}")
+
 # ---------------------------
 # API pública simples
 # ---------------------------
@@ -845,6 +1097,8 @@ def read_book(path: str) -> Book:
     low = path.lower()
     if low.endswith(".epub"):
         return read_epub(path)
+    elif low.endswith(".pdf"):
+        return read_pdf(path)
     raise ValueError(f"Formato não suportado: {path}")
 
 # ---------------------------
@@ -907,19 +1161,55 @@ class EbookReader:
         self.hierarchical_structure = self._load_hierarchical_structure(str(path))
     
     def _load_hierarchical_structure(self, path: str) -> List[HierarchicalChapter]:
-        """Carrega a estrutura hierárquica do toc.ncx."""
+        """Carrega a estrutura hierárquica baseada em quebras de página e toc.ncx."""
         if not self.book or not self.book.chapters:
             return []
         
         try:
+            # Primeira tentativa: usar detecção inteligente de quebras de página
+            page_break_structure = _detect_page_breaks_and_structure(self.book.chapters)
+            if page_break_structure:
+                print(f"✅ Estrutura baseada em quebras de página: {len(page_break_structure)} capítulos principais")
+                return page_break_structure
+            
+            # Fallback: usar toc.ncx se disponível
             with zipfile.ZipFile(path, "r") as zf:
-                # Encontra o base_dir (mesmo processo do read_epub)
                 opf_path = _find_opf_path(zf)
                 base_dir = _opf_dir(opf_path)
-                return _parse_toc_ncx(zf, base_dir, self.book.chapters)
+                toc_structure = _parse_toc_ncx(zf, base_dir, self.book.chapters)
+                if toc_structure:
+                    print(f"✅ Estrutura do toc.ncx: {len(toc_structure)} capítulos")
+                    return toc_structure
+            
+            # Fallback final: estrutura simples
+            print("⚠️ Usando estrutura simples como fallback")
+            return self._create_simple_structure()
+            
         except Exception as e:
             print(f"⚠️ Erro ao carregar estrutura hierárquica: {e}")
+            return self._create_simple_structure()
+    
+    def _create_simple_structure(self) -> List[HierarchicalChapter]:
+        """Cria estrutura simples como fallback."""
+        if not self.book or not self.book.chapters:
             return []
+        
+        structure = []
+        for ch in self.book.chapters:
+            char_count = len(ch.text) if ch.text else 0
+            hier_chapter = HierarchicalChapter(
+                index=ch.index,
+                title=ch.name,
+                level=1,
+                play_order=ch.index,
+                src=ch.source_path,
+                original_id=f"chapter-{ch.index}",
+                char_count=char_count,
+                estimated_duration=char_count / 1000 * 0.6,
+                children=[]
+            )
+            structure.append(hier_chapter)
+        return structure
 
     @property
     def title(self) -> str:
@@ -935,7 +1225,13 @@ class EbookReader:
     def read_ebook(self, path: Union[str, Path]):
         """Compatibility method - loads book and returns title, author, chapters."""
         self.load(path)
-        return self.title, self.author, self.get_chapters()
+        # Verifica se self.book e self.book.chapters não são None
+        if not self.book or not self.book.chapters:
+            return self.title, self.author, []
+
+        # Converte capítulos para lista de tuplas (title, text)
+        chapters = [(ch.name, ch.text) for ch in self.book.chapters]
+        return self.title, self.author, chapters
     
     def get_chapter_structure(self):
         """Returns hierarchical chapter structure from toc.ncx, or fallback structure."""
@@ -952,7 +1248,7 @@ class EbookReader:
             char_count = len(ch.text) if ch.text else 0
             # Cria um HierarchicalChapter simples
             hier_chapter = HierarchicalChapter(
-                index=str(ch.index),
+                index=ch.index,
                 title=ch.name,
                 level=1,
                 play_order=ch.index,
