@@ -158,7 +158,7 @@ def main():
             # Mostra informações da estrutura extraída
             if chapter_structure:
                 print(f"✅ Estrutura extraída: {len(chapter_structure)} capítulos")
-                levels = set(ch.level for ch in chapter_structure)
+                levels = set(ch['level'] for ch in chapter_structure)
                 if len(levels) > 1:
                     print(f"📚 Níveis hierárquicos encontrados: {sorted(levels)}")
             

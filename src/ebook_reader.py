@@ -20,7 +20,8 @@ import os
 import re
 import zipfile
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
+from pathlib import Path
 from xml.etree import ElementTree as ET
 
 XML_NS = {
@@ -378,21 +379,16 @@ class EbookReader:
     ou diretamente passando path no __init__.
     """
     def __init__(self, file_path: Optional[Union[str, Path]] = None):
-        """**Corrigido: Inicialização properly typed e não callable**"""
+        """Inicializa o EbookReader com path opcional."""
         self.file_path: Optional[Path] = Path(file_path) if file_path is not None else None
-
-    def load(self, path: str):
-        self.book = read_book(path)
-
-    @property
-
-    def __init__(self, path: str | None = None):
         self.book = None
-        if path:
-            self.load(path)
+        if file_path:
+            self.load(file_path)
 
-    def load(self, path: str):
-        self.book = read_book(path)
+    def load(self, path: Union[str, Path]):
+        """Carrega o ebook do path especificado."""
+        self.book = read_book(str(path))
+        self.file_path = Path(path)
 
     @property
     def title(self) -> str:
@@ -404,5 +400,27 @@ class EbookReader:
 
     def get_chapters(self):
         return self.book.chapters if self.book else []
+    
+    def read_ebook(self, path: Union[str, Path]):
+        """Compatibility method - loads book and returns title, author, chapters."""
+        self.load(path)
+        return self.title, self.author, self.get_chapters()
+    
+    def get_chapter_structure(self):
+        """Returns formatted chapter structure for display."""
+        if not self.book or not self.book.chapters:
+            return []
+        
+        structure = []
+        for ch in self.book.chapters:
+            char_count = len(ch.text) if ch.text else 0
+            structure.append({
+                'index': ch.index,
+                'level': 1,  # Default level since Chapter dataclass doesn't have level
+                'name': ch.name,
+                'char_count': char_count,
+                'text_preview': ch.text[:100] + '...' if ch.text and len(ch.text) > 100 else ch.text or ''
+            })
+        return structure
 
 __all__ = ["EbookReader", "read_book", "Book", "Chapter"]
