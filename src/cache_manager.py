@@ -6,7 +6,8 @@ Gerenciador de cache para otimizar reprocessamento de arquivos.
 
 import json
 from pathlib import Path
-from typing import List, Tuple, Dict, Optional, Union
+from typing import List, Tuple, Dict, Optional
+from datetime import datetime
 from utils import sanitize_filename, zero_pad
 
 
@@ -42,7 +43,7 @@ class CacheManager:
             "title": book_title,
             "total_chapters": len(chapters),
             "chapters": [],
-            "created_at": str(Path.cwd()),
+            "created_at": datetime.now().isoformat(),
             "processed": True
         }
         
@@ -50,13 +51,11 @@ class CacheManager:
         for old_file in cache_dir.glob("*.txt"):
             try:
                 old_file.unlink()
-            except:
+            except Exception:
                 pass
         
         # Cria arquivos de texto para cada capítulo
-        for idx, chapter in enumerate(chapters, start=1):
-            title = chapter.name
-            text = chapter.text
+        for idx, (title, text) in enumerate(chapters, start=1):
             index_str = zero_pad(idx, len(chapters))
             safe_title = sanitize_filename(title)
             txt_name = f"{index_str} - {safe_title}.txt"
@@ -103,11 +102,11 @@ class CacheManager:
         with open(metadata_file, 'r', encoding='utf-8') as f:
             metadata = json.load(f)
         
-        chapters = []
+        chapters: List[Tuple[str, str]] = []
         missing_files = []
         
         # Carrega textos dos capítulos
-        for ch_meta in metadata["chapters"]:
+        for ch_meta in metadata.get("chapters", []):
             txt_path = cache_dir / ch_meta["txt_file"]
             if txt_path.exists():
                 with open(txt_path, 'r', encoding='utf-8') as f:
@@ -220,7 +219,7 @@ class CacheManager:
             Número de caches removidos
         """
         import time
-        from datetime import datetime, timedelta
+        import shutil
         
         cutoff_time = time.time() - (max_age_days * 24 * 60 * 60)
         removed_count = 0
@@ -231,7 +230,6 @@ class CacheManager:
                     # Verifica idade do diretório
                     dir_mtime = cache_dir.stat().st_mtime
                     if dir_mtime < cutoff_time:
-                        import shutil
                         shutil.rmtree(cache_dir)
                         removed_count += 1
                         print(f"🗑️ Cache antigo removido: {cache_dir.name}")

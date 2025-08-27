@@ -33,7 +33,7 @@ def parse_arguments():
     parser.add_argument(
         "file_path", 
         type=Path, 
-        help="Caminho do arquivo .epub ou .pdf"
+        help="Caminho do arquivo .epub, .pdf ou use --from-txt para arquivo .txt"
     )
     
     parser.add_argument(
@@ -100,6 +100,12 @@ def parse_arguments():
     )
     
     parser.add_argument(
+        "--from-txt", 
+        type=Path,
+        help="Gera MP3 a partir de um arquivo TXT (modo direto de conversão)"
+    )
+    
+    parser.add_argument(
         "--show-structure", 
         action="store_true", 
         help="Mostra estrutura dos capítulos sem converter"
@@ -108,10 +114,82 @@ def parse_arguments():
     return parser.parse_args()
 
 
+def convert_txt_to_mp3(args):
+    """Converte um arquivo TXT diretamente para MP3."""
+    txt_file = args.from_txt
+    
+    # Valida arquivo TXT
+    if not txt_file.exists():
+        print(f"❌ ERRO: Arquivo TXT não encontrado: {txt_file}")
+        sys.exit(1)
+    
+    if txt_file.suffix.lower() != '.txt':
+        print(f"❌ ERRO: Arquivo deve ser .txt, recebido: {txt_file.suffix}")
+        sys.exit(1)
+    
+    # Lê conteúdo do arquivo TXT
+    try:
+        with open(txt_file, 'r', encoding='utf-8') as f:
+            text_content = f.read().strip()
+    except Exception as e:
+        print(f"❌ ERRO ao ler arquivo TXT: {e}")
+        sys.exit(1)
+    
+    if not text_content:
+        print(f"❌ ERRO: Arquivo TXT está vazio: {txt_file}")
+        sys.exit(1)
+    
+    # Nome do arquivo MP3 de saída
+    mp3_output = txt_file.with_suffix('.mp3')
+    
+    print(f"🎵 Convertendo TXT para MP3:")
+    print(f"📄 Entrada: {txt_file}")
+    print(f"🎵 Saída: {mp3_output}")
+    print(f"📊 Tamanho: {len(text_content):,} caracteres")
+    print(f"🔧 Engine: {args.engine}")
+    
+    # Inicializa TTS engine
+    from src.tts_factory import TTSFactory
+    
+    factory = TTSFactory()
+    
+    # Configuração simples para TXT direto
+    engine_config = {}
+    if args.engine == "edge":
+        engine_config = {"voice": args.voice}
+    elif args.engine == "piper":
+        engine_config = {"model_path": str(args.model_path)}
+    elif args.engine == "coqui":
+        engine_config = {"model": args.coqui_model}
+    
+    try:
+        tts_engine = factory.create_engine(
+            engine_type=args.engine,
+            config=engine_config
+        )
+    except Exception as e:
+        print(f"❌ ERRO ao inicializar TTS engine: {e}")
+        sys.exit(1)
+    
+    # Converte texto para áudio
+    try:
+        print("🔄 Gerando áudio...")
+        tts_engine.synthesize(text_content, mp3_output)  # Pass Path object directly
+        print(f"✅ Conversão concluída: {mp3_output}")
+    except Exception as e:
+        print(f"❌ ERRO na conversão: {e}")
+        sys.exit(1)
+
+
 def main():
     """Função principal do programa."""
     try:
         args = parse_arguments()
+        
+        # Modo especial: conversão direta de TXT para MP3
+        if args.from_txt:
+            convert_txt_to_mp3(args)
+            return
         
         # Valida arquivo de entrada
         if not args.file_path.exists():
@@ -322,7 +400,7 @@ def show_chapter_structure(chapters_or_structure):
             # Usa o índice hierárquico ou gera um sequencial
             display_index = hier_chapter.index if hier_chapter.index else parent_index
             
-            print(f"{display_index:>6s}. {indent}{level_icon} {hier_chapter.title}")
+            print(f"{str(display_index):>6s}. {indent}{level_icon} {hier_chapter.title}")
             formatted_duration = format_duration(hier_chapter.estimated_duration)
             print(f"        {indent}   📊 {char_count:,} chars | ~{formatted_duration}")
             
@@ -331,7 +409,18 @@ def show_chapter_structure(chapters_or_structure):
                 sanitized_name = hier_chapter.title.replace("/", "-").replace("\\", "-")
                 # Remove caracteres especiais problemáticos
                 sanitized_name = re.sub(r'[<>:"|?*]', '', sanitized_name)
-                mp3_name = f"{display_index.replace('.', '-')} - {sanitized_name}.mp3"
+                # Usa mesmo formato do conversor
+                if isinstance(hier_chapter.index, str) and '.' in str(hier_chapter.index):
+                    # Índice hierárquico (ex: "1.2" -> "001-2")
+                    index_parts = str(hier_chapter.index).split('.')
+                    main_idx = int(index_parts[0])
+                    sub_idx = int(index_parts[1])
+                    filename_index = f"{main_idx:03d}-{sub_idx}"
+                else:
+                    # Índice simples
+                    filename_index = f"{int(hier_chapter.index):03d}"
+                
+                mp3_name = f"{filename_index} - {sanitized_name}.mp3"
                 print(f"        {indent}   🎵 {mp3_name}")
             print()
             

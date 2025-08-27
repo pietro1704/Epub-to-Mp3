@@ -119,11 +119,14 @@ class EbookToAudioConverter:
         print(f"\n🎙️ CONVERTENDO {total_chapters} CAPÍTULOS")
         print("=" * 60)
         
-        for idx, (title, text) in enumerate(self.config.chapters, start=1):
-            # NOVA: Usa estrutura detalhada se disponível
-            chapter_info = None
-            if self.chapter_structure and idx <= len(self.chapter_structure):
-                chapter_info = self.chapter_structure[idx - 1]
+        # Cria mapeamento linear de capítulos para a estrutura hierárquica
+        chapter_mapping = self._create_chapter_mapping()
+        
+        for idx, chapter in enumerate(self.config.chapters, start=1):
+            title, text = chapter  # Desempacota a tupla manualmente
+            
+            # Encontra informação hierárquica correspondente
+            chapter_info = chapter_mapping.get(idx)
             
             success = self._convert_chapter_with_progress(
                 idx, title, text, total_chapters, tts_engine, chapter_info
@@ -133,6 +136,29 @@ class EbookToAudioConverter:
         
         self.success_count = success_count
         self.total_chapters = total_chapters
+    
+    def _create_chapter_mapping(self) -> dict:
+        """
+        Cria mapeamento entre capítulos lineares (1,2,3...) e estrutura hierárquica.
+        Retorna dict onde key=índice_linear, value=HierarchicalChapter correspondente.
+        """
+        if not self.chapter_structure:
+            return {}
+        
+        mapping = {}
+        linear_index = 1
+        
+        # Percorre estrutura hierárquica e mapeia linearmente
+        for hier_chapter in self.chapter_structure:
+            mapping[linear_index] = hier_chapter
+            linear_index += 1
+            
+            # Mapeia filhos/subcapítulos
+            for child in hier_chapter.children:
+                mapping[linear_index] = child
+                linear_index += 1
+        
+        return mapping
     
     def _convert_chapter_with_progress(self, idx: int, title: str, text: str, 
                                      total: int, tts_engine, chapter_info=None) -> bool:
@@ -202,34 +228,33 @@ class EbookToAudioConverter:
     
     def _generate_structured_filename(self, idx: int, title: str, total: int, chapter_info=None) -> str:
         """
-        NOVA: Gera nome de arquivo baseado na estrutura original do EPUB.
+        Gera nome de arquivo baseado na estrutura hierárquica de quebras de página.
         
         Formatos:
         - Capítulo principal: "001 - Título do Capítulo.mp3"
-        - Subcapítulo: "001.1 - Subtítulo.mp3"  
-        - Com numeração original: "Cap01 - Título.mp3"
+        - Subcapítulo: "001-1 - Subtítulo.mp3"  
+        - Com prévia de texto: "001-2 - Seção 2 - Paulo olhou para.mp3"
         """
-        # Padding baseado no total
-        width = max(2, len(str(total)))
-        
         if chapter_info:
-            # Usa estrutura detalhada
-            if chapter_info.level > 1:
-                # Subcapítulo - encontra capítulo pai
-                parent_idx = self._find_parent_chapter_index(idx, chapter_info.level)
-                if parent_idx:
-                    index_str = f"{parent_idx:0{width}d}.{chapter_info.level - 1}"
+            # Usa índice da estrutura hierárquica
+            if isinstance(chapter_info.index, str):
+                # Índice hierárquico (ex: "1.2" -> "001-2")
+                index_parts = str(chapter_info.index).split('.')
+                if len(index_parts) > 1:
+                    main_idx = int(index_parts[0])
+                    sub_idx = int(index_parts[1])
+                    index_str = f"{main_idx:03d}-{sub_idx}"
                 else:
-                    index_str = f"{idx:0{width}d}.{chapter_info.level - 1}"
+                    index_str = f"{int(index_parts[0]):03d}"
             else:
-                # Capítulo principal
-                index_str = f"{idx:0{width}d}"
+                # Índice numérico simples
+                index_str = f"{chapter_info.index:03d}"
             
-            # Usa título limpo da estrutura
+            # Usa título limpo da estrutura hierárquica
             clean_title = sanitize_filename(chapter_info.title)
         else:
-            # Fallback para método original
-            index_str = f"{idx:0{width}d}"
+            # Fallback: usa índice sequencial simples
+            index_str = f"{idx:03d}"
             clean_title = sanitize_filename(title)
         
         return f"{index_str} - {clean_title}.mp3"
