@@ -9,6 +9,7 @@ Ponto de entrada principal - VERSÃO MELHORADA com estrutura de navegação.
 import argparse
 import sys
 import os
+import re
 from pathlib import Path
 
 # Adiciona o diretório src ao path
@@ -158,7 +159,14 @@ def main():
             # Mostra informações da estrutura extraída
             if chapter_structure:
                 print(f"✅ Estrutura extraída: {len(chapter_structure)} capítulos")
-                levels = set(ch['level'] for ch in chapter_structure)
+                # Verifica se é lista de HierarchicalChapter ou dicionários
+                if hasattr(chapter_structure[0], 'level'):
+                    levels = set(ch.level for ch in chapter_structure)
+                elif isinstance(chapter_structure[0], dict):
+                    levels = set(ch['level'] for ch in chapter_structure)
+                else:
+                    levels = {1}  # fallback
+                
                 if len(levels) > 1:
                     print(f"📚 Níveis hierárquicos encontrados: {sorted(levels)}")
             
@@ -266,39 +274,139 @@ def show_chapter_structure(chapters_or_structure):
     print(f"\n📚 ESTRUTURA DOS CAPÍTULOS")
     print("=" * 60)
     
-    if hasattr(chapters_or_structure[0], 'level') if chapters_or_structure else False:
-        # Estrutura detalhada
-        for i, chapter_info in enumerate(chapters_or_structure, 1):
-            indent = "  " * (chapter_info.level - 1)
-            level_icon = "📖" if chapter_info.level == 1 else "📄"
+    if not chapters_or_structure:
+        print("❌ Nenhum capítulo encontrado!")
+        return
+    
+    # Format duration in human-readable format
+    def format_duration(minutes):
+        if minutes < 1:
+            seconds = int(minutes * 60)
+            return f"{seconds}s"
+        elif minutes < 60:
+            return f"{minutes:.1f}min"
+        elif minutes < 1440:  # less than 24 hours
+            hours = int(minutes // 60)
+            remaining_minutes = int(minutes % 60)
+            if remaining_minutes == 0:
+                return f"{hours}h"
+            return f"{hours}h {remaining_minutes}min"
+        else:  # 24 hours or more
+            days = int(minutes // 1440)
+            remaining_hours = int((minutes % 1440) // 60)
+            remaining_minutes = int(minutes % 60)
             
-            print(f"{i:3d}. {indent}{level_icon} {chapter_info.title}")
-            print(f"     {indent}   📊 {chapter_info.char_count:,} chars | "
-                  f"~{chapter_info.estimated_duration:.1f}min | "
-                  f"Level {chapter_info.level}")
-            if chapter_info.original_id:
-                print(f"     {indent}   🔗 {chapter_info.original_id}")
-    else:
-        # Estrutura simples (fallback)
+            parts = [f"{days}d"]
+            if remaining_hours > 0:
+                parts.append(f"{remaining_hours}h")
+            if remaining_minutes > 0:
+                parts.append(f"{remaining_minutes}min")
+            
+            return " ".join(parts)
+    
+    # Check if it's a list of HierarchicalChapter objects
+    if hasattr(chapters_or_structure[0], 'title') and hasattr(chapters_or_structure[0], 'level'):
+        # Estrutura hierárquica do toc.ncx
         total_chars = 0
-        for i, (title, text) in enumerate(chapters_or_structure, 1):
-            char_count = len(text)
+        
+        def print_hierarchical_chapter(hier_chapter, parent_index=""):
+            """Recursivamente imprime capítulos hierárquicos."""
+            nonlocal total_chars
+            
+            char_count = hier_chapter.char_count
+            total_chars += char_count
+            level = hier_chapter.level
+            indent = "  " * (level - 1)
+            level_icon = "📖" if level == 1 else "📄"
+            
+            # Usa o índice hierárquico ou gera um sequencial
+            display_index = hier_chapter.index if hier_chapter.index else parent_index
+            
+            print(f"{display_index:>6s}. {indent}{level_icon} {hier_chapter.title}")
+            formatted_duration = format_duration(hier_chapter.estimated_duration)
+            print(f"        {indent}   📊 {char_count:,} chars | ~{formatted_duration}")
+            
+            # Nome do arquivo MP3 que seria gerado (apenas para folhas da árvore)
+            if not hier_chapter.children:
+                sanitized_name = hier_chapter.title.replace("/", "-").replace("\\", "-")
+                # Remove caracteres especiais problemáticos
+                sanitized_name = re.sub(r'[<>:"|?*]', '', sanitized_name)
+                mp3_name = f"{display_index.replace('.', '-')} - {sanitized_name}.mp3"
+                print(f"        {indent}   🎵 {mp3_name}")
+            print()
+            
+            # Imprime filhos recursivamente
+            for child in hier_chapter.children:
+                print_hierarchical_chapter(child)
+        
+        for hier_chapter in chapters_or_structure:
+            print_hierarchical_chapter(hier_chapter)
+            
+    elif isinstance(chapters_or_structure[0], dict):
+        # Estrutura detalhada de dicionários (fallback antigo)
+        total_chars = 0
+        for item in chapters_or_structure:
+            char_count = item.get('char_count', 0)
+            total_chars += char_count
+            duration = char_count / 1000 * 0.6  # Estimativa
+            level = item.get('level', 1)
+            indent = "  " * (level - 1)
+            level_icon = "📖" if level == 1 else "📄"
+            
+            print(f"{item['index']:3d}. {indent}{level_icon} {item['name']}")
+            formatted_duration = format_duration(duration)
+            print(f"     {indent}   📊 {char_count:,} chars | ~{formatted_duration}")
+            
+            # Nome do arquivo MP3 que seria gerado
+            sanitized_name = item['name'].replace("/", "-").replace("\\", "-")
+            mp3_name = f"{item['index']:03d} - {sanitized_name}.mp3"
+            print(f"     {indent}   🎵 {mp3_name}")
+            print()
+    elif hasattr(chapters_or_structure[0], 'name'):
+        # Estrutura de Chapter objects
+        total_chars = 0
+        for chapter in chapters_or_structure:
+            char_count = len(chapter.text)
             total_chars += char_count
             duration = char_count / 1000 * 0.6  # Estimativa
             
-            print(f"{i:3d}. 📖 {title}")
-            print(f"     📊 {char_count:,} chars | ~{duration:.1f}min")
-    
-    if hasattr(chapters_or_structure[0], 'char_count') if chapters_or_structure else False:
-        total_chars = sum(ch.char_count for ch in chapters_or_structure)
-        total_duration = sum(ch.estimated_duration for ch in chapters_or_structure)
+            print(f"{chapter.index:3d}. 📖 {chapter.name}")
+            formatted_duration = format_duration(duration)
+            print(f"     📊 {char_count:,} chars | ~{formatted_duration}")
+            
+            # Nome do arquivo MP3 que seria gerado
+            sanitized_name = chapter.name.replace("/", "-").replace("\\", "-")
+            mp3_name = f"{chapter.index:03d} - {sanitized_name}.mp3"
+            print(f"     🎵 {mp3_name}")
+            print()
     else:
-        total_chars = sum(len(text) for _, text in chapters_or_structure)
-        total_duration = total_chars / 1000 * 0.6
+        print(f"❌ Formato de estrutura não reconhecido: {type(chapters_or_structure[0])}")
+        return
+    
+    # Calculate totals based on the structure type
+    if isinstance(chapters_or_structure[0], dict):
+        total_chars = sum(item.get('char_count', 0) for item in chapters_or_structure)
+    elif hasattr(chapters_or_structure[0], 'text'):
+        total_chars = sum(len(ch.text) for ch in chapters_or_structure)
+    elif hasattr(chapters_or_structure[0], 'char_count'):
+        # HierarchicalChapter objects - sum char_count recursively
+        def sum_hierarchical_chars(chapters):
+            total = 0
+            for ch in chapters:
+                total += ch.char_count
+                if hasattr(ch, 'children') and ch.children:
+                    total += sum_hierarchical_chars(ch.children)
+            return total
+        total_chars = sum_hierarchical_chars(chapters_or_structure)
+    else:
+        total_chars = 0
+    
+    total_duration_minutes = total_chars / 1000 * 0.6
+    formatted_duration = format_duration(total_duration_minutes)
     
     print("=" * 60)
     print(f"📊 TOTAL: {len(chapters_or_structure)} capítulos | "
-          f"{total_chars:,} caracteres | ~{total_duration:.1f}min")
+          f"{total_chars:,} caracteres | ~{formatted_duration}")
     print("=" * 60)
 
 
