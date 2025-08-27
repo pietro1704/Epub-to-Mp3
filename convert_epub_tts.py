@@ -959,7 +959,7 @@ def validate_dependencies(engine: str, **kwargs) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Converte EPUB em MP3s por capítulo usando TTS")
-    ap.add_argument("epub_path", type=Path, help="Caminho do arquivo .epub")
+    ap.add_argument("input_path", type=Path, help="Caminho do arquivo .epub")
     ap.add_argument("--engine", choices=["edge", "coqui", "piper"], 
                     help="Engine TTS (se não especificado, mostra menu)")
     ap.add_argument("--voice", help="Voz específica (Edge-TTS)")

@@ -1,7 +1,7 @@
 """
 src/converter.py
 
-Conversor principal com ETA em tempo real e --no-cache funcional.
+Conversor principal com nomes de arquivos baseados na estrutura original e progresso avançado.
 """
 
 import time
@@ -13,14 +13,13 @@ from tts_factory import TTSFactory
 from cache_manager import CacheManager
 from progress_tracker import ProgressTracker
 from utils import (
-    sanitize_filename, get_chapter_filename, print_book_info, 
-    print_conversion_summary, format_file_size, format_duration,
+    sanitize_filename, format_file_size, format_duration,
     estimate_audio_duration, clean_temp_files, validate_audio_file
 )
 
 
 class EbookToAudioConverter:
-    """Conversor principal com progresso em tempo real e ETA."""
+    """Conversor principal com progresso em tempo real e nomes estruturados."""
     
     def __init__(self, config: Config, tts_factory: TTSFactory, cache_manager: CacheManager):
         """
@@ -37,6 +36,11 @@ class EbookToAudioConverter:
         self.output_dir = None
         self.progress_tracker = None
         self.conversion_start_time = None
+        self.chapter_structure = []  # NOVA: estrutura detalhada dos capítulos
+        
+    def set_chapter_structure(self, chapter_structure):
+        """NOVA: Define estrutura detalhada dos capítulos."""
+        self.chapter_structure = chapter_structure
         
     def convert(self) -> None:
         """Executa a conversão completa do ebook para audiolivro."""
@@ -79,26 +83,22 @@ class EbookToAudioConverter:
             else:
                 model_info += f" - {speaker}"
         
-        print_book_info(
-            self.config.book_title,
-            self.config.author,
-            self.config.chapters,
-            self.config.engine,
-            model_info,
-            self.config.output_format
-        )
-        
+        print(f"\n📖 INFORMAÇÕES DO LIVRO")
+        print("=" * 60)
+        print(f"Engine: {self.config.engine.upper()}")
+        if self.config.author:
+            print(f"Autor: {self.config.author}")
+        print(f"Título: {self.config.book_title}")
+        print(f"Capítulos: {len(self.config.chapters)}")
+        print(f"Total de caracteres: {self.config.get_total_chars():,}")
+        print(f"Modelo/Voz: {model_info}")
+        print(f"Formato original: {self.config.output_format}")
         print(f"Pasta de saída: {self.output_dir.resolve()}")
         
         # Estima duração total
         total_chars = self.config.get_total_chars()
         estimated_minutes = estimate_audio_duration(total_chars)
         print(f"Duração estimada: ~{format_duration(estimated_minutes * 60)}")
-        
-        # Verifica se há cache
-        cache_dir = self.cache_manager.check_existing_cache(self.config.book_title.split('_')[0])
-        if cache_dir:
-            print(f"Cache: {cache_dir}")
         
         print("=" * 60)
     
@@ -120,8 +120,13 @@ class EbookToAudioConverter:
         print("=" * 60)
         
         for idx, (title, text) in enumerate(self.config.chapters, start=1):
+            # NOVA: Usa estrutura detalhada se disponível
+            chapter_info = None
+            if self.chapter_structure and idx <= len(self.chapter_structure):
+                chapter_info = self.chapter_structure[idx - 1]
+            
             success = self._convert_chapter_with_progress(
-                idx, title, text, total_chapters, tts_engine
+                idx, title, text, total_chapters, tts_engine, chapter_info
             )
             if success:
                 success_count += 1
@@ -130,54 +135,51 @@ class EbookToAudioConverter:
         self.total_chapters = total_chapters
     
     def _convert_chapter_with_progress(self, idx: int, title: str, text: str, 
-                                     total: int, tts_engine) -> bool:
+                                     total: int, tts_engine, chapter_info=None) -> bool:
         """
-        Converte um capítulo com progresso em tempo real.
-        
-        Args:
-            idx: Índice do capítulo
-            title: Título do capítulo
-            text: Texto do capítulo
-            total: Total de capítulos
-            tts_engine: Engine TTS para usar
-            
-        Returns:
-            True se conversão foi bem-sucedida
+        Converte um capítulo com progresso em tempo real e nomes estruturados.
         """
-        # Gera nome do arquivo
-        mp3_name = get_chapter_filename(idx, total, title)
+        # NOVA: Gera nome de arquivo baseado na estrutura original
+        mp3_name = self._generate_structured_filename(idx, title, total, chapter_info)
         mp3_path = self.output_dir / mp3_name
         
         # Verifica se já existe (e --no-cache)
         if mp3_path.exists() and validate_audio_file(mp3_path) and not self.config.force_reprocess:
             print(f"⏭️ [{idx:03d}/{total}] '{title}' - arquivo já existe")
             self.progress_tracker.complete_item(len(text))
-            self._show_overall_progress(idx, total)  # Mostra progresso mesmo para arquivos existentes
             return True
         
         # Remove arquivo existente se --no-cache
         if mp3_path.exists() and self.config.force_reprocess:
             try:
                 mp3_path.unlink()
-                print(f"🔄 Removendo arquivo existente (--no-cache)")
             except:
                 pass
         
-        # Mostra informações do capítulo
-        self._show_chapter_start(idx, total, title, text)
+        # Inicia progresso do item
+        display_title = title[:60] + ('...' if len(title) > 60 else '')
+        self.progress_tracker.start_item(display_title)
         
-        # Mostra progresso ANTES de começar a conversão
-        self._show_processing_progress(idx, total)
+        # Mostra informações detalhadas do capítulo
+        self._show_chapter_details(idx, total, title, text, chapter_info)
         
         try:
-            # Inicia contagem de tempo
-            self.progress_tracker.start_item()
             chapter_start_time = time.time()
             
-            # Executa síntese com callback de progresso
-            print(f"    🎙️ Convertendo... ", end="", flush=True)
+            # NOVA: Mostra progresso de chunks se necessário
+            max_chunk = 8000 if self.config.engine == "edge" else 1500
+            if len(text) > max_chunk:
+                estimated_chunks = len(text) // max_chunk + 1
+                print(f"    📦 Processando em ~{estimated_chunks} partes")
+                
+                # Hook para mostrar progresso de chunks (implementar no engine se necessário)
+                if hasattr(tts_engine, 'set_progress_callback'):
+                    tts_engine.set_progress_callback(self.progress_tracker.show_item_progress)
+            
+            # Executa síntese
+            print(f"    🎙️ Convertendo...", end=" ", flush=True)
             tts_engine.synthesize(text, mp3_path)
-            print("✓")  # Marca conversão completa
+            print("✓")
             
             # Calcula tempo do capítulo
             chapter_elapsed = time.time() - chapter_start_time
@@ -187,8 +189,7 @@ class EbookToAudioConverter:
             
             # Verifica se arquivo foi criado corretamente
             if validate_audio_file(mp3_path):
-                self._show_chapter_success(mp3_path, len(text), chapter_elapsed)
-                self._show_overall_progress(idx, total)  # Progresso atualizado
+                self._show_chapter_success(mp3_path, len(text), chapter_elapsed, title)
                 return True
             else:
                 print(f"    ❌ ERRO: Arquivo criado é inválido")
@@ -199,75 +200,86 @@ class EbookToAudioConverter:
             self.progress_tracker.complete_item(0)
             return False
     
-    def _show_chapter_start(self, idx: int, total: int, title: str, text: str) -> None:
-        """Mostra informações do capítulo sendo processado."""
-        # Título truncado se muito longo
-        display_title = title[:50] + ('...' if len(title) > 50 else '')
-        print(f"\n🎙️ [{idx:03d}/{total}] '{display_title}'")
-        print(f"    📝 {len(text):,} caracteres | ~{estimate_audio_duration(len(text)):.1f}min estimado")
+    def _generate_structured_filename(self, idx: int, title: str, total: int, chapter_info=None) -> str:
+        """
+        NOVA: Gera nome de arquivo baseado na estrutura original do EPUB.
         
-        # Mostra chunks se texto for grande
-        max_chunk = 8000 if self.config.engine == "edge" else 1500
-        if len(text) > max_chunk:
-            import re
-            chunks = re.split(r'(\.\.\. \.\.\.)', text)
-            chunk_count = len([c for c in chunks if c.strip() and c != "... ..."])
-            print(f"    📦 Será dividido em ~{chunk_count} partes")
+        Formatos:
+        - Capítulo principal: "001 - Título do Capítulo.mp3"
+        - Subcapítulo: "001.1 - Subtítulo.mp3"  
+        - Com numeração original: "Cap01 - Título.mp3"
+        """
+        # Padding baseado no total
+        width = max(2, len(str(total)))
+        
+        if chapter_info:
+            # Usa estrutura detalhada
+            if chapter_info.level > 1:
+                # Subcapítulo - encontra capítulo pai
+                parent_idx = self._find_parent_chapter_index(idx, chapter_info.level)
+                if parent_idx:
+                    index_str = f"{parent_idx:0{width}d}.{chapter_info.level - 1}"
+                else:
+                    index_str = f"{idx:0{width}d}.{chapter_info.level - 1}"
+            else:
+                # Capítulo principal
+                index_str = f"{idx:0{width}d}"
+            
+            # Usa título limpo da estrutura
+            clean_title = sanitize_filename(chapter_info.title)
+        else:
+            # Fallback para método original
+            index_str = f"{idx:0{width}d}"
+            clean_title = sanitize_filename(title)
+        
+        return f"{index_str} - {clean_title}.mp3"
     
-    def _show_chapter_success(self, mp3_path: Path, char_count: int, chapter_time: float) -> None:
+    def _find_parent_chapter_index(self, current_idx: int, current_level: int) -> int:
+        """Encontra índice do capítulo pai para subcapítulos."""
+        if not self.chapter_structure:
+            return current_idx
+        
+        # Procura para trás o último capítulo de nível inferior
+        for i in range(current_idx - 2, -1, -1):  # current_idx - 2 porque é 1-indexed
+            if i < len(self.chapter_structure):
+                chapter = self.chapter_structure[i]
+                if chapter.level < current_level:
+                    return i + 1  # Converte para 1-indexed
+        
+        return current_idx
+    
+    def _show_chapter_details(self, idx: int, total: int, title: str, text: str, chapter_info=None):
+        """Mostra detalhes do capítulo sendo processado."""
+        char_count = len(text)
+        estimated_duration = estimate_audio_duration(char_count)
+        
+        # Informações básicas
+        print(f"    📝 {char_count:,} caracteres | ~{estimated_duration:.1f}min estimado")
+        
+        # Informações da estrutura se disponível
+        if chapter_info:
+            level_indicator = "  " * (chapter_info.level - 1) + ("📖" if chapter_info.level == 1 else "📄")
+            print(f"    {level_indicator} Nível {chapter_info.level}")
+            if chapter_info.original_id:
+                print(f"    🔗 ID original: {chapter_info.original_id}")
+    
+    def _show_chapter_success(self, mp3_path: Path, char_count: int, chapter_time: float, title: str):
         """Mostra informações de sucesso da conversão."""
         file_size = mp3_path.stat().st_size
         file_size_str = format_file_size(file_size)
+        file_size_mb = file_size / (1024 * 1024)
         
         # Estima duração
         duration_minutes = estimate_audio_duration(char_count)
         duration_str = format_duration(duration_minutes * 60)
         
-        # Velocidade do capítulo
-        chars_per_sec = char_count / chapter_time if chapter_time > 0 else 0
-        
-        print(f"    ✅ Criado: {mp3_path.name}")
-        print(f"    📊 {file_size_str} | ~{duration_str} | {chars_per_sec:.0f} chars/s")
-    
-    def _show_processing_progress(self, current: int, total: int) -> None:
-        """Mostra progresso ANTES de começar a processar o capítulo."""
-        progress_pct = ((current - 1) / total) * 100  # current-1 porque ainda não processou
-        
-        # Barra de progresso simples
-        bar_width = 30
-        filled = int(bar_width * (current - 1) / total)
-        bar = "█" * filled + "▓" + "░" * (bar_width - filled - 1)  # ▓ = processando atual
-        
-        print(f"    📊 [{bar}] {progress_pct:.1f}% - Processando capítulo {current}/{total}")
-    
-    def _show_overall_progress(self, current: int, total: int) -> None:
-        """Mostra progresso geral da conversão APÓS completar um capítulo."""
-        progress_pct = (current / total) * 100
-        
-        # Calcula ETA baseado no progresso
-        elapsed = time.time() - self.conversion_start_time
-        if current > 0:
-            avg_time_per_chapter = elapsed / current
-            remaining_chapters = total - current
-            eta_seconds = remaining_chapters * avg_time_per_chapter
-            eta_str = format_duration(eta_seconds)
-        else:
-            eta_str = "Calculando..."
-        
-        # Barra de progresso atualizada
-        bar_width = 30
-        filled = int(bar_width * current / total)
-        bar = "█" * filled + "░" * (bar_width - filled)
-        
-        print(f"    ✅ Concluído: [{bar}] {progress_pct:.1f}%")
-        print(f"    ⏱️ Decorrido: {format_duration(elapsed)} | ETA: {eta_str}")
-        
-        # Velocidade média se disponível
-        if self.progress_tracker.speeds:
-            avg_speed = sum(self.progress_tracker.speeds) / len(self.progress_tracker.speeds)
-            print(f"    ⚡ Velocidade: {avg_speed:.0f} chars/s")
-        
-        print()  # Linha em branco para separar capítulos
+        # Usa método do progress_tracker para resumo consistente
+        self.progress_tracker.show_chapter_summary(
+            mp3_path.name, 
+            file_size_mb, 
+            duration_str, 
+            chapter_time
+        )
     
     def _show_final_summary(self) -> None:
         """Mostra resumo final da conversão."""
@@ -283,34 +295,20 @@ class EbookToAudioConverter:
         total_elapsed = time.time() - self.conversion_start_time
         elapsed_time = format_duration(total_elapsed)
         
-        print_conversion_summary(
-            self.success_count,
-            self.total_chapters,
-            self.output_dir,
-            elapsed_time,
-            total_size,
-            estimated_duration_str
-        )
+        # Usa resumo do progress_tracker
+        self.progress_tracker.show_final_summary()
         
-        # Mostra velocidade média final
-        if self.progress_tracker.speeds:
-            avg_speed = sum(self.progress_tracker.speeds) / len(self.progress_tracker.speeds)
-            print(f"⚡ Velocidade média final: {avg_speed:.0f} chars/s")
-            
-            # Calcula eficiência
-            total_chars = self.config.get_total_chars()
-            theoretical_time = total_chars / avg_speed if avg_speed > 0 else 0
-            efficiency = (theoretical_time / total_elapsed * 100) if total_elapsed > 0 else 0
-            print(f"📈 Eficiência: {efficiency:.1f}% (tempo puro TTS vs total)")
+        # Informações adicionais específicas do conversor
+        print(f"📁 Pasta de saída: {self.output_dir.resolve()}")
+        print(f"💾 Tamanho total: {total_size:.1f}MB")
+        print(f"⏰ Duração estimada: {estimated_duration_str}")
         
-        # Estatísticas do arquivo
-        mp3_files = list(self.output_dir.glob("*.mp3"))
-        if mp3_files:
-            avg_file_size = sum(f.stat().st_size for f in mp3_files) / len(mp3_files) / 1024 / 1024
-            print(f"📁 {len(mp3_files)} arquivos | Tamanho médio: {avg_file_size:.1f}MB")
+        if self.success_count < self.total_chapters:
+            print(f"⚠️ {self.total_chapters - self.success_count} capítulos falharam")
+            print("💡 Dica: Execute novamente para tentar os que falharam")
         
         # Info sobre cache
-        original_title = self.config.book_title.split('_')[0]  # Remove engine suffix
+        original_title = self.config.book_title.split('_')[0]
         cache_dir = self.cache_manager.check_existing_cache(original_title)
         if cache_dir:
             print(f"📁 Cache mantido: {cache_dir}")
