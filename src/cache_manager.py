@@ -54,7 +54,9 @@ class CacheManager:
                 pass
         
         # Cria arquivos de texto para cada capítulo
-        for idx, (title, text) in enumerate(chapters, start=1):
+        for idx, chapter in enumerate(chapters, start=1):
+            title = chapter.name
+            text = chapter.text
             index_str = zero_pad(idx, len(chapters))
             safe_title = sanitize_filename(title)
             txt_name = f"{index_str} - {safe_title}.txt"
