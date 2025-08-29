@@ -457,6 +457,152 @@ def _extract_text_preview(text: str, max_words: int = 4) -> str:
     
     return ""
 
+def _extract_subchapters_from_html(html_content: str, chapter_title: str, base_index: str) -> List['HierarchicalChapter']:
+    """Extrai subcapítulos de um arquivo HTML baseado em headings e estrutura."""
+    if not html_content or len(html_content.strip()) < 200:
+        return []
+    
+    import re
+    from bs4 import BeautifulSoup
+    
+    try:
+        soup = BeautifulSoup(html_content, 'html.parser')
+        
+        # Remove scripts, styles, e outros elementos não textuais
+        for script in soup(["script", "style"]):
+            script.decompose()
+        
+        # Procura por headings (h1, h2, h3, h4) que podem ser subcapítulos
+        headings = soup.find_all(['h1', 'h2', 'h3', 'h4', 'h5'])
+        
+        subchapters = []
+        current_content = []
+        subchapter_index = 1
+        
+        # Divide o conteúdo baseado nos headings
+        all_elements = soup.find('body') or soup
+        if all_elements:
+            elements = list(all_elements.children)
+            
+            current_section_title = None
+            current_section_content = []
+            
+            for element in elements:
+                if hasattr(element, 'name') and element.name in ['h1', 'h2', 'h3', 'h4', 'h5']:
+                    # Se já temos uma seção anterior, salva ela
+                    if current_section_title and current_section_content:
+                        section_text = ' '.join([str(e) for e in current_section_content])
+                        clean_text = html_to_plain_text(section_text).strip()
+                        
+                        if len(clean_text) > 200:  # Só cria subcapítulo se tiver conteúdo substancial
+                            subchapter = HierarchicalChapter(
+                                index=f"{base_index}.{subchapter_index}",
+                                title=current_section_title,
+                                level=2,
+                                play_order=subchapter_index,
+                                src="",
+                                original_id=f"sub_{subchapter_index}",
+                                char_count=len(clean_text),
+                                estimated_duration=len(clean_text) / 1000 * 0.6,
+                                children=[]
+                            )
+                            subchapters.append(subchapter)
+                            subchapter_index += 1
+                    
+                    # Inicia nova seção
+                    current_section_title = html_to_plain_text(str(element)).strip()
+                    current_section_content = []
+                else:
+                    # Adiciona elemento à seção atual
+                    current_section_content.append(element)
+            
+            # Não esquece da última seção
+            if current_section_title and current_section_content:
+                section_text = ' '.join([str(e) for e in current_section_content])
+                clean_text = html_to_plain_text(section_text).strip()
+                
+                if len(clean_text) > 200:
+                    subchapter = HierarchicalChapter(
+                        index=f"{base_index}.{subchapter_index}",
+                        title=current_section_title,
+                        level=2,
+                        play_order=subchapter_index,
+                        src="",
+                        original_id=f"sub_{subchapter_index}",
+                        char_count=len(clean_text),
+                        estimated_duration=len(clean_text) / 1000 * 0.6,
+                        children=[]
+                    )
+                    subchapters.append(subchapter)
+        
+        return subchapters
+        
+    except Exception as e:
+        # Se der erro no parsing HTML, tenta uma abordagem mais simples com regex
+        return _extract_subchapters_with_regex(html_content, base_index)
+
+def _extract_subchapters_with_regex(content: str, base_index: str) -> List['HierarchicalChapter']:
+    """Fallback: extrai subcapítulos usando regex para padrões comuns."""
+    import re
+    
+    # Padrões comuns para subcapítulos
+    patterns = [
+        r'<h[1-4][^>]*>([^<]+)</h[1-4]>',  # Headings HTML
+        r'(?:^|\n)\s*([A-Z][^.\n]{10,60})\s*(?:\n|$)',  # Linhas em maiúscula (títulos)
+        r'(?:^|\n)\s*(\d+\s+de\s+\w+[^.\n]*)\s*(?:\n|$)',  # Datas (ex: "3 de maio")
+        r'(?:^|\n)\s*(Diário\s+de\s+[^.\n]+)\s*(?:\n|$)',  # Diários
+        r'(?:^|\n)\s*(Carta\s+de\s+[^.\n]+)\s*(?:\n|$)',   # Cartas
+        r'(?:^|\n)\s*(Capítulo\s+[IVX]+[^.\n]*)\s*(?:\n|$)'  # Capítulos romanos
+    ]
+    
+    subchapters = []
+    plain_text = html_to_plain_text(content)
+    
+    # Tenta cada padrão
+    for pattern in patterns:
+        matches = re.findall(pattern, plain_text, re.MULTILINE | re.IGNORECASE)
+        
+        if matches:
+            # Remove duplicatas e filtra títulos muito curtos
+            unique_matches = []
+            seen = set()
+            for match in matches:
+                clean_match = match.strip()
+                if len(clean_match) > 5 and clean_match not in seen:
+                    unique_matches.append(clean_match)
+                    seen.add(clean_match)
+            
+            # Se encontrou subcapítulos válidos, cria a estrutura
+            if len(unique_matches) >= 2:  # Pelo menos 2 subcapítulos
+                for i, title in enumerate(unique_matches, 1):
+                    # Estimativa de conteúdo (divide o texto total pelos subcapítulos)
+                    estimated_chars = len(plain_text) // len(unique_matches)
+                    
+                    subchapter = HierarchicalChapter(
+                        index=f"{base_index}.{i}",
+                        title=title,
+                        level=2,
+                        play_order=i,
+                        src="",
+                        original_id=f"regex_sub_{i}",
+                        char_count=estimated_chars,
+                        estimated_duration=estimated_chars / 1000 * 0.6,
+                        children=[]
+                    )
+                    subchapters.append(subchapter)
+                break  # Para no primeiro padrão que funcionar
+    
+    return subchapters
+
+def _is_meaningful_toc_structure(toc_structure: List[HierarchicalChapter]) -> bool:
+    """Verifica se a estrutura do TOC é significativa (não apenas CSS/folhas de rosto)."""
+    if not toc_structure or len(toc_structure) < 2:
+        return False
+    
+    # Verifica se há pelo menos alguns capítulos com conteúdo substancial
+    meaningful_chapters = [ch for ch in toc_structure if ch.char_count > 500]
+    return len(meaningful_chapters) >= 2  # Pelo menos 2 capítulos com conteúdo
+
 def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) -> List[HierarchicalChapter]:
     """
     Parseia o toc.ncx para extrair estrutura hierárquica dos capítulos.
@@ -576,14 +722,19 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                         if False:  # Debug desabilitado
                             print(f"   Total chars: {char_count}")
                 
-                # Encontra o título real do capítulo a partir do mapeamento de capítulos
-                actual_title = nav_title  # Fallback para nav title
-                if matching_chapter:
-                    actual_title = matching_chapter.name
-                elif normalized_src in src_to_chapter:
-                    actual_title = src_to_chapter[normalized_src].name
+                # USA SEMPRE o título do TOC (mais confiável que nomes de arquivo)
+                actual_title = nav_title
                 
-                # Calcula index hierárquico
+                # Só substitui se o matching_chapter tiver um nome MELHOR que o TOC
+                if matching_chapter and matching_chapter.name:
+                    chapter_name = matching_chapter.name.strip()
+                    # Se o nome do arquivo for mais descritivo que o TOC, usa ele
+                    if (not chapter_name.endswith('.html') and 
+                        len(chapter_name) > len(actual_title) and
+                        not actual_title.lower() in ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x']):
+                        actual_title = chapter_name
+                
+                # Calcula index hierárquico  
                 if parent_index:
                     hierarchical_index = f"{parent_index}.{i}"
                 else:
@@ -605,126 +756,12 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                 # Parseia filhos recursivamente (apenas filhos diretos)
                 direct_children = nav_point.findall('ncx:navPoint', ns)
                 if direct_children:
-                    hier_chapter.children = parse_navpoint_children(direct_children, level + 1, hierarchical_index)
+                    hier_chapter.children = parse_navpoint(direct_children, level + 1, hierarchical_index)
                 
                 hierarchical_chapters.append(hier_chapter)
             
             return hierarchical_chapters
         
-        def parse_navpoint_children(nav_points, level, parent_index):
-            """Parseia filhos diretos de navPoint."""
-            children = []
-            for i, nav_point in enumerate(nav_points, 1):
-                # Extrai informações básicas
-                play_order = int(nav_point.get('playOrder', 0))
-                nav_id = nav_point.get('id', '')
-                
-                # Extrai título
-                nav_label = nav_point.find('ncx:navLabel/ncx:text', ns)
-                nav_title = nav_label.text.strip() if nav_label is not None else f"Capítulo {i}"
-                
-                
-                # Extrai src
-                content_elem = nav_point.find('ncx:content', ns)
-                src = content_elem.get('src', '') if content_elem is not None else ''
-                
-                
-                # Normaliza src
-                normalized_src = src.split('#')[0] if '#' in src else src
-                if normalized_src.startswith('Text/'):
-                    normalized_src = normalized_src[5:]  # Remove prefixo Text/
-                
-                
-                # Encontra capítulo correspondente para char_count
-                char_count = 0
-                matching_chapter = src_to_chapter.get(normalized_src)
-                
-                
-                if matching_chapter:
-                    char_count = len(matching_chapter.text)
-                
-                # Se é um arquivo _split_, sempre tenta somar os arquivos relacionados
-                if '_split_' in normalized_src:
-                    total_chars = 0
-                    base_pattern = normalized_src.replace('_split_000.html', '').replace('_split_001.html', '').replace('_split_002.html', '').replace('_split_003.html', '').replace('.html', '')
-                    # Remove prefixo de diretório para comparação
-                    if '/' in base_pattern:
-                        base_pattern = base_pattern.split('/')[-1]
-                    
-                    
-                    for chapter_src, chapter in src_to_chapter.items():
-                        chapter_base = chapter_src.split('/')[-1] if '/' in chapter_src else chapter_src
-                        chapter_pattern = chapter_base.replace('_split_000.html', '').replace('_split_001.html', '').replace('_split_002.html', '').replace('_split_003.html', '').replace('.html', '')
-                        
-                        
-                        if base_pattern == chapter_pattern:
-                            total_chars += len(chapter.text)
-                    
-                    if total_chars > char_count:  # Usa a soma se for maior
-                        char_count = total_chars
-                
-                if not matching_chapter and '_split_' not in normalized_src:
-                    # Tenta busca mais flexível para arquivos split
-                    # Remove prefixos de diretório para busca
-                    base_src = normalized_src
-                    if '/' in base_src:
-                        base_src = base_src.split('/')[-1]
-                    
-                    # Busca direta
-                    if base_src in src_to_chapter:
-                        char_count = len(src_to_chapter[base_src].text)
-                    else:
-                        # Para arquivos split, soma todos os arquivos relacionados
-                        total_chars = 0
-                        base_pattern = base_src.replace('_split_000.html', '').replace('_split_001.html', '').replace('_split_002.html', '').replace('_split_003.html', '').replace('.html', '')
-                        
-                        if False:  # Debug desabilitado
-                            print(f"🔍 Buscando padrão '{base_pattern}' para src='{src}' normalized='{normalized_src}' base='{base_src}'")
-                        
-                        for chapter_src, chapter in src_to_chapter.items():
-                            chapter_base = chapter_src.split('/')[-1] if '/' in chapter_src else chapter_src
-                            chapter_pattern = chapter_base.replace('_split_000.html', '').replace('_split_001.html', '').replace('_split_002.html', '').replace('_split_003.html', '').replace('.html', '')
-                            
-                            if base_pattern == chapter_pattern:
-                                total_chars += len(chapter.text)
-                                if False:  # Debug desabilitado
-                                    print(f"   Encontrou: {chapter_src} -> {chapter.name} ({len(chapter.text)} chars)")
-                        
-                        char_count = total_chars
-                        if False:  # Debug desabilitado
-                            print(f"   Total chars: {char_count}")
-                
-                # Encontra o título real do capítulo a partir do mapeamento de capítulos
-                actual_title = nav_title  # Fallback para nav title
-                if matching_chapter:
-                    actual_title = matching_chapter.name
-                elif normalized_src in src_to_chapter:
-                    actual_title = src_to_chapter[normalized_src].name
-                
-                # Calcula index hierárquico
-                hierarchical_index = f"{parent_index}.{i}"
-                
-                # Cria HierarchicalChapter
-                hier_chapter = HierarchicalChapter(
-                    index=hierarchical_index,
-                    title=actual_title,
-                    level=level,
-                    play_order=play_order,
-                    src=src,
-                    original_id=nav_id,
-                    char_count=char_count,
-                    estimated_duration=char_count / 1000 * 0.6,
-                    children=[]
-                )
-                
-                # Parseia filhos recursivamente
-                direct_children = nav_point.findall('ncx:navPoint', ns)
-                if direct_children:
-                    hier_chapter.children = parse_navpoint_children(direct_children, level + 1, hierarchical_index)
-                
-                children.append(hier_chapter)
-            
-            return children
         
         # Encontra navMap e parseia navPoints
         nav_map = root.find('.//ncx:navMap', ns)
@@ -912,18 +949,58 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
         root_nav_points = nav_map.findall('ncx:navPoint', ns)
         hierarchical_chapters = parse_navpoint(root_nav_points)
         
-        # Post-processa para criar subcapítulos quando há arquivos split com títulos diferentes
+        # Post-processa para criar subcapítulos automaticamente baseado no conteúdo HTML
         processed_chapters = []
         for chapter in hierarchical_chapters:
-            if '_split_' in chapter.src and not chapter.children:
-                # Tenta criar subcapítulos para este capítulo
+            # Para capítulos com conteúdo substancial, tenta extrair subcapítulos
+            if chapter.char_count > 1000 and not chapter.children:
+                # Encontra o arquivo HTML correspondente
+                html_content = None
+                normalized_src = chapter.src.split('#')[0] if '#' in chapter.src else chapter.src
+                if normalized_src.startswith('Text/'):
+                    normalized_src = normalized_src[5:]
+                
+                # Busca o HTML no mapeamento de capítulos
+                matching_chapter = src_to_chapter.get(normalized_src)
+                if matching_chapter:
+                    # Tenta acessar o HTML bruto do arquivo EPUB diretamente
+                    try:
+                        # Reconstrói o caminho completo do arquivo no EPUB
+                        full_path = _join_path(base_dir, normalized_src)
+                        if full_path in zf.namelist():
+                            html_content = _read_zip_text(zf, full_path)
+                        else:
+                            # Tenta caminho alternativo
+                            alt_path = f"Text/{normalized_src}" if not normalized_src.startswith('Text/') else normalized_src
+                            if alt_path in zf.namelist():
+                                html_content = _read_zip_text(zf, alt_path)
+                            else:
+                                html_content = None
+                    except Exception as e:
+                        html_content = None
+                
+                # Se não conseguiu acessar HTML, tenta usar o texto processado
+                if not html_content and matching_chapter:
+                    # Reconstrói HTML básico do texto processado para tentar extrair estrutura
+                    html_content = f"<html><body><p>{matching_chapter.text}</p></body></html>"
+                
+                # Extrai subcapítulos do HTML
+                if html_content:
+                    sub_chapters = _extract_subchapters_from_html(html_content, chapter.title, chapter.index)
+                    if sub_chapters and len(sub_chapters) >= 2:
+                        chapter.children = sub_chapters
+                        # Parent chapter vira container, conteúdo fica nos subcapítulos
+                        chapter.char_count = 0
+                        chapter.estimated_duration = 0.0
+            
+            # Fallback: tenta método anterior para arquivos split
+            elif '_split_' in chapter.src and not chapter.children:
                 sub_chapters = create_subchapters_from_splits(chapter, src_to_chapter)
                 if sub_chapters:
-                    # Substitui o capítulo original pela estrutura hierárquica
                     chapter.children = sub_chapters
-                    # Keep parent chapter at 0 chars since content is in subcapters
                     chapter.char_count = 0
                     chapter.estimated_duration = 0.0
+            
             processed_chapters.append(chapter)
         
         return processed_chapters
@@ -1166,20 +1243,20 @@ class EbookReader:
             return []
         
         try:
-            # Primeira tentativa: usar detecção inteligente de quebras de página
-            page_break_structure = _detect_page_breaks_and_structure(self.book.chapters)
-            if page_break_structure:
-                print(f"✅ Estrutura baseada em quebras de página: {len(page_break_structure)} capítulos principais")
-                return page_break_structure
-            
-            # Fallback: usar toc.ncx se disponível
+            # Primeira tentativa: usar toc.ncx se disponível (mais preciso para livros estruturados)
             with zipfile.ZipFile(path, "r") as zf:
                 opf_path = _find_opf_path(zf)
                 base_dir = _opf_dir(opf_path)
                 toc_structure = _parse_toc_ncx(zf, base_dir, self.book.chapters)
-                if toc_structure:
+                if toc_structure and _is_meaningful_toc_structure(toc_structure):
                     print(f"✅ Estrutura do toc.ncx: {len(toc_structure)} capítulos")
                     return toc_structure
+            
+            # Fallback: usar detecção inteligente de quebras de página
+            page_break_structure = _detect_page_breaks_and_structure(self.book.chapters)
+            if page_break_structure:
+                print(f"✅ Estrutura baseada em quebras de página: {len(page_break_structure)} capítulos principais")
+                return page_break_structure
             
             # Fallback final: estrutura simples
             print("⚠️ Usando estrutura simples como fallback")
