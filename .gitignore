@@ -2,6 +2,59 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+cover/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.env/
+.venv/
+env.bak/
+venv.bak/
 
 # Caches and temp files
 .cache/
@@ -9,39 +62,77 @@ __pycache__/
 *.tmp
 *.temp
 *.bak
+.ipynb_checkpoints
+.mypy_cache/
+.dmypy.json
+dmypy.json
 
 # Editor and OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 .vscode/
 .idea/
 *.swp
+*.swo
+*~
 
-# Output folders
-output/
-build/
-dist/
-.preview/
-.preview.*
-**.mp3o
-# ...existing code...
-
-# Preview files and MP3
-.preview/
-.preview.*
+# Audio files and output
 *.mp3
 *.wav
-*/*.mp3
-**/*.mp3
-**/*.epub
-**/*.pdf
+*.flac
+*.m4a
+*.ogg
+*.wma
+*.aac
 
-# Book folders containing MP3s
+# EBook files (for testing - uncomment if needed)
+*.epub
+*.pdf
+*.mobi
+*.azw3
+
+# Output audiobook folders
+*_audiobook/
+audiobook_*/
+output/
+converted/
+
+# Book-specific folders
 **/livro*/
 **/book*/
 **/audiobook*/
+**/Livro*/
+**/Book*/
 
-# Virtual environments
-venv/
-.env/
-.venv/
+# TTS models and temporary files
+models/
+*.onnx
+*.pt
+*.pth
+*.bin
+reference_voice.wav
+temp_audio.*
+
+# Debug and log files
+debug.log
+conversion.log
+error.log
+*.log.*
+
+# Large cache directories
+.torch/
+.tts_cache/
+.huggingface/
+
+# Preview and temporary conversion files
+.preview/
+.preview.*
+preview_*
+temp_*
+tmp_*
+.cache

@@ -1,36 +1,64 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
 """
-src/utils.py
-
-Utilitários gerais para o sistema.
+Utilitários gerais para o projeto - versão SOLID
 """
 
 import re
+import os
 from pathlib import Path
+from typing import Union, Optional
 
 
-def sanitize_filename(name: str, max_len: int = 120) -> str:
+def sanitize_filename(filename: str, max_length: int = 100) -> str:
     """
-    Sanitiza nome do arquivo removendo caracteres proibidos.
+    Sanitiza nome de arquivo para filesystem
     
     Args:
-        name: Nome para sanitizar
-        max_len: Comprimento máximo do nome
+        filename: Nome original do arquivo
+        max_length: Comprimento máximo do nome
         
     Returns:
-        Nome sanitizado
+        Nome sanitizado e seguro para filesystem
     """
-    forbidden_chars = r"\\/:*?\"<>|\n\r\t"
-    forbidden_re = re.compile(f"[{forbidden_chars}]")
-    multiple_space_re = re.compile(r"\s+")
+    if not filename:
+        return "untitled"
     
-    name = name.strip()
-    name = multiple_space_re.sub(" ", name)
-    name = forbidden_re.sub("-", name)
+    # Remove caracteres inválidos para filesystem
+    safe = re.sub(r'[<>:"/\\|?*]', '', filename)
     
-    if not name:
-        name = "Sem título"
+    # Replace múltiplos espaços com um único espaço
+    safe = re.sub(r'\s+', ' ', safe)
     
-    return name[:max_len].rstrip(" .")
+    # Remove espaços e pontos no início/fim
+    safe = safe.strip('. ')
+    
+    # Limita comprimento
+    if len(safe) > max_length:
+        safe = safe[:max_length].rstrip('. ')
+    
+    # Fallback se ficou vazio
+    if not safe:
+        safe = "untitled"
+    
+    return safe
+
+
+def validate_file_exists(file_path: Union[str, Path]) -> bool:
+    """
+    Valida se arquivo existe e é legível
+    
+    Args:
+        file_path: Caminho para o arquivo
+        
+    Returns:
+        True se arquivo existe e é legível
+    """
+    try:
+        path = Path(file_path)
+        return path.exists() and path.is_file() and os.access(path, os.R_OK)
+    except Exception:
+        return False
 
 
 def zero_pad(i: int, total: int) -> str:
