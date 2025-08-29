@@ -1,503 +1,159 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-main.py
+main_simple.py - Versão simplificada do conversor EPUB para áudio
 
-Ponto de entrada principal - VERSÃO MELHORADA com estrutura de navegação.
+Funcionalidades:
+- Leitura simples de EPUB com hierarquia correta (1, 1.1, 1.2, etc.)
+- Conversão para áudio usando Edge-TTS (mais confiável)
+- Progress tracking básico
+- Cache simples
 """
 
 import argparse
-import sys
+import asyncio
 import os
-import re
+import sys
 from pathlib import Path
+from datetime import datetime
 
-# Adiciona o diretório src ao path
+# Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
-from cache_manager import CacheManager
-from ebook_reader import EbookReader
-from tts_factory import TTSFactory
-from converter import EbookToAudioConverter
-from ui.menu import MenuInterface
-from config import Config, EDGE_VOICES
+from simple_epub_reader import read_epub_simple, SimpleChapter
+import edge_tts
+import subprocess
 
-
-def parse_arguments():
-    """Configura e processa argumentos da linha de comando."""
-    parser = argparse.ArgumentParser(
-        description="Converte EPUB/PDF em MP3s por capítulo usando TTS - VERSÃO MELHORADA",
-        epilog="Melhorias: estrutura de navegação original, progresso avançado, nomes estruturados"
-    )
-    
-    parser.add_argument(
-        "file_path", 
-        type=Path, 
-        help="Caminho do arquivo .epub, .pdf ou use --from-txt para arquivo .txt"
-    )
-    
-    parser.add_argument(
-        "--engine", 
-        choices=["edge", "coqui", "piper"], 
-        default="edge",
-        help="Engine TTS (padrão: edge)"
-    )
-    
-    parser.add_argument(
-        "--voice", 
-        default="pt-BR-AntonioNeural",
-        help="Voz específica Edge-TTS (padrão: pt-BR-AntonioNeural)"
-    )
-    
-    parser.add_argument(
-        "--model-path", 
-        type=Path, 
-        default=Path("./models/pt_BR-faber-medium.onnx"),
-        help="Modelo Piper (.onnx)"
-    )
-    
-    parser.add_argument(
-        "--coqui-model", 
-        help="Modelo Coqui TTS"
-    )
-    
-    parser.add_argument(
-        "--no-cache", 
-        action="store_true", 
-        help="Força reprocessamento do arquivo (ignora cache)"
-    )
-    
-    parser.add_argument(
-        "--bitrate", 
-        default="32k", 
-        help="Bitrate MP3"
-    )
-    
-    parser.add_argument(
-        "--ar", 
-        type=int, 
-        default=22050, 
-        help="Sample rate"
-    )
-    
-    parser.add_argument(
-        "--ac", 
-        type=int, 
-        default=1, 
-        help="Canais de áudio"
-    )
-    
-    parser.add_argument(
-        "--skip-validation", 
-        action="store_true", 
-        help="Pula validação"
-    )
-    
-    parser.add_argument(
-        "--menu", 
-        action="store_true", 
-        help="Força exibição do menu de seleção"
-    )
-    
-    parser.add_argument(
-        "--from-txt", 
-        type=Path,
-        help="Gera MP3 a partir de um arquivo TXT (modo direto de conversão)"
-    )
-    
-    parser.add_argument(
-        "--show-structure", 
-        action="store_true", 
-        help="Mostra estrutura dos capítulos sem converter"
-    )
-    
-    return parser.parse_args()
-
-
-def convert_txt_to_mp3(args):
-    """Converte um arquivo TXT diretamente para MP3."""
-    txt_file = args.from_txt
-    
-    # Valida arquivo TXT
-    if not txt_file.exists():
-        print(f"❌ ERRO: Arquivo TXT não encontrado: {txt_file}")
-        sys.exit(1)
-    
-    if txt_file.suffix.lower() != '.txt':
-        print(f"❌ ERRO: Arquivo deve ser .txt, recebido: {txt_file.suffix}")
-        sys.exit(1)
-    
-    # Lê conteúdo do arquivo TXT
-    try:
-        with open(txt_file, 'r', encoding='utf-8') as f:
-            text_content = f.read().strip()
-    except Exception as e:
-        print(f"❌ ERRO ao ler arquivo TXT: {e}")
-        sys.exit(1)
-    
-    if not text_content:
-        print(f"❌ ERRO: Arquivo TXT está vazio: {txt_file}")
-        sys.exit(1)
-    
-    # Nome do arquivo MP3 de saída
-    mp3_output = txt_file.with_suffix('.mp3')
-    
-    print(f"🎵 Convertendo TXT para MP3:")
-    print(f"📄 Entrada: {txt_file}")
-    print(f"🎵 Saída: {mp3_output}")
-    print(f"📊 Tamanho: {len(text_content):,} caracteres")
-    print(f"🔧 Engine: {args.engine}")
-    
-    # Inicializa TTS engine
-    from src.tts_factory import TTSFactory
-    
-    factory = TTSFactory()
-    
-    # Configuração simples para TXT direto
-    engine_config = {}
-    if args.engine == "edge":
-        engine_config = {"voice": args.voice}
-    elif args.engine == "piper":
-        engine_config = {"model_path": str(args.model_path)}
-    elif args.engine == "coqui":
-        engine_config = {"model": args.coqui_model}
-    
-    try:
-        tts_engine = factory.create_engine(
-            engine_type=args.engine,
-            config=engine_config
-        )
-    except Exception as e:
-        print(f"❌ ERRO ao inicializar TTS engine: {e}")
-        sys.exit(1)
-    
-    # Converte texto para áudio
-    try:
-        print("🔄 Gerando áudio...")
-        tts_engine.synthesize(text_content, mp3_output)  # Pass Path object directly
-        print(f"✅ Conversão concluída: {mp3_output}")
-    except Exception as e:
-        print(f"❌ ERRO na conversão: {e}")
-        sys.exit(1)
-
-
-def main():
-    """Função principal do programa."""
-    try:
-        args = parse_arguments()
+class SimpleConverter:
+    def __init__(self, voice="pt-BR-AntonioNeural"):
+        self.voice = voice
         
-        # Modo especial: conversão direta de TXT para MP3
-        if args.from_txt:
-            convert_txt_to_mp3(args)
+    async def convert_chapter(self, chapter: SimpleChapter, output_dir: Path):
+        """Convert single chapter to MP3"""
+        if not chapter.text.strip():
+            print(f"⚠️  Skipping empty chapter: {chapter.index} - {chapter.title}")
             return
         
-        # Valida arquivo de entrada
-        if not args.file_path.exists():
-            print(f"❌ ERRO: Arquivo não encontrado: {args.file_path}")
-            sys.exit(1)
+        # Clean filename
+        safe_title = self._sanitize_filename(chapter.title)
+        filename = f"{chapter.index.zfill(3)} - {safe_title}.mp3"
+        output_path = output_dir / filename
         
-        # Valida formato
-        file_ext = args.file_path.suffix.lower()
-        if file_ext not in ['.epub', '.pdf']:
-            print(f"❌ ERRO: Formato não suportado: {file_ext}. Use .epub ou .pdf")
-            sys.exit(1)
+        print(f"🎵 Converting: {chapter.index} - {chapter.title} ({chapter.char_count} chars)")
         
-        # Inicializa componentes
-        cache_manager = CacheManager()
-        print(f"args: {args}")
-        ebook_reader = EbookReader()
-        menu = MenuInterface()
-        
-        # Gerencia cache (melhorado)
-        book_title_preview = args.file_path.stem
-        existing_cache = cache_manager.check_existing_cache(book_title_preview)
-        
-        if existing_cache and not args.no_cache:
-            print(f"📂 Usando cache existente: {existing_cache}")
-            try:
-                metadata, chapters = cache_manager.load_from_cache(existing_cache)
-                book_title = metadata["title"]
-                author = None
-                chapter_structure = []  # Cache não tem estrutura detalhada
-                print(f"✅ Cache carregado: {len(chapters)} capítulos")
-            except Exception as e:
-                print(f"⚠️ Erro no cache ({e}), reprocessando arquivo...")
-                book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
-                chapter_structure = ebook_reader.get_chapter_structure()
-                cache_manager.create_cache_structure(book_title, chapters)
-        else:
-            if args.no_cache and existing_cache:
-                print(f"🔄 Flag --no-cache: ignorando cache e reprocessando arquivo")
+        try:
+            # Generate speech with Edge-TTS
+            communicate = edge_tts.Communicate(chapter.text, self.voice)
+            await communicate.save(str(output_path))
+            print(f"✅ Saved: {filename}")
             
-            # Lê arquivo e cria/atualiza cache - COM ESTRUTURA MELHORADA
-            print(f"📖 Extraindo estrutura de capítulos de {file_ext.upper()}...")
-            book_title, author, chapters = ebook_reader.read_ebook(args.file_path)
-            chapter_structure = ebook_reader.get_chapter_structure()
-            
-            # Mostra informações da estrutura extraída
-            if chapter_structure:
-                print(f"✅ Estrutura extraída: {len(chapter_structure)} capítulos")
-                # Verifica se é lista de HierarchicalChapter ou dicionários
-                if hasattr(chapter_structure[0], 'level'):
-                    levels = set(ch.level for ch in chapter_structure)
-                elif isinstance(chapter_structure[0], dict):
-                    levels = set(ch['level'] for ch in chapter_structure)
-                else:
-                    levels = {1}  # fallback
-                
-                if len(levels) > 1:
-                    print(f"📚 Níveis hierárquicos encontrados: {sorted(levels)}")
-            
-            cache_manager.create_cache_structure(book_title, chapters)
-            print(f"✅ {file_ext.upper()} processado e cache atualizado")
+        except Exception as e:
+            print(f"❌ Error converting {chapter.index}: {e}")
+    
+    def _sanitize_filename(self, filename: str) -> str:
+        """Clean filename for filesystem"""
+        # Remove invalid characters
+        safe = re.sub(r'[<>:"/\\|?*]', '', filename)
+        # Replace multiple spaces with single space
+        safe = re.sub(r'\s+', ' ', safe)
+        # Trim and limit length
+        safe = safe.strip()[:100]
+        return safe
+
+async def main():
+    parser = argparse.ArgumentParser(description="Simple EPUB to Audio Converter")
+    parser.add_argument("epub_file", help="Path to EPUB file")
+    parser.add_argument("--voice", default="pt-BR-AntonioNeural", help="Edge-TTS voice")
+    parser.add_argument("--output", "-o", help="Output directory (default: book title)")
+    parser.add_argument("--show-structure", action="store_true", help="Only show chapter structure")
+    parser.add_argument("--no-cache", action="store_true", help="Don't use cache, reprocess EPUB")
+    
+    args = parser.parse_args()
+    
+    # Check if EPUB file exists
+    epub_path = Path(args.epub_file)
+    if not epub_path.exists():
+        print(f"❌ File not found: {epub_path}")
+        return 1
+    
+    print(f"📖 Reading EPUB: {epub_path.name}")
+    
+    try:
+        # Setup cache directory
+        cache_dir = Path(f".cache/{epub_path.stem}")
         
-        # NOVA: Opção para apenas mostrar estrutura
+        # Read chapters from EPUB (with HTML parsing for subchapters)
+        print("📖 Parsing EPUB with HTML analysis...")
+        chapters = read_epub_simple(str(epub_path), parse_html_subchapters=True)
+        
+        if not chapters:
+            print("❌ No chapters found in EPUB")
+            return 1
+        
+        # Always save TXT files (individual files) directly in cache dir
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        
+        for ch in chapters:
+            if ch.text and ch.text.strip():
+                safe_title = re.sub(r'[<>:"/\\|?*]', '', ch.title)[:80]  # Limit filename length
+                txt_file = cache_dir / f"{ch.index.zfill(3)} - {safe_title}.txt"
+                with open(txt_file, 'w', encoding='utf-8') as f:
+                    f.write(f"# {ch.title}\n\n{ch.text}")
+        
+        print(f"📝 TXT files saved: {cache_dir}")
+        
+        # Show structure
+        print(f"\n📚 BOOK STRUCTURE ({len(chapters)} chapters)")
+        print("=" * 60)
+        
+        total_chars = 0
+        for ch in chapters:
+            indent = "  " * (ch.level - 1)
+            print(f"{indent}{ch.index}. 📖 {ch.title}")
+            print(f"{indent}     📊 {ch.char_count:,} chars | ~{ch.char_count/1000*0.6:.1f}min")
+            total_chars += ch.char_count
+        
+        print("=" * 60)
+        print(f"📊 TOTAL: {len(chapters)} chapters | {total_chars:,} chars | ~{total_chars/1000*0.6/60:.1f}h")
+        print("=" * 60)
+        
         if args.show_structure:
-            show_chapter_structure(chapter_structure if chapter_structure else chapters)
-            return
+            return 0
         
-        # Seleção de engine e configuração (inalterada)
-        if args.menu:
-            args.engine = menu.show_engine_menu()
+        # Setup output directory
+        if args.output:
+            output_dir = Path(args.output)
+        else:
+            # Use book title from first chapter's source or file name
+            book_name = epub_path.stem
+            output_dir = Path(book_name)
         
-        # Mostra configuração padrão se não forçar menu
-        if not args.menu:
-            print(f"\n🎙️ CONFIGURAÇÃO PADRÃO")
-            print("=" * 50)
-            print(f"Engine: {args.engine.upper()}")
-            if args.engine == "edge":
-                voice_name = "Antonio - Masculino, padrão"
-                for num, (voice_id, description) in EDGE_VOICES.items():
-                    if voice_id == args.voice:
-                        voice_name = description
-                        break
-                print(f"Voz: {voice_name}")
-            print("💡 Use --menu para selecionar outras opções")
-            print("💡 Use --show-structure para ver estrutura dos capítulos")
-            print("=" * 50)
+        output_dir.mkdir(exist_ok=True)
+        print(f"📁 Output directory: {output_dir}")
         
-        # Configuração específica por engine (inalterada)
-        tts_factory = TTSFactory()
+        # Convert chapters
+        converter = SimpleConverter(args.voice)
         
-        if args.engine == "edge":
-            voice = args.voice if not args.menu else menu.get_edge_voice()
-            engine_config = {
-                "voice": voice,
-                "bitrate": args.bitrate,
-                "ar": args.ar,
-                "ac": args.ac
-            }
-        elif args.engine == "coqui":
-            if args.coqui_model:
-                model_name = args.coqui_model
-                speaker = None
-            else:
-                model_name, speaker = menu.get_coqui_model()
-            engine_config = {"model_name": model_name, "speaker": speaker}
-        elif args.engine == "piper":
-            model_path = args.model_path
-            if not model_path.exists():
-                model_path = menu.get_piper_model()
-            engine_config = {"model_path": model_path}
+        print(f"\n🎵 Starting conversion with voice: {args.voice}")
+        start_time = datetime.now()
         
-        # Validação (inalterada)
-        if not args.skip_validation:
-            try:
-                tts_engine = tts_factory.create_engine(args.engine, engine_config)
-                tts_engine.validate_dependencies()
-            except Exception as e:
-                print(f"\n❌ ERRO: {e}")
-                print("\n💡 SOLUÇÕES:")
-                if "edge-tts" in str(e).lower():
-                    print("• pip install edge-tts")
-                elif "ffmpeg" in str(e).lower():
-                    print("• Ubuntu/Debian: sudo apt install ffmpeg")
-                    print("• macOS: brew install ffmpeg")
-                    print("• Windows: baixe de https://ffmpeg.org/")
-                sys.exit(1)
+        for i, chapter in enumerate(chapters, 1):
+            print(f"\n[{i}/{len(chapters)}] ", end="")
+            await converter.convert_chapter(chapter, output_dir)
         
-        # Configuração global
-        config = Config(
-            engine=args.engine,
-            engine_config=engine_config,
-            book_title=book_title,
-            author=author,
-            chapters=chapters,
-            output_format=file_ext.upper(),
-            force_reprocess=args.no_cache
-        )
+        duration = datetime.now() - start_time
+        print(f"\n✅ Conversion completed in {duration}")
+        print(f"📁 Files saved to: {output_dir.absolute()}")
         
-        # Inicializa conversor COM ESTRUTURA
-        converter = EbookToAudioConverter(config, tts_factory, cache_manager)
+        return 0
         
-        # NOVA: Passa estrutura de capítulos para o conversor
-        if chapter_structure:
-            converter.set_chapter_structure(chapter_structure)
-        
-        # Executa conversão
-        converter.convert()
-        
-    except KeyboardInterrupt:
-        print("\n\n👋 Conversão cancelada pelo usuário")
-        sys.exit(0)
     except Exception as e:
-        print(f"\n❌ ERRO: {e}")
+        print(f"❌ Error: {e}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
-
-
-def show_chapter_structure(chapters_or_structure):
-    """NOVA: Mostra estrutura dos capítulos."""
-    print(f"\n📚 ESTRUTURA DOS CAPÍTULOS")
-    print("=" * 60)
-    
-    if not chapters_or_structure:
-        print("❌ Nenhum capítulo encontrado!")
-        return
-    
-    # Format duration in human-readable format
-    def format_duration(minutes):
-        if minutes < 1:
-            seconds = int(minutes * 60)
-            return f"{seconds}s"
-        elif minutes < 60:
-            return f"{minutes:.1f}min"
-        elif minutes < 1440:  # less than 24 hours
-            hours = int(minutes // 60)
-            remaining_minutes = int(minutes % 60)
-            if remaining_minutes == 0:
-                return f"{hours}h"
-            return f"{hours}h {remaining_minutes}min"
-        else:  # 24 hours or more
-            days = int(minutes // 1440)
-            remaining_hours = int((minutes % 1440) // 60)
-            remaining_minutes = int(minutes % 60)
-            
-            parts = [f"{days}d"]
-            if remaining_hours > 0:
-                parts.append(f"{remaining_hours}h")
-            if remaining_minutes > 0:
-                parts.append(f"{remaining_minutes}min")
-            
-            return " ".join(parts)
-    
-    # Check if it's a list of HierarchicalChapter objects
-    if hasattr(chapters_or_structure[0], 'title') and hasattr(chapters_or_structure[0], 'level'):
-        # Estrutura hierárquica do toc.ncx
-        total_chars = 0
-        
-        def print_hierarchical_chapter(hier_chapter, parent_index=""):
-            """Recursivamente imprime capítulos hierárquicos."""
-            nonlocal total_chars
-            
-            char_count = hier_chapter.char_count
-            total_chars += char_count
-            level = hier_chapter.level
-            indent = "  " * (level - 1)
-            level_icon = "📖" if level == 1 else "📄"
-            
-            # Usa o índice hierárquico ou gera um sequencial
-            display_index = hier_chapter.index if hier_chapter.index else parent_index
-            
-            print(f"{str(display_index):>6s}. {indent}{level_icon} {hier_chapter.title}")
-            formatted_duration = format_duration(hier_chapter.estimated_duration)
-            print(f"        {indent}   📊 {char_count:,} chars | ~{formatted_duration}")
-            
-            # Nome do arquivo MP3 que seria gerado (apenas para folhas da árvore)
-            if not hier_chapter.children:
-                sanitized_name = hier_chapter.title.replace("/", "-").replace("\\", "-")
-                # Remove caracteres especiais problemáticos
-                sanitized_name = re.sub(r'[<>:"|?*]', '', sanitized_name)
-                # Usa mesmo formato do conversor
-                if isinstance(hier_chapter.index, str) and '.' in str(hier_chapter.index):
-                    # Índice hierárquico (ex: "1.2" -> "001-2")
-                    index_parts = str(hier_chapter.index).split('.')
-                    main_idx = int(index_parts[0])
-                    sub_idx = int(index_parts[1])
-                    filename_index = f"{main_idx:03d}-{sub_idx}"
-                else:
-                    # Índice simples
-                    filename_index = f"{int(hier_chapter.index):03d}"
-                
-                mp3_name = f"{filename_index} - {sanitized_name}.mp3"
-                print(f"        {indent}   🎵 {mp3_name}")
-            print()
-            
-            # Imprime filhos recursivamente
-            for child in hier_chapter.children:
-                print_hierarchical_chapter(child)
-        
-        for hier_chapter in chapters_or_structure:
-            print_hierarchical_chapter(hier_chapter)
-            
-    elif isinstance(chapters_or_structure[0], dict):
-        # Estrutura detalhada de dicionários (fallback antigo)
-        total_chars = 0
-        for item in chapters_or_structure:
-            char_count = item.get('char_count', 0)
-            total_chars += char_count
-            duration = char_count / 1000 * 0.6  # Estimativa
-            level = item.get('level', 1)
-            indent = "  " * (level - 1)
-            level_icon = "📖" if level == 1 else "📄"
-            
-            print(f"{item['index']:3d}. {indent}{level_icon} {item['name']}")
-            formatted_duration = format_duration(duration)
-            print(f"     {indent}   📊 {char_count:,} chars | ~{formatted_duration}")
-            
-            # Nome do arquivo MP3 que seria gerado
-            sanitized_name = item['name'].replace("/", "-").replace("\\", "-")
-            mp3_name = f"{item['index']:03d} - {sanitized_name}.mp3"
-            print(f"     {indent}   🎵 {mp3_name}")
-            print()
-    elif hasattr(chapters_or_structure[0], 'name'):
-        # Estrutura de Chapter objects
-        total_chars = 0
-        for chapter in chapters_or_structure:
-            char_count = len(chapter.text)
-            total_chars += char_count
-            duration = char_count / 1000 * 0.6  # Estimativa
-            
-            print(f"{chapter.index:3d}. 📖 {chapter.name}")
-            formatted_duration = format_duration(duration)
-            print(f"     📊 {char_count:,} chars | ~{formatted_duration}")
-            
-            # Nome do arquivo MP3 que seria gerado
-            sanitized_name = chapter.name.replace("/", "-").replace("\\", "-")
-            mp3_name = f"{chapter.index:03d} - {sanitized_name}.mp3"
-            print(f"     🎵 {mp3_name}")
-            print()
-    else:
-        print(f"❌ Formato de estrutura não reconhecido: {type(chapters_or_structure[0])}")
-        return
-    
-    # Calculate totals based on the structure type
-    if isinstance(chapters_or_structure[0], dict):
-        total_chars = sum(item.get('char_count', 0) for item in chapters_or_structure)
-    elif hasattr(chapters_or_structure[0], 'text'):
-        total_chars = sum(len(ch.text) for ch in chapters_or_structure)
-    elif hasattr(chapters_or_structure[0], 'char_count'):
-        # HierarchicalChapter objects - sum char_count recursively
-        def sum_hierarchical_chars(chapters):
-            total = 0
-            for ch in chapters:
-                total += ch.char_count
-                if hasattr(ch, 'children') and ch.children:
-                    total += sum_hierarchical_chars(ch.children)
-            return total
-        total_chars = sum_hierarchical_chars(chapters_or_structure)
-    else:
-        total_chars = 0
-    
-    total_duration_minutes = total_chars / 1000 * 0.6
-    formatted_duration = format_duration(total_duration_minutes)
-    
-    print("=" * 60)
-    print(f"📊 TOTAL: {len(chapters_or_structure)} capítulos | "
-          f"{total_chars:,} caracteres | ~{formatted_duration}")
-    print("=" * 60)
-
+        return 1
 
 if __name__ == "__main__":
-    main()
+    import re
+    exit_code = asyncio.run(main())
+    sys.exit(exit_code)
