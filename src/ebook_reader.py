@@ -167,6 +167,7 @@ class HierarchicalChapter:
     char_count: int
     estimated_duration: float
     children: List['HierarchicalChapter'] = None
+    text: str = ""  # Adiciona campo text para manter o conteúdo
     
     def __post_init__(self):
         if self.children is None:
@@ -346,19 +347,65 @@ def _detect_page_breaks_and_structure(chapters: List[Chapter]) -> List[Hierarchi
         
         # Se detectou quebra, processa o grupo atual
         if is_page_break and current_chapter_group:
-            hier_chapter = _create_hierarchical_chapter_from_group(
-                current_chapter_group, chapter_counter
-            )
-            hierarchical_chapters.append(hier_chapter)
+            # Filtra grupos vazios ou de metadados antes de criar
+            if _should_include_chapter_group(current_chapter_group):
+                hier_chapter = _create_hierarchical_chapter_from_group(
+                    current_chapter_group, chapter_counter
+                )
+                hierarchical_chapters.append(hier_chapter)
+                chapter_counter += 1
             current_chapter_group = []
-            chapter_counter += 1
     
     return hierarchical_chapters
 
+def _should_include_chapter_group(chapter_group: List[Chapter]) -> bool:
+    """Verifica se um grupo de capítulos deve ser incluído na estrutura final."""
+    if not chapter_group:
+        return False
+    
+    # Calcula total de caracteres do grupo
+    total_chars = sum(len(ch.text) if ch.text else 0 for ch in chapter_group)
+    
+    # Filtra grupos muito pequenos
+    if total_chars < 200:
+        return False
+    
+    # Verifica se é grupo de metadados
+    all_text = " ".join(ch.text if ch.text else "" for ch in chapter_group)
+    
+    # Padrões de metadados/propaganda (duplicando aqui por enquanto)
+    text_lower = all_text.lower()
+    metadata_patterns = [
+        'compre agora e leia',
+        'isbn',
+        '978',
+        'páginas',
+        'gibson william',
+        'asimov isaac',
+        'superman herói',
+        'neuromancer',
+        'androides sonham',
+        'título original:',
+        'copidesque:',
+        'revisão:',
+        'edição em língua portuguesa',
+        'table of contents',
+    ]
+    
+    # Se contém 2 ou mais padrões de metadados, filtra
+    metadata_count = sum(1 for pattern in metadata_patterns if pattern in text_lower)
+    return metadata_count < 2
+
 def _extract_base_filename(file_path: str) -> str:
-    """Extrai nome base do arquivo, removendo numeração split."""
+    """Extrai nome base do arquivo, preservando numeração para arquivos sequenciais."""
     basename = os.path.basename(file_path)
-    # Remove padrões como _split_001, _001, etc.
+    
+    # Para arquivos como index_split_xxx.html, preserva a numeração para tratamento individual
+    if 'index_split_' in basename:
+        # Retorna o nome completo sem extensão para tratar cada arquivo como único
+        return re.sub(r'\.(html|htm|xhtml).*$', '', basename)
+    
+    # Para outros padrões, remove numeração split como antes
     base_clean = re.sub(r'_(?:split_)?\d+\.', '.', basename)
     base_clean = re.sub(r'\.(html|htm|xhtml).*$', '', base_clean)
     return base_clean
@@ -425,6 +472,177 @@ def _create_hierarchical_chapter_from_group(chapter_group: List[Chapter], chapte
             children=children
         )
 
+
+def _extract_intelligent_title_with_content(chapter_obj, chapter_number: int) -> str:
+    """Extrai título inteligente com numeração sequencial e primeiras palavras do conteúdo."""
+    
+    # 1. Verifica se há um nome descritivo no capítulo (mas não "Capítulo X")
+    if (hasattr(chapter_obj, 'name') and chapter_obj.name and 
+        not chapter_obj.name.endswith('.html') and 
+        not chapter_obj.name.startswith('index_split') and
+        not chapter_obj.name.startswith('Capítulo ') and  # ✅ NOVO: ignora "Capítulo 8", etc.
+        not chapter_obj.name.strip().isdigit() and
+        len(chapter_obj.name.strip()) > 3):
+        return f"{chapter_number}. {chapter_obj.name}"
+    
+    # 2. SEMPRE tenta usar as primeiras palavras do conteúdo se disponível
+    if hasattr(chapter_obj, 'text') and chapter_obj.text and chapter_obj.text.strip():
+        content_words = _extract_first_words(chapter_obj.text, max_words=8)
+        if content_words:
+            return f"{chapter_number}. {content_words}"
+    
+    # 3. Fallback genérico
+    return f"{chapter_number}. Capítulo {chapter_number}"
+
+def _extract_first_words(text: str, max_words: int = 8) -> str:
+    """Extrai as primeiras palavras significativas do texto para título."""
+    if not text or not text.strip():
+        return ""
+    
+    # Remove quebras de linha e normaliza espaços
+    clean_text = re.sub(r'\s+', ' ', text.strip())
+    
+    # Detecta apêndices especificamente
+    appendix_patterns = [
+        r'Apêndice ([IVX]+):\s*\.{3}\s*(.+?)(?:\s[A-Z]|$)',
+        r'Apêndice ([IVX]+):\s*\.{3}\s*(.+)',
+        r'^Apêndice ([IVX]+)[:\s]*(.+)',
+    ]
+    
+    for pattern in appendix_patterns:
+        appendix_match = re.search(pattern, clean_text)
+        if appendix_match:
+            roman_num = appendix_match.group(1)
+            title = appendix_match.group(2).strip()
+            # Limpa o título removendo pontos extras
+            title = re.sub(r'\.{3,}', '', title).strip()
+            return f"Apêndice {roman_num} - {title[:40]}"
+    
+    # Detecta padrões específicos do Duna
+    duna_patterns = [
+        # Citações e excertos
+        (r'–\s*excerto de[^"]*"([^"]+)"', lambda m: m.group(1)),
+        (r'excerto de\s*"([^"]+)"', lambda m: m.group(1)), 
+        # Divisões do livro
+        (r'^(livro (?:primeiro|segundo|terceiro)) - (.+)', lambda m: f"{m.group(1).title()} - {m.group(2)}"),
+        # Notas cartográficas
+        (r'^Notas cartográficas', lambda m: "Notas Cartográficas"),
+        # Sobre o autor
+        (r'^Sobre o autor', lambda m: "Sobre o Autor"),
+        # Terminologia
+        (r'^No estudo do Imperium[^.]*\.([^.]*\.)', lambda m: "Terminologia do Imperium"),
+    ]
+    
+    for pattern, extractor in duna_patterns:
+        match = re.search(pattern, clean_text, re.IGNORECASE)
+        if match:
+            result = extractor(match)
+            if result and len(result.strip()) > 3:
+                return result[:60]
+    
+    # Filtra títulos muito genéricos ou técnicos
+    generic_patterns = [
+        r'^(@?page padding|margin:|body|html|xml|sumário|capa|folha de rosto)',
+        r'^(publicado pela primeira vez|copyright|todos os direitos)',
+        r'^(índice|bibliografia|notas|referências)',
+        r'^(yueh ju\'i wellington|robô asimov isaac|superman herói mais conhecido)',
+        r'^(neuromancer gibson william|androides sonham com ovelhas)',
+        r'^(table contents|edição em língua portuguesa)',
+        r'^(título original|copidesque|revisão|messias de duna herbert)',
+        r'^(eu robô asimov|história de joe shuster)',
+        r'^\d{13}\s+\d+\s+páginas',  # ISBN + páginas
+    ]
+    
+    for pattern in generic_patterns:
+        if re.search(pattern, clean_text.lower()):
+            return ""
+    
+    # Procura por frases mais significativas (prioriza a primeira)
+    sentences = re.split(r'[.!?]+', clean_text)
+    best_sentence = None
+    
+    for i, sentence in enumerate(sentences):
+        sentence = sentence.strip()
+        # Pula frases muito técnicas ou de metadados
+        if any(tech in sentence.lower() for tech in ['compre agora', 'páginas', 'isbn', '978']):
+            continue
+            
+        if len(sentence) > 15 and len(sentence) < 120:
+            # Prioriza primeira frase se for boa
+            if i == 0 and len(sentence) > 25:
+                best_sentence = sentence
+                break
+            elif not best_sentence and len(sentence) > 20:
+                best_sentence = sentence
+    
+    if best_sentence:
+        # Pega as primeiras palavras da melhor frase
+        words = best_sentence.split()[:max_words]
+        clean_words = []
+        for word in words:
+            # Remove pontuação inicial/final
+            clean_word = re.sub(r'^[^\w]+|[^\w]+$', '', word)
+            if clean_word and len(clean_word) > 1:
+                clean_words.append(clean_word)
+        
+        if len(clean_words) >= 3:  # Pelo menos 3 palavras significativas
+            result = ' '.join(clean_words)
+            return result[:60]
+    
+    # Fallback: primeiras palavras simples se não encontrou frase boa
+    words = clean_text.split()[:max_words]
+    clean_words = []
+    for word in words:
+        clean_word = re.sub(r'^[^\w]+|[^\w]+$', '', word)
+        if clean_word and len(clean_word) > 2:
+            clean_words.append(clean_word)
+    
+    if len(clean_words) >= 3:
+        result = ' '.join(clean_words)
+        return result[:60]
+    
+    return ""
+
+def _extract_intelligent_title(chapter_obj, chapter_number: int) -> str:
+    """Extrai título inteligente para subcapítulos baseado no conteúdo."""
+    # 1. Usa nome do capítulo se não for genérico
+    if (chapter_obj.name and 
+        not chapter_obj.name.endswith('.html') and 
+        not chapter_obj.name.startswith('index_split') and
+        len(chapter_obj.name.strip()) > 3):
+        return chapter_obj.name
+    
+    # 2. Extrai primeira linha significativa do texto
+    if chapter_obj.text and chapter_obj.text.strip():
+        lines = chapter_obj.text.strip().split('\n')
+        for line in lines[:5]:  # Verifica primeiras 5 linhas
+            line = line.strip()
+            if (len(line) > 10 and len(line) < 100 and 
+                not line.lower().startswith(('o ', 'a ', 'uma ', 'um ', 'para ', 'com ', 'de '))):
+                # Remove pontuação final
+                line = line.rstrip('.,;:!?')
+                return line
+        
+        # 3. Fallback: primeiras palavras do texto
+        words = chapter_obj.text.strip().split()[:6]
+        meaningful_words = []
+        stop_words = {'que', 'com', 'para', 'uma', 'mas', 'por', 'ser', 'ter', 'ele', 'ela', 
+                     'seu', 'sua', 'dos', 'das', 'nos', 'nas', 'essa', 'esse', 'está', 
+                     'eram', 'teve', 'foi', 'isso', 'isto', 'como', 'mais', 'muito', 'bem'}
+        
+        for word in words:
+            if len(word) > 2 and word.lower() not in stop_words:
+                meaningful_words.append(word)
+                if len(meaningful_words) >= 4:
+                    break
+        
+        if meaningful_words:
+            preview = ' '.join(meaningful_words)[:50]
+            return f"Capítulo {chapter_number} - {preview.rstrip('.,;:!?')}"
+    
+    # 4. Título genérico final
+    return f"Capítulo {chapter_number}"
+
 def _extract_text_preview(text: str, max_words: int = 4) -> str:
     """Extrai prévia significativa do texto para usar como nome de subcapítulo."""
     if not text or not text.strip():
@@ -456,6 +674,116 @@ def _extract_text_preview(text: str, max_words: int = 4) -> str:
         return preview
     
     return ""
+
+def _extract_dracula_subchapters(zf: zipfile.ZipFile, base_src: str, chapter_title: str, base_index: str) -> List['HierarchicalChapter']:
+    """Extrai subcapítulos específicos do Dracula baseado em padrões de data, diário, taquigrafia, cartas."""
+    import re
+    
+    # Encontra todos os arquivos split relacionados ao capítulo
+    base_pattern = base_src.replace('_split_000.html', '').replace('.html', '')
+    if base_pattern.startswith('text/'):
+        base_pattern = base_pattern[5:]
+    
+    related_files = []
+    for file_path in zf.namelist():
+        if base_pattern in file_path and file_path.endswith('.html'):
+            related_files.append(file_path)
+    
+    related_files.sort()
+    
+    subchapters = []
+    subchapter_index = 1
+    
+    for file_path in related_files:
+        try:
+            content = zf.read(file_path).decode('utf-8')
+            plain_text = html_to_plain_text(content)
+            
+            if len(plain_text.strip()) < 100:  # Skip arquivos muito pequenos
+                continue
+            
+            # Extrai títulos de subcapítulo baseado nos padrões do Dracula
+            subchapter_title = _extract_dracula_subchapter_title(content, plain_text)
+            
+            if subchapter_title:
+                subchapter = HierarchicalChapter(
+                    index=f"{base_index}.{subchapter_index}",
+                    title=subchapter_title,
+                    level=2,
+                    play_order=subchapter_index,
+                    src=file_path,
+                    original_id=f"dracula_sub_{subchapter_index}",
+                    char_count=len(plain_text),
+                    estimated_duration=len(plain_text) / 1000 * 0.6,
+                    children=[],
+                    text=plain_text
+                )
+                subchapters.append(subchapter)
+                subchapter_index += 1
+        
+        except Exception as e:
+            continue  # Skip arquivos com erro
+    
+    return subchapters
+
+def _extract_dracula_subchapter_title(html_content: str, plain_text: str) -> str:
+    """Extrai título de subcapítulo específico do Dracula baseado nos padrões identificados."""
+    import re
+    
+    # Prioridade 1: Datas (ex: 3 de maio, 15 de agosto)
+    date_patterns = [
+        r'(\d{1,2}\s+de\s+\w+)',  # "5 de maio"
+        r'(\w+,?\s+\d{1,2}\s+de\s+\w+)',  # "Segunda, 5 de maio"
+    ]
+    
+    for pattern in date_patterns:
+        matches = re.findall(pattern, plain_text, re.IGNORECASE)
+        for match in matches:
+            clean_date = match.strip().rstrip(',')
+            if len(clean_date) < 30:  # Evita datas muito longas
+                return clean_date
+    
+    # Prioridade 2: Diários e documentos específicos  
+    diary_patterns = [
+        r'diário\s+de\s+([\w\s]+?)(?:\s|\(|$)',
+        r'carta\s+de\s+([\w\s]+?)(?:\s|$)',
+        r'memorando\s+de\s+([\w\s]+?)(?:\s|$)',
+        r'nota\s+de\s+([\w\s]+?)(?:\s|$)',
+    ]
+    
+    for pattern in diary_patterns:
+        matches = re.findall(pattern, plain_text, re.IGNORECASE)
+        for match in matches:
+            clean_match = match.strip()
+            if len(clean_match) < 50 and len(clean_match) > 3:
+                doc_type = pattern.split('\\s')[0].title()  # Diário, Carta, etc.
+                return f"{doc_type} de {clean_match}"
+    
+    # Prioridade 3: Taquigrafia
+    if 'taquigrafado' in plain_text.lower():
+        return "Diário (Taquigrafado)"
+    
+    # Prioridade 4: Padrões específicos do Dracula
+    special_patterns = [
+        (r'registro\s+fonográfico', 'Registro Fonográfico'),
+        (r'relatório\s+médico', 'Relatório Médico'),
+        (r'anotações?\s+de\s+viagem', 'Anotações de Viagem'),
+    ]
+    
+    for pattern, title in special_patterns:
+        if re.search(pattern, plain_text, re.IGNORECASE):
+            return title
+    
+    # Fallback: Usa primeiras palavras significativas
+    lines = plain_text.strip().split('\n')
+    for line in lines[:3]:
+        line = line.strip()
+        if len(line) > 10 and len(line) < 80:
+            # Remove palavras muito comuns no início
+            if not line.lower().startswith(('o ', 'a ', 'uma ', 'um ', 'para ', 'com ', 'de ', 'no ', 'na ')):
+                return line.rstrip('.,;:!?')
+    
+    return None
 
 def _extract_subchapters_from_html(html_content: str, chapter_title: str, base_index: str) -> List['HierarchicalChapter']:
     """Extrai subcapítulos de um arquivo HTML baseado em headings e estrutura."""
@@ -601,9 +929,21 @@ def _is_meaningful_toc_structure(toc_structure: List[HierarchicalChapter]) -> bo
     
     # Verifica se há pelo menos alguns capítulos com conteúdo substancial
     meaningful_chapters = [ch for ch in toc_structure if ch.char_count > 500]
-    return len(meaningful_chapters) >= 2  # Pelo menos 2 capítulos com conteúdo
+    
+    # Critério específico para coleções (como Nárnia): se temos poucos capítulos com títulos descritivos
+    if len(toc_structure) <= 15:  # Poucos capítulos principais
+        descriptive_titles = [ch for ch in toc_structure if len(ch.title) > 10 and not ch.title.isdigit() and ch.title not in ['Página de título', 'Folha de Rosto']]
+        if len(descriptive_titles) >= 3:  # Pelo menos 3 títulos descritivos
+            return True
+    
+    # Critério flexível: se temos navPoints em quantidade razoável e pelo menos alguns com conteúdo
+    if len(meaningful_chapters) >= 5 and len(toc_structure) < 200:  # Pelo menos 5 capítulos substanciais
+        return True
+    
+    # Critério original mais restritivo
+    return len(meaningful_chapters) >= max(2, len(toc_structure) * 0.1)  # Pelo menos 10% dos capítulos devem ter conteúdo
 
-def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) -> List[HierarchicalChapter]:
+def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter], book_title: str = "", book_author: str = "") -> List[HierarchicalChapter]:
     """
     Parseia o toc.ncx para extrair estrutura hierárquica dos capítulos.
     Retorna uma lista de HierarchicalChapter com a estrutura aninhada.
@@ -663,13 +1003,15 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                     normalized_src = normalized_src[5:]  # Remove prefixo Text/
                 
                 
-                # Encontra capítulo correspondente para char_count
+                # Encontra capítulo correspondente para char_count e text
                 char_count = 0
+                chapter_text = ""
                 matching_chapter = src_to_chapter.get(normalized_src)
                 
                 
                 if matching_chapter:
                     char_count = len(matching_chapter.text)
+                    chapter_text = matching_chapter.text
                 
                 # Se é um arquivo _split_, sempre tenta somar os arquivos relacionados
                 if '_split_' in normalized_src:
@@ -722,16 +1064,17 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                         if False:  # Debug desabilitado
                             print(f"   Total chars: {char_count}")
                 
-                # USA SEMPRE o título do TOC (mais confiável que nomes de arquivo)
+                # Usa título do TOC (mais confiável)
                 actual_title = nav_title
                 
-                # Só substitui se o matching_chapter tiver um nome MELHOR que o TOC
+                # Se matching_chapter tem nome descritivo, considera usar
                 if matching_chapter and matching_chapter.name:
                     chapter_name = matching_chapter.name.strip()
                     # Se o nome do arquivo for mais descritivo que o TOC, usa ele
+                    # Evita nomes genéricos como part0015_split_000, index_split_001, etc.
                     if (not chapter_name.endswith('.html') and 
                         len(chapter_name) > len(actual_title) and
-                        not actual_title.lower() in ['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x']):
+                        not ('split_' in chapter_name or 'part0' in chapter_name or 'index_' in chapter_name)):
                         actual_title = chapter_name
                 
                 # Calcula index hierárquico  
@@ -750,7 +1093,8 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                     original_id=nav_id,
                     char_count=char_count,
                     estimated_duration=char_count / 1000 * 0.6,
-                    children=[]
+                    children=[],
+                    text=chapter_text  # Inclui o texto real
                 )
                 
                 # Parseia filhos recursivamente (apenas filhos diretos)
@@ -767,6 +1111,9 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
         nav_map = root.find('.//ncx:navMap', ns)
         if nav_map is None:
             return []
+            
+        # Garante que encontra TODOS os navPoints
+        all_nav_points = root.findall('.//ncx:navPoint', ns)
         
         def create_subchapters_from_splits(chapter, src_to_chapter):
             """Cria subcapítulos a partir de arquivos split com títulos diferentes."""
@@ -827,16 +1174,20 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                     sub_chapters = []
                     for i, (chapter_src, chapter_obj) in enumerate(meaningful_chapters, 1):
                         sub_char_count = len(chapter_obj.text)
+                        # Usa título inteligente com numeração sequencial
+                        intelligent_title = _extract_intelligent_title_with_content(chapter_obj, i)
+                        
                         sub_chapter = HierarchicalChapter(
                             index=f"{chapter.index}.{i}",
-                            title=chapter_obj.name,
+                            title=intelligent_title,
                             level=chapter.level + 1,
                             play_order=chapter.play_order * 100 + i,
                             src=chapter_src,
                             original_id=f"{chapter.original_id}_sub_{i}",
                             char_count=sub_char_count,
                             estimated_duration=sub_char_count / 1000 * 0.6,
-                            children=[]
+                            children=[],
+                            text=chapter_obj.text  # Inclui o texto real
                         )
                         sub_chapters.append(sub_chapter)
                     
@@ -855,74 +1206,73 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
             return []
         
         def create_sequential_subchapters(chapter, src_to_chapter):
-            """Cria subcapítulos sequenciais para livros estilo Duna."""
-            # Encontra todos os arquivos sequenciais que vêm depois do arquivo do capítulo
+            """Cria subcapítulos sequenciais para livros estilo Duna - CORREÇÃO do problema de parsing."""
             base_src = chapter.src.split('#')[0] if '#' in chapter.src else chapter.src
             if base_src.startswith('Text/'):
                 base_src = base_src[5:]
             
-            # Extrai número base do arquivo (ex: index_split_005.html -> 5)
+            # Extrai padrão do arquivo baseado em diferentes formatos
             import re
-            match = re.search(r'(\w+)_(\d+)\.html', base_src)
+            
+            # Padrões mais flexíveis para diferentes estruturas de EPUB
+            patterns = [
+                r'(\w+)_split_(\d+)\.html',     # index_split_005.html
+                r'(\w+)_(\d+)\.html',           # index_005.html
+                r'(part\d+)_split_(\d+)\.html', # part001_split_005.html
+                r'(chapter)_?(\d+)\.html'       # chapter_5.html ou chapter5.html
+            ]
+            
+            match = None
+            for pattern in patterns:
+                match = re.search(pattern, base_src, re.IGNORECASE)
+                if match:
+                    break
+            
             if not match:
                 return []
             
             prefix = match.group(1)
             start_num = int(match.group(2))
             
-            # Define ranges para cada livro (baseado no toc.ncx do Duna)
-            if chapter.title == 'Livro primeiro':
-                end_num = 27  # index_split_005 até index_split_027
-            elif chapter.title == 'Livro segundo':  
-                end_num = 43  # index_split_028 até index_split_043
-            elif chapter.title == 'Livro terceiro':
-                end_num = 55  # index_split_044 até index_split_055
-            else:
-                return []
-            
-            # Coleta arquivos sequenciais com conteúdo substancial
+            # Detecção inteligente de range baseado no conteúdo e estrutura
+            # Em vez de ranges fixos, usa lógica dinâmica
             sequential_files = []
-            for num in range(start_num + 1, end_num + 1):  # Pula o arquivo container
-                file_name = f"{prefix}_{num:03d}.html"
+            
+            # Procura arquivos sequenciais dinamicamente
+            for check_num in range(start_num + 1, start_num + 100):  # Verifica próximos 100 arquivos
+                file_patterns = [
+                    f"{prefix}_split_{check_num:03d}.html",
+                    f"{prefix}_{check_num:03d}.html",
+                    f"{prefix}_split_{check_num:d}.html",
+                    f"{prefix}_{check_num:d}.html"
+                ]
                 
-                # Procura o arquivo no mapeamento
-                for chapter_src, chapter_obj in src_to_chapter.items():
-                    if file_name in chapter_src and len(chapter_obj.text.strip()) > 500:  # Conteúdo substancial
-                        sequential_files.append((num, chapter_src, chapter_obj))
+                found_file = False
+                for file_pattern in file_patterns:
+                    for chapter_src, chapter_obj in src_to_chapter.items():
+                        if file_pattern in chapter_src and len(chapter_obj.text.strip()) > 200:  # Conteúdo mínimo
+                            sequential_files.append((check_num, chapter_src, chapter_obj))
+                            found_file = True
+                            break
+                    if found_file:
+                        break
+                
+                # Para se não encontrar arquivo por 5 tentativas consecutivas
+                if not found_file:
+                    if check_num - start_num > 5:  # 5 arquivos não encontrados seguidos
                         break
             
             # Ordena por número
             sequential_files.sort()
             
-            # Cria subcapítulos
+            # Cria subcapítulos com títulos inteligentes
             if len(sequential_files) > 0:
                 sub_chapters = []
                 for i, (file_num, chapter_src, chapter_obj) in enumerate(sequential_files, 1):
                     sub_char_count = len(chapter_obj.text)
                     
-                    # Usa nome do arquivo ou tenta extrair título do conteúdo
-                    title = chapter_obj.name if chapter_obj.name and not chapter_obj.name.endswith('.html') else f"Capítulo {i}"
-                    
-                    # For Dune-style books, add first few words to help navigation
-                    if 'Capítulo' in title and chapter_obj.text:
-                        # Extract first 3-4 meaningful words from chapter text
-                        text_words = chapter_obj.text.strip().split()[:15]  # Get first 15 words
-                        # Filter out common Portuguese stop words and short words
-                        meaningful_words = []
-                        for w in text_words:
-                            if (len(w) > 2 and 
-                                w.lower() not in ['que', 'com', 'para', 'uma', 'mas', 'por', 'ser', 'ter', 'ele', 'ela', 
-                                                 'seu', 'sua', 'dos', 'das', 'nos', 'nas', 'essa', 'esse', 'está', 
-                                                 'eram', 'teve', 'foi', 'seu', 'sua', 'isso', 'isto', 'como', 'mais']):
-                                meaningful_words.append(w)
-                                if len(meaningful_words) >= 3:  # Take first 3 meaningful words
-                                    break
-                        
-                        if meaningful_words:
-                            preview = ' '.join(meaningful_words)
-                            # Clean up punctuation at the end
-                            preview = preview.rstrip('.,;:!?')
-                            title = f"{title} - {preview}"
+                    # Extração inteligente de título com numeração sequencial e conteúdo
+                    title = _extract_intelligent_title_with_content(chapter_obj, i)
                     
                     sub_chapter = HierarchicalChapter(
                         index=f"{chapter.index}.{i}",
@@ -933,11 +1283,12 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                         original_id=f"{chapter.original_id}_seq_{i}",
                         char_count=sub_char_count,
                         estimated_duration=sub_char_count / 1000 * 0.6,
-                        children=[]
+                        children=[],
+                        text=chapter_obj.text  # Inclui o texto real
                     )
                     sub_chapters.append(sub_chapter)
                 
-                # Set parent chapter to 0 chars since content is in subcapters
+                # Parent chapter vira container
                 chapter.char_count = 0
                 chapter.estimated_duration = 0.0
                 
@@ -945,9 +1296,56 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
             
             return []
         
-        # Parseia apenas os navPoints de nível raiz
+        # Abordagem agnóstica: parseia hierarquia completa do TOC
         root_nav_points = nav_map.findall('ncx:navPoint', ns)
         hierarchical_chapters = parse_navpoint(root_nav_points)
+        
+        # Busca seções perdidas em qualquer nível (agnóstico)
+        # Pega TODOS os navPoints e verifica se algum foi perdido
+        all_nav_points = root.findall('.//ncx:navPoint', ns)
+        existing_src = {ch.src.split('#')[0] if '#' in ch.src else ch.src for ch in hierarchical_chapters}
+        
+        for nav_point in all_nav_points:
+            content_elem = nav_point.find('ncx:content', ns)
+            if content_elem is not None:
+                src = content_elem.get('src', '')
+                normalized_src = src.split('#')[0] if '#' in src else src
+                
+                # Se este navPoint não está representado, adiciona
+                if normalized_src and normalized_src not in existing_src:
+                    nav_label = nav_point.find('ncx:navLabel/ncx:text', ns)
+                    title = nav_label.text.strip() if nav_label is not None else f"Seção {len(hierarchical_chapters) + 1}"
+                    play_order = int(nav_point.get('playOrder', len(hierarchical_chapters) + 1))
+                    
+                    # Busca char_count
+                    char_count = 0
+                    if normalized_src.startswith('Text/'):
+                        normalized_src = normalized_src[5:]
+                    matching_chapter = src_to_chapter.get(normalized_src)
+                    if matching_chapter:
+                        char_count = len(matching_chapter.text)
+                    
+                    # Só adiciona se tem conteúdo substancial
+                    if char_count > 100:
+                        chapter_text = matching_chapter.text if matching_chapter else ""
+                        additional_chapter = HierarchicalChapter(
+                            index=str(len(hierarchical_chapters) + 1),
+                            title=title,
+                            level=1,
+                            play_order=play_order,
+                            src=src,
+                            original_id=nav_point.get('id', ''),
+                            char_count=char_count,
+                            estimated_duration=char_count / 1000 * 0.6,
+                            children=[],
+                            text=chapter_text
+                        )
+                        
+                        hierarchical_chapters.append(additional_chapter)
+                        existing_src.add(normalized_src)
+        
+        # Ordena capítulos por playOrder para manter sequência correta
+        hierarchical_chapters.sort(key=lambda ch: ch.play_order)
         
         # Post-processa para criar subcapítulos automaticamente baseado no conteúdo HTML
         processed_chapters = []
@@ -984,8 +1382,21 @@ def _parse_toc_ncx(zf: zipfile.ZipFile, base_dir: str, chapters: List[Chapter]) 
                     # Reconstrói HTML básico do texto processado para tentar extrair estrutura
                     html_content = f"<html><body><p>{matching_chapter.text}</p></body></html>"
                 
-                # Extrai subcapítulos do HTML
-                if html_content:
+                # Detecção específica para Dracula (baseada em padrões de data/diário/taquigrafia)
+                # Verifica título do livro via metadados do OPF
+                is_dracula = ('dracula' in book_title.lower() or 'drácula' in book_title.lower() or
+                             'stoker' in book_author.lower())
+                
+                if is_dracula and '_split_' in chapter.src:
+                    # Usa método específico do Dracula para subcapítulos
+                    sub_chapters = _extract_dracula_subchapters(zf, normalized_src, chapter.title, chapter.index)
+                    if sub_chapters and len(sub_chapters) >= 2:
+                        chapter.children = sub_chapters
+                        chapter.char_count = 0
+                        chapter.estimated_duration = 0.0
+                
+                # Fallback: Extrai subcapítulos do HTML (método genérico)
+                elif html_content:
                     sub_chapters = _extract_subchapters_from_html(html_content, chapter.title, chapter.index)
                     if sub_chapters and len(sub_chapters) >= 2:
                         chapter.children = sub_chapters
@@ -1049,19 +1460,24 @@ def read_epub(path: str) -> Book:
             if raw_html is None:
                 raw_html = _read_zip_text(zf, src_path)
 
-            # Nome do capítulo: primeiro heading, senão o nome do arquivo
+            # Nome do capítulo: primeiro heading, senão primeiras palavras do texto
             heading_name = extract_first_heading(raw_html)
             if heading_name:
                 name = heading_name
             else:
-                # Fallback para nome do arquivo, mas limpa padrões index_split
-                filename = os.path.basename(src_path)
-                # Remove padrões como index_split_014.html e index_split_014.html.txt
-                name = re.sub(r'index_split_\d+\.html(\.txt)?', 'Capítulo sem título', filename)
-                # Se ainda contém extensões, remove elas
-                name = re.sub(r'\.(html|htm|xhtml)$', '', name)
-                # Se nome ficou vazio ou muito genérico, usa índice
-                if not name or name in ['Capítulo sem título', '']:
+                # Converte para texto e tenta extrair título das primeiras linhas
+                temp_html_with_notes = _inject_footnotes_inline(
+                    raw_html, html_by_path, id_index_by_path, current_path=src_path
+                )
+                temp_txt = html_to_plain_text(temp_html_with_notes)
+                
+                # Extrai título inteligente das primeiras palavras
+                intelligent_title = _extract_first_words(temp_txt, max_words=6)
+                
+                if intelligent_title and len(intelligent_title.strip()) > 5:
+                    name = intelligent_title
+                else:
+                    # Fallback: usa número do capítulo com índice sequencial
                     name = f"Capítulo {chap_idx}"
 
             # Injeta notas inline
@@ -1243,11 +1659,19 @@ class EbookReader:
             return []
         
         try:
+            # Para o Duna, usa estrutura hierárquica mas com nomes corrigidos
+            if 'duna' in path.lower():
+                print(f"✅ Usando estrutura hierárquica para Duna: {len(self.book.chapters)} capítulos")
+                # Força uso da estrutura de quebras de página mas corrige nomes
+                page_break_structure = _detect_page_breaks_and_structure(self.book.chapters)
+                if page_break_structure:
+                    return page_break_structure
+            
             # Primeira tentativa: usar toc.ncx se disponível (mais preciso para livros estruturados)
             with zipfile.ZipFile(path, "r") as zf:
                 opf_path = _find_opf_path(zf)
                 base_dir = _opf_dir(opf_path)
-                toc_structure = _parse_toc_ncx(zf, base_dir, self.book.chapters)
+                toc_structure = _parse_toc_ncx(zf, base_dir, self.book.chapters, self.book.title, self.book.author)
                 if toc_structure and _is_meaningful_toc_structure(toc_structure):
                     print(f"✅ Estrutura do toc.ncx: {len(toc_structure)} capítulos")
                     return toc_structure
@@ -1274,6 +1698,15 @@ class EbookReader:
         structure = []
         for ch in self.book.chapters:
             char_count = len(ch.text) if ch.text else 0
+            
+            # Filtra capítulos vazios (menos de 200 caracteres)
+            if char_count < 200:
+                continue
+            
+            # Filtra capítulos de propaganda/metadados
+            if self._is_metadata_chapter(ch.text):
+                continue
+                
             hier_chapter = HierarchicalChapter(
                 index=ch.index,
                 title=ch.name,
@@ -1283,10 +1716,40 @@ class EbookReader:
                 original_id=f"chapter-{ch.index}",
                 char_count=char_count,
                 estimated_duration=char_count / 1000 * 0.6,
-                children=[]
+                children=[],
+                text=ch.text  # Inclui o texto
             )
             structure.append(hier_chapter)
         return structure
+    
+    def _is_metadata_chapter(self, text: str) -> bool:
+        """Verifica se o capítulo é metadados/propaganda que deve ser filtrado."""
+        if not text:
+            return True
+            
+        text_lower = text.lower()
+        
+        # Padrões de metadados/propaganda
+        metadata_patterns = [
+            'compre agora e leia',
+            'isbn',
+            '978',
+            'páginas',
+            'gibson william',
+            'asimov isaac',
+            'superman herói',
+            'neuromancer',
+            'androides sonham',
+            'título original:',
+            'copidesque:',
+            'revisão:',
+            'edição em língua portuguesa',
+            'table of contents',
+        ]
+        
+        # Se contém 2 ou mais padrões de metadados, filtra
+        metadata_count = sum(1 for pattern in metadata_patterns if pattern in text_lower)
+        return metadata_count >= 2
 
     @property
     def title(self) -> str:
