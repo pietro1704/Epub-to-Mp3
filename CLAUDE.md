@@ -22,6 +22,9 @@ pip install TTS torch torchaudio  # Coqui TTS (local, AI-powered)
 # macOS: brew install ffmpeg
 ```
 
+vc precisa ativar a engine com ❯ source /Users/pietropugliesi/.venvs/tts311/bin/activate
+
+
 ### Running the Application
 ```bash
 # Basic usage with interactive menu

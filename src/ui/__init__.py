@@ -3,6 +3,6 @@
 UI module for TTS converter
 """
 
-from .menu import show_tts_menu, show_quick_menu, TTSMenuService
+from .menu import MenuInterface
 
-__all__ = ['show_tts_menu', 'show_quick_menu', 'TTSMenuService']
+__all__ = ['MenuInterface']
