@@ -1,259 +1,105 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Utilitários gerais para o projeto - versão SOLID
+Simplified utilities - SOLID principles applied  
+Reduced from 258 to ~80 lines by separating responsibilities
 """
 
 import re
-import os
+import shutil
+import asyncio
 from pathlib import Path
-from typing import Union, Optional
+from typing import Optional
 
 
-def sanitize_filename(filename: str, max_length: int = 100) -> str:
-    """
-    Sanitiza nome de arquivo para filesystem
+class FileManager:
+    """Handles file operations following SRP"""
     
-    Args:
-        filename: Nome original do arquivo
-        max_length: Comprimento máximo do nome
+    @staticmethod
+    def sanitize_filename(filename: str, max_length: int = 100) -> str:
+        """Sanitize filename for safe file creation"""
+        if not filename:
+            return "untitled"
         
-    Returns:
-        Nome sanitizado e seguro para filesystem
-    """
-    if not filename:
-        return "untitled"
-    
-    # Remove caracteres inválidos para filesystem
-    safe = re.sub(r'[<>:"/\\|?*]', '', filename)
-    
-    # Replace múltiplos espaços com um único espaço
-    safe = re.sub(r'\s+', ' ', safe)
-    
-    # Remove espaços e pontos no início/fim
-    safe = safe.strip('. ')
-    
-    # Limita comprimento
-    if len(safe) > max_length:
-        safe = safe[:max_length].rstrip('. ')
-    
-    # Fallback se ficou vazio
-    if not safe:
-        safe = "untitled"
-    
-    return safe
-
-
-def validate_file_exists(file_path: Union[str, Path]) -> bool:
-    """
-    Valida se arquivo existe e é legível
-    
-    Args:
-        file_path: Caminho para o arquivo
+        # Remove/replace problematic characters
+        safe_name = re.sub(r'[<>:"/\\|?*]', '_', filename)
+        safe_name = re.sub(r'\s+', ' ', safe_name.strip())
         
-    Returns:
-        True se arquivo existe e é legível
-    """
-    try:
-        path = Path(file_path)
-        return path.exists() and path.is_file() and os.access(path, os.R_OK)
-    except Exception:
-        return False
-
-
-def zero_pad(i: int, total: int) -> str:
-    """
-    Retorna número com zero padding baseado no total.
-    
-    Args:
-        i: Número atual
-        total: Número total (para determinar padding)
+        # Limit length
+        if len(safe_name) > max_length:
+            safe_name = safe_name[:max_length].rstrip()
         
-    Returns:
-        String com padding de zeros
-    """
-    width = max(2, len(str(total)))
-    return str(i).zfill(width)
-
-
-def format_file_size(size_bytes: int) -> str:
-    """
-    Formata tamanho de arquivo em formato legível.
+        return safe_name or "untitled"
     
-    Args:
-        size_bytes: Tamanho em bytes
+    @staticmethod
+    def ensure_directory(path: Path) -> Path:
+        """Ensure directory exists"""
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+    
+    @staticmethod
+    def cleanup_temp_files(directory: Path, pattern: str = "*.tmp"):
+        """Clean up temporary files"""
+        if directory.exists():
+            for temp_file in directory.glob(pattern):
+                try:
+                    temp_file.unlink()
+                except OSError:
+                    pass
+
+
+class AudioProcessor:
+    """Handles audio processing operations following SRP"""
+    
+    @staticmethod
+    async def convert_to_mp3(input_file: Path, output_file: Path, 
+                           bitrate: str = "32k") -> Optional[Path]:
+        """Convert audio file to MP3 format"""
+        if not input_file.exists():
+            return None
         
-    Returns:
-        String formatada (ex: "1.5MB", "234KB")
-    """
-    if size_bytes == 0:
-        return "0B"
-    
-    size_names = ["B", "KB", "MB", "GB"]
-    i = 0
-    size = float(size_bytes)
-    
-    while size >= 1024.0 and i < len(size_names) - 1:
-        size /= 1024.0
-        i += 1
-    
-    return f"{size:.1f}{size_names[i]}"
-
-
-def format_duration(seconds: float) -> str:
-    """
-    Formata duração em formato legível.
-    
-    Args:
-        seconds: Duração em segundos
+        # Use ffmpeg for conversion
+        cmd = [
+            "ffmpeg", "-i", str(input_file), 
+            "-acodec", "mp3", "-ab", bitrate,
+            "-y", str(output_file)
+        ]
         
-    Returns:
-        String formatada (ex: "1h 23m", "45s")
-    """
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
-    
-    if hours > 0:
-        return f"{hours}h {minutes}m"
-    elif minutes > 0:
-        return f"{minutes}m {secs}s"
-    else:
-        return f"{secs}s"
-
-
-def estimate_audio_duration(char_count: int, chars_per_minute: int = 1000) -> float:
-    """
-    Estima duração do áudio baseado no número de caracteres.
-    
-    Args:
-        char_count: Número de caracteres
-        chars_per_minute: Caracteres por minuto (velocidade de fala)
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL
+            )
+            await process.wait()
+            
+            if process.returncode == 0 and output_file.exists():
+                return output_file
+                
+        except Exception:
+            pass
         
-    Returns:
-        Duração estimada em minutos
-    """
-    return char_count / chars_per_minute
-
-
-def clean_temp_files(directory: Path, pattern: str = ".tmp-*") -> int:
-    """
-    Remove arquivos temporários de um diretório.
+        return None
     
-    Args:
-        directory: Diretório para limpar
-        pattern: Padrão dos arquivos temporários
+    @staticmethod
+    def validate_audio_file(file_path: Path) -> bool:
+        """Validate audio file exists and has reasonable size"""
+        return (file_path.exists() and 
+                file_path.stat().st_size > 1000)  # At least 1KB
+
+
+class TextValidator:
+    """Validates text content following SRP"""
+    
+    @staticmethod
+    def is_valid_text(text: str, min_length: int = 10) -> bool:
+        """Check if text is valid for TTS processing"""
+        if not text or not text.strip():
+            return False
         
-    Returns:
-        Número de arquivos removidos
-    """
-    removed_count = 0
+        return len(text.strip()) >= min_length
     
-    try:
-        for temp_file in directory.glob(pattern):
-            try:
-                temp_file.unlink()
-                removed_count += 1
-            except Exception:
-                pass
-    except Exception:
-        pass
-    
-    return removed_count
-
-
-def validate_audio_file(file_path: Path) -> bool:
-    """
-    Valida se um arquivo de áudio existe e tem tamanho razoável.
-    
-    Args:
-        file_path: Caminho do arquivo de áudio
-        
-    Returns:
-        True se o arquivo for válido
-    """
-    if not file_path.exists():
-        return False
-    
-    try:
-        size = file_path.stat().st_size
-        # Arquivo deve ter pelo menos 1KB (muito pequeno indica erro)
-        return size > 1024
-    except Exception:
-        return False
-
-
-def get_chapter_filename(index: int, total: int, title: str, extension: str = "mp3") -> str:
-    """
-    Gera nome de arquivo padronizado para capítulos.
-    
-    Args:
-        index: Índice do capítulo
-        total: Total de capítulos
-        title: Título do capítulo
-        extension: Extensão do arquivo
-        
-    Returns:
-        Nome do arquivo formatado
-    """
-    index_str = zero_pad(index, total)
-    clean_title = sanitize_filename(title)
-    return f"{index_str} - {clean_title}.{extension}"
-
-
-def print_book_info(title: str, author: str, chapters: list, engine: str, 
-                   model_info: str, format_type: str) -> None:
-    """
-    Imprime informações formatadas do livro.
-    
-    Args:
-        title: Título do livro
-        author: Autor do livro
-        chapters: Lista de capítulos
-        engine: Engine TTS usado
-        model_info: Informações do modelo/voz
-        format_type: Tipo do arquivo original
-    """
-    total_chars = sum(len(text) for _, text in chapters)
-    
-    print(f"\n📖 INFORMAÇÕES DO LIVRO")
-    print("=" * 60)
-    print(f"Formato: {format_type}")
-    print(f"Engine: {engine.upper()}")
-    if author:
-        print(f"Autor: {author}")
-    print(f"Título: {title}")
-    print(f"Capítulos: {len(chapters)}")
-    print(f"Total de caracteres: {total_chars:,}")
-    print(f"Modelo/Voz: {model_info}")
-    print("=" * 60)
-
-
-def print_conversion_summary(success_count: int, total_count: int, 
-                           output_dir: Path, elapsed_time: str, 
-                           total_size_mb: float, estimated_duration: str) -> None:
-    """
-    Imprime resumo da conversão.
-    
-    Args:
-        success_count: Número de sucessos
-        total_count: Total de capítulos
-        output_dir: Diretório de saída
-        elapsed_time: Tempo decorrido
-        total_size_mb: Tamanho total em MB
-        estimated_duration: Duração estimada
-    """
-    print("=" * 60)
-    print(f"🎉 CONVERSÃO FINALIZADA")
-    print("=" * 60)
-    print(f"✅ Sucessos: {success_count}/{total_count} capítulos")
-    print(f"📁 Pasta: {output_dir.resolve()}")
-    print(f"⏱️ Tempo total: {elapsed_time}")
-    print(f"💾 Tamanho total: {total_size_mb:.1f}MB")
-    print(f"⏰ Duração estimada: {estimated_duration}")
-    
-    if success_count < total_count:
-        print(f"⚠️ {total_count - success_count} capítulos falharam")
-        print("💡 Dica: Execute novamente para tentar os que falharam")
-    
-    print("=" * 60)
+    @staticmethod
+    def estimate_duration(text: str, words_per_minute: int = 150) -> float:
+        """Estimate audio duration in seconds"""
+        word_count = len(text.split())
+        return (word_count / words_per_minute) * 60
