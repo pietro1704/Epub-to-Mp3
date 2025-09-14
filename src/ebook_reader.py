@@ -168,124 +168,279 @@ class EbookReader:
             manifest, spine, title, author = self._parse_opf(zf, opf_path)
             toc_entries = self._parse_toc(zf, manifest, opf_path)
 
-            # Map hrefs do TOC para títulos
+            # Map hrefs do TOC para títulos com hierarquia
             toc_map = {}
-            def flatten_toc(entries):
+            toc_hierarchy = {}  # Maps href to (level, title, parent_title)
+
+            def flatten_toc(entries, parent_title=None):
                 for e in entries:
-                    toc_map[e.href.split('#')[0]] = e.title
+                    href_base = e.href.split('#')[0]
+                    toc_map[href_base] = e.title
+                    toc_hierarchy[href_base] = (e.level, e.title, parent_title)
                     if e.children:
-                        flatten_toc(e.children)
+                        flatten_toc(e.children, e.title)
             flatten_toc(toc_entries)
 
-            # Build division mapping for hierarchical structure
-            division_map = {}  # Maps file index to (division_index, division_title)
-            current_division = None
+            # Check if we have meaningful hierarchical TOC structure
+            # Only consider hierarchy if we have book divisions (Livro, Capítulo, etc.) not just appendices
+            has_meaningful_hierarchy = False
+            hierarchical_entries = []
 
-            # Analyze TOC to identify book divisions
-            toc_files = []
             for entry in toc_entries:
-                href = entry.href.split('#')[0]
-                if self._looks_like_division(entry.title):
-                    current_division = (len(toc_files) + 1, entry.title)
-                toc_files.append((href, entry.title, current_division))
+                if entry.children and len(entry.children) > 0:
+                    hierarchical_entries.append(entry)
 
-            # Create file to division mapping
-            for i, (href, title, division) in enumerate(toc_files):
-                if division:
-                    division_map[href] = division
+                    # Check if this is a meaningful division (like "Livro I") not just appendices
+                    if (self._looks_like_division(entry.title) or
+                        any(self._looks_like_chapter(child.title) for child in entry.children[:3])):
+                        has_meaningful_hierarchy = True
 
-            opf_dir = '/'.join(opf_path.split('/')[:-1]) if '/' in opf_path else ''
-            chapters = []
-            chapter_index = 1
-            current_division_info = None
-            subchapter_counter = 1
-
-            for item_id in spine:
-                if item_id not in manifest:
-                    continue
-
-                item_info = manifest[item_id]
-                href = item_info['href']
-                media_type = item_info['media-type']
-
-                # Skip non-content files (CSS, images, etc.)
-                if not self._is_content_file(href, media_type):
-                    continue
-
-                full_path = f"{opf_dir}/{href}" if opf_dir else href
-                try:
-                    with zf.open(full_path, 'r') as f:
-                        html_content = f.read().decode('utf-8', errors='ignore')
-                        text_content = self._html_to_text(html_content)
-
-                        # Check if this file starts a new division (before checking minimal content)
-                        base_title = toc_map.get(href)
-
-                        if base_title and self._looks_like_division(base_title):
-                            # This is a division header (like "Livro primeiro")
-                            current_division_info = (chapter_index, base_title)
-                            subchapter_counter = 1
-                            chapter_index += 1
-                            continue
-
-                        # Skip files with minimal or CSS-like content
-                        if len(text_content.strip()) < 50:
-                            continue
-
-                        # Skip files that look like CSS content
-                        if self._is_css_content(text_content):
-                            continue
-
-                        # If no TOC title, extract from content
-                        if not base_title:
-                            base_title = self._extract_first_words(text_content, 8)
-
-                        # Subcapítulos por quebra de página
-                        subcap_parts = self._split_by_page_breaks(html_content, text_content)
-                        for i, (sub_html, sub_text) in enumerate(subcap_parts):
-                            # Process all parts, even empty ones (images, etc.)
-                            if len(sub_text.strip()) == 0:
-                                # For empty text content, use the base title or indicate it's an image/empty page
-                                sub_text = f"[{base_title}]" if base_title else "[Página vazia ou imagem]"
-
-                            # Generate chapter name based on division context
-                            if current_division_info:
-                                # We are inside a division
-                                division_index, division_title = current_division_info
-                                if i == 0:
-                                    idx = f"{division_index}.{subchapter_counter}"
-                                    name = f"{division_title} - {self._extract_first_words(sub_text, 8)}"
-                                else:
-                                    idx = f"{division_index}.{subchapter_counter + i}"
-                                    name = f"{division_title} - {self._extract_first_words(sub_text, 8)}"
-                            else:
-                                # Regular chapter
-                                if i == 0:
-                                    idx = f"{chapter_index}.0"
-                                    name = base_title
-                                else:
-                                    idx = f"{chapter_index}.{i}"
-                                    name = f"{base_title} - {self._extract_first_words(sub_text, 8)}"
-
-                            chapters.append(Chapter(
-                                index=idx,
-                                name=name,
-                                source_path=full_path,
-                                text=sub_text,
-                                level=1 if i == 0 else 2
-                            ))
-
-                        # Update counters
-                        if current_division_info:
-                            subchapter_counter += len(subcap_parts)
-                        else:
-                            chapter_index += 1
-                except Exception as e:
-                    print(f"Warning: Could not extract chapter from {full_path}: {e}")
+            if has_meaningful_hierarchy:
+                # Use hierarchical processing for complex books like Jardim das Aflições
+                chapters = self._extract_chapters_from_hierarchical_toc(zf, toc_entries, opf_path)
+            else:
+                # Use original spine-based processing for books like Duna
+                chapters = self._extract_chapters_from_spine_with_toc(zf, manifest, spine, toc_map, opf_path)
 
             return Book(title or "Unknown", author or "Unknown", chapters)
     
-    # (implementação removida, pois já existe uma versão corrigida acima)
+    def _extract_chapters_from_hierarchical_toc(self, zf: zipfile.ZipFile, toc_entries: List[TocEntry], opf_path: str) -> List[Chapter]:
+        """Extract chapters from hierarchical TOC structure (for complex books like Jardim das Aflições)"""
+        chapters = []
+        opf_dir = '/'.join(opf_path.split('/')[:-1]) if '/' in opf_path else ''
+        chapter_counter = 1
+
+        def process_toc_entry(entry, parent_index=None):
+            """Process TOC entry and its children recursively"""
+            nonlocal chapter_counter
+
+            href_base = entry.href.split('#')[0]
+            full_path = f"{opf_dir}/{href_base}" if opf_dir else href_base
+
+            try:
+                # Read content
+                with zf.open(full_path, 'r') as f:
+                    html_content = f.read().decode('utf-8', errors='ignore')
+                    text_content = self._html_to_text(html_content)
+
+                # Skip files with minimal content
+                if len(text_content.strip()) < 50:
+                    # For division titles with minimal content, still process children as subchapters
+                    if entry.children and entry.level == 1 and self._looks_like_division(entry.title):
+                        current_index = chapter_counter
+                        chapter_counter += 1
+                        sub_counter = 1
+                        for child in entry.children:
+                            process_toc_entry_as_subchapter(child, current_index, sub_counter)
+                            sub_counter += 1
+                    elif entry.children:
+                        for child in entry.children:
+                            process_toc_entry(child, parent_index)
+                    return
+
+                # Skip CSS-like content
+                if self._is_css_content(text_content):
+                    if entry.children:
+                        for child in entry.children:
+                            process_toc_entry(child, parent_index)
+                    return
+
+                # Determine indexing based on hierarchy
+                if entry.level == 1:
+                    # Top level entry (like "Livro I - Pessanha")
+                    if self._looks_like_division(entry.title):
+                        # This is a book division - use it as parent for children
+                        current_index = chapter_counter
+                        chapter_counter += 1
+
+                        # Process children as subchapters under this division
+                        if entry.children:
+                            sub_counter = 1
+                            for child in entry.children:
+                                process_toc_entry_as_subchapter(child, current_index, sub_counter)
+                                sub_counter += 1
+                        else:
+                            # No children, treat as regular chapter
+                            chapters.append(Chapter(
+                                index=f"{current_index}.0",
+                                name=entry.title,
+                                source_path=full_path,
+                                text=text_content,
+                                level=1
+                            ))
+                    else:
+                        # Regular top-level chapter
+                        chapters.append(Chapter(
+                            index=f"{chapter_counter}.0",
+                            name=entry.title,
+                            source_path=full_path,
+                            text=text_content,
+                            level=1
+                        ))
+                        chapter_counter += 1
+                else:
+                    # Lower level entry - should be handled by parent
+                    if parent_index:
+                        sub_index = 1 if not entry.children else 0
+                        chapters.append(Chapter(
+                            index=f"{parent_index}.{sub_index}",
+                            name=entry.title,
+                            source_path=full_path,
+                            text=text_content,
+                            level=entry.level
+                        ))
+
+            except Exception as e:
+                print(f"Warning: Could not extract chapter from {full_path}: {e}")
+
+        def process_toc_entry_as_subchapter(entry, parent_index, sub_index):
+            """Process TOC entry as subchapter under a division"""
+            href_base = entry.href.split('#')[0]
+            full_path = f"{opf_dir}/{href_base}" if opf_dir else href_base
+
+            try:
+                with zf.open(full_path, 'r') as f:
+                    html_content = f.read().decode('utf-8', errors='ignore')
+                    text_content = self._html_to_text(html_content)
+
+                if len(text_content.strip()) < 50 or self._is_css_content(text_content):
+                    return
+
+                # Add the main chapter
+                chapters.append(Chapter(
+                    index=f"{parent_index}.{sub_index}",
+                    name=entry.title,
+                    source_path=full_path,
+                    text=text_content,
+                    level=2
+                ))
+
+                # Process sections within this chapter (§1, §2, etc.)
+                if entry.children:
+                    section_counter = 1
+                    for section in entry.children:
+                        section_href_base = section.href.split('#')[0]
+                        section_full_path = f"{opf_dir}/{section_href_base}" if opf_dir else section_href_base
+
+                        try:
+                            with zf.open(section_full_path, 'r') as sf:
+                                section_html = sf.read().decode('utf-8', errors='ignore')
+                                section_text = self._html_to_text(section_html)
+
+                            if len(section_text.strip()) >= 50:
+                                chapters.append(Chapter(
+                                    index=f"{parent_index}.{sub_index}.{section_counter}",
+                                    name=section.title,
+                                    source_path=section_full_path,
+                                    text=section_text,
+                                    level=3
+                                ))
+                                section_counter += 1
+                        except Exception:
+                            continue
+
+            except Exception as e:
+                print(f"Warning: Could not extract subchapter from {full_path}: {e}")
+
+        # Process all top-level TOC entries
+        for entry in toc_entries:
+            process_toc_entry(entry)
+
+        return chapters
+
+    def _extract_chapters_from_spine_with_toc(self, zf: zipfile.ZipFile, manifest: Dict[str, Dict[str, str]],
+                                             spine: List[str], toc_map: Dict[str, str], opf_path: str) -> List[Chapter]:
+        """Extract chapters from spine with TOC titles (for books like Duna)"""
+        chapters = []
+        opf_dir = '/'.join(opf_path.split('/')[:-1]) if '/' in opf_path else ''
+        chapter_index = 1
+        current_division_info = None
+        subchapter_counter = 1
+
+        for item_id in spine:
+            if item_id not in manifest:
+                continue
+
+            item_info = manifest[item_id]
+            href = item_info['href']
+            media_type = item_info['media-type']
+
+            # Skip non-content files (CSS, images, etc.)
+            if not self._is_content_file(href, media_type):
+                continue
+
+            full_path = f"{opf_dir}/{href}" if opf_dir else href
+            try:
+                with zf.open(full_path, 'r') as f:
+                    html_content = f.read().decode('utf-8', errors='ignore')
+                    text_content = self._html_to_text(html_content)
+
+                    # Check if this file starts a new division (before checking minimal content)
+                    base_title = toc_map.get(href)
+
+                    if base_title and self._looks_like_division(base_title):
+                        # This is a division header (like "Livro primeiro")
+                        current_division_info = (chapter_index, base_title)
+                        subchapter_counter = 1
+                        chapter_index += 1
+                        continue
+
+                    # Skip files with minimal or CSS-like content
+                    if len(text_content.strip()) < 50:
+                        continue
+
+                    # Skip files that look like CSS content
+                    if self._is_css_content(text_content):
+                        continue
+
+                    # If no TOC title, extract from content
+                    if not base_title:
+                        base_title = self._extract_first_words(text_content, 8)
+
+                    # Subcapítulos por quebra de página
+                    subcap_parts = self._split_by_page_breaks(html_content, text_content)
+                    for i, (sub_html, sub_text) in enumerate(subcap_parts):
+                        # Process all parts, even empty ones (images, etc.)
+                        if len(sub_text.strip()) == 0:
+                            # For empty text content, use the base title or indicate it's an image/empty page
+                            sub_text = f"[{base_title}]" if base_title else "[Página vazia ou imagem]"
+
+                        # Generate chapter name based on division context
+                        if current_division_info:
+                            # We are inside a division
+                            division_index, division_title = current_division_info
+                            if i == 0:
+                                idx = f"{division_index}.{subchapter_counter}"
+                                name = f"{division_title} - {self._extract_first_words(sub_text, 8)}"
+                            else:
+                                idx = f"{division_index}.{subchapter_counter + i}"
+                                name = f"{division_title} - {self._extract_first_words(sub_text, 8)}"
+                        else:
+                            # Regular chapter
+                            if i == 0:
+                                idx = f"{chapter_index}.0"
+                                name = base_title
+                            else:
+                                idx = f"{chapter_index}.{i}"
+                                name = f"{base_title} - {self._extract_first_words(sub_text, 8)}"
+
+                        chapters.append(Chapter(
+                            index=idx,
+                            name=name,
+                            source_path=full_path,
+                            text=sub_text,
+                            level=1 if i == 0 else 2
+                        ))
+
+                    # Update counters
+                    if current_division_info:
+                        subchapter_counter += len(subcap_parts)
+                    else:
+                        chapter_index += 1
+            except Exception as e:
+                print(f"Warning: Could not extract chapter from {full_path}: {e}")
+
+        return chapters
     
     def _find_opf(self, zf: zipfile.ZipFile) -> str:
         try:
@@ -358,26 +513,54 @@ class EbookReader:
         return []
     
     def _parse_ncx_toc(self, zf: zipfile.ZipFile, ncx_href: str, opf_path: str) -> List[TocEntry]:
-        """Parse NCX (Navigation Control File) TOC"""
+        """Parse NCX (Navigation Control File) TOC with hierarchical structure"""
         try:
             opf_dir = '/'.join(opf_path.split('/')[:-1]) if '/' in opf_path else ''
             ncx_path = f"{opf_dir}/{ncx_href}" if opf_dir else ncx_href
-            
+
             ncx_content = zf.read(ncx_path).decode('utf-8', errors='ignore')
             root = ET.fromstring(ncx_content)
-            
+
+            def parse_nav_point(nav_point, level=1):
+                """Recursively parse navigation points to maintain hierarchy"""
+                title_elem = nav_point.find('.//{http://www.daisy.org/z3986/2005/ncx/}text')
+                content_elem = nav_point.find('.//{http://www.daisy.org/z3986/2005/ncx/}content')
+
+                if title_elem is None or content_elem is None:
+                    return None
+
+                title = title_elem.text.strip() if title_elem.text else f"Chapter {level}"
+                href = content_elem.get('src', '').split('#')[0]  # Remove fragment
+
+                if not href:
+                    return None
+
+                # Create the entry
+                entry = TocEntry(title=title, href=href, level=level)
+
+                # Find direct child navPoints (not nested deeper)
+                child_nav_points = []
+                for child in nav_point:
+                    if child.tag == '{http://www.daisy.org/z3986/2005/ncx/}navPoint':
+                        child_nav_points.append(child)
+
+                # Parse children
+                if child_nav_points:
+                    entry.children = []
+                    for child_nav_point in child_nav_points:
+                        child_entry = parse_nav_point(child_nav_point, level + 1)
+                        if child_entry:
+                            entry.children.append(child_entry)
+
+                return entry
+
             toc_entries = []
-            for navPoint in root.findall('.//{http://www.daisy.org/z3986/2005/ncx/}navPoint'):
-                title_elem = navPoint.find('.//{http://www.daisy.org/z3986/2005/ncx/}text')
-                content_elem = navPoint.find('.//{http://www.daisy.org/z3986/2005/ncx/}content')
-                
-                if title_elem is not None and content_elem is not None:
-                    title = title_elem.text.strip() if title_elem.text else f"Chapter {len(toc_entries)+1}"
-                    href = content_elem.get('src', '').split('#')[0]  # Remove fragment
-                    
-                    if href:
-                        toc_entries.append(TocEntry(title=title, href=href, level=1))
-            
+            # Find all top-level navPoints
+            for navPoint in root.findall('.//{http://www.daisy.org/z3986/2005/ncx/}navMap/{http://www.daisy.org/z3986/2005/ncx/}navPoint'):
+                entry = parse_nav_point(navPoint, 1)
+                if entry:
+                    toc_entries.append(entry)
+
             return toc_entries
         except Exception as e:
             print(f"Warning: Could not parse NCX TOC: {e}")
@@ -913,7 +1096,34 @@ class EbookReader:
             return True
 
         return False
-    
+
+    def _looks_like_chapter(self, title: str) -> bool:
+        """Check if title looks like a chapter title"""
+        if not title:
+            return False
+
+        title_lower = title.lower().strip()
+
+        # Portuguese patterns for chapters
+        chapter_patterns = [
+            r'^capítulo\s+[ivx\d]+',  # Capítulo I, 1, etc
+            r'^cap\.\s*[ivx\d]+',    # Cap. I, 1, etc
+            r'^chapter\s+[ivx\d]+',  # Chapter I, 1, etc (English)
+            r'^seção\s+[ivx\d]+',    # Seção I, 1, etc
+            r'^parte\s+[ivx\d]+',    # Parte I, 1, etc
+        ]
+
+        # Check exact patterns
+        for pattern in chapter_patterns:
+            if re.match(pattern, title_lower):
+                return True
+
+        # Check if it contains chapter keywords
+        if re.search(r'\bcapítulo\s+[ivx\d]+\b', title_lower):
+            return True
+
+        return False
+
     def _extract_real_chapters_from_division(self, html_content: str, text_content: str, division_title: str) -> List[Tuple[str, str]]:
         """Extract real chapters from a book division that has minimal direct content"""
         
