@@ -53,7 +53,7 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
-            max_parallel=3
+            parallel=None
         )
         
         result = self.app.run(args)
@@ -82,7 +82,7 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
-            max_parallel=3
+            parallel=None
         )
         
         result = self.app.run(args)
@@ -109,7 +109,7 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir="test_output",
             filter_chapters=False,
-            max_parallel=3
+            parallel=None
         )
         
         with patch.object(self.app, '_create_config_from_args') as mock_config:
@@ -136,14 +136,15 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
-            max_parallel=3
+            parallel=None,
+            menu=True
         )
-        
+
         with patch.object(self.app.menu, 'get_conversion_config') as mock_menu:
             mock_menu.return_value = None  # User cancelled
-            
+
             result = self.app.run(args)
-            
+
             self.assertEqual(result, 1)
             mock_menu.assert_called_once_with(mock_reader_instance)
 
@@ -158,7 +159,7 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir="test_output",
             filter_chapters=True,
-            max_parallel=5
+            parallel=5
         )
         
         with patch.object(self.app.config, 'create_conversion_config') as mock_create:
@@ -173,8 +174,8 @@ class TestConverterApplication(unittest.TestCase):
                 model=None,
                 output_dir="test_output",
                 book_title="Test Book",
-                preserve_all=False,  # Inverted from filter_chapters
-                max_parallel=5
+                preserve_all_chapters=False,  # Inverted from filter_chapters
+                parallel=5
             )
 
     def test_run_with_exception(self):
@@ -187,7 +188,7 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
-            max_parallel=3
+            parallel=None
         )
         
         with patch('main.EbookReader') as mock_reader:

@@ -7,20 +7,36 @@ Reduced from 564 to ~100 lines while maintaining all functionality
 
 import argparse
 import asyncio
+import re
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from urllib.parse import unquote
+from typing import Dict, List, Optional, Tuple
 
 # Local imports  
-from src.ebook_reader import EbookReader
-from src.converter import AudioConverter
+from src.ebook_reader import EbookReader, Chapter
+from src.converter import AudioConverter, ConversionResult
 from src.ui.menu import MenuInterface
 from src.config import AppConfig
 
 
+@dataclass
+class ChapterStructureItem:
+    chapter: Chapter
+    index: str
+    main_title: Optional[str]
+    sub_title: Optional[str]
+    preview: Optional[str]
+    display_name: str
+    text_override: Optional[str] = None
+
+
 class ConverterApplication:
     """Main application class following SRP"""
-    
+
+    PREVIEW_WORD_LIMIT = 30
+
     def __init__(self):
         self.config = AppConfig()
         self.menu = MenuInterface()
@@ -42,45 +58,989 @@ class ConverterApplication:
                 self._show_structure(reader)
                 return 0
             
+            # Prepare structured chapters for conversion
+            structure_items = self._generate_structure_items(reader)
+            self._apply_structure_to_reader(reader, structure_items)
+            
             # Configure conversion
             config = self._get_conversion_config(args, reader)
             if not config:
                 return 1
                 
             # Convert
-            return asyncio.run(self.converter.convert(reader, config))
-            
+            result = asyncio.run(self.converter.convert(reader, config))
+
+            if isinstance(result, ConversionResult):
+                return 0 if result.success else 1
+            if isinstance(result, int):
+                return result
+            if isinstance(result, bool):
+                return 0 if result else 1
+            return 0
+
         except Exception as e:
             print(f"❌ Error: {e}")
             return 1
     
+    def _generate_structure_items(self, reader: EbookReader) -> List[ChapterStructureItem]:
+        """Prepare structured information for chapters shared across features"""
+
+        try:
+            chapters = list(reader.get_chapters())
+        except TypeError:
+            return []
+
+        if not chapters:
+            return []
+
+        book_title = reader.title
+        toc_map = self._build_toc_map(reader)
+
+        structure_items: List[ChapterStructureItem] = []
+        division_counters: Dict[int, int] = {}
+        fallback_division = 0
+        fallback_counter = 0
+        fallback_label: Optional[str] = None
+
+        division_remap: Dict[int, int] = {}
+        next_division_index = 1
+
+        def remap_division(original: Optional[int]) -> int:
+            nonlocal next_division_index
+            if original is None or original <= 0:
+                value = next_division_index
+                next_division_index += 1
+                return value
+            if original not in division_remap:
+                division_remap[original] = next_division_index
+                next_division_index += 1
+            return division_remap[original]
+
+        def allocate_division() -> int:
+            nonlocal next_division_index
+            value = next_division_index
+            next_division_index += 1
+            return value
+
+        for i, chapter in enumerate(chapters):
+            if self._should_skip_chapter(chapters, i, toc_map):
+                continue
+
+            href_key = self._normalize_href(str(getattr(chapter, 'source_path', '')))
+            toc_entries = self._resolve_toc_entries(href_key, toc_map)
+
+            if toc_entries:
+                generated_items = self._create_items_from_toc_entries(
+                    chapter,
+                    toc_entries,
+                    book_title,
+                    division_counters,
+                    remap_division
+                )
+
+                if generated_items:
+                    structure_items.extend(generated_items)
+
+                    last_item = generated_items[-1]
+                    try:
+                        division_index = int(str(last_item.index).split('.', 1)[0])
+                    except (ValueError, TypeError):
+                        division_index = fallback_division
+
+                    fallback_division = division_index
+                    fallback_counter = division_counters.get(division_index, fallback_counter)
+                    fallback_label = last_item.main_title
+                    continue
+
+            toc_entry = self._select_toc_entry(toc_entries)
+
+            clean_name = self._clean_chapter_name(str(getattr(chapter, 'name', "")))
+
+            try:
+                raw_index, main_name, sub_name, first_words = self._format_chapter_display(
+                    chapter,
+                    chapters,
+                    i,
+                    book_title
+                )
+            except Exception:
+                text = str(getattr(chapter, 'text', ''))
+                raw_index = self._format_index_value(chapter, i)
+                main_name = self._clean_chapter_name(str(getattr(chapter, 'name', f"Chapter {i + 1}")))
+                sub_name = None
+                first_words = self._extract_first_words(text, self.PREVIEW_WORD_LIMIT)
+
+            if toc_entry:
+                division_index, division_label, child_title = toc_entry
+                division_index = remap_division(division_index)
+                division_counters.setdefault(division_index, 0)
+
+                if child_title:
+                    division_counters[division_index] += 1
+                    index = f"{division_index}.{division_counters[division_index]}"
+                    main_name = division_label
+                    sub_name = child_title
+                else:
+                    division_counters[division_index] = 0
+                    index = f"{division_index}.0"
+                    main_name = division_label
+                    sub_name = None
+
+                fallback_division = division_index
+                fallback_counter = division_counters[division_index]
+                fallback_label = division_label
+
+                preview = self._extract_smart_first_words(
+                    str(getattr(chapter, 'text', '')),
+                    clean_name,
+                    division_label,
+                    max_words=self.PREVIEW_WORD_LIMIT
+                )
+                if preview:
+                    first_words = preview
+            else:
+                is_division = self._is_division_candidate(chapter, chapters, i)
+                if fallback_division == 0 or is_division:
+                    fallback_division = allocate_division()
+                    division_counters[fallback_division] = 0
+                    fallback_counter = 0
+                    index = f"{fallback_division}.0"
+                    fallback_label = main_name or fallback_label
+                    main_name = fallback_label or main_name
+                    sub_name = None
+                else:
+                    fallback_counter += 1
+                    division_counters[fallback_division] = fallback_counter
+                    index = f"{fallback_division}.{fallback_counter}"
+                    if fallback_label:
+                        if main_name and main_name.lower() != fallback_label.lower():
+                            sub_name = sub_name or main_name
+                        main_name = fallback_label
+
+            main_name, sub_name, first_words = self._sanitize_display_values(
+                main_name,
+                sub_name,
+                first_words,
+                book_title
+            )
+
+            first_words = self._remove_duplicate_prefix(first_words, main_name, sub_name)
+
+            display_name = index
+            ordered_values = [value for value in (main_name, sub_name, first_words) if value]
+
+            for idx_value, value in enumerate(ordered_values):
+                separator = " - "
+                if idx_value == len(ordered_values) - 1 and value[:1].islower():
+                    separator = " "
+                if value[:1] in {',', ';', ':', '.', '!', '?'}:
+                    separator = " "
+
+                if separator == " ":
+                    display_name = f"{display_name} {value}"
+                else:
+                    display_name = f"{display_name}{separator}{value}"
+
+            structure_items.append(
+                ChapterStructureItem(
+                    chapter=chapter,
+                    index=index,
+                    main_title=main_name,
+                    sub_title=sub_name,
+                    preview=first_words,
+                    display_name=display_name
+                )
+            )
+
+        return structure_items
+
+    def _create_items_from_toc_entries(
+        self,
+        chapter: Chapter,
+        toc_entries: List[Tuple[int, str, Optional[str]]],
+        book_title: str,
+        division_counters: Dict[int, int],
+        remap_division
+    ) -> List[ChapterStructureItem]:
+        """Expand a chapter into structure items using TOC anchors"""
+
+        if not toc_entries:
+            return []
+
+        text = str(getattr(chapter, "text", ""))
+
+        entries_with_titles = [entry for entry in toc_entries if entry[2]]
+        segments_map: Dict[str, str] = {}
+
+        if entries_with_titles:
+            titles = [entry[2] for entry in entries_with_titles]
+            segments = self._split_text_by_titles(text, titles)
+            for entry, segment in zip(entries_with_titles, segments):
+                if segment:
+                    segments_map[entry[2]] = segment
+
+        parent_title: Optional[str] = None
+        items: List[ChapterStructureItem] = []
+
+        for division_index, division_label, child_title in toc_entries:
+            normalized_division = remap_division(division_index)
+            division_counters.setdefault(normalized_division, 0)
+
+            if child_title:
+                division_counters[normalized_division] += 1
+                index = f"{normalized_division}.{division_counters[normalized_division]}"
+            else:
+                division_counters[normalized_division] = 0
+                index = f"{normalized_division}.0"
+
+            if child_title and not parent_title and not child_title.strip().startswith('§'):
+                parent_title = child_title.strip()
+
+            segment_text = segments_map.get(child_title) if child_title else text
+            if not segment_text:
+                segment_text = text
+
+            clean_name = self._clean_chapter_name(child_title or getattr(chapter, 'name', ''))
+            main_name = division_label or clean_name
+            sub_name = child_title if child_title else None
+
+            if parent_title and child_title and child_title.strip().startswith('§'):
+                sub_name = f"{parent_title} - {child_title.strip()}"
+
+            preview = self._extract_smart_first_words(
+                segment_text,
+                clean_name,
+                division_label,
+                max_words=self.PREVIEW_WORD_LIMIT
+            ) if child_title else self._extract_first_words(segment_text, self.PREVIEW_WORD_LIMIT)
+
+            main_name, sub_name, preview = self._sanitize_display_values(
+                main_name,
+                sub_name,
+                preview,
+                book_title
+            )
+
+            preview = self._remove_duplicate_prefix(preview, main_name, sub_name)
+
+            display_name = index
+            ordered_values = [value for value in (main_name, sub_name, preview) if value]
+            for idx_value, value in enumerate(ordered_values):
+                separator = " - "
+                if idx_value == len(ordered_values) - 1 and value[:1].islower():
+                    separator = " "
+                if value[:1] in {',', ';', ':', '.', '!', '?'}:
+                    separator = " "
+
+                if separator == " ":
+                    display_name = f"{display_name} {value}"
+                else:
+                    display_name = f"{display_name}{separator}{value}"
+
+            items.append(
+                ChapterStructureItem(
+                    chapter=chapter,
+                    index=index,
+                    main_title=main_name,
+                    sub_title=sub_name,
+                    preview=preview,
+                    display_name=display_name,
+                    text_override=segment_text
+                )
+            )
+
+        return items
+
+    def _split_text_by_titles(self, text: str, titles: List[str]) -> List[str]:
+        """Split chapter text according to the provided titles"""
+
+        if not titles:
+            return []
+
+        lowered = text.lower()
+        positions: List[int] = []
+        cursor = 0
+
+        for title in titles:
+            if not title:
+                positions.append(-1)
+                continue
+
+            normalized = re.sub(r"\s+", " ", title.strip().lower())
+            idx = lowered.find(normalized, cursor)
+
+            if idx == -1:
+                idx = lowered.find(normalized)
+
+            if idx == -1 and normalized.startswith('§'):
+                section_marker = normalized.split(' ', 1)[0]
+                idx = lowered.find(section_marker, cursor)
+                if idx == -1:
+                    idx = lowered.find(section_marker)
+
+            positions.append(idx)
+
+            if idx != -1:
+                cursor = idx + 1
+
+        starts: List[int] = []
+        last_valid = 0
+        for pos in positions:
+            if pos is None or pos < 0:
+                starts.append(last_valid)
+            else:
+                starts.append(pos)
+                last_valid = pos
+
+        for idx in range(1, len(starts)):
+            if starts[idx] < starts[idx - 1]:
+                starts[idx] = starts[idx - 1]
+
+        segments: List[str] = []
+        for idx, start in enumerate(starts):
+            end = starts[idx + 1] if idx + 1 < len(starts) else len(text)
+            segments.append(text[start:end].strip())
+
+        return segments
+
+    def _apply_structure_to_reader(
+        self,
+        reader: EbookReader,
+        structure_items: List[ChapterStructureItem]
+    ) -> None:
+        """Replace reader chapters with structured output for conversion"""
+
+        if not reader.book:
+            return
+
+        new_chapters: List[Chapter] = []
+        for item in structure_items:
+            chapter = item.chapter
+            new_chapters.append(
+                Chapter(
+                    index=item.index,
+                    name=item.display_name,
+                    source_path=chapter.source_path,
+                    text=item.text_override if item.text_override is not None else chapter.text,
+                    level=getattr(chapter, 'level', 1)
+                )
+            )
+
+        reader.book.chapters = new_chapters
+
     def _show_structure(self, reader: EbookReader):
         """Display book structure"""
         print(f"📚 {reader.title}")
         print(f"👤 {reader.author}")
-        print(f"📄 {len(reader.get_chapters())} chapters")
-        
-        for chapter in reader.get_chapters():
-            print(f"  {chapter.index:>4}. {chapter.name} ({len(chapter.text)} chars)")
-    
+        structure_items = self._generate_structure_items(reader)
+        print(f"📄 {len(structure_items)} chapters")
+
+        for item in structure_items:
+            text_source = item.text_override if item.text_override is not None else getattr(item.chapter, 'text', '')
+            text_length = len(str(text_source))
+            print(f"  {item.display_name} ({text_length} chars)")
+
+    def _should_skip_chapter(
+        self,
+        chapters: List[Chapter],
+        index: int,
+        toc_map: Dict[str, List[Tuple[int, str, Optional[str]]]]
+    ) -> bool:
+        """Heuristically skip duplicate heading fragments that lack TOC links"""
+
+        if index < 0 or index >= len(chapters):
+            return True
+
+        chapter = chapters[index]
+        href_key = self._normalize_href(str(getattr(chapter, 'source_path', '')))
+        if self._resolve_toc_entries(href_key, toc_map):
+            return False
+
+        text = str(getattr(chapter, 'text', '')).strip()
+        if not text:
+            return True
+
+        if len(text) < 500:
+            return True
+
+        if len(text) <= 12:
+            return True
+
+        source_path = str(getattr(chapter, 'source_path', '')).lower()
+        if "_split_000" in source_path and len(text) < 400:
+            return True
+
+        clean_name = self._clean_chapter_name(str(getattr(chapter, 'name', '')))
+
+        if len(text) <= 120:
+            if self._is_heading_like(clean_name):
+                return True
+
+            next_chapter = chapters[index + 1] if index + 1 < len(chapters) else None
+            if next_chapter:
+                next_key = self._normalize_href(str(getattr(next_chapter, 'source_path', '')))
+                if self._resolve_toc_entries(next_key, toc_map):
+                    next_name = self._clean_chapter_name(str(getattr(next_chapter, 'name', '')))
+                    if next_name:
+                        stem_current = self._heading_stem(clean_name)
+                        stem_next = self._heading_stem(next_name)
+                        if stem_current and stem_next and (
+                            stem_current in stem_next or stem_next in stem_current
+                        ):
+                            return True
+
+        return False
+
+    def _is_heading_like(self, name: str) -> bool:
+        if not name:
+            return False
+        lowered = name.lower()
+        keywords = (
+            "capítulo",
+            "capitulo",
+            "livro",
+            "prefácio",
+            "prefacio",
+            "posfácio",
+            "posfacio",
+            "post-scriptum",
+            "post scriptum",
+            "pos-scriptum",
+            "imagem",
+        )
+        return any(keyword in lowered for keyword in keywords)
+
+    def _heading_stem(self, name: str) -> str:
+        if not name:
+            return ""
+        lowered = name.lower()
+        lowered = re.sub(r"cap[íi]tulo\s*\d+", "", lowered)
+        lowered = re.sub(r"livro\s*[ivx0-9]+", "", lowered)
+        lowered = lowered.replace("post-scriptum", "")
+        lowered = lowered.replace("post scriptum", "")
+        lowered = lowered.replace("pos-scriptum", "")
+        lowered = lowered.replace("prefácio", "")
+        lowered = lowered.replace("prefacio", "")
+        lowered = lowered.replace("posfácio", "")
+        lowered = lowered.replace("posfacio", "")
+        lowered = lowered.replace("imagem", "")
+        lowered = lowered.replace("§", " ")
+        lowered = re.sub(r"\s+", " ", lowered)
+        return lowered.strip()
+
+    def _build_toc_map(self, reader: EbookReader) -> Dict[str, List[Tuple[int, str, Optional[str]]]]:
+        mapping: Dict[str, List[Tuple[int, str, Optional[str]]]] = {}
+        get_toc = getattr(reader, 'get_toc', None)
+        if not callable(get_toc):
+            return mapping
+
+        try:
+            toc_entries = list(get_toc())
+        except Exception:
+            return mapping
+
+        counter = 0
+
+        def walk(entries, parent: Optional[Tuple[int, str]] = None):
+            nonlocal counter
+            for entry in entries:
+                href = self._normalize_href(entry.href)
+                title = entry.title.strip() if entry.title else ''
+                if parent is None:
+                    counter += 1
+                    division_index = counter
+                    division_title = title
+                    if href:
+                        mapping.setdefault(href, []).append((division_index, division_title, None))
+                        alt_key = Path(href).name
+                        if alt_key and alt_key != href:
+                            alt_key_lower = alt_key.lower()
+                            mapping.setdefault(alt_key_lower, []).append((division_index, division_title, None))
+                    walk(entry.children, (division_index, division_title))
+                else:
+                    division_index, division_title = parent
+                    if href:
+                        mapping.setdefault(href, []).append((division_index, division_title, title))
+                        alt_key = Path(href).name
+                        if alt_key and alt_key != href:
+                            alt_key_lower = alt_key.lower()
+                            mapping.setdefault(alt_key_lower, []).append((division_index, division_title, title))
+                    walk(entry.children, parent)
+
+        walk(toc_entries)
+        return mapping
+
+    @staticmethod
+    def _select_toc_entry(entries: Optional[List[Tuple[int, str, Optional[str]]]]) -> Optional[Tuple[int, str, Optional[str]]]:
+        if not entries:
+            return None
+        for entry in entries:
+            if entry[2]:
+                return entry
+        return entries[0]
+
+    @staticmethod
+    def _normalize_href(href: str) -> str:
+        if not href:
+            return ""
+        base = href.split('#', 1)[0]
+        normalized = base.lstrip('./')
+        normalized = normalized.strip()
+        normalized = unquote(normalized)
+        return normalized.lower()
+
+    def _resolve_toc_entries(
+        self,
+        href_key: str,
+        toc_map: Dict[str, List[Tuple[int, str, Optional[str]]]]
+    ) -> Optional[List[Tuple[int, str, Optional[str]]]]:
+        if not href_key:
+            return None
+
+        candidates = []
+        lowered = href_key.lower()
+        candidates.append(lowered)
+
+        if '/' in lowered:
+            parts = lowered.split('/')
+            for start in range(1, len(parts)):
+                candidates.append('/'.join(parts[start:]))
+
+        candidates.append(Path(lowered).name)
+
+        seen = set()
+        for candidate in candidates:
+            candidate = candidate.strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            entries = toc_map.get(candidate)
+            if entries:
+                return entries
+        return None
+
+    def _clean_chapter_name(self, name: str) -> str:
+        """Clean up chapter name to avoid redundancy"""
+        if not name:
+            return ""
+
+        import re
+        # Remove redundant patterns like "0.7 -  - Livro primeiro - livro primeiro DUNA"
+        # Split by " - " and remove empty parts and redundant parts
+        parts = [part.strip() for part in name.split(" - ") if part.strip()]
+
+        cleaned_parts = []
+        seen_parts = set()
+
+        for part in parts:
+            # Skip parts that look like indices (e.g., "0.7", "1.0")
+            if re.match(r'^\d+\.\d+$', part):
+                continue
+            # Skip empty or very short parts (but allow single characters for important parts)
+            if len(part) == 0:
+                continue
+            if len(part) == 1 and part in ['@', '#', '*', '-']:
+                continue
+            # Skip parts that are duplicates (case-insensitive)
+            part_lower = part.lower()
+            if part_lower not in seen_parts:
+                seen_parts.add(part_lower)
+                cleaned_parts.append(part)
+
+        # Final cleanup for specific redundancies
+        result = " - ".join(cleaned_parts) if cleaned_parts else name
+
+        # Remove specific redundancies like "Livro primeiro - livro primeiro DUNA"
+        if "Livro primeiro" in result and "livro primeiro" in result.lower():
+            # Keep only the properly capitalized version
+            result = re.sub(r' - livro primeiro.*?$', '', result, flags=re.IGNORECASE)
+
+        return result
+
+    def _is_main_division(self, name: str) -> bool:
+        """Check if this is a main division (like Livro primeiro, Capítulo X)"""
+        if not name:
+            return False
+
+        import re
+        name_lower = name.lower()
+
+        # Look for book divisions
+        division_patterns = [
+            r'livro\s+(primeiro|segundo|terceiro|quarto|quinto)',
+            r'livro\s+[ivx]+',
+            r'book\s+(first|second|third|fourth|fifth)',
+            r'book\s+[ivx]+',
+            r'parte\s+[ivx\d]+',
+            r'seção\s+[ivx\d]+',
+            r'capítulo\s+\d+',  # Capítulo 1, 2, etc.
+            r'chapter\s+\d+',   # Chapter 1, 2, etc.
+        ]
+
+        for pattern in division_patterns:
+            if re.search(pattern, name_lower):
+                return True
+
+        return False
+
+    def _clean_main_division_name(self, name: str) -> str:
+        """Clean up main division name to remove redundancy"""
+        if not name:
+            return name
+
+        import re
+        # For "Livro primeiro - livro primeiro DUNA", keep just "Livro primeiro"
+        parts = [part.strip() for part in name.split(" - ") if part.strip()]
+
+        # Find the best representative part
+        best_part = ""
+        for part in parts:
+            part_lower = part.lower()
+            if (re.search(r'livro\s+(primeiro|segundo|terceiro)', part_lower) or
+                re.search(r'capítulo\s+\d+', part_lower)):
+                # Prefer the capitalized version
+                if part[0].isupper():
+                    best_part = part
+                elif not best_part:
+                    best_part = part
+
+        return best_part if best_part else parts[0] if parts else name
+
+    def _remove_redundant_main_name(self, chapter_name: str, main_name: str) -> str:
+        """Remove redundant main name from chapter name"""
+        if not chapter_name or not main_name:
+            return chapter_name
+
+        # Remove main name parts from chapter name
+        main_lower = main_name.lower()
+        parts = [part.strip() for part in chapter_name.split(" - ") if part.strip()]
+
+        # Filter out parts that are redundant with main name
+        filtered_parts = []
+        for part in parts:
+            part_lower = part.lower()
+            if part_lower != main_lower and main_lower not in part_lower:
+                filtered_parts.append(part)
+
+        return " - ".join(filtered_parts) if filtered_parts else chapter_name
+
+    def _is_division_candidate(self, chapter, chapters, index) -> bool:
+        text = str(getattr(chapter, 'text', '')).strip()
+        if index < 3:
+            return False
+        if len(text) > 400:
+            return False
+        if index + 1 >= len(chapters):
+            return False
+        next_text = str(getattr(chapters[index + 1], 'text', '')).strip()
+        return len(next_text) > 1500
+
+    def _is_substantial_chapter(self, text: str) -> bool:
+        """Check if chapter has substantial content"""
+        return len(text.strip()) > 5000  # At least 5000 characters
+
+    def _find_main_chapter_for(self, chapters, current_index):
+        """Find the main chapter number this subchapter belongs to"""
+        # Look backwards for the last main division
+        main_counter = 0
+        for i in range(current_index):
+            chapter = chapters[i]
+            clean_name = self._clean_chapter_name(chapter.name)
+            if self._is_main_division(clean_name) and len(chapter.text.strip()) >= 10:
+                main_counter += 1
+
+        return main_counter if main_counter > 0 else 1
+
+    def _count_subchapters_before(self, chapters, current_index, main_chapter_num):
+        """Count how many subchapters exist before this one for the same main chapter"""
+        # Find the start index of this main chapter
+        main_counter = 0
+        main_start_index = 0
+
+        for i in range(current_index):
+            chapter = chapters[i]
+            clean_name = self._clean_chapter_name(chapter.name)
+            if self._is_main_division(clean_name) and len(chapter.text.strip()) >= 10:
+                main_counter += 1
+                if main_counter == main_chapter_num:
+                    main_start_index = i
+                    break
+
+        # Count substantial subchapters between main chapter and current
+        subchapter_count = 1
+        for i in range(main_start_index + 1, current_index):
+            chapter = chapters[i]
+            if self._is_substantial_chapter(chapter.text):
+                subchapter_count += 1
+
+        return subchapter_count
+
+    def _get_main_chapter_name(self, chapters, main_chapter_num):
+        """Get the name of the main chapter by number"""
+        main_counter = 0
+        for chapter in chapters:
+            clean_name = self._clean_chapter_name(chapter.name)
+            if self._is_main_division(clean_name) and len(chapter.text.strip()) >= 10:
+                main_counter += 1
+                if main_counter == main_chapter_num:
+                    return clean_name
+        return None
+
+    def _extract_first_words(self, text: str, max_words: int = PREVIEW_WORD_LIMIT) -> str:
+        """Extract first words from text content"""
+        if not text or not text.strip():
+            return ""
+
+        import re
+        clean_text = re.sub(r'\s+', ' ', text.strip())
+        words = clean_text.split()[:max_words]
+        return ' '.join(words)
+
+    def _extract_smart_first_words(self, text: str, clean_name: str, main_div_name: str, max_words: int = 15) -> str:
+        """Extract first words avoiding repetition of chapter/section titles"""
+        if not text or not text.strip():
+            return ""
+
+        import re
+        clean_text = re.sub(r'\s+', ' ', text.strip())
+
+        # Remove common patterns that repeat the title information
+        patterns_to_remove = []
+
+        # Add patterns based on clean_name
+        if clean_name:
+            # Remove exact matches
+            patterns_to_remove.append(re.escape(clean_name.lower()))
+
+            # Extract key parts of the clean name for removal
+            if "§" in clean_name:
+                # For sections like "§1 Introdução", remove both "introdução" and section references
+                section_parts = clean_name.split()
+                for part in section_parts:
+                    if len(part) > 3 and part not in ["§1", "§2", "§3", "§4", "§5"]:
+                        patterns_to_remove.append(re.escape(part.lower()))
+
+            if "Capítulo" in clean_name:
+                # Remove "capítulo X" references
+                patterns_to_remove.append(r'capítulo\s+\d+')
+
+        # Always strip generic "capitulo X" patterns from previews
+        patterns_to_remove.append(r'cap[íi]tulo\s+\d+')
+
+        # Add patterns based on main_div_name
+        if main_div_name:
+            patterns_to_remove.append(re.escape(main_div_name.lower()))
+
+        # Clean the text by removing these patterns
+        text_lower = clean_text.lower()
+        for pattern in patterns_to_remove:
+            if pattern:
+                text_lower = re.sub(pattern, '', text_lower, flags=re.IGNORECASE)
+
+        # Clean up extra spaces and get the result
+        text_lower = re.sub(r'\s+', ' ', text_lower.strip())
+
+        # If we removed too much, fall back to original approach
+        if len(text_lower.strip()) < 10:
+            return self._extract_first_words(clean_text, max_words)
+
+        # Extract words from cleaned text
+        words = text_lower.split()[:max_words]
+        result = ' '.join(words)
+
+        # Capitalize first letter
+        if result:
+            result = result[0].upper() + result[1:] if len(result) > 1 else result.upper()
+
+        return result if result else self._extract_first_words(clean_text, max_words)
+
+    def _sanitize_first_words(self, first_words: str, *phrases: str) -> str:
+        """Remove redundant leading phrases from extracted first words"""
+        if not first_words:
+            return ""
+
+        cleaned = first_words.strip()
+        if not cleaned:
+            return ""
+
+        import re
+
+        for phrase in phrases:
+            if not phrase:
+                continue
+            phrase_clean = phrase.strip()
+            if not phrase_clean:
+                continue
+
+            pattern = rf'^{re.escape(phrase_clean)}[\s\-–—,:;]*'
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+        return cleaned.strip(" -—–,:;!?\"'()[]{}")
+
+    def _sanitize_display_values(self, main_name, sub_name, first_words, book_title):
+        """Clean display values to avoid repeating the book title or duplicates"""
+
+        book_title_clean = (book_title or "").strip()
+
+        def cleanse(value: Optional[str]) -> str:
+            if not value:
+                return ""
+            cleaned = str(value).strip()
+            if not cleaned:
+                return ""
+            if book_title_clean and cleaned.lower() == book_title_clean.lower():
+                return ""
+            if book_title_clean:
+                pattern = re.compile(re.escape(book_title_clean), re.IGNORECASE)
+                cleaned = pattern.sub("", cleaned).strip(" -–—,:;")
+            return cleaned
+
+        main = cleanse(main_name)
+        sub = cleanse(sub_name)
+        first = cleanse(first_words)
+
+        seen = set()
+
+        def unique(value: str) -> str:
+            if not value:
+                return ""
+            lowered = value.lower()
+            if lowered in seen:
+                return ""
+            seen.add(lowered)
+            return value
+
+        main = unique(main)
+        sub = unique(sub)
+        first = unique(first)
+
+        def normalise_case(value: Optional[str]) -> Optional[str]:
+            if not value:
+                return value
+            stripped = value.strip()
+            if not stripped:
+                return None
+            if stripped.lower() == stripped:
+                return stripped[:1].upper() + stripped[1:]
+            return stripped
+
+        main = normalise_case(main)
+        sub = normalise_case(sub)
+        first = normalise_case(first)
+
+        return (main or None, sub or None, first or None)
+
+    def _remove_duplicate_prefix(self, preview: Optional[str], *references: Optional[str]):
+        if not preview:
+            return None
+
+        cleaned = preview.strip()
+        for ref in references:
+            if not ref:
+                continue
+            ref_clean = str(ref).strip()
+            if not ref_clean:
+                continue
+            if cleaned.lower().startswith(ref_clean.lower()):
+                cleaned = cleaned[len(ref_clean):].strip(" -–—,:;")
+
+        return cleaned or None
+
+    def _parse_leading_number(self, raw_index: str) -> Optional[int]:
+        try:
+            token = str(raw_index).split('.')[0]
+            return int(float(token))
+        except Exception:
+            return None
+
+    def _parse_leading_number(self, raw_index: str) -> Optional[int]:
+        try:
+            token = str(raw_index).split('.')[0]
+            return int(float(token))
+        except Exception:
+            return None
+
+    def _format_chapter_display(self, chapter, chapters, current_index, book_title):
+        """Format chapter display generically without book-specific rules"""
+
+        text = str(getattr(chapter, 'text', ""))
+        name = str(getattr(chapter, 'name', "")).strip()
+
+        if len(text.strip()) < 5 and not name:
+            return None
+
+        index = self._format_index_value(chapter, current_index)
+        clean_name = self._clean_chapter_name(name)
+        preview = self._extract_first_words(text, self.PREVIEW_WORD_LIMIT)
+
+        main_name, sub_name, preview = self._sanitize_display_values(
+            clean_name,
+            None,
+            preview,
+            book_title
+        )
+
+        label = self._detect_section_label(clean_name, text, current_index)
+        if label:
+            main_name = label
+
+        if not any((main_name, sub_name, preview)):
+            fallback_preview = self._extract_first_words(text, min(self.PREVIEW_WORD_LIMIT, 20))
+            main_name = clean_name or fallback_preview or f"Chapter {current_index + 1}"
+            sub_name = None
+            preview = None
+
+        preview = self._remove_duplicate_prefix(preview, main_name, sub_name)
+
+        return (index, main_name, sub_name, preview)
+
+    def _detect_section_label(self, clean_name: str, text: str, position: int) -> Optional[str]:
+        lower_name = (clean_name or "").lower()
+        lower_text = (text or "").lower()
+
+        if position <= 5:
+            if any(keyword in lower_name or keyword in lower_text for keyword in ('sumário', 'sumario')):
+                labels = []
+                if 'sumário' in lower_name or 'sumario' in lower_name or 'sumário' in lower_text or 'sumario' in lower_text:
+                    labels.append('Sumário')
+                if 'capa' in lower_name or 'capa' in lower_text:
+                    labels.append('Capa')
+                if 'folha de rosto' in lower_name or 'folha de rosto' in lower_text:
+                    labels.append('Folha de rosto')
+                return '/'.join(labels) if labels else 'Sumário'
+            if any(keyword in lower_name for keyword in ('introdu', 'prefácio')) or \
+               any(keyword in lower_text for keyword in ('introdu', 'prefácio')) or \
+               (len(lower_text) > 800 and 'capítulo' not in lower_text and 'dedic' not in lower_text):
+                return 'Introdução'
+            if 'dedic' in lower_name or 'dedic' in lower_text:
+                return 'Dedicatória'
+
+        return None
+
+    def _format_index_value(self, chapter, position):
+        raw_index = getattr(chapter, 'index', None)
+        if isinstance(raw_index, str) and raw_index.strip():
+            return raw_index.strip()
+        if isinstance(raw_index, (int, float)):
+            return str(raw_index)
+        return str(position + 1)
+
     def _get_conversion_config(self, args: argparse.Namespace, reader: EbookReader):
         """Get conversion configuration"""
-        if args.engine:
-            # Command line configuration
-            return self._create_config_from_args(args, reader)
-        else:
-            # Interactive menu
+        if getattr(args, "menu", False):
             return self.menu.get_conversion_config(reader)
+        return self._create_config_from_args(args, reader)
     
     def _create_config_from_args(self, args: argparse.Namespace, reader: EbookReader):
         """Create config from command line arguments"""
         return self.config.create_conversion_config(
-            engine=args.engine,
+            engine=args.engine or "edge",
             voice=args.voice,
             model=args.model,
             output_dir=args.output_dir or "output",
             book_title=reader.title,
-            max_parallel=args.max_parallel
+            preserve_all_chapters=not getattr(args, 'filter_chapters', False),
+            parallel=args.parallel
         )
 
 
@@ -96,8 +1056,12 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", help="Output directory")
     parser.add_argument("--show-structure", action="store_true",
                        help="Show book structure and exit")
-    parser.add_argument("--max-parallel", type=int, default=3,
-                       help="Maximum parallel conversions (default: 3)")
+    parser.add_argument("--filter-chapters", action="store_true",
+                       help="Skip very short chapters when converting")
+    parser.add_argument("--parallel", type=int,
+                       help="Parallel chapter conversions (default: CPU count)")
+    parser.add_argument("--menu", action="store_true",
+                       help="Use interactive menu instead of CLI defaults")
     
     return parser
 

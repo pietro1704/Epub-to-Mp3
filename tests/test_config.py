@@ -9,9 +9,9 @@ import os
 from pathlib import Path
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from config_simple import ConversionConfig, AppConfig, VoiceConfigProvider
+from src.config import ConversionConfig, AppConfig, VoiceConfigProvider
 
 
 class TestConversionConfig(unittest.TestCase):
@@ -42,7 +42,7 @@ class TestConversionConfig(unittest.TestCase):
             bitrate="64k",
             sample_rate=44100,
             channels=2,
-            max_parallel=5,
+            parallel=5,
             force_reprocess=True
         )
         
@@ -55,7 +55,7 @@ class TestConversionConfig(unittest.TestCase):
         self.assertEqual(config.bitrate, "64k")
         self.assertEqual(config.sample_rate, 44100)
         self.assertEqual(config.channels, 2)
-        self.assertEqual(config.max_parallel, 5)
+        self.assertEqual(config.parallel, 5)
         self.assertTrue(config.force_reprocess)
 
     def test_config_defaults(self):
@@ -68,7 +68,7 @@ class TestConversionConfig(unittest.TestCase):
         self.assertEqual(config.channels, 1)
         
         # Processing defaults
-        self.assertEqual(config.max_parallel, 3)
+        self.assertEqual(config.parallel, 1)
         self.assertFalse(config.force_reprocess)
 
 
@@ -86,11 +86,13 @@ class TestAppConfig(unittest.TestCase):
     def test_create_conversion_config_minimal(self):
         """Test creating conversion config with minimal parameters"""
         config = self.config.create_conversion_config("edge")
-        
+
         self.assertIsInstance(config, ConversionConfig)
         self.assertEqual(config.engine, "edge")
-        self.assertIsNone(config.voice)
+        self.assertEqual(config.voice, "pt-BR-AntonioNeural")
         self.assertIsNone(config.model_path)
+        expected_parallel = max(os.cpu_count() or 1, 1)
+        self.assertEqual(config.parallel, expected_parallel)
 
     def test_create_conversion_config_with_voice(self):
         """Test creating conversion config with voice"""
@@ -245,14 +247,14 @@ class TestConstants(unittest.TestCase):
 
     def test_default_config(self):
         """Test default config constant"""
-        from config_simple import DEFAULT_CONFIG
+        from src.config import DEFAULT_CONFIG
         
         self.assertIsInstance(DEFAULT_CONFIG, ConversionConfig)
         self.assertEqual(DEFAULT_CONFIG.engine, "edge")
 
     def test_supported_formats(self):
         """Test supported formats constant"""
-        from config_simple import SUPPORTED_FORMATS
+        from src.config import SUPPORTED_FORMATS
         
         self.assertIsInstance(SUPPORTED_FORMATS, list)
         self.assertIn(".epub", SUPPORTED_FORMATS)
@@ -260,7 +262,7 @@ class TestConstants(unittest.TestCase):
 
     def test_audio_formats(self):
         """Test audio formats constant"""
-        from config_simple import AUDIO_FORMATS
+        from src.config import AUDIO_FORMATS
         
         self.assertIsInstance(AUDIO_FORMATS, list)
         self.assertIn("mp3", AUDIO_FORMATS)

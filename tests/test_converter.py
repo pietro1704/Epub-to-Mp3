@@ -11,11 +11,11 @@ from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from converter_simple import AudioConverter, ConversionResult, ChapterProcessor
-from config_simple import ConversionConfig
-from ebook_reader import Chapter
+from src.converter import AudioConverter, ConversionResult, ChapterProcessor
+from src.config import ConversionConfig
+from src.ebook_reader import Chapter
 
 
 class TestConversionResult(unittest.TestCase):
@@ -88,7 +88,7 @@ class TestAudioConverter(unittest.TestCase):
         
         self.assertEqual(output_dir, Path(self.temp_dir))
 
-    @patch('converter_simple.asyncio.gather')
+    @patch('src.converter.asyncio.gather')
     async def test_convert_chapters_success(self, mock_gather):
         """Test successful chapter conversion"""
         # Mock gather to return successful results
@@ -116,7 +116,7 @@ class TestAudioConverter(unittest.TestCase):
         self.assertEqual(len(result.output_files), 2)
         self.assertEqual(len(result.errors), 0)
 
-    @patch('converter_simple.asyncio.gather')
+    @patch('src.converter.asyncio.gather')
     async def test_convert_chapters_with_errors(self, mock_gather):
         """Test chapter conversion with errors"""
         # Mock gather to return mixed results
@@ -246,42 +246,40 @@ class TestAudioConverter(unittest.TestCase):
         # Should not raise exception
         self.converter._report_results(result)
 
-    @patch('converter_simple.asyncio.run')
-    async def test_convert_integration(self, mock_run):
+    async def test_convert_integration(self):
         """Test full convert method integration"""
-        mock_run.return_value = 0
-        
         with patch.object(self.converter, '_setup_output_directory') as mock_setup, \
              patch.object(self.converter.tts_factory, 'create_engine') as mock_create, \
              patch.object(self.converter, '_convert_chapters') as mock_convert, \
              patch.object(self.converter, '_report_results') as mock_report:
-            
+
             mock_setup.return_value = Path(self.temp_dir)
             mock_create.return_value = Mock()
-            mock_convert.return_value = ConversionResult(
-                success=True, total_chapters=2, converted_chapters=2, 
-                output_files=[], errors=[]
+            expected_result = ConversionResult(
+                success=True,
+                total_chapters=2,
+                converted_chapters=2,
+                output_files=[],
+                errors=[],
             )
-            
+            mock_convert.return_value = expected_result
+
             result = await self.converter.convert(self.mock_reader, self.config)
-            
-            self.assertEqual(result, 0)
+
+            self.assertIs(result, expected_result)
             mock_setup.assert_called_once()
             mock_create.assert_called_once()
             mock_convert.assert_called_once()
-            mock_report.assert_called_once()
+            mock_report.assert_called_once_with(expected_result)
 
-    @patch('converter_simple.asyncio.run')
-    async def test_convert_with_exception(self, mock_run):
-        """Test convert method with exception"""
-        mock_run.return_value = 1
-        
+    async def test_convert_with_exception(self):
+        """Test convert method propagates exceptions"""
+
         with patch.object(self.converter.tts_factory, 'create_engine') as mock_create:
             mock_create.side_effect = Exception("Test error")
-            
-            result = await self.converter.convert(self.mock_reader, self.config)
-            
-            self.assertEqual(result, 1)
+
+            with self.assertRaises(Exception):
+                await self.converter.convert(self.mock_reader, self.config)
 
 
 class TestChapterProcessor(unittest.TestCase):
