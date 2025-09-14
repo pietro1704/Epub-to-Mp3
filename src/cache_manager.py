@@ -13,7 +13,7 @@ from datetime import datetime
 class CacheManager:
     """Gerenciador de cache inteligente para ebooks"""
     
-    def __init__(self, cache_dir: Path = None):
+    def __init__(self, cache_dir: Optional[Path] = None):
         self.cache_dir = cache_dir or Path(".cache")
         self.cache_dir.mkdir(exist_ok=True)
     
@@ -89,45 +89,32 @@ class CacheManager:
             return False
     
     def _is_cache_valid(self, metadata: Dict[str, Any], ebook_path: Path) -> bool:
-        """Verifica se cache ainda é válido"""
+        """Valida se o cache ainda é válido"""
         try:
-            # Verifica se hash do arquivo ainda é o mesmo
-            current_hash = self._get_ebook_hash(ebook_path)
-            cached_hash = metadata.get('ebook_hash', '')
-            
-            return current_hash == cached_hash
-            
-        except Exception:
+            stat = ebook_path.stat()
+            return metadata.get("size") == stat.st_size and metadata.get("mtime") == stat.st_mtime
+        except FileNotFoundError:
             return False
     
-    def _cleanup_cache(self, cache_path: Path) -> None:
+    def _cleanup_cache(self, cache_path: Path):
         """Remove cache inválido"""
-        try:
-            import shutil
-            if cache_path.exists():
-                shutil.rmtree(cache_path)
-        except Exception:
-            pass
+        for item in cache_path.glob("*"):
+            item.unlink()
+        cache_path.rmdir()
     
-    def clear_cache(self, ebook_path: Path = None) -> bool:
-        """Limpa cache (específico ou todo)"""
-        try:
-            if ebook_path:
-                # Limpa cache específico
-                cache_path = self._get_cache_path(ebook_path)
+    def clear_cache(self, ebook_path: Optional[Path] = None) -> bool:
+        """Limpa o cache para um ebook específico ou todo o cache"""
+        if ebook_path:
+            cache_path = self._get_cache_path(ebook_path)
+            if cache_path.exists():
                 self._cleanup_cache(cache_path)
-            else:
-                # Limpa todo o cache
-                import shutil
-                if self.cache_dir.exists():
-                    shutil.rmtree(self.cache_dir)
-                    self.cache_dir.mkdir(exist_ok=True)
-            
+                return True
+        else:
+            for item in self.cache_dir.glob("*"):
+                if item.is_dir():
+                    self._cleanup_cache(item)
             return True
-            
-        except Exception as e:
-            print(f"⚠️  Erro ao limpar cache: {e}")
-            return False
+        return False
     
     def get_cache_info(self) -> Dict[str, Any]:
         """Retorna informações sobre o cache"""

@@ -33,8 +33,7 @@ class MenuInterface:
         return ConversionConfig(
             engine=engine,
             voice=voice,
-            book_title=reader.title,
-            preserve_all_chapters=True
+            book_title=reader.title
         )
     
     def _choose_engine(self) -> Optional[str]:
@@ -73,7 +72,7 @@ class MenuInterface:
             return voices[choice][0]
         
         # Default
-        return "pt-BR-FranciscaNeural"
+        return "pt-BR-AntonioNeural"
     
     def _choose_coqui_model(self) -> Optional[str]:
         """Choose Coqui model"""
