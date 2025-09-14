@@ -46,10 +46,63 @@ class TocEntry:
 
 class EbookReader:
     """Enhanced ebook reader with TOC support"""
-    
+
     def __init__(self, file_path: str):
         self.file_path = Path(file_path)
         self._book: Optional[Book] = None
+
+    def _is_content_file(self, href: str, media_type: str) -> bool:
+        """Check if a file should be processed as content (not CSS, images, etc.)"""
+        # Filter by file extension
+        href_lower = href.lower()
+        content_extensions = {'.html', '.xhtml', '.htm', '.xml'}
+        non_content_extensions = {'.css', '.js', '.jpg', '.jpeg', '.png', '.gif', '.svg',
+                                '.bmp', '.webp', '.woff', '.woff2', '.ttf', '.otf', '.eot'}
+
+        # Check file extension
+        for ext in non_content_extensions:
+            if href_lower.endswith(ext):
+                return False
+
+        # If it has a content extension, it's likely content
+        for ext in content_extensions:
+            if href_lower.endswith(ext):
+                break
+        else:
+            # No recognized content extension, check media type
+            if not media_type:
+                return False
+
+        # Filter by media type
+        content_media_types = {
+            'application/xhtml+xml',
+            'text/html',
+            'text/xml',
+            'application/xml'
+        }
+
+        non_content_media_types = {
+            'text/css',
+            'application/javascript',
+            'text/javascript',
+            'application/x-javascript',
+            'image/',  # Any image type
+            'font/',   # Any font type
+            'application/font'
+        }
+
+        if media_type:
+            # Check for non-content media types
+            for non_content in non_content_media_types:
+                if media_type.startswith(non_content):
+                    return False
+
+            # Check for content media types
+            if media_type in content_media_types:
+                return True
+
+        # Default: assume it's content if we can't determine otherwise
+        return True
         
     @property
     def title(self) -> str:
@@ -92,15 +145,32 @@ class EbookReader:
             for item_id in spine:
                 if item_id not in manifest:
                     continue
-                href = manifest[item_id]
+
+                item_info = manifest[item_id]
+                href = item_info['href']
+                media_type = item_info['media-type']
+
+                # Skip non-content files (CSS, images, etc.)
+                if not self._is_content_file(href, media_type):
+                    continue
+
                 full_path = f"{opf_dir}/{href}" if opf_dir else href
                 try:
                     with zf.open(full_path, 'r') as f:
                         html_content = f.read().decode('utf-8', errors='ignore')
                         text_content = self._html_to_text(html_content)
+
+                        # Skip files with minimal content (likely just navigation or empty pages)
+                        if len(text_content.strip()) < 100:
+                            continue
+
                         # Subcapítulos por quebra de página
                         subcap_parts = self._split_by_page_breaks(html_content, text_content)
                         for i, (sub_html, sub_text) in enumerate(subcap_parts):
+                            # Skip empty parts
+                            if len(sub_text.strip()) < 50:
+                                continue
+
                             # Título: do TOC se houver, senão primeiras palavras
                             if i == 0:
                                 base_title = toc_map.get(href, self._extract_first_words(sub_text, 8))
@@ -140,7 +210,7 @@ class EbookReader:
                 return name
         raise ValueError("OPF file not found")
     
-    def _parse_opf(self, zf: zipfile.ZipFile, opf_path: str) -> Tuple[Dict[str, str], List[str], str, str]:
+    def _parse_opf(self, zf: zipfile.ZipFile, opf_path: str) -> Tuple[Dict[str, Dict[str, str]], List[str], str, str]:
         opf_content = zf.read(opf_path).decode('utf-8', errors='ignore')
         root = ET.fromstring(opf_content)
         # Extract metadata with better title handling
@@ -155,13 +225,17 @@ class EbookReader:
             title = "Unknown"
         author_elem = root.find('.//{http://purl.org/dc/elements/1.1/}creator')
         author = author_elem.text.strip() if author_elem is not None and author_elem.text else "Unknown"
-        # Build manifest
+        # Build manifest with media-type information
         manifest = {}
         for item in root.findall('.//{http://www.idpf.org/2007/opf}item'):
             item_id = item.get('id')
             href = item.get('href')
+            media_type = item.get('media-type', '')
             if item_id and href:
-                manifest[item_id] = href
+                manifest[item_id] = {
+                    'href': href,
+                    'media-type': media_type
+                }
         # Build spine
         spine = []
         for item in root.findall('.//{http://www.idpf.org/2007/opf}itemref'):
@@ -170,20 +244,21 @@ class EbookReader:
                 spine.append(idref)
         return manifest, spine, title, author
     
-    def _parse_toc(self, zf: zipfile.ZipFile, manifest: Dict[str, str], opf_path: str) -> List[TocEntry]:
+    def _parse_toc(self, zf: zipfile.ZipFile, manifest: Dict[str, Dict[str, str]], opf_path: str) -> List[TocEntry]:
         """Parse EPUB TOC (table of contents)"""
         # Look for NCX file (traditional TOC)
         ncx_id = None
-        for item_id, href in manifest.items():
+        for item_id, item_info in manifest.items():
+            href = item_info['href']
             if href.endswith('.ncx'):
                 ncx_id = item_id
                 break
-        
+
         if ncx_id and ncx_id in manifest:
-            return self._parse_ncx_toc(zf, manifest[ncx_id], opf_path)
-        
+            return self._parse_ncx_toc(zf, manifest[ncx_id]['href'], opf_path)
+
         # Look for nav.xhtml (EPUB3 TOC)
-        nav_files = [href for href in manifest.values() if 'nav' in href.lower() and href.endswith('.xhtml')]
+        nav_files = [item_info['href'] for item_info in manifest.values() if 'nav' in item_info['href'].lower() and item_info['href'].endswith('.xhtml')]
         if nav_files:
             return self._parse_nav_toc(zf, nav_files[0], opf_path)
         
@@ -244,7 +319,7 @@ class EbookReader:
             print(f"Warning: Could not parse NAV TOC: {e}")
             return []
     
-    def _extract_chapters_from_toc(self, zf: zipfile.ZipFile, manifest: Dict[str, str], toc_entries: List[TocEntry], opf_path: str) -> List[Chapter]:
+    def _extract_chapters_from_toc(self, zf: zipfile.ZipFile, manifest: Dict[str, Dict[str, str]], toc_entries: List[TocEntry], opf_path: str) -> List[Chapter]:
         """Extract chapters based on TOC structure with direct numbering"""
         chapters = []
         opf_dir = '/'.join(opf_path.split('/')[:-1]) if '/' in opf_path else ''
@@ -285,8 +360,8 @@ class EbookReader:
 
         return chapters
     
-    def _extract_chapters_from_toc_with_spine_support(self, zf: zipfile.ZipFile, manifest: Dict[str, str], 
-                                                     spine: List[str], toc_entries: List[TocEntry], 
+    def _extract_chapters_from_toc_with_spine_support(self, zf: zipfile.ZipFile, manifest: Dict[str, Dict[str, str]],
+                                                     spine: List[str], toc_entries: List[TocEntry],
                                                      opf_path: str) -> List[Chapter]:
         """Extract chapters from TOC but use spine content when TOC entries are empty divisions"""
         chapters = []
@@ -365,7 +440,7 @@ class EbookReader:
         # Sort chapters numerically before returning
         return self._sort_chapters_numerically(chapters)
     
-    def _extract_chapters_from_spine(self, zf: zipfile.ZipFile, manifest: Dict[str, str], 
+    def _extract_chapters_from_spine(self, zf: zipfile.ZipFile, manifest: Dict[str, Dict[str, str]],
                                    spine: List[str], opf_path: str) -> List[Chapter]:
         """Fallback: extract chapters from spine order"""
         chapters = []
@@ -374,14 +449,21 @@ class EbookReader:
         for i, item_id in enumerate(spine):
             if item_id not in manifest:
                 continue
-                
-            href = manifest[item_id]
+
+            item_info = manifest[item_id]
+            href = item_info['href']
+            media_type = item_info['media-type']
+
+            # Skip non-content files
+            if not self._is_content_file(href, media_type):
+                continue
+
             full_path = f"{opf_dir}/{href}" if opf_dir else href
-            
+
             try:
                 content = zf.read(full_path).decode('utf-8', errors='ignore')
                 text = self._html_to_text(content)
-                if text.strip():
+                if text.strip() and len(text.strip()) > 100:
                     title = self._extract_title(content) or f"Chapter {i+1}"
                     chapters.append(Chapter(str(i+1), title, full_path, text))
             except:
@@ -632,8 +714,8 @@ class EbookReader:
         # Return results only if we found meaningful splits
         return result if len(result) > 1 else [(html_content, text_content, None)]
     
-    def _collect_split_files_for_chapter(self, zf: zipfile.ZipFile, manifest: Dict[str, str], 
-                                       spine: List[str], chapter_href: str, opf_path: str, 
+    def _collect_split_files_for_chapter(self, zf: zipfile.ZipFile, manifest: Dict[str, Dict[str, str]],
+                                       spine: List[str], chapter_href: str, opf_path: str,
                                        used_content: set) -> List[Tuple[str, str, str]]:
         """Collect all split files for a chapter (diary entries)"""
         opf_dir = '/'.join(opf_path.split('/')[:-1]) if '/' in opf_path else ''
@@ -650,7 +732,8 @@ class EbookReader:
         split_files = []
         for item_id in spine:
             if item_id in manifest:
-                href = manifest[item_id]
+                item_info = manifest[item_id]
+                href = item_info['href']
                 if href.startswith(base_pattern) and '_split_' in href:
                     full_path = f"{opf_dir}/{href}" if opf_dir else href
                     if full_path not in used_content:
