@@ -103,7 +103,45 @@ class EbookReader:
 
         # Default: assume it's content if we can't determine otherwise
         return True
-        
+
+    def _is_css_content(self, text: str) -> bool:
+        """Check if text content looks like CSS content"""
+        if not text:
+            return False
+
+        text_lower = text.lower().strip()
+
+        # Check for CSS patterns
+        css_patterns = [
+            r'@page\s*\{',  # @page rules
+            r'@media\s*\(',  # @media queries
+            r'@import\s+',   # @import statements
+            r'@charset\s+',  # @charset declarations
+            r'body\s*\{',    # body selectors
+            r'\.[\w-]+\s*\{', # class selectors
+            r'#[\w-]+\s*\{',  # id selectors
+        ]
+
+        # If multiple CSS patterns are found, likely CSS content
+        css_pattern_count = 0
+        for pattern in css_patterns:
+            if re.search(pattern, text_lower):
+                css_pattern_count += 1
+
+        # Also check for common CSS properties
+        css_properties = [
+            'margin:', 'padding:', 'font-family:', 'text-align:', 'color:',
+            'background:', 'border:', 'width:', 'height:', 'display:'
+        ]
+
+        css_property_count = 0
+        for prop in css_properties:
+            if prop in text_lower:
+                css_property_count += 1
+
+        # If we have CSS patterns and properties, it's likely CSS
+        return css_pattern_count >= 1 and css_property_count >= 2
+
     @property
     def title(self) -> str:
         return self._ensure_loaded().title
@@ -139,9 +177,29 @@ class EbookReader:
                         flatten_toc(e.children)
             flatten_toc(toc_entries)
 
+            # Build division mapping for hierarchical structure
+            division_map = {}  # Maps file index to (division_index, division_title)
+            current_division = None
+
+            # Analyze TOC to identify book divisions
+            toc_files = []
+            for entry in toc_entries:
+                href = entry.href.split('#')[0]
+                if self._looks_like_division(entry.title):
+                    current_division = (len(toc_files) + 1, entry.title)
+                toc_files.append((href, entry.title, current_division))
+
+            # Create file to division mapping
+            for i, (href, title, division) in enumerate(toc_files):
+                if division:
+                    division_map[href] = division
+
             opf_dir = '/'.join(opf_path.split('/')[:-1]) if '/' in opf_path else ''
             chapters = []
             chapter_index = 1
+            current_division_info = None
+            subchapter_counter = 1
+
             for item_id in spine:
                 if item_id not in manifest:
                     continue
@@ -160,25 +218,55 @@ class EbookReader:
                         html_content = f.read().decode('utf-8', errors='ignore')
                         text_content = self._html_to_text(html_content)
 
-                        # Skip files with minimal content (likely just navigation or empty pages)
-                        if len(text_content.strip()) < 100:
+                        # Check if this file starts a new division (before checking minimal content)
+                        base_title = toc_map.get(href)
+
+                        if base_title and self._looks_like_division(base_title):
+                            # This is a division header (like "Livro primeiro")
+                            current_division_info = (chapter_index, base_title)
+                            subchapter_counter = 1
+                            chapter_index += 1
                             continue
+
+                        # Skip files with minimal or CSS-like content
+                        if len(text_content.strip()) < 50:
+                            continue
+
+                        # Skip files that look like CSS content
+                        if self._is_css_content(text_content):
+                            continue
+
+                        # If no TOC title, extract from content
+                        if not base_title:
+                            base_title = self._extract_first_words(text_content, 8)
 
                         # Subcapítulos por quebra de página
                         subcap_parts = self._split_by_page_breaks(html_content, text_content)
                         for i, (sub_html, sub_text) in enumerate(subcap_parts):
-                            # Skip empty parts
-                            if len(sub_text.strip()) < 50:
-                                continue
+                            # Process all parts, even empty ones (images, etc.)
+                            if len(sub_text.strip()) == 0:
+                                # For empty text content, use the base title or indicate it's an image/empty page
+                                sub_text = f"[{base_title}]" if base_title else "[Página vazia ou imagem]"
 
-                            # Título: do TOC se houver, senão primeiras palavras
-                            if i == 0:
-                                base_title = toc_map.get(href, self._extract_first_words(sub_text, 8))
-                                idx = str(chapter_index)
-                                name = base_title
+                            # Generate chapter name based on division context
+                            if current_division_info:
+                                # We are inside a division
+                                division_index, division_title = current_division_info
+                                if i == 0:
+                                    idx = f"{division_index}.{subchapter_counter}"
+                                    name = f"{division_title} - {self._extract_first_words(sub_text, 8)}"
+                                else:
+                                    idx = f"{division_index}.{subchapter_counter + i}"
+                                    name = f"{division_title} - {self._extract_first_words(sub_text, 8)}"
                             else:
-                                idx = f"{chapter_index}.{i}"
-                                name = f"{base_title} - {self._extract_first_words(sub_text, 8)}"
+                                # Regular chapter
+                                if i == 0:
+                                    idx = f"{chapter_index}.0"
+                                    name = base_title
+                                else:
+                                    idx = f"{chapter_index}.{i}"
+                                    name = f"{base_title} - {self._extract_first_words(sub_text, 8)}"
+
                             chapters.append(Chapter(
                                 index=idx,
                                 name=name,
@@ -186,7 +274,12 @@ class EbookReader:
                                 text=sub_text,
                                 level=1 if i == 0 else 2
                             ))
-                        chapter_index += 1
+
+                        # Update counters
+                        if current_division_info:
+                            subchapter_counter += len(subcap_parts)
+                        else:
+                            chapter_index += 1
                 except Exception as e:
                     print(f"Warning: Could not extract chapter from {full_path}: {e}")
 
@@ -336,13 +429,12 @@ class EbookReader:
 
                     # Create a Chapter object
                     chapters.append(Chapter(
-                        index=str(chapter_counter),
+                        index=f"{chapter_counter}.0",
                         name=entry.title,
                         source_path=full_path,
                         text=text_content,
                         level=entry.level
                     ))
-                    chapter_counter += 1
 
                     # Detect subchapters based on page breaks
                     subchapters = self._split_by_page_breaks(html_content, text_content)
@@ -355,6 +447,7 @@ class EbookReader:
                             text=sub_text,
                             level=entry.level + 1
                         ))
+                    chapter_counter += 1
             except Exception as e:
                 print(f"Warning: Could not extract chapter from {full_path}: {e}")
 
@@ -392,7 +485,7 @@ class EbookReader:
 
                     # Create a Chapter object for the division
                     chapters.append(Chapter(
-                        index=f"{division_index}",
+                        index=f"{division_index}.0",
                         name=entry.title,
                         source_path=full_path,
                         text=text_content,
@@ -427,7 +520,7 @@ class EbookReader:
 
                     # Create a Chapter object
                     chapters.append(Chapter(
-                        index=str(chapter_index),
+                        index=f"{chapter_index}.0",
                         name=entry.title,
                         source_path=full_path,
                         text=text_content,
@@ -465,7 +558,7 @@ class EbookReader:
                 text = self._html_to_text(content)
                 if text.strip() and len(text.strip()) > 100:
                     title = self._extract_title(content) or f"Chapter {i+1}"
-                    chapters.append(Chapter(str(i+1), title, full_path, text))
+                    chapters.append(Chapter(f"{i+1}.0", title, full_path, text))
             except:
                 continue
                 
@@ -790,28 +883,35 @@ class EbookReader:
     
     def _looks_like_division(self, title: str) -> bool:
         """Check if title looks like a book division rather than a real chapter"""
+        if not title:
+            return False
+
+        title_lower = title.lower().strip()
+
+        # Portuguese patterns for book divisions
         division_patterns = [
             r'^livro\s+[ivx]+$',  # Livro I, II, III...
-            r'^livro\s+(primeiro|segundo|terceiro|quarto|quinto)$',  # Livro primeiro, segundo, etc.
+            r'^livro\s+(primeiro|segundo|terceiro|quarto|quinto|sexto|sétimo|oitavo|nono|décimo)$',  # Livro primeiro, segundo, etc.
             r'^parte\s+[ivx\d]+$',  # Parte I, 1, etc
-            r'^parte\s+(primeira|segunda|terceira)$',  # Parte primeira, segunda, etc.
+            r'^parte\s+(primeira|segunda|terceira|quarta|quinta)$',  # Parte primeira, segunda, etc.
             r'^seção\s+[ivx\d]+$',  # Seção I, 1, etc
             r'^capítulo\s*$',  # Just "Capítulo" without number/title
+            # English patterns
             r'^book\s+[ivx\d]+$',  # Book I, 1, etc (English)
-            r'^book\s+(one|two|three|four|five)$',  # Book one, two, etc (English)
+            r'^book\s+(one|two|three|four|five|six|seven|eight|nine|ten)$',  # Book one, two, etc
             r'^part\s+[ivx\d]+$',  # Part I, 1, etc (English)
         ]
-        
-        title_lower = title.lower().strip()
-        
-        # Special case: single roman numerals (I, II, III, etc.) are typically chapters, not divisions
-        # Only treat as division if it's explicitly prefixed with words like "livro", "book", etc.
-        if re.match(r'^[ivx]+$', title_lower):
-            return False
-        
+
+        # Check exact patterns first
         for pattern in division_patterns:
             if re.match(pattern, title_lower):
                 return True
+
+        # More flexible patterns for Portuguese
+        if (re.search(r'\blivro\s+(primeiro|segundo|terceiro|quarto|quinto)\b', title_lower) or
+            re.search(r'\blivro\s+[ivx]+\b', title_lower)):
+            return True
+
         return False
     
     def _extract_real_chapters_from_division(self, html_content: str, text_content: str, division_title: str) -> List[Tuple[str, str]]:
@@ -943,14 +1043,20 @@ class EbookReader:
                 text = page.extract_text().strip()
                 if text:
                     chapter_title = self._extract_first_words(text) or f"Page {i+1}"
-                    chapters.append(Chapter(str(i+1), chapter_title, f"page_{i+1}", text))
+                    chapters.append(Chapter(f"{i+1}.0", chapter_title, f"page_{i+1}", text))
                     
             return Book(title, author, chapters)
     
     def _html_to_text(self, html: str) -> str:
         if not html:
             return ""
+        # Remove title tags
         text = re.sub(r'<title[^>]*>.*?</title>', '', html, re.I | re.DOTALL)
+        # Remove CSS style tags and their content
+        text = re.sub(r'<style[^>]*>.*?</style>', '', text, re.I | re.DOTALL)
+        # Remove script tags and their content
+        text = re.sub(r'<script[^>]*>.*?</script>', '', text, re.I | re.DOTALL)
+        # Replace non-breaking spaces
         text = re.sub(r"&nbsp;|\u00A0", " ", text, flags=re.I)
         text = PARA_RE.sub("\n", text)
         text = TAG_RE.sub("", text)
