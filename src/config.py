@@ -17,7 +17,6 @@ class ConversionConfig:
     model_path: Optional[Path] = None
     output_dir: str = "output"
     book_title: str = ""
-    preserve_all_chapters: bool = True
     
     # Audio settings
     bitrate: str = "32k"
@@ -31,64 +30,28 @@ class ConversionConfig:
 
 class AppConfig:
     """Application configuration manager following SRP"""
-    
+
     def __init__(self):
         self.voice_configs = VoiceConfigProvider()
-    
-    def create_conversion_config(self, engine: str, voice: Optional[str] = None,
-                               model: Optional[str] = None, **kwargs) -> ConversionConfig:
+
+    def create_conversion_config(self, engine: str, **kwargs) -> ConversionConfig:
         """Create conversion configuration"""
-        config = ConversionConfig(engine=engine, **kwargs)
-        
-        if voice:
-            config.voice = voice
-        if model:
-            config.model_path = Path(model)
-            
-        return config
+        return ConversionConfig(engine=engine, **kwargs)
 
 
 class VoiceConfigProvider:
-    """Provides voice configuration data - following SRP"""
-    
-    @property
-    def edge_voices(self) -> Dict[str, tuple]:
-        """Edge-TTS voices"""
-        return {
-            "1": ("pt-BR-FranciscaNeural", "Francisca - Feminina, recomendada ⭐"),
-            "2": ("pt-BR-AntonioNeural", "Antonio - Masculino, padrão"),
-            "3": ("pt-BR-BrendaNeural", "Brenda - Feminina, jovem"),
+    """Provides voice configurations"""
+
+    def get_voice(self, engine: str) -> Optional[str]:
+        """Retrieve default voice for the engine"""
+        voices = {
+            "edge": "en-US-GuyNeural",
+            "coqui": "tts_models/en/ljspeech/tacotron2-DDC_ph",
         }
-    
-    @property
-    def coqui_models(self) -> Dict[str, tuple]:
-        """Coqui TTS models"""
-        return {
-            "1": ("tts_models/multilingual/multi-dataset/xtts_v2", 
-                  "XTTS v2 Multilíngue", "Melhor qualidade ⭐", True),
-            "2": ("tts_models/pt/cv/vits", 
-                  "Português CV-VITS", "Rápido", False),
-        }
-    
-    def get_piper_models(self) -> Dict[str, Dict[str, Any]]:
-        """Get available Piper models from models directory"""
-        models_dir = Path("models")
-        if not models_dir.exists():
-            return {}
-        
-        models = {}
-        for model_file in models_dir.glob("*.onnx"):
-            models[model_file.stem] = {
-                "name": model_file.stem,
-                "path": model_file,
-                "size_mb": model_file.stat().st_size // (1024 * 1024),
-                "recommended": "faber" in model_file.name.lower()
-            }
-        
-        return models
+        return voices.get(engine)
 
 
 # Constants for backward compatibility
-DEFAULT_CONFIG = ConversionConfig(engine="edge")
+DEFAULT_CONFIG = ConversionConfig(engine="edge", voice="pt-BR-AntonioNeural")
 SUPPORTED_FORMATS = [".epub", ".pdf"]
 AUDIO_FORMATS = ["mp3"]

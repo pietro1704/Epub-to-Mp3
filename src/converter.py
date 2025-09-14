@@ -36,24 +36,29 @@ class AudioConverter:
         self.audio_processor = AudioProcessor()
         self.file_manager = FileManager()
     
-    async def convert(self, reader: EbookReader, config: ConversionConfig) -> int:
+    async def convert(self, reader: EbookReader, config: ConversionConfig) -> ConversionResult:
         """Convert ebook to audio"""
-        try:
-            # Setup
-            output_dir = self._setup_output_directory(config)
-            tts_engine = self.tts_factory.create_engine(config)
-            chapters = reader.get_chapter_structure(preserve_all=config.preserve_all_chapters)
-            
-            # Convert chapters
-            result = await self._convert_chapters(chapters, tts_engine, output_dir, config)
-            
-            # Report results
-            self._report_results(result)
-            return 0 if result.success else 1
-            
-        except Exception as e:
-            print(f"❌ Conversion failed: {e}")
-            return 1
+        output_dir = self._setup_output_directory(config)
+        tts_engine = self.tts_factory.create_engine(config)
+        chapters = reader.get_chapter_structure()
+
+        converted_files = []
+        errors = []
+
+        for chapter in chapters:
+            try:
+                audio_file = await self._convert_chapter(chapter, tts_engine, output_dir, config)
+                converted_files.append(audio_file)
+            except Exception as e:
+                errors.append(str(e))
+
+        return ConversionResult(
+            success=len(errors) == 0,
+            total_chapters=len(chapters),
+            converted_chapters=len(converted_files),
+            output_files=converted_files,
+            errors=errors,
+        )
     
     def _setup_output_directory(self, config: ConversionConfig) -> Path:
         """Setup output directory"""
@@ -64,71 +69,29 @@ class AudioConverter:
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir
     
-    async def _convert_chapters(self, chapters: List[Chapter], tts_engine, 
-                              output_dir: Path, config: ConversionConfig) -> ConversionResult:
-        """Convert chapters to audio with parallel processing"""
-        progress = ProgressTracker(len(chapters))
-        
-        semaphore = asyncio.Semaphore(config.max_parallel)
-        tasks = [
-            self._convert_single_chapter(semaphore, chapter, tts_engine, output_dir, i, progress)
-            for i, chapter in enumerate(chapters, 1)
-        ]
-        
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Process results
-        output_files = []
-        errors = []
-        converted = 0
-        
-        for result in results:
-            if isinstance(result, Exception):
-                errors.append(str(result))
-            elif result:
-                output_files.append(result)
-                converted += 1
-        
-        return ConversionResult(
-            success=len(errors) == 0,
-            total_chapters=len(chapters),
-            converted_chapters=converted,
-            output_files=output_files,
-            errors=errors
-        )
-    
-    async def _convert_single_chapter(self, semaphore: asyncio.Semaphore, 
-                                    chapter: Chapter, tts_engine, 
-                                    output_dir: Path, index: int, progress: ProgressTracker) -> Optional[Path]:
+    async def _convert_chapter(self, chapter: Chapter, tts_engine, 
+                              output_dir: Path, config: ConversionConfig) -> Optional[Path]:
         """Convert single chapter to audio"""
-        async with semaphore:
-            try:
-                # Generate output filename
-                safe_title = self.file_manager.sanitize_filename(chapter.name)
-                output_file = output_dir / f"{index:03d}_{safe_title}.mp3"
-                
-                # Skip if exists and not forcing reprocess
-                if output_file.exists():
-                    progress.start_chapter(f"Skipping {chapter.name} (exists)")
-                    return output_file
-                
-                # Convert to audio
-                progress.start_chapter(chapter.name)
-                
-                temp_file = await tts_engine.synthesize_async(chapter.text, output_file.with_suffix('.wav'))
-                if temp_file and temp_file.exists():
-                    # Convert to MP3
-                    final_file = await self.audio_processor.convert_to_mp3(temp_file, output_file)
-                    temp_file.unlink()  # Clean up temp file
-                    return final_file
-                
-                return None
-                
-            except Exception as e:
-                print(f"❌ Error in {chapter.name}: {e}")
-                raise
-            finally:
-                progress.complete_chapter()
+        # Generate output filename
+        safe_title = self.file_manager.sanitize_filename(chapter.name)
+        output_file = output_dir / f"{safe_title}.mp3"
+        
+        # Skip if exists and not forcing reprocess
+        if output_file.exists():
+            print(f"Skipping {chapter.name} (exists)")
+            return output_file
+        
+        # Convert to audio
+        print(f"Converting {chapter.name}...")
+        
+        temp_file = await tts_engine.synthesize_async(chapter.text, output_file.with_suffix('.wav'))
+        if temp_file and temp_file.exists():
+            # Convert to MP3
+            final_file = await self.audio_processor.convert_to_mp3(temp_file, output_file)
+            temp_file.unlink()  # Clean up temp file
+            return final_file
+        
+        return None
     
     def _report_results(self, result: ConversionResult):
         """Report conversion results"""

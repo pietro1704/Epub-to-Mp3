@@ -60,8 +60,8 @@ class ConverterApplication:
         print(f"👤 {reader.author}")
         print(f"📄 {len(reader.get_chapters())} chapters")
         
-        for i, chapter in enumerate(reader.get_chapters(), 1):
-            print(f"  {i:2d}. {chapter.name} ({len(chapter.text)} chars)")
+        for chapter in reader.get_chapters():
+            print(f"  {chapter.index:>4}. {chapter.name} ({len(chapter.text)} chars)")
     
     def _get_conversion_config(self, args: argparse.Namespace, reader: EbookReader):
         """Get conversion configuration"""
@@ -80,7 +80,6 @@ class ConverterApplication:
             model=args.model,
             output_dir=args.output_dir or "output",
             book_title=reader.title,
-            preserve_all=not args.filter_chapters,
             max_parallel=args.max_parallel
         )
 
@@ -97,8 +96,6 @@ def create_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", help="Output directory")
     parser.add_argument("--show-structure", action="store_true",
                        help="Show book structure and exit")
-    parser.add_argument("--filter-chapters", action="store_true",
-                       help="Filter short chapters (default: preserve all)")
     parser.add_argument("--max-parallel", type=int, default=3,
                        help="Maximum parallel conversions (default: 3)")
     

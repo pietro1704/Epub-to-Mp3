@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 
 class EdgeTTSEngine:
-    def __init__(self, voice: str = "pt-BR-FranciscaNeural"):
+    def __init__(self, voice: str = "pt-BR-AntonioNeural"):
         self.voice = voice
         try:
             import edge_tts

@@ -24,7 +24,7 @@ class TTSFactory:
         """Create TTS engine based on configuration"""
         if config.engine == "edge":
             from .edge_engine import EdgeTTSEngine
-            return EdgeTTSEngine(config.voice or "pt-BR-FranciscaNeural")
+            return EdgeTTSEngine(config.voice or "pt-BR-AntonioNeural")
         
         elif config.engine == "coqui":
             from .coqui_engine import CoquiTTSEngine
