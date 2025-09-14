@@ -12,10 +12,8 @@ from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'tts'))
 
-from config_simple import ConversionConfig
+from src.config import ConversionConfig
 
 
 class TestTTSFactory(unittest.TestCase):
@@ -23,15 +21,15 @@ class TestTTSFactory(unittest.TestCase):
 
     def setUp(self):
         """Set up test fixtures"""
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src', 'tts'))
-        from factory_simple import TTSFactory
+        from src.tts.factory import TTSFactory
+
         self.factory = TTSFactory()
 
     def test_create_edge_engine(self):
         """Test creating Edge TTS engine"""
         config = ConversionConfig(engine="edge", voice="pt-BR-FranciscaNeural")
         
-        with patch('edge_simple.EdgeTTSEngine') as mock_engine:
+        with patch('src.tts.edge_engine.EdgeTTSEngine') as mock_engine:
             engine = self.factory.create_engine(config)
             
             mock_engine.assert_called_once_with("pt-BR-FranciscaNeural")
@@ -40,7 +38,7 @@ class TestTTSFactory(unittest.TestCase):
         """Test creating Coqui TTS engine"""
         config = ConversionConfig(engine="coqui", voice="test_model")
         
-        with patch('coqui_simple.CoquiTTSEngine') as mock_engine:
+        with patch('src.tts.coqui_engine.CoquiTTSEngine') as mock_engine:
             engine = self.factory.create_engine(config)
             
             mock_engine.assert_called_once_with("test_model")
@@ -50,7 +48,7 @@ class TestTTSFactory(unittest.TestCase):
         model_path = Path("test_model.onnx")
         config = ConversionConfig(engine="piper", model_path=model_path)
         
-        with patch('piper_simple.PiperTTSEngine') as mock_engine:
+        with patch('src.tts.piper_engine.PiperTTSEngine') as mock_engine:
             engine = self.factory.create_engine(config)
             
             mock_engine.assert_called_once_with(model_path)
@@ -59,7 +57,7 @@ class TestTTSFactory(unittest.TestCase):
         """Test creating Piper TTS engine with auto model detection"""
         config = ConversionConfig(engine="piper")
         
-        with patch('piper_simple.PiperTTSEngine') as mock_engine, \
+        with patch('src.tts.piper_engine.PiperTTSEngine') as mock_engine, \
              patch.object(self.factory, '_find_piper_model') as mock_find:
             
             mock_find.return_value = Path("found_model.onnx")
@@ -82,16 +80,16 @@ class TestTTSFactory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             models_dir = Path(temp_dir) / "models"
             models_dir.mkdir()
-            
+
             model_file = models_dir / "test_model.onnx"
             model_file.write_text("dummy model")
-            
-            with patch('factory_simple.Path') as mock_path:
+
+            with patch('src.tts.factory.Path') as mock_path:
                 mock_path.return_value = models_dir
                 mock_path.side_effect = lambda x: Path(x) if x == "models" else Path(x)
-                
+
                 result = self.factory._find_piper_model()
-                
+
                 self.assertEqual(result.name, "test_model.onnx")
 
     def test_find_piper_model_not_found(self):
@@ -99,7 +97,7 @@ class TestTTSFactory(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             models_dir = Path(temp_dir) / "nonexistent"
             
-            with patch('factory_simple.Path') as mock_path:
+        with patch('src.tts.factory.Path') as mock_path:
                 mock_path.return_value = models_dir
                 
                 with self.assertRaises(FileNotFoundError):
@@ -121,8 +119,8 @@ class TestEdgeTTSEngine(unittest.TestCase):
 
     def test_init_success(self):
         """Test successful EdgeTTSEngine initialization"""
-        with patch('edge_simple.edge_tts') as mock_edge_tts:
-            from edge_simple import EdgeTTSEngine
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
+            from src.tts.edge_engine import EdgeTTSEngine
             engine = EdgeTTSEngine("pt-BR-FranciscaNeural")
             
             self.assertEqual(engine.voice, "pt-BR-FranciscaNeural")
@@ -130,8 +128,8 @@ class TestEdgeTTSEngine(unittest.TestCase):
 
     def test_init_missing_dependency(self):
         """Test EdgeTTSEngine initialization with missing dependency"""
-        with patch('edge_simple.edge_tts', side_effect=ImportError("No module")):
-            from edge_simple import EdgeTTSEngine
+        with patch('src.tts.edge_engine.edge_tts', side_effect=ImportError("No module")):
+            from src.tts.edge_engine import EdgeTTSEngine
             
             with self.assertRaises(ImportError) as context:
                 EdgeTTSEngine("test-voice")
@@ -140,8 +138,8 @@ class TestEdgeTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_success(self):
         """Test successful text synthesis"""
-        with patch('edge_simple.edge_tts') as mock_edge_tts:
-            from edge_simple import EdgeTTSEngine
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
+            from src.tts.edge_engine import EdgeTTSEngine
             
             # Mock communicate object
             mock_communicate = AsyncMock()
@@ -161,8 +159,8 @@ class TestEdgeTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_empty_text(self):
         """Test synthesis with empty text"""
-        with patch('edge_simple.edge_tts') as mock_edge_tts:
-            from edge_simple import EdgeTTSEngine
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
+            from src.tts.edge_engine import EdgeTTSEngine
             
             engine = EdgeTTSEngine("test-voice")
             output_path = Path(self.temp_dir) / "output.wav"
@@ -174,10 +172,10 @@ class TestEdgeTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_timeout(self):
         """Test synthesis with timeout"""
-        with patch('edge_simple.edge_tts') as mock_edge_tts, \
-             patch('edge_simple.asyncio.wait_for') as mock_wait_for:
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts, \
+             patch('src.tts.edge_engine.asyncio.wait_for') as mock_wait_for:
             
-            from edge_simple import EdgeTTSEngine
+            from src.tts.edge_engine import EdgeTTSEngine
             
             # Mock timeout
             mock_wait_for.side_effect = asyncio.TimeoutError()
@@ -191,8 +189,8 @@ class TestEdgeTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_exception(self):
         """Test synthesis with exception"""
-        with patch('edge_simple.edge_tts') as mock_edge_tts:
-            from edge_simple import EdgeTTSEngine
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
+            from src.tts.edge_engine import EdgeTTSEngine
             
             # Mock communicate to raise exception
             mock_communicate = AsyncMock()
@@ -208,8 +206,8 @@ class TestEdgeTTSEngine(unittest.TestCase):
 
     def test_calculate_timeout(self):
         """Test timeout calculation"""
-        with patch('edge_simple.edge_tts'):
-            from edge_simple import EdgeTTSEngine
+        with patch('src.tts.edge_engine.edge_tts'):
+            from src.tts.edge_engine import EdgeTTSEngine
             
             engine = EdgeTTSEngine("test-voice")
             
@@ -243,8 +241,8 @@ class TestCoquiTTSEngine(unittest.TestCase):
 
     def test_init_success(self):
         """Test successful CoquiTTSEngine initialization"""
-        with patch('coqui_simple.TTS') as mock_tts:
-            from coqui_simple import CoquiTTSEngine
+        with patch('src.tts.coqui_engine.TTS') as mock_tts:
+            from src.tts.coqui_engine import CoquiTTSEngine
             
             engine = CoquiTTSEngine("test_model")
             
@@ -254,8 +252,8 @@ class TestCoquiTTSEngine(unittest.TestCase):
 
     def test_init_missing_dependency(self):
         """Test CoquiTTSEngine initialization with missing dependency"""
-        with patch('coqui_simple.TTS', side_effect=ImportError("No module")):
-            from coqui_simple import CoquiTTSEngine
+        with patch('src.tts.coqui_engine.TTS', side_effect=ImportError("No module")):
+            from src.tts.coqui_engine import CoquiTTSEngine
             
             with self.assertRaises(ImportError) as context:
                 CoquiTTSEngine("test_model")
@@ -264,8 +262,8 @@ class TestCoquiTTSEngine(unittest.TestCase):
 
     def test_initialize_model(self):
         """Test lazy model initialization"""
-        with patch('coqui_simple.TTS') as mock_tts_class:
-            from coqui_simple import CoquiTTSEngine
+        with patch('src.tts.coqui_engine.TTS') as mock_tts_class:
+            from src.tts.coqui_engine import CoquiTTSEngine
             
             mock_tts_instance = Mock()
             mock_tts_class.return_value = mock_tts_instance
@@ -278,8 +276,8 @@ class TestCoquiTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_success(self):
         """Test successful text synthesis"""
-        with patch('coqui_simple.TTS') as mock_tts_class:
-            from coqui_simple import CoquiTTSEngine
+        with patch('src.tts.coqui_engine.TTS') as mock_tts_class:
+            from src.tts.coqui_engine import CoquiTTSEngine
             
             mock_tts_instance = Mock()
             mock_tts_instance.tts_to_file = Mock()
@@ -302,8 +300,8 @@ class TestCoquiTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_empty_text(self):
         """Test synthesis with empty text"""
-        with patch('coqui_simple.TTS'):
-            from coqui_simple import CoquiTTSEngine
+        with patch('src.tts.coqui_engine.TTS'):
+            from src.tts.coqui_engine import CoquiTTSEngine
             
             engine = CoquiTTSEngine("test_model")
             output_path = Path(self.temp_dir) / "output.wav"
@@ -314,8 +312,8 @@ class TestCoquiTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_exception(self):
         """Test synthesis with exception"""
-        with patch('coqui_simple.TTS') as mock_tts_class:
-            from coqui_simple import CoquiTTSEngine
+        with patch('src.tts.coqui_engine.TTS') as mock_tts_class:
+            from src.tts.coqui_engine import CoquiTTSEngine
             
             mock_tts_instance = Mock()
             mock_tts_instance.tts_to_file.side_effect = Exception("Test error")
@@ -353,7 +351,7 @@ class TestPiperTTSEngine(unittest.TestCase):
 
     def test_init_success(self):
         """Test successful PiperTTSEngine initialization"""
-        from piper_simple import PiperTTSEngine
+        from src.tts.piper_engine import PiperTTSEngine
         
         engine = PiperTTSEngine(self.model_path)
         
@@ -361,7 +359,7 @@ class TestPiperTTSEngine(unittest.TestCase):
 
     def test_init_missing_model(self):
         """Test PiperTTSEngine initialization with missing model"""
-        from piper_simple import PiperTTSEngine
+        from src.tts.piper_engine import PiperTTSEngine
         
         nonexistent_model = Path(self.temp_dir) / "nonexistent.onnx"
         
@@ -370,12 +368,12 @@ class TestPiperTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_success(self):
         """Test successful text synthesis"""
-        from piper_simple import PiperTTSEngine
+        from src.tts.piper_engine import PiperTTSEngine
         
         engine = PiperTTSEngine(self.model_path)
         output_path = Path(self.temp_dir) / "output.wav"
         
-        with patch('piper_simple.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch('src.tts.piper_engine.asyncio.create_subprocess_exec') as mock_subprocess:
             # Mock successful piper process
             mock_process = AsyncMock()
             mock_process.communicate.return_value = (b"success", b"")
@@ -393,7 +391,7 @@ class TestPiperTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_empty_text(self):
         """Test synthesis with empty text"""
-        from piper_simple import PiperTTSEngine
+        from src.tts.piper_engine import PiperTTSEngine
         
         engine = PiperTTSEngine(self.model_path)
         output_path = Path(self.temp_dir) / "output.wav"
@@ -404,12 +402,12 @@ class TestPiperTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_piper_failure(self):
         """Test synthesis with Piper failure"""
-        from piper_simple import PiperTTSEngine
+        from src.tts.piper_engine import PiperTTSEngine
         
         engine = PiperTTSEngine(self.model_path)
         output_path = Path(self.temp_dir) / "output.wav"
         
-        with patch('piper_simple.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch('src.tts.piper_engine.asyncio.create_subprocess_exec') as mock_subprocess:
             # Mock failed piper process
             mock_process = AsyncMock()
             mock_process.communicate.return_value = (b"", b"Error occurred")
@@ -422,12 +420,12 @@ class TestPiperTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_piper_not_found(self):
         """Test synthesis when Piper is not installed"""
-        from piper_simple import PiperTTSEngine
+        from src.tts.piper_engine import PiperTTSEngine
         
         engine = PiperTTSEngine(self.model_path)
         output_path = Path(self.temp_dir) / "output.wav"
         
-        with patch('piper_simple.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch('src.tts.piper_engine.asyncio.create_subprocess_exec') as mock_subprocess:
             mock_subprocess.side_effect = FileNotFoundError("Piper not found")
             
             result = await engine.synthesize_async("Hello world", output_path)
@@ -436,12 +434,12 @@ class TestPiperTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_exception(self):
         """Test synthesis with exception"""
-        from piper_simple import PiperTTSEngine
+        from src.tts.piper_engine import PiperTTSEngine
         
         engine = PiperTTSEngine(self.model_path)
         output_path = Path(self.temp_dir) / "output.wav"
         
-        with patch('piper_simple.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch('src.tts.piper_engine.asyncio.create_subprocess_exec') as mock_subprocess:
             mock_subprocess.side_effect = Exception("Test error")
             
             result = await engine.synthesize_async("Hello world", output_path)

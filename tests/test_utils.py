@@ -11,9 +11,9 @@ from pathlib import Path
 from unittest.mock import patch, Mock, AsyncMock
 
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from utils_simple import FileManager, AudioProcessor, TextValidator
+from src.utils import FileManager, AudioProcessor, TextValidator
 
 
 class TestFileManager(unittest.TestCase):
@@ -135,7 +135,7 @@ class TestAudioProcessor(unittest.TestCase):
         # Create dummy input file
         input_file.write_text("dummy wav content")
         
-        with patch('utils_simple.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
             # Mock successful ffmpeg process
             mock_process = AsyncMock()
             mock_process.wait.return_value = None
@@ -166,7 +166,7 @@ class TestAudioProcessor(unittest.TestCase):
         
         input_file.write_text("dummy wav content")
         
-        with patch('utils_simple.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
             # Mock failed ffmpeg process
             mock_process = AsyncMock()
             mock_process.wait.return_value = None
@@ -184,7 +184,7 @@ class TestAudioProcessor(unittest.TestCase):
         
         input_file.write_text("dummy wav content")
         
-        with patch('utils_simple.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
             mock_subprocess.side_effect = Exception("Test error")
             
             result = await AudioProcessor.convert_to_mp3(input_file, output_file)
@@ -198,7 +198,7 @@ class TestAudioProcessor(unittest.TestCase):
         
         input_file.write_text("dummy wav content")
         
-        with patch('utils_simple.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
             mock_process = AsyncMock()
             mock_process.wait.return_value = None
             mock_process.returncode = 0
