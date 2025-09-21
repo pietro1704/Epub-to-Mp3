@@ -14,6 +14,14 @@ from pathlib import Path
 from urllib.parse import unquote
 from typing import Dict, List, Optional, Tuple
 
+try:  # Optional dependency for shell tab completion
+    import argcomplete  # type: ignore
+    from argcomplete.completers import ChoicesCompleter, FilesCompleter
+except ImportError:  # pragma: no cover - argcomplete is optional
+    argcomplete = None
+    ChoicesCompleter = None
+    FilesCompleter = None
+
 # Local imports  
 from src.ebook_reader import EbookReader, Chapter
 from src.converter import AudioConverter, ConversionResult
@@ -1044,32 +1052,97 @@ class ConverterApplication:
         )
 
 
-def create_argument_parser() -> argparse.ArgumentParser:
-    """Create command line argument parser"""
-    parser = argparse.ArgumentParser(description="EBook to Audiobook Converter")
-    
-    parser.add_argument("input_file", help="Input EPUB or PDF file")
-    parser.add_argument("--engine", choices=["edge", "coqui", "piper"], 
-                       help="TTS engine to use")
+def _add_conversion_arguments(parser: argparse.ArgumentParser, *, include_menu_flag: bool = True) -> None:
+    """Attach shared CLI arguments and optional tab completion metadata."""
+
+    input_arg = parser.add_argument("input_file", help="Input EPUB or PDF file")
+    engine_arg = parser.add_argument(
+        "--engine",
+        choices=["edge", "coqui", "piper"],
+        help="TTS engine to use",
+    )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
     parser.add_argument("--model", help="Model path (for Piper/Coqui)")
     parser.add_argument("--output-dir", help="Output directory")
-    parser.add_argument("--show-structure", action="store_true",
-                       help="Show book structure and exit")
-    parser.add_argument("--filter-chapters", action="store_true",
-                       help="Skip very short chapters when converting")
-    parser.add_argument("--parallel", type=int,
-                       help="Parallel chapter conversions (default: CPU count)")
-    parser.add_argument("--menu", action="store_true",
-                       help="Use interactive menu instead of CLI defaults")
-    
+    parser.add_argument(
+        "--show-structure",
+        action="store_true",
+        help="Show book structure and exit",
+    )
+    parser.add_argument(
+        "--filter-chapters",
+        action="store_true",
+        help="Skip very short chapters when converting",
+    )
+    parser.add_argument(
+        "--parallel",
+        type=int,
+        help="Parallel chapter conversions (default: CPU count)",
+    )
+
+    if include_menu_flag:
+        parser.add_argument(
+            "--menu",
+            action="store_true",
+            help="Use interactive menu instead of CLI defaults",
+        )
+
+    if FilesCompleter is not None:
+        input_arg.completer = FilesCompleter(
+            allowednames=("*.epub", "*.pdf"),
+            directories=True,
+        )
+    if ChoicesCompleter is not None and getattr(engine_arg, "choices", None):
+        engine_arg.completer = ChoicesCompleter(engine_arg.choices)
+
+
+def create_argument_parser() -> argparse.ArgumentParser:
+    """Create command line argument parser."""
+
+    parser = argparse.ArgumentParser(
+        description="EBook to Audiobook Converter",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    parser.set_defaults(command="convert")
+
+    subparsers = parser.add_subparsers(dest="command", metavar="command")
+
+    convert_parser = subparsers.add_parser(
+        "convert",
+        help="Convert ebook to audiobook",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    _add_conversion_arguments(convert_parser, include_menu_flag=True)
+    convert_parser.set_defaults(command="convert", menu=False)
+
+    menu_parser = subparsers.add_parser(
+        "menu",
+        help="Launch interactive menu",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    _add_conversion_arguments(menu_parser, include_menu_flag=False)
+    menu_parser.set_defaults(command="menu", menu=True)
+
     return parser
 
 
 def main() -> int:
     """Application entry point"""
     parser = create_argument_parser()
-    args = parser.parse_args()
+
+    if argcomplete is not None:
+        argcomplete.autocomplete(parser)  # Enables shell tab completion when available
+
+    argv = sys.argv[1:]
+    if not argv:
+        parser.print_help()
+        return 1
+
+    commands = {"convert", "menu"}
+    if argv[0] not in commands and argv[0] not in {"-h", "--help"}:
+        argv = ["convert", *argv]
+
+    args = parser.parse_args(argv)
     
     app = ConverterApplication()
     return app.run(args)
