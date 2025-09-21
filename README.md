@@ -99,6 +99,20 @@ python main.py livro.epub --no-cache
 python main.py livro.epub --bitrate 64k --ar 44100
 ```
 
+### Novos Comandos
+- `python main.py convert ...` continua disponível (compatível com o uso anterior)
+- `python main.py menu <arquivo>` inicia direto o menu interativo
+- `python main.py menu -h` mostra a ajuda específica do menu
+
+### Autocomplete com TAB
+1. Certifique-se de instalar os requisitos: `pip install -r requirements.txt` (inclui `argcomplete`)
+2. Torne o script executável: `chmod +x main.py`
+3. Ative a conclusão no shell atual (exemplo zsh):
+   ```bash
+   eval "$(register-python-argcomplete ./main.py)"
+   ```
+   Para manter permanentemente, adicione o comando acima ao seu `~/.zshrc` ou `~/.bashrc`.
+
 ## 🎭 Vozes Disponíveis
 
 ### Edge-TTS (Português BR)
