@@ -8,6 +8,7 @@ Reduced from 564 to ~100 lines while maintaining all functionality
 import argparse
 import asyncio
 import re
+import shutil
 import sys
 import unicodedata
 from dataclasses import dataclass
@@ -24,10 +25,18 @@ except ImportError:  # pragma: no cover - argcomplete is optional
     FilesCompleter = None
 
 # Local imports  
-from src.ebook_reader import EbookReader, Chapter
+from src.ebook_reader import EbookReader, Chapter, TextProcessor
 from src.converter import AudioConverter, ConversionResult
 from src.ui.menu import MenuInterface
-from src.config import AppConfig
+from src.config import AppConfig, ConversionConfig
+from src.utils import FileManager
+from src.i18n import get_localization
+from src.language import (
+    LanguageDetector,
+    LanguageMarkup,
+    LanguageProfile,
+    get_language_detector,
+)
 
 
 @dataclass
@@ -45,18 +54,30 @@ class ConverterApplication:
     """Main application class following SRP"""
 
     PREVIEW_WORD_LIMIT = 30
+    FOOTNOTE_CONTEXT_WORDS = 8
 
     def __init__(self):
+        self.localization = get_localization()
         self.config = AppConfig()
-        self.menu = MenuInterface()
-        self.converter = AudioConverter()
+        self.menu = MenuInterface(localization=self.localization)
+        self.converter = AudioConverter(localization=self.localization)
+        self.cache_root = Path(".cache")
+        self.cache_root.mkdir(exist_ok=True)
+        self.language_detector: LanguageDetector = get_language_detector()
+        self.language_markup = LanguageMarkup(self.language_detector)
+        self.language_profile: Optional[LanguageProfile] = None
+        self._interactive_mode = True
     
     def run(self, args: argparse.Namespace) -> int:
         """Main application entry point"""
         try:
+            # **NEW**: Handle clear-cache command
+            if getattr(args, "command", None) == "clear_cache":
+                return self._handle_clear_cache()
+
             # Validate input
             if not Path(args.input_file).exists():
-                print(f"❌ File not found: {args.input_file}")
+                print(self.localization.t("file_not_found", path=args.input_file))
                 return 1
             
             # Load ebook
@@ -69,19 +90,112 @@ class ConverterApplication:
             
             # Prepare structured chapters for conversion
             structure_items = self._generate_structure_items(reader)
+
+            selectors: List[str] = []
+            for raw in getattr(args, "chapters", []) or []:
+                selectors.append(str(raw))
+            for raw in getattr(args, "sections", []) or []:
+                selectors.append(str(raw))
+
             structure_items, filtered = self._filter_structure_selection(
                 structure_items,
-                getattr(args, "target_structures", None)
+                selectors if selectors else None
             )
             if filtered and not structure_items:
                 return 1
-            self._apply_structure_to_reader(reader, structure_items)
-            
+
+            # **NEW**: Use CacheManager for better cache handling
+            from src.cache_manager import CacheManager
+            cache_manager = CacheManager()
+
+            if getattr(args, "clear_cache", False):
+                if hasattr(args, 'input_file') and args.input_file:
+                    # Clear cache for specific book
+                    book_name = Path(args.input_file).stem
+                    book_cache_dir = self.cache_root / book_name
+                    if book_cache_dir.exists():
+                        shutil.rmtree(book_cache_dir)
+                        print(f"🗑️ Cache limpo para: {book_name}")
+                    else:
+                        print(f"⚠️ Nenhum cache encontrado para: {book_name}")
+                else:
+                    # Clear all cache
+                    shutil.rmtree(self.cache_root)
+                    self.cache_root.mkdir(exist_ok=True)
+                    print("🗑️ Todo o cache foi limpo")
+
+            cache_dir = self._resolve_cache_dir(reader)
+            cache_dir.mkdir(parents=True, exist_ok=True)
+            setattr(args, "cache_dir", cache_dir)
+
+            # Corrigir diretório temporário para usar .cache/{nome do livro}
+            book_name = Path(args.input_file).stem
+            temp_dir = self.cache_root / book_name
+
+            if getattr(args, "no_cache", False):
+                # Limpar completamente o diretório .cache
+                if self.cache_root.exists():
+                    shutil.rmtree(self.cache_root)
+                self.cache_root.mkdir(exist_ok=True)
+                print("🗑️ Diretório .cache limpo devido ao uso de --no-cache")
+
+            # Garantir que o diretório temporário esteja dentro de .cache
+            book_name = Path(args.input_file).stem
+            temp_dir = self.cache_root / book_name
+            temp_dir.mkdir(parents=True, exist_ok=True)
+
+            # Atualizar mensagem para refletir o uso correto do diretório
+            print(f"📁 Diretório temporário: {temp_dir}")
+
+            # Resolver problema de ^M usando os.reset
+            import os
+            os.system('stty sane')  # Reseta o terminal para um estado funcional
+
+            # Perguntar ao usuário se deseja retomar a conversão
+            resume = False
+            if temp_dir.exists() and any(temp_dir.iterdir()):
+                while True:
+                    response = input(f"❓ Retomar conversão de onde parou para '{book_name}'? [S/n]: ").strip().lower()
+                    if response in ('', 's', 'sim'):
+                        resume = True
+                        break
+                    elif response in ('n', 'nao', 'não'):
+                        resume = False
+                        break
+                    else:
+                        print("⚠️ Resposta inválida. Digite 'S' para Sim ou 'N' para Não.")
+            if not resume:
+                # Limpar diretório temporário se não for retomar
+                for item in temp_dir.iterdir():
+                    if item.is_file():
+                        item.unlink()
+                    elif item.is_dir():
+                        shutil.rmtree(item)
+
+            # Inicializar `config` antes de configurar o diretório temporário
+            config = self._get_conversion_config(args, reader)
+            if not config:
+                return 1
+
+            # Configurar o diretório temporário usando o método existente com `config`
+            temp_dir = self.converter._setup_temp_directory(config)
+
+            self._interactive_mode = bool(getattr(args, "menu", False))
+
+            # Prepare language profile AFTER displaying initial metadata
+            self.language_profile = self._prepare_language_profile(reader, structure_items, verbose=getattr(args, 'verbose', False))
+
+            # Update display with language detection results
+            self._update_metadata_display_language()
+
             # Configure conversion
             config = self._get_conversion_config(args, reader)
             if not config:
                 return 1
-                
+
+            structure_items = self._apply_text_transforms(structure_items, config)
+            self._apply_structure_to_reader(reader, structure_items)
+
             # Convert
             result = asyncio.run(self.converter.convert(reader, config))
 
@@ -94,7 +208,7 @@ class ConverterApplication:
             return 0
 
         except Exception as e:
-            print(f"❌ Error: {e}")
+            print(self.localization.t("unexpected_error", error=e))
             return 1
     
     def _generate_structure_items(self, reader: EbookReader) -> List[ChapterStructureItem]:
@@ -437,11 +551,288 @@ class ConverterApplication:
                     name=item.display_name,
                     source_path=chapter.source_path,
                     text=item.text_override if item.text_override is not None else chapter.text,
-                    level=getattr(chapter, 'level', 1)
+                    level=getattr(chapter, 'level', 1),
+                    raw_html=getattr(chapter, 'raw_html', None)
                 )
             )
 
         reader.book.chapters = new_chapters
+
+    def _apply_text_transforms(
+        self,
+        items: List[ChapterStructureItem],
+        config: ConversionConfig
+    ) -> List[ChapterStructureItem]:
+        footnote_mode = (getattr(config, 'footnote_mode', 'inline') or 'inline').lower()
+        if footnote_mode not in {"inline", "skip", "chapter_end"}:
+            footnote_mode = "inline"
+        context_words = getattr(config, 'footnote_context_words', 8)
+        try:
+            context_words = max(int(context_words), 0)
+        except (TypeError, ValueError):
+            context_words = 8
+
+        transformed_items: List[ChapterStructureItem] = []
+        for item in items:
+            chapter = item.chapter
+            raw_html = getattr(chapter, 'raw_html', None)
+            text_source = item.text_override if item.text_override is not None else getattr(chapter, 'text', '')
+
+            chapter_label = str(
+                item.display_name
+                or getattr(chapter, 'name', None)
+                or (item.index if isinstance(item.index, str) else None)
+                or ""
+            )
+            print(
+                self.localization.t(
+                    "preprocess_chapter",
+                    index=item.index or "?",
+                    title=chapter_label,
+                ),
+                flush=True,
+            )
+
+            if raw_html:
+                updated_text = TextProcessor.inject_footnotes(
+                    raw_html,
+                    mode=footnote_mode,
+                    context_words=context_words,
+                )
+                updated_text = TextProcessor.add_pause_before_dash(updated_text)
+            else:
+                if footnote_mode == 'skip':
+                    updated_text = self._remove_inline_footnotes(text_source)
+                else:
+                    updated_text = text_source
+
+            updated_text = self._deduplicate_heading(updated_text, chapter_label)
+            item.text_override = self.language_markup.annotate(updated_text, config.primary_language)
+            transformed_items.append(item)
+
+        return transformed_items
+
+    def _prepare_language_profile(
+        self,
+        reader: EbookReader,
+        items: List[ChapterStructureItem],
+        verbose: bool = False,
+    ) -> LanguageProfile:
+        print(self.localization.t("language_profile_start"), flush=True)
+        sample_texts: List[str] = []
+
+        # **FIXED**: Melhorar detecção de idioma para livros com capítulos vazios/curtos
+        # Coletar textos até ter pelo menos 2000 chars ou 20 capítulos
+        total_chars = 0
+        items_checked = 0
+        max_items = min(20, len(items))  # Até 20 capítulos
+        min_chars = 2000  # Mínimo 2000 chars para boa detecção
+
+        for item in items[:max_items]:
+            source_text = item.text_override if item.text_override is not None else getattr(item.chapter, 'text', '')
+            if not source_text and getattr(item.chapter, 'raw_html', None):
+                source_text = TextProcessor.html_to_plain_text(item.chapter.raw_html)
+            if source_text and len(source_text.strip()) > 10:  # Ignorar textos muito pequenos
+                sample_texts.append(source_text)
+                total_chars += len(source_text)
+                items_checked += 1
+
+                # Parar se já temos caracteres suficientes
+                if total_chars >= min_chars and items_checked >= 3:
+                    break
+
+        if verbose:
+            print(f"🔍 [VERBOSE] Idioma: analisados {items_checked} capítulos, {total_chars} caracteres")
+
+        profile = self.language_detector.detect_profile(sample_texts)
+
+        if not profile.languages or not profile.primary:
+            languages = self._prompt_for_languages(reader)
+            primary = languages[0] if languages else None
+            return LanguageProfile(
+                primary=primary,
+                languages=languages,
+                predictions=[],
+                analysed_chars=sum(len(text) for text in sample_texts),
+            )
+
+        return profile
+
+    def _prompt_for_languages(self, reader: EbookReader) -> List[str]:
+        default_language = self._infer_language_from_metadata(reader)
+        fallback_language = default_language or ("pt" if self.localization.language == "pt" else "en")
+
+        if not self._interactive_mode or not sys.stdin.isatty():
+            return [fallback_language]
+
+        try:
+            raw = input(self.localization.t("language_prompt", default=fallback_language))
+        except EOFError:
+            return [fallback_language]
+
+        if not raw.strip():
+            return [fallback_language]
+
+        languages = [self._normalise_language_code(part) for part in raw.split(',')]
+        languages = [lang for lang in languages if lang]
+        if not languages:
+            languages = [fallback_language]
+        return languages
+
+    def _infer_language_from_metadata(self, reader: EbookReader) -> Optional[str]:
+        title = (reader.title or "").lower()
+        if any(token in title for token in ("portug", "brasil", "brasile")):
+            return "pt"
+        if any(token in title for token in ("english", "angl", "ingl")):
+            return "en"
+        return None
+
+    @staticmethod
+    def _normalise_language_code(raw: str) -> str:
+        if not raw:
+            return ""
+        clean = raw.strip().lower()
+        if not clean:
+            return ""
+        return clean.split('-', 1)[0]
+
+    def _apply_language_preferences(self, config: ConversionConfig) -> None:
+        profile = self.language_profile
+        fallback_lang = self.localization.language or "pt"
+        if profile is None:
+            profile = LanguageProfile(primary=config.primary_language, languages=[config.primary_language], predictions=[], analysed_chars=0)
+        elif not profile.is_confident:
+            profile = LanguageProfile(
+                primary=fallback_lang,
+                languages=[fallback_lang],
+                predictions=profile.predictions,
+                analysed_chars=profile.analysed_chars,
+            )
+
+        languages = [lang for lang in profile.languages if lang and lang not in {"unknown", "auto"}]
+        if not languages and profile.primary and profile.primary not in {"unknown", "auto"}:
+            languages = [profile.primary]
+        if not languages:
+            languages = [config.primary_language] if config.primary_language and config.primary_language != "auto" else []
+
+        primary_language = profile.primary if profile.primary not in {None, "", "unknown"} else None
+        if not primary_language and languages:
+            primary_language = languages[0]
+        if not primary_language or primary_language in {"", "unknown"}:
+            primary_language = config.primary_language if config.primary_language not in {None, "", "auto"} else "auto"
+
+        config.primary_language = primary_language or "auto"
+        config.languages = languages or ([config.primary_language] if config.primary_language not in {None, "auto"} else [])
+
+        language_voice_map = self.config.voice_configs.build_language_voice_map(
+            config.engine,
+            config.languages or ([config.primary_language] if config.primary_language not in {None, "auto"} else []),
+            config.voice,
+            primary_language=config.primary_language,
+        )
+
+        if not config.voice and primary_language:
+            config.voice = self.config.voice_configs.get_voice(config.engine, primary_language)
+
+        config.language_voices = language_voice_map
+
+    @staticmethod
+    def _remove_inline_footnotes(text: str) -> str:
+        if not text:
+            return ""
+        pattern = re.compile(
+            r"\s*nota de rodapé\s+\d+:[^\n]*?fim da nota de rodapé\s+\d+\s*",
+            re.IGNORECASE,
+        )
+        cleaned = pattern.sub(" ", text)
+        return re.sub(r"\s+", " ", cleaned).strip()
+
+    @staticmethod
+    def _deduplicate_heading(text: str, display_name: str) -> str:
+        if not text:
+            return text
+
+        lines = text.splitlines()
+        if not lines:
+            return text
+
+        def normalise(value: str) -> str:
+            value = value or ""
+            value = unicodedata.normalize("NFKD", value).casefold()
+            return "".join(ch for ch in value if ch.isalnum())
+
+        display_norm = normalise(display_name)
+
+        for idx, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if display_norm and normalise(stripped) == display_norm:
+                lines.pop(idx)
+            break
+
+        cleaned: list[str] = []
+        previous_norm = None
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                cleaned.append(line)
+                previous_norm = None
+                continue
+            current_norm = normalise(stripped)
+            if previous_norm and current_norm == previous_norm:
+                continue
+            cleaned.append(line)
+            previous_norm = current_norm
+
+        return "\n".join(cleaned).strip()
+
+    @staticmethod
+    def _resolve_footnote_mode(args: argparse.Namespace) -> str:
+        if getattr(args, "no_footnote", False):
+            return "skip"
+        if getattr(args, "footnote_chapter_end", False):
+            return "chapter_end"
+        return "inline"
+
+    def _resolve_cache_dir(self, reader: EbookReader) -> Path:
+        base_name = reader.title or ""
+        if not base_name:
+            file_path = getattr(reader, "file_path", None)
+            if file_path:
+                base_name = Path(file_path).stem
+        if not base_name:
+            base_name = "livro"
+        sanitized = FileManager.sanitize_filename(base_name)
+        if not sanitized:
+            sanitized = "livro"
+        return self.cache_root / sanitized
+
+    def _handle_clear_cache(self) -> int:
+        """Handle global cache clearing command"""
+        from src.cache_manager import CacheManager
+        cache_manager = CacheManager()
+
+        cache_info = cache_manager.get_cache_info()
+        if cache_info['total_cached_books'] == 0:
+            print("📁 Nenhum cache encontrado.")
+            return 0
+
+        print(f"🗑️ Removendo cache de {cache_info['total_cached_books']} livro(s)...")
+        print(f"💾 Tamanho total: {cache_info['cache_size_mb']:.1f} MB")
+
+        success = cache_manager.clear_cache()
+        if success:
+            print("✅ Todo o cache foi removido com sucesso!")
+            return 0
+        else:
+            print("❌ Erro ao remover cache.")
+            return 1
+
+    @staticmethod
+    def _clear_cache_dir(cache_dir: Path) -> None:
+        if cache_dir.exists():
+            shutil.rmtree(cache_dir, ignore_errors=True)
 
     @staticmethod
     def _normalize_lookup(value: Optional[str]) -> str:
@@ -465,7 +856,10 @@ class ConverterApplication:
             return items, False
 
         matched: List[ChapterStructureItem] = []
-        seen_sources = set()
+
+        # Garantir que `matched` seja inicializado corretamente
+        if not matched:
+            matched = []
 
         for item in items:
             index_str = str(item.index)
@@ -487,33 +881,29 @@ class ConverterApplication:
                 continue
 
             source_key = (index_norm, display_norm)
-            if source_key in seen_sources:
+            if source_key in matched:
                 continue
-            seen_sources.add(source_key)
             matched.append(item)
 
         if not matched:
             selector_preview = ", ".join(selectors)
             available = ", ".join(str(item.index) for item in items[:10])
-            print(
-                f"⚠️ Nenhum capítulo ou seção corresponde a: {selector_preview}. "
-                f"Índices disponíveis: {available}"
-            )
+            print(self.localization.t("selectors_not_found", selectors=selector_preview, available=available))
             return [], True
 
         return matched, True
 
     def _show_structure(self, reader: EbookReader):
         """Display book structure"""
-        print(f"📚 {reader.title}")
-        print(f"👤 {reader.author}")
+        print(f"{self.localization.t('book_label')}: {reader.title}")
+        print(f"{self.localization.t('author_label')}: {reader.author}")
         structure_items = self._generate_structure_items(reader)
-        print(f"📄 {len(structure_items)} chapters")
+        print(f"{self.localization.t('chapters_label')}: {len(structure_items)}")
 
         for item in structure_items:
             text_source = item.text_override if item.text_override is not None else getattr(item.chapter, 'text', '')
             text_length = len(str(text_source))
-            print(f"  {item.display_name} ({text_length} chars)")
+            print(self.localization.t("structure_item_entry", name=item.display_name, chars=text_length))
 
     def _should_skip_chapter(
         self,
@@ -590,7 +980,7 @@ class ConverterApplication:
             return ""
         lowered = name.lower()
         lowered = re.sub(r"cap[íi]tulo\s*\d+", "", lowered)
-        lowered = re.sub(r"livro\s*[ivx0-9]+", "", lowered)
+        lowered = re.sub(r"livro\s*[ivx]+", "", lowered)
         lowered = lowered.replace("post-scriptum", "")
         lowered = lowered.replace("post scriptum", "")
         lowered = lowered.replace("pos-scriptum", "")
@@ -610,7 +1000,7 @@ class ConverterApplication:
             return mapping
 
         try:
-            toc_entries = list(get_toc())
+            toc_entries = list(get_toc() or [])
         except Exception:
             return mapping
 
@@ -890,7 +1280,7 @@ class ConverterApplication:
             # Extract key parts of the clean name for removal
             if "§" in clean_name:
                 # For sections like "§1 Introdução", remove both "introdução" and section references
-                section_parts = clean_name.split()
+                section_parts = clean_name.split(' ')
                 for part in section_parts:
                     if len(part) > 3 and part not in ["§1", "§2", "§3", "§4", "§5"]:
                         patterns_to_remove.append(re.escape(part.lower()))
@@ -928,6 +1318,62 @@ class ConverterApplication:
             result = result[0].upper() + result[1:] if len(result) > 1 else result.upper()
 
         return result if result else self._extract_first_words(clean_text, max_words)
+
+    def _display_ebook_metadata(self, reader: EbookReader) -> None:
+        """Display ebook metadata at application startup."""
+        print("="*60)
+        print("📚 METADADOS DO EBOOK")
+        print("="*60)
+
+        # Basic metadata
+        print(f"📜 Título: {reader.title or 'N/A'}")
+        print(f"✍️ Autor: {reader.author or 'N/A'}")
+
+        # Chapter count
+        chapters = list(reader.get_chapters())
+        print(f"📊 Capítulos: {len(chapters)}")
+
+        # Calculate total text statistics
+        total_chars = sum(len(chapter.text or "") for chapter in chapters)
+        total_words = sum(len((chapter.text or "").split()) for chapter in chapters)
+
+        print(f"📝 Total de caracteres: {total_chars:,}")
+        print(f"💬 Total de palavras: {total_words:,}")
+
+        # File info
+        if reader.file_path:
+            file_size = reader.file_path.stat().st_size
+            file_size_mb = file_size / (1024 * 1024)
+            print(f"💾 Tamanho do arquivo: {file_size_mb:.1f} MB")
+            print(f"🗺 Formato: {reader.file_path.suffix.upper()[1:]}")
+
+        # TOC info
+        try:
+            toc_items = list(reader.get_toc())
+            if toc_items:
+                print(f"🗺 Índice: {len(toc_items)} entradas")
+        except:
+            pass
+
+        print("="*60)
+        print()
+
+    def _update_metadata_display_language(self) -> None:
+        """Update the terminal with language detection results."""
+        if self.language_profile:
+            print("🌐 DETECÇÃO DE IDIOMA")
+            print("-" * 30)
+            if self.language_profile.primary:
+                confidence = "Alta" if self.language_profile.is_confident else "Baixa"
+                print(f"🌐 Idioma principal: {self.language_profile.primary} (confiança: {confidence})")
+                if len(self.language_profile.predictions) > 0:
+                    best_prediction = self.language_profile.predictions[0]
+                    print(f"   Probabilidade: {best_prediction.probability:.1%}")
+                if len(self.language_profile.languages) > 1:
+                    other_langs = ", ".join(self.language_profile.languages[1:3])  # Show up to 2 more
+                    print(f"🌍 Idiomas secundários: {other_langs}")
+            print(f"🔍 Caracteres analisados: {self.language_profile.analysed_chars:,}")
+            print()
 
     def _sanitize_first_words(self, first_words: str, *phrases: str) -> str:
         """Remove redundant leading phrases from extracted first words"""
@@ -1023,16 +1469,8 @@ class ConverterApplication:
 
     def _parse_leading_number(self, raw_index: str) -> Optional[int]:
         try:
-            token = str(raw_index).split('.')[0]
-            return int(float(token))
-        except Exception:
-            return None
-
-    def _parse_leading_number(self, raw_index: str) -> Optional[int]:
-        try:
-            token = str(raw_index).split('.')[0]
-            return int(float(token))
-        except Exception:
+            return int(raw_index.split()[0])
+        except (ValueError, IndexError):
             return None
 
     def _format_chapter_display(self, chapter, chapters, current_index, book_title):
@@ -1103,8 +1541,22 @@ class ConverterApplication:
     def _get_conversion_config(self, args: argparse.Namespace, reader: EbookReader):
         """Get conversion configuration"""
         if getattr(args, "menu", False):
-            return self.menu.get_conversion_config(reader)
-        return self._create_config_from_args(args, reader)
+            config = self.menu.get_conversion_config(reader, language_profile=self.language_profile)
+            if config:
+                if getattr(args, "listen", False):
+                    config.listen = True
+                    config.parallel = 1
+                cache_dir = getattr(args, "cache_dir", None)
+                if cache_dir:
+                    config.cache_dir = Path(cache_dir)
+                config.clear_cache = getattr(args, "clear_cache", False)
+                config.footnote_mode = self._resolve_footnote_mode(args)
+                config.footnote_context_words = self.FOOTNOTE_CONTEXT_WORDS
+                self._apply_language_preferences(config)
+            return config
+        config = self._create_config_from_args(args, reader)
+        self._apply_language_preferences(config)
+        return config
     
     def _create_config_from_args(self, args: argparse.Namespace, reader: EbookReader):
         """Create config from command line arguments"""
@@ -1116,14 +1568,30 @@ class ConverterApplication:
             book_title=reader.title,
             preserve_all_chapters=not getattr(args, 'filter_chapters', False),
             parallel=args.parallel,
+            no_parallel=getattr(args, 'no_parallel', False),
+            use_simple_converter=False,
             listen=getattr(args, 'listen', False),
+            cache_dir=getattr(args, 'cache_dir', None),
+            clear_cache=getattr(args, 'clear_cache', False),
+            footnote_mode=self._resolve_footnote_mode(args),
+            footnote_context_words=self.FOOTNOTE_CONTEXT_WORDS,
+            verbose=getattr(args, 'verbose', False),
         )
 
 
-def _add_conversion_arguments(parser: argparse.ArgumentParser, *, include_menu_flag: bool = True) -> None:
+def _add_conversion_arguments(
+    parser: argparse.ArgumentParser,
+    *,
+    include_menu_flag: bool = True,
+    input_required: bool = True,
+) -> None:
     """Attach shared CLI arguments and optional tab completion metadata."""
 
-    input_arg = parser.add_argument("input_file", help="Input EPUB or PDF file")
+    input_arg = parser.add_argument(
+        "input_file",
+        nargs=None if input_required else "?",
+        help="Input EPUB or PDF file",
+    )
     engine_arg = parser.add_argument(
         "--engine",
         choices=["edge", "coqui", "piper"],
@@ -1135,7 +1603,7 @@ def _add_conversion_arguments(parser: argparse.ArgumentParser, *, include_menu_f
     parser.add_argument(
         "--show-structure",
         action="store_true",
-        help="Show book structure and exit",
+        help="Print the detected book structure and exit",
     )
     parser.add_argument(
         "--filter-chapters",
@@ -1143,22 +1611,60 @@ def _add_conversion_arguments(parser: argparse.ArgumentParser, *, include_menu_f
         help="Skip very short chapters when converting",
     )
     parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable verbose logging for debugging",
+    )
+    parser.add_argument(
         "--parallel",
         type=int,
-        help="Parallel chapter conversions (default: CPU count)",
+        nargs="?",
+        const=0,  # Quando --parallel é usado sem valor, const=0 será usado
+        help="Enable parallel processing. Use --parallel N for N workers, or --parallel for auto (default: sequential)",
+    )
+    parser.add_argument(
+        "--no-parallel",
+        action="store_true",
+        help="Force sequential processing (overrides --parallel)",
+    )
+    parser.add_argument(
+        "--use-legacy-converter",
+        action="store_true",
+        help="Use legacy complex converter (may have deadlock issues)",
     )
     parser.add_argument(
         "--listen",
         action="store_true",
-        help="Reproduz o áudio imediatamente após a conversão",
+        help="Play each chapter immediately after conversion",
+    )
+    parser.add_argument(
+        "--no-footnote",
+        action="store_true",
+        help="Skip footnotes entirely",
+    )
+    parser.add_argument(
+        "--footnote-chapter-end",
+        action="store_true",
+        help="Read footnotes at the end of the chapter instead of inline",
+    )
+    parser.add_argument(
+        "--clear-cache",
+        action="store_true",
+        help="Remove cached chapter text before converting",
     )
     parser.add_argument(
         "--chapter",
-        "--section",
-        dest="target_structures",
         action="append",
-        metavar="ID",
-        help="Convert only the chapter or section matching the given index or name",
+        dest="chapters",
+        metavar="CHAPTER",
+        help="Select a chapter by index (supports dotted syntax like 3 or 1.2) or title snippet",
+    )
+    parser.add_argument(
+        "--section",
+        action="append",
+        dest="sections",
+        metavar="SECTION",
+        help="Additional selectors for subsections or names (accepts dotted indices and text)",
     )
 
     if include_menu_flag:
@@ -1168,16 +1674,28 @@ def _add_conversion_arguments(parser: argparse.ArgumentParser, *, include_menu_f
             help="Use interactive menu instead of CLI defaults",
         )
 
-    if FilesCompleter is not None:
-        input_arg.completer = FilesCompleter(
-            allowednames=("*.epub", "*.pdf"),
-            directories=True,
-        )
-    if ChoicesCompleter is not None and getattr(engine_arg, "choices", None):
-        engine_arg.completer = ChoicesCompleter(engine_arg.choices)
+    # Remover configuração de `completer` para evitar erros
+    # Comentado pois `completer` não é reconhecido na classe `Action`
+    # if FilesCompleter is not None:
+    #     input_arg.completer = FilesCompleter()
+    # else:
+    #     print("⚠️ 'FilesCompleter' não está disponível. Certifique-se de que o módulo 'argcomplete' está instalado.")
+
+    # if ChoicesCompleter is not None:
+    #     engine_arg.completer = ChoicesCompleter(engine_arg.choices)
+    # else:
+    #     print("⚠️ 'ChoicesCompleter' não está disponível. Certifique-se de que o módulo 'argcomplete' está instalado.")
+
+    def _parse_leading_number(raw_index: str) -> Optional[int]:
+        try:
+            return int(raw_index.split()[0])
+        except (ValueError, IndexError):
+            return None
+
+    return parser
 
 
-def create_argument_parser() -> argparse.ArgumentParser:
+def create_argument_parser() -> "argparse.ArgumentParser":
     """Create command line argument parser."""
 
     parser = argparse.ArgumentParser(
@@ -1204,6 +1722,14 @@ def create_argument_parser() -> argparse.ArgumentParser:
     _add_conversion_arguments(menu_parser, include_menu_flag=False)
     menu_parser.set_defaults(command="menu", menu=True)
 
+    # **NEW**: Clear cache subcommand for global cache cleanup
+    cache_parser = subparsers.add_parser(
+        "clear-cache",
+        help="Clear all cached ebook data",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    cache_parser.set_defaults(command="clear_cache")
+
     return parser
 
 
@@ -1212,19 +1738,19 @@ def main() -> int:
     parser = create_argument_parser()
 
     if argcomplete is not None:
-        argcomplete.autocomplete(parser)  # Enables shell tab completion when available
+        argcomplete.autocomplete(parser)  # Enables shell tab completion when available 
 
     argv = sys.argv[1:]
     if not argv:
         parser.print_help()
-        return 1
-
-    commands = {"convert", "menu"}
-    if argv[0] not in commands and argv[0] not in {"-h", "--help"}:
-        argv = ["convert", *argv]
+        return 0
 
     args = parser.parse_args(argv)
-    
+    if not hasattr(args, "chapters"):
+        args.chapters = []
+    if not hasattr(args, "sections"):
+        args.sections = []
+
     app = ConverterApplication()
     return app.run(args)
 

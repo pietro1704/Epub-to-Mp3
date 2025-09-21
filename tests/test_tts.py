@@ -32,7 +32,11 @@ class TestTTSFactory(unittest.TestCase):
         with patch('src.tts.edge_engine.EdgeTTSEngine') as mock_engine:
             engine = self.factory.create_engine(config)
             
-            mock_engine.assert_called_once_with("pt-BR-FranciscaNeural")
+            mock_engine.assert_called_once_with(
+                "pt-BR-FranciscaNeural",
+                primary_language="auto",
+                language_voices={},
+            )
 
     def test_create_coqui_engine(self):
         """Test creating Coqui TTS engine"""
@@ -41,7 +45,11 @@ class TestTTSFactory(unittest.TestCase):
         with patch('src.tts.coqui_engine.CoquiTTSEngine') as mock_engine:
             engine = self.factory.create_engine(config)
             
-            mock_engine.assert_called_once_with("test_model")
+            mock_engine.assert_called_once_with(
+                "test_model",
+                primary_language="auto",
+                language_voices={},
+            )
 
     def test_create_piper_engine(self):
         """Test creating Piper TTS engine"""
@@ -51,7 +59,11 @@ class TestTTSFactory(unittest.TestCase):
         with patch('src.tts.piper_engine.PiperTTSEngine') as mock_engine:
             engine = self.factory.create_engine(config)
             
-            mock_engine.assert_called_once_with(model_path)
+            mock_engine.assert_called_once_with(
+                model_path,
+                primary_language="auto",
+                language_voices={},
+            )
 
     def test_create_piper_engine_auto_find(self):
         """Test creating Piper TTS engine with auto model detection"""
@@ -64,7 +76,11 @@ class TestTTSFactory(unittest.TestCase):
             engine = self.factory.create_engine(config)
             
             mock_find.assert_called_once()
-            mock_engine.assert_called_once_with(Path("found_model.onnx"))
+            mock_engine.assert_called_once_with(
+                Path("found_model.onnx"),
+                primary_language="auto",
+                language_voices={},
+            )
 
     def test_create_unsupported_engine(self):
         """Test creating unsupported engine"""
@@ -140,22 +156,72 @@ class TestEdgeTTSEngine(unittest.TestCase):
         """Test successful text synthesis"""
         with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
             from src.tts.edge_engine import EdgeTTSEngine
-            
-            # Mock communicate object
-            mock_communicate = AsyncMock()
-            mock_edge_tts.Communicate.return_value = mock_communicate
-            
+
+            class DummyCommunicate:
+                def __init__(self, chunks):
+                    self._chunks = chunks
+
+                async def stream(self):
+                    for chunk in self._chunks:
+                        yield chunk
+
+            mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(
+                [
+                    {"type": "audio", "data": b"DATA"},
+                    {"type": "WordBoundary", "data": {}},
+                ]
+            )
+
             engine = EdgeTTSEngine("test-voice")
             output_path = Path(self.temp_dir) / "output.wav"
-            
-            # Create output file (simulating successful synthesis)
-            output_path.write_text("A" * 2000)
-            
+
             result = await engine.synthesize_async("Hello world", output_path)
-            
+
             self.assertEqual(result, output_path)
+            self.assertEqual(output_path.read_bytes(), b"DATA")
             mock_edge_tts.Communicate.assert_called_once_with("Hello world", "test-voice")
-            mock_communicate.save.assert_called_once_with(str(output_path))
+
+    async def test_synthesize_async_multilingual(self):
+        """Ensure multilingual markup selects appropriate voices."""
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
+            from src.tts.edge_engine import EdgeTTSEngine
+
+            class DummyCommunicate:
+                def __init__(self, chunks):
+                    self._chunks = chunks
+
+                async def stream(self):
+                    for chunk in self._chunks:
+                        yield chunk
+
+            calls = []
+
+            def make_comm(text, voice):
+                calls.append((text, voice))
+                return DummyCommunicate([
+                    {"type": "audio", "data": b"X"},
+                ])
+
+            mock_edge_tts.Communicate.side_effect = make_comm
+
+            engine = EdgeTTSEngine(
+                "pt-BR-ThalitaMultilingualNeural",
+                primary_language="pt",
+                language_voices={
+                    "pt": "pt-BR-ThalitaMultilingualNeural",
+                    "en": "en-US-JennyNeural",
+                },
+            )
+
+            output_path = Path(self.temp_dir) / "output.wav"
+            text = "Olá [[lang:en]]Hello[[/lang]] mundo"
+
+            result = await engine.synthesize_async(text, output_path)
+
+            self.assertEqual(result, output_path)
+            self.assertEqual(len(calls), 2)
+            self.assertEqual(calls[0][1], "pt-BR-ThalitaMultilingualNeural")
+            self.assertEqual(calls[1][1], "en-US-JennyNeural")
 
     async def test_synthesize_async_empty_text(self):
         """Test synthesis with empty text"""
@@ -172,37 +238,41 @@ class TestEdgeTTSEngine(unittest.TestCase):
 
     async def test_synthesize_async_timeout(self):
         """Test synthesis with timeout"""
-        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts, \
-             patch('src.tts.edge_engine.asyncio.wait_for') as mock_wait_for:
-            
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
             from src.tts.edge_engine import EdgeTTSEngine
-            
-            # Mock timeout
-            mock_wait_for.side_effect = asyncio.TimeoutError()
-            
+
+            class TimeoutCommunicate:
+                async def stream(self):
+                    raise asyncio.TimeoutError()
+
+            mock_edge_tts.Communicate.return_value = TimeoutCommunicate()
+
             engine = EdgeTTSEngine("test-voice")
             output_path = Path(self.temp_dir) / "output.wav"
-            
+
             result = await engine.synthesize_async("Hello world", output_path)
-            
+
             self.assertIsNone(result)
+            self.assertEqual(engine.last_error, "timeout")
 
     async def test_synthesize_async_exception(self):
         """Test synthesis with exception"""
         with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
             from src.tts.edge_engine import EdgeTTSEngine
-            
-            # Mock communicate to raise exception
-            mock_communicate = AsyncMock()
-            mock_communicate.save.side_effect = Exception("Test error")
-            mock_edge_tts.Communicate.return_value = mock_communicate
-            
+
+            class ErrorCommunicate:
+                async def stream(self):
+                    raise RuntimeError("Test error")
+
+            mock_edge_tts.Communicate.return_value = ErrorCommunicate()
+
             engine = EdgeTTSEngine("test-voice")
             output_path = Path(self.temp_dir) / "output.wav"
-            
+
             result = await engine.synthesize_async("Hello world", output_path)
-            
+
             self.assertIsNone(result)
+            self.assertIn("RuntimeError", engine.last_error)
 
     def test_calculate_timeout(self):
         """Test timeout calculation"""

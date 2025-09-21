@@ -11,6 +11,8 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 
+from .text_formatting import TextFormattingProcessor, FormattingSegment
+
 try:  # pragma: no cover - exercised indirectly in tests
     import pypdf  # type: ignore
     PDF_AVAILABLE = True
@@ -47,6 +49,8 @@ class Chapter:
     source_path: str
     text: str
     level: int = 1
+    raw_html: Optional[str] = None
+    formatting_segments: Optional[List[FormattingSegment]] = None
 
 
 @dataclass(slots=True)
@@ -67,6 +71,45 @@ class Book:
 
 class TextProcessor:
     """Utility helpers for dealing with HTML text inside EPUB files."""
+
+    @staticmethod
+    def html_to_plain_text_with_formatting(content: Optional[str]) -> Tuple[str, List[FormattingSegment]]:
+        """Convert HTML to plain text while preserving formatting information"""
+        if not content:
+            return "", []
+
+        # Initialize formatting processor
+        formatter = TextFormattingProcessor()
+
+        # Extract formatting and convert to internal markers
+        text_with_markers = formatter.extract_formatting(content)
+
+        # Apply standard text processing
+        text = str(text_with_markers)
+        text = STYLE_RE.sub("", text)
+        text = SCRIPT_RE.sub("", text)
+        text = NBSP_RE.sub(" ", text)
+        text = ARTIFACT_RE.sub(" ", text)
+        text = re.sub(r"(?is)<head.*?>.*?</head>", "", text)
+        text = text.replace("\r", "\n")
+        text = PARA_BLOCK_RE.sub("\n", text)
+
+        # Clean remaining HTML tags but preserve formatting markers
+        text = re.sub(r'<(?!/?fmt)[^>]+>', '', text)  # Remove HTML tags but keep [[fmt:...]] markers
+        text = WHITESPACE_RE.sub(" ", text)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+
+        lines = [line.strip() for line in text.split("\n")]
+        lines = [line for line in lines if line]
+        clean_text = "\n".join(lines)
+
+        # Parse the text with formatting markers into segments
+        formatting_segments = formatter.parse_formatted_text(clean_text)
+
+        # Return clean text without markers for backward compatibility
+        plain_text = formatter.clean_html_tags(content)
+
+        return plain_text, formatting_segments
 
     @staticmethod
     def html_to_plain_text(content: Optional[str]) -> str:
@@ -90,20 +133,35 @@ class TextProcessor:
         return "\n".join(lines)
 
     @staticmethod
-    def inject_footnotes(markup: Optional[str]) -> str:
+    def inject_footnotes(
+        markup: Optional[str],
+        mode: str = "inline",
+        context_words: int = 8,
+    ) -> str:
         if not markup:
             return ""
+
         try:
             from bs4 import BeautifulSoup  # type: ignore
         except ImportError:  # pragma: no cover - optional dependency
-            return markup
+            BeautifulSoup = None
 
+        if BeautifulSoup is not None:
+            processed_markup, footnotes = TextProcessor._collect_footnotes_bs4(str(markup), BeautifulSoup)
+        else:
+            processed_markup, footnotes = TextProcessor._collect_footnotes_fallback(str(markup))
+
+        plain_text = TextProcessor.html_to_text(processed_markup)
+        return TextProcessor._render_footnotes(plain_text, footnotes, mode=mode, context_words=context_words)
+
+    @staticmethod
+    def _collect_footnotes_bs4(markup: str, BeautifulSoup) -> Tuple[str, List[Dict[str, str]]]:
         soup = BeautifulSoup(markup, "html.parser")
         if soup is None:
-            return markup
+            return markup, []
 
-        note_cache: Dict[str, Tuple[object, str]] = {}
-        note_numbers: Dict[str, int] = {}
+        footnotes: List[Dict[str, str]] = []
+        note_numbers: Dict[str, str] = {}
         processed_targets: List[str] = []
 
         def normalise_fragment(href: str) -> str:
@@ -124,11 +182,22 @@ class TextProcessor:
                     epub_type = str(value).lower()
                     break
             classes = [cls.lower() for cls in anchor.get("class", [])]
-            if "noteref" in classes or role == "doc-noteref" or epub_type == "noteref":
+            href_value = (anchor.get("href") or anchor.get("xlink:href") or "").lower()
+            anchor_id = (anchor.get("id") or "").lower()
+
+            if (
+                "noteref" in classes
+                or "footnote" in classes
+                or role == "doc-noteref"
+                or epub_type == "noteref"
+                or "footnote" in href_value
+                or "footnote" in anchor_id
+                or "idfootnotelink" in classes
+            ):
                 return True
-            if anchor_text and len(anchor_text) <= 5:
-                stripped = anchor_text.strip("[]()")
-                if stripped.replace('.', '').isdigit():
+            if anchor_text:
+                digits_only = "".join(ch for ch in anchor_text if ch.isdigit())
+                if digits_only.isdigit():
                     return True
             if target_text and any(token in target_text.lower() for token in ("nota", "footnote", "rodapé", "rodape")):
                 return True
@@ -142,7 +211,7 @@ class TextProcessor:
                 if href.startswith('#'):
                     backlink.decompose()
             raw = node.get_text(" ", strip=True)
-            return TextProcessor.html_to_plain_text(raw)
+            return TextProcessor.normalise_whitespace(raw)
 
         def strip_leading_label(text: str, label: str) -> str:
             if not text:
@@ -161,37 +230,42 @@ class TextProcessor:
                         break
             return cleaned.strip()
 
-        anchors = soup.find_all('a')
-        for anchor in anchors:
+        for anchor in list(soup.find_all('a')):
             href = anchor.get('href', '') or anchor.get('xlink:href', '')
             fragment = normalise_fragment(href)
             if not fragment:
                 continue
 
-            if fragment in note_cache:
-                note_node, note_text = note_cache[fragment]
-            else:
-                note_node = soup.find(id=fragment)
-                if note_node is None:
-                    continue
-                note_text = extract_note_text(note_node)
-                note_cache[fragment] = (note_node, note_text)
-
+            note_node = soup.find(id=fragment)
+            note_text = extract_note_text(note_node)
             if not note_text:
                 continue
             if not looks_like_noteref(anchor, note_text):
                 continue
 
             label = anchor.get_text(" ", strip=True)
-            note_number = note_numbers.setdefault(fragment, len(note_numbers) + 1)
+            number_hint = "".join(ch for ch in label if ch.isdigit())
+            if fragment in note_numbers:
+                note_number = note_numbers[fragment]
+            else:
+                if number_hint.isdigit():
+                    note_number = number_hint
+                else:
+                    note_number = str(len(note_numbers) + 1)
+                note_numbers[fragment] = note_number
             cleaned_text = strip_leading_label(note_text, label)
             if not cleaned_text:
                 cleaned_text = note_text.strip()
 
-            replacement = soup.new_string(
-                f" {{ nota de rodapé {note_number}: {cleaned_text} - fim da nota de rodapé }} "
-            )
-            anchor.replace_with(replacement)
+            marker_token = f"[[FOOTNOTE_{len(footnotes) + 1}]]"
+            footnotes.append({
+                "marker": marker_token,
+                "number": note_number,
+                "text": cleaned_text,
+                "original_text": TextProcessor.normalise_whitespace(note_text),
+            })
+
+            anchor.replace_with(marker_token)
             parent = anchor.parent
             if parent and parent.name == 'sup' and not parent.get_text(strip=True):
                 parent.decompose()
@@ -199,11 +273,135 @@ class TextProcessor:
             processed_targets.append(fragment)
 
         for fragment in set(processed_targets):
-            node, _ = note_cache.get(fragment, (None, ""))
+            node = soup.find(id=fragment)
             if node is not None:
                 node.decompose()
 
-        return str(soup)
+        return str(soup), footnotes
+
+    @staticmethod
+    def _collect_footnotes_fallback(markup: str) -> Tuple[str, List[Dict[str, str]]]:
+        footnote_pattern = re.compile(
+            r'<(?:div|p)[^>]*id="(?P<id>[^"]+)"[^>]*>(?P<body>.*?)</(?:div|p)>',
+            re.IGNORECASE | re.DOTALL,
+        )
+        footnote_map: Dict[str, str] = {}
+
+        def capture(match: re.Match) -> str:
+            foot_id = match.group('id')
+            if 'footnote' not in foot_id.lower():
+                return match.group(0)
+            body = match.group('body')
+            plain = TextProcessor.html_to_plain_text(body)
+            footnote_map[foot_id] = TextProcessor.normalise_whitespace(plain)
+            return ''
+
+        markup_without_footnotes = footnote_pattern.sub(capture, markup)
+
+        footnotes: List[Dict[str, str]] = []
+        note_numbers: Dict[str, str] = {}
+        counter = 0
+
+        anchor_pattern = re.compile(
+            r'(<sup[^>]*>\s*)?<a[^>]+href=["\"][^"#\']*#(?P<fragment>[^"\']+)["\"][^>]*>(?P<label>.*?)</a>(\s*</sup>)?',
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        def replace(match: re.Match) -> str:
+            nonlocal counter
+            fragment = match.group('fragment')
+            if fragment not in footnote_map:
+                return match.group(0)
+            label = TextProcessor.html_to_plain_text(match.group('label'))
+            digits = ''.join(ch for ch in label if ch.isdigit())
+            if fragment in note_numbers:
+                number = note_numbers[fragment]
+            else:
+                number = digits if digits else str(len(note_numbers) + 1)
+                note_numbers[fragment] = number
+            counter += 1
+            marker_token = f"[[FOOTNOTE_{counter}]]"
+            footnote_text = footnote_map.get(fragment, '').strip()
+            if digits and footnote_text.startswith(digits):
+                footnote_text = footnote_text[len(digits):].lstrip(' .:-)–—')
+            if not footnote_text:
+                footnote_text = footnote_map.get(fragment, '').strip()
+            footnotes.append({
+                "marker": marker_token,
+                "number": number,
+                "text": TextProcessor.normalise_whitespace(footnote_text),
+                "original_text": TextProcessor.normalise_whitespace(footnote_map.get(fragment, '')),
+            })
+            return marker_token
+
+        markup_with_markers = anchor_pattern.sub(replace, markup_without_footnotes)
+        return markup_with_markers, footnotes
+
+    @staticmethod
+    def _render_footnotes(
+        base_text: str,
+        footnotes: List[Dict[str, str]],
+        *,
+        mode: str,
+        context_words: int,
+    ) -> str:
+        if not footnotes:
+            return base_text
+
+        mode = (mode or "inline").lower()
+        context_words = max(int(context_words or 0), 0)
+
+        text = base_text
+
+        if mode == "inline":
+            for footnote in footnotes:
+                marker = footnote["marker"]
+                replacement = (
+                    f" nota de rodapé {footnote['number']}: {footnote['text']} "
+                    f"fim da nota de rodapé {footnote['number']} "
+                )
+                text = text.replace(marker, replacement, 1)
+            return text
+
+        appended_entries: List[Tuple[str, str, str]] = []
+        for footnote in footnotes:
+            marker = footnote["marker"]
+            while marker in text:
+                idx = text.find(marker)
+                if idx == -1:
+                    break
+                preceding = text[:idx]
+                snippet = TextProcessor._extract_context_snippet(preceding, context_words)
+                text = text[:idx] + text[idx + len(marker):]
+                if mode == "chapter_end":
+                    appended_entries.append(
+                        (footnote["number"], snippet, footnote["text"])
+                    )
+                break
+
+            if mode == "chapter_end" and appended_entries:
+                lines = []
+                for number, snippet, note_text in appended_entries:
+                    snippet_part = (snippet or "contexto não identificado").strip()
+                    note_display = f"{number}: {note_text}"
+                    lines.append(
+                        f"nota de rodapé {number}: {snippet_part} - {note_display} fim da nota de rodapé {number}"
+                    )
+                text = text.rstrip() + "\n\n" + "\n".join(lines)
+
+        return text
+
+    @staticmethod
+    def _extract_context_snippet(preceding_text: str, words: int) -> str:
+        if words <= 0 or not preceding_text:
+            return ""
+        window = preceding_text[-200:]
+        tokens = window.strip().split()
+        if not tokens:
+            return ""
+        snippet_tokens = tokens[-words:]
+        snippet = " ".join(snippet_tokens)
+        return snippet.strip(" -–—,:;·\"'“”‘’")
 
     @staticmethod
     def html_to_text(content: str) -> str:
@@ -386,17 +584,21 @@ class EpubParser:
             if TextProcessor.looks_like_css(raw_content):
                 continue
 
-            enriched_content = TextProcessor.inject_footnotes(raw_content)
-            text = TextProcessor.html_to_text(enriched_content)
-            text = TextProcessor.add_pause_before_dash(text)
+            # Process text with formatting awareness
+            text_with_footnotes = TextProcessor.inject_footnotes(raw_content)
+            text_with_formatting, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(text_with_footnotes)
+            text = TextProcessor.add_pause_before_dash(text_with_formatting)
             title = TextProcessor.extract_title(raw_content, f"Capítulo {index_counter}") if text else f"Capítulo {index_counter}"
 
+            # Adicionar todos os capítulos, mesmo que estejam vazios
             chapters.append(
                 Chapter(
                     index=index_counter,
                     name=title,
                     source_path=asset_path,
-                    text=text,
+                    text=text or "",  # Garantir que o texto não seja None
+                    raw_html=raw_content,
+                    formatting_segments=formatting_segments,
                 )
             )
             index_counter += 1
@@ -549,7 +751,7 @@ class EbookReader:
     def get_chapters(self) -> List[Chapter]:
         return list(self.book.chapters) if self.book else []
 
-    def _ensure_loaded(self) -> Book:
+    def _ensure_loaded(self) -> Optional[Book]:
         if not self.book:
             if not self.file_path:
                 raise RuntimeError("Reader has no file loaded")
@@ -570,7 +772,10 @@ class EbookReader:
         return self.book.title, self.book.author, chapters
 
     def get_toc(self) -> List[TocItem]:
-        return list(self._ensure_loaded().toc)
+        book = self._ensure_loaded()
+        if not book:
+            return []
+        return list(book.toc)
 
 
 def read_book(file_path: str | Path) -> Book:

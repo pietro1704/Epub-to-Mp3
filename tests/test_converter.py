@@ -88,6 +88,18 @@ class TestAudioConverter(unittest.TestCase):
         
         self.assertEqual(output_dir, Path(self.temp_dir))
 
+    def test_cache_text_creation(self):
+        """Ensure chapter text cache is written to disk."""
+        cache_dir = Path(self.temp_dir)
+        chapter = Chapter(1, "Cache Chapter", "ch-cache.html", "original text")
+        payload = "linha 1\nlinha 2"
+
+        self.converter._cache_text(cache_dir, chapter, 1, payload)
+
+        expected = cache_dir / "text" / "001_Cache_Chapter.txt"
+        self.assertTrue(expected.exists())
+        self.assertEqual(expected.read_text(encoding="utf-8"), payload)
+
     @patch('src.converter.asyncio.gather')
     async def test_convert_chapters_success(self, mock_gather):
         """Test successful chapter conversion"""

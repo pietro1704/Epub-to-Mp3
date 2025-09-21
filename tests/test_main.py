@@ -146,7 +146,10 @@ class TestConverterApplication(unittest.TestCase):
             result = self.app.run(args)
 
             self.assertEqual(result, 1)
-            mock_menu.assert_called_once_with(mock_reader_instance)
+            mock_menu.assert_called_once_with(
+                mock_reader_instance,
+                language_profile=self.app.language_profile,
+            )
 
     def test_create_config_from_args(self):
         """Test creating config from command line arguments"""
@@ -168,15 +171,20 @@ class TestConverterApplication(unittest.TestCase):
             config = self.app._create_config_from_args(args, mock_reader)
             
             self.assertIsNotNone(config)
-            mock_create.assert_called_once_with(
-                engine="edge",
-                voice="test-voice",
-                model=None,
-                output_dir="test_output",
-                book_title="Test Book",
-                preserve_all_chapters=False,  # Inverted from filter_chapters
-                parallel=5
-            )
+            mock_create.assert_called_once()
+            called_kwargs = mock_create.call_args.kwargs
+            self.assertEqual(called_kwargs["engine"], "edge")
+            self.assertEqual(called_kwargs["voice"], "test-voice")
+            self.assertIsNone(called_kwargs["model"])
+            self.assertEqual(called_kwargs["output_dir"], "test_output")
+            self.assertEqual(called_kwargs["book_title"], "Test Book")
+            self.assertFalse(called_kwargs["preserve_all_chapters"])
+            self.assertEqual(called_kwargs["parallel"], 5)
+            self.assertFalse(called_kwargs["listen"])
+            self.assertIsNone(called_kwargs["cache_dir"])
+            self.assertFalse(called_kwargs["clear_cache"])
+            self.assertEqual(called_kwargs["footnote_mode"], "inline")
+            self.assertEqual(called_kwargs["footnote_context_words"], self.app.FOOTNOTE_CONTEXT_WORDS)
 
     def test_run_with_exception(self):
         """Test running with exception"""
@@ -190,13 +198,23 @@ class TestConverterApplication(unittest.TestCase):
             filter_chapters=False,
             parallel=None
         )
-        
+
         with patch('main.EbookReader') as mock_reader:
             mock_reader.side_effect = Exception("Test exception")
-            
+
             result = self.app.run(args)
-            
+
             self.assertEqual(result, 1)
+
+    def test_deduplicate_heading(self):
+        """Ensure duplicate heading lines are removed."""
+        text = "Capítulo Um\nCAPÍTULO UM\nConteúdo"  # duplicate heading with different casing
+        result = self.app._deduplicate_heading(text, "Capítulo Um")
+        self.assertEqual(result, "CAPÍTULO UM\nConteúdo")
+
+        text2 = "\n\nPrólogo\nPrólogo\nTexto"
+        result2 = self.app._deduplicate_heading(text2, "")
+        self.assertEqual(result2, "Prólogo\nTexto")
 
 
 class TestArgumentParser(unittest.TestCase):
@@ -207,11 +225,12 @@ class TestArgumentParser(unittest.TestCase):
         parser = create_argument_parser()
         
         # Test required argument
-        args = parser.parse_args(["test.epub"])
+        args = parser.parse_args(["convert", "test.epub"])
         self.assertEqual(args.input_file, "test.epub")
         
         # Test optional arguments
         args = parser.parse_args([
+            "convert",
             "test.epub",
             "--engine", "edge",
             "--voice", "test-voice",
@@ -234,7 +253,7 @@ class TestArgumentParser(unittest.TestCase):
         
         # Valid engines
         for engine in ["edge", "coqui", "piper"]:
-            args = parser.parse_args(["test.epub", "--engine", engine])
+            args = parser.parse_args(["convert", "test.epub", "--engine", engine])
             self.assertEqual(args.engine, engine)
 
 
@@ -242,7 +261,7 @@ class TestMainFunction(unittest.TestCase):
     """Test cases for main function"""
 
     @patch('main.ConverterApplication')
-    @patch('sys.argv', ['main.py', 'test.epub'])
+    @patch('sys.argv', ['main.py', 'convert', 'test.epub'])
     def test_main_function(self, mock_app_class):
         """Test main function"""
         mock_app = Mock()
@@ -254,7 +273,7 @@ class TestMainFunction(unittest.TestCase):
         mock_app.run.assert_called_once()
 
     @patch('main.ConverterApplication')
-    @patch('sys.argv', ['main.py', 'test.epub'])
+    @patch('sys.argv', ['main.py', 'convert', 'test.epub'])
     def test_main_function_with_error(self, mock_app_class):
         """Test main function with error"""
         mock_app = Mock()
