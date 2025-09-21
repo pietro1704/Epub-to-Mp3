@@ -9,6 +9,7 @@ import argparse
 import asyncio
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
@@ -68,6 +69,12 @@ class ConverterApplication:
             
             # Prepare structured chapters for conversion
             structure_items = self._generate_structure_items(reader)
+            structure_items, filtered = self._filter_structure_selection(
+                structure_items,
+                getattr(args, "target_structures", None)
+            )
+            if filtered and not structure_items:
+                return 1
             self._apply_structure_to_reader(reader, structure_items)
             
             # Configure conversion
@@ -435,6 +442,66 @@ class ConverterApplication:
             )
 
         reader.book.chapters = new_chapters
+
+    @staticmethod
+    def _normalize_lookup(value: Optional[str]) -> str:
+        if not value:
+            return ""
+        normalised = unicodedata.normalize("NFKD", value)
+        stripped = ''.join(ch for ch in normalised if not unicodedata.combining(ch))
+        return stripped.lower().strip()
+
+    def _filter_structure_selection(
+        self,
+        items: List[ChapterStructureItem],
+        selectors: Optional[List[str]]
+    ) -> Tuple[List[ChapterStructureItem], bool]:
+        if not selectors:
+            return items, False
+
+        normalised_selectors = [self._normalize_lookup(sel) for sel in selectors if sel]
+        normalised_selectors = [sel for sel in normalised_selectors if sel]
+        if not normalised_selectors:
+            return items, False
+
+        matched: List[ChapterStructureItem] = []
+        seen_sources = set()
+
+        for item in items:
+            index_str = str(item.index)
+            index_norm = self._normalize_lookup(index_str)
+            base_index_norm = self._normalize_lookup(index_str.split('.', 1)[0]) if index_str else ""
+            display_norm = self._normalize_lookup(item.display_name)
+            chapter_name_norm = self._normalize_lookup(getattr(item.chapter, 'name', ''))
+
+            for selector in normalised_selectors:
+                if selector == index_norm:
+                    break
+                if selector == base_index_norm and base_index_norm:
+                    break
+                if selector and index_norm.startswith(f"{selector}."):
+                    break
+                if selector in display_norm or selector in chapter_name_norm:
+                    break
+            else:
+                continue
+
+            source_key = (index_norm, display_norm)
+            if source_key in seen_sources:
+                continue
+            seen_sources.add(source_key)
+            matched.append(item)
+
+        if not matched:
+            selector_preview = ", ".join(selectors)
+            available = ", ".join(str(item.index) for item in items[:10])
+            print(
+                f"⚠️ Nenhum capítulo ou seção corresponde a: {selector_preview}. "
+                f"Índices disponíveis: {available}"
+            )
+            return [], True
+
+        return matched, True
 
     def _show_structure(self, reader: EbookReader):
         """Display book structure"""
@@ -1048,7 +1115,8 @@ class ConverterApplication:
             output_dir=args.output_dir or "output",
             book_title=reader.title,
             preserve_all_chapters=not getattr(args, 'filter_chapters', False),
-            parallel=args.parallel
+            parallel=args.parallel,
+            listen=getattr(args, 'listen', False),
         )
 
 
@@ -1078,6 +1146,19 @@ def _add_conversion_arguments(parser: argparse.ArgumentParser, *, include_menu_f
         "--parallel",
         type=int,
         help="Parallel chapter conversions (default: CPU count)",
+    )
+    parser.add_argument(
+        "--listen",
+        action="store_true",
+        help="Reproduz o áudio imediatamente após a conversão",
+    )
+    parser.add_argument(
+        "--chapter",
+        "--section",
+        dest="target_structures",
+        action="append",
+        metavar="ID",
+        help="Convert only the chapter or section matching the given index or name",
     )
 
     if include_menu_flag:

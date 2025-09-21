@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import asyncio
 import re
+import shutil
+import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional, Tuple
 
 
 class FileManager:
@@ -94,6 +96,42 @@ class AudioProcessor:
     def validate_audio_file(path: Path, min_size_bytes: int = 1024) -> bool:
         file_path = Path(path)
         return file_path.exists() and file_path.is_file() and file_path.stat().st_size >= min_size_bytes
+
+    @staticmethod
+    async def play_audio(path: Path) -> bool:
+        """Play an audio file using the best available system player."""
+
+        file_path = Path(path)
+        if not file_path.exists():
+            return False
+
+        candidates: List[Tuple[str, ...]] = []
+
+        if shutil.which("ffplay"):
+            candidates.append(("ffplay", "-autoexit", "-nodisp", str(file_path)))
+        if shutil.which("mpv"):
+            candidates.append(("mpv", "--no-video", str(file_path)))
+        if sys.platform.startswith("darwin") and shutil.which("afplay"):
+            candidates.append(("afplay", str(file_path)))
+        if shutil.which("cvlc"):
+            candidates.append(("cvlc", "--play-and-exit", str(file_path)))
+
+        for command in candidates:
+            try:
+                process = await asyncio.create_subprocess_exec(
+                    *command,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await process.wait()
+                if process.returncode == 0:
+                    return True
+            except FileNotFoundError:
+                continue
+            except Exception:
+                continue
+
+        return False
 
 
 class TextValidator:

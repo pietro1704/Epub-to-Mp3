@@ -9,6 +9,9 @@ Converte ebooks (EPUB/PDF) em audiolivros MP3 por capítulo usando diferentes en
 - **Cache Inteligente**: Retoma conversões e permite trocar modelos
 - **Progresso Detalhado**: ETA, velocidade e estatísticas em tempo real
 - **Pausas Naturais**: Entre títulos, capítulos e parágrafos
+- **Notas Narradas**: Notas de rodapé anunciadas no fluxo da leitura
+- **Pausa em Diálogo**: Travessões recebem pausa automática para melhorar a narração
+- **Audição Imediata**: Use `--listen` para ouvir capítulos assim que forem gerados
 - **Organização SOLID**: Código bem estruturado e extensível
 
 ## 📋 Pré-requisitos
@@ -97,12 +100,20 @@ python main.py livro.epub --no-cache
 
 # Configurações de áudio
 python main.py livro.epub --bitrate 64k --ar 44100
+
+# Ouvir o resultado direto no terminal (requer ffplay/mpv/cvlc/afplay)
+python main.py convert livro.epub --chapter 1 --listen
 ```
 
 ### Novos Comandos
 - `python main.py convert ...` continua disponível (compatível com o uso anterior)
 - `python main.py menu <arquivo>` inicia direto o menu interativo
 - `python main.py menu -h` mostra a ajuda específica do menu
+
+### Conversão Seletiva
+- Converter apenas um capítulo: `python main.py convert livro.epub --chapter 3`
+- Converter uma seção específica: `python main.py convert livro.epub --section 2.1`
+- Ouvir enquanto converte: `python main.py convert livro.epub --chapter 3 --listen`
 
 ### Autocomplete com TAB
 1. Certifique-se de instalar os requisitos: `pip install -r requirements.txt` (inclui `argcomplete`)

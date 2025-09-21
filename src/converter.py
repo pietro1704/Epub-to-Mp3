@@ -131,11 +131,16 @@ class AudioConverter:
 
         if output_path.exists() and not config.force_reprocess:
             progress.start_chapter(chapter.name or f"Chapter {index}", index)
-            progress.complete_chapter("✅ já existia")
+            status = "✅ já existia"
+            if getattr(config, "listen", False):
+                progress.tick("🔊 reproduzindo")
+                played = await self.audio_processor.play_audio(output_path)
+                status = "✅ concluído" if played else "⚠️ reprodução indisponível"
+            progress.complete_chapter(status)
             return output_path
 
         progress.start_chapter(chapter.name or f"Chapter {index}", index)
-        status_holder = {"text": "⏳ preparando"}
+        status_holder = {"text": "⏳ preparando capítulo"}
         heartbeat_stop = asyncio.Event()
 
         async def heartbeat():
@@ -179,6 +184,10 @@ class AudioConverter:
                     pass
 
                 status_holder["text"] = "✅ concluído"
+                if getattr(config, "listen", False):
+                    status_holder["text"] = "🔊 reproduzindo"
+                    played = await self.audio_processor.play_audio(converted)
+                    status_holder["text"] = "✅ concluído" if played else "⚠️ reprodução indisponível"
                 return converted
         except Exception as exc:
             if not status_holder["text"].startswith("❌"):

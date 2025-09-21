@@ -90,6 +90,122 @@ class TextProcessor:
         return "\n".join(lines)
 
     @staticmethod
+    def inject_footnotes(markup: Optional[str]) -> str:
+        if not markup:
+            return ""
+        try:
+            from bs4 import BeautifulSoup  # type: ignore
+        except ImportError:  # pragma: no cover - optional dependency
+            return markup
+
+        soup = BeautifulSoup(markup, "html.parser")
+        if soup is None:
+            return markup
+
+        note_cache: Dict[str, Tuple[object, str]] = {}
+        note_numbers: Dict[str, int] = {}
+        processed_targets: List[str] = []
+
+        def normalise_fragment(href: str) -> str:
+            if not href:
+                return ""
+            fragment = href.split('#', 1)[-1] if '#' in href else ""
+            return fragment.strip()
+
+        def looks_like_noteref(anchor, target_text: str) -> bool:
+            if anchor is None:
+                return False
+            anchor_text = (anchor.get_text(" ", strip=True) or "").strip()
+            role = (anchor.get("role") or "").lower()
+            epub_type = ""
+            for attr_name in ("epub:type", "epub:type", "epub-type", "type"):
+                value = anchor.get(attr_name)
+                if value:
+                    epub_type = str(value).lower()
+                    break
+            classes = [cls.lower() for cls in anchor.get("class", [])]
+            if "noteref" in classes or role == "doc-noteref" or epub_type == "noteref":
+                return True
+            if anchor_text and len(anchor_text) <= 5:
+                stripped = anchor_text.strip("[]()")
+                if stripped.replace('.', '').isdigit():
+                    return True
+            if target_text and any(token in target_text.lower() for token in ("nota", "footnote", "rodapé", "rodape")):
+                return True
+            return False
+
+        def extract_note_text(node) -> str:
+            if node is None:
+                return ""
+            for backlink in node.find_all('a'):
+                href = backlink.get('href', '')
+                if href.startswith('#'):
+                    backlink.decompose()
+            raw = node.get_text(" ", strip=True)
+            return TextProcessor.html_to_plain_text(raw)
+
+        def strip_leading_label(text: str, label: str) -> str:
+            if not text:
+                return ""
+            cleaned = text.strip()
+            label = (label or "").strip()
+            if label:
+                candidates = [label, f"[{label}]", f"({label})", f"{label}.", f"{label}:", f"{label}-"]
+                lowered = cleaned.lower()
+                for candidate in candidates:
+                    candidate_clean = candidate.strip()
+                    if not candidate_clean:
+                        continue
+                    if lowered.startswith(candidate_clean.lower()):
+                        cleaned = cleaned[len(candidate_clean):].lstrip(" .:-)–—")
+                        break
+            return cleaned.strip()
+
+        anchors = soup.find_all('a')
+        for anchor in anchors:
+            href = anchor.get('href', '') or anchor.get('xlink:href', '')
+            fragment = normalise_fragment(href)
+            if not fragment:
+                continue
+
+            if fragment in note_cache:
+                note_node, note_text = note_cache[fragment]
+            else:
+                note_node = soup.find(id=fragment)
+                if note_node is None:
+                    continue
+                note_text = extract_note_text(note_node)
+                note_cache[fragment] = (note_node, note_text)
+
+            if not note_text:
+                continue
+            if not looks_like_noteref(anchor, note_text):
+                continue
+
+            label = anchor.get_text(" ", strip=True)
+            note_number = note_numbers.setdefault(fragment, len(note_numbers) + 1)
+            cleaned_text = strip_leading_label(note_text, label)
+            if not cleaned_text:
+                cleaned_text = note_text.strip()
+
+            replacement = soup.new_string(
+                f" {{ nota de rodapé {note_number}: {cleaned_text} - fim da nota de rodapé }} "
+            )
+            anchor.replace_with(replacement)
+            parent = anchor.parent
+            if parent and parent.name == 'sup' and not parent.get_text(strip=True):
+                parent.decompose()
+
+            processed_targets.append(fragment)
+
+        for fragment in set(processed_targets):
+            node, _ = note_cache.get(fragment, (None, ""))
+            if node is not None:
+                node.decompose()
+
+        return str(soup)
+
+    @staticmethod
     def html_to_text(content: str) -> str:
         if not content:
             return ""
@@ -104,6 +220,21 @@ class TextProcessor:
         text = WHITESPACE_RE.sub(" ", text)
         text = re.sub(r"\n{2,}", "\n", text)
         return text.strip()
+
+    @staticmethod
+    def add_pause_before_dash(text: str) -> str:
+        if not text:
+            return ""
+
+        def insert_break(match: re.Match) -> str:
+            preceding = match.group(1)
+            dash = match.group(2)
+            trailing = match.group(3)
+            return f"{preceding}\n{dash}{trailing}"
+
+        pattern = re.compile(r"([^\s\n])\s*(—)(\s*)")
+        updated = pattern.sub(insert_break, text)
+        return updated
 
     @staticmethod
     def extract_title(markup: str, fallback: str) -> str:
@@ -255,7 +386,9 @@ class EpubParser:
             if TextProcessor.looks_like_css(raw_content):
                 continue
 
-            text = TextProcessor.html_to_text(raw_content)
+            enriched_content = TextProcessor.inject_footnotes(raw_content)
+            text = TextProcessor.html_to_text(enriched_content)
+            text = TextProcessor.add_pause_before_dash(text)
             title = TextProcessor.extract_title(raw_content, f"Capítulo {index_counter}") if text else f"Capítulo {index_counter}"
 
             chapters.append(
@@ -372,6 +505,7 @@ class PdfParser:
             cleaned = TextProcessor.normalise_whitespace(raw_text)
             if not cleaned:
                 continue
+            cleaned = TextProcessor.add_pause_before_dash(cleaned)
             chapters.append(
                 Chapter(index=idx, name=f"Página {idx}", source_path=f"page_{idx}", text=cleaned)
             )
