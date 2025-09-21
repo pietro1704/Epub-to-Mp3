@@ -89,10 +89,12 @@ class TestAppConfig(unittest.TestCase):
 
         self.assertIsInstance(config, ConversionConfig)
         self.assertEqual(config.engine, "edge")
-        self.assertEqual(config.voice, "pt-BR-AntonioNeural")
+        self.assertEqual(config.voice, "pt-BR-ThalitaMultilingualNeural")
         self.assertIsNone(config.model_path)
-        expected_parallel = max(os.cpu_count() or 1, 1)
+        cpu_count = max(os.cpu_count() or 1, 1)
+        expected_parallel = cpu_count if cpu_count <= 4 else 4
         self.assertEqual(config.parallel, expected_parallel)
+        self.assertEqual(config.batch_size, max(expected_parallel * 2, expected_parallel + 1))
 
     def test_create_conversion_config_with_voice(self):
         """Test creating conversion config with voice"""
@@ -154,9 +156,9 @@ class TestVoiceConfigProvider(unittest.TestCase):
             
         # Check for expected voices
         self.assertIn("1", voices)
-        francisca_voice, francisca_desc = voices["1"]
-        self.assertEqual(francisca_voice, "pt-BR-FranciscaNeural")
-        self.assertIn("Francisca", francisca_desc)
+        thalita_voice, thalita_desc = voices["1"]
+        self.assertEqual(thalita_voice, "pt-BR-ThalitaMultilingualNeural")
+        self.assertIn("Thalita", thalita_desc)
 
     def test_coqui_models(self):
         """Test Coqui TTS models"""

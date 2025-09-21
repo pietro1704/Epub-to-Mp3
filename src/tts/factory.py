@@ -25,22 +25,36 @@ class TTSFactory:
         if engine == "edge":
             from .edge_engine import EdgeTTSEngine
 
-            voice = config.voice or self.voice_provider.get_voice("edge") or "en-US-GuyNeural"
-            return EdgeTTSEngine(voice)
+            voice = config.voice or self.voice_provider.get_voice("edge", config.primary_language) or "pt-BR-ThalitaMultilingualNeural"
+            return EdgeTTSEngine(
+                voice,
+                primary_language=config.primary_language,
+                language_voices=config.language_voices,
+                verbose=getattr(config, 'verbose', False),
+            )
 
         if engine == "coqui":
             from .coqui_engine import CoquiTTSEngine
 
-            voice = config.voice or self.voice_provider.get_voice("coqui")
+            voice = config.voice or self.voice_provider.get_voice("coqui", config.primary_language)
             if not voice:
-                raise ValueError("Voice/model required for Coqui engine")
-            return CoquiTTSEngine(voice)
+                voice = "tts_models/multilingual/multi-dataset/xtts_v2"  # Default model (Multilingual XTTS)
+            return CoquiTTSEngine(
+                voice,
+                primary_language=config.primary_language,
+                language_voices=config.language_voices,
+                verbose=getattr(config, 'verbose', False),
+            )
 
         if engine == "piper":
             from .piper_engine import PiperTTSEngine
 
             model_path = config.model_path or self._find_piper_model()
-            return PiperTTSEngine(model_path)
+            return PiperTTSEngine(
+                model_path,
+                primary_language=config.primary_language,
+                language_voices=config.language_voices,
+            )
 
         raise ValueError(f"Unsupported engine: {config.engine}")
 

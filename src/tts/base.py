@@ -6,6 +6,6 @@ from pathlib import Path
 
 class TTSEngine(Protocol):
     """TTS Engine interface"""
-    async def synthesize_async(self, text: str, output_path: Path) -> Path:
+    async def synthesize_async(self, text: str, output_path: Path, formatting_segments=None) -> Path:
         """Synthesize text to audio file"""
         ...

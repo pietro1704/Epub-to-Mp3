@@ -1,0 +1,45 @@
+{
+  "book_path": "/Users/pietropugliesi/Developer/testCOnvert/definitiv/O Jardim das Aflições.epub",
+  "book_title": "O jardim das Aflições: de Epicuro à ressurreicão de César ; ensaio sobre o materialismo e a religião civil",
+  "output_dir": "/var/folders/2g/_w9gsxq95f1d49y40p7q013w0000gn/T/ebook2audio_temp/O jardim das Aflições_ de Epicuro à ressurreicão de César ; ensaio sobre o materialismo e a religião civil",
+  "temp_dir": "/var/folders/2g/_w9gsxq95f1d49y40p7q013w0000gn/T/ebook2audio_temp/O jardim das Aflições_ de Epicuro à ressurreicão de César ; ensaio sobre o materialismo e a religião civil",
+  "total_chapters": 45,
+  "completed_chapters": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7
+  ],
+  "current_chapter": 7,
+  "conversion_config": {
+    "engine": "edge",
+    "voice": "pt-BR-ThalitaMultilingualNeural",
+    "model_path": null,
+    "output_dir": "output",
+    "book_title": "O jardim das Aflições: de Epicuro à ressurreicão de César ; ensaio sobre o materialismo e a religião civil",
+    "preserve_all_chapters": true,
+    "bitrate": "32k",
+    "sample_rate": 22050,
+    "channels": 1,
+    "parallel": null,
+    "batch_size": 2,
+    "force_reprocess": false,
+    "listen": false,
+    "cache_dir": ".cache/O jardim das Aflições_ de Epicuro à ressurreicão de César ; ensaio sobre o materialismo e a religião civil",
+    "clear_cache": true,
+    "footnote_mode": "inline",
+    "footnote_context_words": 8,
+    "primary_language": "pt",
+    "languages": [
+      "pt"
+    ],
+    "language_voices": {
+      "pt": "pt-BR-ThalitaMultilingualNeural"
+    }
+  },
+  "started_at": "2025-09-23T09:17:00.217792",
+  "last_updated": "2025-09-23T09:23:57.003971"
+}

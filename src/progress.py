@@ -4,6 +4,7 @@ Simplified Progress Tracker - SOLID principles applied
 New focused module for progress tracking following SRP
 """
 
+import sys
 import time
 from typing import Optional
 
@@ -18,9 +19,15 @@ class ProgressTracker:
         self.current_chapter: Optional[str] = None
         self.current_index: Optional[int] = None
         self.start_time = time.time()
+        self._chapter_start_time: float = time.time()
+        self._phase_start_time: float = self._chapter_start_time
         self._last_status: str = ""
         self._last_render_len: int = 0
         self._last_render: str = ""
+        self._supports_overwrite = sys.stdout.isatty()
+        self._last_print_time: float = 0.0
+        self._spinner_frames: tuple[str, ...] = ("-", "\\", "|", "/")
+        self._spinner_index: int = 0
 
     def start(self, total_chapters: int, description: Optional[str] = None) -> None:
         """Reset tracker for a new run."""
@@ -31,9 +38,14 @@ class ProgressTracker:
         self.current_chapter = None
         self.current_index = None
         self.start_time = time.time()
+        self._chapter_start_time = self.start_time
+        self._phase_start_time = self._chapter_start_time
         self._last_status = ""
         self._last_render_len = 0
         self._last_render = ""
+        self._last_print_time = 0.0
+        self._supports_overwrite = sys.stdout.isatty()
+        self._spinner_index = 0
         if self.total_chapters == 0:
             self._render("Nenhum capítulo disponível", force=True)
 
@@ -41,6 +53,8 @@ class ProgressTracker:
         """Announce a new chapter conversion."""
         self.current_chapter = chapter_name
         self.current_index = index
+        self._chapter_start_time = time.time()
+        self._phase_start_time = self._chapter_start_time
         print(f"\n🎧 [{index}/{max(self.total_chapters, 1)}] {chapter_name}")
 
     def complete_chapter(self, status: str = "") -> None:
@@ -64,17 +78,33 @@ class ProgressTracker:
             self._render("Finalizando")
         print(f"\n✅ Conversão concluída em {self._format_time(elapsed)}")
 
+    def mark_phase_start(self) -> None:
+        """Reset the timer for the active phase (after waiting slots)."""
+        self._phase_start_time = time.time()
+
     def _render(self, status: str = "", force: bool = False) -> None:
+        previous_status = self._last_status
+        now = time.time()
+        status = (status or "").strip()
+        if len(status) > 80:
+            status = status[:77] + "..."
+
+        if status and status != previous_status:
+            self._phase_start_time = now
+
         progress_pct = self._progress_percentage()
-        elapsed = time.time() - self.start_time
+        elapsed = now - self.start_time
         eta_seconds = self._eta_seconds(elapsed)
         eta_str = self._format_time(eta_seconds) if eta_seconds > 0 else "--"
         bar = self._generate_progress_bar(progress_pct)
 
-        status = status.strip()
-        if len(status) > 80:
-            status = status[:77] + "..."
-        self._last_status = status
+        spinner = ""
+        if status.startswith("⏳") or status.startswith("🔊"):
+            if status != previous_status:
+                self._spinner_index = 0
+            spinner = f" {self._spinner_frames[self._spinner_index]}"
+            self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
+        display_status = f"{status}{spinner}" if status else ""
 
         total_display = self.total_chapters if self.total_chapters else max(self.completed_chapters, 1)
         message = (
@@ -82,12 +112,31 @@ class ProgressTracker:
             f"({self.completed_chapters}/{total_display}) "
             f"tempo restante: {eta_str}"
         )
-        if status:
-            message += f" | {status}"
+        if display_status:
+            chapter_elapsed = self._format_time(now - self._chapter_start_time)
+            phase_elapsed = self._format_time(now - self._phase_start_time)
+            if status.startswith("⌛"):
+                wait_elapsed = self._format_time(now - self._chapter_start_time)
+                message += f" | {display_status} (espera: {wait_elapsed})"
+            else:
+                message += f" | {display_status} (fase: {phase_elapsed} | capítulo: {chapter_elapsed})"
+        self._last_status = status
 
         rendered = message
         if self._last_render_len > len(message):
             rendered += " " * (self._last_render_len - len(message))
+
+        if not self._supports_overwrite:
+            now = time.time()
+            should_print = rendered != self._last_render
+            if not should_print and (force or (now - self._last_print_time) >= 2):
+                should_print = True
+            if should_print:
+                print(rendered, flush=True)
+                self._last_render_len = len(rendered)
+                self._last_render = rendered
+                self._last_print_time = now
+            return
 
         if not force and rendered == self._last_render:
             return

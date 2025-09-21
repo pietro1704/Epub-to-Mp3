@@ -54,6 +54,32 @@ class FileManager:
     def get_output_path(cls, chapter_name: str, output_dir: Path, index: int) -> Path:
         return Path(output_dir) / cls.build_output_filename(chapter_name, index)
 
+    @classmethod
+    def get_temp_output_path(cls, chapter_name: str, temp_dir: Path, index: int) -> Path:
+        """Get temporary output path for chapter conversion"""
+        return Path(temp_dir) / cls.build_output_filename(chapter_name, index)
+
+    @classmethod
+    def move_files_to_final_output(cls, temp_dir: Path, final_dir: Path) -> List[Path]:
+        """Move all files from temp directory to final output directory"""
+        moved_files = []
+        if not temp_dir.exists():
+            return moved_files
+
+        cls.ensure_directory(final_dir)
+
+        for temp_file in temp_dir.glob("*.mp3"):
+            final_file = final_dir / temp_file.name
+            try:
+                if final_file.exists():
+                    final_file.unlink()  # Remove existing file
+                shutil.move(str(temp_file), str(final_file))
+                moved_files.append(final_file)
+            except Exception as e:
+                print(f"⚠️ Erro ao mover {temp_file.name}: {e}")
+
+        return moved_files
+
 
 class AudioProcessor:
     """Async audio helpers implemented with ``ffmpeg``."""

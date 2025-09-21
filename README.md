@@ -1,22 +1,160 @@
 # 📚 EBook TTS Converter
 
+Turn EPUB/PDF ebooks into MP3 audiobooks with configurable TTS engines, cache, and narration rules.
+
+## 🇺🇸 English
+
+### Features
+- **Multiple TTS Engines**: Edge-TTS (online), Coqui TTS, and Piper (local)
+- **Brazilian Portuguese Voices**: Curated defaults with high-quality PT-BR voices
+- **Smart Cache**: Resume interrupted runs and avoid re-synthesising unchanged chapters
+- **Sequential by Default**: Stable, fast processing without complex parallelism
+- **Optional Parallelism**: Use `--parallel` for multi-worker processing when needed
+- **Detailed Progress**: Live percentage, remaining time, and per-chapter status
+- **Natural Pauses**: Automatic pacing between chapters and paragraphs
+- **Configurable Footnotes**: Inline narration, chapter-end summaries, or full suppression
+- **Interactive Menu**: `--menu` lets you pick engine, voice, and footnote mode interactively
+- **Instant Listening**: Play every chapter immediately with `--listen`
+- **Persistent Audio Cache**: Chapter MP3 files copied to `.cache/<book>/audio`
+- **SOLID Architecture**: Clean modules, easy to extend
+
+### Prerequisites
+```bash
+# Python 3.8+
+python -m pip install --upgrade pip
+
+# FFmpeg (audio conversion)
+# Ubuntu/Debian:
+sudo apt install ffmpeg
+
+# macOS:
+brew install ffmpeg
+
+# Windows: download from https://ffmpeg.org/
+```
+Install at least one TTS engine:
+- `pip install edge-tts`
+- `pip install TTS` (Coqui)
+- Piper CLI + model download (see below)
+
+### Installation
+```bash
+git clone <repo-url>
+cd ebook-tts-converter
+pip install -r requirements.txt
+```
+Minimal install:
+```bash
+pip install beautifulsoup4 ebooklib PyPDF2 edge-tts
+```
+(Add Coqui or Piper extras as required.)
+
+### Usage Examples
+> `--chapter` accepts dotted indices (e.g., `1.2`) or title fragments, while `--section` is an additional alias for more selectors. Both flags can be combined and repeated.
+```bash
+# Basic CLI - sequential processing (fastest, most stable)
+python3 convert my_book.epub
+
+# Enable parallel processing (auto workers)
+python3 convert my_book.epub --parallel
+
+# Parallel with specific worker count
+python3 convert my_book.epub --parallel 4
+
+# Edge-TTS with specific voice
+python3 convert book.pdf --engine edge --voice pt-BR-FranciscaNeural
+
+# Coqui XTTS v2
+python3 convert book.epub --engine coqui --model tts_models/multilingual/multi-dataset/xtts_v2
+
+# Piper with local model
+python3 convert book.pdf --engine piper --model ./models/pt_BR-faber-medium.onnx
+
+# Ignore cache and regenerate
+python3 convert book.epub --clear-cache
+
+# Custom audio parameters
+python3 convert book.epub --bitrate 64k --ar 44100
+
+# Skip footnotes entirely
+python3 convert book.epub --no-footnote
+
+# Read footnotes at the end of each chapter
+python3 convert book.epub --footnote-chapter-end
+
+# Listen immediately after each conversion (requires ffplay/mpv/cvlc/afplay)
+python3 convert book.epub --chapter 1 --listen
+
+# Launch interactive menu (engine, voice, footnotes)
+python3 convert book.epub --menu
+
+# Force sequential processing (even if --parallel is specified)
+python3 convert book.epub --no-parallel
+```
+
+### Selective Conversion
+- Single chapter: `python3 convert book.epub --chapter 3`
+- Specific section: `python3 convert book.epub --section 2.1`
+- Skip footnotes: `python3 convert book.epub --section 2.1 --no-footnote`
+- Footnotes at chapter end: `python3 convert book.epub --section 2.1 --footnote-chapter-end`
+
+### Shell Autocomplete
+```bash
+# Make the script executable
+chmod +x main.py
+
+# Enable completion for current shell session (zsh example)
+eval "$(register-python-argcomplete ./main.py)"
+```
+Add the command above to your shell RC file (`~/.zshrc`, `~/.bashrc`, etc.) for persistence.
+
+### Available Voices
+- **Edge-TTS PT-BR**
+  - Female: Francisca, Brenda, Elza, Giovanna, Leila, Leticia, Manuela, Yara
+  - Male: Antonio, Donato, Fabio, Humberto, Julio, Nicolau, Valerio
+- **Coqui TTS**
+  - XTTS v2 (best quality, voice cloning)
+  - XTTS v1.1 (faster)
+  - YourTTS (fast, good quality)
+  - CV-VITS (PT-PT)
+- **Piper**
+  - `pt_BR-faber-medium` (recommended)
+  - `pt_BR-faber-low`
+  - `pt_BR-edresson-low`
+
+### Voice Cloning (Coqui XTTS v2)
+1. Record 6–10 seconds of clean PT-BR audio
+2. Save as `./reference_voice.wav`
+3. Run `python main.py convert book.epub --engine coqui`
+4. Choose XTTS v2 in the interactive menu
+
+Convert formats if needed:
+```bash
+ffmpeg -i my_voice.mp3 -ar 22050 -ac 1 reference_voice.wav
+```
+
+---
+
+## 🇧🇷 Português
+
 Converte ebooks (EPUB/PDF) em audiolivros MP3 por capítulo usando diferentes engines TTS.
 
-## 🚀 Características
-
+### Características
 - **Múltiplos Engines TTS**: Edge-TTS (online), Coqui TTS (local), Piper (local)
 - **Suporte PT-BR**: Vozes em português brasileiro de alta qualidade
 - **Cache Inteligente**: Retoma conversões e permite trocar modelos
+- **Sequencial por Padrão**: Processamento estável e rápido sem complexidade
+- **Paralelismo Opcional**: Use `--parallel` para múltiplos workers quando necessário
 - **Progresso Detalhado**: ETA, velocidade e estatísticas em tempo real
 - **Pausas Naturais**: Entre títulos, capítulos e parágrafos
 - **Notas Narradas**: Notas de rodapé anunciadas no fluxo da leitura
-- **Pausa em Diálogo**: Travessões recebem pausa automática para melhorar a narração
+- **Notas Configuráveis**: Escolha entre leitura inline, ao fim do capítulo ou ignorar
 - **Audição Imediata**: Use `--listen` para ouvir capítulos assim que forem gerados
+- **Cache Persistente**: Arquivos MP3 ficam em `.cache/<livro>/audio` (limpe com `--clear-cache`)
 - **Organização SOLID**: Código bem estruturado e extensível
+- **Menu Interativo**: `--menu` permite escolher engine, voz e modo das notas em tempo real
 
-## 📋 Pré-requisitos
-
-### Obrigatórios
+### Pré-requisitos
 ```bash
 # Python 3.8+
 python -m pip install --upgrade pip
@@ -31,148 +169,126 @@ brew install ffmpeg
 # Windows: baixe de https://ffmpeg.org/
 ```
 
-### Engines TTS (pelo menos um)
+Instale pelo menos um engine TTS:
+- `pip install edge-tts`
+- `pip install TTS`
+- Instale o Piper CLI e baixe um modelo PT-BR
 
-#### 1. Edge-TTS (Recomendado - Rápido)
-```bash
-pip install edge-tts
-```
-- ✅ Rápido e gratuito
-- ❌ Requer internet (Microsoft processa o texto)
-
-#### 2. Coqui TTS (100% Local)
-```bash
-pip install TTS
-```
-- ✅ 100% privado e local
-- ❌ Mais lento, requer mais RAM
-
-#### 3. Piper (100% Local + Rápido)
-```bash
-# Instalar Piper CLI
-# Ubuntu/Debian:
-sudo apt install piper-tts
-
-# Baixar modelos PT-BR em ./models/
-wget https://github.com/rhasspy/piper/releases/download/v1.2.0/pt_BR-faber-medium.onnx
-mkdir -p models && mv pt_BR-faber-medium.onnx models/
-```
-
-## 🛠️ Instalação
-
-### Método 1: Clone do repositório
+### Instalação
 ```bash
 git clone <repo-url>
 cd ebook-tts-converter
 pip install -r requirements.txt
 ```
 
-### Método 2: Instalação mínima
+Instalação mínima:
 ```bash
-# Dependências base
-pip install beautifulsoup4 ebooklib PyPDF2
-
-# Escolha um engine TTS:
-pip install edge-tts        # OU
-pip install TTS            # OU instale Piper manualmente
+pip install beautifulsoup4 ebooklib PyPDF2 edge-tts
 ```
+(Adicione Coqui ou Piper conforme necessário.)
 
-## 📖 Uso
-
-### Uso Básico (Menu Interativo)
+### Uso
+> `--chapter` aceita índices com ponto (por exemplo, `1.2`) ou trechos do título. `--section` é um alias extra para combinar múltiplos filtros; use quantas vezes quiser.
 ```bash
-python main.py meu_livro.epub
-```
+# CLI básica - processamento sequencial (mais rápido e estável)
+python3 convert meu_livro.epub
 
-### Uso Avançado (Parâmetros)
-```bash
+# Habilitar processamento paralelo (workers automáticos)
+python3 convert meu_livro.epub --parallel
+
+# Paralelo com número específico de workers
+python3 convert meu_livro.epub --parallel 4
+
 # Edge-TTS com voz específica
-python main.py livro.pdf --engine edge --voice pt-BR-FranciscaNeural
+python3 convert livro.pdf --engine edge --voice pt-BR-FranciscaNeural
 
-# Coqui TTS com modelo XTTS v2
-python main.py livro.epub --engine coqui --coqui-model tts_models/multilingual/multi-dataset/xtts_v2
+# Coqui XTTS v2
+python3 convert livro.epub --engine coqui --model tts_models/multilingual/multi-dataset/xtts_v2
 
-# Piper com modelo customizado
-python main.py livro.pdf --engine piper --model-path ./models/pt_BR-faber-medium.onnx
+# Piper com modelo local
+python3 convert livro.pdf --engine piper --model ./models/pt_BR-faber-medium.onnx
 
 # Reprocessar ignorando cache
-python main.py livro.epub --no-cache
+python3 convert livro.epub --clear-cache
 
 # Configurações de áudio
-python main.py livro.epub --bitrate 64k --ar 44100
+python3 convert livro.epub --bitrate 64k --ar 44100
+
+# Ignorar notas de rodapé
+python3 convert livro.epub --no-footnote
+
+# Ler notas ao fim do capítulo
+python3 convert livro.epub --footnote-chapter-end
 
 # Ouvir o resultado direto no terminal (requer ffplay/mpv/cvlc/afplay)
-python main.py convert livro.epub --chapter 1 --listen
+python3 convert livro.epub --chapter 1 --listen
+
+# Abrir o menu interativo (engine, voz, notas)
+python3 convert livro.epub --menu
+
+# Forçar processamento sequencial (mesmo com --parallel)
+python3 convert livro.epub --no-parallel
 ```
 
-### Novos Comandos
-- `python main.py convert ...` continua disponível (compatível com o uso anterior)
-- `python main.py menu <arquivo>` inicia direto o menu interativo
-- `python main.py menu -h` mostra a ajuda específica do menu
-
 ### Conversão Seletiva
-- Converter apenas um capítulo: `python main.py convert livro.epub --chapter 3`
-- Converter uma seção específica: `python main.py convert livro.epub --section 2.1`
-- Ouvir enquanto converte: `python main.py convert livro.epub --chapter 3 --listen`
+- Converter apenas um capítulo: `python3 convert livro.epub --chapter 3`
+- Converter uma seção específica: `python3 convert livro.epub --section 2.1`
+- Ignorar notas: `python3 convert livro.epub --section 2.1 --no-footnote`
+- Notas ao fim do capítulo: `python3 convert livro.epub --section 2.1 --footnote-chapter-end`
 
 ### Autocomplete com TAB
-1. Certifique-se de instalar os requisitos: `pip install -r requirements.txt` (inclui `argcomplete`)
-2. Torne o script executável: `chmod +x main.py`
-3. Ative a conclusão no shell atual (exemplo zsh):
-   ```bash
-   eval "$(register-python-argcomplete ./main.py)"
-   ```
-   Para manter permanentemente, adicione o comando acima ao seu `~/.zshrc` ou `~/.bashrc`.
-
-## 🎭 Vozes Disponíveis
-
-### Edge-TTS (Português BR)
-- **Femininas**: Francisca ⭐, Brenda, Elza, Giovanna, Leila, Leticia, Manuela, Yara
-- **Masculinas**: Antonio, Donato, Fabio, Humberto, Julio, Nicolau, Valerio
-
-### Coqui TTS
-- **XTTS v2**: Melhor qualidade, suporte a clonagem de voz ⭐
-- **XTTS v1.1**: Boa qualidade, mais rápido
-- **YourTTS**: Qualidade OK, mais rápido
-- **CV-VITS**: Português PT-PT
-
-### Piper
-- **pt_BR-faber-medium**: Masculino, recomendado ⭐
-- **pt_BR-faber-low**: Masculino, mais rápido
-- **pt_BR-edresson-low**: Masculino, alternativo
-
-## 🔊 Clonagem de Voz (XTTS v2)
-
-Para usar sua própria voz com XTTS v2:
-
-1. **Grave sua voz**: 6-10 segundos, áudio limpo, português
-2. **Salve como**: `./reference_voice.wav`
-3. **Execute**: `python main.py livro.epub --engine coqui`
-4. **Selecione**: XTTS v2 no menu
-
 ```bash
-# Exemplo com ffmpeg para converter áudio
+chmod +x main.py
+eval "$(register-python-argcomplete ./main.py)"
+```
+Adicione ao `~/.zshrc` ou `~/.bashrc` para manter permanentemente.
+
+### Vozes Disponíveis
+- **Edge-TTS (Português BR)**
+  - Femininas: Francisca, Brenda, Elza, Giovanna, Leila, Leticia, Manuela, Yara
+  - Masculinas: Antonio, Donato, Fabio, Humberto, Julio, Nicolau, Valerio
+- **Coqui TTS**
+  - XTTS v2 (melhor qualidade, suporte a clonagem)
+  - XTTS v1.1 (boa qualidade, mais rápido)
+  - YourTTS (rápido, qualidade boa)
+  - CV-VITS (Português PT)
+- **Piper**
+  - `pt_BR-faber-medium` (recomendado)
+  - `pt_BR-faber-low`
+  - `pt_BR-edresson-low`
+
+### Clonagem de Voz (Coqui XTTS v2)
+1. Grave 6–10 segundos de áudio limpo em português
+2. Salve como `./reference_voice.wav`
+3. Execute `python main.py convert livro.epub --engine coqui`
+4. Selecione XTTS v2 no menu interativo
+
+Exemplo de conversão:
+```bash
 ffmpeg -i minha_voz.mp3 -ar 22050 -ac 1 reference_voice.wav
 ```
 
-## 📁 Estrutura do Projeto
-
+### Estrutura do Projeto
 ```
 ebook-tts-converter/
-├── main.py                 # Ponto de entrada
-├── requirements.txt        # Dependências
+├── main.py
+├── requirements.txt
 ├── src/
-│   ├── config.py          # Configurações centralizadas
-│   ├── progress_tracker.py # Rastreamento de progresso
-│   ├── ebook_reader.py    # Leitores EPUB/PDF
-│   ├── cache_manager.py   # Gerenciamento de cache
-│   ├── tts_factory.py     # Factory para engines TTS
-│   ├── converter.py       # Conversor principal
-│   ├── utils.py          # Utilitários gerais
+│   ├── config.py
+│   ├── progress_tracker.py
+│   ├── ebook_reader.py
+│   ├── cache_manager.py
+│   ├── converter.py
+│   ├── utils.py
 │   ├── tts/
-│   │   ├── base.py       # Interfaces base
-│   │   ├── edge_engine.py # Engine Edge-TTS
-│   │   ├── coqui_engine.py # Engine Coqui TTS
-│   │   └── piper_engine.py # Engine Piper
+│   │   ├── base.py
+│   │   ├── edge_engine.py
+│   │   ├── coqui_engine.py
+│   │   └── piper_engine.py
 │   └── ui/
-│
+├── tests/
+└── output/
+```
+
+### Licença
+Consulte o arquivo `LICENSE` (se disponível) ou as instruções do repositório.
