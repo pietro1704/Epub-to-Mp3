@@ -19,6 +19,8 @@ class ProgressTracker:
         self.current_index: Optional[int] = None
         self.start_time = time.time()
         self._last_status: str = ""
+        self._last_render_len: int = 0
+        self._last_render: str = ""
 
     def start(self, total_chapters: int, description: Optional[str] = None) -> None:
         """Reset tracker for a new run."""
@@ -30,6 +32,8 @@ class ProgressTracker:
         self.current_index = None
         self.start_time = time.time()
         self._last_status = ""
+        self._last_render_len = 0
+        self._last_render = ""
         if self.total_chapters == 0:
             self._render("Nenhum capítulo disponível", force=True)
 
@@ -76,12 +80,21 @@ class ProgressTracker:
         message = (
             f"{self.description}: [{bar}] {progress_pct:.1f}% "
             f"({self.completed_chapters}/{total_display}) "
-            f"ETA: {eta_str}"
+            f"tempo restante: {eta_str}"
         )
         if status:
             message += f" | {status}"
 
-        print(f"\r{message}", end="", flush=True)
+        rendered = message
+        if self._last_render_len > len(message):
+            rendered += " " * (self._last_render_len - len(message))
+
+        if not force and rendered == self._last_render:
+            return
+
+        print(f"\r{rendered}", end="", flush=True)
+        self._last_render_len = len(rendered)
+        self._last_render = rendered
         if force:
             print("", end="", flush=True)
 

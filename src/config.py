@@ -28,6 +28,7 @@ class ConversionConfig:
     channels: int = 1
     parallel: int = 1
     force_reprocess: bool = False
+    listen: bool = False
     extra: Dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> Dict[str, object]:
@@ -44,6 +45,7 @@ class ConversionConfig:
             "channels": self.channels,
             "parallel": self.parallel,
             "force_reprocess": self.force_reprocess,
+            "listen": self.listen,
         }
         if self.extra:
             data["extra"] = dict(self.extra)
@@ -140,6 +142,9 @@ class AppConfig:
             except (TypeError, ValueError):
                 parallel = cpu_default
         force_reprocess = bool(kwargs.pop("force_reprocess", False))
+        listen_flag = bool(kwargs.pop("listen", False))
+        if listen_flag:
+            parallel = 1
 
         config = ConversionConfig(
             engine=engine,
@@ -153,6 +158,7 @@ class AppConfig:
             channels=channels,
             parallel=parallel,
             force_reprocess=force_reprocess,
+            listen=listen_flag,
         )
 
         if kwargs:
