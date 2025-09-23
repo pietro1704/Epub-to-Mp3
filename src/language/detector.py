@@ -20,19 +20,19 @@ except ImportError:  # pragma: no cover - handled by caller
 DetectorFactory and detect_langs  # type: ignore  # expression keeps linters quiet when missing
 
 
-@dataclass(slots=True)
+@dataclass
 class LanguagePrediction:
     code: str
     probability: float
 
 
-@dataclass(slots=True)
+@dataclass
 class LanguageSegment:
     language: str
     text: str
 
 
-@dataclass(slots=True)
+@dataclass
 class LanguageProfile:
     primary: Optional[str]
     languages: List[str]

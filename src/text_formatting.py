@@ -19,6 +19,25 @@ class FormattingSegment:
 class TextFormattingProcessor:
     """Processador de formatação de texto para diferenciação no áudio"""
 
+    def process_markup_tags(self, text: str) -> str:
+        """Process markup tags from LanguageMarkup into formatting markers"""
+        if not text:
+            return text
+
+        # Convert emphasis tags to formatting markers
+        text = re.sub(r'\[\[emphasis:mild\]\](.*?)\[\[/emphasis\]\]', r'[[fmt:italic]]\1[[/fmt]]', text)
+        text = re.sub(r'\[\[emphasis:strong\]\](.*?)\[\[/emphasis\]\]', r'[[fmt:bold]]\1[[/fmt]]', text)
+
+        # Convert pause tags to SSML pauses (keep as-is for now)
+        text = re.sub(r'\[\[pause:short\]\]', '<break time="300ms"/>', text)
+        text = re.sub(r'\[\[pause:medium\]\]', '<break time="600ms"/>', text)
+        text = re.sub(r'\[\[pause:long\]\]', '<break time="1s"/>', text)
+
+        # Convert tone tags to prosody
+        text = re.sub(r'\[\[tone:lower\]\](.*?)\[\[/tone\]\]', r'[[fmt:lower]]\1[[/fmt]]', text)
+
+        return text
+
     # Padrões HTML/EPUB comuns para formatação
     FORMATTING_PATTERNS = {
         'italic': [
@@ -58,6 +77,16 @@ class TextFormattingProcessor:
         'small': '[[fmt:small]]{}[[/fmt]]',
     }
 
+    INLINE_RENDERERS = {
+        'italic': lambda value: value,
+        'bold': lambda value: value,
+        'emphasis': lambda value: value,
+        'code': lambda value: value,
+        'quote': lambda value: f'“{value}”',
+        'small': lambda value: value,
+        'lower': lambda value: value,
+    }
+
     def __init__(self):
         self.compiled_patterns = {}
         for fmt_type, patterns in self.FORMATTING_PATTERNS.items():
@@ -70,7 +99,8 @@ class TextFormattingProcessor:
         if not html_text:
             return html_text
 
-        text = html_text
+        # First process markup tags from LanguageMarkup
+        text = self.process_markup_tags(html_text)
 
         # Processar cada tipo de formatação
         for fmt_type, patterns in self.compiled_patterns.items():
@@ -142,10 +172,10 @@ class TextFormattingProcessor:
             text = self._escape_ssml(segment.text)
 
             if segment.formatting == 'italic':
-                # Itálico: tom ligeiramente mais alto e mais lento
+                # Itálico: tom mais alto, mais lento e volume reduzido para destacar
                 ssml_parts.append(
                     f'<voice name="{voice}">'
-                    f'<prosody rate="-10%" pitch="+5%">{text}</prosody>'
+                    f'<prosody rate="-20%" pitch="+15%" volume="-5%">{text}</prosody>'
                     f'</voice>'
                 )
             elif segment.formatting == 'bold':
@@ -187,6 +217,13 @@ class TextFormattingProcessor:
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<prosody rate="+10%" volume="-10%">{text}</prosody>'
+                    f'</voice>'
+                )
+            elif segment.formatting == 'lower':
+                # Tom mais baixo (para parênteses)
+                ssml_parts.append(
+                    f'<voice name="{voice}">'
+                    f'<prosody pitch="-15%" volume="-5%">{text}</prosody>'
                     f'</voice>'
                 )
             else:  # normal
@@ -242,6 +279,25 @@ class TextFormattingProcessor:
                 parts.append(text)
 
         return ' '.join(parts)
+
+    def apply_inline_formatting(self, text: str) -> str:
+        """Substitui marcadores internos por tokens de ênfase inline."""
+        if not text:
+            return ""
+
+        marker_pattern = re.compile(r"\[\[fmt:(\w+)\]\](.*?)\[\[/fmt\]\]", re.DOTALL)
+
+        def replace(match: re.Match) -> str:
+            fmt_type = match.group(1)
+            content = match.group(2)
+            renderer = self.INLINE_RENDERERS.get(fmt_type)
+            if renderer:
+                rendered = renderer(content)
+                return rendered
+            return content
+
+        formatted = marker_pattern.sub(replace, text)
+        return formatted
 
     def _escape_ssml(self, text: str) -> str:
         """Escapa caracteres especiais para SSML"""

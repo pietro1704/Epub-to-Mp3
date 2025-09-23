@@ -369,7 +369,7 @@ class EdgeTTSEngine:
             return received_audio
 
     def _prepare_formatted_segments(self, formatting_segments) -> list[tuple[str, str]]:
-        """Prepare formatted segments using SSML for Edge TTS"""
+        """Prepare formatted segments as plain text for Edge TTS (SSML not supported for multilingual voices)"""
         if not formatting_segments or not TextFormattingProcessor:
             if self.verbose:
                 print("🔍 [VERBOSE] EdgeTTS _prepare_formatted_segments: sem segmentos ou processador")
@@ -377,50 +377,43 @@ class EdgeTTSEngine:
 
         try:
             formatter = TextFormattingProcessor()
-            ssml_text = formatter.to_edge_ssml(formatting_segments, self.voice)
+            # Edge TTS multilingual voices don't support SSML break/prosody tags
+            # Use plain text with simple pauses instead
+            plain_text = formatter.to_plain_text_with_pauses(formatting_segments)
 
             if self.verbose:
-                print(f"🔍 [VERBOSE] EdgeTTS SSML gerado: {len(ssml_text)} chars")
-                print(f"🔍 [VERBOSE] EdgeTTS SSML preview: {ssml_text[:200]}...")
+                print(f"🔍 [VERBOSE] EdgeTTS texto simples gerado: {len(plain_text)} chars")
+                print(f"🔍 [VERBOSE] EdgeTTS texto preview: {plain_text[:200]}...")
 
-            # Break very long SSML into chunks if needed
-            if len(ssml_text) > 8000:
+            # Break very long text into chunks if needed
+            if len(plain_text) > 8000:
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS quebrando SSML longo em chunks")
+                    print(f"🔍 [VERBOSE] EdgeTTS quebrando texto longo em chunks")
 
-                # For SSML, we need to be more careful about breaking
-                # Extract the content between <speak> tags
-                speak_start = ssml_text.find('>') + 1
-                speak_end = ssml_text.rfind('</speak>')
+                chunks = []
+                chunk_size = 7000
+                for i in range(0, len(plain_text), chunk_size):
+                    chunk = plain_text[i:i + chunk_size]
+                    # Try to break at sentence boundaries
+                    if i + chunk_size < len(plain_text):
+                        last_period = chunk.rfind('.')
+                        last_exclamation = chunk.rfind('!')
+                        last_question = chunk.rfind('?')
+                        break_point = max(last_period, last_exclamation, last_question)
+                        if break_point > chunk_size * 0.7:
+                            chunk = chunk[:break_point + 1]
+                    chunks.append((self.voice, chunk.strip()))
 
-                if speak_start > 0 and speak_end > speak_start:
-                    content = ssml_text[speak_start:speak_end]
-                    prefix = ssml_text[:speak_start]
-                    suffix = ssml_text[speak_end:]
+                if self.verbose:
+                    print(f"🔍 [VERBOSE] EdgeTTS quebrou texto em {len(chunks)} chunks")
+                return chunks
 
-                    chunks = []
-                    chunk_size = 7000
-                    for i in range(0, len(content), chunk_size):
-                        chunk_content = content[i:i + chunk_size]
-                        # Try to break at voice tag boundaries for cleaner SSML
-                        if i + chunk_size < len(content):
-                            last_voice_end = chunk_content.rfind('</voice>')
-                            if last_voice_end > chunk_size * 0.7:
-                                chunk_content = chunk_content[:last_voice_end + 8]  # Include </voice>
-
-                        chunk_ssml = prefix + chunk_content + suffix
-                        chunks.append((self.voice, chunk_ssml))
-
-                    if self.verbose:
-                        print(f"🔍 [VERBOSE] EdgeTTS quebrou SSML em {len(chunks)} chunks")
-                    return chunks
-
-            return [(self.voice, ssml_text)]
+            return [(self.voice, plain_text)]
 
         except Exception as e:
             if self.verbose:
                 print(f"🔍 [VERBOSE] EdgeTTS erro ao processar formatação: {e}")
-            # Fallback to plain text
+            # Fallback to plain text without formatting
             plain_text = " ".join([segment.text for segment in formatting_segments if segment.text])
             return [(self.voice, plain_text)]
 

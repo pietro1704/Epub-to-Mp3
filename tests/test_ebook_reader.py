@@ -218,6 +218,25 @@ class TestEbookReader(unittest.TestCase):
         self.assertEqual(len(chapters), 1)
         self.assertEqual(chapters[0].name, "Long")
 
+    def test_epub_parser_extracts_inline_footnotes(self):
+        """Inline footnotes should be rendered into the chapter text."""
+        fixture_path = Path('tests/fixtures/epubs/test_multifeature.epub')
+        reader = EbookReader(fixture_path)
+
+        chapters = reader.get_chapters()
+        self.assertGreaterEqual(len(chapters), 1)
+
+        first_chapter = chapters[0]
+        self.assertIsNotNone(first_chapter.footnotes)
+        self.assertEqual(len(first_chapter.footnotes or []), 1)
+
+        expected_line = (
+            "Este é o início do nosso experimento itálico com notas de rodapé "
+            "(nota de rodapé 1: Esta nota explica o contexto histórico mencionado no texto principal."
+            " - fim da nota de rodapé 1)."
+        )
+        self.assertIn(expected_line, first_chapter.text)
+
     def test_get_chapter_structure_no_book(self):
         """Test get_chapter_structure when no book is loaded"""
         reader = EbookReader()

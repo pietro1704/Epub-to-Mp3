@@ -25,12 +25,9 @@ def _get_coqui_executor():
         _coqui_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="CoquiTTS")
     return _coqui_executor
 
-try:  # pragma: no cover - optional dependency
-    import numpy as np
-    import soundfile as sf
-except ImportError:  # pragma: no cover
-    np = None  # type: ignore
-    sf = None  # type: ignore
+# Optional dependencies resolved lazily to avoid crashes in restricted environments.
+np = None  # type: ignore
+sf = None  # type: ignore
 
 try:  # pragma: no cover - optional dependency
     from ..language import LanguageMarkup
@@ -90,8 +87,18 @@ class CoquiTTSEngine:
         if not text:
             return None
 
-        # Note: formatting_segments currently ignored by Coqui TTS
-        # Could be used for voice modulation or emphasis in future versions
+        # Use formatting segments to convert to plain text with simple pauses if available
+        if formatting_segments:
+            try:
+                from ..text_formatting import TextFormattingProcessor
+                formatter = TextFormattingProcessor()
+                text = formatter.to_plain_text_with_pauses(formatting_segments)
+                if self.verbose:
+                    print(f"🔍 [VERBOSE] CoquiTTS usando texto formatado: {len(text)} chars")
+            except Exception as e:
+                if self.verbose:
+                    print(f"🔍 [VERBOSE] CoquiTTS erro ao processar formatação: {e}, usando texto original")
+                # Continue with original text
 
         contains_markup = LanguageMarkup is not None and "[[lang:" in text.lower()
         default_language = self.primary_language if self.primary_language not in {"", "auto", "unknown"} else "unknown"

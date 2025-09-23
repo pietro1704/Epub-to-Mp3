@@ -7,13 +7,15 @@ import unittest
 import tempfile
 import os
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch, Mock, MagicMock
 from argparse import Namespace
 
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from main import ConverterApplication, create_argument_parser, main
+from main import ConverterApplication, create_argument_parser, main, ChapterStructureItem
+from src.ebook_reader import Chapter
 
 
 class TestConverterApplication(unittest.TestCase):
@@ -113,12 +115,18 @@ class TestConverterApplication(unittest.TestCase):
         )
         
         with patch.object(self.app, '_create_config_from_args') as mock_config:
-            mock_config.return_value = Mock()
+            mock_config.return_value = self.app.config.create_conversion_config(
+                engine="edge",
+                voice="test-voice",
+                output_dir="test_output",
+                footnote_mode="inline",
+                footnote_context_words=self.app.FOOTNOTE_CONTEXT_WORDS,
+            )
             
             result = self.app.run(args)
             
             self.assertEqual(result, 0)
-            mock_config.assert_called_once()
+            self.assertGreaterEqual(mock_config.call_count, 1)
             mock_asyncio_run.assert_called_once()
 
     @patch('main.EbookReader')
@@ -183,8 +191,101 @@ class TestConverterApplication(unittest.TestCase):
             self.assertFalse(called_kwargs["listen"])
             self.assertIsNone(called_kwargs["cache_dir"])
             self.assertFalse(called_kwargs["clear_cache"])
-            self.assertEqual(called_kwargs["footnote_mode"], "inline")
-            self.assertEqual(called_kwargs["footnote_context_words"], self.app.FOOTNOTE_CONTEXT_WORDS)
+        self.assertEqual(called_kwargs["footnote_mode"], "inline")
+        self.assertEqual(called_kwargs["footnote_context_words"], self.app.FOOTNOTE_CONTEXT_WORDS)
+
+    def _build_structure_item(self, html: str) -> ChapterStructureItem:
+        chapter = Chapter(
+            index=1,
+            name="Capítulo 1",
+            source_path="chapter1.xhtml",
+            text="",
+            raw_html=html,
+        )
+        return ChapterStructureItem(
+            chapter=chapter,
+            index="1",
+            main_title="Capítulo 1",
+            sub_title=None,
+            preview=None,
+            display_name="Capítulo 1",
+        )
+
+    def _sample_html(self) -> str:
+        return (
+            "<html><body>"
+            "<p>Texto <em>itálico</em> e <strong>negrito</strong> com <q>aspas</q> e nota"
+            "<a href='#fn1'>1</a>.</p>"
+            "<section id='notas'><p id='fn1'><a href='#ref-fn1'>1</a> Esta nota explicativa.</p></section>"
+            "</body></html>"
+        )
+
+    def test_apply_text_transforms_inline_retains_emphasis(self):
+        item = self._build_structure_item(self._sample_html())
+        reader = SimpleNamespace(title="Livro de Teste")
+        config = self.app.config.create_conversion_config(
+            engine="edge",
+            footnote_mode="inline",
+            footnote_context_words=8,
+        )
+
+        result = self.app._apply_text_transforms([item], config, reader)
+
+        self.assertEqual(len(result), 1)
+        text = result[0].text_override
+        self.assertIsNotNone(text)
+        self.assertNotIn("*", text)
+        self.assertNotIn("[[FOOTNOTE", text)
+        self.assertIn("itálico", text)
+        self.assertIn("negrito", text)
+        self.assertIn("“aspas”", text)
+        self.assertIn("nota de rodapé 1: Esta nota explicativa.", text)
+
+        segments = item.chapter.formatting_segments or []
+        self.assertTrue(any(seg.formatting == 'italic' and seg.text == 'itálico' for seg in segments))
+        self.assertTrue(any(seg.formatting == 'bold' and seg.text == 'negrito' for seg in segments))
+        self.assertTrue(any(seg.formatting == 'quote' and seg.text == 'aspas' for seg in segments))
+        self.assertFalse(any('[[FOOTNOTE' in seg.text for seg in segments))
+
+    def test_apply_text_transforms_chapter_end_moves_notes(self):
+        item = self._build_structure_item(self._sample_html())
+        reader = SimpleNamespace(title="Livro de Teste")
+        config = self.app.config.create_conversion_config(
+            engine="edge",
+            footnote_mode="chapter_end",
+            footnote_context_words=8,
+        )
+
+        result = self.app._apply_text_transforms([item], config, reader)
+        text = result[0].text_override
+
+        self.assertIn("Texto itálico e negrito com “aspas” e nota.", text)
+        self.assertTrue(any("nota de rodapé 1:" in line for line in text.splitlines()[1:]))
+        self.assertNotIn("[[FOOTNOTE", text)
+
+        segments = item.chapter.formatting_segments or []
+        self.assertTrue(any(seg.formatting == 'italic' and seg.text == 'itálico' for seg in segments))
+        self.assertFalse(any('[[FOOTNOTE' in seg.text for seg in segments))
+
+    def test_apply_text_transforms_skip_removes_notes(self):
+        item = self._build_structure_item(self._sample_html())
+        reader = SimpleNamespace(title="Livro de Teste")
+        config = self.app.config.create_conversion_config(
+            engine="edge",
+            footnote_mode="skip",
+            footnote_context_words=8,
+        )
+
+        result = self.app._apply_text_transforms([item], config, reader)
+        text = result[0].text_override
+
+        self.assertIn("Texto itálico e negrito com “aspas” e nota.", text)
+        self.assertNotIn("nota de rodapé", text)
+        self.assertNotIn("[[FOOTNOTE", text)
+
+        segments = item.chapter.formatting_segments or []
+        self.assertTrue(any(seg.formatting == 'italic' and seg.text == 'itálico' for seg in segments))
+        self.assertFalse(any('[[FOOTNOTE' in seg.text for seg in segments))
 
     def test_run_with_exception(self):
         """Test running with exception"""

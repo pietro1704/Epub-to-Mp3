@@ -22,7 +22,11 @@ pip install TTS torch torchaudio  # Coqui TTS (local, AI-powered)
 # macOS: brew install ffmpeg
 ```
 
-vc precisa ativar a engine com ❯ source /Users/pietropugliesi/.venvs/tts311/bin/activate
+### Virtual Environment
+```bash
+# Activate the TTS environment if using venv
+source /Users/pietropugliesi/.venvs/tts311/bin/activate
+```
 
 
 ### Running the Application
@@ -30,20 +34,50 @@ vc precisa ativar a engine com ❯ source /Users/pietropugliesi/.venvs/tts311/bi
 # Basic usage with interactive menu
 python main.py book.epub
 
+# Use the convert script (updated entry point)
+python convert book.epub
+
+# Parallel processing
+python convert book.epub --parallel
+python convert book.epub --parallel 4
+
 # Direct engine selection
 python main.py book.epub --engine edge --voice pt-BR-FranciscaNeural
-python main.py book.epub --engine coqui --coqui-model tts_models/multilingual/multi-dataset/xtts_v2
-python main.py book.epub --engine piper --model-path ./models/pt_BR-faber-medium.onnx
+python main.py book.epub --engine coqui --model tts_models/multilingual/multi-dataset/xtts_v2
+python main.py book.epub --engine piper --model ./models/pt_BR-faber-medium.onnx
+
+# Interactive menu mode
+python convert book.epub --menu
+
+# Listen to chapters immediately after conversion
+python convert book.epub --chapter 1 --listen
+
+# Selective conversion
+python convert book.epub --chapter 3
+python convert book.epub --section 2.1
+
+# Footnote handling options
+python convert book.epub --no-footnote
+python convert book.epub --footnote-chapter-end
 
 # Show chapter structure without converting
 python main.py book.epub --show-structure
 
-# Force reprocessing (ignore cache)
-python main.py book.epub --no-cache
+# Force reprocessing (clear cache)
+python convert book.epub --clear-cache
 ```
 
 ### Testing and Debugging
 ```bash
+# Run test suite
+pytest tests/
+
+# Run specific test file
+pytest tests/test_converter.py -v
+
+# Run tests with verbose output
+pytest -v --tb=short
+
 # Test specific TTS engine dependencies
 python -c "import edge_tts; print('Edge-TTS OK')"
 python -c "import TTS; print('Coqui TTS OK')"
@@ -214,3 +248,6 @@ When reviewing code changes:
 7. Check for proper file sanitization and path handling
 </instructions>
 ```
+- nao crie arquivos novos para teste, o app deve ter somente o s arquivos necessarios para funcionar
+- confirme as mudanças comigo antes de fazer
+- seja sucinto para economizar espaço
