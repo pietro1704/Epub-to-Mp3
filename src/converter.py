@@ -19,6 +19,7 @@ from .tts.factory import TTSFactory
 from .utils import AudioProcessor, FileManager, TextValidator
 from .progress import ProgressTracker
 from .i18n import Localization, get_localization
+from .cache_manager import CacheManager
 
 
 @dataclass
@@ -50,6 +51,7 @@ class AudioConverter:
         self.audio_processor = AudioProcessor()
         self.file_manager = FileManager()
         self.progress = ProgressTracker()
+        self.cache_manager = CacheManager()
         self._requirements_attempted = False
         self.loc = localization or get_localization()
         self.verbose = False
@@ -71,7 +73,7 @@ class AudioConverter:
 
         # **NEW**: Setup checkpoint system
         self._current_book_path = Path(reader.file_path)
-        self.checkpoint_manager.mark_conversion_start()
+        self.cache_manager.mark_conversion_start()
 
         output_dir = self._setup_output_directory(config)
         # **NEW**: Setup temporary directory for conversion
@@ -80,7 +82,7 @@ class AudioConverter:
         total_chapters = len(chapters)
 
         # **NEW**: Check for existing checkpoint
-        checkpoint = self.checkpoint_manager.load_checkpoint(self._current_book_path)
+        checkpoint = self.cache_manager.load_checkpoint(self._current_book_path)
         if checkpoint and not getattr(config, 'force_reprocess', False):
             resume_result = await self._handle_checkpoint_resume(checkpoint, temp_dir, config, total_chapters)
             if resume_result:
@@ -157,19 +159,11 @@ class AudioConverter:
 
             # **NEW**: Clear checkpoint on successful completion
             if self._current_book_path:
-                self.checkpoint_manager.clear_checkpoint(self._current_book_path)
+                self.cache_manager.clear_checkpoint(self._current_book_path)
                 if self.verbose:
                     print("🔍 [VERBOSE] Checkpoint removido - conversão completa")
 
-            # Cleanup temp directory
-            try:
-                import shutil
-                shutil.rmtree(temp_dir, ignore_errors=True)
-                if self.verbose:
-                    print(f"🗑️ Diretório temporário removido: {temp_dir}")
-            except Exception as e:
-                if self.verbose:
-                    print(f"⚠️ Erro ao remover diretório temporário: {e}")
+            self._cleanup_temp_audio(temp_dir)
         else:
             print("❌ Conversão falhou - arquivos temporários mantidos para debug")
             # Keep checkpoint for potential retry
@@ -201,11 +195,11 @@ class AudioConverter:
         """Handle checkpoint resume logic"""
         # Validate checkpoint
         conversion_config = config.as_dict()
-        if not self.checkpoint_manager.validate_checkpoint(checkpoint, current_temp_dir, conversion_config):
+        if not self.cache_manager.validate_checkpoint(checkpoint, current_temp_dir, conversion_config):
             print("⚠️ Checkpoint inválido - iniciando conversão do zero")
             return None
 
-        resume_info = self.checkpoint_manager.get_resume_info(checkpoint)
+        resume_info = self.cache_manager.get_resume_info(checkpoint)
 
         print("\n🔄 CONVERSÃO INTERROMPIDA DETECTADA")
         print("=" * 50)
@@ -231,7 +225,13 @@ class AudioConverter:
 
         if not should_resume:
             print("🆕 Iniciando conversão do zero")
-            return None
+            # Clear checkpoint to prevent re-detection
+            self.cache_manager.clear_checkpoint(self._current_book_path)
+        # Clear temp files but preserve cached text
+        if current_temp_dir.exists():
+            self._cleanup_temp_audio(current_temp_dir)
+            print(f"🗑️ Arquivos temporários removidos: {current_temp_dir}")
+        return None
 
         print("▶️ Retomando conversão...")
 
@@ -255,7 +255,7 @@ class AudioConverter:
             book_title = getattr(config, 'book_title', '') or self._current_book_path.stem
             conversion_config = config.as_dict()
 
-            self.checkpoint_manager.save_checkpoint(
+            self.cache_manager.save_checkpoint(
                 book_path=self._current_book_path,
                 book_title=book_title,
                 output_dir=output_dir,
@@ -369,6 +369,24 @@ class AudioConverter:
                 if self.verbose:
                     print(f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Iniciando síntese TTS")
                     print(f"   📝 Texto: {char_count} caracteres (timeout: {timeout_seconds}s)")
+
+                # Cache text before synthesis
+                try:
+                    cache_dir = Path(output_dir)
+                    target_dir = cache_dir / "text"
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                    chapter_name = getattr(chapter, "name", None) or f"Chapter {idx + 1}"
+                    from .utils import FileManager
+                    safe_name = FileManager.sanitize_filename(chapter_name)
+                    safe_name = safe_name.replace(" ", "_")
+                    target_path = target_dir / f"{idx + 1:03d}_{safe_name}.txt"
+                    target_path.write_text(chapter.text, encoding="utf-8")
+                    if self.verbose:
+                        print(f"💾 Texto salvo: {target_path}")
+                except OSError as e:
+                    if self.verbose:
+                        print(f"⚠️ Erro ao salvar cache de texto: {e}")
+                    pass
 
                 self.progress.tick(f"🎤 Sintetizando {char_count} chars (timeout: {timeout_seconds}s)...")
 
@@ -1029,6 +1047,30 @@ class AudioConverter:
             for error in result.errors[:3]:
                 print(f"    • {error}")
 
+    def _cleanup_temp_audio(self, temp_dir: Path) -> None:
+        temp_dir = Path(temp_dir)
+        if not temp_dir.exists():
+            return
+
+        patterns = ("*.mp3", "*.wav", "*.ogg")
+        for pattern in patterns:
+            for candidate in temp_dir.glob(pattern):
+                try:
+                    candidate.unlink()
+                except FileNotFoundError:
+                    continue
+                except OSError:
+                    if self.verbose:
+                        print(f"⚠️ Não foi possível remover arquivo temporário: {candidate}")
+
+        audio_cache = temp_dir / "audio"
+        if audio_cache.exists():
+            try:
+                shutil.rmtree(audio_cache, ignore_errors=True)
+            except OSError:
+                if self.verbose:
+                    print(f"⚠️ Não foi possível limpar cache de áudio: {audio_cache}")
+
     @staticmethod
     def _cache_audio(
         cache_dir: Optional[Path],
@@ -1098,7 +1140,11 @@ class AudioConverter:
             safe_name = safe_name.replace(" ", "_")
             target_path = target_dir / f"{index:03d}_{safe_name}.txt"
             target_path.write_text(text, encoding="utf-8")
-        except OSError:
+            if self.verbose:
+                print(f"💾 Texto salvo: {target_path}")
+        except OSError as e:
+            if self.verbose:
+                print(f"⚠️ Erro ao salvar cache de texto: {e}")
             pass
 
     def _announce_stage(self, index: int, chapter_name: str, status: str) -> None:

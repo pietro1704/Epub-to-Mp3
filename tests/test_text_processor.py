@@ -183,6 +183,26 @@ class TestTextProcessor(unittest.TestCase):
         result = TextProcessor.extract_title_from_text(text)
         self.assertEqual(result, "Chapter 1: The Beginning of Something")
 
+    def test_collect_footnotes_fallback_handles_short_ids(self):
+        """Fallback extraction should handle short footnote ids like 'fn1'."""
+        markup = (
+            "<p>Texto com nota<a href=\"#fn1\">1</a>.</p>"
+            "<section epub:type=\"footnotes\">"
+            "<p id=\"fn1\"><a href=\"#ref-fn1\">1</a> Nota explicativa detalhada.</p>"
+            "</section>"
+        )
+
+        markup_with_markers, footnotes = TextProcessor._collect_footnotes_fallback(markup)
+
+        self.assertIn("[[FOOTNOTE_1]]", markup_with_markers)
+        self.assertEqual(len(footnotes), 1)
+        self.assertIn("Nota explicativa", footnotes[0]["text"])
+
+        plain_text, _ = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+        rendered = TextProcessor._render_footnotes(plain_text, footnotes, mode="inline", context_words=8)
+
+        self.assertIn("nota de rodapé 1", rendered.lower())
+
 
 if __name__ == '__main__':
     unittest.main()

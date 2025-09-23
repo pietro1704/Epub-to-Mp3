@@ -92,6 +92,7 @@ Thumbs.db
 
 # EBook files (for testing - uncomment if needed)
 *.epub
+!tests/fixtures/epubs/test_multifeature.epub
 *.pdf
 *.mobi
 *.azw3
@@ -128,6 +129,7 @@ error.log
 .torch/
 .tts_cache/
 .huggingface/
+.checkpoints/
 
 # Preview and temporary conversion files
 .preview/

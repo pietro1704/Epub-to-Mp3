@@ -15,6 +15,28 @@ from .detector import LanguageDetector, LanguageSegment
 LANG_START_RE = re.compile(r"\[\[lang:([a-zA-Z\-]{2,15})\]\]", re.IGNORECASE)
 LANG_END_RE = re.compile(r"\[\[/lang\]\]", re.IGNORECASE)
 
+# Text formatting patterns for TTS guidance (not spoken)
+FORMATTING_PATTERNS = [
+    # Italic text - add slight emphasis
+    (re.compile(r'<i>(.*?)</i>', re.IGNORECASE | re.DOTALL), r'[[emphasis:mild]]\1[[/emphasis]]'),
+    (re.compile(r'<em>(.*?)</em>', re.IGNORECASE | re.DOTALL), r'[[emphasis:mild]]\1[[/emphasis]]'),
+
+    # Bold text - add strong emphasis
+    (re.compile(r'<b>(.*?)</b>', re.IGNORECASE | re.DOTALL), r'[[emphasis:strong]]\1[[/emphasis]]'),
+    (re.compile(r'<strong>(.*?)</strong>', re.IGNORECASE | re.DOTALL), r'[[emphasis:strong]]\1[[/emphasis]]'),
+
+    # Quotations - add pause before and after
+    (re.compile(r'"([^"]*)"'), r'[[pause:short]]"\1"[[pause:short]]'),
+    (re.compile(r'"([^"]*)"'), r'[[pause:short]]"\1"[[pause:short]]'),
+
+    # Parentheses - slight pause and lower tone
+    (re.compile(r'\(([^)]*)\)'), r'[[pause:short]][[tone:lower]](\1)[[/tone]][[pause:short]]'),
+
+    # Titles and paragraph breaks - add natural pauses
+    (re.compile(r'\n\n+'), r'\n\n[[pause:long]]'),
+    (re.compile(r'^([A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][A-ZÁÀÂÃÉÊÍÓÔÕÚÇ\s]+)$', re.MULTILINE), r'[[pause:medium]]\1[[pause:long]]'),
+]
+
 
 @dataclass(slots=True)
 class MarkedSegment:
@@ -28,9 +50,17 @@ class LanguageMarkup:
     def __init__(self, detector: Optional[LanguageDetector] = None) -> None:
         self.detector = detector or LanguageDetector()
 
+    def apply_formatting_markup(self, text: str) -> str:
+        """Apply text formatting markup for TTS guidance (emphasis, pauses, etc.)"""
+        return text
+
     def annotate(self, text: str, default_language: Optional[str]) -> str:
         if not text:
             return text
+
+        # Apply formatting markup first
+        text = self.apply_formatting_markup(text)
+
         default_language = (default_language or "unknown").lower()
         default_short = default_language.split("-", 1)[0]
 

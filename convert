@@ -61,8 +61,10 @@ def main() -> int:
 
 
 def _clear_cache_all(*, assume_yes: bool = False) -> None:
-    cache_dir = Path(".cache")
-    if not cache_dir.exists():
+    from src.cache_manager import CacheManager
+    cache_manager = CacheManager()
+    cache_dir = cache_manager.cache_dir
+    if not cache_dir.exists() or not any(cache_dir.iterdir()):
         print("No cache directory found.")
         return
 
@@ -90,12 +92,12 @@ def _clear_cache_all(*, assume_yes: bool = False) -> None:
             print("Cache clear aborted.")
             return
 
-    import shutil
-
     try:
-        shutil.rmtree(cache_dir)
-        cache_dir.mkdir(exist_ok=True)
-        print("Cache directory cleared.")
+        removed = cache_manager.clear_cache()
+        if removed:
+            print("Cache directory cleared.")
+        else:
+            print("No cached files were removed.")
     except OSError as exc:
         print(f"Failed to clear cache: {exc}")
 

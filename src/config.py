@@ -13,7 +13,7 @@ SUPPORTED_FORMATS = [".epub", ".pdf"]
 AUDIO_FORMATS = ["mp3", "wav", "ogg"]
 
 
-@dataclass(slots=True)
+@dataclass
 class ConversionConfig:
     """Runtime configuration for an audio conversion session."""
 

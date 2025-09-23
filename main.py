@@ -25,7 +25,7 @@ except ImportError:  # pragma: no cover - argcomplete is optional
     FilesCompleter = None
 
 # Local imports  
-from src.ebook_reader import EbookReader, Chapter, TextProcessor
+from src.ebook_reader import EbookReader, Chapter, TextProcessor, FormattingSegment
 from src.converter import AudioConverter, ConversionResult
 from src.ui.menu import MenuInterface
 from src.config import AppConfig, ConversionConfig
@@ -67,6 +67,7 @@ class ConverterApplication:
         self.language_markup = LanguageMarkup(self.language_detector)
         self.language_profile: Optional[LanguageProfile] = None
         self._interactive_mode = True
+        self._footnote_summary_printed = False
     
     def run(self, args: argparse.Namespace) -> int:
         """Main application entry point"""
@@ -109,20 +110,21 @@ class ConverterApplication:
             cache_manager = CacheManager()
 
             if getattr(args, "clear_cache", False):
-                if hasattr(args, 'input_file') and args.input_file:
-                    # Clear cache for specific book
-                    book_name = Path(args.input_file).stem
-                    book_cache_dir = self.cache_root / book_name
-                    if book_cache_dir.exists():
-                        shutil.rmtree(book_cache_dir)
-                        print(f"🗑️ Cache limpo para: {book_name}")
+                input_path = Path(getattr(args, 'input_file', '')) if getattr(args, 'input_file', None) else None
+                if input_path:
+                    display_name = reader.title or input_path.stem
+                    cleared = cache_manager.clear_cache(input_path, title=reader.title)
+                    if cleared:
+                        print(f"🗑️ Cache limpo para: {display_name}")
                     else:
-                        print(f"⚠️ Nenhum cache encontrado para: {book_name}")
+                        print(f"⚠️ Nenhum cache encontrado para: {display_name}")
+                    cache_manager.clear_checkpoint(input_path)
                 else:
-                    # Clear all cache
-                    shutil.rmtree(self.cache_root)
-                    self.cache_root.mkdir(exist_ok=True)
-                    print("🗑️ Todo o cache foi limpo")
+                    cleared = cache_manager.clear_cache()
+                    if cleared:
+                        print("🗑️ Todo o cache foi limpo")
+                    else:
+                        print("⚠️ Nenhum cache encontrado para remover")
 
             cache_dir = self._resolve_cache_dir(reader)
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -176,6 +178,7 @@ class ConverterApplication:
             config = self._get_conversion_config(args, reader)
             if not config:
                 return 1
+            self._announce_footnote_mode(config)
 
             # Configurar o diretório temporário usando o método existente com `config`
             temp_dir = self.converter._setup_temp_directory(config)
@@ -192,8 +195,9 @@ class ConverterApplication:
             config = self._get_conversion_config(args, reader)
             if not config:
                 return 1
+            self._announce_footnote_mode(config)
 
-            structure_items = self._apply_text_transforms(structure_items, config)
+            structure_items = self._apply_text_transforms(structure_items, config, reader)
             self._apply_structure_to_reader(reader, structure_items)
 
             # Convert
@@ -545,6 +549,9 @@ class ConverterApplication:
         new_chapters: List[Chapter] = []
         for item in structure_items:
             chapter = item.chapter
+            formatting_segments = getattr(chapter, 'formatting_segments', None)
+            if getattr(chapter, 'footnotes', None):
+                formatting_segments = None
             new_chapters.append(
                 Chapter(
                     index=item.index,
@@ -552,7 +559,9 @@ class ConverterApplication:
                     source_path=chapter.source_path,
                     text=item.text_override if item.text_override is not None else chapter.text,
                     level=getattr(chapter, 'level', 1),
-                    raw_html=getattr(chapter, 'raw_html', None)
+                    raw_html=getattr(chapter, 'raw_html', None),
+                    formatting_segments=formatting_segments,
+                    footnotes=getattr(chapter, 'footnotes', None),
                 )
             )
 
@@ -561,7 +570,8 @@ class ConverterApplication:
     def _apply_text_transforms(
         self,
         items: List[ChapterStructureItem],
-        config: ConversionConfig
+        config: ConversionConfig,
+        reader: EbookReader,
     ) -> List[ChapterStructureItem]:
         footnote_mode = (getattr(config, 'footnote_mode', 'inline') or 'inline').lower()
         if footnote_mode not in {"inline", "skip", "chapter_end"}:
@@ -572,11 +582,31 @@ class ConverterApplication:
         except (TypeError, ValueError):
             context_words = 8
 
-        transformed_items: List[ChapterStructureItem] = []
+        processed_data: List[dict] = []
+        primary_language = getattr(config, 'primary_language', None) or self.localization.language
+        phrases = self._footnote_phrases(primary_language)
+
+        def build_inline_replacements(footnotes_list: List[Dict[str, str]]) -> dict[str, str]:
+            if not footnotes_list or footnote_mode != 'inline':
+                return {}
+            prefix = phrases.get("prefix", " (")
+            template = phrases.get("template", "nota de rodapé {number}: {text}")
+            suffix_text = phrases.get("suffix_text", " - fim da nota de rodapé {number}")
+            closing = phrases.get("closing", ")")
+            replacements_map: dict[str, str] = {}
+            for footnote in footnotes_list:
+                intro = template.format(number=footnote["number"], text=footnote["text"])
+                suffix_part = suffix_text.format(number=footnote["number"], text=footnote["text"])
+                replacements_map[footnote["marker"]] = f"{prefix}{intro}{suffix_part}{closing}"
+            return replacements_map
+
         for item in items:
             chapter = item.chapter
             raw_html = getattr(chapter, 'raw_html', None)
+            chapter_footnotes = getattr(chapter, 'footnotes', None)
             text_source = item.text_override if item.text_override is not None else getattr(chapter, 'text', '')
+            if item.text_override is not None:
+                raw_html = None
 
             chapter_label = str(
                 item.display_name
@@ -594,20 +624,198 @@ class ConverterApplication:
             )
 
             if raw_html:
-                updated_text = TextProcessor.inject_footnotes(
+                markup_with_markers, footnotes = TextProcessor.inject_footnotes(
                     raw_html,
                     mode=footnote_mode,
                     context_words=context_words,
                 )
+                text_with_formatting, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+                updated_text = TextProcessor._render_footnotes(
+                    text_with_formatting,
+                    footnotes,
+                    mode=footnote_mode,
+                    context_words=context_words,
+                    phrases=phrases,
+                )
                 updated_text = TextProcessor.add_pause_before_dash(updated_text)
+                if footnotes:
+                    setattr(chapter, 'footnotes', list(footnotes))
+                replacements = build_inline_replacements(footnotes or [])
+                if formatting_segments:
+                    updated_segments: list[FormattingSegment] = []
+                    markers = [fn["marker"] for fn in (footnotes or [])]
+                    for segment in formatting_segments:
+                        segment_text = segment.text
+                        if replacements:
+                            for marker, replacement in replacements.items():
+                                segment_text = segment_text.replace(marker, replacement)
+                        elif markers:
+                            for marker in markers:
+                                segment_text = segment_text.replace(marker, '')
+                        updated_segments.append(
+                            FormattingSegment(
+                                text=segment_text,
+                                formatting=segment.formatting,
+                                language=segment.language,
+                            )
+                        )
+                    chapter.formatting_segments = updated_segments
+                else:
+                    chapter.formatting_segments = None
             else:
+                footnotes = list(chapter_footnotes or [])
                 if footnote_mode == 'skip':
                     updated_text = self._remove_inline_footnotes(text_source)
                 else:
-                    updated_text = text_source
+                    needs_render = '[[FOOTNOTE_' in text_source or '[[footnote_' in text_source.lower()
+                    if footnotes and needs_render:
+                        updated_text = TextProcessor._render_footnotes(
+                            text_source,
+                            footnotes,
+                            mode=footnote_mode,
+                            context_words=context_words,
+                            phrases=phrases,
+                        )
+                    else:
+                        updated_text = text_source
+                formatting_segments = getattr(chapter, 'formatting_segments', None)
+                replacements = build_inline_replacements(footnotes or [])
+                if formatting_segments:
+                    updated_segments: list[FormattingSegment] = []
+                    markers = [fn["marker"] for fn in (footnotes or [])]
+                    for segment in formatting_segments:
+                        segment_text = segment.text
+                        if replacements:
+                            for marker, replacement in replacements.items():
+                                segment_text = segment_text.replace(marker, replacement)
+                        elif markers:
+                            for marker in markers:
+                                segment_text = segment_text.replace(marker, '')
+                        updated_segments.append(
+                            FormattingSegment(
+                                text=segment_text,
+                                formatting=segment.formatting,
+                                language=segment.language,
+                            )
+                        )
+                    chapter.formatting_segments = updated_segments
+                else:
+                    chapter.formatting_segments = None
 
-            updated_text = self._deduplicate_heading(updated_text, chapter_label)
-            item.text_override = self.language_markup.annotate(updated_text, config.primary_language)
+            book_title = config.book_title or reader.title
+            final_text = self._prepare_chapter_text(
+                updated_text,
+                display_name=chapter_label,
+                book_title=book_title,
+            )
+            if not final_text:
+                continue
+
+            lines = [line.strip() for line in final_text.splitlines() if line.strip()]
+            if not lines:
+                continue
+
+            processed_data.append({
+                "item": item,
+                "lines": lines,
+                "line_sigs": [self._text_signature(line) for line in lines],
+                "text": "\n".join(lines),
+            })
+
+        index_to_data: dict[str, dict] = {}
+        for data in processed_data:
+            index = getattr(data["item"], "index", None)
+            if isinstance(index, str):
+                index_to_data[index] = data
+
+        children_map: dict[str, list[dict]] = {}
+        for data in processed_data:
+            index = getattr(data["item"], "index", None)
+            if not isinstance(index, str) or '.' not in index:
+                continue
+            parent_index = index.rsplit('.', 1)[0]
+            parent_data = index_to_data.get(parent_index)
+            if parent_data is None and parent_index:
+                parent_data = index_to_data.get(f"{parent_index}.0")
+            if parent_data is data:
+                continue
+            if parent_data is None:
+                continue
+            children_map.setdefault(parent_index, []).append(data)
+
+        for parent_index, child_list in children_map.items():
+            parent_data = index_to_data.get(parent_index)
+            if parent_data is None and parent_index:
+                parent_data = index_to_data.get(f"{parent_index}.0")
+            if not parent_data:
+                continue
+            child_signatures = {
+                sig
+                for child in child_list
+                for sig in child["line_sigs"]
+                if sig
+            }
+            parent_lines = parent_data["lines"]
+            parent_sigs = parent_data["line_sigs"]
+            new_lines = [
+                line
+                for line, sig in zip(parent_lines, parent_sigs)
+                if sig and sig not in child_signatures
+            ]
+            if child_list:
+                if new_lines:
+                    first_child = child_list[0]
+                    existing = set(first_child["line_sigs"])
+                    prepended: list[str] = []
+                    for line in new_lines:
+                        sig = self._text_signature(line)
+                        if sig and sig not in existing:
+                            prepended.append(line)
+                            existing.add(sig)
+                    if prepended:
+                        first_child_lines = prepended + first_child["lines"]
+                        first_child["lines"] = first_child_lines
+                        first_child["line_sigs"] = [self._text_signature(line) for line in first_child_lines]
+                        first_child["text"] = "\n".join(first_child_lines)
+                parent_data["skip"] = True
+            else:
+                if not new_lines:
+                    parent_data["skip"] = True
+                else:
+                    parent_data["lines"] = new_lines
+                    parent_data["line_sigs"] = [self._text_signature(line) for line in new_lines]
+                    parent_data["text"] = "\n".join(new_lines)
+
+        transformed_items: List[ChapterStructureItem] = []
+        seen_signatures: set[str] = set()
+
+        for data in processed_data:
+            if data.get("skip"):
+                continue
+            text = data["text"].strip()
+            if not text:
+                continue
+
+            lines = data["lines"]
+            item = data["item"]
+
+            text_signature = self._text_signature(text)
+            if text_signature == self._text_signature(item.display_name):
+                continue
+
+            name_parts = [part.strip() for part in item.display_name.split('-') if part.strip()]
+            trailing_part = name_parts[-1] if name_parts else item.display_name
+            if (
+                len(lines) == 1
+                and self._text_signature(lines[0]) == self._text_signature(trailing_part)
+            ):
+                continue
+
+            if text_signature in seen_signatures:
+                continue
+
+            seen_signatures.add(text_signature)
+            item.text_override = text
             transformed_items.append(item)
 
         return transformed_items
@@ -736,6 +944,15 @@ class ConverterApplication:
 
         config.language_voices = language_voice_map
 
+        if not self._voice_supports_multilingual(config.engine, config.voice):
+            if primary_language and primary_language not in {"", "unknown", "auto"}:
+                config.languages = [primary_language]
+            else:
+                fallback = fallback_lang if fallback_lang not in {"", "unknown"} else None
+                config.primary_language = fallback or "auto"
+                config.languages = [config.primary_language] if config.primary_language not in {"", "auto"} else []
+            config.language_voices = {}
+
     @staticmethod
     def _remove_inline_footnotes(text: str) -> str:
         if not text:
@@ -746,6 +963,139 @@ class ConverterApplication:
         )
         cleaned = pattern.sub(" ", text)
         return re.sub(r"\s+", " ", cleaned).strip()
+
+    @staticmethod
+    def _strip_book_title_prefix(text: str, book_title: Optional[str]) -> str:
+        if not text:
+            return ""
+        if not book_title:
+            return text.lstrip()
+
+        title = str(book_title).strip()
+        if not title:
+            return text.lstrip()
+
+        cleaned = text.lstrip()
+        pattern = re.compile(
+            rf"^(?:{re.escape(title)}[\s,.:;\-–—“”\"']*)+",
+            re.IGNORECASE,
+        )
+        cleaned = pattern.sub("", cleaned, count=1)
+
+        def normalise(value: str) -> str:
+            value = value or ""
+            value = unicodedata.normalize("NFKD", value).casefold()
+            return "".join(ch for ch in value if ch.isalnum())
+
+        title_norm = normalise(title)
+        lines = cleaned.splitlines()
+        while lines and title_norm and normalise(lines[0]) == title_norm:
+            lines.pop(0)
+        cleaned = "\n".join(lines).lstrip()
+        return cleaned
+
+    @staticmethod
+    def _voice_supports_multilingual(engine: Optional[str], voice: Optional[str]) -> bool:
+        engine_name = (engine or "").lower()
+        voice_name = (voice or "").lower()
+        if not voice_name:
+            return False
+        if engine_name == "edge":
+            return "multilingual" in voice_name
+        if engine_name == "coqui":
+            return "xtts" in voice_name or "multi" in voice_name
+        if engine_name == "piper":
+            return False
+        return False
+
+    def _prepare_chapter_text(self, raw_text: str, *, display_name: str, book_title: Optional[str]) -> str:
+        """Normalise chapter text to ensure parity between cache and audio."""
+        text = raw_text or ""
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        text = self._strip_book_title_prefix(text, book_title)
+        text = self._deduplicate_heading(text, display_name)
+        lines = [line.strip() for line in text.split("\n")]
+
+        display_parts = [part.strip() for part in display_name.split(" - ") if part.strip()]
+        ignored_candidates = [display_name] + display_parts[:-1]
+        ignored_norms = {self._normalize_lookup(part) for part in ignored_candidates if part}
+        if book_title:
+            ignored_norms.add(self._normalize_lookup(book_title))
+
+        # Remove redundant consecutive headings and empty lines
+        cleaned_lines: list[str] = []
+        for line in lines:
+            if not line:
+                if cleaned_lines and cleaned_lines[-1] != "":
+                    cleaned_lines.append("")
+                continue
+
+            normalised_line = self._normalize_lookup(line)
+            if normalised_line in ignored_norms:
+                continue
+
+            if cleaned_lines:
+                last = cleaned_lines[-1]
+                if last and self._heading_contains(line, last):
+                    cleaned_lines[-1] = line
+                    continue
+                if line and self._heading_contains(last, line):
+                    # Skip current line if previous already more descriptive
+                    continue
+
+            cleaned_lines.append(line)
+
+        while cleaned_lines and not cleaned_lines[0]:
+            cleaned_lines.pop(0)
+        while cleaned_lines and not cleaned_lines[-1]:
+            cleaned_lines.pop()
+
+        if cleaned_lines and cleaned_lines[-1].lower() in {"notas", "nota"}:
+            cleaned_lines.pop()
+
+        text = "\n".join(cleaned_lines)
+        text = re.sub(r"\n{3,}", "\n\n", text)
+        text = re.sub(r"[\t ]+\n", "\n", text)
+        text = re.sub(r"\n[\t ]+", "\n", text)
+        text = re.sub(r"\)\s+\.", ").", text)
+        text = re.sub(r"\s+\)", ")", text)
+        return text.strip()
+
+    @staticmethod
+    def _heading_contains(value: str, candidate: str) -> bool:
+        value_norm = ConverterApplication._normalize_lookup(value)
+        candidate_norm = ConverterApplication._normalize_lookup(candidate)
+        if not value_norm or not candidate_norm:
+            return False
+        return value_norm != candidate_norm and (value_norm in candidate_norm or candidate_norm in value_norm)
+
+    @staticmethod
+    def _text_signature(text: str) -> str:
+        if not text:
+            return ""
+        import re
+        return re.sub(r"\s+", " ", text).strip().lower()
+
+    def _footnote_phrases(self, language: Optional[str]) -> Dict[str, str]:
+        lang = (language or "").split('-', 1)[0].lower()
+        if lang != "en" and lang != "pt":
+            lang = "pt"
+        if lang == "en":
+            return {
+                "prefix": " (",
+                "template": "footnote {number}: {text}",
+                "suffix_text": " - end of footnote {number}",
+                "closing": ")",
+                "chapter_end_template": "footnote {number}: {snippet} - {text} end of footnote {number}",
+            }
+
+        return {
+            "prefix": " (",
+            "template": "nota de rodapé {number}: {text}",
+            "suffix_text": " - fim da nota de rodapé {number}",
+            "closing": ")",
+            "chapter_end_template": "nota de rodapé {number}: {snippet} - {text} fim da nota de rodapé {number}",
+        }
 
     @staticmethod
     def _deduplicate_heading(text: str, display_name: str) -> str:
@@ -894,16 +1244,55 @@ class ConverterApplication:
         return matched, True
 
     def _show_structure(self, reader: EbookReader):
-        """Display book structure"""
+        """Display book structure and save cache txt files"""
         print(f"{self.localization.t('book_label')}: {reader.title}")
         print(f"{self.localization.t('author_label')}: {reader.author}")
         structure_items = self._generate_structure_items(reader)
+
+        preview_config = self.config.create_conversion_config(
+            engine="edge",
+            output_dir=str(self.cache_root),
+            book_title=reader.title,
+        )
+        preview_config.footnote_mode = "inline"
+        preview_config.footnote_context_words = self.FOOTNOTE_CONTEXT_WORDS
+
+        structure_items = self._apply_text_transforms(structure_items, preview_config, reader)
+
         print(f"{self.localization.t('chapters_label')}: {len(structure_items)}")
 
+        # **Salvar cache txt** ao mostrar estrutura
+        from src.cache_manager import CacheManager
+        cache_manager = CacheManager()
+
+        chapters_data = {
+            'title': reader.title or 'Livro',
+            'author': reader.author or 'Desconhecido',
+            'chapters': []
+        }
+
         for item in structure_items:
-            text_source = item.text_override if item.text_override is not None else getattr(item.chapter, 'text', '')
-            text_length = len(str(text_source))
+            cleaned_text = str(item.text_override or "")
+            text_length = len(cleaned_text)
             print(self.localization.t("structure_item_entry", name=item.display_name, chars=text_length))
+
+            # Adicionar capítulo ao cache data
+            chapters_data['chapters'].append({
+                'title': item.display_name,
+                'text': cleaned_text
+            })
+
+        # Salvar no cache
+        if hasattr(reader, 'file_path') and reader.file_path:
+            success = cache_manager.save_chapters_to_cache(reader.file_path, chapters_data)
+            if success:
+                cache_txt_path = cache_manager._get_cache_path(
+                    Path(reader.file_path),
+                    override_name=chapters_data.get('title'),
+                ) / "txt"
+                print(f"\n💾 Cache txt salvo em: {cache_txt_path}")
+            else:
+                print("\n⚠️  Erro ao salvar cache txt")
 
     def _should_skip_chapter(
         self,
@@ -1375,6 +1764,36 @@ class ConverterApplication:
             print(f"🔍 Caracteres analisados: {self.language_profile.analysed_chars:,}")
             print()
 
+    def _announce_footnote_mode(self, config: ConversionConfig) -> None:
+        """Display the chosen footnote handling mode once per run."""
+        if self._footnote_summary_printed:
+            return
+
+        mode = (getattr(config, "footnote_mode", "inline") or "inline").lower()
+        raw_context = getattr(config, "footnote_context_words", self.FOOTNOTE_CONTEXT_WORDS)
+        try:
+            context_words = max(int(raw_context), 0)
+        except (TypeError, ValueError):
+            context_words = self.FOOTNOTE_CONTEXT_WORDS
+        if context_words == 0:
+            context_words = self.FOOTNOTE_CONTEXT_WORDS
+
+        label_keys = {
+            "inline": "footnote_option_inline",
+            "chapter_end": "footnote_option_chapter_end",
+            "skip": "footnote_option_skip",
+        }
+        label_key = label_keys.get(mode, "footnote_option_inline")
+        mode_label = self.localization.t(label_key)
+        print(self.localization.t("footnote_selected", option=mode_label))
+
+        if mode == "inline":
+            print(self.localization.t("footnote_inline_context", value=context_words))
+        elif mode == "chapter_end":
+            print(self.localization.t("footnote_chapter_end_context", value=context_words))
+
+        self._footnote_summary_printed = True
+
     def _sanitize_first_words(self, first_words: str, *phrases: str) -> str:
         """Remove redundant leading phrases from extracted first words"""
         if not first_words:
@@ -1412,8 +1831,24 @@ class ConverterApplication:
             if book_title_clean and cleaned.lower() == book_title_clean.lower():
                 return ""
             if book_title_clean:
-                pattern = re.compile(re.escape(book_title_clean), re.IGNORECASE)
-                cleaned = pattern.sub("", cleaned).strip(" -–—,:;")
+                title_pattern = re.escape(book_title_clean)
+                # Remove parenthetical fragments that still reference the book title
+                cleaned = re.sub(
+                    rf"\(\s*[^)]*{title_pattern}[^)]*\)",
+                    "",
+                    cleaned,
+                    flags=re.IGNORECASE,
+                )
+                pattern = re.compile(title_pattern, re.IGNORECASE)
+                cleaned = pattern.sub("", cleaned)
+                cleaned = re.sub(r"\s+", " ", cleaned)
+                cleaned = cleaned.strip()
+                cleaned = re.sub(r"\s+([)\]}])", r"\1", cleaned)
+                cleaned = re.sub(r"([\(\[\{])\s+", r"\1", cleaned)
+                cleaned = re.sub(r"\(\s*\)", "", cleaned)
+                cleaned = re.sub(r"\[\s*\]", "", cleaned)
+                cleaned = re.sub(r"\{\s*\}", "", cleaned)
+            cleaned = cleaned.strip(" -–—,:;")
             return cleaned
 
         main = cleanse(main_name)
@@ -1455,6 +1890,7 @@ class ConverterApplication:
         if not preview:
             return None
 
+        import re
         cleaned = preview.strip()
         for ref in references:
             if not ref:
@@ -1462,8 +1898,22 @@ class ConverterApplication:
             ref_clean = str(ref).strip()
             if not ref_clean:
                 continue
+
+            # Remove exact matches at start
             if cleaned.lower().startswith(ref_clean.lower()):
                 cleaned = cleaned[len(ref_clean):].strip(" -–—,:;")
+
+            # Remove partial word matches too
+            ref_words = ref_clean.lower().split()
+            for word in ref_words:
+                if len(word) > 3:  # Only for significant words
+                    pattern = r'\b' + re.escape(word) + r'\b'
+                    cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE).strip()
+
+        # Clean up multiple spaces and separators
+        cleaned = re.sub(r'[-–—,:;\s]+', ' ', cleaned).strip()
+
+        cleaned = re.sub(r'^(?:\d+\s+){1,3}', '', cleaned).strip()
 
         return cleaned or None
 
