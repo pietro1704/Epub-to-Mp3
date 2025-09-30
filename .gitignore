@@ -93,6 +93,7 @@ Thumbs.db
 # EBook files (for testing - uncomment if needed)
 *.epub
 !tests/fixtures/epubs/test_multifeature.epub
+!web/public/sample.epub
 *.pdf
 *.mobi
 *.azw3
