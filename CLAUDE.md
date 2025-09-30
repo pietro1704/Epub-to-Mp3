@@ -11,7 +11,7 @@ This is an EBook to Audiobook converter that transforms EPUB/PDF files into MP3 
 ### Installation and Setup
 ```bash
 # Install core dependencies
-pip install -r requirements.txt
+pip install -r python_app/requirements.txt
 
 # Install specific TTS engines
 pip install edge-tts          # Edge-TTS (Microsoft, online)
@@ -32,48 +32,48 @@ source /Users/pietropugliesi/.venvs/tts311/bin/activate
 ### Running the Application
 ```bash
 # Basic usage with interactive menu
-python main.py book.epub
+python -m python_app.main book.epub
 
 # Use the convert script (updated entry point)
-python convert book.epub
+python python_app/convert book.epub
 
 # Parallel processing
-python convert book.epub --parallel
-python convert book.epub --parallel 4
+python python_app/convert book.epub --parallel
+python python_app/convert book.epub --parallel 4
 
 # Direct engine selection
-python main.py book.epub --engine edge --voice pt-BR-FranciscaNeural
-python main.py book.epub --engine coqui --model tts_models/multilingual/multi-dataset/xtts_v2
-python main.py book.epub --engine piper --model ./models/pt_BR-faber-medium.onnx
+python -m python_app.main book.epub --engine edge --voice pt-BR-FranciscaNeural
+python -m python_app.main book.epub --engine coqui --model tts_models/multilingual/multi-dataset/xtts_v2
+python -m python_app.main book.epub --engine piper --model python_app/models/pt_BR-faber-medium.onnx
 
 # Interactive menu mode
-python convert book.epub --menu
+python python_app/convert book.epub --menu
 
 # Listen to chapters immediately after conversion
-python convert book.epub --chapter 1 --listen
+python python_app/convert book.epub --chapter 1 --listen
 
 # Selective conversion
-python convert book.epub --chapter 3
-python convert book.epub --section 2.1
+python python_app/convert book.epub --chapter 3
+python python_app/convert book.epub --section 2.1
 
 # Footnote handling options
-python convert book.epub --no-footnote
-python convert book.epub --footnote-chapter-end
+python python_app/convert book.epub --no-footnote
+python python_app/convert book.epub --footnote-chapter-end
 
 # Show chapter structure without converting
-python main.py book.epub --show-structure
+python -m python_app.main book.epub --show-structure
 
 # Force reprocessing (clear cache)
-python convert book.epub --clear-cache
+python python_app/convert book.epub --clear-cache
 ```
 
 ### Testing and Debugging
 ```bash
 # Run test suite
-pytest tests/
+pytest
 
 # Run specific test file
-pytest tests/test_converter.py -v
+pytest python_app/tests/test_converter.py -v
 
 # Run tests with verbose output
 pytest -v --tb=short
@@ -83,10 +83,23 @@ python -c "import edge_tts; print('Edge-TTS OK')"
 python -c "import TTS; print('Coqui TTS OK')"
 
 # Debug mode with verbose output
-python -u main.py book.epub 2>&1 | tee debug.log
+python -u -m python_app.main book.epub 2>&1 | tee debug.log
 
 # Skip dependency validation if needed
-python main.py book.epub --skip-validation
+python -m python_app.main book.epub --skip-validation
+```
+
+### Frontend (Cloudflare Pages)
+```bash
+cd web
+npm install
+npm run dev
+
+# Override backend target locally
+VITE_API_BASE=http://localhost:8787 npm run dev
+
+# Build for deployment (outputs web/dist)
+npm run build
 ```
 
 ### Dependency Resolution
@@ -104,7 +117,7 @@ pip install transformers==4.40.2 --force-reinstall
 ### Core Components
 
 **Main Entry Point**
-- `main.py` - CLI interface, argument parsing, and conversion orchestration
+- `python_app/main.py` - CLI interface, argument parsing, and conversion orchestration
 - Supports both interactive menu and command-line parameters
 - Handles file validation and basic error handling
 
@@ -168,7 +181,7 @@ The system preserves EPUB navigation structure:
 
 **Edge-TTS**: 15+ Portuguese voices, fastest conversion, requires internet
 **Coqui TTS**: AI-powered local synthesis, supports voice cloning with `reference_voice.wav`
-**Piper**: Lightweight local engine using ONNX models in `./models/` directory
+**Piper**: Lightweight local engine using ONNX models in `python_app/models/` directory
 
 ### Error Handling and Validation
 
@@ -201,7 +214,7 @@ Stack: Python 3.8+, asyncio, subprocess, pathlib, dataclasses
 Estrutura atual:
 - src/tts/: Engines TTS (edge_engine.py, coqui_engine.py, piper_engine.py)
 - src/: Core modules (converter.py, cache_manager.py, progress_tracker.py)
-- main.py: Entry point com argparse
+- python_app/main.py: Entry point com argparse
 - config.py: Centralized configuration
 </context>
 
