@@ -131,6 +131,10 @@ error.log
 .huggingface/
 .checkpoints/
 
+# Frontend build artifacts
+web/node_modules/
+web/dist/
+
 # Preview and temporary conversion files
 .preview/
 .preview.*

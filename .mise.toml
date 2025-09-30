@@ -1,0 +1,25 @@
+[tools]
+python = { version = "3.11", virtualenv = "python_app/.venv" }
+node = "20"
+
+[tasks."python:install"]
+run = "python -m pip install -r python_app/requirements.txt"
+
+[tasks."python:test"]
+run = "pytest"
+
+[tasks."web:install"]
+dir = "web"
+run = "npm install"
+
+[tasks."web:test"]
+dir = "web"
+run = "npm run test"
+
+[tasks."web:build"]
+dir = "web"
+run = "npm run build"
+
+[tasks."web:dev"]
+dir = "web"
+run = "npm run dev"

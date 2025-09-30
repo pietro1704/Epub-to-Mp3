@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""Dedicated CLI entry that defaults to the `convert` command."""
+
+import argparse
+import sys
+from pathlib import Path
+
+from src.ui.prompt import TerminalPrompt
+
+from main import (
+    ConverterApplication,
+    _add_conversion_arguments,
+    argcomplete,
+)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="EBook to Audiobook Converter",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        epilog=(
+            "Example:\n"
+            "  book=$(find \"$HOME/Downloads\" -maxdepth 1 -iname '*jardim*' -print -quit)\n"
+            "  python python_app/convert \"$book\" --engine piper --model "
+            "python_app/models/pt_BR-faber-medium.onnx --chapter 1"
+        ),
+    )
+    _add_conversion_arguments(parser, include_menu_flag=False, input_required=False)
+    parser.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        help="Assume yes for all prompts when clearing cache",
+    )
+    parser.add_argument(
+        "--menu",
+        action="store_true",
+        help="Launch interactive menu before converting",
+    )
+
+    if argcomplete is not None:
+        argcomplete.autocomplete(parser)
+
+    args = parser.parse_args()
+
+    has_input = bool(getattr(args, "input_file", None))
+
+    if args.clear_cache and not has_input:
+        _clear_cache_all(assume_yes=args.yes)
+        return 0
+
+    if not has_input:
+        parser.print_help()
+        return 1
+
+    args.command = "convert"
+    if not hasattr(args, "chapters"):
+        args.chapters = []
+    if not hasattr(args, "sections"):
+        args.sections = []
+
+    if not hasattr(args, "menu"):
+        args.menu = False
+
+    app = ConverterApplication()
+    return app.run(args)
+
+
+def _clear_cache_all(*, assume_yes: bool = False) -> None:
+    from src.cache_manager import CacheManager
+    cache_manager = CacheManager()
+    cache_dir = cache_manager.cache_dir
+    if not cache_dir.exists() or not any(cache_dir.iterdir()):
+        print("No cache directory found.")
+        return
+
+    if not assume_yes:
+        if not sys.stdin.isatty():
+            print("Run with --clear-cache -y to skip confirmation in non-interactive mode.")
+            return
+
+        prompt = TerminalPrompt()
+        try:
+            answer = prompt.ask(
+                "Remove all cached audio/text files? [y/N]: ",
+                valid={"y", "n", "yes", "no"},
+                default="n",
+                allow_blank_default=True,
+            )
+        except EOFError:
+            answer = None
+
+        if not answer:
+            print("Cache clear aborted.")
+            return
+
+        if answer.lower() not in {"y", "yes"}:
+            print("Cache clear aborted.")
+            return
+
+    try:
+        removed = cache_manager.clear_cache()
+        if removed:
+            print("Cache directory cleared.")
+        else:
+            print("No cached files were removed.")
+    except OSError as exc:
+        print(f"Failed to clear cache: {exc}")
+
+
+if __name__ == "__main__":
+    sys.exit(main())
