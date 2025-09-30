@@ -143,3 +143,4 @@ preview_*
 temp_*
 tmp_*
 .cache
+.env.local
