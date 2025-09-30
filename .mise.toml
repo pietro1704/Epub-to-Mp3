@@ -2,6 +2,10 @@
 python = { version = "3.11", virtualenv = "python_app/.venv" }
 node = "20"
 
+[tasks."sync:fixtures"]
+description = "Copy test EPUB from fixtures to web/public"
+run = "./sync_test_fixtures.sh"
+
 [tasks."python:install"]
 run = "python -m pip install -r python_app/requirements.txt"
 
@@ -21,10 +25,14 @@ dir = "web"
 run = "npm run test"
 
 [tasks."web:build"]
+description = "Build web frontend (copies fixtures first)"
+depends = ["sync:fixtures"]
 dir = "web"
 run = "npm run build"
 
 [tasks."web:dev"]
+description = "Start web dev server (copies fixtures first)"
+depends = ["sync:fixtures"]
 dir = "web"
 env = { VITE_API_BASE = "http://localhost:8000" }
 run = "npm run dev"

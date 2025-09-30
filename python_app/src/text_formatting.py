@@ -102,6 +102,9 @@ class TextFormattingProcessor:
         # First process markup tags from LanguageMarkup
         text = self.process_markup_tags(html_text)
 
+        # **NOVO**: Extrair atributos lang e converter para [[lang:xx]]
+        text = self._extract_language_attributes(text)
+
         # Processar cada tipo de formatação
         for fmt_type, patterns in self.compiled_patterns.items():
             marker_template = self.INTERNAL_MARKERS[fmt_type]
@@ -325,6 +328,70 @@ class TextFormattingProcessor:
         text = text.replace("'", '&apos;')
 
         return text
+
+    def _extract_language_attributes(self, html_text: str) -> str:
+        """
+        Extrai atributos lang/xml:lang de tags HTML e converte para [[lang:xx]]
+        Processa apenas tags de conteúdo (p, div, span), ignorando tags estruturais (html, body)
+
+        Exemplo:
+            <html lang="pt"><p lang="en">Hello</p></html>
+            -> <html lang="pt">[[lang:en]]<p>Hello</p>[[/lang]]</html>
+        """
+        if not html_text:
+            return html_text
+
+        # Tags estruturais que devem ser ignoradas (não adicionar [[lang:]])
+        structural_tags = {'html', 'body', 'head', 'article', 'section', 'header', 'footer', 'main', 'nav'}
+
+        # Processar múltiplas vezes para capturar tags aninhadas
+        # Começar das mais internas (menor distância entre abertura e fechamento)
+        max_iterations = 10
+        for _ in range(max_iterations):
+            # Padrão para detectar tags com atributo lang
+            # Captura: <tag lang="xx" ...> conteúdo </tag>
+            lang_pattern = re.compile(
+                r'<(\w+)\s+([^>]*?)(?:lang|xml:lang)=["\']([a-zA-Z\-]+)["\']([^>]*?)>(.*?)</\1>',
+                re.IGNORECASE | re.DOTALL
+            )
+
+            match = lang_pattern.search(html_text)
+            if not match:
+                break  # Nenhuma tag lang encontrada
+
+            tag_name = match.group(1).lower()
+            attrs_before = match.group(2)
+            lang_code = match.group(3)
+            attrs_after = match.group(4)
+            content = match.group(5)
+
+            # **NOVO**: Ignorar tags estruturais para evitar quebrar capítulos
+            if tag_name in structural_tags:
+                # Remover apenas o atributo lang, mas não adicionar [[lang:]]
+                attrs = (attrs_before + attrs_after).strip()
+                if attrs:
+                    new_tag = f'<{tag_name} {attrs}>'
+                else:
+                    new_tag = f'<{tag_name}>'
+
+                replacement = f'{new_tag}{content}</{tag_name}>'
+                html_text = html_text[:match.start()] + replacement + html_text[match.end():]
+                continue
+
+            # Remover atributo lang e reconstruir tag sem ele
+            attrs = (attrs_before + attrs_after).strip()
+            if attrs:
+                new_tag = f'<{tag_name} {attrs}>'
+            else:
+                new_tag = f'<{tag_name}>'
+
+            # Adicionar marcadores de idioma em torno do conteúdo
+            replacement = f'{new_tag}[[lang:{lang_code}]]{content}[[/lang]]</{tag_name}>'
+
+            # Substituir apenas a primeira ocorrência (mais interna)
+            html_text = html_text[:match.start()] + replacement + html_text[match.end():]
+
+        return html_text
 
     def clean_html_tags(self, text: str) -> str:
         """Remove todas as tags HTML do texto"""

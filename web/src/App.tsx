@@ -69,6 +69,7 @@ export default function App(props?: AppProps): JSX.Element {
               showRawLog={showRawLog}
               onToggleRawLog={() => setShowRawLog((value) => !value)}
               summary={state.summary}
+              cliCommand={state.cliCommand}
             />
           </Panel>
         ),
@@ -83,7 +84,14 @@ export default function App(props?: AppProps): JSX.Element {
             description={t.tabs.downloads.panelDescription}
             footer={<small>{t.tabs.downloads.footer}</small>}
           >
-            <DownloadsPanel downloads={state.downloads} phase={state.phase} onReset={handleReset} isBusy={isBusy} />
+            <DownloadsPanel
+              downloads={state.downloads}
+              phase={state.phase}
+              onReset={handleReset}
+              isBusy={isBusy}
+              cliCommand={state.cliCommand}
+              log={state.log}
+            />
           </Panel>
         ),
       },

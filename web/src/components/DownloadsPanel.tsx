@@ -1,20 +1,23 @@
 import { useState } from 'react';
 import { useI18n, useTranslations } from '../i18n/I18nProvider';
 import type { Locale } from '../i18n/translations';
-import { ConversionState, DownloadAsset } from '../types/conversion';
+import { ConversionState, DownloadAsset, StatusEntry } from '../types/conversion';
 
 interface DownloadsPanelProps {
   downloads: DownloadAsset[];
   phase: ConversionState['phase'];
   onReset: () => void;
   isBusy: boolean;
+  cliCommand?: string;
+  log: StatusEntry[];
 }
 
-export default function DownloadsPanel({ downloads, phase, onReset, isBusy }: DownloadsPanelProps): JSX.Element {
+export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliCommand, log }: DownloadsPanelProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
   const hasDownloads = downloads.length > 0;
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
+  const [showLog, setShowLog] = useState(false);
 
   // Separate ZIP file from individual chapters
   const zipFile = downloads.find(d => d.name.toLowerCase().endsWith('.zip'));
@@ -34,6 +37,25 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy }: Do
 
   return (
     <div className="downloads-panel">
+      {cliCommand && (
+        <div className="downloads-panel__command-section">
+          <h3>Comando executado</h3>
+          <code className="downloads-panel__command">{cliCommand}</code>
+          <button
+            type="button"
+            className="downloads-panel__log-toggle"
+            onClick={() => setShowLog(!showLog)}
+          >
+            {showLog ? '▼ Ocultar log' : '▶ Ver log completo'}
+          </button>
+          {showLog && (
+            <pre className="downloads-panel__log">
+              {log.map(entry => entry.message).join('\n')}
+            </pre>
+          )}
+        </div>
+      )}
+
       {!hasDownloads && phase !== 'success' && (
         <p className="downloads-panel__placeholder">{t.downloads.placeholder}</p>
       )}
