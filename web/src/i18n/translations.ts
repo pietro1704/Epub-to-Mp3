@@ -108,6 +108,9 @@ export interface DownloadsText {
   resetWithoutDownloads: string;
   audioNotSupported: string;
   downloadChapter: string;
+  downloadZip: string;
+  downloadZipHint: (chapterCount: number) => string;
+  orIndividual: string;
 }
 
 export interface LayoutText {
@@ -275,6 +278,9 @@ export const translations: Record<Locale, Translations> = {
       resetWithoutDownloads: 'Limpar tudo',
       audioNotSupported: 'Seu navegador não suporta reprodução de áudio.',
       downloadChapter: '⬇ Baixar MP3',
+      downloadZip: 'Baixar Audiolivro Completo (ZIP)',
+      downloadZipHint: (count: number) => `Contém ${count} ${count === 1 ? 'capítulo' : 'capítulos'} em MP3`,
+      orIndividual: 'Ou baixe/ouça os capítulos individualmente',
     },
     layout: {
       footer:
@@ -428,6 +434,9 @@ export const translations: Record<Locale, Translations> = {
       resetWithoutDownloads: 'Clear form',
       audioNotSupported: 'Your browser does not support audio playback.',
       downloadChapter: '⬇ Download MP3',
+      downloadZip: 'Download Complete Audiobook (ZIP)',
+      downloadZipHint: (count: number) => `Contains ${count} ${count === 1 ? 'chapter' : 'chapters'} in MP3`,
+      orIndividual: 'Or download/listen to individual chapters',
     },
     layout: {
       footer: 'Ready for Cloudflare Pages. Set VITE_API_BASE to your Python backend and you are good to go.',
