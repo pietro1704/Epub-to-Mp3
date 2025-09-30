@@ -224,6 +224,22 @@ export class MockConversionClient implements ConversionClient {
     };
   }
 
+  private createMockZip(bookTitle: string): string {
+    // Create a simple ZIP-like file with mock content
+    const content = `Mock Audiobook ZIP: ${bookTitle}
+
+This ZIP file would contain:
+- 001 - Capítulo 1.mp3
+- 002 - Capítulo 2.mp3
+- 003 - Capítulo 3.mp3
+
+Generated: ${new Date().toISOString()}
+Note: In production, this would be a real ZIP with all MP3 files.
+`;
+    const blob = new Blob([content], { type: 'application/zip' });
+    return URL.createObjectURL(blob);
+  }
+
   async poll(jobId: string, options: PollOptions = {}): Promise<JobSnapshot> {
     const bookTitle = 'Livro_de_Exemplo';
 
@@ -231,6 +247,7 @@ export class MockConversionClient implements ConversionClient {
     const chapter1 = this.createMockAudio('001 - Capítulo 1', 3);
     const chapter2 = this.createMockAudio('002 - Capítulo 2', 4);
     const chapter3 = this.createMockAudio('003 - Capítulo 3', 5);
+    const zipUrl = this.createMockZip(bookTitle);
 
     const steps: JobSnapshot[] = [
       {
@@ -365,6 +382,7 @@ export class MockConversionClient implements ConversionClient {
         currentChapter: 'Capítulo 3',
         progressPercent: 100,
         outputs: [
+          { name: 'Livro_de_Exemplo.zip', url: zipUrl },
           { name: '001 - Capítulo 1.mp3', url: chapter1, durationSeconds: 180 },
           { name: '002 - Capítulo 2.mp3', url: chapter2, durationSeconds: 240 },
           { name: '003 - Capítulo 3.mp3', url: chapter3, durationSeconds: 300 },

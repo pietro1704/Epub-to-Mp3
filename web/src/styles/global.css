@@ -825,6 +825,67 @@ select {
   color: var(--downloads-placeholder);
 }
 
+.downloads-panel__primary {
+  margin-bottom: 1.5rem;
+}
+
+.downloads-panel__zip-button {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 1.8rem;
+  background: linear-gradient(135deg, var(--button-gradient-start), var(--button-gradient-end));
+  border-radius: 16px;
+  color: white;
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 12px var(--button-shadow);
+}
+
+.downloads-panel__zip-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px var(--button-shadow);
+}
+
+.downloads-panel__zip-icon {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.downloads-panel__zip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.downloads-panel__zip-text strong {
+  font-size: 1.1rem;
+}
+
+.downloads-panel__zip-text small {
+  font-size: 0.85rem;
+  opacity: 0.9;
+  font-weight: 400;
+}
+
+.downloads-panel__divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.downloads-panel__divider::before,
+.downloads-panel__divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--panel-border);
+}
+
 .downloads-chapters {
   display: grid;
   gap: 0.75rem;
