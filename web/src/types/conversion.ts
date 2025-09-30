@@ -57,4 +57,5 @@ export interface ConversionState {
   error?: string;
   etaSeconds?: number | null;
   summary?: ConversionSummary;
+  cliCommand?: string;
 }

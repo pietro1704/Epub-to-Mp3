@@ -12,6 +12,7 @@ interface StatusPanelProps {
   showRawLog: boolean;
   onToggleRawLog: () => void;
   summary?: ConversionSummary;
+  cliCommand?: string;
 }
 
 export default function StatusPanel({
@@ -23,6 +24,7 @@ export default function StatusPanel({
   showRawLog,
   onToggleRawLog,
   summary,
+  cliCommand,
 }: StatusPanelProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
@@ -56,6 +58,11 @@ export default function StatusPanel({
         <button type="button" className="status-panel__toggle" onClick={onToggleRawLog}>
           {toggleLabel}
         </button>
+        {cliCommand && (
+          <code className="status-panel__cli" title={cliCommand}>
+            {cliCommand}
+          </code>
+        )}
         <div className="status-panel__eta">
           <span className="status-panel__eta-label">{t.status.etaLabel}</span>
           <span className="status-panel__eta-value">{etaDisplay}</span>

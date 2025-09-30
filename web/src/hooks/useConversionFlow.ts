@@ -11,9 +11,39 @@ import {
 } from '../types/conversion';
 import { useTranslations } from '../i18n/I18nProvider';
 
+function buildCliCommand(values: ConversionFormValues): string {
+  const parts = ['python python_app/convert', values.file.name];
+
+  if (values.engine) {
+    parts.push('--engine', values.engine);
+  }
+
+  if (values.voice) {
+    parts.push('--voice', values.voice);
+  }
+
+  if (values.chapters) {
+    parts.push('--chapter', values.chapters);
+  }
+
+  if (values.footnoteMode && values.footnoteMode !== 'inline') {
+    if (values.footnoteMode === 'skip') {
+      parts.push('--no-footnote');
+    } else if (values.footnoteMode === 'chapter_end') {
+      parts.push('--footnote-chapter-end');
+    }
+  }
+
+  if (values.language) {
+    parts.push('--language', values.language);
+  }
+
+  return parts.join(' ');
+}
+
 type Action =
   | { type: 'reset' }
-  | { type: 'start'; entry: StatusEntry }
+  | { type: 'start'; entry: StatusEntry; cliCommand: string }
   | { type: 'job-created'; entry: StatusEntry; jobId: string }
   | { type: 'append-entry'; entry: StatusEntry }
   | { type: 'complete'; entry: StatusEntry; downloads: DownloadAsset[] }
@@ -28,6 +58,7 @@ const initialState: ConversionState = {
   jobId: undefined,
   etaSeconds: undefined,
   summary: undefined,
+  cliCommand: undefined,
 };
 
 function reducer(state: ConversionState, action: Action): ConversionState {
@@ -43,6 +74,7 @@ function reducer(state: ConversionState, action: Action): ConversionState {
         error: undefined,
         etaSeconds: undefined,
         summary: undefined,
+        cliCommand: action.cliCommand,
       };
     case 'job-created':
       return {
@@ -179,7 +211,10 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
       startTimeRef.current = Date.now();
       fileNameRef.current = values.file.name;
 
-      dispatch({ type: 'start', entry: entryFactoryRef.current(t.flow.start) });
+      // Generate CLI command
+      const cliCommand = buildCliCommand(values);
+
+      dispatch({ type: 'start', entry: entryFactoryRef.current(t.flow.start), cliCommand });
       try {
         const { jobId } = await api.submit(values);
         dispatch({
@@ -238,23 +273,26 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
         }
 
         const downloads = finalSnapshot.outputs ?? [];
+        // Count only MP3 files (exclude ZIP)
+        const chapterCount = downloads.filter(d => d.name.toLowerCase().endsWith('.mp3')).length;
+
         const summaryUpdate: ConversionSummary = {};
         if (typeof finalSnapshot.chaptersCompleted === 'number') {
           summaryUpdate.chaptersCompleted = finalSnapshot.chaptersCompleted;
-        } else if (downloads.length > 0) {
-          summaryUpdate.chaptersCompleted = downloads.length;
+        } else if (chapterCount > 0) {
+          summaryUpdate.chaptersCompleted = chapterCount;
         }
         if (typeof finalSnapshot.chaptersTotal === 'number') {
           summaryUpdate.chaptersTotal = finalSnapshot.chaptersTotal;
-        } else if (downloads.length > 0) {
-          summaryUpdate.chaptersTotal = downloads.length;
+        } else if (chapterCount > 0) {
+          summaryUpdate.chaptersTotal = chapterCount;
         }
         summaryUpdate.progressPercent = 100;
         dispatch({ type: 'update-meta', etaSeconds: 0, summary: summaryUpdate });
         dispatch({
           type: 'complete',
           downloads,
-          entry: entryFactoryRef.current(t.flow.completion(downloads.length)),
+          entry: entryFactoryRef.current(t.flow.completion(chapterCount)),
         });
         // Clear cache on successful completion
         conversionCache.remove(jobId);
@@ -361,23 +399,26 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
         }
 
         const downloads = finalSnapshot.outputs ?? [];
+        // Count only MP3 files (exclude ZIP)
+        const chapterCount = downloads.filter(d => d.name.toLowerCase().endsWith('.mp3')).length;
+
         const summaryUpdate: ConversionSummary = {};
         if (typeof finalSnapshot.chaptersCompleted === 'number') {
           summaryUpdate.chaptersCompleted = finalSnapshot.chaptersCompleted;
-        } else if (downloads.length > 0) {
-          summaryUpdate.chaptersCompleted = downloads.length;
+        } else if (chapterCount > 0) {
+          summaryUpdate.chaptersCompleted = chapterCount;
         }
         if (typeof finalSnapshot.chaptersTotal === 'number') {
           summaryUpdate.chaptersTotal = finalSnapshot.chaptersTotal;
-        } else if (downloads.length > 0) {
-          summaryUpdate.chaptersTotal = downloads.length;
+        } else if (chapterCount > 0) {
+          summaryUpdate.chaptersTotal = chapterCount;
         }
         summaryUpdate.progressPercent = 100;
         dispatch({ type: 'update-meta', etaSeconds: 0, summary: summaryUpdate });
         dispatch({
           type: 'complete',
           downloads,
-          entry: entryFactoryRef.current(t.flow.completion(downloads.length)),
+          entry: entryFactoryRef.current(t.flow.completion(chapterCount)),
         });
         // Clear cache on successful completion
         conversionCache.remove(jobId);

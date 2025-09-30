@@ -43,6 +43,41 @@ async function parseResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export function normalizeAssetUrl(baseUrl: string, assetUrl: string): string {
+  if (!assetUrl) {
+    return assetUrl;
+  }
+  if (/^https?:\/\//i.test(assetUrl)) {
+    return assetUrl;
+  }
+
+  const origin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
+  const trimmedBase = (baseUrl || '').trim();
+
+  if (trimmedBase && /^https?:\/\//i.test(trimmedBase)) {
+    try {
+      return new URL(assetUrl, trimmedBase).toString();
+    } catch (_error) {
+      return assetUrl;
+    }
+  }
+
+  if (assetUrl.startsWith('/')) {
+    return origin ? `${origin}${assetUrl}` : assetUrl;
+  }
+
+  if (trimmedBase) {
+    const prefix = trimmedBase.startsWith('/')
+      ? `${origin}${trimmedBase}`
+      : origin
+        ? `${origin}/${trimmedBase}`
+        : trimmedBase;
+    return `${prefix.replace(/\/$/, '')}/${assetUrl.replace(/^\//, '')}`;
+  }
+
+  return origin ? `${origin}/${assetUrl.replace(/^\//, '')}` : assetUrl;
+}
+
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
@@ -77,7 +112,7 @@ export class HttpConversionClient implements ConversionClient {
   }
 
   async submit(request: ConversionFormValues): Promise<{ jobId: string }> {
-    const response = await fetch(this.resolve('/convert'), {
+    const response = await fetch(this.resolve('/api/convert'), {
       method: 'POST',
       body: buildFormData(request),
     });
@@ -85,7 +120,7 @@ export class HttpConversionClient implements ConversionClient {
   }
 
   async fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot> {
-    const response = await fetch(this.resolve(`/jobs/${encodeURIComponent(jobId)}`), {
+    const response = await fetch(this.resolve(`/api/jobs/${encodeURIComponent(jobId)}`), {
       method: 'GET',
       signal,
     });
@@ -96,7 +131,14 @@ export class HttpConversionClient implements ConversionClient {
         events: [],
       } satisfies JobSnapshot;
     }
-    return parseResponse<JobSnapshot>(response);
+    const snapshot = await parseResponse<JobSnapshot>(response);
+    if (Array.isArray(snapshot.outputs)) {
+      snapshot.outputs = snapshot.outputs.map((asset) => ({
+        ...asset,
+        url: normalizeAssetUrl(this.baseUrl, asset.url),
+      }));
+    }
+    return snapshot;
   }
 
   async poll(jobId: string, options: PollOptions = {}): Promise<JobSnapshot> {

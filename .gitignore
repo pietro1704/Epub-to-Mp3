@@ -92,8 +92,8 @@ Thumbs.db
 
 # EBook files (for testing - uncomment if needed)
 *.epub
-!tests/fixtures/epubs/test_multifeature.epub
-!web/public/sample.epub
+!tests/fixtures/epubs/*.epub
+# web/public/sample.epub is generated from fixtures during build
 *.pdf
 *.mobi
 *.azw3
