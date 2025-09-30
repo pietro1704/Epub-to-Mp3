@@ -106,6 +106,8 @@ export interface DownloadsText {
   placeholder: string;
   resetWithDownloads: string;
   resetWithoutDownloads: string;
+  audioNotSupported: string;
+  downloadChapter: string;
 }
 
 export interface LayoutText {
@@ -271,6 +273,8 @@ export const translations: Record<Locale, Translations> = {
       placeholder: 'Assim que a conversão terminar, os áudios ficam disponíveis aqui para ouvir ou baixar.',
       resetWithDownloads: 'Começar uma nova conversão',
       resetWithoutDownloads: 'Limpar tudo',
+      audioNotSupported: 'Seu navegador não suporta reprodução de áudio.',
+      downloadChapter: '⬇ Baixar MP3',
     },
     layout: {
       footer:
@@ -422,6 +426,8 @@ export const translations: Record<Locale, Translations> = {
       placeholder: 'When the conversion finishes, the audio files will show up here to play or download.',
       resetWithDownloads: 'Start another conversion',
       resetWithoutDownloads: 'Clear form',
+      audioNotSupported: 'Your browser does not support audio playback.',
+      downloadChapter: '⬇ Download MP3',
     },
     layout: {
       footer: 'Ready for Cloudflare Pages. Set VITE_API_BASE to your Python backend and you are good to go.',

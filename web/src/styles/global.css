@@ -825,38 +825,85 @@ select {
   color: var(--downloads-placeholder);
 }
 
-.downloads-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+.downloads-chapters {
   display: grid;
-  gap: 0.85rem;
+  gap: 0.75rem;
 }
 
-.downloads-list__item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+.chapter-item {
   background: var(--downloads-item-bg);
   border: 1px solid var(--downloads-item-border);
   border-radius: 14px;
-  padding: 0.9rem 1rem;
+  overflow: hidden;
 }
 
-.downloads-list__link {
+.chapter-item__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 1rem 1.2rem;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.chapter-item__header:hover {
+  background: rgba(99, 102, 241, 0.08);
+}
+
+.chapter-item__icon {
+  font-size: 0.7rem;
   color: var(--downloads-link);
+  min-width: 1rem;
+}
+
+.chapter-item__name {
+  flex: 1;
   font-weight: 600;
-  text-decoration: none;
+  color: var(--text-primary);
 }
 
-.downloads-list__link:hover {
-  text-decoration: underline;
-}
-
-.downloads-list__meta {
+.chapter-item__duration {
   font-size: 0.85rem;
   color: var(--downloads-meta);
+  white-space: nowrap;
+}
+
+.chapter-item__content {
+  padding: 0 1.2rem 1.2rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  border-top: 1px solid var(--downloads-item-border);
+  padding-top: 1rem;
+}
+
+.chapter-item__player {
+  width: 100%;
+  height: 40px;
+  border-radius: 8px;
+}
+
+.chapter-item__download {
+  display: inline-block;
+  padding: 0.5rem 1rem;
+  background: var(--downloads-button-bg);
+  color: var(--downloads-button-text);
+  text-decoration: none;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: center;
+  transition: background 0.2s ease;
+}
+
+.chapter-item__download:hover {
+  background: var(--downloads-button-hover-bg);
 }
 
 .downloads-panel__cta {
@@ -896,9 +943,16 @@ footer {
     grid-template-columns: 1fr;
   }
 
-  .downloads-list__item {
-    flex-direction: column;
-    align-items: flex-start;
+  .chapter-item__header {
+    padding: 0.85rem 1rem;
+  }
+
+  .chapter-item__content {
+    padding: 0 1rem 1rem 1rem;
+  }
+
+  .chapter-item__name {
+    font-size: 0.95rem;
   }
 
   .topbar {
