@@ -1,17 +1,26 @@
 # Web Frontend
 
-Static frontend scaffold for Cloudflare Pages. It expects a Python conversion API (e.g., Cloudflare Worker proxying to the `python_app` service).
+Static frontend for EPUB/PDF to MP3 conversion. Uses real Python backend - **no mocks** (except sample.epub file).
 
 ## Development
+
+### 1. Start Python Backend
+```bash
+# From project root
+cd python_app
+python -m uvicorn main:app --reload --port 8000
+```
+
+### 2. Start Frontend (in another terminal)
 ```bash
 cd web
 npm install
-npm run dev
+VITE_API_BASE=http://localhost:8000 npm run dev
 ```
-By default the UI calls `/api/*`. During local development point `VITE_API_BASE` to a running backend:
-```bash
-VITE_API_BASE=http://localhost:8787 npm run dev
-```
+
+Frontend will run at `http://localhost:5173` and connect to Python backend at `http://localhost:8000`.
+
+**Note**: Without backend running, frontend will show 404 errors. Only `sample.epub` is mocked for file upload testing.
 
 ## Build & Deploy
 ```bash
