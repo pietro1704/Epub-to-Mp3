@@ -37,10 +37,6 @@ python -m python_app.main book.epub
 # Use the convert script (updated entry point)
 python python_app/convert book.epub
 
-# Parallel processing
-python python_app/convert book.epub --parallel
-python python_app/convert book.epub --parallel 4
-
 # Direct engine selection
 python -m python_app.main book.epub --engine edge --voice pt-BR-FranciscaNeural
 python -m python_app.main book.epub --engine coqui --model tts_models/multilingual/multi-dataset/xtts_v2
@@ -197,6 +193,7 @@ The system preserves EPUB navigation structure:
 - Chapter text chunks limited to 8000 chars (Edge) or 1500 chars (others) for optimal TTS processing
 - Temporary files automatically cleaned up after conversion
 - FFmpeg required for audio format conversion across all engines
+- **Sequential Processing**: Chapters are processed one at a time to avoid deadlocks and ensure stability
 
 This architecture supports easy extension for additional TTS engines by implementing the base TTS interface and registering with the factory.
 
