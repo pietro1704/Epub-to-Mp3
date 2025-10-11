@@ -77,7 +77,7 @@ class AudioConverter:
 
         if self.verbose:
             print("🔍 [VERBOSE] AudioConverter.convert() iniciado")
-            print(f"🔍 [VERBOSE] Configuração: engine={getattr(config, 'engine', 'unknown')}, parallel={getattr(config, 'parallel', 'auto')}")
+            print(f"🔍 [VERBOSE] Configuração: engine={getattr(config, 'engine', 'unknown')}, mode=sequential")
 
         # **NEW**: Setup checkpoint system
         reader_path = getattr(reader, "file_path", None)
@@ -113,10 +113,7 @@ class AudioConverter:
 
         print(self.loc.t("conversion_start", title=reader.title, chapters=total_chapters))
         print(self.loc.t("conversion_output", path=output_dir))
-        if config.parallel is not None:
-            print(self.loc.t("conversion_parallel", workers=config.parallel))
-        else:
-            print("🔄 Modo sequencial: processando capítulos um por vez")
+        print("🔄 Modo sequencial: processando capítulos um por vez")
 
         self.progress.start(total_chapters, description=self.loc.t("progress_description"))
 
@@ -138,27 +135,11 @@ class AudioConverter:
         if getattr(config, "languages", None):
             print(self.loc.t("conversion_languages", languages=", ".join(config.languages)))
 
-        # Determine parallelism configuration first
-        engine_name = (getattr(config, "engine", "") or "").lower()
-        concurrency, batch_size, allow_dynamic_parallel = self._calculate_parallelism_config(engine_name, config, total_chapters)
-
-        # Show parallelism configuration
-        print(f"🚀 Configuração de paralelismo: {concurrency} workers simultâneos, batch de {batch_size} capítulos")
-        if engine_name == "edge":
-            print("⚡ Edge TTS: Rate limiting ativo (máx 3 conexões simultâneas)")
-        elif engine_name in ["coqui", "piper"]:
-            print(f"🔥 Engine local ({engine_name}): Paralelismo agressivo ativado")
-
         if self.verbose:
             print(f"🔍 [VERBOSE] Engine configurado: {type(tts_engine).__name__}")
-            print(f"🔍 [VERBOSE] Parallelismo final: concurrency={concurrency}, batch_size={batch_size}")
-            print(f"🔍 [VERBOSE] Dynamic parallel permitido: {allow_dynamic_parallel}")
 
-        # **CHANGED**: Modo sequencial por padrão, paralelo como opt-in
-        if config.parallel is None or getattr(config, 'no_parallel', False):
-            result = await self._convert_chapters_sequential(chapters, tts_engine, temp_dir, config)
-        else:
-            result = await self._convert_chapters(chapters, tts_engine, temp_dir, config)
+        # Always use sequential processing
+        result = await self._convert_chapters_sequential(chapters, tts_engine, temp_dir, config)
 
         # **NEW**: Move files from temp to final output directory only if conversion was successful
         if result.success and result.converted_chapters > 0:
@@ -289,45 +270,6 @@ class AudioConverter:
             if self.verbose:
                 print(f"⚠️ Erro ao salvar checkpoint: {e}")
 
-    def _calculate_parallelism_config(self, engine_name: str, config: ConversionConfig, total_chapters: int) -> tuple[int, int, bool]:
-        """Calculate optimal parallelism settings based on engine type."""
-        import os
-        cpu_count = os.cpu_count() or 4
-
-        # **CHANGED**: Se parallel é None, retornar config sequencial
-        if config.parallel is None:
-            return 1, 1, False
-
-        # **CHANGED**: user_parallel nunca é None aqui (já filtrado acima)
-        if engine_name == "edge":
-            # Edge TTS: Otimizar para velocidade máxima mantendo estabilidade
-            user_parallel = config.parallel
-            concurrency = min(user_parallel, 10)  # **OPTIMIZED**: Máximo 10
-            batch_size = min(concurrency * 3, total_chapters)  # **OPTIMIZED**: Batch maior
-            allow_dynamic_parallel = True  # **OPTIMIZED**: Habilitar dinâmico
-        elif engine_name == "coqui":
-            # Coqui TTS: Otimizar paralelismo para performance local
-            user_parallel = config.parallel
-            concurrency = min(user_parallel, 8)  # **OPTIMIZED**: Máximo 8
-            batch_size = min(concurrency * 3, total_chapters)  # **OPTIMIZED**: Batch maior
-            allow_dynamic_parallel = True
-        elif engine_name == "piper":
-            # Piper TTS: Máximo paralelismo para processos subprocess
-            user_parallel = config.parallel
-            concurrency = user_parallel  # **OPTIMIZED**: Sem limite
-            batch_size = min(concurrency * 3, total_chapters)  # **OPTIMIZED**: Batch maior
-            allow_dynamic_parallel = True
-        else:
-            # Default/unknown engines: Paralelismo moderado
-            concurrency = max(1, config.parallel)  # **CHANGED**: Usar valor fornecido
-            batch_size = min(concurrency * 2, total_chapters)
-            allow_dynamic_parallel = True
-
-        # **FIXED**: Garantir valores mínimos
-        concurrency = max(1, concurrency)
-        batch_size = max(1, batch_size)
-
-        return concurrency, batch_size, allow_dynamic_parallel
 
     async def _convert_chapters_sequential(
         self,
@@ -360,21 +302,41 @@ class AudioConverter:
                 # **NEW**: Check if chapter already completed in checkpoint
                 if idx + 1 in self._completed_chapters:
                     if output_path.exists():
-                        converted_files.append(output_path)
-                        self.progress.tick("✅ Capítulo já convertido (checkpoint)")
-                        self.progress.complete_chapter("✅ Completo (checkpoint)")
-                        continue
+                        file_size = output_path.stat().st_size
+                        if file_size > 1000:  # Validar arquivo válido
+                            converted_files.append(output_path)
+                            self.progress.tick(f"✅ Capítulo já convertido (checkpoint, {file_size} bytes)")
+                            self.progress.complete_chapter("✅ Completo (checkpoint)")
+                            continue
+                        else:
+                            # Arquivo inválido - remover do checkpoint e reconverter
+                            if self.verbose:
+                                print(f"   🗑️ Arquivo do checkpoint inválido ({file_size} bytes) - reconvertendo")
+                            output_path.unlink(missing_ok=True)
+                            self._completed_chapters.remove(idx + 1)
+                    else:
+                        # Arquivo não existe mas está no checkpoint - remover do checkpoint
+                        if self.verbose:
+                            print(f"   ⚠️ Arquivo do checkpoint não encontrado - reconvertendo")
+                        self._completed_chapters.remove(idx + 1)
 
-                # Verificar se já existe
+                # Verificar se já existe e é válido (tamanho > 1KB)
                 if output_path.exists() and not config.force_reprocess:
-                    converted_files.append(output_path)
-                    # **NEW**: Mark as completed in checkpoint
-                    if idx + 1 not in self._completed_chapters:
-                        self._completed_chapters.append(idx + 1)
-                        self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
-                    self.progress.tick("✅ Arquivo já existe")
-                    self.progress.complete_chapter("✅ Completo (cache)")
-                    continue
+                    file_size = output_path.stat().st_size
+                    if file_size > 1000:  # Mínimo 1KB para áudio válido
+                        converted_files.append(output_path)
+                        # **NEW**: Mark as completed in checkpoint
+                        if idx + 1 not in self._completed_chapters:
+                            self._completed_chapters.append(idx + 1)
+                            self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
+                        self.progress.tick(f"✅ Arquivo já existe ({file_size} bytes)")
+                        self.progress.complete_chapter("✅ Completo (cache)")
+                        continue
+                    else:
+                        # Arquivo vazio ou corrompido - remover e reconverter
+                        if self.verbose:
+                            print(f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}")
+                        output_path.unlink(missing_ok=True)
 
                 # Sintetizar com heartbeat e timeout
                 speech_text = self._speech_text(chapter)
@@ -532,17 +494,26 @@ class AudioConverter:
                         await heartbeat_task
 
                 if synthesis_result and output_path.exists():
-                    converted_files.append(output_path)
                     file_size = output_path.stat().st_size
 
-                    # **NEW**: Mark chapter as completed and save checkpoint
-                    if idx + 1 not in self._completed_chapters:
-                        self._completed_chapters.append(idx + 1)
-                        self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
+                    # Validar que o arquivo tem tamanho mínimo (não está vazio/corrompido)
+                    if file_size > 1000:  # Mínimo 1KB para áudio válido
+                        converted_files.append(output_path)
 
-                    if self.verbose:
-                        print(f"   📊 Arquivo gerado: {file_size} bytes")
-                    self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
+                        # **NEW**: Mark chapter as completed and save checkpoint
+                        if idx + 1 not in self._completed_chapters:
+                            self._completed_chapters.append(idx + 1)
+                            self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
+
+                        if self.verbose:
+                            print(f"   📊 Arquivo gerado: {file_size} bytes")
+                        self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
+                    else:
+                        # Arquivo muito pequeno - provavelmente corrompido
+                        if self.verbose:
+                            print(f"   ⚠️ Arquivo muito pequeno ({file_size} bytes) - considerando falha")
+                        output_path.unlink(missing_ok=True)
+                        synthesis_result = None  # Forçar retry
                 else:
                     # **RETRY**: Tentar com idioma padrão em caso de falha
                     if self.verbose:
@@ -561,18 +532,25 @@ class AudioConverter:
                             )
 
                             if synthesis_result and output_path.exists():
-                                converted_files.append(output_path)
                                 file_size = output_path.stat().st_size
 
-                                # **NEW**: Mark chapter as completed and save checkpoint
-                                if idx + 1 not in self._completed_chapters:
-                                    self._completed_chapters.append(idx + 1)
-                                    self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
+                                # Validar tamanho mínimo
+                                if file_size > 1000:
+                                    converted_files.append(output_path)
 
-                                if self.verbose:
-                                    print(f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)")
-                                self.progress.complete_chapter(f"✅ Sucesso (retry)")
-                                continue  # Success! Continue to next chapter
+                                    # **NEW**: Mark chapter as completed and save checkpoint
+                                    if idx + 1 not in self._completed_chapters:
+                                        self._completed_chapters.append(idx + 1)
+                                        self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
+
+                                    if self.verbose:
+                                        print(f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)")
+                                    self.progress.complete_chapter(f"✅ Sucesso (retry)")
+                                    continue  # Success! Continue to next chapter
+                                else:
+                                    if self.verbose:
+                                        print(f"   ⚠️ RETRY: Arquivo inválido ({file_size} bytes)")
+                                    output_path.unlink(missing_ok=True)
                     except Exception as retry_e:
                         if self.verbose:
                             print(f"   ❌ RETRY falhou: {retry_e}")
@@ -604,192 +582,6 @@ class AudioConverter:
             errors=errors,
         )
 
-    async def _convert_chapters(
-        self,
-        chapters: Iterable[Chapter],
-        tts_engine,
-        output_dir: Path,
-        config: ConversionConfig,
-    ) -> ConversionResult:
-        chapters_list = list(chapters)
-        if not chapters_list:
-            return ConversionResult(True, 0, 0, [], [])
-
-        engine_name = (getattr(config, "engine", "") or "").lower()
-
-        # Get parallelism configuration
-        concurrency, batch_size, allow_dynamic_parallel = self._calculate_parallelism_config(engine_name, config, len(chapters_list))
-
-        dynamic_parallel = concurrency
-        dynamic_batch_size = batch_size
-
-        results = []
-        offset = 0
-
-        batch_number = 0
-        while offset < len(chapters_list):
-            batch_number += 1
-            batch_end = min(offset + dynamic_batch_size, len(chapters_list))
-            batch_indices = list(range(offset, batch_end))
-            batch_size_actual = len(batch_indices)
-            offset = batch_end
-
-            print(f"📦 Batch {batch_number}: processando {batch_size_actual} capítulos (workers: {dynamic_parallel})")
-
-            if self.verbose:
-                print(f"🔍 [VERBOSE] Batch {batch_number}: capítulos {batch_indices[0]+1}-{batch_indices[-1]+1}")
-                for idx in batch_indices:
-                    chapter = chapters_list[idx]
-                    text_len = len(self._speech_text(chapter) or "")
-                    print(f"🔍 [VERBOSE]   - [{idx+1}] {chapter.name}: {text_len} chars")
-
-            order = sorted(
-                batch_indices,
-                key=lambda idx: len(chapters_list[idx].text or ""),
-                reverse=True,
-            )
-
-            if self.verbose:
-                print(f"🔍 [VERBOSE] Ordem de processamento (por tamanho): {[idx+1 for idx in order]}")
-            semaphore = asyncio.Semaphore(dynamic_parallel)
-            tasks = [
-                asyncio.create_task(
-                    self._convert_single_chapter(
-                        semaphore,
-                        chapters_list[idx],
-                        tts_engine,
-                        output_dir,
-                        idx + 1,
-                        config,
-                        self.progress,
-                    )
-                )
-                for idx in order
-            ]
-
-            # Monitor batch execution with heartbeat
-            batch_start_time = asyncio.get_event_loop().time()
-            heartbeat_active = True
-
-            async def batch_heartbeat():
-                last_active_count = 0
-                stall_count = 0
-                while heartbeat_active:
-                    await asyncio.sleep(5)  # Check every 5 seconds
-                    if not heartbeat_active:
-                        break
-
-                    # Check task status (all are now proper Tasks)
-                    active_count = sum(1 for task in tasks if not task.done())
-
-                    elapsed = int(asyncio.get_event_loop().time() - batch_start_time)
-
-                    if active_count == last_active_count and active_count > 0:
-                        stall_count += 1
-                        if stall_count >= 3:  # 15 seconds without change
-                            print(f"⚠️  Possível travamento detectado: {active_count} tasks ativos há {elapsed}s")
-                            # **OPTIMIZED**: Detecção mais rápida de deadlock
-                            if stall_count >= 6:  # 30 seconds
-                                print(f"🚨 DEADLOCK DETECTADO: Cancelando {active_count} tasks travadas após {elapsed}s")
-                                for task in tasks:
-                                    if not task.done():
-                                        task.cancel()
-                                break
-                    else:
-                        stall_count = 0
-
-                    if active_count > 0:
-                        completed_in_batch = batch_size_actual - active_count
-                        throughput = completed_in_batch / max(elapsed, 1) * 60  # chapters per minute
-                        print(f"💭 Batch {batch_number}: {active_count} workers ativos, {completed_in_batch}/{batch_size_actual} completos, {throughput:.1f} cap/min, {elapsed}s")
-
-                    last_active_count = active_count
-
-            heartbeat_task = asyncio.create_task(batch_heartbeat())
-
-            gather_call = asyncio.gather(*tasks, return_exceptions=True)
-            gather_is_awaitable = inspect.isawaitable(gather_call)
-
-            try:
-                if gather_is_awaitable:
-                    try:
-                        batch_results = await gather_call
-                    except asyncio.CancelledError:
-                        for task in tasks:
-                            if not task.done():
-                                task.cancel()
-                        await asyncio.gather(*tasks, return_exceptions=True)
-                        raise
-                else:
-                    batch_results = gather_call
-                    pending = [task for task in tasks if not task.done()]
-                    for task in pending:
-                        task.cancel()
-                    if pending:
-                        await asyncio.wait(pending)
-            finally:
-                heartbeat_active = False
-                heartbeat_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await heartbeat_task
-
-            if not gather_is_awaitable and not isinstance(batch_results, list):
-                batch_results = list(batch_results)
-
-            batch_time = int(asyncio.get_event_loop().time() - batch_start_time)
-            print(f"✅ Batch {batch_number} completo em {batch_time}s")
-            slowdown_detected = False
-            for idx, outcome in zip(order, batch_results):
-                results.append((idx, outcome))
-                if allow_dynamic_parallel:
-                    slowdown_detected = slowdown_detected or self._should_reduce_parallel(outcome)
-
-            if allow_dynamic_parallel and slowdown_detected and dynamic_parallel > 1:
-                dynamic_parallel -= 1
-                dynamic_batch_size = max(dynamic_parallel * 2, dynamic_parallel + 1)
-                try:
-                    print(self.loc.t("conversion_parallel_downshift", workers=dynamic_parallel))
-                except KeyError:
-                    print(f"⚠️ Reduzindo paralelismo para {dynamic_parallel}")
-
-        # Sort results back to original order
-        results.sort(key=lambda item: item[0])
-        ordered_outcomes = [outcome for _, outcome in results]
-
-        converted_files: List[Path] = []
-        errors: List[str] = []
-        for chapter, outcome in zip(chapters_list, ordered_outcomes):
-            # **FIXED**: Tratar CancelledError especificamente
-            if isinstance(outcome, asyncio.CancelledError):
-                errors.append(f"{chapter.name}: Cancelado por deadlock")
-                continue
-            if isinstance(outcome, Exception):
-                errors.append(f"{chapter.name}: {outcome}")
-                continue
-            if isinstance(outcome, ChapterConversionOutcome):
-                if outcome.path:
-                    converted_files.append(Path(outcome.path))
-                else:
-                    detail = outcome.error or self.loc.t("error_conversion_failed", chapter=outcome.name)
-                    if detail.startswith(f"{outcome.name}:"):
-                        errors.append(detail)
-                    else:
-                        errors.append(f"{outcome.name}: {detail}")
-                continue
-            if outcome is None:
-                errors.append(self.loc.t("error_conversion_failed", chapter=chapter.name))
-                continue
-            # Backwards compatibility when old path values are returned
-            converted_files.append(Path(outcome))
-
-        success = not errors
-        return ConversionResult(
-            success=success,
-            total_chapters=len(chapters_list),
-            converted_chapters=len(converted_files),
-            output_files=converted_files,
-            errors=errors,
-        )
 
     def _install_requirements(self) -> bool:
         if self._requirements_attempted:

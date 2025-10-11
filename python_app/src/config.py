@@ -26,9 +26,7 @@ class ConversionConfig:
     bitrate: str = "8k"  # Máxima compressão possível para voz (75% de redução)
     sample_rate: int = 16_000  # Suficiente para voz (Nyquist 8kHz)
     channels: int = 1  # Mono para audiobooks
-    parallel: Optional[int] = 1  # default sequential worker
-    no_parallel: bool = False  # **NEW**: Desabilitar paralelismo completamente
-    use_simple_converter: bool = False  # **CHANGED**: Usar conversor legado por padrão
+    use_simple_converter: bool = False
     force_reprocess: bool = False
     listen: bool = False
     cache_dir: Optional[Path] = None
@@ -209,26 +207,8 @@ class AppConfig:
         bitrate = kwargs.pop("bitrate", "32k")
         sample_rate = int(kwargs.pop("sample_rate", 22_050))
         channels = int(kwargs.pop("channels", 1))
-        # **CHANGED**: Paralelismo como opt-in - padrão é sequencial
-        raw_parallel = kwargs.pop("parallel", None)
-        if raw_parallel is None:
-            raw_parallel = kwargs.pop("max_parallel", None)
-
-        if raw_parallel is None:
-            cpu_count = os.cpu_count() or 1
-            parallel = min(cpu_count, 4)
-        elif raw_parallel == 0:
-            cpu_count = os.cpu_count() or 4
-            parallel = min(cpu_count, 8)  # Auto com limite seguro
-        else:
-            try:
-                parallel = max(int(raw_parallel), 1)
-            except (TypeError, ValueError):
-                parallel = min((os.cpu_count() or 1), 4)
         force_reprocess = bool(kwargs.pop("force_reprocess", False))
         listen_flag = bool(kwargs.pop("listen", False))
-        if listen_flag and parallel is not None:
-            parallel = 1  # **CHANGED**: Listen força paralelo = 1
         clear_cache_flag = bool(kwargs.pop("clear_cache", False))
         footnote_mode = (kwargs.pop("footnote_mode", None) or "inline").lower()
         if footnote_mode not in {"inline", "skip", "chapter_end"}:
@@ -249,12 +229,9 @@ class AppConfig:
         except (TypeError, ValueError):
             batch_size = 0
         if batch_size <= 0:
-            # **CHANGED**: Batch size baseado no paralelismo (ou 1 se sequencial)
-            effective_parallel = parallel if parallel is not None else 1
-            batch_size = max(effective_parallel * 2, effective_parallel + 1)
+            batch_size = 1
 
         # Extract new parameters
-        no_parallel = bool(kwargs.pop("no_parallel", False))
         use_simple_converter = bool(kwargs.pop("use_simple_converter", False))
         verbose = bool(kwargs.pop("verbose", False))
 
@@ -268,8 +245,6 @@ class AppConfig:
             bitrate=bitrate,
             sample_rate=sample_rate,
             channels=channels,
-            parallel=parallel,
-            no_parallel=no_parallel,
             use_simple_converter=use_simple_converter,
             force_reprocess=force_reprocess,
             listen=listen_flag,

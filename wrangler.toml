@@ -1,3 +1,9 @@
 name = "epub-to-mp3-web"
 compatibility_date = "2025-10-01"
 pages_build_output_dir = "web/dist"
+
+[env.production.vars]
+BACKEND_URL = "https://your-backend-url.com"
+
+[env.preview.vars]
+BACKEND_URL = "https://your-backend-url.com"

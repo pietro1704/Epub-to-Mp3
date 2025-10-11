@@ -2021,7 +2021,6 @@ class ConverterApplication:
             if config:
                 if getattr(args, "listen", False):
                     config.listen = True
-                    config.parallel = 1
                 cache_dir = getattr(args, "cache_dir", None)
                 if cache_dir:
                     config.cache_dir = Path(cache_dir)
@@ -2043,8 +2042,6 @@ class ConverterApplication:
             output_dir=args.output_dir or "output",
             book_title=reader.title,
             preserve_all_chapters=not getattr(args, 'filter_chapters', False),
-            parallel=args.parallel,
-            no_parallel=getattr(args, 'no_parallel', False),
             use_simple_converter=False,
             listen=getattr(args, 'listen', False),
             cache_dir=getattr(args, 'cache_dir', None),
@@ -2090,23 +2087,6 @@ def _add_conversion_arguments(
         "--verbose",
         action="store_true",
         help="Enable verbose logging for debugging",
-    )
-    parser.add_argument(
-        "--parallel",
-        type=int,
-        nargs="?",
-        const=0,  # Quando --parallel é usado sem valor, const=0 será usado
-        help="Enable parallel processing. Use --parallel N for N workers, or --parallel for auto (default: sequential)",
-    )
-    parser.add_argument(
-        "--no-parallel",
-        action="store_true",
-        help="Force sequential processing (overrides --parallel)",
-    )
-    parser.add_argument(
-        "--use-legacy-converter",
-        action="store_true",
-        help="Use legacy complex converter (may have deadlock issues)",
     )
     parser.add_argument(
         "--listen",
