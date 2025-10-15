@@ -52,7 +52,6 @@ class ConversionConfig:
             "bitrate": self.bitrate,
             "sample_rate": self.sample_rate,
             "channels": self.channels,
-            "parallel": self.parallel,
             "batch_size": self.batch_size,
             "force_reprocess": self.force_reprocess,
             "listen": self.listen,

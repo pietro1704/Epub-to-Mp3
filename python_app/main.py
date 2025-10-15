@@ -713,11 +713,11 @@ class ConverterApplication:
             if not final_text:
                 continue
 
-            # **FIXED**: Preserve formatting for TTS - don't strip inline markdown
-            # Apply inline formatting for display but keep original for speech
+            # Strip inline markdown for speech (remove *, _, etc.)
             processor = TextFormattingProcessor()
             formatted_text = processor.apply_inline_formatting(final_text)
-            chapter.speech_text = formatted_text  # Keep formatting for TTS
+            speech_text = processor.strip_inline_markdown(final_text)
+            chapter.speech_text = speech_text  # Clean text for TTS
 
             lines = [line.strip() for line in final_text.splitlines() if line.strip()]
             if not lines:

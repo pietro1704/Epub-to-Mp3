@@ -347,7 +347,7 @@ class AudioConverter:
                     print(f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Iniciando síntese TTS")
                     print(f"   📝 Texto: {char_count} caracteres (timeout: {timeout_seconds}s)")
 
-                # Cache text before synthesis
+                # **FIXED**: Cache text before synthesis - MUST use speech_text (what's sent to TTS)
                 try:
                     cache_dir = Path(output_dir)
                     target_dir = cache_dir / "text"
@@ -356,10 +356,24 @@ class AudioConverter:
                     from .utils import FileManager
                     safe_name = FileManager.sanitize_filename(chapter_name)
                     safe_name = safe_name.replace(" ", "_")
+
+                    # Save parse.txt (original chapter.text from EPUB parsing)
+                    parse_path = target_dir / f"{idx + 1:03d}_{safe_name}_parse.txt"
+                    parse_path.write_text(chapter.text or "", encoding="utf-8")
+
+                    # Save tts_input.txt (speech_text that goes to TTS)
+                    tts_input_path = target_dir / f"{idx + 1:03d}_{safe_name}_tts_input.txt"
+                    tts_input_path.write_text(speech_text, encoding="utf-8")
+
+                    # Also save as regular .txt (for backward compatibility)
                     target_path = target_dir / f"{idx + 1:03d}_{safe_name}.txt"
-                    target_path.write_text(chapter.text, encoding="utf-8")
+                    # **FIXED**: Save speech_text (what goes to TTS), NOT chapter.text
+                    target_path.write_text(speech_text, encoding="utf-8")
+
                     if self.verbose:
                         print(f"💾 Texto salvo: {target_path}")
+                        print(f"💾 Parse salvo: {parse_path}")
+                        print(f"💾 TTS input salvo: {tts_input_path}")
                 except OSError as e:
                     if self.verbose:
                         print(f"⚠️ Erro ao salvar cache de texto: {e}")

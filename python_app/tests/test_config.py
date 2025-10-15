@@ -31,7 +31,7 @@ class TestConversionConfig(unittest.TestCase):
     def test_config_creation_full(self):
         """Test config creation with all parameters"""
         model_path = Path("test/model.onnx")
-        
+
         config = ConversionConfig(
             engine="piper",
             voice="test-voice",
@@ -42,10 +42,9 @@ class TestConversionConfig(unittest.TestCase):
             bitrate="64k",
             sample_rate=44100,
             channels=2,
-            parallel=5,
             force_reprocess=True
         )
-        
+
         self.assertEqual(config.engine, "piper")
         self.assertEqual(config.voice, "test-voice")
         self.assertEqual(config.model_path, model_path)
@@ -55,20 +54,18 @@ class TestConversionConfig(unittest.TestCase):
         self.assertEqual(config.bitrate, "64k")
         self.assertEqual(config.sample_rate, 44100)
         self.assertEqual(config.channels, 2)
-        self.assertEqual(config.parallel, 5)
         self.assertTrue(config.force_reprocess)
 
     def test_config_defaults(self):
         """Test default values"""
         config = ConversionConfig(engine="test")
-        
-        # Audio defaults
-        self.assertEqual(config.bitrate, "32k")
-        self.assertEqual(config.sample_rate, 22050)
+
+        # Audio defaults (otimizado para tamanho)
+        self.assertEqual(config.bitrate, "8k")
+        self.assertEqual(config.sample_rate, 16_000)
         self.assertEqual(config.channels, 1)
-        
+
         # Processing defaults
-        self.assertEqual(config.parallel, 1)
         self.assertFalse(config.force_reprocess)
 
 
@@ -91,10 +88,6 @@ class TestAppConfig(unittest.TestCase):
         self.assertEqual(config.engine, "edge")
         self.assertEqual(config.voice, "pt-BR-ThalitaMultilingualNeural")
         self.assertIsNone(config.model_path)
-        cpu_count = max(os.cpu_count() or 1, 1)
-        expected_parallel = cpu_count if cpu_count <= 4 else 4
-        self.assertEqual(config.parallel, expected_parallel)
-        self.assertEqual(config.batch_size, max(expected_parallel * 2, expected_parallel + 1))
 
     def test_create_conversion_config_with_voice(self):
         """Test creating conversion config with voice"""

@@ -196,7 +196,6 @@ class TestConverterApplication(unittest.TestCase):
             self.assertEqual(called_kwargs["output_dir"], "test_output")
             self.assertEqual(called_kwargs["book_title"], "Test Book")
             self.assertFalse(called_kwargs["preserve_all_chapters"])
-            self.assertEqual(called_kwargs["parallel"], 5)
             self.assertFalse(called_kwargs["listen"])
             self.assertIsNone(called_kwargs["cache_dir"])
             self.assertFalse(called_kwargs["clear_cache"])
