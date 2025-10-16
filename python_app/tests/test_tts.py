@@ -14,6 +14,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.config import ConversionConfig
+from src.text_formatting import FormattingSegment, TextFormattingProcessor
 
 
 class TestTTSFactory(unittest.TestCase):
@@ -219,9 +220,81 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             result = await engine.synthesize_async(text, output_path)
 
             self.assertEqual(result, output_path)
-            self.assertEqual(len(calls), 2)
+            # Esperamos três segmentos: PT → EN → PT
+            self.assertEqual(len(calls), 3)
             self.assertEqual(calls[0][1], "pt-BR-ThalitaMultilingualNeural")
             self.assertEqual(calls[1][1], "en-US-JennyNeural")
+            self.assertEqual(calls[2][1], "pt-BR-ThalitaMultilingualNeural")
+            for payload, _voice in calls:
+                self.assertNotIn("<speak", payload.lower())
+                self.assertNotIn("[[fmt:", payload)
+
+    async def test_synthesize_async_adds_audible_cues_for_formatting(self):
+        """Edge engine should convert formatting markers into audible cues."""
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
+            from src.tts.edge_engine import EdgeTTSEngine
+
+            captured = []
+
+            class DummyCommunicate:
+                def __init__(self, text, voice):
+                    captured.append((text, voice))
+
+                async def stream(self):
+                    yield {"type": "audio", "data": b"X"}
+
+            mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(text, voice)
+
+            engine = EdgeTTSEngine("pt-BR-FranciscaNeural")
+            output_path = Path(self.temp_dir) / "output_cues.wav"
+
+            segments = [
+                FormattingSegment(text="Palavra", formatting="italic"),
+                FormattingSegment(text="seguida", formatting="normal"),
+            ]
+
+            result = await engine.synthesize_async("Palavra seguida", output_path, formatting_segments=segments)
+
+            self.assertEqual(result, output_path)
+            self.assertTrue(captured, "Expected at least one call to Communicate")
+            payload, voice = captured[0]
+            self.assertIn("em itálico:", payload)
+            self.assertNotIn("[[fmt:", payload)
+            self.assertEqual(voice, "pt-BR-FranciscaNeural")
+
+    async def test_long_text_chunking_preserves_full_content(self):
+        """Long payloads should be chunked without losing content."""
+        with patch('src.tts.edge_engine.edge_tts') as mock_edge_tts:
+            from src.tts.edge_engine import EdgeTTSEngine
+
+            calls = []
+
+            class DummyCommunicate:
+                def __init__(self, text, voice):
+                    calls.append((text, voice))
+
+                async def stream(self):
+                    yield {"type": "audio", "data": b"X"}
+
+            mock_edge_tts.Communicate.side_effect = lambda text, voice: DummyCommunicate(text, voice)
+
+            engine = EdgeTTSEngine("pt-BR-FranciscaNeural")
+            output_path = Path(self.temp_dir) / "chunked.wav"
+
+            base_block = "Esta é uma frase muito longa para testar o particionamento do Edge TTS. "
+            text = base_block * 400  # > 7000 chars
+
+            result = await engine.synthesize_async(text, output_path)
+
+            self.assertEqual(result, output_path)
+            self.assertGreater(len(calls), 1, "Texto longo deve ser dividido em múltiplos segmentos")
+
+            aggregated = "".join(payload for payload, _ in calls)
+            expected = TextFormattingProcessor.clean_tts_text(text)
+            self.assertEqual(TextFormattingProcessor.clean_tts_text(aggregated), expected)
+
+            for payload, _voice in calls:
+                self.assertLessEqual(len(payload), 7000 + 500, "Segmento excedeu o limite esperado (~7000 chars)")
 
     async def test_synthesize_async_empty_text(self):
         """Test synthesis with empty text"""

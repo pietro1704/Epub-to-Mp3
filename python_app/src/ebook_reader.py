@@ -452,6 +452,45 @@ class TextProcessor:
         return text
 
     @staticmethod
+    def _apply_footnotes_to_segments(
+        segments: Optional[List[FormattingSegment]],
+        footnotes: List[Dict[str, str]],
+        *,
+        mode: str,
+        context_words: int,
+        phrases: Optional[Dict[str, str]] = None,
+    ) -> Optional[List[FormattingSegment]]:
+        if not segments or not footnotes:
+            return segments
+
+        mode = (mode or "inline").lower()
+        if mode != "inline":
+            return segments
+
+        phrases = phrases or {}
+        prefix = phrases.get("prefix", " (")
+        template = phrases.get("template", "nota de rodapé {number}: {text}")
+        suffix_text = phrases.get("suffix_text", " - fim da nota de rodapé {number}")
+        closing = phrases.get("closing", ")")
+
+        replacements: Dict[str, str] = {}
+        for footnote in footnotes:
+            intro = template.format(number=footnote["number"], text=footnote["text"])
+            suffix_part = suffix_text.format(number=footnote["number"], text=footnote["text"])
+            replacements[footnote["marker"]] = f"{prefix}{intro}{suffix_part}{closing}"
+
+        for segment in segments:
+            if not getattr(segment, "text", None):
+                continue
+            updated = segment.text
+            for marker, replacement in replacements.items():
+                if marker in updated:
+                    updated = updated.replace(marker, replacement)
+            segment.text = updated
+
+        return segments
+
+    @staticmethod
     def _extract_context_snippet(preceding_text: str, words: int) -> str:
         if words <= 0 or not preceding_text:
             return ""
@@ -562,6 +601,36 @@ class EpubParser:
         self.file_path = str(file_path)
         self.path = Path(file_path)
 
+    @staticmethod
+    def _prepare_speech_text(text: str, formatting_segments: Optional[List[FormattingSegment]]) -> str:
+        """
+        Prepara o texto para envio ao TTS com pistas audíveis de formatação.
+
+        Este método:
+        1. PRESERVA tags [[lang:xx]] para TTS multiidioma
+        2. Converte marcadores [[fmt:...]] em mensagens que o ouvinte entende (“em itálico”, “entre aspas” etc.)
+        3. Remove apenas markdown auxiliar (_italic_, **bold**) que não contribui para o áudio
+
+        Resultado: o texto retornado é exatamente o payload enviado ao TTS e salvo em -pre-tts.txt
+        """
+        if not text:
+            return ""
+
+        # Apenas remover markdown inline que foi adicionado pelo processador
+        # IMPORTANTE: NÃO remover tags [[lang:]] nem [[fmt:]]
+        if TextFormattingProcessor:
+            formatter = TextFormattingProcessor()
+            try:
+                processed = formatter.to_audible_text(text, formatting_segments)
+                if processed:
+                    return processed
+            except Exception:
+                # Fallback para remoção básica caso algo falhe
+                pass
+            return TextFormattingProcessor.strip_inline_markdown(text)
+
+        return text
+
     def parse(self) -> Book:
         with zipfile.ZipFile(self.path, "r") as archive:
             opf_path = self._find_opf_path(archive)
@@ -655,13 +724,23 @@ class EpubParser:
                     mode="inline",
                     context_words=context_words,
                 )
+                formatting_segments = TextProcessor._apply_footnotes_to_segments(
+                    formatting_segments,
+                    footnotes,
+                    mode="inline",
+                    context_words=context_words,
+                )
             else:
                 text_with_footnotes = text_with_formatting
             text = TextProcessor.add_pause_before_dash(text_with_footnotes)
             title = TextProcessor.extract_title(raw_content, f"Capítulo {index_counter}") if text else f"Capítulo {index_counter}"
 
             # Adicionar todos os capítulos, mesmo que estejam vazios
-            speech_text = TextFormattingProcessor.strip_inline_markdown(text) if TextFormattingProcessor else text
+            # IMPORTANTE: speech_text deve ser o que será enviado ao TTS
+            # - Remove apenas markdown inline (_italic_, **bold**, `code`)
+            # - PRESERVA tags [[lang:xx]] para TTS multiidioma
+            # - PRESERVA marcadores de formatação [[fmt:...]] para ênfase
+            speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
             chapters.append(
                 Chapter(
                     index=index_counter,

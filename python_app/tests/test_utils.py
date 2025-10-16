@@ -131,26 +131,25 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         """Test successful MP3 conversion"""
         input_file = Path(self.temp_dir) / "input.wav"
         output_file = Path(self.temp_dir) / "output.mp3"
-        
+
         # Create dummy input file
         input_file.write_text("dummy wav content")
 
-        # Mock pydub to force fallback to subprocess
-        with patch.dict('sys.modules', {'pydub': None}):
-            with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
-                # Mock successful ffmpeg process
-                mock_process = AsyncMock()
-                mock_process.wait.return_value = None
-                mock_process.returncode = 0
-                mock_subprocess.return_value = mock_process
+        # Mock ffmpeg subprocess
+        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
+            # Mock successful ffmpeg process
+            mock_process = AsyncMock()
+            mock_process.wait.return_value = None
+            mock_process.returncode = 0
+            mock_subprocess.return_value = mock_process
 
-                # Create output file (simulating ffmpeg success)
-                output_file.write_text("dummy mp3 content")
+            # Create output file (simulating ffmpeg success)
+            output_file.write_text("dummy mp3 content")
 
-                result = await AudioProcessor.convert_to_mp3(input_file, output_file)
+            result = await AudioProcessor.convert_to_mp3(input_file, output_file)
 
-                self.assertEqual(result, output_file)
-                mock_subprocess.assert_called_once()
+            self.assertEqual(result, output_file)
+            mock_subprocess.assert_called_once()
 
     async def test_convert_to_mp3_input_not_exists(self):
         """Test MP3 conversion with non-existent input file"""
@@ -197,26 +196,25 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         """Test MP3 conversion with custom bitrate"""
         input_file = Path(self.temp_dir) / "input.wav"
         output_file = Path(self.temp_dir) / "output.mp3"
-        
+
         input_file.write_text("dummy wav content")
 
-        # Mock pydub to force fallback to subprocess
-        with patch.dict('sys.modules', {'pydub': None}):
-            with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
-                mock_process = AsyncMock()
-                mock_process.wait.return_value = None
-                mock_process.returncode = 0
-                mock_subprocess.return_value = mock_process
+        # Mock ffmpeg subprocess
+        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
+            mock_process = AsyncMock()
+            mock_process.wait.return_value = None
+            mock_process.returncode = 0
+            mock_subprocess.return_value = mock_process
 
-                output_file.write_text("dummy mp3 content")
+            output_file.write_text("dummy mp3 content")
 
-                result = await AudioProcessor.convert_to_mp3(input_file, output_file, bitrate="64k")
+            result = await AudioProcessor.convert_to_mp3(input_file, output_file, bitrate="64k")
 
-                self.assertEqual(result, output_file)
+            self.assertEqual(result, output_file)
 
-                # Check that custom bitrate was used
-                call_args = mock_subprocess.call_args[0][0]
-                self.assertIn("64k", call_args)
+            # Check that custom bitrate was used
+            call_args = mock_subprocess.call_args[0][0]
+            self.assertIn("64k", call_args)
 
     def test_validate_audio_file_valid(self):
         """Test validating valid audio file"""

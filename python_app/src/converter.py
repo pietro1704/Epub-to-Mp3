@@ -57,7 +57,6 @@ class AudioConverter:
         self.loc = localization or get_localization()
         self.verbose = False
         self._current_book_path: Optional[Path] = None
-        self._completed_chapters: List[int] = []
         self.show_tts_output = False  # Only show TTS output in verbose mode
 
     @staticmethod
@@ -66,6 +65,68 @@ class AudioConverter:
         if text is None:
             text = chapter.text or ""
         return text
+
+    def _validate_and_clean_cache(self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig) -> None:
+        """Validate cache: if MP3 exists but pre-tts.txt doesn't, delete MP3"""
+        text_dir = Path(output_dir) / "text"
+        deleted_count = 0
+
+        for idx, chapter in enumerate(chapters):
+            chapter_num = idx + 1
+            chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
+            safe_name = self.file_manager.sanitize_filename(chapter_name)
+
+            # Check for pre-tts.txt
+            pre_tts_file = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
+
+            # Check for MP3
+            mp3_path = self.file_manager.get_temp_output_path(chapter.name, output_dir, chapter_num)
+
+            # If MP3 exists but pre-tts.txt doesn't → cache invalidated, delete MP3
+            if mp3_path.exists() and not pre_tts_file.exists():
+                if self.verbose:
+                    print(f"   🗑️ Cache inválido para capítulo {chapter_num}: {mp3_path.name}")
+                mp3_path.unlink()
+                deleted_count += 1
+
+        if deleted_count > 0:
+            print(f"🗑️ {deleted_count} arquivo(s) MP3 removido(s) (cache inválido)")
+
+    def _generate_all_text_files(self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig) -> None:
+        """Generate all text files BEFORE starting TTS conversion"""
+        text_dir = Path(output_dir) / "text"
+        text_dir.mkdir(parents=True, exist_ok=True)
+
+        files_generated = 0
+        for idx, chapter in enumerate(chapters):
+            chapter_num = idx + 1
+            chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
+
+            # Sanitize filename
+            safe_name = self.file_manager.sanitize_filename(chapter_name)
+
+            # NEW FORMAT: "N - ChapterName-parsed.txt" and "N - ChapterName-pre-tts.txt"
+            parsed_path = text_dir / f"{chapter_num} - {safe_name}-parsed.txt"
+            pre_tts_path = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
+
+            # Only generate if files don't exist
+            if not pre_tts_path.exists() or not parsed_path.exists():
+                # Get texts
+                parsed_text = chapter.text or ""
+                pre_tts_text = self._speech_text(chapter)
+
+                # Write files
+                parsed_path.write_text(parsed_text, encoding="utf-8")
+                pre_tts_path.write_text(pre_tts_text, encoding="utf-8")
+                files_generated += 2
+
+                if self.verbose:
+                    print(f"   📄 {chapter_num}. {chapter_name}")
+                    print(f"      → {parsed_path.name}")
+                    print(f"      → {pre_tts_path.name}")
+
+        if files_generated == 0 and self.verbose:
+            print("   ♻️ Todos os arquivos .txt já existem (usando cache)")
 
     async def convert(self, reader: EbookReader, config: ConversionConfig) -> ConversionResult:
         """Convert all chapters in ``reader`` according to ``config``."""
@@ -79,32 +140,18 @@ class AudioConverter:
             print("🔍 [VERBOSE] AudioConverter.convert() iniciado")
             print(f"🔍 [VERBOSE] Configuração: engine={getattr(config, 'engine', 'unknown')}, mode=sequential")
 
-        # **NEW**: Setup checkpoint system
+        # Setup paths
         reader_path = getattr(reader, "file_path", None)
         try:
             self._current_book_path = Path(reader_path) if reader_path else None
         except TypeError:
             self._current_book_path = None
-        self.cache_manager.mark_conversion_start()
 
         output_dir = self._setup_output_directory(config)
-        # **NEW**: Setup temporary directory for conversion
+        # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
         chapters = list(reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or [])
         total_chapters = len(chapters)
-
-        # **NEW**: Check for existing checkpoint
-        checkpoint = None
-        if self._current_book_path:
-            checkpoint = self.cache_manager.load_checkpoint(self._current_book_path)
-        if checkpoint and not getattr(config, 'force_reprocess', False):
-            resume_result = await self._handle_checkpoint_resume(checkpoint, temp_dir, config, total_chapters)
-            if resume_result:
-                chapters_to_process, checkpoint_temp_dir = resume_result
-                # Restore completed chapters list
-                self._completed_chapters = checkpoint.completed_chapters.copy()
-                # Use checkpoint temp directory
-                temp_dir = checkpoint_temp_dir
 
         if self.verbose:
             print(f"🔍 [VERBOSE] Total de capítulos: {total_chapters}")
@@ -115,13 +162,17 @@ class AudioConverter:
         print(self.loc.t("conversion_output", path=output_dir))
         print("🔄 Modo sequencial: processando capítulos um por vez")
 
-        self.progress.start(total_chapters, description=self.loc.t("progress_description"))
-
         if total_chapters == 0:
-            self.progress.finish()
             empty_result = ConversionResult(True, 0, 0, [], [])
             self._report_results(empty_result)
             return empty_result
+
+        # **NEW**: Generate ALL .txt files BEFORE starting TTS conversion
+        print("\n📝 Gerando arquivos de texto...")
+        self._generate_all_text_files(chapters, temp_dir, config)
+        print(f"✅ {total_chapters} arquivos de texto gerados\n")
+
+        self.progress.start(total_chapters, description=self.loc.t("progress_description"))
 
         try:
             tts_engine = self.tts_factory.create_engine(config)
@@ -141,7 +192,7 @@ class AudioConverter:
         # Always use sequential processing
         result = await self._convert_chapters_sequential(chapters, tts_engine, temp_dir, config)
 
-        # **NEW**: Move files from temp to final output directory only if conversion was successful
+        # Move files from temp to final output directory only if conversion was successful
         if result.success and result.converted_chapters > 0:
             if self.verbose:
                 print(f"🔍 [VERBOSE] Movendo {len(result.output_files)} arquivos para diretório final...")
@@ -152,16 +203,9 @@ class AudioConverter:
             if moved_files:
                 print(f"📁 {len(moved_files)} arquivos movidos para: {output_dir}")
 
-            # **NEW**: Clear checkpoint on successful completion
-            if self._current_book_path:
-                self.cache_manager.clear_checkpoint(self._current_book_path)
-                if self.verbose:
-                    print("🔍 [VERBOSE] Checkpoint removido - conversão completa")
-
             self._cleanup_temp_audio(temp_dir)
         else:
             print("❌ Conversão falhou - arquivos temporários mantidos para debug")
-            # Keep checkpoint for potential retry
 
         self.progress.finish()
         self._report_results(result)
@@ -171,104 +215,40 @@ class AudioConverter:
         base_dir = Path(config.output_dir)
         if config.book_title:
             base_dir = base_dir / self.file_manager.sanitize_filename(config.book_title)
+        engine_suffix = self._build_engine_signature(config)
+        base_dir = base_dir / engine_suffix
         return self.file_manager.ensure_directory(base_dir)
 
     def _setup_temp_directory(self, config: ConversionConfig) -> Path:
         """Setup temporary directory for conversion files"""
-        if config.book_title:
-            safe_title = self.file_manager.sanitize_filename(config.book_title)
-            temp_dir = Path(".cache") / safe_title
+        custom_cache = getattr(config, "cache_dir", None)
+        if custom_cache:
+            base_cache = Path(custom_cache)
         else:
-            temp_dir = Path(".cache") / "conversion"
+            base_cache = Path(".cache")
+            if config.book_title:
+                safe_title = self.file_manager.sanitize_filename(config.book_title)
+                base_cache = base_cache / safe_title
+            else:
+                base_cache = base_cache / "conversion"
 
-        return self.file_manager.ensure_directory(temp_dir)
+        engine_suffix = self._build_engine_signature(config)
+        temp_dir = self.file_manager.ensure_directory(base_cache / engine_suffix)
+        config.cache_dir = temp_dir
+        return temp_dir
 
-    async def _handle_checkpoint_resume(self, checkpoint: ConversionCheckpoint,
-                                      current_temp_dir: Path,
-                                      config: ConversionConfig,
-                                      total_chapters: int) -> Optional[tuple[List[Chapter], Path]]:
-        """Handle checkpoint resume logic"""
-        # Validate checkpoint
-        conversion_config = config.as_dict()
-        if not self.cache_manager.validate_checkpoint(checkpoint, current_temp_dir, conversion_config):
-            print("⚠️ Checkpoint inválido - iniciando conversão do zero")
-            return None
-
-        resume_info = self.cache_manager.get_resume_info(checkpoint)
-
-        print("\n🔄 CONVERSÃO INTERROMPIDA DETECTADA")
-        print("=" * 50)
-        print(f"📖 Livro: {checkpoint.book_title}")
-        print(f"📊 Progresso: {resume_info['completed_chapters']}/{checkpoint.total_chapters} capítulos ({resume_info['progress_percentage']:.1f}%)")
-        print(f"⏱️ Tempo decorrido: {resume_info['elapsed_time']}")
-        print(f"📅 Última atualização: {checkpoint.last_updated}")
-        print(f"📁 Diretório temporário: {checkpoint.temp_dir}")
-
-        if getattr(config, 'force_reprocess', False):
-            print("🔄 --force-reprocess detectado - ignorando checkpoint")
-            return None
-
-        # Auto-resume if non-interactive or ask user
-        should_resume = True
-        try:
-            import sys
-            if sys.stdout.isatty():  # Interactive terminal
-                response = input("\n❓ Retomar conversão de onde parou? [S/n]: ").strip().lower()
-                should_resume = response in ('', 's', 'sim', 'y', 'yes')
-        except (EOFError, KeyboardInterrupt):
-            should_resume = False
-
-        if not should_resume:
-            print("🆕 Iniciando conversão do zero")
-            # Clear checkpoint to prevent re-detection
-            self.cache_manager.clear_checkpoint(self._current_book_path)
-        # Clear temp files but preserve cached text
-        if current_temp_dir.exists():
-            self._cleanup_temp_audio(current_temp_dir)
-            print(f"🗑️ Arquivos temporários removidos: {current_temp_dir}")
-        return None
-
-        print("▶️ Retomando conversão...")
-
-        # Use checkpoint temp directory
-        checkpoint_temp_dir = Path(checkpoint.temp_dir)
-
-        # Get chapters that still need processing
-        completed_set = set(checkpoint.completed_chapters)
-
-        # Return None to indicate we should use original chapters list
-        # The checkpoint logic will be handled in the individual chapter processing
-        return None, checkpoint_temp_dir
-
-    def _save_checkpoint(self, config: ConversionConfig, output_dir: Path, temp_dir: Path,
-                        total_chapters: int, current_chapter: Optional[int] = None) -> None:
-        """Save current conversion progress to checkpoint"""
-        if not self._current_book_path:
-            return
-
-        try:
-            book_title = getattr(config, 'book_title', '') or self._current_book_path.stem
-            conversion_config = config.as_dict()
-
-            self.cache_manager.save_checkpoint(
-                book_path=self._current_book_path,
-                book_title=book_title,
-                output_dir=output_dir,
-                temp_dir=temp_dir,
-                total_chapters=total_chapters,
-                completed_chapters=self._completed_chapters,
-                current_chapter=current_chapter,
-                conversion_config=conversion_config
-            )
-
-            if self.verbose:
-                completed_count = len(self._completed_chapters)
-                percentage = (completed_count / total_chapters) * 100 if total_chapters > 0 else 0
-                print(f"🔍 [VERBOSE] Checkpoint salvo: {completed_count}/{total_chapters} ({percentage:.1f}%)")
-
-        except Exception as e:
-            if self.verbose:
-                print(f"⚠️ Erro ao salvar checkpoint: {e}")
+    def _build_engine_signature(self, config: ConversionConfig) -> str:
+        voice = getattr(config, "voice", None)
+        model_path = getattr(config, "model_path", None)
+        fallback_voice = None
+        if not voice and config.language_voices:
+            fallback_voice = next(iter(config.language_voices.values()), None)
+        return self.file_manager.build_engine_voice_suffix(
+            engine=getattr(config, "engine", None),
+            voice=voice,
+            model_path=model_path,
+            fallback_voice=fallback_voice,
+        )
 
 
     async def _convert_chapters_sequential(
@@ -285,6 +265,13 @@ class AudioConverter:
 
         print(f"🔄 Modo sequencial: processando {len(chapters_list)} capítulos")
 
+        # **NEW**: Check for cache invalidation BEFORE generating text files
+        # If MP3 exists but pre-tts.txt doesn't, delete MP3 (cache invalidated)
+        self._validate_and_clean_cache(chapters_list, output_dir, config)
+
+        # **NEW**: Generate ALL text files BEFORE starting conversion
+        self._generate_all_text_files(chapters_list, output_dir, config)
+
         converted_files: List[Path] = []
         errors: List[str] = []
 
@@ -296,39 +283,15 @@ class AudioConverter:
             self.progress.start_chapter(chapter.name, chapter_num)
 
             try:
-                # **SIMPLE**: Conversão para diretório temporário
+                # Conversão para diretório temporário
                 output_path = self.file_manager.get_temp_output_path(chapter.name, output_dir, idx + 1)
 
-                # **NEW**: Check if chapter already completed in checkpoint
-                if idx + 1 in self._completed_chapters:
-                    if output_path.exists():
-                        file_size = output_path.stat().st_size
-                        if file_size > 1000:  # Validar arquivo válido
-                            converted_files.append(output_path)
-                            self.progress.tick(f"✅ Capítulo já convertido (checkpoint, {file_size} bytes)")
-                            self.progress.complete_chapter("✅ Completo (checkpoint)")
-                            continue
-                        else:
-                            # Arquivo inválido - remover do checkpoint e reconverter
-                            if self.verbose:
-                                print(f"   🗑️ Arquivo do checkpoint inválido ({file_size} bytes) - reconvertendo")
-                            output_path.unlink(missing_ok=True)
-                            self._completed_chapters.remove(idx + 1)
-                    else:
-                        # Arquivo não existe mas está no checkpoint - remover do checkpoint
-                        if self.verbose:
-                            print(f"   ⚠️ Arquivo do checkpoint não encontrado - reconvertendo")
-                        self._completed_chapters.remove(idx + 1)
-
-                # Verificar se já existe e é válido (tamanho > 1KB)
+                # Check if MP3 already exists and is valid (size > 1KB)
+                # Note: Cache validation already done by _validate_and_clean_cache()
                 if output_path.exists() and not config.force_reprocess:
                     file_size = output_path.stat().st_size
                     if file_size > 1000:  # Mínimo 1KB para áudio válido
                         converted_files.append(output_path)
-                        # **NEW**: Mark as completed in checkpoint
-                        if idx + 1 not in self._completed_chapters:
-                            self._completed_chapters.append(idx + 1)
-                            self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
                         self.progress.tick(f"✅ Arquivo já existe ({file_size} bytes)")
                         self.progress.complete_chapter("✅ Completo (cache)")
                         continue
@@ -346,38 +309,6 @@ class AudioConverter:
                 if self.verbose:
                     print(f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Iniciando síntese TTS")
                     print(f"   📝 Texto: {char_count} caracteres (timeout: {timeout_seconds}s)")
-
-                # **FIXED**: Cache text before synthesis - MUST use speech_text (what's sent to TTS)
-                try:
-                    cache_dir = Path(output_dir)
-                    target_dir = cache_dir / "text"
-                    target_dir.mkdir(parents=True, exist_ok=True)
-                    chapter_name = getattr(chapter, "name", None) or f"Chapter {idx + 1}"
-                    from .utils import FileManager
-                    safe_name = FileManager.sanitize_filename(chapter_name)
-                    safe_name = safe_name.replace(" ", "_")
-
-                    # Save parse.txt (original chapter.text from EPUB parsing)
-                    parse_path = target_dir / f"{idx + 1:03d}_{safe_name}_parse.txt"
-                    parse_path.write_text(chapter.text or "", encoding="utf-8")
-
-                    # Save tts_input.txt (speech_text that goes to TTS)
-                    tts_input_path = target_dir / f"{idx + 1:03d}_{safe_name}_tts_input.txt"
-                    tts_input_path.write_text(speech_text, encoding="utf-8")
-
-                    # Also save as regular .txt (for backward compatibility)
-                    target_path = target_dir / f"{idx + 1:03d}_{safe_name}.txt"
-                    # **FIXED**: Save speech_text (what goes to TTS), NOT chapter.text
-                    target_path.write_text(speech_text, encoding="utf-8")
-
-                    if self.verbose:
-                        print(f"💾 Texto salvo: {target_path}")
-                        print(f"💾 Parse salvo: {parse_path}")
-                        print(f"💾 TTS input salvo: {tts_input_path}")
-                except OSError as e:
-                    if self.verbose:
-                        print(f"⚠️ Erro ao salvar cache de texto: {e}")
-                    pass
 
                 self.progress.tick(f"🎤 Sintetizando {char_count} chars (timeout: {timeout_seconds}s)...")
 
@@ -514,11 +445,6 @@ class AudioConverter:
                     if file_size > 1000:  # Mínimo 1KB para áudio válido
                         converted_files.append(output_path)
 
-                        # **NEW**: Mark chapter as completed and save checkpoint
-                        if idx + 1 not in self._completed_chapters:
-                            self._completed_chapters.append(idx + 1)
-                            self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
-
                         if self.verbose:
                             print(f"   📊 Arquivo gerado: {file_size} bytes")
                         self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
@@ -551,11 +477,6 @@ class AudioConverter:
                                 # Validar tamanho mínimo
                                 if file_size > 1000:
                                     converted_files.append(output_path)
-
-                                    # **NEW**: Mark chapter as completed and save checkpoint
-                                    if idx + 1 not in self._completed_chapters:
-                                        self._completed_chapters.append(idx + 1)
-                                        self._save_checkpoint(config, Path(output_path.parent), output_dir, len(chapters_list), idx + 1)
 
                                     if self.verbose:
                                         print(f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)")

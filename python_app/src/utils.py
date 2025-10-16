@@ -60,6 +60,31 @@ class FileManager:
         return Path(temp_dir) / cls.build_output_filename(chapter_name, index)
 
     @classmethod
+    def build_engine_voice_suffix(
+        cls,
+        *,
+        engine: Optional[str],
+        voice: Optional[str],
+        model_path: Optional[Path] = None,
+        fallback_voice: Optional[str] = None,
+    ) -> str:
+        """
+        Build a sanitized directory component containing engine and voice/model info.
+        """
+        engine_label = (engine or "unknown").lower()
+
+        descriptor = voice or fallback_voice
+        if not descriptor and model_path:
+            descriptor = Path(model_path).stem
+        if not descriptor:
+            descriptor = "default"
+
+        slug = f"{engine_label}__{descriptor}"
+        slug = cls.sanitize_filename(slug, max_length=96)
+        slug = slug.replace(" ", "_")
+        return slug or "unknown__default"
+
+    @classmethod
     def move_files_to_final_output(cls, temp_dir: Path, final_dir: Path) -> List[Path]:
         """Move all files from temp directory to final output directory"""
         moved_files = []
@@ -98,75 +123,35 @@ class AudioProcessor:
             # Ensure static-ffmpeg is available
             import static_ffmpeg
             static_ffmpeg.add_paths()
-
-            # Try using pydub with static-ffmpeg
-            from pydub import AudioSegment
-
-            def convert_sync():
-                # Load audio file using pydub
-                audio = AudioSegment.from_file(str(input_path))
-
-                # Extract bitrate number (e.g., "16k" -> 16)
-                bitrate_num = int(bitrate.rstrip('k'))
-
-                # Otimizações para menor espaço em audiobooks:
-                # 1. Converter para mono se não for
-                if audio.channels > 1:
-                    audio = audio.set_channels(1)
-
-                # 2. Reduzir sample rate para 16kHz (ideal para voz)
-                if audio.frame_rate > 16000:
-                    audio = audio.set_frame_rate(16000)
-
-                # 3. Exportar com configurações otimizadas para menor espaço
-                audio.export(
-                    str(output_path),
-                    format="mp3",
-                    bitrate=f"{bitrate_num}k",
-                    parameters=[
-                        "-b:a", f"{bitrate_num}k",  # Bitrate constante (CBR) para menor espaço
-                        "-minrate", f"{bitrate_num}k",  # Bitrate mínimo
-                        "-maxrate", f"{bitrate_num}k",  # Bitrate máximo
-                        "-ar", "16000",  # Sample rate 16kHz
-                        "-ac", "1",  # Forçar mono
-                        "-cutoff", "8000",  # Cortar frequências acima de 8kHz (suficiente para voz)
-                        "-joint_stereo", "0"  # Desabilitar joint stereo para menor processamento
-                    ]
-                )
-
-            # Run the synchronous pydub operation in a thread pool
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, convert_sync)
-
         except ImportError:
-            # Fallback to direct ffmpeg subprocess call
-            command = (
-                "ffmpeg",
-                "-y",
-                "-i",
-                str(input_path),
-                "-b:a", bitrate,  # Bitrate constante
-                "-minrate", bitrate,  # Bitrate mínimo
-                "-maxrate", bitrate,  # Bitrate máximo
-                "-ar", "16000",  # Sample rate 16kHz
-                "-ac", "1",  # Mono
-                "-cutoff", "8000",  # Cortar frequências acima de 8kHz
-                str(output_path),
+            pass  # static-ffmpeg is optional, will use system ffmpeg
+
+        # Use ffmpeg directly (no pydub/audioop dependency)
+        command = (
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-b:a", bitrate,  # Bitrate constante (CBR)
+            "-minrate", bitrate,  # Bitrate mínimo
+            "-maxrate", bitrate,  # Bitrate máximo
+            "-ar", "16000",  # Sample rate 16kHz (ideal para voz)
+            "-ac", "1",  # Mono (audiobooks não precisam stereo)
+            "-cutoff", "8000",  # Cortar frequências acima de 8kHz (suficiente para voz)
+            str(output_path),
+        )
+
+        subprocess_exec = asyncio.create_subprocess_exec
+        positional_args = (command,) if getattr(subprocess_exec, "__module__", "") == "unittest.mock" else command
+
+        try:
+            process = await subprocess_exec(
+                *positional_args,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
             )
-
-            subprocess_exec = asyncio.create_subprocess_exec
-            positional_args = (command,) if getattr(subprocess_exec, "__module__", "") == "unittest.mock" else command
-
-            try:
-                process = await subprocess_exec(
-                    *positional_args,
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                await process.wait()
-                if process.returncode != 0:
-                    return None
-            except Exception:
+            await process.wait()
+            if process.returncode != 0:
                 return None
         except Exception:
             return None

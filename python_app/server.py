@@ -13,7 +13,6 @@ from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from pydub import AudioSegment
 
 from src.config import ConversionConfig
 from src.ebook_reader import EbookReader
@@ -159,9 +158,8 @@ async def process_conversion(job_id: str) -> None:
             # Use TTS engine
             await tts_engine.synthesize_async(chapter_text, output_file)
 
-            # Get duration
-            audio = AudioSegment.from_file(output_file)
-            duration_seconds = audio.duration_seconds
+            # Get duration using ffprobe (no pydub/audioop dependency)
+            duration_seconds = await _get_audio_duration(output_file)
 
             job["events"].append(f"✅ Concluído: {output_file.name}")
             job["chaptersCompleted"] = idx
@@ -215,6 +213,36 @@ def _guess_media_type(filename: str) -> str:
     if lowered.endswith(".zip"):
         return "application/zip"
     return "application/octet-stream"
+
+
+async def _get_audio_duration(file_path: Path) -> float:
+    """Get audio duration using ffprobe (no pydub dependency)."""
+    try:
+        # Ensure static-ffmpeg is available
+        try:
+            import static_ffmpeg
+            static_ffmpeg.add_paths()
+        except ImportError:
+            pass  # Use system ffprobe
+
+        process = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v", "error",
+            "-show_entries", "format=duration",
+            "-of", "default=noprint_wrappers=1:nokey=1",
+            str(file_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await process.communicate()
+
+        if process.returncode == 0 and stdout:
+            return float(stdout.decode().strip())
+    except Exception:
+        pass
+
+    # Fallback: estimate based on file size (rough approximation)
+    return file_path.stat().st_size / 1000.0  # ~1KB per second for 8kbps
 
 
 def sanitize_filename(name: str) -> str:

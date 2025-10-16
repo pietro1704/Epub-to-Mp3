@@ -144,6 +144,12 @@ class SimpleAudioConverter:
         base_dir = Path(config.output_dir or ".cache")
         if config.book_title:
             base_dir = base_dir / self.file_manager.sanitize_filename(config.book_title)
+        engine_suffix = self.file_manager.build_engine_voice_suffix(
+            engine=getattr(config, "engine", None),
+            voice=getattr(config, "voice", None),
+            model_path=getattr(config, "model_path", None),
+        )
+        base_dir = base_dir / engine_suffix
         return self.file_manager.ensure_directory(base_dir)
 
 
