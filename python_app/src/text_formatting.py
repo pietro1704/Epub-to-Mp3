@@ -19,6 +19,7 @@ class FormattingSegment:
 class TextFormattingProcessor:
     """Processador de formatação de texto para diferenciação no áudio"""
 
+    FORMAT_MARKER_RE = re.compile(r"\[\[fmt:[^\]]+\]\]|\[\[/fmt\]\]", re.IGNORECASE)
     def process_markup_tags(self, text: str) -> str:
         """Process markup tags from LanguageMarkup into formatting markers"""
         if not text:
@@ -117,6 +118,9 @@ class TextFormattingProcessor:
                     return marker_template.format(clean_content)
 
                 text = pattern.sub(replace_with_marker, text)
+
+        # **NOVO**: Adicionar marcadores para aspas inline e travessão de diálogo
+        text = self._add_inline_emphasis_markers(text)
 
         return text
 
@@ -250,11 +254,12 @@ class TextFormattingProcessor:
             elif segment.formatting == 'bold':
                 parts.append(f"em negrito: {text}")
             elif segment.formatting == 'emphasis':
-                parts.append(f"com ênfase: {text}")
+                # Diálogo ou trecho enfatizado (travessão, exclamações etc.)
+                parts.append(f"diálogo com ênfase: {text}")
             elif segment.formatting == 'code':
-                parts.append(f"código: {text}")
+                parts.append(f"trecho de código: {text}")
             elif segment.formatting == 'quote':
-                parts.append(f"citação: {text}")
+                parts.append(f"entre aspas: {text}")
             elif segment.formatting == 'small':
                 parts.append(f"texto pequeno: {text}")
             else:  # normal
@@ -302,18 +307,99 @@ class TextFormattingProcessor:
         formatted = marker_pattern.sub(replace, text)
         return formatted
 
+    @classmethod
+    def remove_formatting_markers(cls, text: str) -> str:
+        """
+        Remove marcadores [[fmt:...]] preservando o conteúdo interno.
+
+        Mantém espaços e quebras de linha originais.
+        """
+        if not text:
+            return ""
+
+        return cls.FORMAT_MARKER_RE.sub("", text)
+
     @staticmethod
     def strip_inline_markdown(text: str) -> str:
         if not text:
             return ""
 
-        cleaned = text
+        cleaned = TextFormattingProcessor.remove_formatting_markers(text)
         cleaned = re.sub(r'\*\*(.+?)\*\*', r'\1', cleaned)
         cleaned = re.sub(r'__(.+?)__', r'\1', cleaned)
         cleaned = re.sub(r'_([^_]+?)_', r'\1', cleaned)
         cleaned = re.sub(r'`([^`]+?)`', r'\1', cleaned)
         cleaned = re.sub(r'\s{2,}', ' ', cleaned)
         return cleaned.strip()
+
+    @classmethod
+    def clean_tts_text(cls, text: str) -> str:
+        """
+        Remove marcadores internos e markdown, preservando pistas de idioma.
+        """
+        if not text:
+            return ""
+
+        return cls.strip_inline_markdown(text)
+
+    def to_audible_text(
+        self,
+        text: str,
+        formatting_segments: Optional[List[FormattingSegment]] = None,
+    ) -> str:
+        """
+        Converte o texto em uma versão pronta para o TTS, com pistas audíveis.
+        """
+        if not text and not formatting_segments:
+            return ""
+
+        segments = formatting_segments or self.parse_formatted_text(text)
+
+        if not segments:
+            return self.clean_tts_text(text)
+
+        audible = self.to_plain_text_with_cues(segments)
+        return self.clean_tts_text(audible)
+
+    def _add_inline_emphasis_markers(self, text: str) -> str:
+        """
+        Adiciona marcadores de ênfase para padrões comuns em audiolivros:
+        - "Texto entre aspas duplas" → [[fmt:quote]]..[[/fmt]]
+        - —Diálogo com travessão → [[fmt:emphasis]]..[[/fmt]]
+
+        IMPORTANTE: Não adicionar marcadores para markdown já processado (_italic_, **bold**)
+        """
+        if not text:
+            return text
+
+        # Detectar texto entre aspas duplas (curvas ou retas)
+        # Ignora se já há marcador [[fmt:...]]
+        quote_pattern = re.compile(r'(?<!\[\[fmt:)"([^"]{10,}?)"(?!\]\])', re.UNICODE)
+
+        def add_quote_marker(match):
+            content = match.group(1)
+            # Não marcar se já tem marcador interno
+            if '[[fmt:' in content:
+                return match.group(0)
+            return f'[[fmt:quote]]{content}[[/fmt]]'
+
+        text = quote_pattern.sub(add_quote_marker, text)
+
+        # Detectar travessão de diálogo (— ou --) no início de parágrafo/linha
+        # Adiciona ênfase para diferenciar narração de diálogo
+        dash_pattern = re.compile(r'^(—|--)\s*(.+?)$', re.MULTILINE)
+
+        def add_dash_emphasis(match):
+            dash = match.group(1)
+            content = match.group(2)
+            # Não marcar se já tem marcador
+            if '[[fmt:' in content:
+                return match.group(0)
+            return f'{dash} [[fmt:emphasis]]{content}[[/fmt]]'
+
+        text = dash_pattern.sub(add_dash_emphasis, text)
+
+        return text
 
     def _escape_ssml(self, text: str) -> str:
         """Escapa caracteres especiais para SSML"""

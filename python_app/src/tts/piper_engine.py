@@ -18,6 +18,11 @@ try:  # pragma: no cover - optional dependency
 except ImportError:  # pragma: no cover
     LanguageMarkup = None  # type: ignore
 
+try:  # pragma: no cover - optional dependency
+    from ..text_formatting import TextFormattingProcessor
+except ImportError:  # pragma: no cover
+    TextFormattingProcessor = None  # type: ignore
+
 # **FIXED**: Semáforo global para limitar processos simultâneos do Piper
 _piper_semaphore = None
 
@@ -44,36 +49,57 @@ class PiperTTSEngine:
             raise FileNotFoundError(f"Model not found: {self.model_path}")
         self.primary_language = (primary_language or "auto").split('-', 1)[0].lower()
         self.language_voices = language_voices or {}
+        self.verbose = False
+
+    def supports_multilingual(self) -> bool:
+        """Piper supports multilingual via language-specific models"""
+        # Piper uses separate models per language, so multilingual requires switching models
+        return bool(self.language_voices)
+
+    def supports_emphasis(self) -> bool:
+        """Piper supports basic emphasis via pause markers"""
+        return True
 
     async def synthesize_async(self, text: str, output_path: Path, formatting_segments=None) -> Optional[Path]:
         if not text:
             return None
 
-        # Use formatting segments to convert to plain text with simple pauses if available
-        if formatting_segments:
+        if TextFormattingProcessor:
+            formatter = TextFormattingProcessor()
             try:
-                from ..text_formatting import TextFormattingProcessor
-                formatter = TextFormattingProcessor()
-                text = formatter.to_plain_text_with_pauses(formatting_segments)
+                converted = formatter.to_audible_text(text, formatting_segments)
+                if converted:
+                    if self.verbose and converted != text:
+                        print(f"🔍 [VERBOSE] PiperTTS texto ajustado para áudio: {len(converted)} chars")
+                    text = converted
+            except Exception as exc:
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] PiperTTS usando texto formatado: {len(text)} chars")
-            except Exception as e:
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] PiperTTS erro ao processar formatação: {e}, usando texto original")
-                # Continue with original text
+                    print(f"🔍 [VERBOSE] PiperTTS falha ao preparar texto com formatação ({exc}); prosseguindo com limpeza básica")
+                text = formatter.clean_tts_text(text)
+        else:
+            text = text.strip()
 
         contains_markup = LanguageMarkup is not None and "[[lang:" in text.lower()
         default_language = self.primary_language if self.primary_language not in {"", "auto", "unknown"} else "unknown"
 
         if not contains_markup:
-            plain_text = text
+            plain_text = TextFormattingProcessor.clean_tts_text(text) if TextFormattingProcessor else text
         else:
             plain_text = LanguageMarkup.strip(text) if LanguageMarkup else text
 
         segments: List[Tuple[str, str]]
         if contains_markup and LanguageMarkup is not None:
             parsed = LanguageMarkup.parse(text, default_language)
-            segments = [(segment.language, segment.text) for segment in parsed if segment.text]
+            segments = []
+            for segment in parsed:
+                if not segment or not segment.text:
+                    continue
+                segment_text = (
+                    TextFormattingProcessor.clean_tts_text(segment.text)
+                    if TextFormattingProcessor
+                    else segment.text
+                )
+                segments.append((segment.language, segment_text))
         else:
             segments = [(default_language, plain_text)]
 

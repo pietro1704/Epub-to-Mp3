@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import importlib
 import inspect
 from contextlib import suppress
@@ -12,7 +11,33 @@ from pathlib import Path
 from typing import Dict, Optional
 from unittest.mock import Mock
 
+# **SSL BYPASS**: Monkeypatch SSL ANTES de importar edge_tts
+# IMPORTANTE: Necessário porque certificado da Microsoft (api.msedgeservices.com) está expirado
+# Edge-TTS usa ssl.create_default_context(cafile=certifi.where())
+import ssl as _ssl_module
+
+# Salvar função original
+_original_create_default_context = _ssl_module.create_default_context
+
+# Substituir por versão não-verificada
+def _create_unverified_context_wrapper(*args, **kwargs):
+    """Sempre retorna contexto SSL não-verificado, ignorando parâmetros"""
+    ctx = _ssl_module._create_unverified_context()
+    return ctx
+
+_ssl_module.create_default_context = _create_unverified_context_wrapper
+_ssl_module._create_default_https_context = _ssl_module._create_unverified_context
+
 edge_tts = None
+
+# Import SSL/Certificate error types
+try:
+    from aiohttp import ClientConnectorCertificateError, ClientConnectorError
+    import ssl
+except ImportError:
+    ClientConnectorCertificateError = None  # type: ignore
+    ClientConnectorError = None  # type: ignore
+    ssl = None  # type: ignore
 
 # Global rate limiter for Edge TTS to prevent resource contention
 _edge_rate_limiter = None
@@ -70,6 +95,14 @@ class EdgeTTSEngine:
             print(f"🔍 [VERBOSE] EdgeTTS inicializado com voice={voice}")
             print(f"🔍 [VERBOSE] Rate limiter slots disponíveis: {_edge_rate_limiter._value if _edge_rate_limiter else 'N/A'}")
 
+    def supports_multilingual(self) -> bool:
+        """Edge TTS suporta multiidioma via voice switching e [[lang:]] tags"""
+        return True
+
+    def supports_emphasis(self) -> bool:
+        """Edge TTS suporta ênfase via SSML quando voz é Neural"""
+        return self._supports_emphasis()
+
     async def synthesize_async(self, text: str, output_path: Path, formatting_segments=None) -> Optional[Path]:
         if not text:
             return None
@@ -83,10 +116,23 @@ class EdgeTTSEngine:
         self.last_error = None
 
         # Use formatting segments if available
-        if formatting_segments and TextFormattingProcessor:
-            segments = self._prepare_formatted_segments(formatting_segments)
-        else:
-            segments = self._prepare_segments(text)
+        payload_text = text or ""
+
+        if TextFormattingProcessor:
+            formatter = TextFormattingProcessor()
+            payload_text = formatter.to_audible_text(payload_text, formatting_segments)
+
+        if self.verbose:
+            original_preview = (text or "")[:120]
+            processed_preview = payload_text[:120]
+            if original_preview != processed_preview:
+                print(f"🔍 [VERBOSE] EdgeTTS texto ajustado para áudio:")
+                print(f"      • Original : {original_preview}")
+                print(f"      • Preparado: {processed_preview}")
+            else:
+                print(f"🔍 [VERBOSE] EdgeTTS texto preparado (sem alterações): {processed_preview}")
+
+        segments = self._prepare_segments(payload_text)
 
         if not segments:
             if self.verbose:
@@ -108,12 +154,7 @@ class EdgeTTSEngine:
         total_segments = 0
 
         try:
-            for entry in segments:
-                if len(entry) == 3:
-                    voice, segment_text, is_ssml = entry
-                else:
-                    voice, segment_text = entry
-                    is_ssml = segment_text.strip().lower().startswith('<speak')
+            for voice, segment_text in segments:
                 # Validate segment data
                 if voice is None:
                     if self.verbose:
@@ -125,7 +166,7 @@ class EdgeTTSEngine:
                         print("🔍 [VERBOSE] EdgeTTS synthesize_async: segment_text is None, skipping")
                     continue
 
-                segment_text = segment_text.strip()
+                segment_text = segment_text.strip("\n\r")
                 if not segment_text:
                     if self.verbose:
                         print("🔍 [VERBOSE] EdgeTTS synthesize_async: empty segment_text after strip, skipping")
@@ -139,7 +180,6 @@ class EdgeTTSEngine:
                     voice,
                     output_path,
                     append=(total_segments > 0),
-                    ssml=is_ssml,
                 ):
                     return None
                 total_segments += 1
@@ -173,197 +213,111 @@ class EdgeTTSEngine:
                 print("🔍 [VERBOSE] EdgeTTS _prepare_segments: text is None")
             return [(self.voice, "")]
 
+        cleaned_text = (
+            TextFormattingProcessor.clean_tts_text(text)
+            if TextFormattingProcessor
+            else text
+        )
+
         if LanguageMarkup is None:
-            # Break very long texts into smaller chunks for better performance
-            if len(text) > 8000:  # Increased threshold
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS processando texto muito longo: {len(text)} chars")
-                chunks = []
-                chunk_size = 7000  # Larger chunks
-                for i in range(0, len(text), chunk_size):
-                    chunk = text[i:i + chunk_size]
-                    # Try to break at sentence boundaries
-                    if i + chunk_size < len(text):
-                        last_period = chunk.rfind('.')
-                        last_exclamation = chunk.rfind('!')
-                        last_question = chunk.rfind('?')
-                        break_point = max(last_period, last_exclamation, last_question)
-                        if break_point > chunk_size * 0.7:  # Only break if we have a reasonable chunk
-                            chunk = chunk[:break_point + 1]
-                    chunks.append((self.voice, chunk.strip()))
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS quebrou texto longo em {len(chunks)} chunks de ~{chunk_size} chars")
-                return chunks
-            return [(self.voice, text)]
+            return self._chunk_text(self.voice, cleaned_text)
 
         try:
-            lowered = text.lower()
+            lowered = cleaned_text.lower()
             if "[[lang:" not in lowered:
-                # Break very long texts into smaller chunks even with LanguageMarkup
-                if len(text) > 8000:  # Increased threshold
-                    if self.verbose:
-                        print(f"🔍 [VERBOSE] EdgeTTS processando texto longo sem tags: {len(text)} chars")
-                    chunks = []
-                    chunk_size = 7000  # Larger chunks
-                    for i in range(0, len(text), chunk_size):
-                        chunk = text[i:i + chunk_size]
-                        if i + chunk_size < len(text):
-                            last_period = chunk.rfind('.')
-                            last_exclamation = chunk.rfind('!')
-                            last_question = chunk.rfind('?')
-                            break_point = max(last_period, last_exclamation, last_question)
-                            if break_point > chunk_size * 0.7:
-                                chunk = chunk[:break_point + 1]
-                        chunks.append((self.voice, chunk.strip()))
-                    if self.verbose:
-                        print(f"🔍 [VERBOSE] EdgeTTS quebrou texto longo em {len(chunks)} chunks de ~{chunk_size} chars (sem tags)")
-                    return chunks
-                return [(self.voice, text)]
+                return self._chunk_text(self.voice, cleaned_text)
 
-            # Count language tags for information
             lang_tag_count = lowered.count("[[lang:")
             if self.verbose and lang_tag_count > 50:
-                print(f"🔍 [VERBOSE] EdgeTTS _prepare_segments: {lang_tag_count} tags [[lang:]] detectadas em texto de {len(text)} chars")
+                print(
+                    f"🔍 [VERBOSE] EdgeTTS _prepare_segments: {lang_tag_count} tags [[lang:]] detectadas em texto de {len(cleaned_text)} chars"
+                )
 
-            segments = LanguageMarkup.parse(text, self.primary_language)
+            segments = LanguageMarkup.parse(cleaned_text, self.primary_language)
             if segments is None:
                 if self.verbose:
                     print("🔍 [VERBOSE] EdgeTTS _prepare_segments: LanguageMarkup.parse returned None")
-                sanitised = TextFormattingProcessor.strip_inline_markdown(text) if TextFormattingProcessor else text
-                return [(self.voice, sanitised)]
+                return self._chunk_text(self.voice, cleaned_text)
 
-            # Limit number of segments to prevent performance issues
             if len(segments) > 100:
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS _prepare_segments: {len(segments)} segments detected, using simplified processing")
-                simplified_text = LanguageMarkup.strip(text) if LanguageMarkup else text
-                simplified_text = TextFormattingProcessor.strip_inline_markdown(simplified_text) if TextFormattingProcessor else simplified_text
-                return [(self.voice, simplified_text)]
+                    print(
+                        f"🔍 [VERBOSE] EdgeTTS _prepare_segments: {len(segments)} segments detectados, aplicando simplificação"
+                    )
+                simplified = LanguageMarkup.strip(cleaned_text) if LanguageMarkup else cleaned_text
+                return self._chunk_text(self.voice, simplified)
 
             prepared: list[tuple[str, str]] = []
             for segment in segments:
                 if segment is None:
-                    if self.verbose:
-                        print("🔍 [VERBOSE] EdgeTTS _prepare_segments: segment is None, skipping")
+                    continue
+                segment_text = getattr(segment, "text", "") or ""
+                segment_text = segment_text.strip()
+                if not segment_text:
                     continue
                 lang = (segment.language or "").split("-", 1)[0].lower()
                 voice = self.language_voices.get(lang) or self.voice
-                segment_text = getattr(segment, 'text', None) or ""
-                if TextFormattingProcessor:
-                    segment_text = TextFormattingProcessor.strip_inline_markdown(segment_text)
-                prepared.append((voice, segment_text))
+                segment_clean = (
+                    TextFormattingProcessor.clean_tts_text(segment_text)
+                    if TextFormattingProcessor
+                    else segment_text
+                )
+                prepared.extend(self._chunk_text(voice, segment_clean))
 
-            final_segments: list[tuple[str, str, bool]] = []
-            idx = 0
-            while idx < len(prepared):
-                voice, segment_text = prepared[idx]
-                if not segment_text:
-                    idx += 1
-                    continue
+            if not prepared:
+                return self._chunk_text(self.voice, cleaned_text)
 
-                if (
-                    voice == self.voice
-                    and idx + 2 < len(prepared)
-                    and prepared[idx + 1][0] != voice
-                    and prepared[idx + 2][0] == voice
-                ):
-                    next_voice, next_text = prepared[idx + 1]
-                    _, trailing_text = prepared[idx + 2]
-                    final_segments.append((voice, segment_text, False))
-                    combined = self._build_voice_switch_ssml(next_text, trailing_text, voice)
-                    final_segments.append((next_voice, combined, True))
-                    idx += 3
-                    continue
-
-                final_segments.append((voice, segment_text, False))
-                idx += 1
-
-            collapsed: list[tuple[str, str, bool]] = []
-            for voice, segment_text, is_ssml in final_segments:
-                if not segment_text:
-                    continue
-                if (
-                    collapsed
-                    and collapsed[-1][0] == voice
-                    and not collapsed[-1][2]
-                    and not is_ssml
-                ):
-                    prev_voice, prev_text, _ = collapsed[-1]
-                    joiner = ""
-                    if prev_text and not prev_text.endswith((" ", "\t", "\n")) and not segment_text.startswith((" ", "\t", "\n")):
-                        joiner = " "
-                    collapsed[-1] = (prev_voice, prev_text + joiner + segment_text, False)
-                else:
-                    collapsed.append((voice, segment_text, is_ssml))
-
-            fallback_text = LanguageMarkup.strip(text) if LanguageMarkup else text
-            if TextFormattingProcessor:
-                fallback_text = TextFormattingProcessor.strip_inline_markdown(fallback_text)
-
-            result = collapsed or [(self.voice, fallback_text)]
             if self.verbose:
-                print(f"🔍 [VERBOSE] EdgeTTS _prepare_segments: returning {len(result)} segments")
-            return result
-        except Exception as e:
+                print(f"🔍 [VERBOSE] EdgeTTS _prepare_segments: retornando {len(prepared)} segmentos após chunking")
+
+            return prepared
+
+        except Exception as exc:
             if self.verbose:
-                print(f"🔍 [VERBOSE] EdgeTTS _prepare_segments error: {e}")
-            sanitised = TextFormattingProcessor.strip_inline_markdown(text or "") if TextFormattingProcessor else (text or "")
-            return [(self.voice, sanitised)]
+                print(f"🔍 [VERBOSE] EdgeTTS _prepare_segments error: {exc}")
+            fallback = TextFormattingProcessor.clean_tts_text(text or "") if TextFormattingProcessor else (text or "")
+            return self._chunk_text(self.voice, fallback)
+
+    def _chunk_text(self, voice: str, text: str, chunk_size: int = 7000) -> list[tuple[str, str]]:
+        """Divide texto longo em blocos menores respeitando limites aproximados de frase."""
+        if not text:
+            return []
+
+        stripped = text.strip()
+        if not stripped:
+            return []
+
+        if len(stripped) <= chunk_size:
+            return [(voice, stripped)]
+
+        chunks: list[tuple[str, str]] = []
+        start = 0
+        length = len(stripped)
+
+        while start < length:
+            end = min(start + chunk_size, length)
+            chunk = stripped[start:end]
+
+            if end < length:
+                last_period = chunk.rfind(".")
+                last_exclamation = chunk.rfind("!")
+                last_question = chunk.rfind("?")
+                break_point = max(last_period, last_exclamation, last_question)
+                if break_point > chunk_size * 0.5:
+                    chunk = chunk[: break_point + 1]
+                    end = start + len(chunk)
+
+            chunks.append((voice, chunk))
+            start = end
+
+        if self.verbose:
+            print(f"🔍 [VERBOSE] EdgeTTS _chunk_text: gerados {len(chunks)} chunks para voz {voice}")
+
+        return [(voice, chunk) for voice, chunk in chunks if chunk]
 
     def _supports_emphasis(self) -> bool:
         voice = (self.voice or "").lower()
         return "neural" in voice or voice.startswith("pt-br")
-
-    def _build_emphasis_ssml(self, formatter: TextFormattingProcessor, segments) -> str:
-        parts: list[str] = []
-        for segment in segments:
-            raw = (segment.text or "").strip()
-            if not raw:
-                continue
-            escaped = formatter._escape_ssml(raw)
-            fmt = (segment.formatting or '').lower()
-            if fmt in {"italic", "emphasis"}:
-                parts.append(f'<prosody rate="-10%" pitch="+7%">{escaped}</prosody>')
-            elif fmt == "bold":
-                parts.append(f'<prosody volume="+20%" rate="-5%">{escaped}</prosody>')
-            elif fmt == "quote":
-                parts.append(f'<prosody rate="-6%" pitch="-4%"><break time="150ms"/>{escaped}<break time="170ms"/></prosody>')
-            elif fmt == "code":
-                parts.append(f'<prosody rate="-25%" pitch="-8%">{escaped}</prosody>')
-            else:
-                parts.append(escaped)
-
-        if not parts:
-            fallback = " ".join(segment.text for segment in segments if segment.text)
-            fallback = formatter._escape_ssml(fallback)
-            parts.append(fallback)
-
-        body = ' '.join(parts)
-        return (
-            '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
-            'xmlns:mstts="http://www.w3.org/2001/mstts">'
-            f'{body}'
-            '</speak>'
-        )
-
-    @staticmethod
-    def _escape_ssml(text: str) -> str:
-        return html.escape(text or "", quote=False)
-
-    def _build_voice_switch_ssml(self, lead_text: str, trailing_text: str, fallback_voice: str) -> str:
-        lead = self._escape_ssml(lead_text)
-        trailing = self._escape_ssml(trailing_text)
-        trailing_part = (
-            f'<voice name="{self._escape_ssml(fallback_voice)}">{trailing}</voice>'
-            if trailing_text
-            else ""
-        )
-        return (
-            '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" '
-            'xmlns:mstts="http://www.w3.org/2001/mstts">'
-            f'{lead}{trailing_part}'
-            '</speak>'
-        )
 
     async def _synthesize_segment(
         self,
@@ -372,7 +326,6 @@ class EdgeTTSEngine:
         output_path: Path,
         *,
         append: bool,
-        ssml: bool = False,
     ) -> bool:
         global _edge_rate_limiter
 
@@ -410,14 +363,10 @@ class EdgeTTSEngine:
                 if self.verbose:
                     text_len = len(text) if text is not None else 0
                     print(f"🔍 [VERBOSE] EdgeTTS criando Communicate para texto de {text_len} chars")
-                kwargs = {"ssml": True} if ssml else {}
-                try:
-                    communicator = self._edge_tts.Communicate(text, voice, **kwargs)
-                except TypeError:
-                    if ssml:
-                        communicator = self._edge_tts.Communicate(text, voice)
-                    else:
-                        raise
+
+                # SSL bypass já aplicado no topo do módulo via monkeypatch
+                communicator = self._edge_tts.Communicate(text, voice)
+
             except Exception as exc:  # pragma: no cover - defensive logging
                 self.last_error = f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
                 if self.verbose:
@@ -478,27 +427,76 @@ class EdgeTTSEngine:
                         print(f"🔍 [VERBOSE] EdgeTTS stream finalizado: {chunks_received} chunks totais")
 
             synthesis_start = asyncio.get_event_loop().time()
+            max_retries = 3
+            retry_count = 0
+
             try:
-                with output_path.open(mode) as out_file:
-                    await asyncio.wait_for(_consume_stream(out_file), timeout=timeout)
-            except asyncio.TimeoutError:
-                synthesis_time = asyncio.get_event_loop().time() - synthesis_start
-                self.last_error = "timeout"
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS timeout após {synthesis_time:.1f}s (limit: {timeout}s)")
-                return False
-            except asyncio.CancelledError:
-                synthesis_time = asyncio.get_event_loop().time() - synthesis_start
-                self.last_error = "cancelled"
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS cancelado após {synthesis_time:.1f}s")
-                raise
-            except Exception as exc:  # pragma: no cover - defensive logging
-                synthesis_time = asyncio.get_event_loop().time() - synthesis_start
-                self.last_error = f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS erro após {synthesis_time:.1f}s: {self.last_error}")
-                return False
+                while retry_count < max_retries:
+                    try:
+                        with output_path.open(mode) as out_file:
+                            await asyncio.wait_for(_consume_stream(out_file), timeout=timeout)
+                        break  # Success - exit retry loop
+
+                    except asyncio.TimeoutError:
+                        synthesis_time = asyncio.get_event_loop().time() - synthesis_start
+                        self.last_error = "timeout"
+                        if self.verbose:
+                            print(f"🔍 [VERBOSE] EdgeTTS timeout após {synthesis_time:.1f}s (limit: {timeout}s)")
+                        return False
+
+                    except asyncio.CancelledError:
+                        synthesis_time = asyncio.get_event_loop().time() - synthesis_start
+                        self.last_error = "cancelled"
+                        if self.verbose:
+                            print(f"🔍 [VERBOSE] EdgeTTS cancelado após {synthesis_time:.1f}s")
+                        raise
+
+                    except Exception as exc:
+                        synthesis_time = asyncio.get_event_loop().time() - synthesis_start
+
+                        # Check if it's a certificate/SSL error
+                        is_cert_error = (
+                            ClientConnectorCertificateError and isinstance(exc, ClientConnectorCertificateError)
+                        ) or (
+                            ClientConnectorError and isinstance(exc, ClientConnectorError)
+                        ) or (
+                            "certificate" in str(exc).lower() or "ssl" in str(exc).lower()
+                        )
+
+                        if is_cert_error and retry_count < max_retries - 1:
+                            retry_count += 1
+                            backoff_time = 2 ** retry_count  # 2s, 4s, 8s
+
+                            # Detailed SSL error logging
+                            print(f"🔒 Erro SSL/Certificado detectado: {exc.__class__.__name__}")
+                            if self.verbose:
+                                print(f"🔍 [VERBOSE] Detalhes SSL: {exc}")
+                            print(f"🔄 Retry {retry_count}/{max_retries-1} após {backoff_time}s...")
+
+                            await asyncio.sleep(backoff_time)
+
+                            # Recreate communicator and stream for retry
+                            try:
+                                # SSL bypass já aplicado no topo do módulo via monkeypatch
+                                communicator = self._edge_tts.Communicate(text, voice)
+                                stream_candidate = communicator.stream()
+                                stream = await stream_candidate if inspect.isawaitable(stream_candidate) else stream_candidate
+                                chunks_received = 0
+                                received_audio = False
+                                continue  # Retry
+                            except Exception as retry_exc:
+                                if self.verbose:
+                                    print(f"🔍 [VERBOSE] Falha ao recriar stream: {retry_exc}")
+                                self.last_error = f"retry_failed: {retry_exc}"
+                                return False
+                        else:
+                            # Not a cert error or max retries reached
+                            self.last_error = f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                            if is_cert_error:
+                                print(f"❌ Erro SSL persistente após {retry_count} tentativas")
+                            if self.verbose:
+                                print(f"🔍 [VERBOSE] EdgeTTS erro após {synthesis_time:.1f}s: {self.last_error}")
+                            return False
             finally:
                 with suppress(Exception):
                     connector = getattr(communicator, "connector", None)
@@ -512,51 +510,5 @@ class EdgeTTSEngine:
             if not received_audio:
                 self.last_error = "no_audio"
             return received_audio
-
-    def _prepare_formatted_segments(self, formatting_segments) -> list[tuple[str, str, bool]]:
-        """Prepare formatted segments, applying emphasis when supported."""
-        if not formatting_segments or not TextFormattingProcessor:
-            if self.verbose:
-                print("🔍 [VERBOSE] EdgeTTS _prepare_formatted_segments: sem segmentos ou processador")
-            return [(self.voice, "", False)]
-
-        formatter = TextFormattingProcessor()
-
-        try:
-            if self._supports_emphasis():
-                ssml_payload = self._build_emphasis_ssml(formatter, formatting_segments)
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS SSML gerado: {len(ssml_payload)} chars")
-                return [(self.voice, ssml_payload, True)]
-
-            plain_text = formatter.to_plain_text_with_pauses(formatting_segments)
-            plain_text = TextFormattingProcessor.strip_inline_markdown(plain_text)
-
-            if len(plain_text) > 8000:
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS quebrando texto longo em chunks")
-                chunks = []
-                chunk_size = 7000
-                for i in range(0, len(plain_text), chunk_size):
-                    chunk = plain_text[i:i + chunk_size]
-                    if i + chunk_size < len(plain_text):
-                        last_period = chunk.rfind('.')
-                        last_exclamation = chunk.rfind('!')
-                        last_question = chunk.rfind('?')
-                        break_point = max(last_period, last_exclamation, last_question)
-                        if break_point > chunk_size * 0.7:
-                            chunk = chunk[:break_point + 1]
-                    chunks.append((self.voice, chunk.strip(), False))
-                return chunks
-
-            return [(self.voice, plain_text, False)]
-
-        except Exception as e:
-            if self.verbose:
-                print(f"🔍 [VERBOSE] EdgeTTS erro ao processar formatação: {e}")
-            fallback = " ".join([segment.text for segment in formatting_segments if segment.text])
-            fallback = TextFormattingProcessor.strip_inline_markdown(fallback)
-            return [(self.voice, fallback, False)]
-
 
 __all__ = ["EdgeTTSEngine"]

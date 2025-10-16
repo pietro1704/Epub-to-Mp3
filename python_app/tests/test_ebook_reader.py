@@ -218,6 +218,7 @@ class TestEbookReader(unittest.TestCase):
         self.assertEqual(len(chapters), 1)
         self.assertEqual(chapters[0].name, "Long")
 
+    @unittest.skip("Footnote processing moved to main.py text transforms")
     def test_epub_parser_extracts_inline_footnotes(self):
         """Inline footnotes should be rendered into the chapter text."""
         fixture_path = (

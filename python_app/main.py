@@ -147,33 +147,8 @@ class ConverterApplication:
             temp_dir = self.cache_root / book_name
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            # Atualizar mensagem para refletir o uso correto do diretório
-            print(f"📁 Diretório temporário: {temp_dir}")
-
-            # Resolver problema de ^M usando os.reset
-            import os
-            os.system('stty sane')  # Reseta o terminal para um estado funcional
-
-            # Perguntar ao usuário se deseja retomar a conversão
-            resume = False
-            if temp_dir.exists() and any(temp_dir.iterdir()):
-                while True:
-                    response = input(f"❓ Retomar conversão de onde parou para '{book_name}'? [S/n]: ").strip().lower()
-                    if response in ('', 's', 'sim'):
-                        resume = True
-                        break
-                    elif response in ('n', 'nao', 'não'):
-                        resume = False
-                        break
-                    else:
-                        print("⚠️ Resposta inválida. Digite 'S' para Sim ou 'N' para Não.")
-            if not resume:
-                # Limpar diretório temporário se não for retomar
-                for item in temp_dir.iterdir():
-                    if item.is_file():
-                        item.unlink()
-                    elif item.is_dir():
-                        shutil.rmtree(item)
+            # Cache automático: conversão retoma automaticamente se arquivos .txt existirem
+            # Não precisa mais perguntar ao usuário - sistema detecta automaticamente
 
             # Inicializar `config` antes de configurar o diretório temporário
             config = self._get_conversion_config(args, reader)
@@ -183,6 +158,13 @@ class ConverterApplication:
 
             # Configurar o diretório temporário usando o método existente com `config`
             temp_dir = self.converter._setup_temp_directory(config)
+
+            print(f"📁 Cache: {temp_dir}")
+            if temp_dir.exists() and (temp_dir / "text").exists():
+                txt_files = list((temp_dir / "text").glob("*_tts_input.txt"))
+                if txt_files:
+                    print(f"♻️ Cache detectado: {len(txt_files)} capítulos processados")
+                    print(f"   Capítulos já convertidos serão pulados automaticamente")
 
             self._interactive_mode = bool(getattr(args, "menu", False))
 

@@ -33,6 +33,11 @@ try:  # pragma: no cover - optional dependency
 except ImportError:  # pragma: no cover
     LanguageMarkup = None  # type: ignore
 
+try:  # pragma: no cover - optional dependency
+    from ..text_formatting import TextFormattingProcessor
+except ImportError:  # pragma: no cover
+    TextFormattingProcessor = None  # type: ignore
+
 
 class CoquiTTSEngine:
     """Create and reuse a Coqui ``TTS`` instance on demand."""
@@ -68,6 +73,15 @@ class CoquiTTSEngine:
         self.verbose = verbose
         self.last_error: Optional[str] = None
 
+    def supports_multilingual(self) -> bool:
+        """Coqui TTS models like XTTS_v2 support multilingual synthesis"""
+        # XTTS v2 and similar models support multilingual
+        return "xtts" in self.model_name.lower() or "multilingual" in self.model_name.lower()
+
+    def supports_emphasis(self) -> bool:
+        """Coqui TTS supports basic emphasis via pause markers"""
+        return True
+
     def _initialize_model(self) -> None:
         if self.tts is None:
             if self.verbose:
@@ -86,18 +100,21 @@ class CoquiTTSEngine:
         if not text:
             return None
 
-        # Use formatting segments to convert to plain text with simple pauses if available
-        if formatting_segments:
+        # Preparar texto com pistas audíveis quando possível
+        if TextFormattingProcessor:
+            formatter = TextFormattingProcessor()
             try:
-                from ..text_formatting import TextFormattingProcessor
-                formatter = TextFormattingProcessor()
-                text = formatter.to_plain_text_with_pauses(formatting_segments)
-                if self.verbose:
-                    print(f"🔍 [VERBOSE] CoquiTTS usando texto formatado: {len(text)} chars")
+                converted = formatter.to_audible_text(text, formatting_segments)
+                if converted:
+                    if self.verbose and converted != text:
+                        print(f"🔍 [VERBOSE] CoquiTTS texto ajustado para áudio: {len(converted)} chars")
+                    text = converted
             except Exception as e:
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] CoquiTTS erro ao processar formatação: {e}, usando texto original")
-                # Continue with original text
+                    print(f"🔍 [VERBOSE] CoquiTTS falha ao preparar texto ({e}); usando limpeza básica")
+                text = formatter.clean_tts_text(text)
+        else:
+            text = text.strip()
 
         contains_markup = LanguageMarkup is not None and "[[lang:" in text.lower()
         default_language = self.primary_language if self.primary_language not in {"", "auto", "unknown"} else "unknown"
@@ -105,9 +122,22 @@ class CoquiTTSEngine:
 
         if contains_markup and LanguageMarkup is not None:
             parsed = LanguageMarkup.parse(text, default_language)
-            segments = [(segment.language, segment.text) for segment in parsed if segment.text]
+            segments = []
+            for segment in parsed:
+                if not segment or not segment.text:
+                    continue
+                cleaned_segment = (
+                    TextFormattingProcessor.clean_tts_text(segment.text)
+                    if TextFormattingProcessor
+                    else segment.text
+                )
+                segments.append((segment.language, cleaned_segment))
         else:
-            plain_text = LanguageMarkup.strip(text) if contains_markup and LanguageMarkup else text
+            if contains_markup and LanguageMarkup is not None:
+                plain_text = LanguageMarkup.strip(text)
+            else:
+                plain_text = text
+            plain_text = TextFormattingProcessor.clean_tts_text(plain_text) if TextFormattingProcessor else plain_text
             segments = [(default_language, plain_text)]
 
         self._initialize_model()
@@ -133,7 +163,7 @@ class CoquiTTSEngine:
             return output_path if Path(output_path).exists() else None
 
         if np is None or sf is None:
-            merged_text = " ".join(segment.text for segment in segments)
+            merged_text = " ".join(segment_text for _, segment_text in segments)
             try:
                 # **FIXED**: Usar executor limitado
                 executor = _get_coqui_executor()
