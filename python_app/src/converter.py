@@ -97,6 +97,13 @@ class AudioConverter:
         text_dir = Path(output_dir) / "text"
         text_dir.mkdir(parents=True, exist_ok=True)
 
+        # Import TextFormattingProcessor to apply the same processing as TTS
+        try:
+            from .text_formatting import TextFormattingProcessor
+            formatter = TextFormattingProcessor()
+        except ImportError:
+            formatter = None
+
         files_generated = 0
         for idx, chapter in enumerate(chapters):
             chapter_num = idx + 1
@@ -113,7 +120,15 @@ class AudioConverter:
             if not pre_tts_path.exists() or not parsed_path.exists():
                 # Get texts
                 parsed_text = chapter.text or ""
-                pre_tts_text = self._speech_text(chapter)
+                speech_text = self._speech_text(chapter)
+
+                # **CRITICAL FIX**: Apply the SAME TextFormattingProcessor that TTS uses
+                # This ensures pre-tts.txt contains EXACTLY what goes to TTS
+                if formatter:
+                    formatting_segments = getattr(chapter, 'formatting_segments', None)
+                    pre_tts_text = formatter.to_audible_text(speech_text, formatting_segments)
+                else:
+                    pre_tts_text = speech_text
 
                 # Write files
                 parsed_path.write_text(parsed_text, encoding="utf-8")
@@ -124,6 +139,9 @@ class AudioConverter:
                     print(f"   📄 {chapter_num}. {chapter_name}")
                     print(f"      → {parsed_path.name}")
                     print(f"      → {pre_tts_path.name}")
+                    if formatter and speech_text != pre_tts_text:
+                        chars_added = len(pre_tts_text) - len(speech_text)
+                        print(f"      ℹ️  Formatação adicionou {chars_added} chars (cues audíveis)")
 
         if files_generated == 0 and self.verbose:
             print("   ♻️ Todos os arquivos .txt já existem (usando cache)")
@@ -635,37 +653,55 @@ class AudioConverter:
                 status_holder["text"] = self.loc.t("status_synthesizing")
                 self._announce_stage(index, chapter_label, status_holder["text"])
 
-                # **OPTIMIZED**: Estratégia de fallback mais rápida
-                char_count = len(chapter_payload) if chapter_payload else 100
-                lang_tag_count = chapter_payload.lower().count("[[lang:")
+                # **UPDATED**: Estratégia de fallback e timeouts baseados em duração estimada
+                char_count = len(chapter_payload or "")
+                lang_tag_count = chapter_payload.lower().count("[[lang:") if chapter_payload else 0
 
-                # Usar fallback imediato para capítulos complexos (limites mais baixos)
                 use_immediate_fallback = lang_tag_count > 50 or (lang_tag_count > 20 and char_count > 15000)
 
                 if use_immediate_fallback:
                     if self.verbose:
-                        print(f"🔍 [VERBOSE] Chapter {index} muito complexo ({lang_tag_count} tags, {char_count} chars) - usando fallback imediato")
-                    # Apply fallback immediately
+                        print(
+                            f"🔍 [VERBOSE] Chapter {index} muito complexo "
+                            f"({lang_tag_count} tags, {char_count} chars) - usando fallback imediato"
+                        )
                     try:
                         from ..language import LanguageMarkup
-                        chapter_payload = LanguageMarkup.strip(chapter_payload) if LanguageMarkup else chapter_payload
+                        simplified = LanguageMarkup.strip(chapter_payload) if LanguageMarkup else chapter_payload
                         if self.verbose:
-                            print(f"🔍 [VERBOSE] Chapter {index} FALLBACK IMEDIATO: {char_count} → {len(chapter_payload)} chars")
-                        # Update status to show immediate fallback
+                            print(
+                                f"🔍 [VERBOSE] Chapter {index} FALLBACK IMEDIATO: "
+                                f"{char_count} → {len(simplified)} chars"
+                            )
                         status_holder["text"] = f"🔄 Fallback: removendo {lang_tag_count} tags de idioma"
                         self._announce_stage(index, chapter_label, status_holder["text"])
+                        chapter_payload = simplified
                     except ImportError:
                         if self.verbose:
                             print(f"🔍 [VERBOSE] Chapter {index} FALLBACK: LanguageMarkup não disponível")
 
-                # **OPTIMIZED**: Timeouts mais agressivos para velocidade
+                # Recalcular métricas após fallback
+                char_count = len(chapter_payload or "")
+                lang_tag_count = chapter_payload.lower().count("[[lang:") if chapter_payload else 0
+                estimated_seconds = TextValidator.estimate_duration(chapter_payload)
+                if estimated_seconds <= 0:
+                    estimated_seconds = max(char_count / 25.0, 45.0)
+
                 if use_immediate_fallback or lang_tag_count > 10:
-                    chapter_timeout = 20  # **OPTIMIZED**: 20 segundos para complexos
+                    base_timeout = estimated_seconds * 1.4 + 45.0
+                    minimum_timeout = 150.0
                 else:
-                    chapter_timeout = min(max(char_count // 300, 30), 120)  # **OPTIMIZED**: Máximo 2 minutos
+                    base_timeout = estimated_seconds * 1.25 + 30.0
+                    minimum_timeout = 90.0
+
+                chapter_timeout = max(base_timeout, minimum_timeout)
+                chapter_timeout = min(chapter_timeout, 900.0)
 
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] Chapter {index} timeout: {chapter_timeout}s para {char_count} chars")
+                    print(
+                        f"🔍 [VERBOSE] Chapter {index} timeout: {chapter_timeout:.0f}s "
+                        f"(estimado {estimated_seconds:.0f}s, {char_count} chars, {lang_tag_count} tags)"
+                    )
 
                 # Try synthesis (already with fallback applied for complex chapters)
                 synthesis_task = None

@@ -6,9 +6,11 @@ from __future__ import annotations
 import asyncio
 import importlib
 import inspect
+import os
+import re
 from contextlib import suppress
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from unittest.mock import Mock
 
 # **SSL BYPASS**: Monkeypatch SSL ANTES de importar edge_tts
@@ -30,6 +32,16 @@ _ssl_module._create_default_https_context = _ssl_module._create_unverified_conte
 
 edge_tts = None
 
+try:
+    _segment_seconds_env = float(os.getenv("EDGE_MAX_SEGMENT_SECONDS", "55"))
+except (TypeError, ValueError):
+    _segment_seconds_env = 55.0
+
+DEFAULT_EDGE_SEGMENT_SECONDS = max(30.0, min(_segment_seconds_env, 90.0))
+WORDS_PER_MINUTE = 150
+MIN_WORDS_PER_SEGMENT = 40
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
 # Import SSL/Certificate error types
 try:
     from aiohttp import ClientConnectorCertificateError, ClientConnectorError
@@ -49,6 +61,8 @@ try:  # pragma: no cover - lazily loaded
 except ImportError:  # pragma: no cover - during optional dependency resolution
     LanguageMarkup = None  # type: ignore
     TextFormattingProcessor = None  # type: ignore
+
+from ..utils import TextValidator
 
 
 class EdgeTTSEngine:
@@ -90,10 +104,13 @@ class EdgeTTSEngine:
         }
         self.last_error: Optional[str] = None
         self.verbose = verbose
+        self._max_segment_seconds = max(30.0, min(DEFAULT_EDGE_SEGMENT_SECONDS, 75.0))
+        self._words_per_minute = WORDS_PER_MINUTE
 
         if self.verbose:
             print(f"🔍 [VERBOSE] EdgeTTS inicializado com voice={voice}")
             print(f"🔍 [VERBOSE] Rate limiter slots disponíveis: {_edge_rate_limiter._value if _edge_rate_limiter else 'N/A'}")
+            print(f"🔍 [VERBOSE] Segmentos limitados a {self._max_segment_seconds:.0f}s ({self._words_per_minute} wpm)")
 
     def supports_multilingual(self) -> bool:
         """Edge TTS suporta multiidioma via voice switching e [[lang:]] tags"""
@@ -141,6 +158,11 @@ class EdgeTTSEngine:
 
         if self.verbose:
             print(f"🔍 [VERBOSE] {len(segments)} segmentos preparados para {output_path.name}")
+            total_chars = sum(len(seg_text) for _, seg_text in segments)
+            print(f"🔍 [VERBOSE] Total de caracteres nos segmentos: {total_chars}/{len(payload_text)}")
+            if total_chars != len(payload_text):
+                diff = len(payload_text) - total_chars
+                print(f"⚠️ WARNING: Perdidos {diff} caracteres na segmentação!")
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -152,9 +174,10 @@ class EdgeTTSEngine:
             pass
 
         total_segments = 0
+        failed_segments = 0
 
         try:
-            for voice, segment_text in segments:
+            for idx, (voice, segment_text) in enumerate(segments):
                 # Validate segment data
                 if voice is None:
                     if self.verbose:
@@ -173,15 +196,52 @@ class EdgeTTSEngine:
                     continue
 
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS synthesize_async: processing segment {total_segments+1}/{len(segments)}, {len(segment_text)} chars")
+                    print(f"🔍 [VERBOSE] EdgeTTS synthesize_async: processing segment {idx+1}/{len(segments)}, {len(segment_text)} chars")
 
-                if not await self._synthesize_segment(
+                # **CRITICAL FIX**: Try to process segment with retries
+                success = await self._synthesize_segment(
                     segment_text,
                     voice,
                     output_path,
                     append=(total_segments > 0),
-                ):
-                    return None
+                )
+
+                if not success:
+                    failed_segments += 1
+                    if self.verbose:
+                        print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} FAILED (error: {self.last_error})")
+
+                    # **NEW**: Retry failed segment with backoff
+                    if failed_segments <= 3:  # Allow up to 3 failed segments
+                        import asyncio
+                        await asyncio.sleep(2 ** failed_segments)  # 2s, 4s, 8s backoff
+
+                        if self.verbose:
+                            print(f"🔍 [VERBOSE] Retrying segment {idx+1}/{len(segments)}...")
+                        success = await self._synthesize_segment(
+                            segment_text,
+                            voice,
+                            output_path,
+                            append=(total_segments > 0),
+                        )
+
+                        if success:
+                            if self.verbose:
+                                print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} succeeded on retry")
+                            failed_segments -= 1  # Reset counter on success
+                        else:
+                            if self.verbose:
+                                print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} failed after retry")
+
+                    # **CRITICAL**: Only fail completely if we have too many consecutive failures
+                    if failed_segments > 3:
+                        print(f"❌ Edge TTS: Too many failed segments ({failed_segments}), aborting")
+                        return None
+
+                    # **NEW**: Continue to next segment instead of aborting
+                    continue
+
+                # Success!
                 total_segments += 1
         except asyncio.TimeoutError:
             self.last_error = "timeout"
@@ -192,20 +252,44 @@ class EdgeTTSEngine:
 
         if total_segments == 0 or not output_path.exists():
             self.last_error = "no_audio"
+            if self.verbose:
+                print(f"🔍 [VERBOSE] EdgeTTS synthesize_async: no audio generated (total_segments={total_segments}, file_exists={output_path.exists()})")
             return None
+
+        # **NEW**: Warn if there were failures
+        if failed_segments > 0:
+            expected_segments = len([s for _, s in segments if s and s.strip()])
+            print(f"⚠️ Edge TTS: {failed_segments} segment(s) failed during synthesis")
+            print(f"   Processed: {total_segments}/{expected_segments} segments")
+            if self.verbose:
+                print(f"   Use --verbose to see detailed failure information")
 
         return output_path
 
     def _calculate_timeout(self, text: str) -> int:
         """Estimate a safe upper bound for synthesis time in seconds."""
-        if text is None:
+        if not text:
             if self.verbose:
-                print("🔍 [VERBOSE] EdgeTTS _calculate_timeout: text is None, using default timeout")
-            return 120
+                print("🔍 [VERBOSE] EdgeTTS _calculate_timeout: texto vazio, usando timeout padrão ampliado")
+            return int(max(self._max_segment_seconds * 1.5, 90))
 
-        char_count = max(len(text), 1)
-        estimated = max(char_count // 33, 30)
-        return int(min(estimated, 120))
+        estimated = max(self._estimate_duration(text), 10.0)
+        buffer = max(estimated * 0.6, 25.0)
+        timeout = estimated + buffer
+
+        minimum = max(self._max_segment_seconds + 20.0, 60.0)
+        maximum = max(self._max_segment_seconds * 3.0, 240.0)
+
+        timeout = max(timeout, minimum)
+        timeout = min(timeout, maximum)
+
+        if self.verbose:
+            print(
+                f"🔍 [VERBOSE] EdgeTTS _calculate_timeout: "
+                f"estimado {estimated:.1f}s → timeout {timeout:.1f}s (limites {minimum:.0f}-{maximum:.0f})"
+            )
+
+        return int(round(timeout))
 
     def _prepare_segments(self, text: str) -> list[tuple[str, str]]:
         if text is None:
@@ -279,7 +363,7 @@ class EdgeTTSEngine:
             return self._chunk_text(self.voice, fallback)
 
     def _chunk_text(self, voice: str, text: str, chunk_size: int = 7000) -> list[tuple[str, str]]:
-        """Divide texto longo em blocos menores respeitando limites aproximados de frase."""
+        """Divide texto longo em blocos menores respeitando limites aproximados de frase e duração."""
         if not text:
             return []
 
@@ -288,32 +372,117 @@ class EdgeTTSEngine:
             return []
 
         if len(stripped) <= chunk_size:
-            return [(voice, stripped)]
+            base_chunks: List[tuple[str, str]] = [(voice, stripped)]
+        else:
+            base_chunks = []
+            start = 0
+            length = len(stripped)
 
-        chunks: list[tuple[str, str]] = []
-        start = 0
-        length = len(stripped)
+            while start < length:
+                end = min(start + chunk_size, length)
+                chunk = stripped[start:end]
 
-        while start < length:
-            end = min(start + chunk_size, length)
-            chunk = stripped[start:end]
+                if end < length:
+                    last_period = chunk.rfind(".")
+                    last_exclamation = chunk.rfind("!")
+                    last_question = chunk.rfind("?")
+                    break_point = max(last_period, last_exclamation, last_question)
+                    if break_point > chunk_size * 0.5:
+                        chunk = chunk[: break_point + 1]
+                        end = start + len(chunk)
 
-            if end < length:
-                last_period = chunk.rfind(".")
-                last_exclamation = chunk.rfind("!")
-                last_question = chunk.rfind("?")
-                break_point = max(last_period, last_exclamation, last_question)
-                if break_point > chunk_size * 0.5:
-                    chunk = chunk[: break_point + 1]
-                    end = start + len(chunk)
+                if chunk:
+                    base_chunks.append((voice, chunk))
+                start = end
 
-            chunks.append((voice, chunk))
-            start = end
+        refined: List[tuple[str, str]] = []
+        for chunk_voice, chunk_text in base_chunks:
+            refined.extend(self._split_if_needed(chunk_voice, chunk_text))
 
         if self.verbose:
-            print(f"🔍 [VERBOSE] EdgeTTS _chunk_text: gerados {len(chunks)} chunks para voz {voice}")
+            base_count = len(base_chunks)
+            refined_count = len(refined)
+            if refined_count != base_count:
+                print(
+                    "🔍 [VERBOSE] EdgeTTS _chunk_text: "
+                    f"{base_count} blocos base → {refined_count} segmentos (≤ {self._max_segment_seconds:.0f}s)"
+                )
+            else:
+                print(f"🔍 [VERBOSE] EdgeTTS _chunk_text: gerados {refined_count} segmentos para voz {voice}")
 
-        return [(voice, chunk) for voice, chunk in chunks if chunk]
+        return refined
+
+    def _split_if_needed(self, voice: str, text: str) -> List[tuple[str, str]]:
+        """Ensure each chunk respects the estimated duration limit."""
+        if not text:
+            return []
+
+        duration = self._estimate_duration(text)
+        if duration <= self._max_segment_seconds:
+            return [(voice, text)]
+
+        segments = self._split_text_by_duration(text, self._max_segment_seconds)
+        return [(voice, segment) for segment in segments if segment]
+
+    def _split_text_by_duration(self, text: str, max_seconds: float) -> List[str]:
+        """Split text using sentence boundaries and estimated duration."""
+        sentences = _SENTENCE_SPLIT_RE.split(text)
+        segments: List[str] = []
+        buffer: List[str] = []
+
+        for sentence in sentences:
+            trimmed = sentence.strip()
+            if not trimmed:
+                continue
+
+            candidate = f"{' '.join(buffer)} {trimmed}".strip() if buffer else trimmed
+            if buffer and self._estimate_duration(candidate) > max_seconds:
+                segments.append(" ".join(buffer).strip())
+                buffer = [trimmed]
+            else:
+                buffer.append(trimmed)
+
+        if buffer:
+            segments.append(" ".join(buffer).strip())
+
+        refined: List[str] = []
+        for segment in segments:
+            if not segment:
+                continue
+            if self._estimate_duration(segment) <= max_seconds or len(segment.split()) <= 1:
+                refined.append(segment)
+            else:
+                refined.extend(self._split_by_words(segment, max_seconds))
+
+        return [segment for segment in refined if segment]
+
+    def _split_by_words(self, text: str, max_seconds: float) -> List[str]:
+        """Fallback splitter when a single sentence still exceeds the duration limit."""
+        words = [word for word in text.split() if word]
+        if not words:
+            return []
+
+        max_words = max(int((max_seconds / 60.0) * self._words_per_minute), MIN_WORDS_PER_SEGMENT)
+        segments: List[str] = []
+
+        for start in range(0, len(words), max_words):
+            segment_words = words[start:start + max_words]
+            segment_text = " ".join(segment_words).strip()
+            if segment_text:
+                segments.append(segment_text)
+
+        return segments
+
+    def _estimate_duration(self, text: str) -> float:
+        """Estimate spoken duration in seconds for the provided text."""
+        try:
+            estimated = TextValidator.estimate_duration(text, words_per_minute=self._words_per_minute)
+            return float(estimated or 0.0)
+        except Exception:
+            words = [word for word in (text or "").split() if word]
+            if not words:
+                return 0.0
+            return (len(words) / max(self._words_per_minute, 1)) * 60.0
 
     def _supports_emphasis(self) -> bool:
         voice = (self.voice or "").lower()
