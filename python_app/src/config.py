@@ -203,9 +203,9 @@ class AppConfig:
             preserve_all = bool(kwargs.pop("preserve_all"))
         preserve_all = True if preserve_all is None else bool(preserve_all)
 
-        bitrate = kwargs.pop("bitrate", "32k")
-        sample_rate = int(kwargs.pop("sample_rate", 22_050))
-        channels = int(kwargs.pop("channels", 1))
+        bitrate = kwargs.pop("bitrate", "8k")  # 8k para máxima compressão (audiobooks)
+        sample_rate = int(kwargs.pop("sample_rate", 16_000))  # 16kHz suficiente para voz
+        channels = int(kwargs.pop("channels", 1))  # Mono para audiobooks
         force_reprocess = bool(kwargs.pop("force_reprocess", False))
         listen_flag = bool(kwargs.pop("listen", False))
         clear_cache_flag = bool(kwargs.pop("clear_cache", False))
