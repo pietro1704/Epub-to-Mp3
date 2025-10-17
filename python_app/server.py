@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 import zipfile
 from pathlib import Path
@@ -17,12 +18,34 @@ from pydantic import BaseModel
 from src.config import ConversionConfig
 from src.ebook_reader import EbookReader
 from src.tts.factory import TTSFactory
+from src.storage_manager import get_storage_manager
 
 app = FastAPI(title="EPUB to MP3 Converter API")
 
+# Initialize storage manager (R2)
+storage = get_storage_manager()
+
+# CORS configuration - supports both local dev and Cloudflare deployment
+allowed_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    "http://localhost:8000",
+]
+
+# Add Cloudflare Pages domain from environment (for production)
+cloudflare_domain = os.getenv("CLOUDFLARE_PAGES_URL")
+if cloudflare_domain:
+    allowed_origins.append(cloudflare_domain)
+    allowed_origins.append(cloudflare_domain.replace("http://", "https://"))
+
+# Add custom frontend URL if provided
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    allowed_origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -96,6 +119,64 @@ async def download_output(job_id: str, filename: str) -> FileResponse:
     return FileResponse(path=file_path, media_type=_guess_media_type(filename), filename=filename)
 
 
+@app.post("/api/cleanup")
+async def cleanup_old_files(max_age_hours: int = 48) -> dict:
+    """
+    Cleanup old files from local storage and R2.
+
+    This endpoint should be called periodically (e.g., via cron job).
+    """
+    result = {
+        "local_deleted": 0,
+        "r2_deleted": 0,
+        "errors": []
+    }
+
+    try:
+        # Cleanup local files
+        import time
+        cutoff_time = time.time() - (max_age_hours * 3600)
+
+        for job_dir in output_dir.iterdir():
+            if not job_dir.is_dir():
+                continue
+
+            # Check directory age
+            dir_mtime = job_dir.stat().st_mtime
+            if dir_mtime < cutoff_time:
+                try:
+                    import shutil
+                    shutil.rmtree(job_dir)
+                    result["local_deleted"] += 1
+                    logger.info(f"Deleted old job directory: {job_dir.name}")
+                except Exception as e:
+                    result["errors"].append(f"Failed to delete {job_dir.name}: {str(e)}")
+
+        # Cleanup R2 files
+        if storage.is_enabled():
+            r2_deleted = storage.cleanup_old_files(max_age_hours=max_age_hours)
+            result["r2_deleted"] = r2_deleted
+
+        logger.info(f"Cleanup completed: {result}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Cleanup failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/health")
+async def health_check() -> dict:
+    """Health check endpoint for monitoring."""
+    return {
+        "status": "healthy",
+        "storage": {
+            "r2_enabled": storage.is_enabled(),
+            "local_output_dir": str(output_dir),
+        }
+    }
+
+
 async def process_conversion(job_id: str) -> None:
     job = jobs[job_id]
 
@@ -124,12 +205,16 @@ async def process_conversion(job_id: str) -> None:
         job["detectedLanguage"] = detected_lang
         job["events"].append(f"🌐 Idioma principal: {detected_lang} (estimado)")
 
-        # Create TTS engine using factory
+        # Create TTS engine using factory with optimized compression
         config = ConversionConfig(
             engine=job.get("engine", "edge"),
             voice=job.get("voice"),
             primary_language=detected_lang,
             output_dir=str(output_dir / job_id),
+            # Optimized compression for web delivery (reduce file size & bandwidth)
+            bitrate="8k",        # 8 kbps - good quality for voice, ~3.6 MB/hour
+            sample_rate=16_000,  # 16 kHz - sufficient for speech
+            channels=1,          # Mono - audiobooks don't need stereo
         )
 
         tts_engine = tts_factory.create_engine(config)
@@ -180,11 +265,54 @@ async def process_conversion(job_id: str) -> None:
                 if path.exists():
                     archive.write(path, arcname=asset["name"])
 
+        # Upload to R2 if configured
+        if storage.is_enabled():
+            job["events"].append("")
+            job["events"].append("☁️ Enviando arquivos para storage permanente...")
+
+            # Upload individual MP3s to R2
+            for asset in outputs:
+                mp3_path = job_output_dir / asset["name"]
+                if mp3_path.exists():
+                    result = storage.upload_file(
+                        mp3_path,
+                        object_key=f"{job_id}/{asset['name']}",
+                        ttl_hours=48
+                    )
+                    if result.success:
+                        asset["url"] = result.public_url  # Update to R2 URL
+                        asset["r2_key"] = result.object_key
+                        job["events"].append(f"  ✅ {asset['name']} → R2")
+                    else:
+                        job["events"].append(f"  ⚠️ {asset['name']} → fallback local")
+                        # Keep local URL as fallback
+                        asset["url"] = f"/api/outputs/{job_id}/{asset['name']}"
+
+            # Upload ZIP to R2
+            zip_result = storage.upload_file(
+                zip_file,
+                object_key=f"{job_id}/{zip_file.name}",
+                ttl_hours=48
+            )
+
+            if zip_result.success:
+                zip_url = zip_result.public_url
+                job["events"].append(f"  ✅ {zip_file.name} → R2")
+            else:
+                zip_url = f"/api/outputs/{job_id}/{zip_file.name}"
+                job["events"].append(f"  ⚠️ {zip_file.name} → fallback local")
+        else:
+            # R2 not configured - use local URLs
+            job["events"].append("")
+            job["events"].append("ℹ️ R2 não configurado - arquivos salvos localmente")
+            job["events"].append("⚠️ Arquivos serão perdidos após restart do servidor")
+            zip_url = f"/api/outputs/{job_id}/{zip_file.name}"
+
         outputs.insert(
             0,
             {
                 "name": zip_file.name,
-                "url": f"/api/outputs/{job_id}/{zip_file.name}",
+                "url": zip_url,
                 "sizeBytes": zip_file.stat().st_size,
             },
         )
@@ -192,6 +320,7 @@ async def process_conversion(job_id: str) -> None:
         job["state"] = "finished"
         job["progressPercent"] = 100
         job["outputs"] = outputs
+        job["events"].append("")
         job["events"].append("✅ Conversão finalizada com sucesso")
         job["events"].append(f"📁 Arquivo disponível: {zip_file.name} ({len(chapters)} capítulos)")
 

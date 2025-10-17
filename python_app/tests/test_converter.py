@@ -7,6 +7,7 @@ import unittest
 import tempfile
 import asyncio
 import os
+import re
 from pathlib import Path
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
@@ -429,6 +430,71 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(parse_content, pre_tts_content,
                            "parsed.txt should differ from pre-tts when text != speech_text")
 
+    async def test_long_chapter_tts_receives_full_text(self):
+        """Ensure long chapters deliver the complete payload to the TTS engine."""
+        cache_dir = Path(self.temp_dir) / ".cache" / "Long_Book"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        long_text = " ".join(f"Sentence {i}." for i in range(4000))
+        chapter = Chapter(
+            index=1,
+            name="Long Chapter",
+            source_path="long.html",
+            text=long_text,
+            speech_text=long_text,
+        )
+
+        captured_inputs = []
+
+        class CapturingTTSEngine:
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                captured_inputs.append(text)
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"edge" * 400)  # ensure file exists
+                return output_path
+
+        async def fake_convert_to_mp3(input_file, output_file, bitrate="8k"):
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"mp3" * 400)
+            return output_path
+
+        self.converter.audio_processor.convert_to_mp3 = fake_convert_to_mp3
+
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(cache_dir),
+            book_title="Long_Book",
+        )
+
+        result = await self.converter._convert_chapters_sequential(
+            [chapter],
+            CapturingTTSEngine(),
+            cache_dir,
+            config,
+        )
+
+        self.assertEqual(result.converted_chapters, 1, "Chapter should convert successfully")
+        self.assertEqual(len(captured_inputs), 1, "TTS must be invoked exactly once")
+
+        normalise = lambda value: re.sub(r"\s+", " ", value or "").strip()
+
+        self.assertEqual(
+            normalise(captured_inputs[0]),
+            normalise(long_text),
+            "Full chapter text must reach the TTS engine without truncation",
+        )
+
+        pre_tts_files = list((cache_dir / "text").glob("*-pre-tts.txt"))
+        self.assertEqual(len(pre_tts_files), 1, "Expected a single pre-tts cache file")
+        cached_text = pre_tts_files[0].read_text(encoding="utf-8")
+        self.assertEqual(
+            normalise(cached_text),
+            normalise(long_text),
+            "Cached pre-tts text should match the complete chapter payload",
+        )
+
     async def test_multilingual_text_with_lang_tags(self):
         """Test that [[lang:xx]] tags are preserved in pre-tts.txt for multilingual TTS"""
         cache_dir = Path(self.temp_dir) / ".cache" / "Multilingual_Test"
@@ -487,7 +553,10 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                         "parsed.txt should contain original chapter.text")
 
         # Verify pre-tts.txt = speech_text (with [[lang:]] tags)
-        self.assertEqual(pre_tts_content, chapter.speech_text,
+        # Normalize whitespace for comparison (clean_tts_text normalizes spaces)
+        import re
+        normalize = lambda t: re.sub(r'\s+', ' ', t or '').strip()
+        self.assertEqual(normalize(pre_tts_content), normalize(chapter.speech_text),
                         "pre-tts.txt should contain speech_text with [[lang:]] tags")
 
         # Verify language tags are preserved in pre-tts.txt
@@ -521,17 +590,27 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             name="Emphasis Chapter",
             source_path="ch1.html",
             text="Normal text without markers",
-            speech_text=audible_text
+            speech_text=emphasized_text  # Speech text BEFORE formatting processor
         )
 
-        class DummyTTSEngine:
+        # Track what TTS receives
+        tts_received = []
+
+        class TrackingTTSEngine:
             async def synthesize_async(self, text, output_path, formatting_segments=None):
+                # Apply the same processing as real Edge TTS
+                if formatter:
+                    processed = formatter.to_audible_text(text, formatting_segments)
+                else:
+                    processed = text
+                tts_received.append(processed)
+
                 output_path = Path(output_path)
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_bytes(b"audio" * 400)
                 return output_path
 
-        engine = DummyTTSEngine()
+        engine = TrackingTTSEngine()
         config = ConversionConfig(
             engine="edge",
             output_dir=str(cache_dir),
@@ -564,9 +643,95 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("<speak", pre_tts_content.lower(),
                          "SSML should not appear in the text sent to Piper")
 
-        # Verify content matches speech_text exactly (converted during parsing)
-        self.assertEqual(pre_tts_content, chapter.speech_text,
-                        "pre-tts.txt must exactly match chapter.speech_text")
+        # **CRITICAL**: Verify pre-tts.txt matches EXACTLY what TTS received
+        self.assertEqual(len(tts_received), 1, "TTS should be called once")
+        import re
+        normalize = lambda t: re.sub(r'\s+', ' ', t or '').strip()
+
+        self.assertEqual(
+            normalize(pre_tts_content),
+            normalize(tts_received[0]),
+            "CRITICAL: pre-tts.txt must EXACTLY match what TTS received (including audible cues)"
+        )
+
+    async def test_pre_tts_file_matches_tts_input_exactly(self):
+        """CRITICAL TEST: Verify pre-tts.txt contains EXACTLY what TTS receives, byte-by-byte."""
+        cache_dir = Path(self.temp_dir) / ".cache" / "Exact_Match_Test"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Chapter with formatting that will be processed
+        chapter_text = "Normal text. [[fmt:italic]]Italic text[[/fmt]] and [[fmt:bold]]bold text[[/fmt]]."
+
+        chapter = Chapter(
+            index=1,
+            name="Exact Match Chapter",
+            source_path="ch1.html",
+            text="Original parsed text",
+            speech_text=chapter_text
+        )
+
+        # Track EXACTLY what TTS receives
+        tts_received_exact = []
+
+        class ExactTrackingTTSEngine:
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                # Record the EXACT text received (after Edge TTS processing)
+                # This simulates what edge_engine.py does
+                formatter = TextFormattingProcessor()
+                processed_text = formatter.to_audible_text(text, formatting_segments)
+                tts_received_exact.append(processed_text)
+
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"audio" * 500)
+                return output_path
+
+        engine = ExactTrackingTTSEngine()
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(cache_dir),
+            book_title="Exact_Match_Test"
+        )
+
+        # Run conversion
+        result = await self.converter._convert_chapters_sequential(
+            [chapter], engine, cache_dir, config
+        )
+
+        self.assertEqual(result.converted_chapters, 1)
+
+        # Read pre-tts.txt
+        text_dir = cache_dir / "text"
+        pre_tts_files = list(text_dir.glob("*-pre-tts.txt"))
+        self.assertEqual(len(pre_tts_files), 1, "Should have one pre-tts.txt file")
+
+        cached_text = pre_tts_files[0].read_text(encoding="utf-8")
+
+        # Get what TTS actually received
+        self.assertEqual(len(tts_received_exact), 1, "TTS should be called exactly once")
+        tts_input = tts_received_exact[0]
+
+        # **CRITICAL ASSERTION**: They must match EXACTLY (not just normalized)
+        self.assertEqual(
+            cached_text,
+            tts_input,
+            f"CRITICAL BUG: pre-tts.txt does NOT match TTS input exactly!\n"
+            f"Cached ({len(cached_text)} chars): {cached_text[:200]}...\n"
+            f"TTS Input ({len(tts_input)} chars): {tts_input[:200]}..."
+        )
+
+        # Verify audible cues are present in BOTH
+        if "[[fmt:" in chapter_text:
+            self.assertIn("em itálico:", cached_text,
+                         "Audible cues should be in pre-tts.txt")
+            self.assertIn("em itálico:", tts_input,
+                         "Audible cues should be in TTS input")
+
+            # And original markers should be GONE from both
+            self.assertNotIn("[[fmt:", cached_text,
+                           "Markers should not be in pre-tts.txt")
+            self.assertNotIn("[[fmt:", tts_input,
+                           "Markers should not be in TTS input")
 
     async def test_cache_invalidation_without_txt_files(self):
         """Test that MP3 files are deleted and reconverted when .txt cache is missing"""
@@ -929,6 +1094,154 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
             with self.assertRaises(Exception):
                 await self.converter.convert(self.mock_reader, self.config)
+
+    async def test_edge_tts_receives_complete_chapter_content(self):
+        """CRITICAL: Verify Edge TTS receives the COMPLETE chapter text, not truncated."""
+        cache_dir = Path(self.temp_dir) / ".cache" / "Complete_Test"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Create a realistic chapter (equivalent to ~5 minutes of audio)
+        # Average reading: 150 words/min, so 5 min = ~750 words
+        realistic_chapter = " ".join(
+            f"This is sentence number {i} with realistic content that makes sense. " for i in range(750)
+        )
+
+        chapter = Chapter(
+            index=1,
+            name="Complete Chapter",
+            source_path="ch1.html",
+            text=realistic_chapter,
+            speech_text=realistic_chapter,
+        )
+
+        # Track what Edge TTS actually receives
+        tts_received_texts = []
+
+        class SpyEdgeTTSEngine:
+            """Mock Edge TTS that captures all text it receives."""
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                # Record EVERY call to synthesize_async
+                tts_received_texts.append(text)
+
+                # Simulate successful synthesis
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"audio" * 500)  # > 1000 bytes
+                return output_path
+
+        spy_engine = SpyEdgeTTSEngine()
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(cache_dir),
+            book_title="Complete_Test"
+        )
+
+        # Run conversion
+        result = await self.converter._convert_chapters_sequential(
+            [chapter], spy_engine, cache_dir, config
+        )
+
+        # Verify conversion succeeded
+        self.assertEqual(result.converted_chapters, 1, "Chapter should convert successfully")
+
+        # Verify Edge TTS was called (possibly multiple times for segments)
+        self.assertGreater(len(tts_received_texts), 0, "Edge TTS should be called at least once")
+
+        # Combine all text received by Edge TTS (in case it was segmented)
+        total_tts_input = " ".join(tts_received_texts)
+
+        # Normalize for comparison
+        import re
+        normalize = lambda t: re.sub(r'\s+', ' ', t or '').strip()
+
+        normalized_original = normalize(realistic_chapter)
+        normalized_tts_input = normalize(total_tts_input)
+
+        # CRITICAL: TTS should receive 100% of the text
+        original_word_count = len(normalized_original.split())
+        tts_word_count = len(normalized_tts_input.split())
+
+        self.assertGreaterEqual(
+            tts_word_count,
+            original_word_count * 0.99,  # Allow 1% tolerance for processing
+            f"CRITICAL BUG: TTS only received {tts_word_count}/{original_word_count} words! "
+            f"Missing {original_word_count - tts_word_count} words. This causes audio truncation."
+        )
+
+        # Verify first and last sentences are present
+        self.assertIn("sentence number 0", normalized_tts_input,
+                     "First sentence missing - TTS input is truncated at start")
+        self.assertIn("sentence number 749", normalized_tts_input,
+                     "Last sentence missing - TTS input is truncated at end")
+
+    async def test_show_structure_matches_tts_input(self):
+        """Verify that show-structure output matches what actually goes to TTS."""
+        cache_dir = Path(self.temp_dir) / ".cache" / "Structure_Test"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Chapter with language tags (as shown in show-structure)
+        chapter_with_tags = Chapter(
+            index=1,
+            name="Structure Test",
+            source_path="ch1.html",
+            text="Original parsed text",
+            speech_text="English text [[lang:pt-BR]]Texto português[[/lang]] more English"
+        )
+
+        # Track what TTS receives
+        tts_inputs = []
+
+        class CapturingTTSEngine:
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                tts_inputs.append(text)
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"audio" * 500)
+                return output_path
+
+        engine = CapturingTTSEngine()
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(cache_dir),
+            book_title="Structure_Test"
+        )
+
+        # Run conversion
+        result = await self.converter._convert_chapters_sequential(
+            [chapter_with_tags], engine, cache_dir, config
+        )
+
+        self.assertEqual(result.converted_chapters, 1)
+
+        # What was sent to TTS
+        tts_input = " ".join(tts_inputs)
+
+        # What would be shown in show-structure (the speech_text)
+        show_structure_text = chapter_with_tags.speech_text
+
+        # They MUST match
+        import re
+        normalize = lambda t: re.sub(r'\s+', ' ', t or '').strip()
+
+        self.assertEqual(
+            normalize(tts_input),
+            normalize(show_structure_text),
+            "CRITICAL: show-structure output does NOT match TTS input! "
+            "This means the text files don't reflect what was actually converted."
+        )
+
+        # Verify pre-tts.txt file matches as well
+        text_dir = cache_dir / "text"
+        pre_tts_files = list(text_dir.glob("*-pre-tts.txt"))
+        self.assertEqual(len(pre_tts_files), 1)
+
+        cached_text = pre_tts_files[0].read_text(encoding="utf-8")
+
+        self.assertEqual(
+            normalize(cached_text),
+            normalize(show_structure_text),
+            "pre-tts.txt should match show-structure (speech_text)"
+        )
 
 
 class TestChapterProcessor(unittest.TestCase):

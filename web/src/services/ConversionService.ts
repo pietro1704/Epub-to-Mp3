@@ -108,6 +108,18 @@ export class HttpConversionClient implements ConversionClient {
   private resolve(path: string): string {
     const normalizedBase = this.baseUrl.replace(/\/$/, '');
     const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    if (!normalizedBase) {
+      return normalizedPath;
+    }
+
+    if (/^https?:\/\//i.test(normalizedBase)) {
+      return `${normalizedBase}${normalizedPath}`;
+    }
+
+    if (normalizedBase.endsWith('/api') && normalizedPath.startsWith('/api')) {
+      return `${normalizedBase}${normalizedPath.substring(4)}`;
+    }
+
     return `${normalizedBase}${normalizedPath}`;
   }
 

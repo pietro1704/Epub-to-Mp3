@@ -31,9 +31,9 @@ from telegram.ext import (
 
 # Importar módulos do conversor
 sys.path.insert(0, str(Path(__file__).parent))
-from src.config import AppConfig, VoiceConfigProvider
+from src.config import ConversionConfig, VoiceConfigProvider
 from src.ebook_reader import EbookReader
-from src.converter import ConverterService
+from src.converter import AudioConverter
 
 # Configurar logging
 logging.basicConfig(
@@ -66,10 +66,10 @@ class TelegramBot:
 
     def __init__(self, token: str):
         self.token = token
-        self.app_config = AppConfig()
         self.voice_provider = VoiceConfigProvider()
         self.temp_dir = Path("temp_telegram")
         self.temp_dir.mkdir(exist_ok=True)
+        self.converter = AudioConverter()
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handler para /start - boas-vindas e instruções."""
@@ -335,16 +335,28 @@ class TelegramBot:
         engine = context.user_data.get(USER_ENGINE, 'edge')
         voice = context.user_data.get(USER_VOICE) or context.user_data.get(USER_MODEL, 'padrão')
 
-        await query.edit_message_text(
+        message_text = (
             f"⚙️ *Configurações:*\n\n"
             f"Motor: *{engine.upper()}*\n"
             f"Voz: *{voice.split('/')[-1]}*\n"
             f"Notas: *{footnote_text}*\n"
             f"Capítulos: *{chapters_text}*\n\n"
-            "Configure ou inicie a conversão:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
+            "Configure ou inicie a conversão:"
         )
+
+        # Check if this is from a callback query or regular message
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+        else:
+            await update.message.reply_text(
+                message_text,
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
 
         return SELECT_OPTIONS
 
@@ -429,63 +441,109 @@ class TelegramBot:
         options = context.user_data.get(USER_OPTIONS, {})
 
         try:
-            # Criar configuração
-            config_kwargs = {
-                'voice': voice,
-                'model_path': model,
-                'footnote_mode': options.get('footnote_mode', 'inline'),
-                'clear_cache': options.get('clear_cache', False),
-                'parallel': 1,  # Sequencial para evitar problemas
-            }
-
-            config = self.app_config.create_conversion_config(engine, **config_kwargs)
-
-            # Ler ebook
-            await query.edit_message_text("📚 Analisando livro...")
-            reader = EbookReader(str(file_path))
-            book_structure = reader.read()
-
-            # Criar conversor
-            converter = ConverterService(config)
-
-            # Converter
-            total_chapters = len(book_structure.chapters)
-            await query.edit_message_text(
-                f"🎙️ Convertendo {total_chapters} capítulos...\n"
-                "Progresso: 0%"
+            # Criar configuração com compressão otimizada para Telegram (limite 50MB)
+            config = ConversionConfig(
+                engine=engine,
+                voice=voice,
+                model_path=Path(model) if model else None,
+                output_dir="output_telegram",
+                footnote_mode=options.get('footnote_mode', 'inline'),
+                clear_cache=options.get('clear_cache', False),
+                # Compressão máxima para reduzir tamanho (limite Telegram 50MB)
+                bitrate="8k",      # 8 kbps - boa qualidade para voz, ~3.6 MB/hora
+                sample_rate=16_000,  # 16 kHz - suficiente para voz
+                channels=1,         # Mono - audiobooks não precisam de stereo
             )
 
-            # TODO: Implementar progresso em tempo real
-            # Por enquanto, processar e enviar
+            # Ler ebook para obter metadados
+            await query.edit_message_text("📚 Analisando livro...")
+            reader = EbookReader(str(file_path))
 
-            output_files = await self.run_conversion(converter, book_structure, file_path)
+            # Set book title in config for better organization
+            config.book_title = reader.title or file_path.stem
 
-            # Enviar arquivos
+            # Get chapter count
+            chapters = list(reader.get_chapters())
+            total_chapters = len(chapters)
+
+            await query.edit_message_text(
+                f"🎙️ Convertendo {total_chapters} capítulos...\n"
+                "Progresso: 0%\n\n"
+                "⏳ Isso pode levar alguns minutos..."
+            )
+
+            # Run conversion
+            output_files = await self.run_conversion(config, file_path)
+
+            # Enviar arquivos com validação de tamanho
             if output_files:
                 await query.edit_message_text(
                     f"✅ Conversão concluída!\n"
-                    f"Enviando {len(output_files)} arquivos..."
+                    f"Enviando {len(output_files)} arquivos...\n\n"
+                    "⏳ Aguarde, isso pode levar alguns minutos..."
                 )
 
-                for i, audio_file in enumerate(output_files[:10]):  # Limitar a 10 primeiros
+                sent_count = 0
+                skipped_count = 0
+                too_large_files = []
+                TELEGRAM_MAX_SIZE = 50 * 1024 * 1024  # 50 MB
+
+                for i, audio_file in enumerate(output_files, 1):
                     try:
+                        # Check file size
+                        file_size = audio_file.stat().st_size
+
+                        if file_size > TELEGRAM_MAX_SIZE:
+                            # File too large for Telegram
+                            skipped_count += 1
+                            too_large_files.append({
+                                'name': audio_file.name,
+                                'size_mb': file_size / (1024 * 1024)
+                            })
+                            logger.warning(f"Arquivo muito grande para Telegram: {audio_file.name} ({file_size / 1024 / 1024:.1f} MB)")
+                            continue
+
+                        # Send file
                         with open(audio_file, 'rb') as f:
+                            # Update progress every 5 files
+                            if i % 5 == 0:
+                                await context.bot.send_message(
+                                    chat_id=update.effective_chat.id,
+                                    text=f"📤 Enviando... {i}/{len(output_files)}"
+                                )
+
                             await context.bot.send_audio(
                                 chat_id=update.effective_chat.id,
                                 audio=f,
                                 title=audio_file.stem,
-                                caption=f"Capítulo {i+1}/{len(output_files)}"
+                                caption=f"🎧 {audio_file.name}\n📊 {file_size / (1024 * 1024):.1f} MB"
                             )
+                            sent_count += 1
+
                     except Exception as e:
                         logger.error(f"Erro ao enviar {audio_file}: {e}")
+                        skipped_count += 1
 
-                if len(output_files) > 10:
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=f"⚠️ Primeiros 10 capítulos enviados.\n"
-                        f"Total: {len(output_files)} capítulos.\n"
-                        f"Arquivos salvos em: output/"
-                    )
+                # Summary message
+                summary = f"✅ Envio concluído!\n\n"
+                summary += f"📨 Enviados: {sent_count} arquivos\n"
+
+                if too_large_files:
+                    summary += f"\n⚠️ {len(too_large_files)} arquivo(s) > 50 MB (não enviados):\n"
+                    for file_info in too_large_files[:5]:  # Mostrar até 5
+                        summary += f"  • {file_info['name']} ({file_info['size_mb']:.1f} MB)\n"
+                    if len(too_large_files) > 5:
+                        summary += f"  ... e mais {len(too_large_files) - 5}\n"
+                    summary += f"\n💡 Dica: Arquivos muito grandes ficam salvos no servidor.\n"
+                    summary += f"Em breve: download via link web! 🚀"
+
+                if skipped_count > len(too_large_files):
+                    summary += f"\n❌ Erros: {skipped_count - len(too_large_files)} arquivo(s)"
+
+                await context.bot.send_message(
+                    chat_id=update.effective_chat.id,
+                    text=summary
+                )
             else:
                 await query.edit_message_text("❌ Nenhum arquivo gerado.")
 
@@ -511,11 +569,18 @@ class TelegramBot:
             )
             return ConversationHandler.END
 
-    async def run_conversion(self, converter, book_structure, file_path: Path) -> list[Path]:
+    async def run_conversion(self, config: ConversionConfig, file_path: Path) -> list[Path]:
         """Executar conversão e retornar lista de arquivos."""
-        # TODO: Integrar com ConverterService real
-        # Por enquanto, retornar lista vazia
-        return []
+        try:
+            result = await self.converter.convert_book_async(str(file_path), config)
+            if result.success:
+                return result.output_files
+            else:
+                logger.error(f"Conversão falhou: {result.errors}")
+                return []
+        except Exception as e:
+            logger.error(f"Erro na conversão: {e}", exc_info=True)
+            return []
 
     def run(self):
         """Iniciar o bot."""
