@@ -9,6 +9,7 @@ import shutil
 import uuid
 import zipfile
 from pathlib import Path
+import re
 from typing import Dict, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
@@ -220,8 +221,10 @@ async def process_conversion(job_id: str) -> None:
             channels=1,          # Mono - audiobooks don't need stereo
         )
 
-        chapters = _prepare_chapters(reader, config)
-        job["events"].append(f"📊 Capítulos: {len(chapters)}")
+        selector_text = job.get("chapters")
+        chapters = _prepare_chapters(reader, config, selector_text)
+        selection_note = " (filtro aplicado)" if selector_text else ""
+        job["events"].append(f"📊 Capítulos: {len(chapters)}{selection_note}")
         job["chaptersTotal"] = len(chapters)
 
         tts_engine = tts_factory.create_engine(config)
@@ -447,7 +450,7 @@ def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: obj
         pass
 
 
-def _prepare_chapters(reader: EbookReader, config: ConversionConfig) -> list:
+def _prepare_chapters(reader: EbookReader, config: ConversionConfig, selectors: Optional[str] = None) -> list:
     """Mirror CLI chapter processing so output matches show-structure."""
 
     converter_app = ConverterApplication()
@@ -460,6 +463,16 @@ def _prepare_chapters(reader: EbookReader, config: ConversionConfig) -> list:
 
     if not structure_items:
         return reader.get_chapters()
+
+    if selectors:
+        raw_selectors = [token.strip() for token in re.split(r"[\s,;]+", selectors) if token.strip()]
+        if raw_selectors:
+            try:
+                filtered_items, filtered = converter_app._filter_structure_selection(structure_items, raw_selectors)
+                if filtered and filtered_items:
+                    structure_items = filtered_items
+            except Exception:
+                pass
 
     try:
         converter_app.language_profile = converter_app._prepare_language_profile(reader, structure_items, verbose=False)
