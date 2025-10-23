@@ -22,6 +22,7 @@ from src.tts.factory import TTSFactory
 from src.storage_manager import get_storage_manager
 from src.utils import FileManager
 from src.cache_manager import CacheManager
+from main import ConverterApplication
 
 app = FastAPI(title="EPUB to MP3 Converter API")
 
@@ -194,13 +195,10 @@ async def process_conversion(job_id: str) -> None:
 
         title = reader.title or "Livro_Desconhecido"
         author = reader.author or "Autor Desconhecido"
-        chapters = reader.get_chapters()
         job["bookTitle"] = title
 
         job["events"].append(f"📜 Título: {title}")
         job["events"].append(f"✍️ Autor: {author}")
-        job["events"].append(f"📊 Capítulos: {len(chapters)}")
-        job["chaptersTotal"] = len(chapters)
         job["chaptersCompleted"] = 0
 
         job["events"].append("")
@@ -221,6 +219,10 @@ async def process_conversion(job_id: str) -> None:
             sample_rate=16_000,  # 16 kHz - sufficient for speech
             channels=1,          # Mono - audiobooks don't need stereo
         )
+
+        chapters = _prepare_chapters(reader, config)
+        job["events"].append(f"📊 Capítulos: {len(chapters)}")
+        job["chaptersTotal"] = len(chapters)
 
         tts_engine = tts_factory.create_engine(config)
 
@@ -443,6 +445,31 @@ def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: obj
             cache_manager.clear_cache(title=book_title)
     except Exception:
         pass
+
+
+def _prepare_chapters(reader: EbookReader, config: ConversionConfig) -> list:
+    """Mirror CLI chapter processing so output matches show-structure."""
+
+    converter_app = ConverterApplication()
+    converter_app._interactive_mode = False
+
+    try:
+        structure_items = converter_app._generate_structure_items(reader)
+    except Exception:
+        return reader.get_chapters()
+
+    if not structure_items:
+        return reader.get_chapters()
+
+    try:
+        converter_app.language_profile = converter_app._prepare_language_profile(reader, structure_items, verbose=False)
+        converter_app._apply_language_preferences(config)
+        transformed_items = converter_app._apply_text_transforms(structure_items, config, reader)
+        converter_app._apply_structure_to_reader(reader, transformed_items)
+        chapters = reader.get_chapter_structure(preserve_all=config.preserve_all_chapters)
+        return chapters or reader.get_chapters()
+    except Exception:
+        return reader.get_chapters()
 
 
 if __name__ == "__main__":  # pragma: no cover - manual execution helper
