@@ -475,8 +475,14 @@ def _prepare_chapters(reader: EbookReader, config: ConversionConfig, selectors: 
                 pass
 
     try:
-        converter_app.language_profile = converter_app._prepare_language_profile(reader, structure_items, verbose=False)
-        converter_app._apply_language_preferences(config)
+        try:
+            converter_app.language_profile = converter_app._prepare_language_profile(reader, structure_items, verbose=False)
+            converter_app._apply_language_preferences(config)
+        except PermissionError:
+            # Cache directory not writable: skip language detection that needs .cache
+            converter_app.language_profile = None
+        except Exception:
+            converter_app.language_profile = None
         transformed_items = converter_app._apply_text_transforms(structure_items, config, reader)
         converter_app._apply_structure_to_reader(reader, transformed_items)
         chapters = reader.get_chapter_structure(preserve_all=config.preserve_all_chapters)
