@@ -10,7 +10,6 @@ import uuid
 import zipfile
 from pathlib import Path
 from typing import Dict, Optional
-from datetime import datetime
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -21,6 +20,8 @@ from src.config import ConversionConfig
 from src.ebook_reader import EbookReader
 from src.tts.factory import TTSFactory
 from src.storage_manager import get_storage_manager
+from src.utils import FileManager
+from src.cache_manager import CacheManager
 
 app = FastAPI(title="EPUB to MP3 Converter API")
 
@@ -85,7 +86,6 @@ async def convert_ebook(
     language: Optional[str] = Form(None),
 ) -> dict[str, str]:
     job_id = f"{uuid.uuid4()}"
-    run_suffix = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     temp_file = output_dir / f"{job_id}_{file.filename}"
 
     with temp_file.open("wb") as buffer:
@@ -102,7 +102,6 @@ async def convert_ebook(
         "footnote_mode": footnote_mode,
         "language": language,
         "outputs": [],
-        "runSuffix": run_suffix,
     }
 
     background_tasks.add_task(process_conversion, job_id)
@@ -196,6 +195,7 @@ async def process_conversion(job_id: str) -> None:
         title = reader.title or "Livro_Desconhecido"
         author = reader.author or "Autor Desconhecido"
         chapters = reader.get_chapters()
+        job["bookTitle"] = title
 
         job["events"].append(f"📜 Título: {title}")
         job["events"].append(f"✍️ Autor: {author}")
@@ -234,7 +234,6 @@ async def process_conversion(job_id: str) -> None:
         job_output_dir.mkdir(exist_ok=True)
 
         outputs = []
-        run_suffix = job.get("runSuffix") or datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 
         for idx, chapter in enumerate(chapters, 1):
             chapter_name = getattr(chapter, "name", f"Chapter {idx}")
@@ -245,7 +244,8 @@ async def process_conversion(job_id: str) -> None:
             progress = (idx / len(chapters)) * 100 if chapters else 100
             job["progressPercent"] = progress
 
-            output_file = job_output_dir / f"{idx:03d} - {sanitize_filename(chapter_name)} - {run_suffix}.mp3"
+            safe_name = FileManager.sanitize_filename(chapter_name)
+            output_file = job_output_dir / f"{idx:03d} - {safe_name}.mp3"
             chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
 
             if not chapter_text or not chapter_text.strip():
@@ -282,7 +282,8 @@ async def process_conversion(job_id: str) -> None:
                 }
             )
 
-        zip_file = job_output_dir / f"{sanitize_filename(title)} - {run_suffix}.zip"
+        book_safe_name = FileManager.sanitize_filename(title)
+        zip_file = job_output_dir / f"{book_safe_name}.zip"
         with zipfile.ZipFile(zip_file, "w") as archive:
             for asset in outputs:
                 path = job_output_dir / asset["name"]
@@ -400,16 +401,6 @@ async def _get_audio_duration(file_path: Path) -> float:
     # Fallback: estimate based on file size (rough approximation)
     return file_path.stat().st_size / 1000.0  # ~1KB per second for 8kbps
 
-
-def sanitize_filename(name: str) -> str:
-    sanitized = name.replace("/", "_").replace("\\", "_")
-    sanitized = sanitized.replace(":", "_").replace("*", "_")
-    sanitized = sanitized.replace("?", "_").replace('"', "_")
-    sanitized = sanitized.replace("<", "_").replace(">", "_")
-    sanitized = sanitized.replace("|", "_")
-    return sanitized.strip()
-
-
 def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: object) -> None:
     last_error = getattr(tts_engine, "last_error", None)
     error_message = str(error) if error else "erro desconhecido"
@@ -440,6 +431,18 @@ def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: obj
                 shutil.rmtree(job_dir, ignore_errors=True)
         except Exception:
             pass
+
+    # Clear cache and checkpoints related to this ebook to avoid stale data
+    try:
+        cache_manager = CacheManager()
+        source_path = Path(job.get("file_path", "")) if job.get("file_path") else None
+        book_title = job.get("bookTitle")
+        if source_path and source_path.exists():
+            cache_manager.clear_cache(source_path, title=book_title)
+        elif book_title:
+            cache_manager.clear_cache(title=book_title)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":  # pragma: no cover - manual execution helper
