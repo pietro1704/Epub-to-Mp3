@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import uuid
 import zipfile
 from pathlib import Path
 from typing import Dict, Optional
+from datetime import datetime
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -82,7 +84,8 @@ async def convert_ebook(
     footnote_mode: Optional[str] = Form("inline"),
     language: Optional[str] = Form(None),
 ) -> dict[str, str]:
-    job_id = str(uuid.uuid4())
+    job_id = f"{uuid.uuid4()}"
+    run_suffix = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
     temp_file = output_dir / f"{job_id}_{file.filename}"
 
     with temp_file.open("wb") as buffer:
@@ -99,6 +102,7 @@ async def convert_ebook(
         "footnote_mode": footnote_mode,
         "language": language,
         "outputs": [],
+        "runSuffix": run_suffix,
     }
 
     background_tasks.add_task(process_conversion, job_id)
@@ -225,9 +229,12 @@ async def process_conversion(job_id: str) -> None:
         job["events"].append(f"🗣️ Voz: {config.voice or 'padrão'}")
 
         job_output_dir = output_dir / job_id
+        if job_output_dir.exists():
+            shutil.rmtree(job_output_dir, ignore_errors=True)
         job_output_dir.mkdir(exist_ok=True)
 
         outputs = []
+        run_suffix = job.get("runSuffix") or datetime.utcnow().strftime("%Y%m%d-%H%M%S")
 
         for idx, chapter in enumerate(chapters, 1):
             chapter_name = getattr(chapter, "name", f"Chapter {idx}")
@@ -238,11 +245,27 @@ async def process_conversion(job_id: str) -> None:
             progress = (idx / len(chapters)) * 100 if chapters else 100
             job["progressPercent"] = progress
 
-            output_file = job_output_dir / f"{idx:03d} - {sanitize_filename(chapter_name)}.mp3"
+            output_file = job_output_dir / f"{idx:03d} - {sanitize_filename(chapter_name)} - {run_suffix}.mp3"
             chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
 
+            if not chapter_text or not chapter_text.strip():
+                job["events"].append("⚠️ Capítulo sem conteúdo audível, ignorado")
+                job["chaptersCompleted"] = idx
+                continue
+
             # Use TTS engine
-            await tts_engine.synthesize_async(chapter_text, output_file)
+            try:
+                await tts_engine.synthesize_async(chapter_text, output_file)
+            except FileNotFoundError as exc:
+                _record_chapter_failure(job, tts_engine, chapter_name, exc)
+                return
+            except Exception as exc:
+                _record_chapter_failure(job, tts_engine, chapter_name, exc)
+                return
+
+            if not output_file.exists() or output_file.stat().st_size == 0:
+                _record_chapter_failure(job, tts_engine, chapter_name, "áudio não foi gerado pelo serviço de voz")
+                return
 
             # Get duration using ffprobe (no pydub/audioop dependency)
             duration_seconds = await _get_audio_duration(output_file)
@@ -259,7 +282,7 @@ async def process_conversion(job_id: str) -> None:
                 }
             )
 
-        zip_file = job_output_dir / f"{sanitize_filename(title)}.zip"
+        zip_file = job_output_dir / f"{sanitize_filename(title)} - {run_suffix}.zip"
         with zipfile.ZipFile(zip_file, "w") as archive:
             for asset in outputs:
                 path = job_output_dir / asset["name"]
@@ -347,6 +370,9 @@ def _guess_media_type(filename: str) -> str:
 
 async def _get_audio_duration(file_path: Path) -> float:
     """Get audio duration using ffprobe (no pydub dependency)."""
+    if not file_path.exists():
+        return 0.0
+
     try:
         # Ensure static-ffmpeg is available
         try:
@@ -382,6 +408,38 @@ def sanitize_filename(name: str) -> str:
     sanitized = sanitized.replace("<", "_").replace(">", "_")
     sanitized = sanitized.replace("|", "_")
     return sanitized.strip()
+
+
+def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: object) -> None:
+    last_error = getattr(tts_engine, "last_error", None)
+    error_message = str(error) if error else "erro desconhecido"
+    if isinstance(error, FileNotFoundError):
+        failure_detail = last_error or "Edge TTS não criou o arquivo de áudio"
+    else:
+        failure_detail = last_error or error_message
+    job["events"].append("")
+    job["events"].append(f"❌ Falha na síntese do capítulo '{chapter_name}': {failure_detail}")
+    if error:
+        error_type = getattr(error, "__class__", type(error)).__name__
+    else:
+        error_type = "UnknownError"
+
+    if last_error and error_message and last_error != error_message:
+        job["events"].append(f"   ↳ Erro interno ({error_type}): {error_message}")
+    elif not last_error and error_message:
+        job["events"].append(f"   ↳ Erro interno ({error_type}): {error_message}")
+    job["state"] = "failed"
+    job["error"] = f"Falha na síntese do capítulo '{chapter_name}': {failure_detail}"
+    job.setdefault("outputs", [])
+
+    job_id = job.get("jobId")
+    if job_id:
+        try:
+            job_dir = output_dir / job_id
+            if job_dir.exists():
+                shutil.rmtree(job_dir, ignore_errors=True)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":  # pragma: no cover - manual execution helper

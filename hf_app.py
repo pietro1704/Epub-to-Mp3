@@ -9,16 +9,28 @@ from pathlib import Path
 # Add python_app to path
 sys.path.insert(0, str(Path(__file__).parent / "python_app"))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.middleware.cors import CORSMiddleware
 from python_app.server import app as api_app
 
 # Create main app
 app = FastAPI(title="EPUB to MP3 Converter")
 
-# Mount API routes under /api
-app.mount("/api", api_app)
+# Add CORS middleware (before mounting sub-apps)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Include API routes (server.py already has /api prefix)
+# Don't mount - include routes directly to avoid double /api prefix
+for route in api_app.routes:
+    app.routes.append(route)
 
 # Serve static files from web/dist
 web_dist = Path(__file__).parent / "web" / "dist"
@@ -44,4 +56,6 @@ else:
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=7860)
+    import os
+    port = int(os.getenv("PORT", 7860))
+    uvicorn.run(app, host="0.0.0.0", port=port)
