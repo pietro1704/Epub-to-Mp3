@@ -52,8 +52,9 @@ app.add_middleware(
 )
 
 jobs: Dict[str, dict] = {}
-output_dir = Path("output")
-output_dir.mkdir(exist_ok=True)
+# Use /tmp for cloud deployments (HF Spaces, etc.) or local 'output' dir
+output_dir = Path(os.getenv("OUTPUT_DIR", "/tmp/output" if os.getenv("SPACE_ID") else "output"))
+output_dir.mkdir(exist_ok=True, parents=True)
 
 tts_factory = TTSFactory()
 
