@@ -9,6 +9,7 @@ import asyncio
 import os
 import re
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, AsyncMock, patch, MagicMock
 
 import sys
@@ -451,13 +452,13 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 captured_inputs.append(text)
                 output_path = Path(output_path)
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_bytes(b"edge" * 400)  # ensure file exists
+                output_path.write_bytes(b"edge" * 800_000)  # ≈3.2MB to mimic long audio
                 return output_path
 
         async def fake_convert_to_mp3(input_file, output_file, bitrate="8k"):
             output_path = Path(output_file)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(b"mp3" * 400)
+            output_path.write_bytes(b"mp3" * 800_000)  # ≈2.4MB simulated MP3
             return output_path
 
         self.converter.audio_processor.convert_to_mp3 = fake_convert_to_mp3
@@ -1095,6 +1096,66 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(Exception):
                 await self.converter.convert(self.mock_reader, self.config)
 
+    async def test_convert_retries_after_partial_tts_failure(self):
+        """Conversion should automatically retry chapters when TTS returns partial output."""
+        output_root = Path(self.temp_dir) / "retry_output"
+        output_root.mkdir(parents=True, exist_ok=True)
+
+        long_text = " ".join(f"Frase número {i} do capítulo." for i in range(600))
+        chapter = Chapter(
+            index=1,
+            name="Capítulo de Retry",
+            source_path="retry.html",
+            text=long_text,
+            speech_text=long_text,
+        )
+
+        reader = SimpleNamespace(
+            title="Livro Retry",
+            file_path="retry.epub",
+            get_chapter_structure=lambda preserve_all=True: [chapter],
+        )
+
+        class FlakyTTSEngine:
+            def __init__(self):
+                self.calls = 0
+                self.voice = "retry-voice"
+                self.last_error = None
+
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                self.calls += 1
+                path = Path(output_path)
+                path.parent.mkdir(parents=True, exist_ok=True)
+
+                if self.calls == 1:
+                    # Produce an obviously truncated file (~60s @ 8kbps)
+                    path.write_bytes(b"a" * 60_000)
+                else:
+                    # Produce a healthy file (~12m+) to satisfy duration heuristics
+                    path.write_bytes(b"b" * 1_000_000)
+                return path
+
+        flaky_engine = FlakyTTSEngine()
+        self.converter.tts_factory.create_engine = Mock(return_value=flaky_engine)
+
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(output_root),
+            book_title="Livro Retry",
+            extra={"max_auto_retries": 3},
+        )
+
+        result = await self.converter.convert(reader, config)
+
+        self.assertTrue(result.success, "Conversion should eventually succeed after retry")
+        self.assertEqual(result.converted_chapters, 1, "Chapter must be present in final result")
+        self.assertGreaterEqual(len(result.output_files), 1, "At least one output file should be produced")
+        self.assertEqual(flaky_engine.calls, 2, "Engine must retry exactly once after the initial failure")
+        final_output = result.output_files[0]
+        self.assertTrue(final_output.exists(), "Final MP3 should exist after conversion")
+        self.assertGreater(final_output.stat().st_size, 1000, "Generated MP3 should have expected size")
+        self.assertFalse(result.errors, "No residual errors should remain after successful retry")
+
     async def test_edge_tts_receives_complete_chapter_content(self):
         """CRITICAL: Verify Edge TTS receives the COMPLETE chapter text, not truncated."""
         cache_dir = Path(self.temp_dir) / ".cache" / "Complete_Test"
@@ -1126,7 +1187,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 # Simulate successful synthesis
                 output_path = Path(output_path)
                 output_path.parent.mkdir(parents=True, exist_ok=True)
-                output_path.write_bytes(b"audio" * 500)  # > 1000 bytes
+                output_path.write_bytes(b"audio" * 500_000)  # ≈2.5MB to satisfy duration heuristics
                 return output_path
 
         spy_engine = SpyEdgeTTSEngine()

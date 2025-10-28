@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, Iterable, Optional
 
+from .paths import OUTPUT_DIR, CACHE_DIR
+
 
 SUPPORTED_FORMATS = [".epub", ".pdf"]
 AUDIO_FORMATS = ["mp3", "wav", "ogg"]
@@ -20,7 +22,7 @@ class ConversionConfig:
     engine: str
     voice: Optional[str] = None
     model_path: Optional[Path] = None
-    output_dir: str = "output"
+    output_dir: Path = OUTPUT_DIR  # Sempre usa a raiz do projeto
     book_title: str = ""
     preserve_all_chapters: bool = True
     bitrate: str = "8k"  # Máxima compressão possível para voz (75% de redução)
@@ -29,7 +31,7 @@ class ConversionConfig:
     use_simple_converter: bool = False
     force_reprocess: bool = False
     listen: bool = False
-    cache_dir: Optional[Path] = None
+    cache_dir: Path = CACHE_DIR  # Sempre usa a raiz do projeto
     clear_cache: bool = False
     footnote_mode: str = "inline"
     footnote_context_words: int = 8
@@ -192,10 +194,14 @@ class AppConfig:
 
         model_value = kwargs.pop("model_path", None) or kwargs.pop("model", None)
         model_path = Path(model_value) if model_value else None
-        cache_dir_value = kwargs.pop("cache_dir", None)
-        cache_dir_path = Path(cache_dir_value) if cache_dir_value else None
 
-        output_dir = kwargs.pop("output_dir", None) or "output"
+        # Cache dir: se fornecido, usa o caminho fornecido; senão, usa CACHE_DIR da raiz
+        cache_dir_value = kwargs.pop("cache_dir", None)
+        cache_dir_path = Path(cache_dir_value) if cache_dir_value else CACHE_DIR
+
+        # Output dir: se fornecido, usa o caminho fornecido; senão, usa OUTPUT_DIR da raiz
+        output_dir_value = kwargs.pop("output_dir", None)
+        output_dir = Path(output_dir_value) if output_dir_value else OUTPUT_DIR
         book_title = kwargs.pop("book_title", "")
 
         preserve_all = kwargs.pop("preserve_all_chapters", None)

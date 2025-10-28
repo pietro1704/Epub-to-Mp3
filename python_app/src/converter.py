@@ -10,14 +10,15 @@ import shutil
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+import re
 from pathlib import Path
-from typing import Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional
 
 from .ebook_reader import EbookReader, Chapter
 from .config import ConversionConfig
 from .tts.factory import TTSFactory
-from .utils import AudioProcessor, FileManager, TextValidator
+from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
 from .progress import ProgressTracker
 from .i18n import Localization, get_localization
 from .cache_manager import CacheManager
@@ -58,6 +59,7 @@ class AudioConverter:
         self.verbose = False
         self._current_book_path: Optional[Path] = None
         self.show_tts_output = False  # Only show TTS output in verbose mode
+        self._retry_original_texts: Dict[str, str] = {}
 
     @staticmethod
     def _speech_text(chapter: Chapter) -> str:
@@ -65,6 +67,297 @@ class AudioConverter:
         if text is None:
             text = chapter.text or ""
         return text
+
+    @staticmethod
+    def _bitrate_to_bps(bitrate: Optional[str]) -> Optional[int]:
+        if bitrate is None:
+            return None
+        text = str(bitrate).strip().lower()
+        if not text:
+            return None
+        multiplier = 1_000 if text.endswith(("kbps", "k")) else 1
+        if text.endswith("mbps") or text.endswith("m"):
+            multiplier = 1_000_000
+        suffixes = ("mbps", "kbps", "bps", "m", "k")
+        for suffix in suffixes:
+            if text.endswith(suffix):
+                text = text[: -len(suffix)]
+                break
+        text = text.strip()
+        if not text:
+            return None
+        try:
+            value = float(text)
+        except ValueError:
+            return None
+        bps = int(value * multiplier)
+        return bps if bps > 0 else None
+
+    @classmethod
+    def _expected_audio_bytes(cls, estimated_seconds: float, bitrate: Optional[str]) -> Optional[int]:
+        if estimated_seconds <= 0:
+            return None
+        bps = cls._bitrate_to_bps(bitrate)
+        if not bps:
+            return None
+        expected = estimated_seconds * (bps / 8.0)
+        return int(expected)
+
+    def _probe_audio_duration(self, audio_path: Path) -> Optional[float]:
+        try:
+            result = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(audio_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if result.returncode == 0:
+                value = result.stdout.strip()
+                if value:
+                    duration = float(value)
+                    if duration > 0:
+                        return duration
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+        return None
+
+    def _detect_short_audio_output(
+        self,
+        audio_path: Path,
+        payload_text: Optional[str],
+        config: ConversionConfig,
+    ) -> Optional[str]:
+        audio_path = Path(audio_path)
+        if not audio_path.exists() or not payload_text:
+            return None
+
+        try:
+            file_size = audio_path.stat().st_size
+        except OSError:
+            file_size = 0
+
+        stripped = payload_text.strip() if payload_text else ""
+        if len(stripped) < 2000:
+            return None
+
+        estimated_seconds = TextValidator.estimate_duration(stripped)
+        if estimated_seconds < 150:
+            return None
+
+        actual_seconds = self._probe_audio_duration(audio_path)
+        if actual_seconds and actual_seconds >= estimated_seconds * 0.60:
+            return None
+        if actual_seconds and actual_seconds >= max(estimated_seconds - 90, estimated_seconds * 0.5):
+            return None
+
+        expected_bytes = self._expected_audio_bytes(estimated_seconds, getattr(config, "bitrate", "8k"))
+        ratio_warning = False
+        approx_seconds = None
+        if expected_bytes:
+            minimum_expected = max(int(expected_bytes * 0.55), 180_000)
+            if file_size < minimum_expected:
+                ratio_warning = True
+        if not ratio_warning and actual_seconds is None:
+            bitrate_bps = self._bitrate_to_bps(getattr(config, "bitrate", "8k")) or 8_000
+            approx_seconds_calc = (file_size * 8) / max(bitrate_bps, 1)
+            approx_seconds = int(approx_seconds_calc)
+            if approx_seconds < estimated_seconds * 0.55:
+                ratio_warning = True
+
+        if not ratio_warning and actual_seconds is None:
+            return None
+
+        short_seconds = approx_seconds if approx_seconds is not None else int(actual_seconds or 0)
+        if actual_seconds is not None:
+            short_seconds = int(actual_seconds)
+
+        expected_display = int(estimated_seconds)
+        if short_seconds <= 0:
+            short_seconds = max(int((file_size or 1) / 1000), 1)
+
+        return (
+            f"Áudio possivelmente truncado ({file_size} bytes ≈ {short_seconds}s, esperado ≈ {expected_display}s)"
+        )
+
+    def _load_cached_payload(
+        self,
+        chapter: Chapter,
+        index: int,
+        temp_dir: Path,
+    ) -> Optional[str]:
+        try:
+            text_dir = Path(temp_dir) / "text"
+            safe_name = self.file_manager.sanitize_filename(getattr(chapter, "name", None) or f"Chapter {index}")
+            candidate = text_dir / f"{index} - {safe_name}-pre-tts.txt"
+            if candidate.exists():
+                return candidate.read_text(encoding="utf-8")
+        except OSError:
+            pass
+        return None
+
+    def _prepare_truncation_retry_payload(
+        self,
+        chapter: Chapter,
+        canonical_label: str,
+        attempts_so_far: int,
+    ) -> None:
+        """Simplify chapter payload before a retry after truncated audio detection."""
+        baseline = self._retry_original_texts.get(canonical_label)
+        if baseline is None:
+            baseline = self._speech_text(chapter)
+            self._retry_original_texts[canonical_label] = baseline
+
+        updated_text: Optional[str] = None
+        try:
+            from ..language import LanguageMarkup
+        except ImportError:
+            LanguageMarkup = None  # type: ignore
+
+        if attempts_so_far <= 1:
+            if LanguageMarkup:
+                stripped = LanguageMarkup.strip(baseline)  # type: ignore[attr-defined]
+                if stripped and stripped.strip() and stripped != self._speech_text(chapter):
+                    updated_text = stripped
+        elif attempts_so_far == 2:
+            stripped = LanguageMarkup.strip(baseline) if LanguageMarkup else baseline  # type: ignore[attr-defined]
+            cleaned = re.sub(r"\[\[fmt:[^\]]+\]\]|\[\[/fmt\]\]", "", stripped or "")
+            updated_text = cleaned.strip()
+            chapter.formatting_segments = None
+        else:
+            stripped = LanguageMarkup.strip(baseline) if LanguageMarkup else baseline  # type: ignore[attr-defined]
+            truncated = (stripped or "")[: max(12_000, len(stripped or "") // 2 or 6_000)]
+            updated_text = truncated.strip()
+            chapter.formatting_segments = None
+
+        if updated_text and updated_text != self._speech_text(chapter):
+            chapter.speech_text = updated_text
+
+    @staticmethod
+    def _chapter_display_name(chapter: Chapter, index: int) -> str:
+        """Return the label consistently used when reporting chapter status."""
+        name = getattr(chapter, "name", None)
+        if name:
+            return str(name)
+        return f"Chapter {index}"
+
+    @staticmethod
+    def _build_error_map(errors: Iterable[str]) -> Dict[str, str]:
+        """Map `\"Chapter\": \"error\"` from the converter error list."""
+        error_map: Dict[str, str] = {}
+        for entry in errors or []:
+            if not entry:
+                continue
+            if ":" in entry:
+                name, message = entry.rsplit(":", 1)
+                error_map[name.strip()] = message.strip()
+            else:
+                error_map[entry.strip()] = ""
+        return error_map
+
+    def _register_chapter_lookup(
+        self,
+        lookup: Dict[str, tuple[Chapter, int, str]],
+        label: str,
+        chapter: Chapter,
+        index: int,
+    ) -> None:
+        """Register multiple lookup keys for a chapter name."""
+        canonical = label.strip() or label
+        variants = {
+            canonical,
+            canonical.strip(),
+            " ".join(canonical.split()),
+        }
+        lower = canonical.lower()
+        variants.add(lower)
+        variants.add(lower.strip())
+        sanitized = self.file_manager.sanitize_filename(canonical)
+        if sanitized:
+            variants.add(sanitized)
+            variants.add(sanitized.lower())
+        for key in variants:
+            if not key:
+                continue
+            lookup.setdefault(key, (chapter, index, canonical))
+
+    def _lookup_chapter_entry(
+        self,
+        lookup: Dict[str, tuple[Chapter, int, str]],
+        name: str,
+    ) -> Optional[tuple[Chapter, int, str]]:
+        """Find a chapter entry in the lookup using relaxed matching."""
+        if not name:
+            return None
+        candidates = [
+            name,
+            name.strip(),
+            " ".join(name.split()),
+        ]
+        lower = name.lower()
+        candidates.append(lower)
+        candidates.append(lower.strip())
+        sanitized = self.file_manager.sanitize_filename(name)
+        if sanitized:
+            candidates.append(sanitized)
+            candidates.append(sanitized.lower())
+        seen: set[str] = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            entry = lookup.get(candidate)
+            if entry:
+                return entry
+        return None
+
+    def _normalise_failure_keys(
+        self,
+        failures: Dict[str, str],
+        lookup: Dict[str, tuple[Chapter, int, str]],
+    ) -> tuple[Dict[str, str], Dict[str, str]]:
+        """Normalise failure keys to canonical chapter labels."""
+        normalised: Dict[str, str] = {}
+        unresolved: Dict[str, str] = {}
+        for raw_name, message in failures.items():
+            entry = self._lookup_chapter_entry(lookup, raw_name)
+            if entry:
+                _, _, canonical = entry
+                normalised[canonical] = message
+            else:
+                unresolved[raw_name] = message
+        return normalised, unresolved
+
+    def _detect_failed_chapters_by_output(
+        self,
+        chapters: List[Chapter],
+        temp_dir: Path,
+    ) -> Dict[str, str]:
+        """Detect chapters that lack a valid audio artifact after conversion."""
+        detected: Dict[str, str] = {}
+        for idx, chapter in enumerate(chapters, start=1):
+            label = self._chapter_display_name(chapter, idx).strip()
+            output_path = self.file_manager.get_temp_output_path(chapter.name, temp_dir, idx)
+            if not output_path.exists():
+                detected[label] = "Arquivo ausente após tentativa inicial"
+                continue
+            try:
+                size = output_path.stat().st_size
+            except OSError:
+                size = 0
+            if size <= 1000:
+                detected[label] = f"Arquivo inválido ({size} bytes)"
+        return detected
 
     def _validate_and_clean_cache(self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig) -> None:
         """Validate cache: if MP3 exists but pre-tts.txt doesn't, delete MP3"""
@@ -121,7 +414,7 @@ class AudioConverter:
                 # Get texts
                 parsed_text = chapter.text or ""
                 speech_text = self._speech_text(chapter)
-
+                current_payload = speech_text
                 # **CRITICAL FIX**: Apply the SAME TextFormattingProcessor that TTS uses
                 # This ensures pre-tts.txt contains EXACTLY what goes to TTS
                 if formatter:
@@ -170,6 +463,10 @@ class AudioConverter:
         temp_dir = self._setup_temp_directory(config)
         chapters = list(reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or [])
         total_chapters = len(chapters)
+        chapter_lookup: Dict[str, tuple[Chapter, int, str]] = {}
+        for idx, chapter in enumerate(chapters, start=1):
+            label = self._chapter_display_name(chapter, idx)
+            self._register_chapter_lookup(chapter_lookup, label, chapter, idx)
 
         if self.verbose:
             print(f"🔍 [VERBOSE] Total de capítulos: {total_chapters}")
@@ -210,6 +507,133 @@ class AudioConverter:
         # Always use sequential processing
         result = await self._convert_chapters_sequential(chapters, tts_engine, temp_dir, config)
 
+        total_output_files = list(result.output_files)
+        raw_failures = self._build_error_map(result.errors)
+        pending_failures, unresolved_failures = self._normalise_failure_keys(raw_failures, chapter_lookup)
+        unresolved_pool: Dict[str, str] = dict(unresolved_failures)
+        attempts_used: Dict[str, int] = {label: 1 for label in pending_failures}
+
+        for unresolved in unresolved_failures:
+            print(f"⚠️ Não foi possível correlacionar capítulo com falha: {unresolved}")
+
+        max_retry_rounds = 5
+        extra_retry_value = None
+        if getattr(config, "extra", None):
+            extra_retry_value = config.extra.get("max_auto_retries") or config.extra.get("max_retries")
+        if extra_retry_value is None:
+            extra_retry_value = getattr(config, "max_auto_retries", None)
+        try:
+            if extra_retry_value is not None:
+                max_retry_rounds = max(0, int(extra_retry_value))
+        except (ValueError, TypeError):
+            pass
+        if not pending_failures and result.converted_chapters < total_chapters:
+            fallback_detected = self._detect_failed_chapters_by_output(chapters, temp_dir)
+            if fallback_detected:
+                for label in fallback_detected:
+                    attempts_used.setdefault(label, 1)
+                pending_failures.update(fallback_detected)
+                print(f"\n⚠️ Capítulos sem áudio válido detectados: {len(fallback_detected)}")
+                if self.verbose:
+                    print("   → " + ", ".join(sorted(fallback_detected.keys())))
+
+        if pending_failures:
+            failed_labels = ", ".join(sorted(pending_failures.keys()))
+            print(f"\n⚠️ Capítulos com falha detectados: {len(pending_failures)}")
+            if self.verbose:
+                print(f"   → {failed_labels}")
+
+        retry_round = 1
+        while pending_failures and retry_round <= max_retry_rounds:
+            failed_names = list(pending_failures.keys())
+            chapters_to_retry_info = []
+            missing_names = []
+            for name in failed_names:
+                entry = self._lookup_chapter_entry(chapter_lookup, name)
+                if entry:
+                    chapter_obj, original_idx, canonical_label = entry
+                    chapters_to_retry_info.append((chapter_obj, original_idx, canonical_label))
+                    attempts_used.setdefault(canonical_label, 1)
+                else:
+                    missing_names.append(name)
+
+            for missing in missing_names:
+                message = pending_failures.pop(missing, "")
+                unresolved_pool[missing] = message or "Motivo desconhecido"
+                attempts_used.pop(missing, None)
+                print(f"⚠️ Não foi possível localizar capítulo para retry: {missing}")
+
+            if not chapters_to_retry_info:
+                break
+
+            for chapter_obj, _original_idx, canonical_label in chapters_to_retry_info:
+                failure_message = pending_failures.get(canonical_label, "")
+                if "Áudio possivelmente truncado" in (failure_message or ""):
+                    attempts_so_far = attempts_used.get(canonical_label, 1)
+                    self._prepare_truncation_retry_payload(chapter_obj, canonical_label, attempts_so_far)
+
+            chapters_to_retry_info.sort(key=lambda item: item[1])
+            chapters_to_retry = [item[0] for item in chapters_to_retry_info]
+
+            print(f"\n🔁 Reprocessando {len(chapters_to_retry)} capítulo(s) com falha (tentativa {retry_round}/{max_retry_rounds})")
+            retry_config = replace(config, force_reprocess=True)
+            retry_result = await self._convert_chapters_sequential(chapters_to_retry, tts_engine, temp_dir, retry_config)
+
+            total_output_files.extend(retry_result.output_files)
+            retry_error_map = self._build_error_map(retry_result.errors)
+            normalised_retry, unresolved_retry = self._normalise_failure_keys(retry_error_map, chapter_lookup)
+            for unresolved, message in unresolved_retry.items():
+                print(f"⚠️ Falha retornada sem correspondência: {unresolved}")
+                unresolved_pool[unresolved] = message or "Motivo desconhecido"
+
+            for chapter_obj, original_idx, canonical_label in chapters_to_retry_info:
+                attempts_used[canonical_label] = attempts_used.get(canonical_label, 1) + 1
+                if canonical_label in normalised_retry:
+                    pending_failures[canonical_label] = normalised_retry[canonical_label]
+                else:
+                    if canonical_label in pending_failures:
+                        print(f"✅ Capítulo recuperado: {canonical_label}")
+                    pending_failures.pop(canonical_label, None)
+
+            retry_round += 1
+
+        if pending_failures:
+            print(f"\n⚠️ Alguns capítulos ainda falharam após {max_retry_rounds} tentativa(s).")
+        elif attempts_used and any(attempts > 1 for attempts in attempts_used.values()):
+            print("\n✅ Todos os capítulos foram convertidos após tentativas adicionais.")
+
+        unique_outputs: List[Path] = []
+        seen_outputs = set()
+        for path in total_output_files:
+            key = str(path)
+            if key in seen_outputs:
+                continue
+            seen_outputs.add(key)
+            unique_outputs.append(path)
+
+        result.output_files = unique_outputs
+        result.converted_chapters = len(unique_outputs)
+
+        if pending_failures:
+            ordered_errors = []
+            for name, message in pending_failures.items():
+                entry = self._lookup_chapter_entry(chapter_lookup, name)
+                idx = entry[1] if entry else total_chapters + 1
+                ordered_errors.append((idx, name, message))
+            ordered_errors.sort(key=lambda item: item[0])
+            result.errors = [
+                f"{name}: {message} (tentativas: {attempts_used.get(name, 'n/d')})" if message else f"{name} (tentativas: {attempts_used.get(name, 'n/d')})"
+                for _, name, message in ordered_errors
+            ]
+        else:
+            result.errors = []
+
+        if unresolved_pool:
+            for name, message in unresolved_pool.items():
+                result.errors.append(f"{name}: {message} (não correlacionado)")
+
+        result.success = not pending_failures and not unresolved_pool
+
         # Move files from temp to final output directory only if conversion was successful
         if result.success and result.converted_chapters > 0:
             if self.verbose:
@@ -243,12 +667,19 @@ class AudioConverter:
         if custom_cache:
             base_cache = Path(custom_cache)
         else:
-            base_cache = Path(".cache")
-            if config.book_title:
-                safe_title = self.file_manager.sanitize_filename(config.book_title)
-                base_cache = base_cache / safe_title
-            else:
-                base_cache = base_cache / "conversion"
+            try:
+                base_cache = resolve_cache_root()
+                if config.book_title:
+                    safe_title = self.file_manager.sanitize_filename(config.book_title)
+                    base_cache = base_cache / safe_title
+                else:
+                    base_cache = base_cache / "conversion"
+            except (RuntimeError, OSError) as e:
+                # Fallback para diretório temporário do sistema
+                import tempfile
+                print(f"⚠️ Cache indisponível: {e}")
+                print("💡 Usando diretório temporário do sistema")
+                base_cache = Path(tempfile.mkdtemp(prefix="epub_to_mp3_"))
 
         engine_suffix = self._build_engine_signature(config)
         temp_dir = self.file_manager.ensure_directory(base_cache / engine_suffix)
@@ -299,6 +730,8 @@ class AudioConverter:
 
             # **RESTORED**: Usar progress tracker
             self.progress.start_chapter(chapter.name, chapter_num)
+            current_payload: Optional[str] = None
+            chapter_label = self._chapter_display_name(chapter, chapter_num)
 
             try:
                 # Conversão para diretório temporário
@@ -309,10 +742,18 @@ class AudioConverter:
                 if output_path.exists() and not config.force_reprocess:
                     file_size = output_path.stat().st_size
                     if file_size > 1000:  # Mínimo 1KB para áudio válido
-                        converted_files.append(output_path)
-                        self.progress.tick(f"✅ Arquivo já existe ({file_size} bytes)")
-                        self.progress.complete_chapter("✅ Completo (cache)")
-                        continue
+                        cached_payload = self._load_cached_payload(chapter, chapter_num, output_dir) or self._speech_text(chapter)
+                        truncation_warning = self._detect_short_audio_output(output_path, cached_payload, config)
+                        if truncation_warning:
+                            if self.verbose:
+                                print(f"   ⚠️ Cache inválido detectado: {truncation_warning}")
+                            output_path.unlink(missing_ok=True)
+                        else:
+                            converted_files.append(output_path)
+                            self.progress.tick(f"✅ Arquivo já existe ({file_size} bytes)")
+                            self.progress.complete_chapter("✅ Completo (cache)")
+                            self._retry_original_texts.pop(chapter_label, None)
+                            continue
                     else:
                         # Arquivo vazio ou corrompido - remover e reconverter
                         if self.verbose:
@@ -321,8 +762,20 @@ class AudioConverter:
 
                 # Sintetizar com heartbeat e timeout
                 speech_text = self._speech_text(chapter)
+                current_payload = speech_text
                 char_count = len(speech_text)
-                timeout_seconds = min(max(char_count // 200, 30), 180)  # 30s-3min baseado no tamanho
+                estimated_seconds = TextValidator.estimate_duration(speech_text)
+                if estimated_seconds <= 0:
+                    estimated_seconds = max(char_count / 20.0, 60.0)
+                if estimated_seconds < 180:
+                    base_timeout = estimated_seconds * 1.4 + 45.0
+                    minimum_timeout = 180.0
+                else:
+                    base_timeout = estimated_seconds * 1.25 + 90.0
+                    minimum_timeout = 360.0
+                timeout_seconds = max(base_timeout, minimum_timeout)
+                timeout_seconds = min(timeout_seconds, 1200.0)
+                timeout_seconds = int(timeout_seconds)
 
                 if self.verbose:
                     print(f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Iniciando síntese TTS")
@@ -374,6 +827,7 @@ class AudioConverter:
                         from ..language import LanguageMarkup
                         base_text = self._speech_text(chapter)
                         clean_text = LanguageMarkup.strip(base_text) if LanguageMarkup else base_text
+                        current_payload = clean_text
                         clean_chars = len(clean_text)
                         fallback_timeout = timeout_seconds // 2
 
@@ -461,11 +915,27 @@ class AudioConverter:
 
                     # Validar que o arquivo tem tamanho mínimo (não está vazio/corrompido)
                     if file_size > 1000:  # Mínimo 1KB para áudio válido
+                        truncation_warning = self._detect_short_audio_output(
+                            output_path,
+                            current_payload,
+                            config,
+                        )
+                        if truncation_warning:
+                            if self.verbose:
+                                print(f"   ⚠️ {truncation_warning}")
+                            if hasattr(tts_engine, "last_error"):
+                                setattr(tts_engine, "last_error", "short_output")
+                            output_path.unlink(missing_ok=True)
+                            errors.append(f"{chapter.name}: {truncation_warning}")
+                            self.progress.complete_chapter(f"❌ {truncation_warning}")
+                            continue
+
                         converted_files.append(output_path)
 
                         if self.verbose:
                             print(f"   📊 Arquivo gerado: {file_size} bytes")
                         self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
+                        self._retry_original_texts.pop(chapter_label, None)
                     else:
                         # Arquivo muito pequeno - provavelmente corrompido
                         if self.verbose:
@@ -480,6 +950,7 @@ class AudioConverter:
                     try:
                         # Use only the first part of text with default language
                         simple_text = (speech_text or "")[:2000].strip()
+                        current_payload = simple_text
                         if simple_text:
                             self.progress.tick(f"🔄 Retry: texto simples (idioma padrão)...")
                             retry_timeout = 45
@@ -494,11 +965,27 @@ class AudioConverter:
 
                                 # Validar tamanho mínimo
                                 if file_size > 1000:
+                                    truncation_warning = self._detect_short_audio_output(
+                                        output_path,
+                                        current_payload,
+                                        config,
+                                    )
+                                    if truncation_warning:
+                                        if self.verbose:
+                                            print(f"   ⚠️ {truncation_warning}")
+                                        if hasattr(tts_engine, "last_error"):
+                                            setattr(tts_engine, "last_error", "short_output")
+                                        output_path.unlink(missing_ok=True)
+                                        errors.append(f"{chapter.name}: {truncation_warning}")
+                                        self.progress.complete_chapter(f"❌ {truncation_warning}")
+                                        continue
+
                                     converted_files.append(output_path)
 
                                     if self.verbose:
                                         print(f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)")
                                     self.progress.complete_chapter(f"✅ Sucesso (retry)")
+                                    self._retry_original_texts.pop(chapter_label, None)
                                     continue  # Success! Continue to next chapter
                                 else:
                                     if self.verbose:
@@ -806,6 +1293,32 @@ class AudioConverter:
                 )
                 if converted is None:
                     status_holder["text"] = self.loc.t("status_mp3_failed")
+                    self._announce_stage(index, chapter_label, status_holder["text"])
+                    outcome = ChapterConversionOutcome(
+                        index=index,
+                        name=chapter_label,
+                        path=None,
+                        error=status_holder["text"],
+                    )
+                    return None if legacy_mode else outcome
+
+                try:
+                    file_size = converted.stat().st_size
+                except OSError:
+                    file_size = 0
+                truncation_warning = self._detect_short_audio_output(
+                    converted,
+                    chapter_payload,
+                    config,
+                )
+                if truncation_warning:
+                    if self.verbose:
+                        print(f"   ⚠️ {truncation_warning}")
+                    try:
+                        converted.unlink(missing_ok=True)
+                    except OSError:
+                        pass
+                    status_holder["text"] = truncation_warning
                     self._announce_stage(index, chapter_label, status_holder["text"])
                     outcome = ChapterConversionOutcome(
                         index=index,

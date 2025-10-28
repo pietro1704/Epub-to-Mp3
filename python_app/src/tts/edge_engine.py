@@ -106,6 +106,8 @@ class EdgeTTSEngine:
         self.verbose = verbose
         self._max_segment_seconds = max(30.0, min(DEFAULT_EDGE_SEGMENT_SECONDS, 75.0))
         self._words_per_minute = WORDS_PER_MINUTE
+        self.partial_failure_detected: bool = False
+        self.last_segment_report: Dict[str, int] = {"expected": 0, "generated": 0, "failed": 0}
 
         if self.verbose:
             print(f"🔍 [VERBOSE] EdgeTTS inicializado com voice={voice}")
@@ -131,6 +133,8 @@ class EdgeTTSEngine:
                 print(f"🔍 [VERBOSE] Formatação disponível: {len(formatting_segments)} segmentos")
 
         self.last_error = None
+        self.partial_failure_detected = False
+        self.last_segment_report = {"expected": 0, "generated": 0, "failed": 0}
 
         # Use formatting segments if available
         payload_text = text or ""
@@ -213,7 +217,6 @@ class EdgeTTSEngine:
 
                     # **NEW**: Retry failed segment with backoff
                     if failed_segments <= 3:  # Allow up to 3 failed segments
-                        import asyncio
                         await asyncio.sleep(2 ** failed_segments)  # 2s, 4s, 8s backoff
 
                         if self.verbose:
@@ -256,13 +259,35 @@ class EdgeTTSEngine:
                 print(f"🔍 [VERBOSE] EdgeTTS synthesize_async: no audio generated (total_segments={total_segments}, file_exists={output_path.exists()})")
             return None
 
-        # **NEW**: Warn if there were failures
-        if failed_segments > 0:
-            expected_segments = len([s for _, s in segments if s and s.strip()])
-            print(f"⚠️ Edge TTS: {failed_segments} segment(s) failed during synthesis")
-            print(f"   Processed: {total_segments}/{expected_segments} segments")
+        expected_segments = len([s for _, s in segments if s and s.strip()])
+        self.last_segment_report = {
+            "expected": expected_segments,
+            "generated": total_segments,
+            "failed": failed_segments,
+        }
+
+        # **FIXED**: Aceitar áudio somente se pelo menos 95% dos segmentos foram gerados com sucesso
+        success_rate = total_segments / max(expected_segments, 1)
+
+        if success_rate < 0.95:
+            # Menos de 95% dos segmentos -> falha crítica
+            self.partial_failure_detected = True
+            if failed_segments > 0:
+                print(f"⚠️ Edge TTS: {failed_segments} segment(s) falharam durante a síntese")
+                print(f"   Processados: {total_segments}/{expected_segments} segmentos ({success_rate*100:.0f}%)")
+                if self.verbose:
+                    print(f"   Use --verbose para mais detalhes sobre os segmentos com falha")
+            else:
+                print(f"⚠️ Edge TTS: somente {total_segments}/{expected_segments} segmentos foram gerados (saída incompleta)")
+            self.last_error = f"incomplete_segments:{total_segments}/{expected_segments}"
+            with suppress(OSError):
+                output_path.unlink(missing_ok=True)
+            return None
+        elif failed_segments > 0 and success_rate < 1.0:
+            # Entre 95-100% dos segmentos -> avisar mas aceitar o áudio
+            print(f"⚠️ Edge TTS: {failed_segments} segment(s) falharam, mas {success_rate*100:.1f}% foi gerado com sucesso")
             if self.verbose:
-                print(f"   Use --verbose to see detailed failure information")
+                print(f"   Processados: {total_segments}/{expected_segments} segmentos")
 
         return output_path
 
@@ -278,7 +303,8 @@ class EdgeTTSEngine:
         timeout = estimated + buffer
 
         minimum = max(self._max_segment_seconds + 20.0, 60.0)
-        maximum = max(self._max_segment_seconds * 3.0, 240.0)
+        # **FIXED**: Aumentar timeout máximo de 240s para 900s (15 min) para capítulos longos
+        maximum = max(self._max_segment_seconds * 3.0, 900.0)
 
         timeout = max(timeout, minimum)
         timeout = min(timeout, maximum)

@@ -3,13 +3,15 @@
 Gerenciador de cache para ebooks processados
 """
 
-import json
 import hashlib
+import json
 import shutil
 from pathlib import Path
 from typing import Dict, Any, Optional, List
 from datetime import datetime
 from dataclasses import dataclass
+
+from .paths import CACHE_DIR
 
 
 @dataclass
@@ -29,10 +31,17 @@ class ConversionCheckpoint:
 
 class CacheManager:
     """Gerenciador de cache inteligente para ebooks"""
-    
+
     def __init__(self, cache_dir: Optional[Path] = None):
-        self.cache_dir = cache_dir or Path(".cache")
-        self.cache_dir.mkdir(exist_ok=True)
+        try:
+            # Sempre usa CACHE_DIR da raiz do projeto, a menos que seja explicitamente fornecido
+            self.cache_dir = Path(cache_dir) if cache_dir else CACHE_DIR
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            print(f"⚠️ Cache desabilitado: sem permissão de escrita ({e})")
+            print(f"💡 Dica: verifique as permissões do diretório {CACHE_DIR}")
+            # Fallback para None - operações de cache serão no-ops
+            self.cache_dir = None
     
     def _get_ebook_hash(self, ebook_path: Path) -> str:
         """Gera hash único para o ebook"""
@@ -43,6 +52,10 @@ class CacheManager:
     
     def _get_cache_path(self, ebook_path: Path, *, override_name: Optional[str] = None) -> Path:
         """Retorna caminho do cache usando apenas o nome do livro"""
+        if self.cache_dir is None:
+            # Fallback para diretório temporário
+            import tempfile
+            return Path(tempfile.gettempdir()) / "epub_to_mp3_fallback"
         source_name = override_name or ebook_path.stem
         safe_name = self._sanitize_filename(source_name)
         if not safe_name:
@@ -51,9 +64,12 @@ class CacheManager:
     
     def get_cached_chapters(self, ebook_path: Path) -> Optional[Dict[str, Any]]:
         """Retorna capítulos cacheados se existirem"""
+        if self.cache_dir is None:
+            return None
+
         cache_path = self._get_cache_path(ebook_path)
         metadata_file = cache_path / "metadata.json"
-        
+
         if not metadata_file.exists():
             return None
         
@@ -74,6 +90,10 @@ class CacheManager:
     
     def save_chapters_to_cache(self, ebook_path: Path, chapters_data: Dict[str, Any]) -> bool:
         """Salva capítulos processados no cache"""
+        if self.cache_dir is None:
+            # Cache desabilitado - operação silenciosa
+            return False
+
         try:
             ebook_path = Path(ebook_path)
         except TypeError:
@@ -142,6 +162,9 @@ class CacheManager:
     
     def clear_cache(self, ebook_path: Optional[Path] = None, *, title: Optional[str] = None) -> bool:
         """Limpa o cache para um ebook específico ou todo o cache."""
+        if self.cache_dir is None:
+            return False
+
         removed_any = False
 
         if ebook_path:
@@ -181,6 +204,9 @@ class CacheManager:
     
     def get_cache_info(self) -> Dict[str, Any]:
         """Retorna informações sobre o cache"""
+        if self.cache_dir is None:
+            return {'total_cached_books': 0, 'cache_size_mb': 0}
+
         try:
             if not self.cache_dir.exists():
                 return {'total_cached_books': 0, 'cache_size_mb': 0}
@@ -220,6 +246,14 @@ class CacheManager:
     
     def _get_checkpoint_path(self, book_path: Path) -> Path:
         """Gera caminho do checkpoint para o livro"""
+        if self.cache_dir is None:
+            # Fallback para diretório temporário
+            import tempfile
+            temp_cache = Path(tempfile.gettempdir()) / "epub_to_mp3_fallback"
+            book_hash = hashlib.md5(str(book_path.absolute()).encode()).hexdigest()[:12]
+            safe_name = self._sanitize_filename(book_path.stem)
+            return temp_cache / f"{safe_name}_{book_hash}.json"
+
         book_hash = hashlib.md5(str(book_path.absolute()).encode()).hexdigest()[:12]
         safe_name = self._sanitize_filename(book_path.stem)
         return self.cache_dir / f"{safe_name}_{book_hash}.json"
@@ -347,6 +381,9 @@ class CacheManager:
 
     def list_checkpoints(self) -> List[Dict[str, Any]]:
         """Lista todos os checkpoints disponíveis"""
+        if self.cache_dir is None:
+            return []
+
         checkpoints = []
 
         for checkpoint_file in self.cache_dir.glob("*.json"):
