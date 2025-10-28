@@ -23,6 +23,7 @@ from src.tts.factory import TTSFactory
 from src.storage_manager import get_storage_manager
 from src.utils import FileManager
 from src.cache_manager import CacheManager
+from src.paths import OUTPUT_DIR
 from main import ConverterApplication
 
 app = FastAPI(title="EPUB to MP3 Converter API")
@@ -57,8 +58,15 @@ app.add_middleware(
 )
 
 jobs: Dict[str, dict] = {}
-# Use /tmp for cloud deployments (HF Spaces, etc.) or local 'output' dir
-output_dir = Path(os.getenv("OUTPUT_DIR", "/tmp/output" if os.getenv("SPACE_ID") else "output"))
+# Para deployments em cloud (HF Spaces, etc.), use /tmp; caso contrário, usa OUTPUT_DIR da raiz do projeto
+# Se OUTPUT_DIR env var estiver definida, usa ela; senão usa OUTPUT_DIR do paths.py
+if os.getenv("OUTPUT_DIR"):
+    output_dir = Path(os.getenv("OUTPUT_DIR"))
+elif os.getenv("SPACE_ID"):  # HuggingFace Spaces
+    output_dir = Path("/tmp/output")
+else:
+    output_dir = OUTPUT_DIR
+
 output_dir.mkdir(exist_ok=True, parents=True)
 
 tts_factory = TTSFactory()

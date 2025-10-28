@@ -30,7 +30,7 @@ from src.text_formatting import TextFormattingProcessor
 from src.converter import AudioConverter, ConversionResult
 from src.ui.menu import MenuInterface
 from src.config import AppConfig, ConversionConfig
-from src.utils import FileManager
+from src.utils import FileManager, resolve_cache_root
 from src.i18n import get_localization
 from src.language import (
     LanguageDetector,
@@ -62,8 +62,7 @@ class ConverterApplication:
         self.config = AppConfig()
         self.menu = MenuInterface(localization=self.localization)
         self.converter = AudioConverter(localization=self.localization)
-        self.cache_root = Path(".cache")
-        self.cache_root.mkdir(exist_ok=True)
+        self.cache_root = resolve_cache_root()
         self.language_detector: LanguageDetector = get_language_detector()
         self.language_markup = LanguageMarkup(self.language_detector)
         self.language_profile: Optional[LanguageProfile] = None
@@ -573,10 +572,10 @@ class ConverterApplication:
         def build_inline_replacements(footnotes_list: List[Dict[str, str]]) -> dict[str, str]:
             if not footnotes_list or footnote_mode != 'inline':
                 return {}
-            prefix = phrases.get("prefix", " (")
+            prefix = phrases.get("prefix", "\n")
             template = phrases.get("template", "nota de rodapé {number}: {text}")
-            suffix_text = phrases.get("suffix_text", " - fim da nota de rodapé {number}")
-            closing = phrases.get("closing", ")")
+            suffix_text = phrases.get("suffix_text", " fim da nota de rodapé")
+            closing = phrases.get("closing", "")
             replacements_map: dict[str, str] = {}
             for footnote in footnotes_list:
                 intro = template.format(number=footnote["number"], text=footnote["text"])
@@ -1090,19 +1089,19 @@ class ConverterApplication:
             lang = "pt"
         if lang == "en":
             return {
-                "prefix": " (",
+                "prefix": "\n",
                 "template": "footnote {number}: {text}",
-                "suffix_text": " - end of footnote {number}",
-                "closing": ")",
-                "chapter_end_template": "footnote {number}: {snippet} - {text} end of footnote {number}",
+                "suffix_text": " end of footnote",
+                "closing": "",
+                "chapter_end_template": "footnote {number}: {snippet} - {text} end of footnote",
             }
 
         return {
-            "prefix": " (",
+            "prefix": "\n",
             "template": "nota de rodapé {number}: {text}",
-            "suffix_text": " - fim da nota de rodapé {number}",
-            "closing": ")",
-            "chapter_end_template": "nota de rodapé {number}: {snippet} - {text} fim da nota de rodapé {number}",
+            "suffix_text": " fim da nota de rodapé",
+            "closing": "",
+            "chapter_end_template": "nota de rodapé {number}: {snippet} - {text} fim da nota de rodapé",
         }
 
     @staticmethod

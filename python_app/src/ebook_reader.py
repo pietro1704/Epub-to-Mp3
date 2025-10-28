@@ -142,6 +142,7 @@ class TextProcessor:
         markup: Optional[str],
         mode: str = "inline",
         context_words: int = 8,
+        external_file_resolver = None,
     ) -> tuple[str, List[Dict[str, str]]]:
         if not markup:
             return "", []
@@ -152,14 +153,14 @@ class TextProcessor:
             BeautifulSoup = None
 
         if BeautifulSoup is not None:
-            processed_markup, footnotes = TextProcessor._collect_footnotes_bs4(str(markup), BeautifulSoup)
+            processed_markup, footnotes = TextProcessor._collect_footnotes_bs4(str(markup), BeautifulSoup, external_file_resolver)
         else:
             processed_markup, footnotes = TextProcessor._collect_footnotes_fallback(str(markup))
 
         return processed_markup, footnotes
 
     @staticmethod
-    def _collect_footnotes_bs4(markup: str, BeautifulSoup) -> Tuple[str, List[Dict[str, str]]]:
+    def _collect_footnotes_bs4(markup: str, BeautifulSoup, external_file_resolver=None) -> Tuple[str, List[Dict[str, str]]]:
         soup = BeautifulSoup(markup, "html.parser")
         if soup is None:
             return markup, []
@@ -167,6 +168,7 @@ class TextProcessor:
         footnotes: List[Dict[str, str]] = []
         note_numbers: Dict[str, str] = {}
         processed_targets: List[str] = []
+        external_footnote_cache: Dict[str, any] = {}
 
         def normalise_fragment(href: str) -> str:
             if not href:
@@ -226,6 +228,9 @@ class TextProcessor:
         def extract_note_text(node) -> str:
             if node is None:
                 return ""
+            # If node is an empty anchor, use parent instead
+            if node.name == 'a' and not node.get_text(strip=True) and node.parent:
+                node = node.parent
             for backlink in node.find_all('a'):
                 if backlink is None or not hasattr(backlink, "get"):
                     continue
@@ -260,7 +265,24 @@ class TextProcessor:
             if not fragment:
                 continue
 
+            # Try to find note in current document
             note_node = soup.find(id=fragment)
+
+            # If not found and href points to external file, try to load it
+            if not note_node and external_file_resolver and '#' in href:
+                external_file = href.split('#')[0]
+                if external_file and external_file not in external_footnote_cache:
+                    try:
+                        external_html = external_file_resolver(external_file)
+                        if external_html:
+                            external_footnote_cache[external_file] = BeautifulSoup(external_html, "html.parser")
+                    except Exception:
+                        external_footnote_cache[external_file] = None
+
+                external_soup = external_footnote_cache.get(external_file)
+                if external_soup:
+                    note_node = external_soup.find(id=fragment)
+
             note_text = extract_note_text(note_node)
             if not note_text:
                 continue
@@ -404,11 +426,11 @@ class TextProcessor:
         context_words = max(int(context_words or 0), 0)
 
         phrases = phrases or {}
-        prefix = phrases.get("prefix", " (")
+        prefix = phrases.get("prefix", "\n")
         template = phrases.get("template", "nota de rodapé {number}: {text}")
-        suffix_text = phrases.get("suffix_text", " - fim da nota de rodapé {number}")
-        closing = phrases.get("closing", ")")
-        chapter_end_template = phrases.get("chapter_end_template", "nota de rodapé {number}: {snippet} - {text} fim da nota de rodapé {number}")
+        suffix_text = phrases.get("suffix_text", " fim da nota de rodapé")
+        closing = phrases.get("closing", "")
+        chapter_end_template = phrases.get("chapter_end_template", "nota de rodapé {number}: {snippet} - {text} fim da nota de rodapé")
 
         text = base_text
 
@@ -468,10 +490,10 @@ class TextProcessor:
             return segments
 
         phrases = phrases or {}
-        prefix = phrases.get("prefix", " (")
+        prefix = phrases.get("prefix", "\n")
         template = phrases.get("template", "nota de rodapé {number}: {text}")
-        suffix_text = phrases.get("suffix_text", " - fim da nota de rodapé {number}")
-        closing = phrases.get("closing", ")")
+        suffix_text = phrases.get("suffix_text", " fim da nota de rodapé")
+        closing = phrases.get("closing", "")
 
         replacements: Dict[str, str] = {}
         for footnote in footnotes:
@@ -714,8 +736,21 @@ class EpubParser:
             if TextProcessor.looks_like_css(raw_content):
                 continue
 
+            # Create resolver for external footnote files (relative to current chapter)
+            chapter_dir = str(Path(asset_path).parent).replace("\\", "/") if "/" in asset_path else ""
+            def resolve_external_file(relative_path: str) -> Optional[str]:
+                try:
+                    # Resolve relative to current chapter's directory
+                    full_path = self._join_path(chapter_dir, relative_path)
+                    return self._read_zip_text(archive, full_path)
+                except (KeyError, Exception):
+                    return None
+
             # Process text with formatting awareness
-            markup_with_markers, footnotes = TextProcessor.inject_footnotes(raw_content)
+            markup_with_markers, footnotes = TextProcessor.inject_footnotes(
+                raw_content,
+                external_file_resolver=resolve_external_file
+            )
             text_with_formatting, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
             if footnotes:
                 text_with_footnotes = TextProcessor._render_footnotes(

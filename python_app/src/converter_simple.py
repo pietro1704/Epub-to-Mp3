@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from .config import ConversionConfig
 from .ebook_reader import EbookReader
 from .tts.factory import TTSFactory
-from .utils import AudioProcessor, FileManager, TextValidator
+from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
 from .progress import ProgressTracker
 from .i18n import Localization, get_localization
 
@@ -141,7 +141,7 @@ class SimpleAudioConverter:
 
     def _setup_output_directory(self, config: ConversionConfig) -> Path:
         """Setup output directory for MP3 files"""
-        base_dir = Path(config.output_dir or ".cache")
+        base_dir = Path(config.output_dir) if config.output_dir else resolve_cache_root()
         if config.book_title:
             base_dir = base_dir / self.file_manager.sanitize_filename(config.book_title)
         engine_suffix = self.file_manager.build_engine_voice_suffix(

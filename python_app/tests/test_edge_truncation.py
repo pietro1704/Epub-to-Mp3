@@ -81,6 +81,13 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
             f"This suggests segments were not all processed (truncation bug)."
         )
 
+        self.assertFalse(self.engine.partial_failure_detected, "No partial failure should be flagged for successful synthesis")
+        self.assertEqual(
+            self.engine.last_segment_report["generated"],
+            self.engine.last_segment_report["expected"],
+            "Generated segments should match expected count"
+        )
+
     async def test_all_segments_processed_not_just_first(self):
         """CRITICAL: Verify that ALL segments are processed, not just the first 1 minute"""
         # Create text that will generate exactly 5 segments
@@ -134,9 +141,10 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
             [0, 1, 2, 3, 4],
             f"Segments processed out of order or skipped: {processed_segments}"
         )
+        self.assertFalse(self.engine.partial_failure_detected, "Full processing should not set partial failure flag")
 
-    async def test_segment_failure_does_not_abort_all_remaining(self):
-        """Verify that if segment 2 fails, segments 3, 4, 5 are still processed"""
+    async def test_segment_failure_flags_partial_output(self):
+        """Partial synthesis must be flagged as failure to avoid truncated chapters"""
         parts = [f"Segmento {i}. " * 100 for i in range(5)]
         full_text = " ".join(parts)
         output_path = Path(self.temp_dir) / "test_resilience.mp3"
@@ -173,19 +181,16 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
         # Synthesize
         result = await self.engine.synthesize_async(full_text, output_path)
 
-        # Should still succeed (with retry logic)
-        self.assertIsNotNone(result, "Should succeed even with one segment failure")
+        # Partial output must be rejected
+        self.assertIsNone(result, "Engine must return None when segments fail")
+        self.assertTrue(self.engine.partial_failure_detected, "Partial failure flag should be set")
+        self.assertIn("incomplete_segments", self.engine.last_error or "", "Last error must report incomplete segments")
+        self.assertFalse(output_path.exists(), "Partial audio artifact should be removed")
 
-        # Segments 0, 2, 3, 4 should be processed (segment 1 failed)
-        # With retry, segment 1 will be called twice (original + 1 retry)
+        # Segments other than the failed one should still have been attempted
         expected_processed = [0, 2, 3, 4]
-        self.assertEqual(
-            sorted(processed),
-            expected_processed,
-            f"Expected {expected_processed} but got {processed}. "
-            f"Segment 1 should fail, but others should continue!"
-        )
-
+        self.assertEqual(sorted(set(processed)), expected_processed)
+        self.assertGreaterEqual(call_count[0], 6, "Retry logic should attempt the failing segment at least twice")
 
 if __name__ == "__main__":
     unittest.main()

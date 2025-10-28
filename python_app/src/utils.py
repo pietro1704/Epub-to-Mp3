@@ -4,11 +4,25 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
+
+from .paths import CACHE_DIR
+
+
+def resolve_cache_root() -> Path:
+    """
+    DEPRECATED: Agora usamos CACHE_DIR de paths.py que sempre aponta para a raiz do projeto.
+
+    Esta função é mantida apenas para compatibilidade com código legado.
+    Use `from .paths import CACHE_DIR` diretamente.
+    """
+    return CACHE_DIR
 
 
 class FileManager:
