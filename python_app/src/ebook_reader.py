@@ -579,6 +579,112 @@ class TextProcessor:
         return WHITESPACE_RE.sub(" ", text.strip())
 
     @staticmethod
+    def join_broken_lines(text: str) -> str:
+        """Junta linhas quebradas no meio de frases (típico em PDFs).
+
+        Preserva quebras de parágrafo reais (linhas terminadas com pontuação).
+        Remove cabeçalhos/rodapés repetidos que aparecem em múltiplas páginas.
+        """
+        if not text:
+            return ""
+
+        lines = text.split('\n')
+
+        # Primeiro: detectar e remover cabeçalhos/rodapés repetidos
+        lines = TextProcessor._remove_pdf_headers_footers(lines)
+
+        joined_lines = []
+        i = 0
+
+        while i < len(lines):
+            current_line = lines[i].strip()
+
+            if not current_line:
+                i += 1
+                continue
+
+            # Verifica se linha termina com pontuação que indica fim de frase
+            ends_with_punctuation = current_line.endswith(('.', '!', '?', ':', ';'))
+
+            # Se não termina com pontuação E existe próxima linha, tenta juntar
+            while not ends_with_punctuation and i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+
+                # Se próxima linha está vazia, para de juntar
+                if not next_line:
+                    break
+
+                # Junta com espaço
+                current_line = current_line + ' ' + next_line
+                i += 1
+
+                # Atualiza flag de pontuação
+                ends_with_punctuation = current_line.endswith(('.', '!', '?', ':', ';'))
+
+            joined_lines.append(current_line)
+            i += 1
+
+        return '\n'.join(joined_lines)
+
+    @staticmethod
+    def _remove_pdf_headers_footers(lines: List[str]) -> List[str]:
+        """Remove cabeçalhos e rodapés repetidos típicos de PDFs.
+
+        Detecta linhas curtas que aparecem isoladas (sem continuação) e que
+        parecem ser títulos de livro, nomes de autor ou números de página.
+        """
+        if not lines or len(lines) < 3:
+            return lines
+
+        # Heurísticas para identificar cabeçalhos/rodapés:
+        # 1. Linhas muito curtas (< 100 chars) que não terminam com pontuação normal
+        # 2. Linhas que contêm apenas números (página)
+        # 3. Linhas que parecem títulos (sem verbos, palavras capitalizadas)
+
+        filtered_lines = []
+
+        # Primeiro: analisar padrões comuns nas primeiras e últimas linhas
+        # Cabeçalhos/rodapés geralmente estão nas primeiras 3-4 ou últimas 3-4 linhas
+        non_empty_lines = [l.strip() for l in lines if l.strip()]
+
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+
+            # Linha vazia, manter
+            if not stripped:
+                filtered_lines.append(line)
+                continue
+
+            # Linha é apenas número (número de página)
+            if stripped.isdigit():
+                continue
+
+            # Verificar se é uma das primeiras ou últimas linhas não-vazias
+            is_header_position = i < 5
+            is_footer_position = i >= len(lines) - 5
+
+            # Linha curta em posição de cabeçalho/rodapé
+            if (is_header_position or is_footer_position) and len(stripped) < 100:
+                # Verificar se parece cabeçalho/rodapé
+                words = stripped.split()
+
+                # Remover se for apenas título com palavras capitalizadas
+                if len(words) >= 2:
+                    cap_count = sum(1 for w in words if w and len(w) > 1 and w[0].isupper())
+                    # Se maioria das palavras são capitalizadas e não termina com pontuação
+                    if cap_count >= len(words) * 0.6 and not stripped.endswith(('.', '!', '?', ':')):
+                        # Provável título de livro/autor
+                        continue
+
+                # Remover linhas que são apenas "Página X" ou similares
+                if stripped.lower().startswith('página') or stripped.lower().startswith('pagina'):
+                    continue
+
+            filtered_lines.append(line)
+
+        return filtered_lines
+
+    @staticmethod
     def looks_like_css(content: str) -> bool:
         if not content:
             return False
@@ -658,8 +764,10 @@ class EpubParser:
             opf_path = self._find_opf_path(archive)
             manifest, spine_ids, title, author = self._parse_opf(archive, opf_path)
             base_dir = self._opf_dir(opf_path)
-            chapters = self._extract_chapters(archive, manifest, spine_ids, base_dir)
             toc = self._parse_toc(archive, base_dir)
+
+            # Usar método baseado em spine (método antigo, mais confiável)
+            chapters = self._extract_chapters(archive, manifest, spine_ids, base_dir)
 
         title = title or self.path.stem
         author = author or ""
@@ -710,6 +818,176 @@ class EpubParser:
                 author = author_elem.text.strip()
 
         return manifest, spine, title, author
+
+    def _extract_chapters_from_toc(
+        self,
+        archive: zipfile.ZipFile,
+        manifest: Dict[str, str],
+        spine_ids: Iterable[str],
+        base_dir: str,
+        toc: List[TocItem],
+    ) -> List[Chapter]:
+        """Extrai capítulos baseado na estrutura do TOC (Table of Contents).
+
+        Isso evita duplicação de conteúdo usando a hierarquia real do livro.
+        """
+        chapters: List[Chapter] = []
+        index_counter = 1
+        context_words = 8
+
+        # Cache de conteúdo HTML já lido
+        html_cache: Dict[str, str] = {}
+        # Track de arquivos já processados (sem âncora)
+        processed_full_files: set = set()
+
+        def get_html_content(href: str) -> str:
+            """Obtém conteúdo HTML de um arquivo, usando cache."""
+            # Extrair apenas o arquivo (sem âncora)
+            file_path = href.split('#')[0] if '#' in href else href
+            if not file_path:
+                return ""
+
+            if file_path in html_cache:
+                return html_cache[file_path]
+
+            asset_path = self._join_path(base_dir, file_path)
+            try:
+                content = self._read_zip_text(archive, asset_path)
+                html_cache[file_path] = content
+                return content
+            except KeyError:
+                return ""
+
+        def get_all_split_files_content(href: str) -> str:
+            """Obtém conteúdo de todos os arquivos split relacionados.
+
+            Se o arquivo for part0006_split_000.html, também carrega:
+            part0006_split_001.html, part0006_split_002.html, etc.
+            """
+            file_path = href.split('#')[0] if '#' in href else href
+            if not file_path:
+                return ""
+
+            # Verificar se é arquivo split
+            if '_split_' in file_path:
+                # Extrair base e número do split
+                base_pattern = file_path.rsplit('_split_', 1)[0]
+
+                # Coletar todos os splits deste arquivo
+                all_content = []
+                split_num = 0
+
+                while True:
+                    split_file = f"{base_pattern}_split_{split_num:03d}.html"
+                    content = get_html_content(split_file)
+                    if content:
+                        all_content.append(content)
+                        split_num += 1
+                    else:
+                        break
+
+                if all_content:
+                    return '\n'.join(all_content)
+
+            # Se não é split ou não encontrou splits, retornar arquivo único
+            return get_html_content(href)
+
+        def process_toc_item(item: TocItem, level: int = 1) -> None:
+            """Processa um item do TOC e seus filhos recursivamente."""
+            nonlocal index_counter
+
+            # Extrair arquivo e âncora
+            if '#' in item.href:
+                file_path_only = item.href.split('#')[0]
+                anchor = item.href.split('#')[1]
+            else:
+                file_path_only = item.href
+                anchor = ""
+
+            # Para arquivos split, usar base sem número do split
+            base_file = file_path_only
+            if '_split_' in file_path_only:
+                base_file = file_path_only.rsplit('_split_', 1)[0]
+
+            # Se não há âncora e o arquivo/base já foi processado, pular
+            if not anchor and base_file in processed_full_files:
+                return
+
+            # Obter conteúdo HTML deste item (incluindo todos os splits)
+            raw_content = get_all_split_files_content(item.href)
+            if not raw_content or TextProcessor.looks_like_css(raw_content):
+                return
+
+            # Marcar base como processada
+            if not anchor:
+                processed_full_files.add(base_file)
+
+            # Criar resolver para footnotes externos
+            file_path = item.href.split('#')[0] if '#' in item.href else item.href
+            chapter_dir = str(Path(self._join_path(base_dir, file_path)).parent).replace("\\", "/")
+
+            def resolve_external_file(relative_path: str) -> Optional[str]:
+                try:
+                    full_path = self._join_path(chapter_dir, relative_path)
+                    return self._read_zip_text(archive, full_path)
+                except (KeyError, Exception):
+                    return None
+
+            # Processar texto
+            markup_with_markers, footnotes = TextProcessor.inject_footnotes(
+                raw_content,
+                external_file_resolver=resolve_external_file
+            )
+            text_with_formatting, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+
+            if footnotes:
+                text_with_footnotes = TextProcessor._render_footnotes(
+                    text_with_formatting,
+                    footnotes,
+                    mode="inline",
+                    context_words=context_words,
+                )
+                formatting_segments = TextProcessor._apply_footnotes_to_segments(
+                    formatting_segments,
+                    footnotes,
+                    mode="inline",
+                    context_words=context_words,
+                )
+            else:
+                text_with_footnotes = text_with_formatting
+
+            text = TextProcessor.add_pause_before_dash(text_with_footnotes)
+
+            # Usar título do TOC
+            chapter_title = item.title.strip() if item.title else f"Capítulo {index_counter}"
+
+            # Preparar speech text
+            speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
+
+            # Criar capítulo
+            chapters.append(
+                Chapter(
+                    index=index_counter,
+                    name=chapter_title,
+                    source_path=item.href,
+                    text=text or "",
+                    level=level,
+                    raw_html=raw_content,
+                    formatting_segments=formatting_segments,
+                    footnotes=list(footnotes) if footnotes else None,
+                    speech_text=speech_text or "",
+                )
+            )
+            index_counter += 1
+
+            # NÃO processar filhos - usar apenas nível 1 do TOC
+            # para evitar duplicação de conteúdo
+
+        # Processar apenas itens de nível 1 do TOC (capítulos principais)
+        for toc_item in toc:
+            process_toc_item(toc_item, level=1)
+
+        return chapters
 
     def _extract_chapters(
         self,
@@ -791,6 +1069,212 @@ class EpubParser:
             index_counter += 1
 
         return chapters
+
+    def _remove_duplicate_chapters(self, chapters: List[Chapter]) -> List[Chapter]:
+        """Remove capítulos que têm conteúdo duplicado/sobreposto.
+
+        Isso evita criar entradas separadas para subcapítulos que repetem
+        conteúdo já presente em outros capítulos.
+        """
+        if not chapters:
+            return chapters
+
+        # Estratégia: manter apenas capítulos com conteúdo único
+        # Para cada capítulo, extrair "núcleo único" (conteúdo que não aparece em outros)
+        # Remover capítulos cujo conteúdo está 90%+ contido em outros capítulos
+
+        # Passo 1: normalizar todos os textos
+        normalized_texts = []
+        for chapter in chapters:
+            normalized_texts.append(self._normalize_for_comparison(chapter.text.strip()))
+
+        # Passo 2: identificar capítulos a remover
+        chapters_to_keep = []
+        removed_chapters = []
+
+        for i, chapter in enumerate(chapters):
+            current_norm = normalized_texts[i]
+
+            # Capítulos vazios ou muito curtos: verificar se são só divisores
+            if len(current_norm) < 50:
+                # Capítulo muito curto, provavelmente só título
+                removed_chapters.append(chapter)
+                continue
+
+            # Verificar se este capítulo tem conteúdo único significativo
+            has_unique_content = True
+
+            # Extrair "núcleo" do capítulo (primeiros 500 chars após limpeza)
+            core_content = current_norm[:500] if len(current_norm) > 500 else current_norm
+
+            # Extrair várias "janelas" do texto para comparação
+            # Isso detecta conteúdo repetido mesmo com prefixos diferentes
+            windows = []
+            window_size = 300
+            step = 150  # Janelas sobrepostas
+            for start in range(0, len(current_norm) - window_size, step):
+                windows.append(current_norm[start:start + window_size])
+
+            # Verificar se o núcleo aparece em outros capítulos (anteriores ou posteriores)
+            for j, other_chapter in enumerate(chapters):
+                if i == j:
+                    continue
+
+                other_norm = normalized_texts[j]
+
+                # Se outro capítulo é maior e contém nosso núcleo
+                if len(other_norm) > len(current_norm) and core_content in other_norm:
+                    # Este capítulo é subset de outro maior
+                    has_unique_content = False
+                    break
+
+                # Verificar se QUALQUER janela significativa do texto aparece em outro capítulo
+                if len(other_norm) > len(current_norm):
+                    for window in windows:
+                        if len(window) >= 200 and window in other_norm:
+                            # Uma porção significativa do texto está repetida
+                            has_unique_content = False
+                            break
+                    if not has_unique_content:
+                        break
+
+                # Se outro capítulo é do mesmo tamanho (±30%) e tem alta sobreposição
+                if abs(len(other_norm) - len(current_norm)) < len(current_norm) * 0.3:
+                    overlap = self._calculate_text_overlap(current_norm, other_norm)
+                    if overlap > 0.6:  # 60% de sobreposição
+                        # Manter o que veio primeiro (ou o maior)
+                        if j < i or len(other_norm) > len(current_norm):
+                            has_unique_content = False
+                            break
+
+            if has_unique_content:
+                chapters_to_keep.append(chapter)
+            else:
+                removed_chapters.append(chapter)
+
+        # Verificação de integridade: garantir que nenhum conteúdo foi perdido
+        self._verify_content_integrity(chapters, chapters_to_keep, removed_chapters)
+
+        return chapters_to_keep
+
+    def _calculate_text_overlap(self, text1: str, text2: str) -> float:
+        """Calcula porcentagem de sobreposição entre dois textos usando n-gramas."""
+        if not text1 or not text2:
+            return 0.0
+
+        # Usar 3-gramas (sequências de 3 palavras)
+        words1 = text1.split()
+        words2 = text2.split()
+
+        if len(words1) < 3 or len(words2) < 3:
+            # Textos muito curtos, comparar diretamente
+            return 1.0 if text1 == text2 else 0.0
+
+        # Criar conjuntos de 3-gramas
+        ngrams1 = set()
+        for i in range(len(words1) - 2):
+            ngrams1.add(' '.join(words1[i:i+3]))
+
+        ngrams2 = set()
+        for i in range(len(words2) - 2):
+            ngrams2.add(' '.join(words2[i:i+3]))
+
+        if not ngrams1 or not ngrams2:
+            return 0.0
+
+        # Calcular sobreposição (Jaccard similarity)
+        intersection = ngrams1 & ngrams2
+        union = ngrams1 | ngrams2
+
+        return len(intersection) / len(union) if union else 0.0
+
+    def _normalize_for_comparison(self, text: str) -> str:
+        """Normaliza texto para comparação, removendo marcações e formatação."""
+        if not text:
+            return ""
+
+        # Remover marcações markdown
+        cleaned = re.sub(r'\*+', '', text)  # Remove asteriscos
+        cleaned = re.sub(r'_+', '', cleaned)  # Remove underscores
+        cleaned = re.sub(r'\[\[.*?\]\]', '', cleaned)  # Remove marcadores [[...]]
+        cleaned = re.sub(r'§\s*\d+', '', cleaned)  # Remove seções §1, §2, etc.
+
+        # Normalizar espaços
+        cleaned = ' '.join(cleaned.split())
+
+        # Remover pontuação comum no início
+        cleaned = cleaned.lstrip(' .-:')
+
+        return cleaned.lower()
+
+    def _verify_content_integrity(
+        self,
+        original_chapters: List[Chapter],
+        filtered_chapters: List[Chapter],
+        removed_chapters: List[Chapter]
+    ) -> None:
+        """Verifica que todo o conteúdo original está presente após a filtragem.
+
+        Compara o conteúdo total para garantir que nenhum texto foi perdido.
+        """
+        # Extrair todo o texto único do original (normalizado para ignorar formatação)
+        original_words = set()
+        for chapter in original_chapters:
+            normalized = self._normalize_for_comparison(chapter.text.strip())
+            words = normalized.split()
+            # Filtrar palavras muito curtas (provavelmente marcações)
+            words = [w for w in words if len(w) > 2]
+            original_words.update(words)
+
+        # Extrair todo o texto único dos capítulos filtrados
+        filtered_words = set()
+        for chapter in filtered_chapters:
+            normalized = self._normalize_for_comparison(chapter.text.strip())
+            words = normalized.split()
+            words = [w for w in words if len(w) > 2]
+            filtered_words.update(words)
+
+        # Verificar se há palavras faltando
+        missing_words = original_words - filtered_words
+
+        # Filtrar palavras que são apenas marcações ou números isolados
+        significant_missing = set()
+        for word in missing_words:
+            # Ignorar números puros, palavras muito curtas, ou marcações
+            if word.isdigit() or len(word) <= 3:
+                continue
+            # Ignorar palavras com muitos caracteres especiais
+            alpha_ratio = sum(1 for c in word if c.isalpha()) / len(word) if word else 0
+            if alpha_ratio < 0.5:
+                continue
+            significant_missing.add(word)
+
+        if significant_missing:
+            # Há conteúdo significativo faltando! Isso é um problema.
+            missing_sample = list(significant_missing)[:20]
+            print(f"⚠️ AVISO: Detectado conteúdo possivelmente perdido na filtragem de duplicatas!")
+            print(f"   Palavras faltando (amostra): {' '.join(missing_sample)}")
+            print(f"   Total de palavras únicas faltando: {len(significant_missing)}")
+
+            # Identificar quais capítulos removidos tinham conteúdo único
+            for removed in removed_chapters:
+                removed_normalized = self._normalize_for_comparison(removed.text.strip())
+                removed_words = set(w for w in removed_normalized.split() if len(w) > 3)
+                removed_unique = removed_words - filtered_words
+                # Filtrar marcações
+                removed_unique = set(
+                    w for w in removed_unique
+                    if w and len(w) > 0 and sum(1 for c in w if c.isalpha()) / len(w) >= 0.5
+                )
+                if removed_unique:
+                    print(f"   ❌ Capítulo '{removed.name}' tinha {len(removed_unique)} palavras únicas perdidas")
+
+            # Restaurar capítulos removidos que tinham conteúdo único
+            # NÃO fazer isso automaticamente - apenas alertar
+            raise ValueError(
+                f"Falha na verificação de integridade: {len(significant_missing)} palavras únicas perdidas. "
+                "O algoritmo de remoção de duplicatas precisa ser ajustado."
+            )
 
     def _parse_toc(self, archive: zipfile.ZipFile, base_dir: str) -> List[TocItem]:
         candidates = [name for name in archive.namelist() if name.lower().endswith('.ncx')]
@@ -891,7 +1375,9 @@ class PdfParser:
                     )
                     continue
 
-                cleaned = TextProcessor.normalise_whitespace(raw_text)
+                # Primeiro junta linhas quebradas, depois normaliza espaços
+                joined_text = TextProcessor.join_broken_lines(raw_text)
+                cleaned = TextProcessor.normalise_whitespace(joined_text)
                 if not cleaned:
                     continue
                 cleaned = TextProcessor.add_pause_before_dash(cleaned)

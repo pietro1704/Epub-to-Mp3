@@ -209,6 +209,7 @@ class ConverterApplication:
             return []
 
         book_title = reader.title
+        book_author = reader.author
         toc_map = self._build_toc_map(reader)
 
         structure_items: List[ChapterStructureItem] = []
@@ -250,7 +251,8 @@ class ConverterApplication:
                     toc_entries,
                     book_title,
                     division_counters,
-                    remap_division
+                    remap_division,
+                    book_author
                 )
 
                 if generated_items:
@@ -276,7 +278,8 @@ class ConverterApplication:
                     chapter,
                     chapters,
                     i,
-                    book_title
+                    book_title,
+                    book_author
                 )
             except Exception:
                 text = str(getattr(chapter, 'text', ''))
@@ -336,7 +339,8 @@ class ConverterApplication:
                 main_name,
                 sub_name,
                 first_words,
-                book_title
+                book_title,
+                book_author
             )
 
             first_words = self._remove_duplicate_prefix(first_words, main_name, sub_name)
@@ -375,7 +379,8 @@ class ConverterApplication:
         toc_entries: List[Tuple[int, str, Optional[str]]],
         book_title: str,
         division_counters: Dict[int, int],
-        remap_division
+        remap_division,
+        book_author: str = ""
     ) -> List[ChapterStructureItem]:
         """Expand a chapter into structure items using TOC anchors"""
 
@@ -433,7 +438,8 @@ class ConverterApplication:
                 main_name,
                 sub_name,
                 preview,
-                book_title
+                book_title,
+                book_author
             )
 
             preview = self._remove_duplicate_prefix(preview, main_name, sub_name)
@@ -1153,12 +1159,15 @@ class ConverterApplication:
         return "inline"
 
     def _resolve_cache_dir(self, reader: EbookReader) -> Path:
-        base_name = reader.title or ""
-        if not base_name:
-            file_path = getattr(reader, "file_path", None)
-            if file_path:
-                base_name = Path(file_path).stem
-        if not base_name:
+        """Resolve cache directory path using file name (not book title)
+
+        IMPORTANTE: Usa sempre o nome do arquivo, NÃO o título do livro,
+        para evitar criar pastas duplicadas
+        """
+        file_path = getattr(reader, "file_path", None)
+        if file_path:
+            base_name = Path(file_path).stem
+        else:
             base_name = "livro"
         sanitized = FileManager.sanitize_filename(base_name)
         if not sanitized:
@@ -1293,10 +1302,8 @@ class ConverterApplication:
         if hasattr(reader, 'file_path') and reader.file_path:
             success = cache_manager.save_chapters_to_cache(reader.file_path, chapters_data)
             if success:
-                cache_txt_path = cache_manager._get_cache_path(
-                    Path(reader.file_path),
-                    override_name=chapters_data.get('title'),
-                ) / "txt"
+                # **CORRIGIDO**: Não usar override_name para evitar pastas duplicadas
+                cache_txt_path = cache_manager._get_cache_path(Path(reader.file_path)) / "txt"
                 print(f"\n💾 Cache txt salvo em: {cache_txt_path}")
             else:
                 print("\n⚠️  Erro ao salvar cache txt")
@@ -1824,10 +1831,11 @@ class ConverterApplication:
 
         return cleaned.strip(" -—–,:;!?\"'()[]{}")
 
-    def _sanitize_display_values(self, main_name, sub_name, first_words, book_title):
+    def _sanitize_display_values(self, main_name, sub_name, first_words, book_title, book_author=None):
         """Clean display values to avoid repeating the book title or duplicates"""
 
         book_title_clean = (book_title or "").strip()
+        book_author_clean = (book_author or "").strip()
 
         def cleanse(value: Optional[str]) -> str:
             if not value:
@@ -1836,6 +1844,8 @@ class ConverterApplication:
             if not cleaned:
                 return ""
             if book_title_clean and cleaned.lower() == book_title_clean.lower():
+                return ""
+            if book_author_clean and cleaned.lower() == book_author_clean.lower():
                 return ""
             if book_title_clean:
                 title_pattern = re.escape(book_title_clean)
@@ -1855,6 +1865,11 @@ class ConverterApplication:
                 cleaned = re.sub(r"\(\s*\)", "", cleaned)
                 cleaned = re.sub(r"\[\s*\]", "", cleaned)
                 cleaned = re.sub(r"\{\s*\}", "", cleaned)
+            if book_author_clean:
+                author_pattern = re.escape(book_author_clean)
+                cleaned = re.sub(author_pattern, "", cleaned, flags=re.IGNORECASE)
+                cleaned = re.sub(r"\s+", " ", cleaned)
+                cleaned = cleaned.strip()
             cleaned = cleaned.strip(" -–—,:;")
             return cleaned
 
@@ -1930,7 +1945,7 @@ class ConverterApplication:
         except (ValueError, IndexError):
             return None
 
-    def _format_chapter_display(self, chapter, chapters, current_index, book_title):
+    def _format_chapter_display(self, chapter, chapters, current_index, book_title, book_author=None):
         """Format chapter display generically without book-specific rules"""
 
         text = str(getattr(chapter, 'text', ""))
@@ -1947,7 +1962,8 @@ class ConverterApplication:
             clean_name,
             None,
             preview,
-            book_title
+            book_title,
+            book_author
         )
 
         label = self._detect_section_label(clean_name, text, current_index)
