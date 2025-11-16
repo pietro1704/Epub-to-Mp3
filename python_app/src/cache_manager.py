@@ -51,12 +51,18 @@ class CacheManager:
         return hashlib.md5(hash_input.encode()).hexdigest()[:12]
     
     def _get_cache_path(self, ebook_path: Path, *, override_name: Optional[str] = None) -> Path:
-        """Retorna caminho do cache usando apenas o nome do livro"""
+        """Retorna caminho do cache usando apenas o nome do livro
+
+        IMPORTANTE: Sempre usa o nome do arquivo como base, NÃO o título do livro,
+        para evitar criar pastas duplicadas quando título != nome do arquivo
+        """
         if self.cache_dir is None:
             # Fallback para diretório temporário
             import tempfile
             return Path(tempfile.gettempdir()) / "epub_to_mp3_fallback"
-        source_name = override_name or ebook_path.stem
+        # **CORRIGIDO**: Sempre usar ebook_path.stem, ignorar override_name
+        # para evitar criar múltiplas pastas para o mesmo livro
+        source_name = ebook_path.stem
         safe_name = self._sanitize_filename(source_name)
         if not safe_name:
             safe_name = "livro"
@@ -113,8 +119,8 @@ class CacheManager:
             return False
 
         try:
-            override_title = chapters_data.get('title') if isinstance(chapters_data, dict) else None
-            cache_path = self._get_cache_path(ebook_path, override_name=override_title)
+            # **CORRIGIDO**: Não usar override_name para evitar pastas duplicadas
+            cache_path = self._get_cache_path(ebook_path)
             cache_path.mkdir(parents=True, exist_ok=True)
 
             # Cria subdiretório txt para os capítulos, sobrescrevendo o conteúdo anterior
@@ -169,16 +175,10 @@ class CacheManager:
 
         if ebook_path:
             ebook_path = Path(ebook_path)
+            # **CORRIGIDO**: Usar apenas o caminho baseado no nome do arquivo
+            # para evitar procurar em múltiplas pastas
             candidates = set()
-
             candidates.add(self._get_cache_path(ebook_path))
-            if title:
-                candidates.add(self._get_cache_path(ebook_path, override_name=title))
-
-            safe_stem = self._sanitize_filename(ebook_path.stem)
-            candidates.add(self.cache_dir / f"{safe_stem}_{self._get_ebook_hash(ebook_path)}")
-            if title:
-                candidates.add(self.cache_dir / self._sanitize_filename(title))
 
             for candidate in candidates:
                 if candidate.exists() and candidate.is_dir():
