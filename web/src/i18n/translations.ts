@@ -176,7 +176,6 @@ export const translations: Record<Locale, Translations> = {
         description: 'Os capítulos prontos aparecem aqui para download imediato.',
         panelTitle: 'Seus arquivos MP3',
         panelDescription: 'Baixe os capítulos convertidos ou inicie outra conversão.',
-        footer: 'Para publicar, aponte VITE_API_BASE para seu backend.',
       },
     },
     form: {
@@ -283,8 +282,7 @@ export const translations: Record<Locale, Translations> = {
       orIndividual: 'Ou baixe/ouça os capítulos individualmente',
     },
     layout: {
-      footer:
-        'Pronto para publicar no Cloudflare Pages. Informe VITE_API_BASE com o endereço do serviço Python e tudo funciona automaticamente.',
+      footer: '',
     },
     flow: {
       start: 'Enviando arquivo para o servidor…',
@@ -332,7 +330,6 @@ export const translations: Record<Locale, Translations> = {
         description: 'Finished chapters become available for instant download.',
         panelTitle: 'Your MP3 files',
         panelDescription: 'Download the chapters or start another conversion.',
-        footer: 'When deploying, set VITE_API_BASE to your backend endpoint.',
       },
     },
     form: {
@@ -439,7 +436,7 @@ export const translations: Record<Locale, Translations> = {
       orIndividual: 'Or download/listen to individual chapters',
     },
     layout: {
-      footer: 'Ready for Cloudflare Pages. Set VITE_API_BASE to your Python backend and you are good to go.',
+      footer: '',
     },
     flow: {
       start: 'Sending file to the server…',
