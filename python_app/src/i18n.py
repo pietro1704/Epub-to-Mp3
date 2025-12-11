@@ -191,7 +191,7 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
 @dataclass
 class Localization:
     language: str
-    default_color: str = field(default="\033[36m")  # cyan
+    default_color: str = field(default="\033[1;34m")  # bold blue (better contrast for light themes)
     reset_color: str = field(default="\033[0m")
 
     def __post_init__(self) -> None:
