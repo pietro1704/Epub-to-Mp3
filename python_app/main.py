@@ -589,7 +589,7 @@ class ConverterApplication:
                 replacements_map[footnote["marker"]] = f"{prefix}{intro}{suffix_part}{closing}"
             return replacements_map
 
-        for item in items:
+        for chapter_num, item in enumerate(items, 1):
             chapter = item.chapter
             raw_html = getattr(chapter, 'raw_html', None)
             chapter_footnotes = getattr(chapter, 'footnotes', None)
@@ -603,10 +603,12 @@ class ConverterApplication:
                 or (item.index if isinstance(item.index, str) else None)
                 or ""
             )
+            # Mostrar número ordinal (1/179) + identificador estrutural (4.23)
+            index_display = f"{chapter_num}/{len(items)} [{item.index}]" if item.index else f"{chapter_num}/{len(items)}"
             print(
                 self.localization.t(
                     "preprocess_chapter",
-                    index=item.index or "?",
+                    index=index_display,
                     title=chapter_label,
                 ),
                 flush=True,

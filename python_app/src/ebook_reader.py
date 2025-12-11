@@ -245,8 +245,19 @@ class TextProcessor:
                 return ""
             cleaned = text.strip()
             label = (label or "").strip()
-            if label:
-                candidates = [label, f"[{label}]", f"({label})", f"{label}.", f"{label}:", f"{label}-"]
+
+            # Extrair apenas dígitos do label para comparação
+            label_digits = "".join(ch for ch in label if ch.isdigit())
+
+            if label_digits:
+                # Tentar remover várias formas do número/label no início
+                candidates = [
+                    label,  # Label completo (ex: "[1]")
+                    f"[{label}]", f"({label})", f"{label}.", f"{label}:", f"{label}-",
+                    f"[{label_digits}]", f"({label_digits})", f"{label_digits}.", f"{label_digits}:", f"{label_digits}-",
+                    label_digits,  # Apenas o número (ex: "1")
+                ]
+
                 lowered = cleaned.lower()
                 for candidate in candidates:
                     candidate_clean = candidate.strip()
@@ -255,6 +266,7 @@ class TextProcessor:
                     if lowered.startswith(candidate_clean.lower()):
                         cleaned = cleaned[len(candidate_clean):].lstrip(" .:-)–—")
                         break
+
             return cleaned.strip()
 
         for anchor in list(soup.find_all('a')):
@@ -395,8 +407,21 @@ class TextProcessor:
             counter += 1
             marker_token = f"[[FOOTNOTE_{counter}]]"
             footnote_text = footnote_map.get(lookup_key, '').strip()
-            if digits and footnote_text.startswith(digits):
-                footnote_text = footnote_text[len(digits):].lstrip(' .:-)–—')
+
+            # Remover número/label duplicado no início do texto
+            if digits:
+                # Tentar remover várias formas do número no início
+                candidates = [
+                    f"[{digits}]", f"({digits})", f"{digits}.", f"{digits}:", f"{digits}-",
+                    f"[{label}]", f"({label})", f"{label}.", f"{label}:", f"{label}-",
+                    digits,  # Apenas o número
+                ]
+                lowered = footnote_text.lower()
+                for candidate in candidates:
+                    if lowered.startswith(candidate.lower()):
+                        footnote_text = footnote_text[len(candidate):].lstrip(' .:-)–—')
+                        break
+
             if not footnote_text:
                 footnote_text = footnote_map.get(lookup_key, '').strip()
             footnotes.append({
