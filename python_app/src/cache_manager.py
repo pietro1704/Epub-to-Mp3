@@ -142,6 +142,22 @@ class CacheManager:
                 with open(chapter_file, 'w', encoding='utf-8') as handle:
                     handle.write(chapter_text)
 
+            # **FIX**: Salvar metadata.json para que get_cached_chapters funcione
+            stat = ebook_path.stat()
+            metadata = {
+                'title': chapters_data.get('title', 'Unknown'),
+                'author': chapters_data.get('author', 'Unknown'),
+                'chapters': chapters_data.get('chapters', []),
+                'chapters_count': len(chapters),
+                'cached_at': datetime.now().isoformat(),
+                'size': stat.st_size,
+                'mtime': stat.st_mtime
+            }
+
+            metadata_file = cache_path / "metadata.json"
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, ensure_ascii=False, indent=2)
+
             return True
 
         except Exception as exc:
