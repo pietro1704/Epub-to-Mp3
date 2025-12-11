@@ -98,8 +98,9 @@ class TestSampleEpubFeatures(unittest.TestCase):
                     result = app.run(args)  # type: ignore[arg-type]
                     self.assertEqual(result, 0)
 
-                cache_dir = app.cache_root / "Test_Multi_Feature_Book" / "txt"
-                self.assertTrue(cache_dir.exists())
+                # Cache is saved using ebook_path.stem (sample.epub -> sample)
+                cache_dir = app.cache_root / "sample" / "txt"
+                self.assertTrue(cache_dir.exists(), f"Cache directory not found at {cache_dir}")
 
                 cached_files = sorted(cache_dir.glob("*.txt"))
                 self.assertGreaterEqual(len(cached_files), 3)

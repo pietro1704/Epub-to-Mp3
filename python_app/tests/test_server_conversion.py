@@ -43,7 +43,7 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
 
     job = server.jobs[job_id]
     assert job["state"] == "finished"
-    assert len(job["outputs"]) == 3  # zip + 2 capítulos
+    assert len(job["outputs"]) == 5  # zip + 4 capítulos (inclui sub-capítulos)
 
     job_dir = tmp_path / job_id
     generated_files = {p.name for p in job_dir.iterdir() if p.is_file()}

@@ -109,9 +109,9 @@ class TestConverterApplication(unittest.TestCase):
         mock_reader_instance = Mock()
         mock_reader_instance.title = "Test Book"
         mock_reader.return_value = mock_reader_instance
-        
+
         mock_asyncio_run.side_effect = _asyncio_run_stub
-        
+
         args = Namespace(
             input_file=self.test_file,
             show_structure=False,
@@ -120,20 +120,30 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir="test_output",
             filter_chapters=False,
-            parallel=None
+            parallel=None,
+            menu=False,  # Required to avoid menu path
+            listen=False,
+            clear_cache=False,
+            no_cache=False,
+            chapters=None,
+            sections=None,
+            verbose=False,
+            no_footnote=False,
+            footnote_chapter_end=False,
         )
-        
+
         with patch.object(self.app, '_create_config_from_args') as mock_config:
+            # Return a real ConversionConfig with Path for output_dir
             mock_config.return_value = self.app.config.create_conversion_config(
                 engine="edge",
                 voice="test-voice",
-                output_dir="test_output",
+                output_dir=Path("test_output"),  # Use Path instead of string
                 footnote_mode="inline",
                 footnote_context_words=self.app.FOOTNOTE_CONTEXT_WORDS,
             )
-            
+
             result = self.app.run(args)
-            
+
             self.assertEqual(result, 0)
             self.assertGreaterEqual(mock_config.call_count, 1)
             mock_asyncio_run.assert_called_once()
@@ -144,7 +154,7 @@ class TestConverterApplication(unittest.TestCase):
         mock_reader_instance = Mock()
         mock_reader_instance.title = "Test Book"
         mock_reader.return_value = mock_reader_instance
-        
+
         args = Namespace(
             input_file=self.test_file,
             show_structure=False,
@@ -154,7 +164,15 @@ class TestConverterApplication(unittest.TestCase):
             output_dir=None,
             filter_chapters=False,
             parallel=None,
-            menu=True
+            menu=True,
+            listen=False,
+            clear_cache=False,
+            no_cache=False,
+            chapters=None,
+            sections=None,
+            verbose=False,
+            no_footnote=False,
+            footnote_chapter_end=False,
         )
 
         with patch.object(self.app.menu, 'get_conversion_config') as mock_menu:

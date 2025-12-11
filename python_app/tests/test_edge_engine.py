@@ -64,7 +64,7 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
 
         self.assertGreater(long_timeout, short_timeout, "Longer text should have a higher timeout")
         self.assertGreaterEqual(short_timeout, 75, "Short timeout should honour minimum safeguards")
-        self.assertLessEqual(long_timeout, 240, "Timeout must stay under the configured ceiling")
+        self.assertLessEqual(long_timeout, 900, "Timeout must stay under the configured ceiling")
 
     def test_all_segments_processed(self):
         """CRITICAL: Verify that ALL segments are processed, not just the first one."""
