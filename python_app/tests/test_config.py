@@ -20,11 +20,12 @@ class TestConversionConfig(unittest.TestCase):
     def test_config_creation_minimal(self):
         """Test config creation with minimal parameters"""
         config = ConversionConfig(engine="edge")
-        
+
         self.assertEqual(config.engine, "edge")
         self.assertIsNone(config.voice)
         self.assertIsNone(config.model_path)
-        self.assertEqual(config.output_dir, "output")
+        self.assertIsInstance(config.output_dir, Path)  # Now uses OUTPUT_DIR (Path)
+        self.assertTrue(str(config.output_dir).endswith("output"))
         self.assertEqual(config.book_title, "")
         self.assertTrue(config.preserve_all_chapters)
 
@@ -120,10 +121,11 @@ class TestAppConfig(unittest.TestCase):
             output_dir="custom",
             preserve_all_chapters=False
         )
-        
+
         self.assertEqual(config.engine, "coqui")
         self.assertEqual(config.book_title, "Test Book")
-        self.assertEqual(config.output_dir, "custom")
+        self.assertIsInstance(config.output_dir, Path)  # output_dir is now Path
+        self.assertEqual(str(config.output_dir), "custom")
         self.assertFalse(config.preserve_all_chapters)
 
 
