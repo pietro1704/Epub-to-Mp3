@@ -108,6 +108,8 @@ class TestConverterApplication(unittest.TestCase):
         """Test running with specific engine"""
         mock_reader_instance = Mock()
         mock_reader_instance.title = "Test Book"
+        mock_reader_instance.file_path = Path(self.test_file)
+        mock_reader_instance.get_chapters.return_value = []
         mock_reader.return_value = mock_reader_instance
 
         mock_asyncio_run.side_effect = _asyncio_run_stub
@@ -153,6 +155,8 @@ class TestConverterApplication(unittest.TestCase):
         """Test running with interactive menu"""
         mock_reader_instance = Mock()
         mock_reader_instance.title = "Test Book"
+        mock_reader_instance.file_path = Path(self.test_file)
+        mock_reader_instance.get_chapters.return_value = []
         mock_reader.return_value = mock_reader_instance
 
         args = Namespace(

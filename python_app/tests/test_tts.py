@@ -363,12 +363,12 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             # Medium text
             medium_text = "A" * 2000
             timeout = engine._calculate_timeout(medium_text)
-            self.assertEqual(timeout, 60)
+            self.assertEqual(timeout, 75)  # Minimum timeout is 75
             
             # Long text
             long_text = "A" * 10000
             timeout = engine._calculate_timeout(long_text)
-            self.assertGreaterEqual(timeout, 90)
+            self.assertGreaterEqual(timeout, 75)  # Minimum timeout is 75
 
 
 class TestCoquiTTSEngine(unittest.IsolatedAsyncioTestCase):

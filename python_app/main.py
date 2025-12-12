@@ -107,7 +107,7 @@ class ConverterApplication:
 
             # **NEW**: Use CacheManager for better cache handling
             from src.cache_manager import CacheManager
-            cache_manager = CacheManager()
+            cache_manager = CacheManager(cache_dir=self.cache_root)
 
             if getattr(args, "clear_cache", False):
                 input_path = Path(getattr(args, 'input_file', '')) if getattr(args, 'input_file', None) else None
@@ -1179,7 +1179,7 @@ class ConverterApplication:
     def _handle_clear_cache(self) -> int:
         """Handle global cache clearing command"""
         from src.cache_manager import CacheManager
-        cache_manager = CacheManager()
+        cache_manager = CacheManager(cache_dir=self.cache_root)
 
         cache_info = cache_manager.get_cache_info()
         if cache_info['total_cached_books'] == 0:
@@ -1281,7 +1281,7 @@ class ConverterApplication:
 
         # **Salvar cache txt** ao mostrar estrutura
         from src.cache_manager import CacheManager
-        cache_manager = CacheManager()
+        cache_manager = CacheManager(cache_dir=self.cache_root)
 
         chapters_data = {
             'title': reader.title or 'Livro',
