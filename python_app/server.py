@@ -27,6 +27,7 @@ from src.storage_manager import get_storage_manager
 from src.utils import FileManager
 from src.cache_manager import CacheManager
 from src.paths import OUTPUT_DIR
+from src.job_manager import JobManager
 from main import ConverterApplication
 
 app = FastAPI(title="EPUB to MP3 Converter API")
@@ -60,7 +61,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-jobs: Dict[str, dict] = {}
 # Para deployments em cloud (HF Spaces, etc.), use /tmp; caso contrário, usa OUTPUT_DIR da raiz do projeto
 # Se OUTPUT_DIR env var estiver definida, usa ela; senão usa OUTPUT_DIR do paths.py
 if os.getenv("OUTPUT_DIR"):
@@ -71,6 +71,36 @@ else:
     output_dir = OUTPUT_DIR
 
 output_dir.mkdir(exist_ok=True, parents=True)
+
+# Initialize job manager with persistence
+jobs_state_dir = output_dir / ".jobs"
+job_manager = JobManager(jobs_state_dir)
+
+# Load existing jobs from disk on startup
+jobs: Dict[str, dict] = job_manager.load_all_jobs()
+logger.info(f"Loaded {len(jobs)} jobs from disk")
+
+# Mark jobs as interrupted if they were running/queued (server restart)
+# IMPORTANT: On HF Spaces, /tmp is cleared on restart, so source files are lost.
+# Jobs that were in progress cannot be resumed without the source file.
+# Future enhancement: Save EPUB to R2 for resume capability.
+for job_id, job_data in jobs.items():
+    state = job_data.get("state", "")
+    if state in ("queued", "running"):
+        # Check if the source file still exists
+        file_path = job_data.get("file_path")
+        if file_path and not Path(file_path).exists():
+            # Source file was lost (server restart), mark as interrupted
+            job_data["state"] = "interrupted"
+            job_data["error"] = "Conversão interrompida (servidor reiniciado e arquivo temporário perdido)"
+            job_data["events"] = job_data.get("events", []) + [
+                "",
+                "⚠️ Conversão interrompida devido a reinício do servidor",
+                "❌ Arquivo de origem foi perdido - não é possível retomar",
+                "ℹ️ Para evitar isso, aguarde a conversão completa antes de sair",
+            ]
+            job_manager.save_job(job_id, job_data)
+            logger.warning(f"Job {job_id} marked as interrupted (source file lost)")
 
 tts_factory = TTSFactory()
 
@@ -117,15 +147,27 @@ async def convert_ebook(
         "outputs": [],
     }
 
+    # Persist job state to disk
+    job_manager.save_job(job_id, jobs[job_id])
+
     background_tasks.add_task(process_conversion, job_id)
     return {"jobId": job_id}
 
 
 @app.get("/api/jobs/{job_id}")
 async def get_job_status(job_id: str) -> JobStatus:
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return JobStatus(**jobs[job_id])
+    # Check in-memory jobs first
+    if job_id in jobs:
+        return JobStatus(**jobs[job_id])
+
+    # Try to load from disk if not in memory
+    job_data = job_manager.load_job(job_id)
+    if job_data:
+        # Add back to memory cache for future requests
+        jobs[job_id] = job_data
+        return JobStatus(**job_data)
+
+    raise HTTPException(status_code=404, detail="Job not found")
 
 
 @app.get("/api/outputs/{job_id}/{filename}")
@@ -174,6 +216,10 @@ async def cleanup_old_files(max_age_hours: int = 48) -> dict:
             r2_deleted = storage.cleanup_old_files(max_age_hours=max_age_hours)
             result["r2_deleted"] = r2_deleted
 
+        # Cleanup old job state files
+        jobs_deleted = job_manager.cleanup_old_jobs(max_age_hours=max_age_hours)
+        result["jobs_deleted"] = jobs_deleted
+
         logger.info(f"Cleanup completed: {result}")
         return result
 
@@ -194,6 +240,22 @@ async def health_check() -> dict:
     }
 
 
+@app.get("/api/jobs/resumable")
+async def get_resumable_jobs() -> dict:
+    """Get list of jobs that can be resumed."""
+    resumable = job_manager.get_resumable_jobs()
+    return {
+        "resumable_jobs": resumable,
+        "count": len(resumable)
+    }
+
+
+def _persist_job(job_id: str) -> None:
+    """Helper to persist job state to disk."""
+    if job_id in jobs:
+        job_manager.save_job(job_id, jobs[job_id])
+
+
 async def process_conversion(job_id: str) -> None:
     job = jobs[job_id]
 
@@ -201,6 +263,7 @@ async def process_conversion(job_id: str) -> None:
         job["state"] = "running"
         job["events"].append("📚 METADADOS DO EBOOK")
         job["events"].append("=" * 64)
+        _persist_job(job_id)
 
         file_path = Path(job["file_path"])
         reader = EbookReader(str(file_path))
@@ -212,6 +275,7 @@ async def process_conversion(job_id: str) -> None:
         job["events"].append(f"📜 Título: {title}")
         job["events"].append(f"✍️ Autor: {author}")
         job["chaptersCompleted"] = 0
+        _persist_job(job_id)
 
         job["events"].append("")
         job["events"].append("🌐 DETECÇÃO DE IDIOMA")
@@ -219,6 +283,7 @@ async def process_conversion(job_id: str) -> None:
         detected_lang = job.get("language") or "pt-BR"
         job["detectedLanguage"] = detected_lang
         job["events"].append(f"🌐 Idioma principal: {detected_lang} (estimado)")
+        _persist_job(job_id)
 
         # Create TTS engine using factory with optimized compression
         config = ConversionConfig(
@@ -288,6 +353,7 @@ async def process_conversion(job_id: str) -> None:
 
             job["events"].append(f"✅ Concluído: {output_file.name}")
             job["chaptersCompleted"] = idx
+            _persist_job(job_id)
 
             outputs.append(
                 {
@@ -364,11 +430,16 @@ async def process_conversion(job_id: str) -> None:
         job["events"].append("")
         job["events"].append("✅ Conversão finalizada com sucesso")
         job["events"].append(f"📁 Arquivo disponível: {zip_file.name} ({len(chapters)} capítulos)")
+        _persist_job(job_id)
+
+        # Delete job state after successful completion (keep for failed jobs)
+        job_manager.delete_job(job_id)
 
     except Exception as exc:  # pragma: no cover - defensive handling
         job["state"] = "failed"
         job["error"] = str(exc)
         job["events"].append(f"❌ Erro: {exc}")
+        _persist_job(job_id)
 
     finally:
         temp_path = Path(job["file_path"])

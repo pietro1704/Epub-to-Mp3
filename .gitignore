@@ -92,8 +92,8 @@ Thumbs.db
 
 # EBook files (for testing - uncomment if needed)
 *.epub
-!tests/fixtures/epubs/*.epub
-# web/public/sample.epub is generated from fixtures during build
+!python_app/tests/fixtures/epubs/*.epub
+!web/public/sample.epub
 *.pdf
 *.mobi
 *.azw3
@@ -113,7 +113,7 @@ converted/
 
 # TTS models and temporary files
 models/
-*.onnx
+!python_app/models/*.onnx
 *.pt
 *.pth
 *.bin

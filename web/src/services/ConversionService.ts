@@ -10,10 +10,21 @@ export interface PollOptions {
   onSnapshot?: (snapshot: JobSnapshot) => void;
 }
 
+export interface ResumableJob {
+  jobId: string;
+  state: string;
+  bookTitle: string;
+  fileName: string;
+  savedAt: string;
+  chaptersCompleted?: number;
+  chaptersTotal?: number;
+}
+
 export interface ConversionClient {
   submit(request: ConversionFormValues): Promise<{ jobId: string }>;
   fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot>;
   poll(jobId: string, options?: PollOptions): Promise<JobSnapshot>;
+  getResumableJobs?(): Promise<ResumableJob[]>;
 }
 
 function buildFormData(values: ConversionFormValues): FormData {
@@ -161,11 +172,24 @@ export class HttpConversionClient implements ConversionClient {
       const snapshot = await this.fetch(jobId, signal);
       options.onSnapshot?.(snapshot);
 
-      if (snapshot.state === 'finished' || snapshot.state === 'failed') {
+      if (snapshot.state === 'finished' || snapshot.state === 'failed' || snapshot.state === 'interrupted') {
         return snapshot;
       }
 
       await sleep(interval, signal);
+    }
+  }
+
+  async getResumableJobs(): Promise<ResumableJob[]> {
+    try {
+      const response = await fetch(this.resolve('/api/jobs/resumable'), {
+        method: 'GET',
+      });
+      const data = await parseResponse<{ resumable_jobs: ResumableJob[]; count: number }>(response);
+      return data.resumable_jobs || [];
+    } catch (error) {
+      console.warn('[ConversionClient] Failed to fetch resumable jobs:', error);
+      return [];
     }
   }
 }

@@ -14,14 +14,47 @@ export interface AppProps {
   client?: ConversionClient;
 }
 
+const CACHED_ALERT_DISMISSED_KEY = 'ebook-tts-cached-alert-dismissed';
+
 export default function App(props?: AppProps): JSX.Element {
   const { client } = props ?? {};
   const { state, submit, resume, reset, isBusy, cachedJobs } = useConversionFlow(client);
   const [formVersion, setFormVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<'setup' | 'progress' | 'downloads'>('setup');
   const [showRawLog, setShowRawLog] = useState(false);
-  const [showCachedAlert, setShowCachedAlert] = useState(true);
+  const [showCachedAlert, setShowCachedAlert] = useState(() => {
+    try {
+      return localStorage.getItem(CACHED_ALERT_DISMISSED_KEY) !== 'true';
+    } catch {
+      return true;
+    }
+  });
   const t = useTranslations();
+
+  // Re-show alert when new cached jobs appear
+  useEffect(() => {
+    if (cachedJobs.length > 0) {
+      try {
+        const isDismissed = localStorage.getItem(CACHED_ALERT_DISMISSED_KEY) === 'true';
+        if (isDismissed) {
+          // Check if we have a stored job count
+          const storedCount = localStorage.getItem('ebook-tts-cached-count');
+          const previousCount = storedCount ? parseInt(storedCount, 10) : 0;
+
+          // If new jobs appeared, reset the dismissed state
+          if (cachedJobs.length > previousCount) {
+            localStorage.removeItem(CACHED_ALERT_DISMISSED_KEY);
+            setShowCachedAlert(true);
+          }
+        }
+
+        // Update stored count
+        localStorage.setItem('ebook-tts-cached-count', cachedJobs.length.toString());
+      } catch (error) {
+        console.warn('[App] Failed to check cached jobs count:', error);
+      }
+    }
+  }, [cachedJobs.length]);
 
   const handleReset = useCallback(() => {
     reset();
@@ -99,11 +132,20 @@ export default function App(props?: AppProps): JSX.Element {
     [formVersion, handleReset, isBusy, showRawLog, state.downloads, state.error, state.etaSeconds, state.jobId, state.log, state.phase, state.summary, submit, t],
   );
 
+  const handleDismissAlert = useCallback(() => {
+    setShowCachedAlert(false);
+    try {
+      localStorage.setItem(CACHED_ALERT_DISMISSED_KEY, 'true');
+    } catch (error) {
+      console.warn('[App] Failed to save alert dismissed state:', error);
+    }
+  }, []);
+
   const handleResumeJob = useCallback((jobId: string) => {
     setActiveTab('progress');
-    setShowCachedAlert(false);
+    handleDismissAlert();
     resume(jobId);
-  }, [resume]);
+  }, [resume, handleDismissAlert]);
 
   return (
     <Layout>
@@ -112,7 +154,7 @@ export default function App(props?: AppProps): JSX.Element {
         <CachedJobsAlert
           cachedJobs={cachedJobs}
           onResume={handleResumeJob}
-          onDismiss={() => setShowCachedAlert(false)}
+          onDismiss={handleDismissAlert}
         />
       )}
       <section className="tabs">

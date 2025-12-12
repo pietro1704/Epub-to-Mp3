@@ -182,12 +182,31 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
   const t = useTranslations();
   const [cachedJobs, setCachedJobs] = useState<Array<{ jobId: string; fileName: string; timestamp: number }>>([]);
 
-  // Cleanup old cache on mount and load cached jobs
+  // Cleanup old cache on mount and load cached jobs from both backend and localStorage
   useEffect(() => {
-    conversionCache.cleanup();
-    const cached = conversionCache.listAll();
-    setCachedJobs(cached.map(c => ({ jobId: c.jobId, fileName: c.fileName, timestamp: c.timestamp })));
-  }, []);
+    const loadJobs = async () => {
+      // Cleanup old localStorage cache
+      conversionCache.cleanup();
+
+      // Try to fetch resumable jobs from backend
+      const backendJobs = await api.getResumableJobs?.() || [];
+
+      if (backendJobs.length > 0) {
+        // Convert backend jobs to cachedJobs format
+        setCachedJobs(backendJobs.map(job => ({
+          jobId: job.jobId,
+          fileName: job.fileName || job.bookTitle || 'Livro Desconhecido',
+          timestamp: job.savedAt ? new Date(job.savedAt).getTime() : Date.now(),
+        })));
+      } else {
+        // Fallback to localStorage cache if backend has no jobs
+        const cached = conversionCache.listAll();
+        setCachedJobs(cached.map(c => ({ jobId: c.jobId, fileName: c.fileName, timestamp: c.timestamp })));
+      }
+    };
+
+    loadJobs();
+  }, [api]);
 
   const resetLogAndCounters = useCallback(() => {
     entryFactoryRef.current = createStatusEntryFactory();
@@ -315,37 +334,90 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
 
   const resume = useCallback(
     async (jobId: string) => {
+      // Try to fetch job state from backend first
+      let initialSnapshot: JobSnapshot | null = null;
+      try {
+        initialSnapshot = await api.fetch(jobId);
+
+        // Check if job was interrupted (source file lost)
+        if (initialSnapshot.state === 'interrupted') {
+          dispatch({
+            type: 'fail',
+            error: initialSnapshot.error || 'Conversão interrompida',
+            entry: entryFactoryRef.current(initialSnapshot.error || 'Conversão foi interrompida e não pode ser retomada'),
+          });
+
+          // Show all events from interrupted job
+          initialSnapshot.events?.forEach((event) => {
+            dispatch({
+              type: 'append-entry',
+              entry: { id: `event-${Math.random()}`, message: event, timestamp: new Date().toISOString() },
+            });
+          });
+
+          // Remove from cached jobs list
+          setCachedJobs(prev => prev.filter(j => j.jobId !== jobId));
+          return;
+        }
+      } catch (error) {
+        console.warn('[useConversionFlow] Failed to fetch job from backend:', error);
+      }
+
+      // Fallback to localStorage cache
       const cached = conversionCache.load(jobId);
-      if (!cached) {
-        console.warn('[useConversionFlow] No cached state found for job:', jobId);
+
+      // If neither backend nor cache has the job, warn and return
+      if (!initialSnapshot && !cached) {
+        console.warn('[useConversionFlow] No state found for job:', jobId);
+        dispatch({
+          type: 'fail',
+          error: 'Job não encontrado',
+          entry: entryFactoryRef.current('Não foi possível encontrar o estado da conversão'),
+        });
         return;
       }
 
-      // Restore cached state
+      // Restore state
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // Restore log entries
       resetLogAndCounters();
-      cached.state.log.forEach(entry => {
-        seenEventsRef.current.add(entry.message);
-      });
 
-      // Dispatch all cached log entries
-      for (const entry of cached.state.log) {
-        dispatch({ type: 'append-entry', entry });
+      // If we have backend data, use it; otherwise use cache
+      if (initialSnapshot) {
+        // Use backend state
+        fileNameRef.current = initialSnapshot.events?.find(e => e.includes('📜 Título:'))?.replace('📜 Título: ', '') || 'Livro';
+
+        // Dispatch initial events from backend
+        initialSnapshot.events?.forEach((event) => {
+          seenEventsRef.current.add(event);
+          dispatch({
+            type: 'append-entry',
+            entry: { id: `event-${Math.random()}`, message: event, timestamp: new Date().toISOString() },
+          });
+        });
+      } else if (cached) {
+        // Use localStorage cache
+        cached.state.log.forEach(entry => {
+          seenEventsRef.current.add(entry.message);
+        });
+
+        for (const entry of cached.state.log) {
+          dispatch({ type: 'append-entry', entry });
+        }
+
+        fileNameRef.current = cached.fileName;
       }
 
-      // Set jobId
+      // Set jobId and add resuming message
       dispatch({
         type: 'job-created',
-        jobId: cached.jobId,
+        jobId,
         entry: entryFactoryRef.current(t.flow.resuming),
       });
 
       startTimeRef.current = Date.now();
-      fileNameRef.current = cached.fileName;
 
       try {
         // Continue polling from where we left off
@@ -382,12 +454,12 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
 
             // Save to cache periodically during conversion
             if (snapshot.state === 'running' || snapshot.state === 'queued') {
-              conversionCache.save(jobId, cached.fileName, state);
+              conversionCache.save(jobId, fileNameRef.current, state);
             }
           },
         });
 
-        if (finalSnapshot.state === 'failed') {
+        if (finalSnapshot.state === 'failed' || finalSnapshot.state === 'interrupted') {
           const failureMessage = finalSnapshot.error || t.flow.defaultFailure;
           dispatch({
             type: 'fail',
@@ -395,6 +467,8 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
             entry: entryFactoryRef.current(t.flow.failure(failureMessage)),
           });
           startTimeRef.current = null;
+          // Remove from cached jobs list
+          setCachedJobs(prev => prev.filter(j => j.jobId !== jobId));
           return;
         }
 
