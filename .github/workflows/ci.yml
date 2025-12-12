@@ -3,12 +3,11 @@ name: CI
 on:
   push:
     branches:
-      - main
       - master
   pull_request:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,29 +19,13 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r python_app/requirements.txt
+          pip install -r requirements.txt
 
       - name: Run Python tests
-        run: pytest
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: web/package-lock.json
-
-      - name: Install web dependencies
-        run: npm install
-        working-directory: web
-
-      - name: Build web app
-        run: npm run build
-        working-directory: web
-
-      - name: Run web tests
-        run: npm run test
-        working-directory: web
+        run: pytest -v --tb=short

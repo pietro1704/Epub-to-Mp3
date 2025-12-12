@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import shutil
 import uuid
@@ -11,6 +12,8 @@ import zipfile
 from pathlib import Path
 import re
 from typing import Dict, Optional
+
+logger = logging.getLogger(__name__)
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware

@@ -1,0 +1,36 @@
+# Hugging Face Space Requirements
+# EPUB to MP3 Converter with Edge-TTS
+
+# FastAPI Server
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+
+# TTS Engine (Edge-TTS - Microsoft online)
+edge-tts>=7.2.0
+
+# Ebook Processing
+ebooklib>=0.18
+beautifulsoup4>=4.12.0
+pypdf>=4.0.0
+lxml>=5.0.0
+
+# Language Detection
+langdetect>=1.0.9
+
+# Audio Processing
+static-ffmpeg
+
+# Data/Validation
+pydantic>=2.10.0
+numpy>=1.24.0,<2.0.0
+
+# HTTP/Async
+aiohttp>=3.9.0
+aiofiles>=24.0.0
+
+# Progress
+tqdm
+
+# Testing (dev only)
+pytest
