@@ -1,3 +1,13 @@
+---
+title: EPUB to MP3 Converter
+emoji: 📚
+colorFrom: blue
+colorTo: purple
+sdk: docker
+pinned: false
+license: mit
+---
+
 # EPUB to MP3 Converter
 
 Convert EPUB/PDF ebooks into MP3 audiobooks using TTS engines.
