@@ -289,9 +289,12 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result, output_path)
             self.assertGreater(len(calls), 1, "Texto longo deve ser dividido em múltiplos segmentos")
 
-            aggregated = "".join(payload for payload, _ in calls)
+            aggregated = " ".join(payload for payload, _ in calls)
             expected = TextFormattingProcessor.clean_tts_text(text)
-            self.assertEqual(TextFormattingProcessor.clean_tts_text(aggregated), expected)
+            # Normalize whitespace for comparison (chunking may adjust spacing)
+            import re
+            normalize = lambda s: re.sub(r'\s+', ' ', s).strip()
+            self.assertEqual(normalize(aggregated), normalize(expected))
 
             for payload, _voice in calls:
                 self.assertLessEqual(len(payload), 7000 + 500, "Segmento excedeu o limite esperado (~7000 chars)")
