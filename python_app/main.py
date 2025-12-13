@@ -68,6 +68,13 @@ class ConverterApplication:
         self.language_profile: Optional[LanguageProfile] = None
         self._interactive_mode = True
         self._footnote_summary_printed = False
+
+    @staticmethod
+    def _resolve_verbose(args: argparse.Namespace) -> bool:
+        raw = getattr(args, "verbose", None)
+        if raw is None:
+            return True
+        return bool(raw)
     
     def run(self, args: argparse.Namespace) -> int:
         """Main application entry point"""
@@ -153,6 +160,7 @@ class ConverterApplication:
             config = self._get_conversion_config(args, reader)
             if not config:
                 return 1
+            config.verbose = self._resolve_verbose(args)
             self._announce_footnote_mode(config)
 
             # Configurar o diretório temporário usando o método existente com `config`
@@ -168,7 +176,8 @@ class ConverterApplication:
             self._interactive_mode = bool(getattr(args, "menu", False))
 
             # Prepare language profile AFTER displaying initial metadata
-            self.language_profile = self._prepare_language_profile(reader, structure_items, verbose=getattr(args, 'verbose', False))
+            verbose = self._resolve_verbose(args)
+            self.language_profile = self._prepare_language_profile(reader, structure_items, verbose=verbose)
 
             # Update display with language detection results
             self._update_metadata_display_language()
@@ -177,6 +186,7 @@ class ConverterApplication:
             config = self._get_conversion_config(args, reader)
             if not config:
                 return 1
+            config.verbose = self._resolve_verbose(args)
             self._announce_footnote_mode(config)
 
             structure_items = self._apply_text_transforms(structure_items, config, reader)
@@ -1020,7 +1030,7 @@ class ConverterApplication:
         if engine_name == "coqui":
             return "xtts" in voice_name or "multi" in voice_name
         if engine_name == "piper":
-            return False
+            return True
         return False
 
     def _prepare_chapter_text(self, raw_text: str, *, display_name: str, book_title: Optional[str]) -> str:
@@ -2034,6 +2044,7 @@ class ConverterApplication:
     
     def _create_config_from_args(self, args: argparse.Namespace, reader: EbookReader):
         """Create config from command line arguments"""
+        verbose = self._resolve_verbose(args)
         return self.config.create_conversion_config(
             engine=args.engine or "edge",
             voice=args.voice,
@@ -2047,7 +2058,7 @@ class ConverterApplication:
             clear_cache=getattr(args, 'clear_cache', False),
             footnote_mode=self._resolve_footnote_mode(args),
             footnote_context_words=self.FOOTNOTE_CONTEXT_WORDS,
-            verbose=getattr(args, 'verbose', False),
+            verbose=verbose,
         )
 
 
@@ -2082,10 +2093,20 @@ def _add_conversion_arguments(
         action="store_true",
         help="Skip very short chapters when converting",
     )
-    parser.add_argument(
+    verbose_group = parser.add_mutually_exclusive_group()
+    verbose_group.add_argument(
         "--verbose",
+        dest="verbose",
         action="store_true",
-        help="Enable verbose logging for debugging",
+        default=None,
+        help="Enable verbose logging (default: enabled)",
+    )
+    verbose_group.add_argument(
+        "--no-verbose",
+        dest="verbose",
+        action="store_false",
+        default=None,
+        help="Disable verbose logging",
     )
     parser.add_argument(
         "--listen",

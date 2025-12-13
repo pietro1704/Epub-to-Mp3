@@ -63,7 +63,11 @@ def main() -> int:
         args.menu = False
 
     app = ConverterApplication()
-    return app.run(args)
+    try:
+        return app.run(args)
+    except KeyboardInterrupt:
+        print("\n🛑 Conversão interrompida pelo usuário (CTRL+C).")
+        return 130
 
 
 def _clear_cache_all(*, assume_yes: bool = False) -> None:

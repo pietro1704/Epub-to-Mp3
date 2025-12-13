@@ -24,7 +24,7 @@ export interface ConversionClient {
   submit(request: ConversionFormValues): Promise<{ jobId: string }>;
   fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot>;
   poll(jobId: string, options?: PollOptions): Promise<JobSnapshot>;
-  getResumableJobs?(): Promise<ResumableJob[]>;
+  getResumableJobs?(): Promise<ResumableJob[] | null>;
 }
 
 function buildFormData(values: ConversionFormValues): FormData {
@@ -114,6 +114,8 @@ async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 export class HttpConversionClient implements ConversionClient {
+  private resumableEndpointAvailable = true;
+
   constructor(private readonly baseUrl: string = API_BASE_URL) {}
 
   private resolve(path: string): string {
@@ -148,11 +150,7 @@ export class HttpConversionClient implements ConversionClient {
       signal,
     });
     if (response.status === 404) {
-      return {
-        jobId,
-        state: 'queued',
-        events: [],
-      } satisfies JobSnapshot;
+      throw new Error(`Job ${jobId} not found (404)`);
     }
     const snapshot = await parseResponse<JobSnapshot>(response);
     if (Array.isArray(snapshot.outputs)) {
@@ -180,16 +178,27 @@ export class HttpConversionClient implements ConversionClient {
     }
   }
 
-  async getResumableJobs(): Promise<ResumableJob[]> {
+  async getResumableJobs(): Promise<ResumableJob[] | null> {
+    if (!this.resumableEndpointAvailable) {
+      return null;
+    }
     try {
       const response = await fetch(this.resolve('/api/jobs/resumable'), {
         method: 'GET',
       });
+      if (response.status === 404) {
+        this.resumableEndpointAvailable = false;
+        return null;
+      }
       const data = await parseResponse<{ resumable_jobs: ResumableJob[]; count: number }>(response);
       return data.resumable_jobs || [];
     } catch (error) {
+      if (error instanceof Error && error.message.includes('404')) {
+        this.resumableEndpointAvailable = false;
+        return null;
+      }
       console.warn('[ConversionClient] Failed to fetch resumable jobs:', error);
-      return [];
+      return null;
     }
   }
 }
@@ -300,6 +309,10 @@ export class MockConversionClient implements ConversionClient {
       state: 'queued',
       events: ['Mock: Job received', 'Mock: Processing started'],
     };
+  }
+
+  async getResumableJobs(): Promise<ResumableJob[] | null> {
+    return [];
   }
 
   private createMockZip(bookTitle: string): string {

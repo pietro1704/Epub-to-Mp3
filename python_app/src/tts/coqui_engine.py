@@ -20,13 +20,28 @@ _coqui_executor = None
 def _get_coqui_executor():
     global _coqui_executor
     if _coqui_executor is None:
-        # Máximo 4 threads para evitar sobrecarga
-        _coqui_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="CoquiTTS")
+        try:
+            max_workers = int(os.environ.get("COQUI_MAX_WORKERS", "").strip() or "0")
+        except ValueError:
+            max_workers = 0
+        if max_workers <= 0:
+            cpu_count = os.cpu_count() or 1
+            max_workers = max(1, min(2, cpu_count))
+        _coqui_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="CoquiTTS")
     return _coqui_executor
 
 # Optional dependencies resolved lazily to avoid crashes in restricted environments.
 np = None  # type: ignore
 sf = None  # type: ignore
+
+try:  # pragma: no cover - optional dependency
+    import numpy as _np  # type: ignore
+    import soundfile as _sf  # type: ignore
+
+    np = _np  # type: ignore
+    sf = _sf  # type: ignore
+except Exception:  # pragma: no cover
+    pass
 
 try:  # pragma: no cover - optional dependency
     from ..language import LanguageMarkup
@@ -229,6 +244,15 @@ class CoquiTTSEngine:
             except (TypeError, ValueError) as e:
                 error_msg = str(e).lower()
 
+                # Coqui às vezes retorna '0' quando speaker é inválido; trate como fallback de speaker
+                if error_msg.strip().strip("'\"") == "0":
+                    kwargs.pop("speaker", None)
+                    kwargs.pop("speaker_wav", None)
+                    if self.verbose:
+                        print("🔍 [VERBOSE] Coqui removendo speaker após erro '0'")
+                    retry_count += 1
+                    continue
+
                 if "multi-speaker" in error_msg and "speaker" in error_msg:
                     # Model requires speaker parameter
                     if retry_count == 0:
@@ -275,17 +299,34 @@ class CoquiTTSEngine:
         if self.verbose:
             print("🔍 [VERBOSE] Coqui tentando fallback de speaker")
 
-        # For VITS PT models, try speaker "0" first (most common)
-        if 'vits' in self.model_name.lower() and 'pt' in self.model_name.lower():
+        model_lower = self.model_name.lower()
+
+        # XTTS: não usar "0" – preferir speaker conhecido ou nenhum
+        if "xtts" in model_lower or "multilingual" in model_lower:
+            # Se o modelo expõe speakers, tente o primeiro; caso contrário remova speaker
+            if getattr(self.tts, "speakers", None):
+                kwargs["speaker"] = self.tts.speakers[0]
+                if self.verbose:
+                    print(f"🔍 [VERBOSE] Coqui XTTS fallback usando speaker: {kwargs['speaker']}")
+            else:
+                kwargs.pop("speaker", None)
+                kwargs["speaker_wav"] = None
+                if self.verbose:
+                    print("🔍 [VERBOSE] Coqui XTTS fallback removendo speaker (usar padrão interno)")
+            return
+
+        # Para modelos VITS PT, tente "0"
+        if "vits" in model_lower and "pt" in model_lower:
             kwargs["speaker"] = "0"
             if self.verbose:
                 print("🔍 [VERBOSE] Coqui VITS PT usando speaker: 0")
-        else:
-            # Try common speaker names for other models
-            common_speakers = ["0", "default", "speaker_0", "ljspeech", "p225"]
-            kwargs["speaker"] = common_speakers[0]
-            if self.verbose:
-                print(f"🔍 [VERBOSE] Coqui usando speaker fallback: {common_speakers[0]}")
+            return
+
+        # Para outros modelos, tente opções comuns (sem forçar "0" para XTTS)
+        common_speakers = ["default", "speaker_0", "ljspeech", "p225"]
+        kwargs["speaker"] = common_speakers[0]
+        if self.verbose:
+            print(f"🔍 [VERBOSE] Coqui usando speaker fallback: {common_speakers[0]}")
 
     @staticmethod
     def _resample_audio(data, current_sr: int, target_sr: int):  # pragma: no cover - depends on numpy availability

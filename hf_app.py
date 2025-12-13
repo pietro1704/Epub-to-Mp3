@@ -27,11 +27,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API routes FIRST (server.py already has /api prefix)
-# Insert at beginning to ensure they have priority over catch-all route
-api_routes = list(api_app.routes)
-for route in reversed(api_routes):
-    app.routes.insert(0, route)
+# Include API routes FIRST (server.py already has /api prefix).
+# This ensures the SPA catch-all route doesn't shadow `/api/*`.
+app.include_router(api_app.router)
 
 # Serve static files from web/dist
 web_dist = Path(__file__).parent / "web" / "dist"

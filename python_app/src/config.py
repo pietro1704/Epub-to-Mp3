@@ -94,7 +94,10 @@ class VoiceConfigProvider:
         self._coqui_language_map = {
             "default": "tts_models/pt/cv/vits",
         }
-        self._piper_language_map = {}
+        self._piper_language_map = {
+            "pt": "pt_BR",
+            "en": "en_US",
+        }
 
     @property
     def edge_voices(self) -> Dict[str, tuple[str, str]]:
@@ -140,7 +143,28 @@ class VoiceConfigProvider:
             return self._edge_voices.get("1", (None,))[0]
         if engine == "coqui":
             return self._coqui_models.get("1", (None,))[0]
+        if engine == "piper":
+            code = (primary_language or "").split("-", 1)[0].lower()
+            return self._resolve_piper_model(code)
         return None
+
+    def _resolve_piper_model(self, code: str) -> Optional[str]:
+        discovered = self.get_piper_models()
+        if not discovered:
+            return None
+
+        prefix = self._piper_language_map.get(code, "")
+        candidates = [
+            entry for name, entry in discovered.items()
+            if prefix and str(name).lower().startswith(prefix.lower())
+        ]
+        if not candidates:
+            candidates = list(discovered.values())
+
+        recommended = [c for c in candidates if c.get("recommended")]
+        picked = (recommended[0] if recommended else candidates[0]) if candidates else None
+        path = picked.get("path") if isinstance(picked, dict) else None
+        return str(path) if path else None
 
     def build_language_voice_map(
         self,
@@ -171,7 +195,10 @@ class VoiceConfigProvider:
             elif engine == "coqui":
                 mapping[code] = self._coqui_language_map.get("default", fallback_voice or "coqui-tts/xtts_v2")
             elif engine == "piper":
-                if fallback_voice:
+                model_path = self._resolve_piper_model(code)
+                if model_path:
+                    mapping[code] = model_path
+                elif fallback_voice:
                     mapping[code] = fallback_voice
         if fallback_voice and valid_primary:
             mapping.setdefault(valid_primary, fallback_voice)

@@ -723,6 +723,108 @@ class AudioConverter:
 
         converted_files: List[Path] = []
         errors: List[str] = []
+        cooldown_pattern = re.compile(r"cooldown\\s+(\\d+)s", re.IGNORECASE)
+
+        edge_unavailable_hits = 0
+
+        def can_use_piper() -> bool:
+            return shutil.which("piper") is not None
+
+        def build_best_offline_engine() -> bool:
+            nonlocal tts_engine, config
+            if config.engine.lower() != "edge":
+                return False
+
+            # PRIORIDADE = velocidade (Piper) e, se indisponível, XTTS para qualidade.
+            if can_use_piper():
+                try:
+                    piper_config = replace(config, engine="piper", voice=None, model_path=None)
+                    piper_config.voice = self.tts_factory.voice_provider.get_voice("piper", piper_config.primary_language)
+                    piper_config.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
+                        "piper",
+                        piper_config.languages or ([piper_config.primary_language] if piper_config.primary_language != "auto" else []),
+                        piper_config.voice,
+                        primary_language=piper_config.primary_language,
+                    )
+                    tts_engine = self.tts_factory.create_engine(piper_config)
+                    config = piper_config
+                    print("🔁 Fallback automático: Edge indisponível → Piper (offline rápido)")
+                    return True
+                except Exception as exc:
+                    if self.verbose:
+                        print(f"   ⚠️ Fallback para Piper falhou: {exc}")
+
+            try:
+                coqui_config = replace(config, engine="coqui", voice=None, model_path=None)
+                coqui_config.voice = self.tts_factory.voice_provider.get_voice("coqui", coqui_config.primary_language) or "tts_models/multilingual/multi-dataset/xtts_v2"
+                coqui_config.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
+                    "coqui",
+                    coqui_config.languages or ([coqui_config.primary_language] if coqui_config.primary_language != "auto" else []),
+                    coqui_config.voice,
+                    primary_language=coqui_config.primary_language,
+                )
+                tts_engine = self.tts_factory.create_engine(coqui_config)
+                config = coqui_config
+                print("🔁 Fallback automático: Edge indisponível → XTTS (Coqui, offline)")
+                return True
+            except ImportError:
+                return False
+            except Exception as exc:
+                if self.verbose:
+                    print(f"   ⚠️ Fallback para XTTS falhou: {exc}")
+                return False
+
+        async def wait_edge_cooldown_if_needed(context: str) -> bool:
+            """
+            Handle Edge outages aggressively:
+              - On `NoAudioReceived` or `service_unavailable`, switch to offline (XTTS → Piper) immediately.
+              - If offline engine cannot be created, wait a short cooldown before retrying Edge.
+            """
+            if (config.engine or "").lower() != "edge":
+                return False
+            last_error = getattr(tts_engine, "last_error", None)
+            if not last_error:
+                return False
+
+            error_text = str(last_error)
+            lower_error = error_text.lower()
+            should_switch = (
+                "service_unavailable" in lower_error
+                or "no_audio_payload" in lower_error
+            )
+            if not should_switch:
+                return False
+
+            match = cooldown_pattern.search(str(last_error))
+            seconds = int(match.group(1)) if match else 0
+            if seconds <= 0:
+                # Edge costuma abrir cooldown de 60s em NoAudioReceived; use 45s conservadores
+                seconds = 45
+            if self.verbose:
+                print(f"   ⚠️ Edge indisponível ({context}) - erro: {last_error}")
+            nonlocal edge_unavailable_hits
+            edge_unavailable_hits += 1
+
+            # Prefer switching to an offline engine immediately (Edge costuma falhar em datacenters/HF).
+            if build_best_offline_engine():
+                return True
+
+            max_wait = min(seconds, 90)
+            if self.verbose:
+                print(f"   ⏳ Sem fallback disponível; aguardando {max_wait}s antes de tentar novamente...")
+            waited = 0
+            while waited < max_wait:
+                chunk = min(3, max_wait - waited)
+                await asyncio.sleep(chunk)
+                waited += chunk
+                self.progress.tick(f"⏳ Edge indisponível - aguardando {max_wait - waited}s...")
+            return True
+
+        def _resolve_tts_output_path(final_mp3_path: Path) -> tuple[Path, bool]:
+            engine = (config.engine or "").lower()
+            if engine in {"piper", "coqui"}:
+                return final_mp3_path.with_suffix(".wav"), True
+            return final_mp3_path, False
 
         for idx, chapter in enumerate(chapters_list):
             chapter_num = idx + 1
@@ -736,6 +838,7 @@ class AudioConverter:
             try:
                 # Conversão para diretório temporário
                 output_path = self.file_manager.get_temp_output_path(chapter.name, output_dir, idx + 1)
+                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
 
                 # Check if MP3 already exists and is valid (size > 1KB)
                 # Note: Cache validation already done by _validate_and_clean_cache()
@@ -759,6 +862,8 @@ class AudioConverter:
                         if self.verbose:
                             print(f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}")
                         output_path.unlink(missing_ok=True)
+                        if needs_mp3_transcode:
+                            tts_output_path.unlink(missing_ok=True)
 
                 # Sintetizar com heartbeat e timeout (otimizado)
                 speech_text = self._speech_text(chapter)
@@ -803,14 +908,41 @@ class AudioConverter:
                     if self.verbose:
                         print(f"   🔄 Executando comando TTS: {type(tts_engine).__name__}")
 
-                    synthesis_result = await asyncio.wait_for(
-                        tts_engine.synthesize_async(
-                            speech_text,
+                    synthesis_result = None
+                    max_attempts = 1 if (config.engine or "").lower() == "edge" else 2
+                    last_tts_output_path = tts_output_path
+                    last_needs_transcode = needs_mp3_transcode
+                    for attempt in range(max_attempts):
+                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
+                        last_tts_output_path = tts_output_path
+                        last_needs_transcode = needs_mp3_transcode
+                        synthesis_result = await asyncio.wait_for(
+                            tts_engine.synthesize_async(
+                                speech_text,
+                                tts_output_path,
+                                formatting_segments=getattr(chapter, 'formatting_segments', None)
+                            ),
+                            timeout=timeout_seconds
+                        )
+                        if synthesis_result:
+                            break
+                        waited = await wait_edge_cooldown_if_needed(f"tentativa {attempt + 1}/{max_attempts}")
+                        if not waited:
+                            break
+
+                    if synthesis_result and last_needs_transcode:
+                        if self.verbose:
+                            print(f"🔍 [VERBOSE] Convertendo WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})")
+                        converted = await self.audio_processor.convert_to_mp3(
+                            last_tts_output_path,
                             output_path,
-                            formatting_segments=getattr(chapter, 'formatting_segments', None)
-                        ),
-                        timeout=timeout_seconds
-                    )
+                            bitrate=config.bitrate,
+                        )
+                        if self.verbose and converted is None:
+                            print("🔍 [VERBOSE] Falha ao converter WAV→MP3 (ffmpeg)")
+                        synthesis_result = converted
+                        with contextlib.suppress(OSError):
+                            last_tts_output_path.unlink(missing_ok=True)
 
                     if self.verbose and synthesis_result:
                         print(f"   ✅ TTS concluído: {output_path.name}")
@@ -854,10 +986,24 @@ class AudioConverter:
                         fallback_task = asyncio.create_task(fallback_heartbeat())
 
                         try:
+                            tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
                             synthesis_result = await asyncio.wait_for(
-                                tts_engine.synthesize_async(clean_text, output_path, formatting_segments=None),
+                                tts_engine.synthesize_async(clean_text, tts_output_path, formatting_segments=None),
                                 timeout=fallback_timeout
                             )
+                            if synthesis_result and needs_mp3_transcode:
+                                if self.verbose:
+                                    print(f"🔍 [VERBOSE] Convertendo WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})")
+                                converted = await self.audio_processor.convert_to_mp3(
+                                    tts_output_path,
+                                    output_path,
+                                    bitrate=config.bitrate,
+                                )
+                                if self.verbose and converted is None:
+                                    print("🔍 [VERBOSE] Falha ao converter WAV→MP3 (fallback)")
+                                synthesis_result = converted
+                                with contextlib.suppress(OSError):
+                                    tts_output_path.unlink(missing_ok=True)
                             if self.verbose and synthesis_result:
                                 print(f"   ✅ RETRY: Sucesso no fallback!")
                         finally:
@@ -881,10 +1027,24 @@ class AudioConverter:
                                 if self.verbose:
                                     print(f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)")
 
+                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
                                 synthesis_result = await asyncio.wait_for(
-                                    tts_engine.synthesize_async(emergency_text, output_path, formatting_segments=None),
+                                    tts_engine.synthesize_async(emergency_text, tts_output_path, formatting_segments=None),
                                     timeout=emergency_timeout
                                 )
+                                if synthesis_result and needs_mp3_transcode:
+                                    if self.verbose:
+                                        print(f"🔍 [VERBOSE] Convertendo WAV→MP3 (emergência): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})")
+                                    converted = await self.audio_processor.convert_to_mp3(
+                                        tts_output_path,
+                                        output_path,
+                                        bitrate=config.bitrate,
+                                    )
+                                    if self.verbose and converted is None:
+                                        print("🔍 [VERBOSE] Falha ao converter WAV→MP3 (emergência)")
+                                    synthesis_result = converted
+                                    with contextlib.suppress(OSError):
+                                        tts_output_path.unlink(missing_ok=True)
                                 if synthesis_result and self.verbose:
                                     print(f"   ✅ EMERGÊNCIA: Sucesso com texto reduzido!")
                             else:
@@ -943,20 +1103,30 @@ class AudioConverter:
                 else:
                     # **RETRY**: Tentar com idioma padrão em caso de falha
                     if self.verbose:
-                        print(f"   ⚠️ RETRY: Síntese falhou, tentando com idioma padrão")
+                        print("   ⚠️ RETRY: Síntese falhou, tentando com idioma padrão")
 
                     try:
+                        # If Edge is on cooldown, wait before retrying to avoid instant failures.
+                        await wait_edge_cooldown_if_needed("antes do retry")
+
                         # Use only the first part of text with default language
                         simple_text = (speech_text or "")[:2000].strip()
                         current_payload = simple_text
                         if simple_text:
-                            self.progress.tick(f"🔄 Retry: texto simples (idioma padrão)...")
+                            self.progress.tick("🔄 Retry: texto simples (idioma padrão)...")
                             retry_timeout = 45
 
-                            synthesis_result = await asyncio.wait_for(
-                                tts_engine.synthesize_async(simple_text, output_path, formatting_segments=None),
-                                timeout=retry_timeout
-                            )
+                            synthesis_result = None
+                            for attempt in range(2):
+                                synthesis_result = await asyncio.wait_for(
+                                    tts_engine.synthesize_async(simple_text, output_path, formatting_segments=None),
+                                    timeout=retry_timeout,
+                                )
+                                if synthesis_result:
+                                    break
+                                waited = await wait_edge_cooldown_if_needed(f"retry {attempt + 1}/2")
+                                if not waited:
+                                    break
 
                             if synthesis_result and output_path.exists():
                                 file_size = output_path.stat().st_size
@@ -982,13 +1152,13 @@ class AudioConverter:
 
                                     if self.verbose:
                                         print(f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)")
-                                    self.progress.complete_chapter(f"✅ Sucesso (retry)")
+                                    self.progress.complete_chapter("✅ Sucesso (retry)")
                                     self._retry_original_texts.pop(chapter_label, None)
                                     continue  # Success! Continue to next chapter
-                                else:
-                                    if self.verbose:
-                                        print(f"   ⚠️ RETRY: Arquivo inválido ({file_size} bytes)")
-                                    output_path.unlink(missing_ok=True)
+
+                                if self.verbose:
+                                    print(f"   ⚠️ RETRY: Arquivo inválido ({file_size} bytes)")
+                                output_path.unlink(missing_ok=True)
                     except Exception as retry_e:
                         if self.verbose:
                             print(f"   ❌ RETRY falhou: {retry_e}")

@@ -166,23 +166,17 @@ export default function App(props?: AppProps): JSX.Element {
           <Panel
             title={t.tabs.downloads.panelTitle}
             description={t.tabs.downloads.panelDescription}
-            footer={
-              activeTab === 'downloads' ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                  <button
-                    type="button"
-                    className="button button--secondary"
-                    onClick={() => handleTabChange('progress')}
-                    style={{ alignSelf: 'flex-start' }}
-                  >
-                    ← Voltar
-                  </button>
-                  <small>{t.tabs.downloads.footer}</small>
-                </div>
-              ) : (
-                <small>{t.tabs.downloads.footer}</small>
-              )
-            }
+            footer={activeTab === 'downloads' && (
+              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                <button
+                  type="button"
+                  className="button button--secondary"
+                  onClick={() => handleTabChange('progress')}
+                >
+                  ← Voltar
+                </button>
+              </div>
+            )}
           >
             <DownloadsPanel
               downloads={state.downloads}

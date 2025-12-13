@@ -37,6 +37,7 @@ class TestTTSFactory(unittest.TestCase):
                 "pt-BR-FranciscaNeural",
                 primary_language="auto",
                 language_voices={},
+                verbose=False,
             )
 
     def test_create_coqui_engine(self):
@@ -50,6 +51,7 @@ class TestTTSFactory(unittest.TestCase):
                 "test_model",
                 primary_language="auto",
                 language_voices={},
+                verbose=False,
             )
 
     def test_create_piper_engine(self):

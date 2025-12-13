@@ -30,6 +30,7 @@ class TTSFactory:
                 voice,
                 primary_language=config.primary_language,
                 language_voices=config.language_voices,
+                verbose=config.verbose,
             )
 
         if engine == "coqui":
@@ -42,17 +43,25 @@ class TTSFactory:
                 voice,
                 primary_language=config.primary_language,
                 language_voices=config.language_voices,
+                verbose=config.verbose,
             )
 
         if engine == "piper":
             from .piper_engine import PiperTTSEngine
 
-            model_path = config.model_path or self._find_piper_model()
-            return PiperTTSEngine(
+            model_path = config.model_path
+            if model_path is None and config.voice:
+                candidate = Path(str(config.voice))
+                if candidate.suffix.lower() == ".onnx" and candidate.exists():
+                    model_path = candidate
+            model_path = model_path or self._find_piper_model()
+            engine_instance = PiperTTSEngine(
                 model_path,
                 primary_language=config.primary_language,
                 language_voices=config.language_voices,
             )
+            engine_instance.verbose = config.verbose
+            return engine_instance
 
         raise ValueError(f"Unsupported engine: {config.engine}")
 

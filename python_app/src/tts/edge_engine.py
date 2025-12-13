@@ -8,9 +8,10 @@ import importlib
 import inspect
 import os
 import re
+import traceback
 from contextlib import suppress
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple, Set
 from unittest.mock import Mock
 
 # **SSL BYPASS**: Monkeypatch SSL ANTES de importar edge_tts
@@ -40,7 +41,14 @@ except (TypeError, ValueError):
 DEFAULT_EDGE_SEGMENT_SECONDS = max(30.0, min(_segment_seconds_env, 90.0))
 WORDS_PER_MINUTE = 150
 MIN_WORDS_PER_SEGMENT = 40
+MAX_SEGMENT_SPLIT_ATTEMPTS = 2
+MIN_SEGMENT_RETRY_CHARS = 600
+SIMPLIFIED_SEGMENT_MAX_CHARS = 1800
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+# If Edge returns no audio at all, it's often a connectivity / service issue.
+# Use a short circuit-breaker to avoid spending minutes retrying the same request.
+EDGE_NOAUDIO_COOLDOWN_SECONDS = float(os.getenv("EDGE_NOAUDIO_COOLDOWN_SECONDS", "60"))
 
 # Import SSL/Certificate error types
 try:
@@ -67,6 +75,8 @@ from ..utils import TextValidator
 
 class EdgeTTSEngine:
     """Small facade around ``edge_tts`` with predictable behaviour."""
+
+    _noaudio_backoff_until: float = 0.0
 
     def __init__(
         self,
@@ -114,6 +124,7 @@ class EdgeTTSEngine:
             print(f"🔍 [VERBOSE] EdgeTTS inicializado com voice={voice}")
             print(f"🔍 [VERBOSE] Rate limiter slots disponíveis: {_edge_rate_limiter._value if _edge_rate_limiter else 'N/A'}")
             print(f"🔍 [VERBOSE] Segmentos limitados a {self._max_segment_seconds:.0f}s ({self._words_per_minute} wpm)")
+            print(f"🔍 [VERBOSE] Sanitizador ativo para caracteres invisíveis/controle")
 
     def supports_multilingual(self) -> bool:
         """Edge TTS suporta multiidioma via voice switching e [[lang:]] tags"""
@@ -122,6 +133,50 @@ class EdgeTTSEngine:
     def supports_emphasis(self) -> bool:
         """Edge TTS suporta ênfase via SSML quando voz é Neural"""
         return self._supports_emphasis()
+
+    async def _probe_edge_health(self, voice: str) -> bool:
+        """
+        Tenta uma síntese mínima para diferenciar erro de conteúdo x indisponibilidade do serviço.
+        Se até o texto de teste falhar, assumimos outage no backend do Edge.
+        """
+        test_text = "Teste rápido do Edge TTS."
+        timeout = 8
+        try:
+            async with _edge_rate_limiter:
+                communicator = self._edge_tts.Communicate(test_text, voice or self.voice)
+                stream_candidate = communicator.stream()
+                stream = await stream_candidate if inspect.isawaitable(stream_candidate) else stream_candidate
+
+                async def _consume_probe():
+                    got_audio = False
+                    async for chunk in stream:
+                        if chunk.get("type") == "audio":
+                            got_audio = True
+                            break
+                    with suppress(Exception):
+                        await stream.aclose()
+                    return got_audio
+
+                return await asyncio.wait_for(_consume_probe(), timeout=timeout)
+        except Exception as exc:
+            if self.verbose:
+                print(f"🔍 [VERBOSE] EdgeTTS health-check falhou: {exc}")
+            return False
+
+    @staticmethod
+    def _sanitize_for_edge(text: str) -> str:
+        """
+        Remove caracteres de controle/zero-width e normaliza espaços.
+        Edge costuma retornar NoAudioReceived quando recebe controle invisível ou separadores de linha.
+        """
+        cleaned = re.sub(r"[\u0000-\u001f\u007f-\u009f]", " ", text)
+        cleaned = cleaned.replace("\u2028", " ").replace("\u2029", " ").replace("\ufeff", " ")
+        cleaned = cleaned.replace("\u00a0", " ")
+        cleaned = re.sub(r"[ \t\u200b\u200c\u200d\u2060]+", " ", cleaned)
+        cleaned = re.sub(r"\s+\n", "\n", cleaned)
+        cleaned = re.sub(r"\n\s+", "\n", cleaned)
+        cleaned = cleaned.strip()
+        return cleaned
 
     async def synthesize_async(self, text: str, output_path: Path, formatting_segments=None) -> Optional[Path]:
         if not text:
@@ -144,6 +199,12 @@ class EdgeTTSEngine:
             formatter = TextFormattingProcessor()
             payload_text = formatter.to_audible_text(payload_text, formatting_segments)
 
+        sanitized = self._sanitize_for_edge(payload_text)
+        if sanitized != payload_text:
+            if self.verbose:
+                print(f"🔍 [VERBOSE] EdgeTTS sanitizado: {len(payload_text)} -> {len(sanitized)} chars")
+            payload_text = sanitized
+
         if self.verbose:
             original_preview = (text or "")[:120]
             processed_preview = payload_text[:120]
@@ -153,6 +214,10 @@ class EdgeTTSEngine:
                 print(f"      • Preparado: {processed_preview}")
             else:
                 print(f"🔍 [VERBOSE] EdgeTTS texto preparado (sem alterações): {processed_preview}")
+
+        force_plain_segments = self._should_force_plain_text(payload_text)
+        if force_plain_segments:
+            payload_text = self._simplify_segment_text(payload_text, limit_chars=None)
 
         segments = self._prepare_segments(payload_text)
 
@@ -180,9 +245,18 @@ class EdgeTTSEngine:
 
         total_segments = 0
         failed_segments = 0
+        segments_to_process: List[Tuple[str, str]] = [
+            (voice, segment_text)
+            for voice, segment_text in segments
+            if segment_text and segment_text.strip()
+        ]
+        segment_split_attempts: Dict[str, int] = {}
+        micro_split_tracker: Set[str] = set()
+        idx = 0
 
         try:
-            for idx, (voice, segment_text) in enumerate(segments):
+            while idx < len(segments_to_process):
+                voice, segment_text = segments_to_process[idx]
                 # Validate segment data
                 if voice is None:
                     if self.verbose:
@@ -200,8 +274,14 @@ class EdgeTTSEngine:
                         print("🔍 [VERBOSE] EdgeTTS synthesize_async: empty segment_text after strip, skipping")
                     continue
 
+                if force_plain_segments or self._should_force_plain_text(segment_text):
+                    simplified_segment = self._simplify_segment_text(segment_text, limit_chars=None)
+                    if simplified_segment:
+                        segment_text = simplified_segment
+                        force_plain_segments = True
+
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] EdgeTTS synthesize_async: processing segment {idx+1}/{len(segments)}, {len(segment_text)} chars")
+                    print(f"🔍 [VERBOSE] EdgeTTS synthesize_async: processing segment {idx+1}/{len(segments_to_process)}, {len(segment_text)} chars")
 
                 # **CRITICAL FIX**: Try to process segment with retries
                 success = await self._synthesize_segment(
@@ -212,9 +292,50 @@ class EdgeTTSEngine:
                 )
 
                 if not success:
+                    # If the Edge service is returning *no audio at all*, splitting/cleaning won't help.
+                    # Fail fast so the converter can move on instead of spending minutes in retries.
+                    if idx == 0 and self.last_error and (
+                        "noaudioreceived" in self.last_error.lower()
+                        or "service_unavailable" in self.last_error.lower()
+                        or "no_audio" == self.last_error.lower()
+                    ):
+                        if self.verbose:
+                            print(f"🔍 [VERBOSE] Abortando cedo por erro do serviço Edge: {self.last_error}")
+                        return None
+
+                    retry_segments = self._split_failed_segment(voice, segment_text, segment_split_attempts)
+                    if retry_segments:
+                        if self.verbose:
+                            print(
+                                f"🔍 [VERBOSE] Segment {idx+1}/{len(segments_to_process)} falhou; "
+                                f"dividindo em {len(retry_segments)} novos segmentos"
+                            )
+                        segments_to_process[idx:idx + 1] = retry_segments
+                        continue
+
+                    simplified_text = self._simplify_segment_text(segment_text)
+                    if simplified_text and simplified_text != segment_text:
+                        if self.verbose:
+                            print(
+                                f"🔍 [VERBOSE] Segment {idx+1}/{len(segments_to_process)} falhou; tentando texto simplificado"
+                            )
+                        success = await self._synthesize_segment(
+                            simplified_text,
+                            voice,
+                            output_path,
+                            append=(total_segments > 0),
+                        )
+                        if success:
+                            if self.verbose:
+                                print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments_to_process)} gerado com texto simplificado")
+                            force_plain_segments = True
+                            total_segments += 1
+                            idx += 1
+                            continue
+
                     failed_segments += 1
                     if self.verbose:
-                        print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} FAILED (error: {self.last_error})")
+                        print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments_to_process)} FAILED (error: {self.last_error})")
 
                     # Retry com backoff exponencial mais curto (1s, 2s)
                     if failed_segments <= 2:
@@ -222,7 +343,7 @@ class EdgeTTSEngine:
                         await asyncio.sleep(backoff)
 
                         if self.verbose:
-                            print(f"🔍 [VERBOSE] Retrying segment {idx+1}/{len(segments)} after {backoff}s...")
+                            print(f"🔍 [VERBOSE] Retrying segment {idx+1}/{len(segments_to_process)} after {backoff}s...")
                         success = await self._synthesize_segment(
                             segment_text,
                             voice,
@@ -232,21 +353,34 @@ class EdgeTTSEngine:
 
                         if success:
                             if self.verbose:
-                                print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} succeeded on retry")
+                                print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments_to_process)} succeeded on retry")
                             failed_segments = max(0, failed_segments - 1)
                         else:
                             if self.verbose:
-                                print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} failed after retry")
+                                print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments_to_process)} failed after retry")
 
                     # Falhar se mais de 2 segmentos consecutivos falharem
                     if failed_segments > 2:
+                        micro_segments = self._force_micro_segments(voice, segment_text, micro_split_tracker)
+                        if micro_segments:
+                            if self.verbose:
+                                print(
+                                    f"🔍 [VERBOSE] Segment {idx+1}/{len(segments_to_process)} "
+                                    f"forçado em {len(micro_segments)} microsegmentos"
+                                )
+                            segments_to_process[idx:idx + 1] = micro_segments
+                            force_plain_segments = True
+                            failed_segments = 0
+                            continue
                         print(f"❌ Edge TTS: Too many failed segments ({failed_segments}), aborting")
                         return None
 
+                    idx += 1
                     continue
 
                 # Success!
                 total_segments += 1
+                idx += 1
         except asyncio.TimeoutError:
             self.last_error = "timeout"
             return None
@@ -260,7 +394,7 @@ class EdgeTTSEngine:
                 print(f"🔍 [VERBOSE] EdgeTTS synthesize_async: no audio generated (total_segments={total_segments}, file_exists={output_path.exists()})")
             return None
 
-        expected_segments = len([s for _, s in segments if s and s.strip()])
+        expected_segments = total_segments + failed_segments
         self.last_segment_report = {
             "expected": expected_segments,
             "generated": total_segments,
@@ -497,6 +631,130 @@ class EdgeTTSEngine:
 
         return segments
 
+    def _segment_signature(self, voice: str, text: str) -> str:
+        preview = (text or "").strip()
+        return f"{voice}:{len(preview)}:{hash(preview[:160])}"
+
+    def _split_failed_segment(
+        self,
+        voice: str,
+        text: str,
+        attempts: Dict[str, int],
+    ) -> List[Tuple[str, str]] | None:
+        """Try to split a problematic segment into smaller pieces for retry."""
+        if not text or len(text) < MIN_SEGMENT_RETRY_CHARS:
+            return None
+
+        signature = self._segment_signature(voice, text)
+        attempt = attempts.get(signature, 0)
+        if attempt >= MAX_SEGMENT_SPLIT_ATTEMPTS:
+            return None
+
+        divisor = 2 + attempt
+        chunk_size = max(int(len(text) / divisor), MIN_SEGMENT_RETRY_CHARS // 2)
+        smaller_segments = self._chunk_text(voice, text, chunk_size=chunk_size)
+        smaller_segments = [
+            (seg_voice, seg_text)
+            for seg_voice, seg_text in smaller_segments
+            if seg_text and seg_text.strip()
+        ]
+
+        if len(smaller_segments) <= 1:
+            return None
+
+        attempts[signature] = attempt + 1
+        return smaller_segments
+
+    def _force_micro_segments(
+        self,
+        voice: str,
+        text: str,
+        tracker: Set[str],
+    ) -> List[Tuple[str, str]] | None:
+        """Force text into very small segments to salvage stubborn payloads."""
+        if not text:
+            return None
+
+        signature = f"micro:{self._segment_signature(voice, text)}"
+        if signature in tracker:
+            return None
+
+        tracker.add(signature)
+
+        cleaned = text.strip()
+        if not cleaned:
+            return None
+
+        max_seconds = min(self._max_segment_seconds * 0.5, 20.0)
+        micro_chunks = self._split_text_by_duration(cleaned, max_seconds)
+
+        if not micro_chunks:
+            # Fall back to fixed-size word groups (~80 words ≈ 30s)
+            words = [word for word in cleaned.split() if word]
+            if not words:
+                return None
+
+            chunk_words = max(min(len(words) // 4, 80), 20)
+            micro_chunks = []
+            for start in range(0, len(words), chunk_words):
+                segment_words = words[start:start + chunk_words]
+                if segment_words:
+                    micro_chunks.append(" ".join(segment_words))
+
+        micro_chunks = [chunk.strip() for chunk in micro_chunks if chunk and chunk.strip()]
+        if not micro_chunks:
+            return None
+
+        return [(voice, chunk) for chunk in micro_chunks]
+
+    def _simplify_segment_text(self, text: str, *, limit_chars: Optional[int] = SIMPLIFIED_SEGMENT_MAX_CHARS) -> str:
+        """Remove formatting markers and limit length to create a safer payload."""
+        if not text:
+            return ""
+
+        simplified = text
+        if LanguageMarkup:
+            try:
+                simplified = LanguageMarkup.strip(simplified)
+            except Exception:
+                pass
+
+        if TextFormattingProcessor:
+            try:
+                simplified = TextFormattingProcessor.strip_inline_markdown(simplified)
+            except Exception:
+                pass
+
+        simplified = re.sub(r"<[^>]+>", " ", simplified)
+        simplified = re.sub(r"\[\[[^\]]+\]\]", " ", simplified)
+        simplified = re.sub(r"\s+", " ", simplified)
+        simplified = simplified.strip()
+
+        if limit_chars and len(simplified) > limit_chars:
+            simplified = simplified[:limit_chars]
+
+        return simplified
+
+    def _should_force_plain_text(self, text: str) -> bool:
+        """Heuristic: detect heavy markup that often breaks Edge SSML."""
+        if not text:
+            return False
+        stripped = text.strip()
+        if len(stripped) < 400:
+            return False
+
+        fmt_markers = stripped.count("[[fmt:")
+        lang_markers = stripped.lower().count("[[lang:")
+        bold_markers = stripped.count("**")
+        italic_markers = stripped.count("_")
+
+        high_markup = fmt_markers + lang_markers >= 20
+        dense_markup = (fmt_markers + lang_markers) >= 8 and len(stripped) / max(fmt_markers + lang_markers, 1) < 200
+        heavy_markdown = bold_markers >= 10 or italic_markers >= 30
+        very_long = len(stripped) > 12000 and (fmt_markers + lang_markers) >= 5
+
+        return high_markup or dense_markup or heavy_markdown or very_long
+
     def _estimate_duration(self, text: str) -> float:
         """Estimate spoken duration in seconds for the provided text."""
         try:
@@ -552,6 +810,14 @@ class EdgeTTSEngine:
                 print(f"🔍 [VERBOSE] EdgeTTS slot obtido após {wait_time:.3f}s")
             if wait_time > 1:
                 print(f"🚀 Edge TTS: slot liberado após {wait_time:.1f}s")
+
+            now = asyncio.get_event_loop().time()
+            if now < self._noaudio_backoff_until:
+                remaining = int(self._noaudio_backoff_until - now)
+                self.last_error = f"service_unavailable (cooldown {remaining}s)"
+                if self.verbose:
+                    print(f"🔍 [VERBOSE] EdgeTTS em cooldown após NoAudioReceived ({remaining}s restantes)")
+                return False
             try:
                 if self.verbose:
                     text_len = len(text) if text is not None else 0
@@ -626,8 +892,32 @@ class EdgeTTSEngine:
             try:
                 while retry_count < max_retries:
                     try:
-                        with output_path.open(mode) as out_file:
-                            await asyncio.wait_for(_consume_stream(out_file), timeout=timeout)
+                        heartbeat_task = None
+                        if self.verbose:
+                            async def _segment_heartbeat() -> None:
+                                while True:
+                                    await asyncio.sleep(5)
+                                    elapsed = asyncio.get_event_loop().time() - synthesis_start
+                                    status = "recebendo áudio" if received_audio else "aguardando áudio"
+                                    print(
+                                        "🔍 [VERBOSE] EdgeTTS segmento "
+                                        f"({status}) {elapsed:.0f}s "
+                                        f"| chunks={chunks_received} | timeout={timeout}s "
+                                        f"| voice={voice} | chars={len(text)}",
+                                        flush=True,
+                                    )
+
+                            heartbeat_task = asyncio.create_task(_segment_heartbeat())
+
+                        try:
+                            with output_path.open(mode) as out_file:
+                                await asyncio.wait_for(_consume_stream(out_file), timeout=timeout)
+                        finally:
+                            if heartbeat_task is not None:
+                                heartbeat_task.cancel()
+                                with suppress(asyncio.CancelledError):
+                                    await heartbeat_task
+
                         break  # Success - exit retry loop
 
                     except asyncio.TimeoutError:
@@ -647,6 +937,10 @@ class EdgeTTSEngine:
                     except Exception as exc:
                         synthesis_time = asyncio.get_event_loop().time() - synthesis_start
 
+                        if self.verbose:
+                            print(f"🔍 [VERBOSE] EdgeTTS exceção ({exc.__class__.__name__}) após {synthesis_time:.1f}s: {exc}", flush=True)
+                            print(traceback.format_exc(), flush=True)
+
                         # Check if it's a certificate/SSL error
                         is_cert_error = (
                             ClientConnectorCertificateError and isinstance(exc, ClientConnectorCertificateError)
@@ -656,15 +950,29 @@ class EdgeTTSEngine:
                             "certificate" in str(exc).lower() or "ssl" in str(exc).lower()
                         )
 
-                        if is_cert_error and retry_count < max_retries - 1:
+                        is_no_audio = "noaudio" in str(exc).lower() or exc.__class__.__name__.lower() == "noaudioreceived"
+                        is_transient = is_cert_error or is_no_audio or "timeout" in str(exc).lower() or "connection" in str(exc).lower()
+
+                        # If *nothing* was received (0 chunks), first check if service is reachable.
+                        allow_retry = True
+                        health_ok = True
+                        if is_no_audio and chunks_received == 0 and not received_audio:
+                            allow_retry = retry_count < 1  # only one retry for no-audio
+                            health_ok = await self._probe_edge_health(voice)
+
+                        if is_transient and allow_retry and retry_count < max_retries - 1:
                             retry_count += 1
                             backoff_time = 2 ** retry_count  # 2s, 4s, 8s
 
                             # Detailed SSL error logging
-                            print(f"🔒 Erro SSL/Certificado detectado: {exc.__class__.__name__}")
-                            if self.verbose:
-                                print(f"🔍 [VERBOSE] Detalhes SSL: {exc}")
-                            print(f"🔄 Retry {retry_count}/{max_retries-1} após {backoff_time}s...")
+                            if is_cert_error:
+                                print(f"🔒 Erro SSL/Certificado detectado: {exc.__class__.__name__}")
+                                if self.verbose:
+                                    print(f"🔍 [VERBOSE] Detalhes SSL: {exc}")
+                            elif is_no_audio:
+                                print(f"🔇 EdgeTTS não retornou áudio ({exc.__class__.__name__}); retry {retry_count}/{max_retries-1} após {backoff_time}s...")
+                            else:
+                                print(f"🔄 EdgeTTS erro transitório ({exc.__class__.__name__}); retry {retry_count}/{max_retries-1} após {backoff_time}s...")
 
                             await asyncio.sleep(backoff_time)
 
@@ -685,6 +993,21 @@ class EdgeTTSEngine:
                         else:
                             # Not a cert error or max retries reached
                             self.last_error = f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                            if is_no_audio and chunks_received == 0 and not received_audio:
+                                if not health_ok:
+                                    # Open cooldown to avoid hammering the service when it's not responding with audio.
+                                    self._noaudio_backoff_until = asyncio.get_event_loop().time() + max(5.0, EDGE_NOAUDIO_COOLDOWN_SECONDS)
+                                    self.last_error = f"service_unavailable (cooldown {int(EDGE_NOAUDIO_COOLDOWN_SECONDS)}s)"
+                                    if self.verbose:
+                                        print(
+                                            "🔍 [VERBOSE] EdgeTTS marcou serviço como indisponível "
+                                            f"por {int(EDGE_NOAUDIO_COOLDOWN_SECONDS)}s (NoAudioReceived + health-check falhou)"
+                                        )
+                                else:
+                                    # Provável problema de payload; não abrir cooldown global
+                                    self.last_error = "no_audio_payload"
+                                    if self.verbose:
+                                        print("🔍 [VERBOSE] EdgeTTS sem áudio, mas health-check OK (provável conteúdo inválido)")
                             if is_cert_error:
                                 print(f"❌ Erro SSL persistente após {retry_count} tentativas")
                             if self.verbose:

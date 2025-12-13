@@ -14,6 +14,15 @@ np = None  # type: ignore
 sf = None  # type: ignore
 
 try:  # pragma: no cover - optional dependency
+    import numpy as _np  # type: ignore
+    import soundfile as _sf  # type: ignore
+
+    np = _np  # type: ignore
+    sf = _sf  # type: ignore
+except Exception:  # pragma: no cover
+    pass
+
+try:  # pragma: no cover - optional dependency
     from ..language import LanguageMarkup
 except ImportError:  # pragma: no cover
     LanguageMarkup = None  # type: ignore
@@ -29,8 +38,14 @@ _piper_semaphore = None
 def _get_piper_semaphore():
     global _piper_semaphore
     if _piper_semaphore is None:
-        # Máximo 8 processos Piper simultâneos
-        _piper_semaphore = asyncio.Semaphore(8)
+        try:
+            max_procs = int(os.environ.get("PIPER_MAX_PROCS", "").strip() or "0")
+        except ValueError:
+            max_procs = 0
+        if max_procs <= 0:
+            cpu_count = os.cpu_count() or 1
+            max_procs = max(1, min(2, cpu_count))
+        _piper_semaphore = asyncio.Semaphore(max_procs)
     return _piper_semaphore
 
 
@@ -48,7 +63,20 @@ class PiperTTSEngine:
         if not self.model_path.exists():
             raise FileNotFoundError(f"Model not found: {self.model_path}")
         self.primary_language = (primary_language or "auto").split('-', 1)[0].lower()
-        self.language_voices = language_voices or {}
+        raw_language_voices = language_voices or {}
+        self.language_voices = {
+            (key or "").split("-", 1)[0].lower(): value
+            for key, value in raw_language_voices.items()
+            if value
+        }
+        self.language_models: Dict[str, Path] = {}
+        for code, value in self.language_voices.items():
+            try:
+                candidate = Path(str(value))
+            except Exception:
+                continue
+            if candidate.exists() and candidate.is_file():
+                self.language_models[code] = candidate
         self.verbose = False
 
     def supports_multilingual(self) -> bool:
@@ -104,21 +132,25 @@ class PiperTTSEngine:
             segments = [(default_language, plain_text)]
 
         if len(segments) == 1:
-            return await self._synthesize_single(segments[0][1], output_path)
+            lang, segment_text = segments[0]
+            model = self._resolve_model_for_language(lang)
+            return await self._synthesize_single(segment_text, output_path, model)
 
         if np is None or sf is None:
             combined_text = " ".join(segment for _, segment in segments)
-            return await self._synthesize_single(combined_text, output_path)
+            model = self._resolve_model_for_language(default_language)
+            return await self._synthesize_single(combined_text, output_path, model)
 
         temp_files: List[Path] = []
         try:
-            for idx, (_, segment_text) in enumerate(segments):
+            for idx, (language, segment_text) in enumerate(segments):
                 segment_text = segment_text.strip()
                 if not segment_text:
                     continue
                 temp_path = Path(f"/tmp/piper_segment_{idx}_{hash(segment_text) % 10000}.wav")
                 temp_files.append(temp_path)
-                result = await self._synthesize_single(segment_text, temp_path)
+                model = self._resolve_model_for_language(language)
+                result = await self._synthesize_single(segment_text, temp_path, model)
                 if result is None:
                     return None
 
@@ -147,11 +179,15 @@ class PiperTTSEngine:
 
         return output_path if Path(output_path).exists() else None
 
-    async def _synthesize_single(self, text: str, output_path: Path) -> Optional[Path]:
+    def _resolve_model_for_language(self, language: Optional[str]) -> Path:
+        code = (language or "").split("-", 1)[0].lower()
+        return self.language_models.get(code) or self.model_path
+
+    async def _synthesize_single(self, text: str, output_path: Path, model_path: Path) -> Optional[Path]:
         command = (
             "piper",
             "--model",
-            str(self.model_path),
+            str(model_path),
             "--output_file",
             str(output_path),
         )

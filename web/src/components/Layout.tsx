@@ -4,13 +4,16 @@ import TopBar from './TopBar';
 
 export default function Layout({ children }: PropsWithChildren): JSX.Element {
   const t = useTranslations();
+  const footerText = t.layout.footer?.trim();
   return (
     <div className="app-shell">
       <TopBar />
       {children}
-      <footer>
-        <p>{t.layout.footer}</p>
-      </footer>
+      {footerText && (
+        <footer>
+          <p>{footerText}</p>
+        </footer>
+      )}
     </div>
   );
 }

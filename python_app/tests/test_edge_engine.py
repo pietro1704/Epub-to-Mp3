@@ -11,7 +11,7 @@ from unittest.mock import Mock
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.tts import edge_engine
-from src.tts.edge_engine import EdgeTTSEngine
+from src.tts.edge_engine import EdgeTTSEngine, SIMPLIFIED_SEGMENT_MAX_CHARS
 
 
 class TestEdgeTTSSegmentation(unittest.TestCase):
@@ -153,6 +153,41 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
             tolerance,
             f"Lost {char_diff} characters during segmentation (>{tolerance:.0f} tolerance)!"
         )
+
+    def test_force_micro_segments_breaks_text(self):
+        """Hard-failing segments should be force-split into smaller pieces."""
+        stubborn_text = " ".join(f"Palavra {i}" for i in range(2000))
+        tracker = set()
+
+        micro_segments = self.engine._force_micro_segments("pt-BR-Voice", stubborn_text, tracker)
+
+        self.assertIsNotNone(micro_segments, "Should create micro segments for long stubborn text")
+        self.assertGreater(len(micro_segments), 1, "Micro splitting must produce multiple segments")
+
+        for _, chunk in micro_segments:
+            self.assertLess(len(chunk), len(stubborn_text), "Each micro chunk must be smaller than original text")
+            self.assertTrue(chunk.strip(), "Micro segments must contain text")
+
+    def test_should_force_plain_text_detects_markup(self):
+        noisy_text = " ".join("**palavra** _italic_ [[fmt:bold]]texto[[/fmt]]" for _ in range(100))
+        self.assertTrue(
+            self.engine._should_force_plain_text(noisy_text),
+            "Heavy markup should trigger plain text mode",
+        )
+
+        clean_text = " ".join(f"Palavra {i}" for i in range(50))
+        self.assertFalse(
+            self.engine._should_force_plain_text(clean_text),
+            "Simple paragraphs should not force plain mode",
+        )
+
+    def test_simplify_segment_text_can_skip_limit(self):
+        text = " ".join(f"**Palavra {i}**" for i in range(1000))
+        limited = self.engine._simplify_segment_text(text)
+        self.assertLessEqual(len(limited), SIMPLIFIED_SEGMENT_MAX_CHARS)
+
+        unlimited = self.engine._simplify_segment_text(text, limit_chars=None)
+        self.assertGreater(len(unlimited), len(limited), "Unlimited simplification should retain more content than limited mode")
 
 
 if __name__ == "__main__":  # pragma: no cover

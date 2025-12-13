@@ -182,16 +182,26 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
   const t = useTranslations();
   const [cachedJobs, setCachedJobs] = useState<Array<{ jobId: string; fileName: string; timestamp: number }>>([]);
 
-  // Cleanup old cache on mount and load cached jobs from both backend and localStorage
+  // Cleanup old cache on mount and load cached jobs from backend when supported
   useEffect(() => {
     const loadJobs = async () => {
       // Cleanup old localStorage cache
       conversionCache.cleanup();
 
-      // Try to fetch resumable jobs from backend
-      const backendJobs = await api.getResumableJobs?.() || [];
+      if (!api.getResumableJobs) {
+        conversionCache.clearAll();
+        setCachedJobs([]);
+        return;
+      }
 
-      if (backendJobs.length > 0) {
+      try {
+        const backendJobs = await api.getResumableJobs();
+        if (!backendJobs || backendJobs.length === 0) {
+          conversionCache.clearAll();
+          setCachedJobs([]);
+          return;
+        }
+
         // Convert backend jobs to cachedJobs format
         setCachedJobs(backendJobs.map(job => ({
           jobId: job.jobId,
@@ -202,30 +212,15 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
         // Clean up localStorage jobs that don't exist in backend
         const backendJobIds = new Set(backendJobs.map(j => j.jobId));
         const localJobs = conversionCache.listAll();
-        localJobs.forEach(localJob => {
+        localJobs.forEach((localJob) => {
           if (!backendJobIds.has(localJob.jobId)) {
             conversionCache.remove(localJob.jobId);
           }
         });
-      } else {
-        // Fallback to localStorage cache if backend has no jobs
-        // But validate each job still exists in backend
-        const cached = conversionCache.listAll();
-        const validJobs: Array<{ jobId: string; fileName: string; timestamp: number }> = [];
-
-        for (const c of cached) {
-          try {
-            // Try to fetch job from backend to validate it exists
-            await api.fetch(c.jobId);
-            validJobs.push({ jobId: c.jobId, fileName: c.fileName, timestamp: c.timestamp });
-          } catch (error) {
-            // Job doesn't exist in backend, remove from cache
-            console.log(`[useConversionFlow] Removing invalid job from cache: ${c.jobId}`);
-            conversionCache.remove(c.jobId);
-          }
-        }
-
-        setCachedJobs(validJobs);
+      } catch (error) {
+        console.warn('[useConversionFlow] Failed to load resumable jobs:', error);
+        conversionCache.clearAll();
+        setCachedJobs([]);
       }
     };
 
