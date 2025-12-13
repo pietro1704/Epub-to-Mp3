@@ -78,8 +78,35 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 - `POST /api/convert` - Upload EPUB and start conversion
 - `GET /api/jobs/{job_id}` - Check conversion status
+- `GET /api/jobs/resumable` - List resumable jobs
 - `GET /api/outputs/{job_id}/{filename}` - Download output file
 - `GET /api/health` - Health check
+- `POST /api/cleanup` - Cleanup old files (R2 + local)
+
+### Optional: Configure R2 Storage (Recommended)
+
+By default, files are stored locally in `/tmp` and lost on server restart.
+
+For **permanent storage** with Cloudflare R2 (10 GB free):
+
+📖 **[Complete R2 Setup Guide](docs/R2_SETUP.md)**
+
+Quick summary:
+1. Create free Cloudflare account
+2. Create R2 bucket
+3. Get API credentials
+4. Set environment variables in Hugging Face Secrets:
+   - `R2_ACCOUNT_ID`
+   - `R2_ACCESS_KEY_ID`
+   - `R2_SECRET_ACCESS_KEY`
+   - `R2_BUCKET_NAME`
+   - `R2_PUBLIC_URL`
+
+Benefits:
+- ✅ Files persist across server restarts
+- ✅ 10 GB free storage
+- ✅ Free downloads (no egress fees)
+- ✅ Global CDN
 
 ## Available Voices
 
