@@ -324,12 +324,24 @@ class TextFormattingProcessor:
         if not text:
             return ""
 
+        # Remove marcadores [[fmt:...]]
         cleaned = TextFormattingProcessor.remove_formatting_markers(text)
-        cleaned = re.sub(r'\*\*(.+?)\*\*', r'\1', cleaned)
-        cleaned = re.sub(r'__(.+?)__', r'\1', cleaned)
-        cleaned = re.sub(r'_([^_]+?)_', r'\1', cleaned)
-        cleaned = re.sub(r'`([^`]+?)`', r'\1', cleaned)
-        cleaned = re.sub(r'\s{2,}', ' ', cleaned)
+
+        # Remove Markdown com padrões mais robustos
+        # Permitir espaços dentro dos marcadores e múltiplas linhas
+        cleaned = re.sub(r'\*\*\s*(.+?)\s*\*\*', r'\1', cleaned, flags=re.DOTALL)  # **texto**
+        cleaned = re.sub(r'__\s*(.+?)\s*__', r'\1', cleaned, flags=re.DOTALL)      # __texto__
+        cleaned = re.sub(r'_\s*([^_]+?)\s*_', r'\1', cleaned)                       # _texto_
+        cleaned = re.sub(r'`([^`]+?)`', r'\1', cleaned)                              # `código`
+
+        # Limpar asteriscos e underscores soltos que sobraram
+        cleaned = re.sub(r'\*+', '', cleaned)  # Remove ** soltos
+        cleaned = re.sub(r'_+', '', cleaned)   # Remove __ soltos
+
+        # Normalizar espaços múltiplos
+        cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+
         return cleaned.strip()
 
     @classmethod

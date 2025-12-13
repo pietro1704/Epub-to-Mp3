@@ -28,6 +28,7 @@ from src.utils import FileManager
 from src.cache_manager import CacheManager
 from src.paths import OUTPUT_DIR
 from src.job_manager import JobManager
+from src.text_formatting import TextFormattingProcessor
 from main import ConverterApplication
 
 app = FastAPI(title="EPUB to MP3 Converter API")
@@ -339,9 +340,12 @@ async def process_conversion(job_id: str) -> None:
                 job["chaptersCompleted"] = idx
                 continue
 
+            # Limpar marcadores Markdown antes de enviar ao TTS
+            clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
+
             # Use TTS engine
             try:
-                await tts_engine.synthesize_async(chapter_text, output_file)
+                await tts_engine.synthesize_async(clean_text, output_file)
             except FileNotFoundError as exc:
                 _record_chapter_failure(job, tts_engine, chapter_name, exc)
                 return
