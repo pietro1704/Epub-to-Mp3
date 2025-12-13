@@ -21,6 +21,7 @@ export default function App(props?: AppProps): JSX.Element {
   const { state, submit, resume, reset, isBusy, cachedJobs } = useConversionFlow(client);
   const [formVersion, setFormVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<'setup' | 'progress' | 'downloads'>('setup');
+  const [userSelectedTab, setUserSelectedTab] = useState(false);
   const [showRawLog, setShowRawLog] = useState(false);
   const [showCachedAlert, setShowCachedAlert] = useState(() => {
     try {
@@ -60,10 +61,19 @@ export default function App(props?: AppProps): JSX.Element {
     reset();
     setFormVersion((value) => value + 1);
     setActiveTab('setup');
+    setUserSelectedTab(false);
     setShowRawLog(false);
   }, [reset]);
 
+  const handleTabChange = useCallback((tabId: 'setup' | 'progress' | 'downloads') => {
+    setActiveTab(tabId);
+    setUserSelectedTab(true);
+  }, []);
+
   useEffect(() => {
+    // Only auto-switch tabs if user hasn't manually selected a tab
+    if (userSelectedTab) return;
+
     if (state.phase === 'polling' && activeTab !== 'progress') {
       setActiveTab('progress');
     }
@@ -73,7 +83,7 @@ export default function App(props?: AppProps): JSX.Element {
     if (state.phase === 'error') {
       setActiveTab('progress');
     }
-  }, [state.phase, activeTab]);
+  }, [state.phase, activeTab, userSelectedTab]);
 
   const tabs = useMemo(
     () => [
@@ -82,7 +92,23 @@ export default function App(props?: AppProps): JSX.Element {
         label: t.tabs.setup.label,
         description: t.tabs.setup.description,
         content: (
-          <Panel title={t.tabs.setup.panelTitle} description={t.tabs.setup.panelDescription}>
+          <Panel
+            title={t.tabs.setup.panelTitle}
+            description={t.tabs.setup.panelDescription}
+            footer={
+              activeTab === 'setup' && state.phase !== 'idle' && (
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={() => handleTabChange('progress')}
+                  >
+                    Ver Progresso →
+                  </button>
+                </div>
+              )
+            }
+          >
             <ConversionForm key={formVersion} isSubmitting={isBusy} onSubmit={submit} />
           </Panel>
         ),
@@ -92,7 +118,32 @@ export default function App(props?: AppProps): JSX.Element {
         label: t.tabs.progress.label,
         description: t.tabs.progress.description,
         content: (
-          <Panel title={t.tabs.progress.panelTitle} description={t.tabs.progress.panelDescription}>
+          <Panel
+            title={t.tabs.progress.panelTitle}
+            description={t.tabs.progress.panelDescription}
+            footer={
+              activeTab === 'progress' && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={() => handleTabChange('setup')}
+                  >
+                    ← Voltar
+                  </button>
+                  {state.phase === 'success' && (
+                    <button
+                      type="button"
+                      className="button button--secondary"
+                      onClick={() => handleTabChange('downloads')}
+                    >
+                      Ver Downloads →
+                    </button>
+                  )}
+                </div>
+              )
+            }
+          >
             <StatusPanel
               entries={state.log}
               phase={state.phase}
@@ -115,7 +166,23 @@ export default function App(props?: AppProps): JSX.Element {
           <Panel
             title={t.tabs.downloads.panelTitle}
             description={t.tabs.downloads.panelDescription}
-            footer={<small>{t.tabs.downloads.footer}</small>}
+            footer={
+              activeTab === 'downloads' ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    className="button button--secondary"
+                    onClick={() => handleTabChange('progress')}
+                    style={{ alignSelf: 'flex-start' }}
+                  >
+                    ← Voltar
+                  </button>
+                  <small>{t.tabs.downloads.footer}</small>
+                </div>
+              ) : (
+                <small>{t.tabs.downloads.footer}</small>
+              )
+            }
           >
             <DownloadsPanel
               downloads={state.downloads}
@@ -129,7 +196,7 @@ export default function App(props?: AppProps): JSX.Element {
         ),
       },
     ],
-    [formVersion, handleReset, isBusy, showRawLog, state.downloads, state.error, state.etaSeconds, state.jobId, state.log, state.phase, state.summary, submit, t],
+    [activeTab, formVersion, handleReset, handleTabChange, isBusy, showRawLog, state.cliCommand, state.downloads, state.error, state.etaSeconds, state.jobId, state.log, state.phase, state.summary, submit, t],
   );
 
   const handleDismissAlert = useCallback(() => {
@@ -172,7 +239,7 @@ export default function App(props?: AppProps): JSX.Element {
                 className={`tabs__trigger${isActive ? ' tabs__trigger--active' : ''}`}
                 aria-selected={isActive}
                 aria-controls={panelId}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabChange(tab.id)}
               >
                 <span className="tabs__label">{tab.label}</span>
                 <span className="tabs__description">{tab.description}</span>
