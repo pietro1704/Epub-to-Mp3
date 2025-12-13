@@ -386,7 +386,7 @@ class EdgeTTSEngine:
             fallback = TextFormattingProcessor.clean_tts_text(text or "") if TextFormattingProcessor else (text or "")
             return self._chunk_text(self.voice, fallback)
 
-    def _chunk_text(self, voice: str, text: str, chunk_size: int = 7000) -> list[tuple[str, str]]:
+    def _chunk_text(self, voice: str, text: str, chunk_size: int = 7800) -> list[tuple[str, str]]:
         """Divide texto longo em blocos menores respeitando limites aproximados de frase e duração."""
         if not text:
             return []
