@@ -250,9 +250,15 @@ async def get_resumable_jobs() -> dict:
     }
 
 
-def _persist_job(job_id: str) -> None:
-    """Helper to persist job state to disk."""
-    if job_id in jobs:
+def _persist_job(job_id: str, force: bool = False) -> None:
+    """
+    Helper to persist job state to disk.
+
+    Args:
+        job_id: Job ID to persist
+        force: If True, persist immediately. If False, only persist important state changes.
+    """
+    if job_id in jobs and force:
         job_manager.save_job(job_id, jobs[job_id])
 
 
@@ -263,7 +269,7 @@ async def process_conversion(job_id: str) -> None:
         job["state"] = "running"
         job["events"].append("📚 METADADOS DO EBOOK")
         job["events"].append("=" * 64)
-        _persist_job(job_id)
+        _persist_job(job_id, force=True)  # Persist state change
 
         file_path = Path(job["file_path"])
         reader = EbookReader(str(file_path))
@@ -275,7 +281,6 @@ async def process_conversion(job_id: str) -> None:
         job["events"].append(f"📜 Título: {title}")
         job["events"].append(f"✍️ Autor: {author}")
         job["chaptersCompleted"] = 0
-        _persist_job(job_id)
 
         job["events"].append("")
         job["events"].append("🌐 DETECÇÃO DE IDIOMA")
@@ -283,7 +288,7 @@ async def process_conversion(job_id: str) -> None:
         detected_lang = job.get("language") or "pt-BR"
         job["detectedLanguage"] = detected_lang
         job["events"].append(f"🌐 Idioma principal: {detected_lang} (estimado)")
-        _persist_job(job_id)
+        _persist_job(job_id, force=True)  # Persist metadata
 
         # Create TTS engine using factory with optimized compression
         config = ConversionConfig(
@@ -353,7 +358,9 @@ async def process_conversion(job_id: str) -> None:
 
             job["events"].append(f"✅ Concluído: {output_file.name}")
             job["chaptersCompleted"] = idx
-            _persist_job(job_id)
+
+            # Persist every chapter completion (important milestone)
+            _persist_job(job_id, force=True)
 
             outputs.append(
                 {
@@ -366,7 +373,9 @@ async def process_conversion(job_id: str) -> None:
 
         book_safe_name = FileManager.sanitize_filename(title)
         zip_file = job_output_dir / f"{book_safe_name}.zip"
-        with zipfile.ZipFile(zip_file, "w") as archive:
+        # Use STORED (no compression) for MP3s - they're already compressed
+        # This is MUCH faster than ZIP_DEFLATED for audio files
+        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_STORED) as archive:
             for asset in outputs:
                 path = job_output_dir / asset["name"]
                 if path.exists():
@@ -557,14 +566,10 @@ def _prepare_chapters(reader: EbookReader, config: ConversionConfig, selectors: 
                 pass
 
     try:
-        try:
-            converter_app.language_profile = converter_app._prepare_language_profile(reader, structure_items, verbose=False)
-            converter_app._apply_language_preferences(config)
-        except PermissionError:
-            # Cache directory not writable: skip language detection that needs .cache
-            converter_app.language_profile = None
-        except Exception:
-            converter_app.language_profile = None
+        # Skip slow language detection in server mode for better performance
+        # Language is already set via config.primary_language
+        converter_app.language_profile = None
+
         transformed_items = converter_app._apply_text_transforms(structure_items, config, reader)
         converter_app._apply_structure_to_reader(reader, transformed_items)
         chapters = reader.get_chapter_structure(preserve_all=config.preserve_all_chapters)

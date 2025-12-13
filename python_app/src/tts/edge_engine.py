@@ -90,9 +90,9 @@ class EdgeTTSEngine:
                     raise ImportError("Edge-TTS not installed") from exc
             module = edge_tts
 
-        # **FIXED**: Rate limiter mais conservador para evitar deadlocks
+        # Rate limiter for Edge TTS concurrent requests
         if _edge_rate_limiter is None:
-            _edge_rate_limiter = asyncio.Semaphore(3)  # **FIXED**: Reduzido de 6 para 3
+            _edge_rate_limiter = asyncio.Semaphore(8)  # Allow up to 8 concurrent requests
 
         self.voice = voice
         self._edge_tts = module
