@@ -26,10 +26,18 @@ Frontend will run at `http://localhost:5173` and connect to Python backend at `h
 ```bash
 npm run build
 ```
-Upload the generated `web/dist` folder to Cloudflare Pages (or configure CI to run `npm install && npm run build`). Set the environment variable `VITE_API_BASE` to the public URL of your backend if it differs from the default `/api` path.
+
+Set the environment variable `VITE_API_BASE` to the public URL of your Python backend. The frontend will automatically connect to it.
+
+Example:
+```bash
+VITE_API_BASE=https://your-backend.example.com npm run build
+```
 
 ## API Expectations
-- `POST /convert` → accepts `multipart/form-data` with fields `file`, `engine`, optional `voice`, `chapters`. Returns `{ jobId }`.
-- `GET /jobs/:id` → returns `{ state: "pending" | "running" | "finished" | "failed", events: string[], outputs: [{ name, url }], error? }`.
+The frontend expects a Python backend running with these endpoints:
+- `POST /api/convert` → accepts `multipart/form-data` with fields `file`, `engine`, optional `voice`, `chapters`. Returns `{ jobId }`.
+- `GET /api/jobs/:id` → returns `{ state: "queued" | "running" | "finished" | "failed" | "interrupted", events: string[], outputs: [{ name, url }], error? }`.
+- `GET /api/jobs/resumable` → returns list of jobs that can be resumed.
 
-Implement these endpoints using your preferred hosting (Cloudflare Worker, Fly.io, Dedicated VM) by wrapping the logic inside `python_app`.
+The Python backend implementation is in `python_app/` directory.
