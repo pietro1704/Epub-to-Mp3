@@ -27,10 +27,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include API routes (server.py already has /api prefix)
-# Don't mount - include routes directly to avoid double /api prefix
-for route in api_app.routes:
-    app.routes.append(route)
+# Include API routes FIRST (server.py already has /api prefix)
+# Insert at beginning to ensure they have priority over catch-all route
+api_routes = list(api_app.routes)
+for route in reversed(api_routes):
+    app.routes.insert(0, route)
 
 # Serve static files from web/dist
 web_dist = Path(__file__).parent / "web" / "dist"
@@ -46,6 +47,7 @@ if web_dist.exists():
         return FileResponse(str(web_dist / "sample.epub"))
 
     # Serve index.html for all other routes (SPA)
+    # This catch-all MUST be registered AFTER API routes to avoid conflicts
     @app.get("/{full_path:path}")
     async def serve_spa(full_path: str):
         return FileResponse(str(web_dist / "index.html"))
