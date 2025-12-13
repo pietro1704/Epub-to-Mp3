@@ -20,6 +20,16 @@ class TextFormattingProcessor:
     """Processador de formatação de texto para diferenciação no áudio"""
 
     FORMAT_MARKER_RE = re.compile(r"\[\[fmt:[^\]]+\]\]|\[\[/fmt\]\]", re.IGNORECASE)
+
+    # Regexes pré-compiladas para strip_inline_markdown (otimização de performance)
+    _BOLD_ASTERISK_RE = re.compile(r'\*\*\s*(.+?)\s*\*\*', re.DOTALL)
+    _BOLD_UNDERSCORE_RE = re.compile(r'__\s*(.+?)\s*__', re.DOTALL)
+    _ITALIC_UNDERSCORE_RE = re.compile(r'_\s*([^_]+?)\s*_')
+    _CODE_RE = re.compile(r'`([^`]+?)`')
+    _LOOSE_ASTERISKS_RE = re.compile(r'\*+')
+    _LOOSE_UNDERSCORES_RE = re.compile(r'_+')
+    _MULTI_SPACES_RE = re.compile(r'[ \t]{2,}')
+    _MULTI_NEWLINES_RE = re.compile(r'\n{3,}')
     def process_markup_tags(self, text: str) -> str:
         """Process markup tags from LanguageMarkup into formatting markers"""
         if not text:
@@ -319,28 +329,28 @@ class TextFormattingProcessor:
 
         return cls.FORMAT_MARKER_RE.sub("", text)
 
-    @staticmethod
-    def strip_inline_markdown(text: str) -> str:
+    @classmethod
+    def strip_inline_markdown(cls, text: str) -> str:
+        """Remove marcadores Markdown do texto (otimizado com regexes pré-compiladas)."""
         if not text:
             return ""
 
         # Remove marcadores [[fmt:...]]
-        cleaned = TextFormattingProcessor.remove_formatting_markers(text)
+        cleaned = cls.remove_formatting_markers(text)
 
-        # Remove Markdown com padrões mais robustos
-        # Permitir espaços dentro dos marcadores e múltiplas linhas
-        cleaned = re.sub(r'\*\*\s*(.+?)\s*\*\*', r'\1', cleaned, flags=re.DOTALL)  # **texto**
-        cleaned = re.sub(r'__\s*(.+?)\s*__', r'\1', cleaned, flags=re.DOTALL)      # __texto__
-        cleaned = re.sub(r'_\s*([^_]+?)\s*_', r'\1', cleaned)                       # _texto_
-        cleaned = re.sub(r'`([^`]+?)`', r'\1', cleaned)                              # `código`
+        # Remove Markdown usando regexes pré-compiladas
+        cleaned = cls._BOLD_ASTERISK_RE.sub(r'\1', cleaned)     # **texto**
+        cleaned = cls._BOLD_UNDERSCORE_RE.sub(r'\1', cleaned)   # __texto__
+        cleaned = cls._ITALIC_UNDERSCORE_RE.sub(r'\1', cleaned) # _texto_
+        cleaned = cls._CODE_RE.sub(r'\1', cleaned)               # `código`
 
-        # Limpar asteriscos e underscores soltos que sobraram
-        cleaned = re.sub(r'\*+', '', cleaned)  # Remove ** soltos
-        cleaned = re.sub(r'_+', '', cleaned)   # Remove __ soltos
+        # Limpar asteriscos e underscores soltos
+        cleaned = cls._LOOSE_ASTERISKS_RE.sub('', cleaned)
+        cleaned = cls._LOOSE_UNDERSCORES_RE.sub('', cleaned)
 
-        # Normalizar espaços múltiplos
-        cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
-        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+        # Normalizar espaços
+        cleaned = cls._MULTI_SPACES_RE.sub(' ', cleaned)
+        cleaned = cls._MULTI_NEWLINES_RE.sub('\n\n', cleaned)
 
         return cleaned.strip()
 

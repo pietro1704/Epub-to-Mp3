@@ -353,25 +353,26 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(engine.last_error, "no_audio")
 
     def test_calculate_timeout(self):
-        """Test timeout calculation"""
+        """Test timeout calculation (otimizado para falhar rápido)"""
         with patch('src.tts.edge_engine.edge_tts'):
             from src.tts.edge_engine import EdgeTTSEngine
 
             engine = EdgeTTSEngine("test-voice")
 
-            # Short text
+            # Short text - timeout mínimo de 45s
             timeout = engine._calculate_timeout("Hi")
-            self.assertEqual(timeout, 75)  # Minimum timeout increased from 30 to 75
-            
+            self.assertEqual(timeout, 45)
+
             # Medium text
             medium_text = "A" * 2000
             timeout = engine._calculate_timeout(medium_text)
-            self.assertEqual(timeout, 75)  # Minimum timeout is 75
-            
-            # Long text
+            self.assertGreaterEqual(timeout, 45)  # Mínimo 45s
+
+            # Long text - máximo de 300s
             long_text = "A" * 10000
             timeout = engine._calculate_timeout(long_text)
-            self.assertGreaterEqual(timeout, 75)  # Minimum timeout is 75
+            self.assertGreaterEqual(timeout, 45)
+            self.assertLessEqual(timeout, 300)  # Máximo 300s
 
 
 class TestCoquiTTSEngine(unittest.IsolatedAsyncioTestCase):

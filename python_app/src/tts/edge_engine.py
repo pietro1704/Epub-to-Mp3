@@ -91,8 +91,9 @@ class EdgeTTSEngine:
             module = edge_tts
 
         # Rate limiter for Edge TTS concurrent requests
+        # Reduzido de 8 para 4 para evitar rate limiting da Microsoft
         if _edge_rate_limiter is None:
-            _edge_rate_limiter = asyncio.Semaphore(8)  # Allow up to 8 concurrent requests
+            _edge_rate_limiter = asyncio.Semaphore(4)
 
         self.voice = voice
         self._edge_tts = module
@@ -215,12 +216,13 @@ class EdgeTTSEngine:
                     if self.verbose:
                         print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} FAILED (error: {self.last_error})")
 
-                    # **NEW**: Retry failed segment with backoff
-                    if failed_segments <= 3:  # Allow up to 3 failed segments
-                        await asyncio.sleep(2 ** failed_segments)  # 2s, 4s, 8s backoff
+                    # Retry com backoff exponencial mais curto (1s, 2s)
+                    if failed_segments <= 2:
+                        backoff = min(1.0 * (2 ** (failed_segments - 1)), 3.0)
+                        await asyncio.sleep(backoff)
 
                         if self.verbose:
-                            print(f"🔍 [VERBOSE] Retrying segment {idx+1}/{len(segments)}...")
+                            print(f"🔍 [VERBOSE] Retrying segment {idx+1}/{len(segments)} after {backoff}s...")
                         success = await self._synthesize_segment(
                             segment_text,
                             voice,
@@ -231,17 +233,16 @@ class EdgeTTSEngine:
                         if success:
                             if self.verbose:
                                 print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} succeeded on retry")
-                            failed_segments -= 1  # Reset counter on success
+                            failed_segments = max(0, failed_segments - 1)
                         else:
                             if self.verbose:
                                 print(f"🔍 [VERBOSE] Segment {idx+1}/{len(segments)} failed after retry")
 
-                    # **CRITICAL**: Only fail completely if we have too many consecutive failures
-                    if failed_segments > 3:
+                    # Falhar se mais de 2 segmentos consecutivos falharem
+                    if failed_segments > 2:
                         print(f"❌ Edge TTS: Too many failed segments ({failed_segments}), aborting")
                         return None
 
-                    # **NEW**: Continue to next segment instead of aborting
                     continue
 
                 # Success!
@@ -292,28 +293,25 @@ class EdgeTTSEngine:
         return output_path
 
     def _calculate_timeout(self, text: str) -> int:
-        """Estimate a safe upper bound for synthesis time in seconds."""
+        """Estimate a safe upper bound for synthesis time in seconds.
+
+        Otimizado: timeout mais agressivo para falhar rápido em caso de problemas.
+        """
         if not text:
-            if self.verbose:
-                print("🔍 [VERBOSE] EdgeTTS _calculate_timeout: texto vazio, usando timeout padrão ampliado")
-            return int(max(self._max_segment_seconds * 1.5, 90))
+            return 60  # 60s padrão para texto vazio
 
-        estimated = max(self._estimate_duration(text), 10.0)
-        buffer = max(estimated * 0.6, 25.0)
-        timeout = estimated + buffer
+        estimated = max(self._estimate_duration(text), 5.0)
 
-        minimum = max(self._max_segment_seconds + 20.0, 60.0)
-        # **FIXED**: Aumentar timeout máximo de 240s para 900s (15 min) para capítulos longos
-        maximum = max(self._max_segment_seconds * 3.0, 900.0)
+        # Timeout = duração estimada + 40% de buffer + 20s fixos
+        # Mais agressivo para evitar esperas longas
+        timeout = estimated * 1.4 + 20.0
 
-        timeout = max(timeout, minimum)
-        timeout = min(timeout, maximum)
+        # Limites: mínimo 45s, máximo 300s (5 min)
+        timeout = max(timeout, 45.0)
+        timeout = min(timeout, 300.0)
 
         if self.verbose:
-            print(
-                f"🔍 [VERBOSE] EdgeTTS _calculate_timeout: "
-                f"estimado {estimated:.1f}s → timeout {timeout:.1f}s (limites {minimum:.0f}-{maximum:.0f})"
-            )
+            print(f"🔍 [VERBOSE] EdgeTTS timeout: {estimated:.0f}s estimado → {timeout:.0f}s timeout")
 
         return int(round(timeout))
 

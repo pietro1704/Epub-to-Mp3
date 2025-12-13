@@ -760,21 +760,19 @@ class AudioConverter:
                             print(f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}")
                         output_path.unlink(missing_ok=True)
 
-                # Sintetizar com heartbeat e timeout
+                # Sintetizar com heartbeat e timeout (otimizado)
                 speech_text = self._speech_text(chapter)
                 current_payload = speech_text
                 char_count = len(speech_text)
                 estimated_seconds = TextValidator.estimate_duration(speech_text)
                 if estimated_seconds <= 0:
-                    estimated_seconds = max(char_count / 20.0, 60.0)
-                if estimated_seconds < 180:
-                    base_timeout = estimated_seconds * 1.4 + 45.0
-                    minimum_timeout = 180.0
-                else:
-                    base_timeout = estimated_seconds * 1.25 + 90.0
-                    minimum_timeout = 360.0
-                timeout_seconds = max(base_timeout, minimum_timeout)
-                timeout_seconds = min(timeout_seconds, 1200.0)
+                    estimated_seconds = max(char_count / 15.0, 30.0)
+
+                # Timeout otimizado: mais agressivo para falhar rápido
+                # Base: duração estimada * 1.5 + 30s buffer
+                base_timeout = estimated_seconds * 1.5 + 30.0
+                timeout_seconds = max(base_timeout, 60.0)  # Mínimo 60s
+                timeout_seconds = min(timeout_seconds, 600.0)  # Máximo 10 min
                 timeout_seconds = int(timeout_seconds)
 
                 if self.verbose:
@@ -783,15 +781,15 @@ class AudioConverter:
 
                 self.progress.tick(f"🎤 Sintetizando {char_count} chars (timeout: {timeout_seconds}s)...")
 
-                # **NEW**: Heartbeat para mostrar progresso visual
+                # Heartbeat para mostrar progresso (otimizado: 3s em vez de 1s)
                 heartbeat_active = True
                 start_synthesis = time.time()
 
                 async def synthesis_heartbeat():
-                    spinner_frames = ["🔄", "⚙️", "🔧", "⚡"]
+                    spinner_frames = ["⚙️", "🔧"]
                     frame_idx = 0
                     while heartbeat_active:
-                        await asyncio.sleep(1)  # Atualizar a cada segundo
+                        await asyncio.sleep(3)  # Atualizar a cada 3 segundos (reduz overhead)
                         if not heartbeat_active:
                             break
                         elapsed = int(time.time() - start_synthesis)
@@ -837,20 +835,20 @@ class AudioConverter:
 
                         self.progress.tick(f"🔄 Fallback: {clean_chars} chars (timeout: {fallback_timeout}s)")
 
-                        # Heartbeat para fallback
+                        # Heartbeat para fallback (otimizado: 3s)
                         heartbeat_active = True
                         start_fallback = time.time()
 
                         async def fallback_heartbeat():
-                            spinner_frames = ["🚑", "🚨", "🔥", "⚡"]
+                            spinner_frames = ["🚑", "🔥"]
                             frame_idx = 0
                             while heartbeat_active:
-                                await asyncio.sleep(1)
+                                await asyncio.sleep(3)
                                 if not heartbeat_active:
                                     break
                                 elapsed_fb = int(time.time() - start_fallback)
                                 frame = spinner_frames[frame_idx % len(spinner_frames)]
-                                self.progress.tick(f"{frame} FALLBACK {elapsed_fb}s/{fallback_timeout}s (sem idioma)")
+                                self.progress.tick(f"{frame} FALLBACK {elapsed_fb}s/{fallback_timeout}s")
                                 frame_idx += 1
 
                         fallback_task = asyncio.create_task(fallback_heartbeat())

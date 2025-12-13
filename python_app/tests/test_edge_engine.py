@@ -55,7 +55,7 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
             )
 
     def test_calculate_timeout_scales_with_text(self):
-        """Timeouts should scale with estimated duration within safe bounds."""
+        """Timeouts should scale with estimated duration within safe bounds (otimizado)."""
         short_text = "Short sentence."
         long_text = " ".join(f"Sentence {i}." for i in range(4000))
 
@@ -63,8 +63,8 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         long_timeout = self.engine._calculate_timeout(long_text)
 
         self.assertGreater(long_timeout, short_timeout, "Longer text should have a higher timeout")
-        self.assertGreaterEqual(short_timeout, 75, "Short timeout should honour minimum safeguards")
-        self.assertLessEqual(long_timeout, 900, "Timeout must stay under the configured ceiling")
+        self.assertGreaterEqual(short_timeout, 45, "Short timeout should honour minimum (45s)")
+        self.assertLessEqual(long_timeout, 300, "Timeout must stay under ceiling (300s)")
 
     def test_all_segments_processed(self):
         """CRITICAL: Verify that ALL segments are processed, not just the first one."""
