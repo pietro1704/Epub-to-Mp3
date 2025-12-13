@@ -198,10 +198,34 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
           fileName: job.fileName || job.bookTitle || 'Livro Desconhecido',
           timestamp: job.savedAt ? new Date(job.savedAt).getTime() : Date.now(),
         })));
+
+        // Clean up localStorage jobs that don't exist in backend
+        const backendJobIds = new Set(backendJobs.map(j => j.jobId));
+        const localJobs = conversionCache.listAll();
+        localJobs.forEach(localJob => {
+          if (!backendJobIds.has(localJob.jobId)) {
+            conversionCache.remove(localJob.jobId);
+          }
+        });
       } else {
         // Fallback to localStorage cache if backend has no jobs
+        // But validate each job still exists in backend
         const cached = conversionCache.listAll();
-        setCachedJobs(cached.map(c => ({ jobId: c.jobId, fileName: c.fileName, timestamp: c.timestamp })));
+        const validJobs: Array<{ jobId: string; fileName: string; timestamp: number }> = [];
+
+        for (const c of cached) {
+          try {
+            // Try to fetch job from backend to validate it exists
+            await api.fetch(c.jobId);
+            validJobs.push({ jobId: c.jobId, fileName: c.fileName, timestamp: c.timestamp });
+          } catch (error) {
+            // Job doesn't exist in backend, remove from cache
+            console.log(`[useConversionFlow] Removing invalid job from cache: ${c.jobId}`);
+            conversionCache.remove(c.jobId);
+          }
+        }
+
+        setCachedJobs(validJobs);
       }
     };
 
@@ -355,11 +379,28 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
             });
           });
 
-          // Remove from cached jobs list
+          // Remove from cached jobs list and localStorage
           setCachedJobs(prev => prev.filter(j => j.jobId !== jobId));
+          conversionCache.remove(jobId);
           return;
         }
       } catch (error) {
+        // If job not found (404), remove from cache and show error
+        if (error instanceof Error && error.message.includes('404')) {
+          console.warn('[useConversionFlow] Job not found in backend (404):', jobId);
+
+          dispatch({
+            type: 'fail',
+            error: 'Conversão não encontrada',
+            entry: entryFactoryRef.current('Esta conversão não existe mais no servidor. Ela pode ter sido removida ou o servidor foi reiniciado.'),
+          });
+
+          // Remove from cached jobs list and localStorage
+          setCachedJobs(prev => prev.filter(j => j.jobId !== jobId));
+          conversionCache.remove(jobId);
+          return;
+        }
+
         console.warn('[useConversionFlow] Failed to fetch job from backend:', error);
       }
 
