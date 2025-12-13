@@ -10,7 +10,7 @@ export interface ConversionFormValues {
   language?: string;
 }
 
-export type JobState = 'queued' | 'running' | 'finished' | 'failed';
+export type JobState = 'queued' | 'running' | 'finished' | 'failed' | 'interrupted';
 
 export interface DownloadAsset {
   name: string;

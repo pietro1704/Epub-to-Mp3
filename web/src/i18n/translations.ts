@@ -176,6 +176,7 @@ export const translations: Record<Locale, Translations> = {
         description: 'Os capítulos prontos aparecem aqui para download imediato.',
         panelTitle: 'Seus arquivos MP3',
         panelDescription: 'Baixe os capítulos convertidos ou inicie outra conversão.',
+        footer: '',
       },
     },
     form: {
@@ -330,6 +331,7 @@ export const translations: Record<Locale, Translations> = {
         description: 'Finished chapters become available for instant download.',
         panelTitle: 'Your MP3 files',
         panelDescription: 'Download the chapters or start another conversion.',
+        footer: '',
       },
     },
     form: {
