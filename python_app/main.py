@@ -545,22 +545,36 @@ class ConverterApplication:
             return
 
         new_chapters: List[Chapter] = []
+        formatter = TextFormattingProcessor()
+
         for item in structure_items:
             chapter = item.chapter
             formatting_segments = getattr(chapter, 'formatting_segments', None)
             if getattr(chapter, 'footnotes', None):
                 formatting_segments = None
+
+            # Determine text content
+            final_text = item.text_override if item.text_override is not None else chapter.text
+
+            # CRITICAL FIX: Recalculate speech_text when text_override is used
+            # Otherwise all subcapters would get the same speech_text from original chapter
+            if item.text_override is not None:
+                # Recalculate speech_text based on overridden text
+                speech_text = formatter.to_audible_text(final_text, formatting_segments)
+            else:
+                speech_text = getattr(chapter, 'speech_text', None)
+
             new_chapters.append(
                 Chapter(
                     index=item.index,
                     name=item.display_name,
                     source_path=chapter.source_path,
-                    text=item.text_override if item.text_override is not None else chapter.text,
+                    text=final_text,
                     level=getattr(chapter, 'level', 1),
                     raw_html=getattr(chapter, 'raw_html', None),
                     formatting_segments=formatting_segments,
                     footnotes=getattr(chapter, 'footnotes', None),
-                    speech_text=getattr(chapter, 'speech_text', None),
+                    speech_text=speech_text,
                 )
             )
 
@@ -1672,7 +1686,10 @@ class ConverterApplication:
             return ""
 
         import re
-        clean_text = re.sub(r'\s+', ' ', text.strip())
+        # Remove language tags [[lang:xx]] and [[/lang]] before extracting words
+        clean_text = re.sub(r'\[\[lang:[a-zA-Z\-]+\]\]', '', text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\[\[/lang\]\]', '', clean_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\s+', ' ', clean_text.strip())
         words = clean_text.split()[:max_words]
         return ' '.join(words)
 
@@ -1682,7 +1699,10 @@ class ConverterApplication:
             return ""
 
         import re
-        clean_text = re.sub(r'\s+', ' ', text.strip())
+        # Remove language tags [[lang:xx]] and [[/lang]] before extracting words
+        clean_text = re.sub(r'\[\[lang:[a-zA-Z\-]+\]\]', '', text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\[\[/lang\]\]', '', clean_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r'\s+', ' ', clean_text.strip())
 
         # Remove common patterns that repeat the title information
         patterns_to_remove = []

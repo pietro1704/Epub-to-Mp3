@@ -774,6 +774,18 @@ class AudioConverter:
                     print(f"   ⚠️ Fallback para XTTS falhou: {exc}")
                 return False
 
+        # Pré-checagem do Edge para evitar travar no primeiro capítulo
+        if (config.engine or "").lower() == "edge" and hasattr(tts_engine, "_probe_edge_health"):
+            try:
+                voice = getattr(tts_engine, "voice", None)
+                healthy = await tts_engine._probe_edge_health(voice)  # type: ignore[attr-defined]
+                if not healthy and build_best_offline_engine():
+                    if self.verbose:
+                        print("   ⚠️ Edge pré-check falhou; usando engine offline antes de iniciar capítulos")
+            except Exception:
+                # Se der erro no pré-check, seguimos adiante para não bloquear execução
+                pass
+
         async def wait_edge_cooldown_if_needed(context: str) -> bool:
             """
             Handle Edge outages aggressively:
