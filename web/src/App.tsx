@@ -6,6 +6,7 @@ import Hero from './components/Hero';
 import Layout from './components/Layout';
 import Panel from './components/Panel';
 import StatusPanel from './components/StatusPanel';
+import BookCoverCard from './components/BookCoverCard';
 import { useConversionFlow } from './hooks/useConversionFlow';
 import { useTranslations } from './i18n/I18nProvider';
 import type { ConversionClient } from './services/ConversionService';
@@ -211,6 +212,12 @@ export default function App(props?: AppProps): JSX.Element {
   return (
     <Layout>
       <Hero />
+      <BookCoverCard
+        title={state.bookTitle}
+        author={state.bookAuthor}
+        coverUrl={state.coverUrl}
+        phase={state.phase}
+      />
       {showCachedAlert && cachedJobs.length > 0 && (
         <CachedJobsAlert
           cachedJobs={cachedJobs}

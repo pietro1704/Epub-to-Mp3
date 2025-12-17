@@ -159,6 +159,9 @@ export class HttpConversionClient implements ConversionClient {
         url: normalizeAssetUrl(this.baseUrl, asset.url),
       }));
     }
+    if (snapshot.coverUrl) {
+      snapshot.coverUrl = normalizeAssetUrl(this.baseUrl, snapshot.coverUrl);
+    }
     return snapshot;
   }
 
@@ -333,6 +336,7 @@ Note: In production, this would be a real ZIP with all MP3 files.
 
   async poll(jobId: string, options: PollOptions = {}): Promise<JobSnapshot> {
     const bookTitle = 'Livro_de_Exemplo';
+    const coverUrl = 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=720&auto=format&fit=crop';
 
     // Create individual chapter MP3s with different durations
     const chapter1 = this.createMockAudio('001 - Capítulo 1', 3);
@@ -355,7 +359,10 @@ Note: In production, this would be a real ZIP with all MP3 files.
         chaptersTotal: 3,
         chaptersCompleted: 0,
         progressPercent: 5,
-      },
+        bookTitle: 'Livro de Exemplo',
+        bookAuthor: 'Autor Desconhecido',
+        coverUrl,
+     },
       {
         jobId,
         state: 'running',
@@ -377,7 +384,10 @@ Note: In production, this would be a real ZIP with all MP3 files.
         chaptersTotal: 3,
         chaptersCompleted: 0,
         progressPercent: 15,
-      },
+        bookTitle: 'Livro de Exemplo',
+        bookAuthor: 'Autor Desconhecido',
+        coverUrl,
+     },
       {
         jobId,
         state: 'running',
@@ -403,7 +413,10 @@ Note: In production, this would be a real ZIP with all MP3 files.
         chaptersCompleted: 1,
         currentChapter: 'Capítulo 1',
         progressPercent: 33,
-      },
+        bookTitle: 'Livro de Exemplo',
+        bookAuthor: 'Autor Desconhecido',
+        coverUrl,
+     },
       {
         jobId,
         state: 'running',
@@ -433,7 +446,10 @@ Note: In production, this would be a real ZIP with all MP3 files.
         chaptersCompleted: 2,
         currentChapter: 'Capítulo 2',
         progressPercent: 67,
-      },
+        bookTitle: 'Livro de Exemplo',
+        bookAuthor: 'Autor Desconhecido',
+        coverUrl,
+     },
       {
         jobId,
         state: 'finished',
@@ -478,6 +494,9 @@ Note: In production, this would be a real ZIP with all MP3 files.
           { name: '002 - Capítulo 2.mp3', url: chapter2, durationSeconds: 240 },
           { name: '003 - Capítulo 3.mp3', url: chapter3, durationSeconds: 300 },
         ],
+        bookTitle: 'Livro de Exemplo',
+        bookAuthor: 'Autor Desconhecido',
+        coverUrl,
       },
     ];
 

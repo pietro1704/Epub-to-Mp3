@@ -30,7 +30,7 @@ export default function CachedJobsAlert({ cachedJobs, onResume, onDismiss }: Cac
     <div className="cached-jobs-alert">
       <div className="cached-jobs-alert__header">
         <h3>🔄 Conversões Interrompidas</h3>
-        <button type="button" className="cached-jobs-alert__close" onClick={onDismiss} aria-label="Fechar">
+        <button type="button" className="cached-jobs-alert__close" onClick={onDismiss} aria-label="Fechar aviso">
           ✕
         </button>
       </div>
@@ -43,7 +43,10 @@ export default function CachedJobsAlert({ cachedJobs, onResume, onDismiss }: Cac
         {cachedJobs.map((job) => (
           <li key={job.jobId} className="cached-jobs-alert__item">
             <div className="cached-jobs-alert__info">
-              <span className="cached-jobs-alert__filename">📄 {job.fileName}</span>
+              <span className="cached-jobs-alert__filename" title={job.fileName}>
+                <span aria-hidden="true">📄</span>
+                <span className="cached-jobs-alert__filename-text">{job.fileName}</span>
+              </span>
               <span className="cached-jobs-alert__time">{formatTime(job.timestamp)}</span>
             </div>
             <button

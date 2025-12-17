@@ -85,6 +85,8 @@ class EdgeTTSEngine:
         primary_language: Optional[str] = None,
         language_voices: Optional[Dict[str, str]] = None,
         verbose: bool = False,
+        max_segment_seconds: Optional[float] = None,
+        chunk_char_limit: Optional[int] = None,
     ) -> None:
         global edge_tts, _edge_rate_limiter
 
@@ -115,7 +117,15 @@ class EdgeTTSEngine:
         }
         self.last_error: Optional[str] = None
         self.verbose = verbose
-        self._max_segment_seconds = max(30.0, min(DEFAULT_EDGE_SEGMENT_SECONDS, 75.0))
+        max_seconds = max_segment_seconds if max_segment_seconds is not None else DEFAULT_EDGE_SEGMENT_SECONDS
+        self._max_segment_seconds = max(30.0, min(float(max_seconds), 95.0))
+        chunk_limit = chunk_char_limit if chunk_char_limit is not None else 12000
+        try:
+            chunk_limit = int(chunk_limit)
+        except (TypeError, ValueError):
+            chunk_limit = 12000
+        self._chunk_char_limit = max(4000, chunk_limit)
+        self._chunk_log_every = max(25, int(self._chunk_char_limit / 400))
         self._words_per_minute = WORDS_PER_MINUTE
         self.partial_failure_detected: bool = False
         self.last_segment_report: Dict[str, int] = {"expected": 0, "generated": 0, "failed": 0}
@@ -124,6 +134,7 @@ class EdgeTTSEngine:
             print(f"🔍 [VERBOSE] EdgeTTS inicializado com voice={voice}")
             print(f"🔍 [VERBOSE] Rate limiter slots disponíveis: {_edge_rate_limiter._value if _edge_rate_limiter else 'N/A'}")
             print(f"🔍 [VERBOSE] Segmentos limitados a {self._max_segment_seconds:.0f}s ({self._words_per_minute} wpm)")
+            print(f"🔍 [VERBOSE] Chunk máximo: {self._chunk_char_limit} chars (~{int(self._chunk_char_limit/6)} palavras)")
             print(f"🔍 [VERBOSE] Sanitizador ativo para caracteres invisíveis/controle")
 
     def supports_multilingual(self) -> bool:
@@ -133,6 +144,58 @@ class EdgeTTSEngine:
     def supports_emphasis(self) -> bool:
         """Edge TTS suporta ênfase via SSML quando voz é Neural"""
         return self._supports_emphasis()
+
+    def apply_speed_profile(
+        self,
+        *,
+        chunk_char_limit: Optional[int] = None,
+        max_segment_seconds: Optional[float] = None,
+        words_per_minute: Optional[int] = None,
+    ) -> None:
+        """Runtime hook used by the converter to nudge chunk sizes/timeouts."""
+        updates: list[str] = []
+        if chunk_char_limit is not None:
+            try:
+                limit = int(chunk_char_limit)
+            except (TypeError, ValueError):
+                limit = self._chunk_char_limit
+            limit = max(4000, min(limit, 25_000))
+            if limit != self._chunk_char_limit:
+                self._chunk_char_limit = limit
+                self._chunk_log_every = max(25, int(self._chunk_char_limit / 400))
+                updates.append(f"chunk={limit}")
+
+        if max_segment_seconds is not None:
+            try:
+                seconds = float(max_segment_seconds)
+            except (TypeError, ValueError):
+                seconds = self._max_segment_seconds
+            seconds = max(30.0, min(seconds, 100.0))
+            if seconds != self._max_segment_seconds:
+                self._max_segment_seconds = seconds
+                updates.append(f"segment={seconds:.0f}s")
+
+        if words_per_minute is not None:
+            try:
+                wpm = int(words_per_minute)
+            except (TypeError, ValueError):
+                wpm = self._words_per_minute
+            wpm = max(120, min(wpm, 260))
+            if wpm != self._words_per_minute:
+                self._words_per_minute = wpm
+                updates.append(f"wpm={wpm}")
+
+        if updates and self.verbose:
+            print(f"⚡ EdgeTTS speed profile atualizado: {', '.join(updates)}")
+
+    @property
+    def speed_profile(self) -> Dict[str, float]:
+        """Expose active chunk/timing limits for telemetry/logging."""
+        return {
+            "chunk_char_limit": float(self._chunk_char_limit),
+            "max_segment_seconds": float(self._max_segment_seconds),
+            "words_per_minute": float(self._words_per_minute),
+        }
 
     async def _probe_edge_health(self, voice: str) -> bool:
         """
@@ -520,7 +583,7 @@ class EdgeTTSEngine:
             fallback = TextFormattingProcessor.clean_tts_text(text or "") if TextFormattingProcessor else (text or "")
             return self._chunk_text(self.voice, fallback)
 
-    def _chunk_text(self, voice: str, text: str, chunk_size: int = 7800) -> list[tuple[str, str]]:
+    def _chunk_text(self, voice: str, text: str, chunk_size: Optional[int] = None) -> list[tuple[str, str]]:
         """Divide texto longo em blocos menores respeitando limites aproximados de frase e duração."""
         if not text:
             return []
@@ -529,7 +592,13 @@ class EdgeTTSEngine:
         if not stripped:
             return []
 
-        if len(stripped) <= chunk_size:
+        try:
+            active_chunk_limit = int(chunk_size) if chunk_size is not None else self._chunk_char_limit
+        except (TypeError, ValueError):
+            active_chunk_limit = self._chunk_char_limit
+        active_chunk_limit = max(4000, active_chunk_limit)
+
+        if len(stripped) <= active_chunk_limit:
             base_chunks: List[tuple[str, str]] = [(voice, stripped)]
         else:
             base_chunks = []
@@ -537,7 +606,7 @@ class EdgeTTSEngine:
             length = len(stripped)
 
             while start < length:
-                end = min(start + chunk_size, length)
+                end = min(start + active_chunk_limit, length)
                 chunk = stripped[start:end]
 
                 if end < length:
@@ -545,7 +614,7 @@ class EdgeTTSEngine:
                     last_exclamation = chunk.rfind("!")
                     last_question = chunk.rfind("?")
                     break_point = max(last_period, last_exclamation, last_question)
-                    if break_point > chunk_size * 0.5:
+                    if break_point > active_chunk_limit * 0.5:
                         chunk = chunk[: break_point + 1]
                         end = start + len(chunk)
 
@@ -563,10 +632,13 @@ class EdgeTTSEngine:
             if refined_count != base_count:
                 print(
                     "🔍 [VERBOSE] EdgeTTS _chunk_text: "
-                    f"{base_count} blocos base → {refined_count} segmentos (≤ {self._max_segment_seconds:.0f}s)"
+                    f"{base_count} blocos base → {refined_count} segmentos (≤ {self._max_segment_seconds:.0f}s, limite {active_chunk_limit} chars)"
                 )
             else:
-                print(f"🔍 [VERBOSE] EdgeTTS _chunk_text: gerados {refined_count} segmentos para voz {voice}")
+                print(
+                    "🔍 [VERBOSE] EdgeTTS _chunk_text: "
+                    f"{refined_count} segmentos para voz {voice} (limite {active_chunk_limit} chars)"
+                )
 
         return refined
 
@@ -875,9 +947,9 @@ class EdgeTTSEngine:
                         if chunk["type"] == "audio":
                             out_file.write(chunk["data"])
                             received_audio = True
-                            if self.verbose and chunks_received % 10 == 0:
+                            if self.verbose and chunks_received % self._chunk_log_every == 0:
                                 print(f"🔍 [VERBOSE] EdgeTTS: {chunks_received} chunks processados")
-                        elif self.verbose:
+                        elif self.verbose and (chunks_received <= 3 or chunks_received % self._chunk_log_every == 0):
                             print(f"🔍 [VERBOSE] EdgeTTS chunk não-audio: {chunk['type']}")
                 finally:
                     with suppress(Exception):

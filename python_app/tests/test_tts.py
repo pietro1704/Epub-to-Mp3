@@ -38,6 +38,8 @@ class TestTTSFactory(unittest.TestCase):
                 primary_language="auto",
                 language_voices={},
                 verbose=False,
+                max_segment_seconds=config.edge_max_segment_seconds,
+                chunk_char_limit=config.edge_chunk_chars,
             )
 
     def test_create_coqui_engine(self):

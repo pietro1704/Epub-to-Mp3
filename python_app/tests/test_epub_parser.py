@@ -8,7 +8,7 @@ import tempfile
 import zipfile
 import os
 from unittest.mock import patch, Mock, mock_open
-from src.ebook_reader import EpubParser, Book, Chapter, TextProcessor
+from src.ebook_reader import EpubParser, Book, Chapter, TextProcessor, EbookReader
 
 
 class TestEpubParser(unittest.TestCase):
@@ -25,8 +25,13 @@ class TestEpubParser(unittest.TestCase):
             os.remove(self.sample_epub_path)
         os.rmdir(self.temp_dir)
 
-    def create_mock_epub(self, title="Test Book", author="Test Author", 
-                        chapters_data=None):
+    def create_mock_epub(
+        self,
+        title="Test Book",
+        author="Test Author",
+        chapters_data=None,
+        include_cover=True,
+    ):
         """Create a mock EPUB file for testing"""
         if chapters_data is None:
             chapters_data = [
@@ -49,14 +54,22 @@ class TestEpubParser(unittest.TestCase):
             manifest_items += f'<item id="chapter{i}" href="{filename}" media-type="application/xhtml+xml"/>\n'
             spine_items += f'<itemref idref="chapter{i}"/>\n'
 
+        cover_manifest = ""
+        cover_meta = ""
+        if include_cover:
+            cover_manifest = '<item id="cover-image" href="Images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>\n'
+            cover_meta = '<meta name="cover" content="cover-image"/>'
+
         opf_content = f'''<?xml version="1.0"?>
         <package xmlns="http://www.idpf.org/2007/opf" version="2.0">
             <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
                 <dc:title>{title}</dc:title>
                 <dc:creator>{author}</dc:creator>
+                {cover_meta}
             </metadata>
             <manifest>
                 {manifest_items}
+                {cover_manifest}
             </manifest>
             <spine>
                 {spine_items}
@@ -70,6 +83,8 @@ class TestEpubParser(unittest.TestCase):
             
             for filename, content in chapters_data:
                 zf.writestr(f"OEBPS/{filename}", content)
+            if include_cover:
+                zf.writestr("OEBPS/Images/cover.jpg", b"\xff\xd8\xff\xdbMockCoverData")
 
     def test_init(self):
         """Test EpubParser initialization"""
@@ -136,6 +151,17 @@ class TestEpubParser(unittest.TestCase):
         self.assertEqual(book.chapters[0].name, "Capítulo 1")
         self.assertEqual(book.chapters[1].name, "Capítulo 2")
         self.assertEqual(book.chapters[2].name, "Valid content here.")
+
+    def test_extract_cover_image(self):
+        """EbookReader should expose cover bytes from the EPUB manifest."""
+        self.create_mock_epub()
+        reader = EbookReader(self.sample_epub_path)
+        cover = reader.extract_cover_image()
+        self.assertIsNotNone(cover, "Cover should be detected in mocked EPUB")
+        assert cover is not None  # mypy/static check
+        self.assertEqual(cover.extension, ".jpg")
+        self.assertTrue(cover.media_type.startswith("image/"))
+        self.assertGreater(len(cover.data), 0)
 
     def test_parse_epub_no_metadata(self):
         """Test parsing EPUB with no metadata"""

@@ -298,6 +298,66 @@ body {
   font-size: 0.92rem;
 }
 
+.cover-card {
+  width: 100%;
+  margin: 0 0 1.75rem;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  border-radius: 24px;
+  border: 1px solid var(--panel-border);
+  background: rgba(15, 23, 42, 0.5);
+  display: flex;
+  gap: clamp(1rem, 2vw, 1.5rem);
+  align-items: center;
+  box-shadow: 0 18px 45px rgba(15, 23, 42, 0.4);
+}
+
+.cover-card__image {
+  width: clamp(120px, 18vw, 180px);
+  aspect-ratio: 2.8 / 4;
+  border-radius: 18px;
+  overflow: hidden;
+  background: radial-gradient(circle at top, rgba(99, 102, 241, 0.35), rgba(79, 70, 229, 0.2));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.cover-card__image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.cover-card__placeholder {
+  font-size: clamp(2.5rem, 4vw, 3.5rem);
+}
+
+.cover-card__details {
+  flex: 1;
+  min-width: 0;
+}
+
+.cover-card__status {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.cover-card__title {
+  margin: 0;
+  font-size: clamp(1.4rem, 3vw, 1.9rem);
+  color: var(--text-primary);
+}
+
+.cover-card__author {
+  margin: 0.2rem 0 0;
+  color: var(--text-secondary);
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -456,6 +516,26 @@ select {
   margin: 0;
   font-size: 0.88rem;
   color: var(--hint-color);
+}
+
+.form-hint--filename {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.form-hint__filename {
+  max-width: min(420px, 65vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .engine-insight {
@@ -863,9 +943,20 @@ select {
 .cached-jobs-alert__filename {
   font-weight: 500;
   color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.cached-jobs-alert__filename-text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  display: inline-block;
+  max-width: min(360px, 55vw);
 }
 
 .cached-jobs-alert__time {
@@ -979,6 +1070,7 @@ select {
   align-items: center;
   gap: 0.75rem;
   width: 100%;
+  min-width: 0;
   padding: 1rem 1.2rem;
   border: none;
   background: transparent;
@@ -1003,6 +1095,10 @@ select {
   flex: 1;
   font-weight: 600;
   color: var(--text-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .chapter-item__duration {
@@ -1177,6 +1273,15 @@ footer {
 
   .hero__highlights {
     grid-template-columns: 1fr;
+  }
+
+  .cover-card {
+    flex-direction: column;
+    text-align: center;
+  }
+
+  .cover-card__image {
+    width: min(220px, 60vw);
   }
 }
 

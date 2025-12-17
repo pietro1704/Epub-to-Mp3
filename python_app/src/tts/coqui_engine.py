@@ -17,6 +17,36 @@ TTS = None
 # **FIXED**: Executor global com limite de threads para evitar travamentos
 _coqui_executor = None
 
+def _patch_transformers_beam_search(force: bool = False) -> None:
+    """Ensure ``transformers`` exposes ``BeamSearchScorer`` for older releases of ``TTS``."""
+    try:
+        import transformers  # type: ignore
+    except ImportError:
+        return
+
+    if not force and hasattr(transformers, "BeamSearchScorer"):
+        return
+
+    BeamSearchScorer = None
+    for module_path in (
+        "transformers.generation.beam_search",
+        "transformers.generation.stream_generator",
+        "transformers.generation.utils",
+    ):
+        try:
+            module = importlib.import_module(module_path)
+            candidate = getattr(module, "BeamSearchScorer", None)
+            if candidate is not None:
+                BeamSearchScorer = candidate
+                break
+        except Exception:
+            continue
+
+    if BeamSearchScorer is not None:
+        transformers.BeamSearchScorer = BeamSearchScorer  # type: ignore[attr-defined]
+
+_patch_transformers_beam_search()
+
 def _get_coqui_executor():
     global _coqui_executor
     if _coqui_executor is None:
@@ -26,7 +56,7 @@ def _get_coqui_executor():
             max_workers = 0
         if max_workers <= 0:
             cpu_count = os.cpu_count() or 1
-            max_workers = max(1, min(2, cpu_count))
+            max_workers = max(1, min(4, cpu_count))
         _coqui_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="CoquiTTS")
     return _coqui_executor
 
@@ -41,6 +71,24 @@ try:  # pragma: no cover - optional dependency
     np = _np  # type: ignore
     sf = _sf  # type: ignore
 except Exception:  # pragma: no cover
+    pass
+
+# Transformers compatibility shim: newer releases stop exporting BeamSearchScorer at top-level
+try:  # pragma: no cover - defensive compatibility
+    import transformers as _transformers  # type: ignore
+    if not hasattr(_transformers, "BeamSearchScorer"):
+        _BeamSearchScorer = None
+        try:
+            from transformers.generation.beam_search import BeamSearchScorer as _BeamSearchScorer  # type: ignore
+        except Exception:
+            try:
+                generation_mod = importlib.import_module("transformers.generation.utils")  # type: ignore
+                _BeamSearchScorer = getattr(generation_mod, "BeamSearchScorer", None)
+            except Exception:
+                _BeamSearchScorer = None
+        if _BeamSearchScorer is not None:
+            _transformers.BeamSearchScorer = _BeamSearchScorer  # type: ignore[attr-defined]
+except Exception:
     pass
 
 try:  # pragma: no cover - optional dependency
@@ -101,10 +149,22 @@ class CoquiTTSEngine:
         if self.tts is None:
             if self.verbose:
                 print(f"🔍 [VERBOSE] Coqui inicializando modelo: {self.model_name}")
+            _patch_transformers_beam_search()
             try:
                 self.tts = self._tts_class(model_name=self.model_name)
                 if self.verbose:
                     print(f"🔍 [VERBOSE] Coqui modelo inicializado com sucesso")
+            except ImportError as e:
+                if "BeamSearchScorer" in str(e):
+                    _patch_transformers_beam_search(force=True)
+                    self.tts = self._tts_class(model_name=self.model_name)
+                    if self.verbose:
+                        print(f"🔍 [VERBOSE] Coqui modelo inicializado após patch Transformers")
+                else:
+                    self.last_error = f"init_error: {e}"
+                    if self.verbose:
+                        print(f"🔍 [VERBOSE] Coqui erro na inicialização: {e}")
+                    raise
             except Exception as e:
                 self.last_error = f"init_error: {e}"
                 if self.verbose:

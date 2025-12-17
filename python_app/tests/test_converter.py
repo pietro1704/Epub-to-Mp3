@@ -467,6 +467,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             engine="edge",
             output_dir=str(cache_dir),
             book_title="Long_Book",
+            edge_auto_offline_chars=0,
+            edge_auto_offline_seconds=0,
         )
 
         result = await self.converter._convert_chapters_sequential(
@@ -1143,6 +1145,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             output_dir=str(output_root),
             book_title="Livro Retry",
             extra={"max_auto_retries": 3},
+            edge_auto_offline_chars=0,
+            edge_auto_offline_seconds=0,
         )
 
         result = await self.converter.convert(reader, config)
@@ -1194,7 +1198,9 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         config = ConversionConfig(
             engine="edge",
             output_dir=str(cache_dir),
-            book_title="Complete_Test"
+            book_title="Complete_Test",
+            edge_auto_offline_chars=0,
+            edge_auto_offline_seconds=0,
         )
 
         # Run conversion

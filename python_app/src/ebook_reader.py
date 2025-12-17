@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 import re
 import zipfile
 from dataclasses import dataclass, field
@@ -69,6 +70,13 @@ class Book:
     author: str
     chapters: List[Chapter]
     toc: List[TocItem] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class CoverImage:
+    data: bytes
+    media_type: str
+    extension: str
 
 
 class TextProcessor:
@@ -1474,6 +1482,85 @@ class EbookReader:
         if not book:
             return []
         return list(book.toc)
+
+    def extract_cover_image(self) -> Optional[CoverImage]:
+        """Return the raw cover image bundled in the EPUB, if available."""
+        if not self.file_path or self.file_path.suffix.lower() != ".epub":
+            return None
+
+        try:
+            parser = EpubParser(str(self.file_path))
+            with zipfile.ZipFile(self.file_path, "r") as archive:
+                opf_path = parser._find_opf_path(archive)
+                opf_dir = parser._opf_dir(opf_path)
+                opf_content = parser._read_zip_text(archive, opf_path)
+                opf_tree = ET.fromstring(opf_content)
+
+                manifest: Dict[str, Dict[str, str]] = {}
+                for item in opf_tree.findall("opf:manifest/opf:item", XML_NS):
+                    item_id = item.attrib.get("id")
+                    href = item.attrib.get("href")
+                    if not item_id or not href:
+                        continue
+                    manifest[item_id] = {
+                        "href": href,
+                        "media_type": item.attrib.get("media-type", ""),
+                        "properties": item.attrib.get("properties", ""),
+                    }
+
+                cover_entry = self._detect_cover_entry(opf_tree, manifest)
+                if not cover_entry:
+                    return None
+
+                cover_href = cover_entry.get("href")
+                if not cover_href:
+                    return None
+
+                cover_path = parser._join_path(opf_dir, cover_href)
+                try:
+                    data = archive.read(cover_path)
+                except KeyError:
+                    data = archive.read(unquote(cover_path))
+
+                media_type = cover_entry.get("media_type") or mimetypes.guess_type(cover_href)[0] or "image/jpeg"
+                extension = Path(cover_path).suffix or mimetypes.guess_extension(media_type) or ".jpg"
+                if not extension.startswith("."):
+                    extension = f".{extension}"
+                return CoverImage(data=data, media_type=media_type, extension=extension)
+        except Exception:
+            return None
+
+    def _detect_cover_entry(
+        self,
+        opf_tree: ET.Element,
+        manifest: Dict[str, Dict[str, str]],
+    ) -> Optional[Dict[str, str]]:
+        metadata = opf_tree.find("opf:metadata", XML_NS)
+        cover_id = None
+        if metadata is not None:
+            meta_cover = metadata.find("opf:meta[@name='cover']", XML_NS)
+            if meta_cover is None:
+                for meta in metadata.findall(".//*"):
+                    tag = meta.tag.split('}', 1)[-1]
+                    if tag.lower() == "meta" and meta.attrib.get("name") == "cover":
+                        meta_cover = meta
+                        break
+            if meta_cover is not None:
+                cover_id = meta_cover.attrib.get("content")
+        if cover_id and cover_id in manifest:
+            return manifest[cover_id]
+
+        for item_id, entry in manifest.items():
+            props = (entry.get("properties") or "").lower()
+            href = entry.get("href") or ""
+            media_type = (entry.get("media_type") or "").lower()
+            if "cover-image" in props:
+                return entry
+            if item_id.lower() in {"cover", "cover-image"}:
+                return entry
+            if media_type.startswith("image/") and "cover" in href.lower():
+                return entry
+        return None
 
 
 def read_book(file_path: str | Path) -> Book:

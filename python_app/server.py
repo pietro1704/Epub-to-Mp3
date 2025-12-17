@@ -169,6 +169,10 @@ class JobStatus(BaseModel):
     progressPercent: Optional[float] = None
     outputs: list[dict] = []
     error: Optional[str] = None
+    bookTitle: Optional[str] = None
+    bookAuthor: Optional[str] = None
+    coverUrl: Optional[str] = None
+    coverMimeType: Optional[str] = None
 
 
 @app.post("/api/convert")
@@ -198,6 +202,11 @@ async def convert_ebook(
         "footnote_mode": footnote_mode,
         "language": language,
         "outputs": [],
+        "bookTitle": None,
+        "bookAuthor": None,
+        "cover": None,
+        "coverUrl": None,
+        "coverMimeType": None,
     }
 
     # Persist job state to disk
@@ -326,10 +335,12 @@ async def process_conversion(job_id: str) -> None:
 
         file_path = Path(job["file_path"])
         reader = EbookReader(str(file_path))
+        cover_blob = reader.extract_cover_image()
 
         title = reader.title or "Livro_Desconhecido"
         author = reader.author or "Autor Desconhecido"
         job["bookTitle"] = title
+        job["bookAuthor"] = author
 
         job["events"].append(f"📜 Título: {title}")
         job["events"].append(f"✍️ Autor: {author}")
@@ -395,6 +406,32 @@ async def process_conversion(job_id: str) -> None:
             shutil.rmtree(job_output_dir, ignore_errors=True)
         job_output_dir.mkdir(exist_ok=True)
 
+        if cover_blob:
+            original_name = Path(job.get("file_path", "")).name
+            cover_slug = (
+                FileManager.sanitize_filename(title)
+                or FileManager.sanitize_filename(original_name)
+                or "capa"
+            )
+            filename = f"{cover_slug}_cover{cover_blob.extension}"
+            cover_path = job_output_dir / filename
+            try:
+                cover_path.write_bytes(cover_blob.data)
+                cover_url = f"/api/outputs/{job_id}/{filename}"
+                job["cover"] = {
+                    "name": filename,
+                    "url": cover_url,
+                    "mimeType": cover_blob.media_type,
+                }
+                job["coverUrl"] = cover_url
+                job["coverMimeType"] = cover_blob.media_type
+                job["events"].append("🖼️ Capa do livro detectada")
+                _persist_job(job_id, force=True)
+            except Exception as cover_exc:
+                job["events"].append(f"⚠️ Falha ao salvar capa: {cover_exc}")
+                job["cover"] = None
+                job["coverUrl"] = None
+                job["coverMimeType"] = None
         outputs = []
 
         def _resolve_tts_output(target_mp3: Path, engine_name: str) -> tuple[Path, bool]:
@@ -542,6 +579,23 @@ async def process_conversion(job_id: str) -> None:
             else:
                 zip_url = f"/api/outputs/{job_id}/{zip_file.name}"
                 job["events"].append(f"  ⚠️ {zip_file.name} → fallback local")
+
+            cover_entry = job.get("cover")
+            if cover_entry and cover_entry.get("name"):
+                cover_path = job_output_dir / cover_entry["name"]
+                if cover_path.exists():
+                    cover_result = storage.upload_file(
+                        cover_path,
+                        object_key=f"{job_id}/{cover_entry['name']}",
+                        ttl_hours=48,
+                    )
+                    if cover_result.success:
+                        cover_entry["url"] = cover_result.public_url
+                        cover_entry["r2_key"] = cover_result.object_key
+                        job["coverUrl"] = cover_result.public_url
+                        job["events"].append("  ✅ Capa → R2")
+                    else:
+                        job["events"].append("  ⚠️ Capa → fallback local")
         else:
             # R2 not configured - use local URLs
             job["events"].append("")

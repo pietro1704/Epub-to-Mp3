@@ -41,6 +41,10 @@ class ConversionConfig:
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
+    edge_auto_offline_seconds: int = 480  # switch to offline engine if chapter is predicted to exceed this duration
+    edge_auto_offline_chars: int = 20000  # switch to offline engine if chapter text is bigger than this
+    edge_chunk_chars: int = 14000  # character budget per Edge chunk before splitting
+    edge_max_segment_seconds: int = 75  # hard limit for each Edge chunk duration
 
     def as_dict(self) -> Dict[str, object]:
         """Return a serialisable representation useful for debugging."""
@@ -64,6 +68,10 @@ class ConversionConfig:
             "primary_language": self.primary_language,
             "languages": list(self.languages),
             "language_voices": dict(self.language_voices),
+            "edge_auto_offline_seconds": self.edge_auto_offline_seconds,
+            "edge_auto_offline_chars": self.edge_auto_offline_chars,
+            "edge_chunk_chars": self.edge_chunk_chars,
+            "edge_max_segment_seconds": self.edge_max_segment_seconds,
         }
         if self.extra:
             data["extra"] = dict(self.extra)
@@ -266,6 +274,29 @@ class AppConfig:
         # Extract new parameters
         use_simple_converter = bool(kwargs.pop("use_simple_converter", False))
         verbose = bool(kwargs.pop("verbose", False))
+        def _safe_int(env_value: Optional[str], default: int) -> int:
+            try:
+                parsed = int(env_value) if env_value is not None else default
+            except (TypeError, ValueError):
+                parsed = default
+            return max(parsed, 0)
+
+        edge_auto_offline_seconds = kwargs.pop(
+            "edge_auto_offline_seconds",
+            _safe_int(os.getenv("EDGE_AUTO_OFFLINE_SECONDS"), ConversionConfig.edge_auto_offline_seconds),
+        )
+        edge_auto_offline_chars = kwargs.pop(
+            "edge_auto_offline_chars",
+            _safe_int(os.getenv("EDGE_AUTO_OFFLINE_CHARS"), ConversionConfig.edge_auto_offline_chars),
+        )
+        edge_chunk_chars = kwargs.pop(
+            "edge_chunk_chars",
+            _safe_int(os.getenv("EDGE_CHUNK_CHARS"), ConversionConfig.edge_chunk_chars),
+        )
+        edge_max_segment_seconds = kwargs.pop(
+            "edge_max_segment_seconds",
+            _safe_int(os.getenv("EDGE_MAX_SEGMENT_SECONDS"), ConversionConfig.edge_max_segment_seconds),
+        )
 
         config = ConversionConfig(
             engine=engine,
@@ -289,6 +320,10 @@ class AppConfig:
             language_voices=dict(language_voices),
             batch_size=batch_size,
             verbose=verbose,
+            edge_auto_offline_seconds=edge_auto_offline_seconds,
+            edge_auto_offline_chars=edge_auto_offline_chars,
+            edge_chunk_chars=edge_chunk_chars,
+            edge_max_segment_seconds=edge_max_segment_seconds,
         )
 
         if kwargs:

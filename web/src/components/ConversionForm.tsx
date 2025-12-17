@@ -185,7 +185,12 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
             {t.form.useSampleButton}
           </button>
         </div>
-        {selectedFile && <p className="form-hint">📄 {selectedFile.name}</p>}
+        {selectedFile && (
+          <p className="form-hint form-hint--filename" title={selectedFile.name}>
+            <span aria-hidden="true">📄</span>
+            <span className="form-hint__filename">{selectedFile.name}</span>
+          </p>
+        )}
         <p className="form-hint">{t.form.fileHint}</p>
       </fieldset>
 

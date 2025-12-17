@@ -48,7 +48,12 @@ type Action =
   | { type: 'append-entry'; entry: StatusEntry }
   | { type: 'complete'; entry: StatusEntry; downloads: DownloadAsset[] }
   | { type: 'fail'; entry: StatusEntry; error: string }
-  | { type: 'update-meta'; etaSeconds?: number | null; summary?: ConversionSummary };
+  | {
+      type: 'update-meta';
+      etaSeconds?: number | null;
+      summary?: ConversionSummary;
+      details?: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>>;
+    };
 
 const initialState: ConversionState = {
   phase: 'idle',
@@ -59,6 +64,9 @@ const initialState: ConversionState = {
   etaSeconds: undefined,
   summary: undefined,
   cliCommand: undefined,
+  bookTitle: undefined,
+  bookAuthor: undefined,
+  coverUrl: undefined,
 };
 
 function reducer(state: ConversionState, action: Action): ConversionState {
@@ -122,11 +130,17 @@ function reducer(state: ConversionState, action: Action): ConversionState {
           }
         }
       }
-      return {
+      const updatedState: ConversionState = {
         ...state,
         etaSeconds: typeof action.etaSeconds === 'number' ? Math.max(0, action.etaSeconds) : action.etaSeconds,
         summary: nextSummary,
       };
+      if (action.details) {
+        updatedState.bookTitle = action.details.bookTitle ?? updatedState.bookTitle;
+        updatedState.bookAuthor = action.details.bookAuthor ?? updatedState.bookAuthor;
+        updatedState.coverUrl = action.details.coverUrl ?? updatedState.coverUrl;
+      }
+      return updatedState;
     default:
       return state;
   }
@@ -280,8 +294,18 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
             if (typeof percentFromSnapshot === 'number') {
               summaryUpdate.progressPercent = percentFromSnapshot;
             }
+            const detailUpdate: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>> = {};
+            if (snapshot.bookTitle) detailUpdate.bookTitle = snapshot.bookTitle;
+            if (snapshot.bookAuthor) detailUpdate.bookAuthor = snapshot.bookAuthor;
+            if (snapshot.coverUrl) detailUpdate.coverUrl = snapshot.coverUrl;
             const hasSummary = Object.values(summaryUpdate).some((value) => value !== undefined);
-            dispatch({ type: 'update-meta', etaSeconds, summary: hasSummary ? summaryUpdate : undefined });
+            const hasDetails = Object.values(detailUpdate).some((value) => value !== undefined);
+            dispatch({
+                type: 'update-meta',
+                etaSeconds,
+                summary: hasSummary ? summaryUpdate : undefined,
+                details: hasDetails ? detailUpdate : undefined,
+            });
             snapshot.events?.forEach((event) => {
               if (!seenEventsRef.current.has(event)) {
                 seenEventsRef.current.add(event);
@@ -326,7 +350,17 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
           summaryUpdate.chaptersTotal = chapterCount;
         }
         summaryUpdate.progressPercent = 100;
-        dispatch({ type: 'update-meta', etaSeconds: 0, summary: summaryUpdate });
+        const detailUpdate: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>> = {};
+        if (finalSnapshot.bookTitle) detailUpdate.bookTitle = finalSnapshot.bookTitle;
+        if (finalSnapshot.bookAuthor) detailUpdate.bookAuthor = finalSnapshot.bookAuthor;
+        if (finalSnapshot.coverUrl) detailUpdate.coverUrl = finalSnapshot.coverUrl;
+        const hasDetails = Object.values(detailUpdate).some((value) => value !== undefined);
+        dispatch({
+          type: 'update-meta',
+          etaSeconds: 0,
+          summary: summaryUpdate,
+          details: hasDetails ? detailUpdate : undefined,
+        });
         dispatch({
           type: 'complete',
           downloads,
@@ -476,8 +510,18 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
             if (typeof percentFromSnapshot === 'number') {
               summaryUpdate.progressPercent = percentFromSnapshot;
             }
+            const detailUpdate: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>> = {};
+            if (snapshot.bookTitle) detailUpdate.bookTitle = snapshot.bookTitle;
+            if (snapshot.bookAuthor) detailUpdate.bookAuthor = snapshot.bookAuthor;
+            if (snapshot.coverUrl) detailUpdate.coverUrl = snapshot.coverUrl;
             const hasSummary = Object.values(summaryUpdate).some((value) => value !== undefined);
-            dispatch({ type: 'update-meta', etaSeconds, summary: hasSummary ? summaryUpdate : undefined });
+            const hasDetails = Object.values(detailUpdate).some((value) => value !== undefined);
+            dispatch({
+              type: 'update-meta',
+              etaSeconds,
+              summary: hasSummary ? summaryUpdate : undefined,
+              details: hasDetails ? detailUpdate : undefined,
+            });
             snapshot.events?.forEach((event) => {
               if (!seenEventsRef.current.has(event)) {
                 seenEventsRef.current.add(event);
@@ -524,7 +568,17 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
           summaryUpdate.chaptersTotal = chapterCount;
         }
         summaryUpdate.progressPercent = 100;
-        dispatch({ type: 'update-meta', etaSeconds: 0, summary: summaryUpdate });
+        const detailUpdate: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>> = {};
+        if (finalSnapshot.bookTitle) detailUpdate.bookTitle = finalSnapshot.bookTitle;
+        if (finalSnapshot.bookAuthor) detailUpdate.bookAuthor = finalSnapshot.bookAuthor;
+        if (finalSnapshot.coverUrl) detailUpdate.coverUrl = finalSnapshot.coverUrl;
+        const hasDetails = Object.values(detailUpdate).some((value) => value !== undefined);
+        dispatch({
+          type: 'update-meta',
+          etaSeconds: 0,
+          summary: summaryUpdate,
+          details: hasDetails ? detailUpdate : undefined,
+        });
         dispatch({
           type: 'complete',
           downloads,

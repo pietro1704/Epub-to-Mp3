@@ -33,6 +33,10 @@ export interface JobSnapshot {
   chaptersCompleted?: number;
   currentChapter?: string;
   progressPercent?: number | null;
+  bookTitle?: string;
+  bookAuthor?: string;
+  coverUrl?: string;
+  coverMimeType?: string;
 }
 
 export interface StatusEntry {
@@ -58,4 +62,7 @@ export interface ConversionState {
   etaSeconds?: number | null;
   summary?: ConversionSummary;
   cliCommand?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+  coverUrl?: string;
 }

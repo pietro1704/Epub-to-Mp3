@@ -91,7 +91,9 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
                         aria-expanded={isExpanded}
                       >
                         <span className="chapter-item__icon">{isExpanded ? '▼' : '▶'}</span>
-                        <span className="chapter-item__name">{asset.name}</span>
+                        <span className="chapter-item__name" title={asset.name}>
+                          {asset.name}
+                        </span>
                         {typeof asset.durationSeconds === 'number' && (
                           <span className="chapter-item__duration">{formatDuration(asset.durationSeconds, locale)}</span>
                         )}

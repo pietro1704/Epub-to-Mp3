@@ -31,6 +31,8 @@ class TTSFactory:
                 primary_language=config.primary_language,
                 language_voices=config.language_voices,
                 verbose=config.verbose,
+                max_segment_seconds=config.edge_max_segment_seconds or None,
+                chunk_char_limit=config.edge_chunk_chars or None,
             )
 
         if engine == "coqui":
