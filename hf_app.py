@@ -9,27 +9,12 @@ from pathlib import Path
 # Add python_app to path
 sys.path.insert(0, str(Path(__file__).parent / "python_app"))
 
-from fastapi import FastAPI, APIRouter
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
 from python_app.server import app as api_app
 
-# Create main app
-app = FastAPI(title="EPUB to MP3 Converter")
-
-# Add CORS middleware (before mounting sub-apps)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Include API routes FIRST (server.py already has /api prefix).
-# This ensures the SPA catch-all route doesn't shadow `/api/*`.
-app.include_router(api_app.router)
+# Reuse the same FastAPI instance defined in python_app.server
+app = api_app
 
 # Serve static files from web/dist
 web_dist = Path(__file__).parent / "web" / "dist"

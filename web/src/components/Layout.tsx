@@ -8,7 +8,7 @@ export default function Layout({ children }: PropsWithChildren): JSX.Element {
   return (
     <div className="app-shell">
       <TopBar />
-      {children}
+      <main className="content-shell">{children}</main>
       {footerText && (
         <footer>
           <p>{footerText}</p>

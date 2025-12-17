@@ -24,10 +24,16 @@ export interface TopBarText {
   localePortuguese: string;
 }
 
+export interface HeroHighlight {
+  title: string;
+  description: string;
+}
+
 export interface HeroText {
   badge: string;
   title: string;
   subtitle: string;
+  highlights: HeroHighlight[];
 }
 
 export interface TabsText {
@@ -157,6 +163,20 @@ export const translations: Record<Locale, Translations> = {
       title: 'Transforme seu EPUB ou PDF em MP3 com poucos cliques',
       subtitle:
         'Envie o arquivo, escolha a voz preferida e deixe o serviço Python narrar a história para você ouvir onde quiser.',
+      highlights: [
+        {
+          title: 'Edge → XTTS → Piper',
+          description: 'Escolhemos automaticamente o motor mais estável para manter qualidade e velocidade.',
+        },
+        {
+          title: 'Multi-idioma real',
+          description: 'Detectamos mudanças de idioma no texto e alternamos a voz sem precisar configurar nada.',
+        },
+        {
+          title: 'Conversões retomáveis',
+          description: 'O cache inteligente retoma jobs interrompidos e evita refazer capítulos já prontos.',
+        },
+      ],
     },
     tabs: {
       setup: {
@@ -312,6 +332,20 @@ export const translations: Record<Locale, Translations> = {
       title: 'Turn your EPUB or PDF into MP3 in just a few clicks',
       subtitle:
         'Upload the file, pick a voice you like, and let the Python service narrate the story so you can listen anywhere.',
+      highlights: [
+        {
+          title: 'Edge → XTTS → Piper',
+          description: 'Automatically picks the most reliable engine to keep quality and speed high.',
+        },
+        {
+          title: 'True multilingual',
+          description: 'Detects language changes per chapter and switches voices with zero configuration.',
+        },
+        {
+          title: 'Resume conversions',
+          description: 'Smart caching resumes interrupted jobs and skips chapters already rendered.',
+        },
+      ],
     },
     tabs: {
       setup: {

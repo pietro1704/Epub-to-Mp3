@@ -735,31 +735,17 @@ class AudioConverter:
             if config.engine.lower() != "edge":
                 return False
 
-            # PRIORIDADE = velocidade (Piper) e, se indisponível, XTTS para qualidade.
-            if can_use_piper():
-                try:
-                    piper_config = replace(config, engine="piper", voice=None, model_path=None)
-                    piper_config.voice = self.tts_factory.voice_provider.get_voice("piper", piper_config.primary_language)
-                    piper_config.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
-                        "piper",
-                        piper_config.languages or ([piper_config.primary_language] if piper_config.primary_language != "auto" else []),
-                        piper_config.voice,
-                        primary_language=piper_config.primary_language,
-                    )
-                    tts_engine = self.tts_factory.create_engine(piper_config)
-                    config = piper_config
-                    print("🔁 Fallback automático: Edge indisponível → Piper (offline rápido)")
-                    return True
-                except Exception as exc:
-                    if self.verbose:
-                        print(f"   ⚠️ Fallback para Piper falhou: {exc}")
-
+            # PRIORIDADE = qualidade/multi-idioma (XTTS) e, se indisponível, Piper pela velocidade.
             try:
                 coqui_config = replace(config, engine="coqui", voice=None, model_path=None)
-                coqui_config.voice = self.tts_factory.voice_provider.get_voice("coqui", coqui_config.primary_language) or "tts_models/multilingual/multi-dataset/xtts_v2"
+                coqui_config.voice = (
+                    self.tts_factory.voice_provider.get_voice("coqui", coqui_config.primary_language)
+                    or "tts_models/multilingual/multi-dataset/xtts_v2"
+                )
                 coqui_config.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
                     "coqui",
-                    coqui_config.languages or ([coqui_config.primary_language] if coqui_config.primary_language != "auto" else []),
+                    coqui_config.languages
+                    or ([coqui_config.primary_language] if coqui_config.primary_language != "auto" else []),
                     coqui_config.voice,
                     primary_language=coqui_config.primary_language,
                 )
@@ -768,11 +754,32 @@ class AudioConverter:
                 print("🔁 Fallback automático: Edge indisponível → XTTS (Coqui, offline)")
                 return True
             except ImportError:
-                return False
+                if self.verbose:
+                    print("   ⚠️ XTTS indisponível (pacote TTS não instalado)")
             except Exception as exc:
                 if self.verbose:
                     print(f"   ⚠️ Fallback para XTTS falhou: {exc}")
-                return False
+
+            if can_use_piper():
+                try:
+                    piper_config = replace(config, engine="piper", voice=None, model_path=None)
+                    piper_config.voice = self.tts_factory.voice_provider.get_voice("piper", piper_config.primary_language)
+                    piper_config.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
+                        "piper",
+                        piper_config.languages
+                        or ([piper_config.primary_language] if piper_config.primary_language != "auto" else []),
+                        piper_config.voice,
+                        primary_language=piper_config.primary_language,
+                    )
+                    tts_engine = self.tts_factory.create_engine(piper_config)
+                    config = piper_config
+                    print("🔁 Fallback automático: Edge indisponível → Piper (offline)")
+                    return True
+                except Exception as exc:
+                    if self.verbose:
+                        print(f"   ⚠️ Fallback para Piper falhou: {exc}")
+
+            return False
 
         # Pré-checagem do Edge para evitar travar no primeiro capítulo
         if (config.engine or "").lower() == "edge" and hasattr(tts_engine, "_probe_edge_health"):

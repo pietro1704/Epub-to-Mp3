@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import shutil
@@ -12,6 +13,7 @@ import zipfile
 from pathlib import Path
 import re
 from typing import Dict, Optional
+from dataclasses import replace
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +26,7 @@ from src.config import ConversionConfig
 from src.ebook_reader import EbookReader
 from src.tts.factory import TTSFactory
 from src.storage_manager import get_storage_manager
-from src.utils import FileManager
+from src.utils import FileManager, AudioProcessor
 from src.cache_manager import CacheManager
 from src.paths import OUTPUT_DIR
 from src.job_manager import JobManager
@@ -104,6 +106,56 @@ for job_id, job_data in jobs.items():
             logger.warning(f"Job {job_id} marked as interrupted (source file lost)")
 
 tts_factory = TTSFactory()
+
+
+def _normalise_languages(primary_language: Optional[str], languages: Optional[list[str]] = None) -> list[str]:
+    values: list[str] = []
+    if languages:
+        for lang in languages:
+            clean = (lang or "").strip()
+            if clean:
+                values.append(clean)
+    primary = (primary_language or "").strip()
+    if primary and primary.lower() != "auto":
+        values.insert(0, primary)
+    normalised: list[str] = []
+    for lang in values:
+        if lang not in normalised:
+            normalised.append(lang)
+    return normalised
+
+
+def _ensure_voice_and_languages(config: ConversionConfig) -> None:
+    languages = _normalise_languages(config.primary_language, config.languages)
+    config.languages = languages
+    provider = tts_factory.voice_provider
+    fallback_voice = config.voice or provider.get_voice(config.engine, config.primary_language)
+    if (config.engine or "").lower() == "coqui" and not fallback_voice:
+        fallback_voice = "tts_models/multilingual/multi-dataset/xtts_v2"
+    config.voice = fallback_voice
+    config.language_voices = provider.build_language_voice_map(
+        config.engine,
+        languages,
+        fallback_voice,
+        primary_language=config.primary_language,
+    )
+
+
+def _clone_config_for_engine(base: ConversionConfig, engine_name: str) -> ConversionConfig:
+    cloned = replace(base, engine=engine_name, voice=None, model_path=None)
+    cloned.languages = list(base.languages)
+    cloned.language_voices = {}
+    _ensure_voice_and_languages(cloned)
+    return cloned
+
+
+def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
+    _ensure_voice_and_languages(config)
+    chain = [config]
+    if (config.engine or "").lower() == "edge":
+        chain.append(_clone_config_for_engine(config, "coqui"))
+        chain.append(_clone_config_for_engine(config, "piper"))
+    return chain
 
 
 class JobStatus(BaseModel):
@@ -301,6 +353,7 @@ async def process_conversion(job_id: str) -> None:
             bitrate="8k",        # 8 kbps - good quality for voice, ~3.6 MB/hour
             sample_rate=16_000,  # 16 kHz - sufficient for speech
             channels=1,          # Mono - audiobooks don't need stereo
+            languages=[detected_lang] if detected_lang and detected_lang.lower() != "auto" else [],
         )
 
         selector_text = job.get("chapters")
@@ -309,11 +362,33 @@ async def process_conversion(job_id: str) -> None:
         job["events"].append(f"📊 Capítulos: {len(chapters)}{selection_note}")
         job["chaptersTotal"] = len(chapters)
 
-        tts_engine = tts_factory.create_engine(config)
+        engine_chain = _build_engine_chain(config)
+        engine_index = 0
+        tts_engine = None
+        active_config: Optional[ConversionConfig] = None
+
+        while engine_index < len(engine_chain):
+            candidate = engine_chain[engine_index]
+            try:
+                tts_engine = tts_factory.create_engine(candidate)
+                active_config = candidate
+                break
+            except ImportError as exc:
+                job["events"].append(f"⚠️ Engine '{candidate.engine}' indisponível: {exc}")
+            except Exception as exc:
+                job["events"].append(f"⚠️ Falha ao iniciar engine '{candidate.engine}': {exc}")
+            engine_index += 1
+
+        if tts_engine is None or active_config is None:
+            job["state"] = "failed"
+            job["error"] = "Nenhuma engine TTS disponível"
+            job["events"].append("❌ Nenhuma engine TTS disponível para iniciar")
+            _persist_job(job_id, force=True)
+            return
 
         job["events"].append("")
-        job["events"].append(f"🎙️ Engine: {config.engine}")
-        job["events"].append(f"🗣️ Voz: {config.voice or 'padrão'}")
+        job["events"].append(f"🎙️ Engine: {active_config.engine}")
+        job["events"].append(f"🗣️ Voz: {active_config.voice or 'padrão'}")
 
         job_output_dir = output_dir / job_id
         if job_output_dir.exists():
@@ -321,6 +396,32 @@ async def process_conversion(job_id: str) -> None:
         job_output_dir.mkdir(exist_ok=True)
 
         outputs = []
+
+        def _resolve_tts_output(target_mp3: Path, engine_name: str) -> tuple[Path, bool]:
+            if engine_name.lower() in {"coqui", "piper"}:
+                return target_mp3.with_suffix(".wav"), True
+            return target_mp3, False
+
+        def _switch_to_next_engine(reason: str) -> bool:
+            nonlocal engine_index, tts_engine, active_config
+            if engine_index + 1 >= len(engine_chain):
+                return False
+            job["events"].append(f"🔁 {reason} → tentando fallback")
+
+            while engine_index + 1 < len(engine_chain):
+                engine_index += 1
+                candidate = engine_chain[engine_index]
+                job["events"].append(f"   ↳ Ativando engine '{candidate.engine}'...")
+                try:
+                    tts_engine = tts_factory.create_engine(candidate)
+                    active_config = candidate
+                    job["events"].append(f"   ✅ Agora usando {candidate.engine.upper()} ({candidate.voice or 'padrão'})")
+                    return True
+                except ImportError as exc:
+                    job["events"].append(f"   ⚠️ Engine '{candidate.engine}' indisponível: {exc}")
+                except Exception as exc:
+                    job["events"].append(f"   ⚠️ Falha ao iniciar '{candidate.engine}': {exc}")
+            return False
 
         for idx, chapter in enumerate(chapters, 1):
             chapter_name = getattr(chapter, "name", f"Chapter {idx}")
@@ -344,18 +445,38 @@ async def process_conversion(job_id: str) -> None:
             clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
 
             # Use TTS engine
-            try:
-                await tts_engine.synthesize_async(clean_text, output_file)
-            except FileNotFoundError as exc:
-                _record_chapter_failure(job, tts_engine, chapter_name, exc)
-                return
-            except Exception as exc:
-                _record_chapter_failure(job, tts_engine, chapter_name, exc)
-                return
+            while True:
+                tts_path, needs_transcode = _resolve_tts_output(output_file, active_config.engine if active_config else config.engine)
+                try:
+                    await tts_engine.synthesize_async(clean_text, tts_path)
+                except Exception as exc:
+                    if _switch_to_next_engine(f"Engine {active_config.engine if active_config else config.engine} falhou ({exc})"):
+                        continue
+                    _record_chapter_failure(job, tts_engine, chapter_name, exc)
+                    return
 
-            if not output_file.exists() or output_file.stat().st_size == 0:
-                _record_chapter_failure(job, tts_engine, chapter_name, "áudio não foi gerado pelo serviço de voz")
-                return
+                target_file = output_file
+                if needs_transcode:
+                    converted = await AudioProcessor.convert_to_mp3(tts_path, output_file, bitrate=config.bitrate)
+                    if not converted:
+                        with contextlib.suppress(OSError):
+                            tts_path.unlink(missing_ok=True)
+                        if _switch_to_next_engine("Conversão WAV→MP3 falhou"):
+                            continue
+                        _record_chapter_failure(job, tts_engine, chapter_name, "falha ao converter WAV para MP3")
+                        return
+                    with contextlib.suppress(OSError):
+                        tts_path.unlink(missing_ok=True)
+                    target_file = converted
+
+                if not target_file.exists() or target_file.stat().st_size == 0:
+                    with contextlib.suppress(OSError):
+                        target_file.unlink(missing_ok=True)
+                    if _switch_to_next_engine("Áudio vazio ou inexistente"):
+                        continue
+                    _record_chapter_failure(job, tts_engine, chapter_name, "áudio não foi gerado pelo serviço de voz")
+                    return
+                break
 
             # Get duration using ffprobe (no pydub/audioop dependency)
             duration_seconds = await _get_audio_duration(output_file)
