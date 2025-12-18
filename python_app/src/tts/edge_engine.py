@@ -60,6 +60,11 @@ except ImportError:
     ssl = None  # type: ignore
 
 # Global rate limiter for Edge TTS to prevent resource contention
+try:
+    _edge_max_concurrency = int(os.getenv("EDGE_MAX_CONCURRENCY", "2").strip() or "2")
+except (TypeError, ValueError):
+    _edge_max_concurrency = 2
+_edge_max_concurrency = max(1, min(_edge_max_concurrency, 6))
 _edge_rate_limiter = None
 
 
@@ -103,9 +108,8 @@ class EdgeTTSEngine:
             module = edge_tts
 
         # Rate limiter for Edge TTS concurrent requests
-        # Reduzido de 8 para 4 para evitar rate limiting da Microsoft
         if _edge_rate_limiter is None:
-            _edge_rate_limiter = asyncio.Semaphore(4)
+            _edge_rate_limiter = asyncio.Semaphore(_edge_max_concurrency)
 
         self.voice = voice
         self._edge_tts = module

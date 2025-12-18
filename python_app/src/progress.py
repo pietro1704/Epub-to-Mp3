@@ -4,6 +4,7 @@ Simplified Progress Tracker - SOLID principles applied
 New focused module for progress tracking following SRP
 """
 
+import os
 import sys
 import time
 from typing import Optional
@@ -24,7 +25,8 @@ class ProgressTracker:
         self._last_status: str = ""
         self._last_render_len: int = 0
         self._last_render: str = ""
-        self._supports_overwrite = sys.stdout.isatty()
+        force_static = os.getenv("FORCE_STATIC_PROGRESS", "1").strip().lower() not in {"0", "false", "no"}
+        self._supports_overwrite = force_static or sys.stdout.isatty()
         self._last_print_time: float = 0.0
         self._spinner_frames: tuple[str, ...] = ("-", "\\", "|", "/")
         self._spinner_index: int = 0
@@ -44,7 +46,8 @@ class ProgressTracker:
         self._last_render_len = 0
         self._last_render = ""
         self._last_print_time = 0.0
-        self._supports_overwrite = sys.stdout.isatty()
+        force_static = os.getenv("FORCE_STATIC_PROGRESS", "1").strip().lower() not in {"0", "false", "no"}
+        self._supports_overwrite = force_static or sys.stdout.isatty()
         self._spinner_index = 0
         if self.total_chapters == 0:
             self._render("Nenhum capítulo disponível", force=True)
@@ -93,6 +96,12 @@ class ProgressTracker:
             self._phase_start_time = now
 
         progress_pct = self._progress_percentage()
+        if (
+            self.total_chapters > 0
+            and self.completed_chapters == 0
+            and progress_pct <= 0.0
+        ):
+            progress_pct = 0.01
         elapsed = now - self.start_time
         eta_seconds = self._eta_seconds(elapsed)
         eta_str = self._format_time(eta_seconds) if eta_seconds > 0 else "--"
@@ -108,7 +117,7 @@ class ProgressTracker:
 
         total_display = self.total_chapters if self.total_chapters else max(self.completed_chapters, 1)
         message = (
-            f"{self.description}: [{bar}] {progress_pct:.1f}% "
+            f"{self.description}: [{bar}] {progress_pct:.2f}% "
             f"({self.completed_chapters}/{total_display}) "
             f"tempo restante: {eta_str}"
         )
@@ -125,18 +134,6 @@ class ProgressTracker:
         rendered = message
         if self._last_render_len > len(message):
             rendered += " " * (self._last_render_len - len(message))
-
-        if not self._supports_overwrite:
-            now = time.time()
-            should_print = rendered != self._last_render
-            if not should_print and (force or (now - self._last_print_time) >= 2):
-                should_print = True
-            if should_print:
-                print(rendered, flush=True)
-                self._last_render_len = len(rendered)
-                self._last_render = rendered
-                self._last_print_time = now
-            return
 
         if not force and rendered == self._last_render:
             return

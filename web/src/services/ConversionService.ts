@@ -25,6 +25,7 @@ export interface ConversionClient {
   fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot>;
   poll(jobId: string, options?: PollOptions): Promise<JobSnapshot>;
   getResumableJobs?(): Promise<ResumableJob[] | null>;
+  cancel?(jobId: string): Promise<{ status: string }>;
 }
 
 function buildFormData(values: ConversionFormValues): FormData {
@@ -36,6 +37,9 @@ function buildFormData(values: ConversionFormValues): FormData {
   }
   if (values.chapters) {
     formData.append('chapters', values.chapters);
+  }
+  if (values.priority) {
+    formData.append('priority', values.priority);
   }
   if (values.footnoteMode) {
     formData.append('footnote_mode', values.footnoteMode);
@@ -173,12 +177,24 @@ export class HttpConversionClient implements ConversionClient {
       const snapshot = await this.fetch(jobId, signal);
       options.onSnapshot?.(snapshot);
 
-      if (snapshot.state === 'finished' || snapshot.state === 'failed' || snapshot.state === 'interrupted') {
+      if (
+        snapshot.state === 'finished'
+        || snapshot.state === 'failed'
+        || snapshot.state === 'interrupted'
+        || snapshot.state === 'cancelled'
+      ) {
         return snapshot;
       }
 
       await sleep(interval, signal);
     }
+  }
+
+  async cancel(jobId: string): Promise<{ status: string }> {
+    const response = await fetch(this.resolve(`/api/jobs/${encodeURIComponent(jobId)}/cancel`), {
+      method: 'POST',
+    });
+    return parseResponse<{ status: string }>(response);
   }
 
   async getResumableJobs(): Promise<ResumableJob[] | null> {

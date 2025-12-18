@@ -16,7 +16,7 @@ Convert EPUB/PDF ebooks into MP3 audiobooks using TTS engines.
 
 ## Features
 
-- **TTS Engines**: Edge-TTS (online), Coqui TTS, Piper (local)
+- **TTS Engines**: Auto (Edge/Coqui/Piper), Edge-TTS (online), Coqui TTS, Piper (local)
 - **Portuguese BR Voices**: High-quality curated voices
 - **Smart Cache**: Resume interrupted conversions
 - **Chapter Structure**: Preserves book navigation hierarchy
@@ -42,11 +42,14 @@ pip install -r requirements.txt
 ## CLI Usage
 
 ```bash
-# Basic conversion
+# Basic conversion (auto picks the fastest engine per chapter)
 python -m python_app.main book.epub
 
-# With specific voice
+# Force specific engine/voice
 python -m python_app.main book.epub --engine edge --voice pt-BR-FranciscaNeural
+
+# Prioritize specific chapters (these play first, rest follow)
+python -m python_app.main book.epub --priority "Prólogo" --priority 5
 
 # Interactive menu
 python -m python_app.main book.epub --menu
@@ -64,6 +67,25 @@ python -m python_app.main book.epub --show-structure
 python -m python_app.main book.epub --clear-cache
 ```
 
+### Tuning Edge-TTS performance
+
+Edge voices depend on Microsoft’s cloud, so long chapters can slow down when network latency spikes. The CLI already adapts automatically, but you can fine-tune it with env vars:
+
+```bash
+# Use smaller chunks/timeouts (values below are the defaults shipped in code)
+export EDGE_CHUNK_CHARS=11000
+export EDGE_MAX_SEGMENT_SECONDS=65
+
+# Auto-fallback to offline engines for very long chapters
+export EDGE_AUTO_OFFLINE_CHARS=9000
+export EDGE_AUTO_OFFLINE_SECONDS=300
+
+# Limit concurrent Edge requests (prevents queueing on HF Spaces)
+export EDGE_MAX_CONCURRENCY=2
+```
+
+Lowering chunks/seconds makes each Edge request finish faster; the fallback thresholds push huge chapters directly into Coqui/Piper so the queue never stalls.
+
 ## API Server
 
 ```bash
@@ -78,6 +100,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 - `POST /api/convert` - Upload EPUB and start conversion
 - `GET /api/jobs/{job_id}` - Check conversion status
+- `POST /api/jobs/{job_id}/cancel` - Cancel a queued/running job
 - `GET /api/jobs/resumable` - List resumable jobs
 - `GET /api/outputs/{job_id}/{filename}` - Download output file
 - `GET /api/health` - Health check

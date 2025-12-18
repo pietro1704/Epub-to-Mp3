@@ -20,19 +20,20 @@ const VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
     { name: 'es-ES-ElviraNeural', multilingual: false },
   ],
   piper: [
-    { name: 'en_US-amy-medium', multilingual: false },
-    { name: 'pt_BR-faber-medium', multilingual: false },
-    { name: 'es_ES-ana-medium', multilingual: false },
+    { name: 'pt_BR-faber-medium.onnx', multilingual: false },
+    { name: 'en_US-lessac-medium.onnx', multilingual: false },
   ],
   coqui: [
-    { name: 'coqui-tts-multilingual', multilingual: true },
-    { name: 'pt-br-fernanda', multilingual: false },
-    { name: 'en-us-norman', multilingual: false },
-    { name: 'es-es-ana', multilingual: false },
+    { name: 'tts_models/pt/cv/vits', multilingual: false },
+    { name: 'tts_models/multilingual/multi-dataset/xtts_v2', multilingual: true },
+  ],
+  auto: [
+    { name: 'tts_models/pt/cv/vits', multilingual: false },
+    { name: 'pt-BR-ThalitaNeural', multilingual: true },
   ],
 };
 
-type KnownEngine = 'edge' | 'piper' | 'coqui';
+type KnownEngine = 'edge' | 'piper' | 'coqui' | 'auto';
 
 interface EngineInsights {
   defaultVoice: string;
@@ -49,16 +50,22 @@ const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
     languages: ['auto'],
   },
   piper: {
-    defaultVoice: 'en_US-amy-medium',
-    multiLingual: true,
-    autoLanguage: false,
-    languages: ['pt', 'en', 'es', 'fr'],
-  },
-  coqui: {
-    defaultVoice: 'coqui-tts-multilingual',
+    defaultVoice: 'pt_BR-faber-medium.onnx',
     multiLingual: false,
     autoLanguage: false,
+    languages: ['pt', 'en'],
+  },
+  coqui: {
+    defaultVoice: 'tts_models/pt/cv/vits',
+    multiLingual: true,
+    autoLanguage: false,
     languages: ['pt', 'en', 'es', 'fr', 'de'],
+  },
+  auto: {
+    defaultVoice: '',
+    multiLingual: true,
+    autoLanguage: true,
+    languages: ['auto'],
   },
 };
 
@@ -78,12 +85,13 @@ function getEngineMeta(engine: EngineOption): EngineInsights {
 
 export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFormProps): JSX.Element {
   const t = useTranslations();
-  const initialEngine: EngineOption = 'edge';
+  const initialEngine: EngineOption = 'auto';
   const initialMeta = getEngineMeta(initialEngine);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [engine, setEngine] = useState<EngineOption>(initialEngine);
   const [voice, setVoice] = useState(initialMeta.defaultVoice);
   const [chapters, setChapters] = useState('');
+  const [priority, setPriority] = useState('');
   const [footnoteMode, setFootnoteMode] = useState<FootnoteMode>('inline');
   const [language, setLanguage] = useState<string>(initialMeta.autoLanguage ? 'auto' : initialMeta.languages[0] ?? '');
   const [showMissingFileError, setShowMissingFileError] = useState(false);
@@ -292,6 +300,19 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
           onChange={(event) => setChapters(event.target.value)}
         />
         <p className="form-hint">{t.form.chaptersHint}</p>
+      </fieldset>
+
+      <fieldset className="form-row">
+        <label htmlFor="priority">{t.form.priorityLabel}</label>
+        <input
+          id="priority"
+          name="priority"
+          placeholder={t.form.priorityPlaceholder}
+          value={priority}
+          disabled={isSubmitting}
+          onChange={(event) => setPriority(event.target.value)}
+        />
+        <p className="form-hint">{t.form.priorityHint}</p>
       </fieldset>
 
       <fieldset className="form-field">

@@ -13,6 +13,9 @@ interface StatusPanelProps {
   onToggleRawLog: () => void;
   summary?: ConversionSummary;
   cliCommand?: string;
+  onCancel?: () => void;
+  canCancel?: boolean;
+  cancelDisabled?: boolean;
 }
 
 export default function StatusPanel({
@@ -25,18 +28,25 @@ export default function StatusPanel({
   onToggleRawLog,
   summary,
   cliCommand,
+  onCancel,
+  canCancel,
+  cancelDisabled,
 }: StatusPanelProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
   const rawLogRef = useRef<HTMLPreElement>(null);
   const timelineRef = useRef<HTMLUListElement>(null);
-  const errorText = phase === 'error' && error ? t.status.errorPrefix.replace('{message}', error) : null;
+  const showError = (phase === 'error' || phase === 'cancelled') && error;
+  const errorText = showError ? t.status.errorPrefix.replace('{message}', error) : null;
   const timeLocale = locale === 'pt' ? 'pt-BR' : 'en-US';
   const toggleLabel = showRawLog ? t.status.toggleHide : t.status.toggleShow;
   const etaDisplay = formatEta(phase, etaSeconds, locale, t);
   const languageDisplay = summary?.detectedLanguage
     ? resolveLanguageLabel(summary.detectedLanguage, t)
     : '—';
+  const progressValue = typeof summary?.progressPercent === 'number'
+    ? Math.max(0, Math.min(100, summary.progressPercent))
+    : null;
 
   // Autoscroll when new entries are added
   useEffect(() => {
@@ -67,6 +77,16 @@ export default function StatusPanel({
           <span className="status-panel__eta-label">{t.status.etaLabel}</span>
           <span className="status-panel__eta-value">{etaDisplay}</span>
         </div>
+        {canCancel && onCancel && (
+          <button
+            type="button"
+            className="status-panel__cancel"
+            onClick={onCancel}
+            disabled={cancelDisabled}
+          >
+            {phase === 'cancelling' ? t.status.cancelButtonPending : t.status.cancelButton}
+          </button>
+        )}
       </div>
 
       {summary && (
@@ -98,6 +118,15 @@ export default function StatusPanel({
             </dd>
           </div>
           </dl>
+        </div>
+      )}
+      {progressValue !== null && (
+        <div className="status-progress">
+          <div className="status-progress__label">{t.status.progressLabel}</div>
+          <div className="status-progress__bar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progressValue}>
+            <div className="status-progress__fill" style={{ width: `${progressValue}%` }} />
+          </div>
+          <div className="status-progress__value">{progressValue.toFixed(1)}%</div>
         </div>
       )}
 
@@ -151,7 +180,7 @@ function formatEta(
   if (phase === 'success') {
     return t.status.etaDone;
   }
-  if (phase === 'error') {
+  if (phase === 'error' || phase === 'cancelled') {
     return '—';
   }
   if (phase === 'idle') {

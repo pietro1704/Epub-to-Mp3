@@ -10,6 +10,7 @@ import asyncio
 import re
 import shutil
 import sys
+import traceback
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -204,6 +205,7 @@ class ConverterApplication:
             return 0
 
         except Exception as e:
+            traceback.print_exc()
             print(self.localization.t("unexpected_error", error=e))
             return 1
     
@@ -971,15 +973,36 @@ class ConverterApplication:
         config.primary_language = primary_language or "auto"
         config.languages = languages or ([config.primary_language] if config.primary_language not in {None, "auto"} else [])
 
+        voice_auto_raw = config.extra.get("voice_auto", False)
+        def _to_bool(value) -> bool:
+            if isinstance(value, bool):
+                return value
+            if value is None:
+                return False
+            text = str(value).strip().lower()
+            if text in {"1", "true", "yes", "on"}:
+                return True
+            if text in {"0", "false", "no", "off"}:
+                return False
+            return bool(text)
+        voice_auto = _to_bool(voice_auto_raw)
+        if primary_language and (not config.voice or voice_auto):
+            suggested_voice = self.config.voice_configs.get_voice(config.engine, primary_language)
+            if suggested_voice:
+                config.voice = suggested_voice
+        if voice_auto and not config.voice:
+            for lang in languages:
+                suggested_voice = self.config.voice_configs.get_voice(config.engine, lang)
+                if suggested_voice:
+                    config.voice = suggested_voice
+                    break
+
         language_voice_map = self.config.voice_configs.build_language_voice_map(
             config.engine,
             config.languages or ([config.primary_language] if config.primary_language not in {None, "auto"} else []),
             config.voice,
             primary_language=config.primary_language,
         )
-
-        if not config.voice and primary_language:
-            config.voice = self.config.voice_configs.get_voice(config.engine, primary_language)
 
         config.language_voices = language_voice_map
 
@@ -1260,16 +1283,31 @@ class ConverterApplication:
             display_norm = self._normalize_lookup(item.display_name)
             chapter_name_norm = self._normalize_lookup(getattr(item.chapter, 'name', ''))
 
+            matched_selector = False
             for selector in normalised_selectors:
+                if not selector:
+                    continue
                 if selector == index_norm:
+                    matched_selector = True
                     break
                 if selector == base_index_norm and base_index_norm:
+                    matched_selector = True
                     break
                 if selector and index_norm.startswith(f"{selector}."):
+                    matched_selector = True
                     break
-                if selector in display_norm or selector in chapter_name_norm:
-                    break
-            else:
+
+            if not matched_selector:
+                for selector in normalised_selectors:
+                    if not selector:
+                        continue
+                    if not any(ch.isalpha() for ch in selector):
+                        continue
+                    if selector in display_norm or selector in chapter_name_norm:
+                        matched_selector = True
+                        break
+
+            if not matched_selector:
                 continue
 
             source_key = (index_norm, display_norm)
@@ -2066,7 +2104,7 @@ class ConverterApplication:
         """Create config from command line arguments"""
         verbose = self._resolve_verbose(args)
         return self.config.create_conversion_config(
-            engine=args.engine or "edge",
+            engine=args.engine or "auto",
             voice=args.voice,
             model=args.model,
             output_dir=args.output_dir or "output",
@@ -2079,6 +2117,7 @@ class ConverterApplication:
             footnote_mode=self._resolve_footnote_mode(args),
             footnote_context_words=self.FOOTNOTE_CONTEXT_WORDS,
             verbose=verbose,
+            priority_selectors=getattr(args, 'priority', []) or [],
         )
 
 
@@ -2097,7 +2136,7 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["edge", "coqui", "piper"],
+        choices=["auto", "edge", "coqui", "piper"],
         help="TTS engine to use",
     )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
@@ -2161,6 +2200,13 @@ def _add_conversion_arguments(
         dest="sections",
         metavar="SECTION",
         help="Additional selectors for subsections or names (accepts dotted indices and text)",
+    )
+    parser.add_argument(
+        "--priority",
+        action="append",
+        dest="priority",
+        metavar="PRIORITY",
+        help="Prioritize chapters before the rest (same syntax as --chapter)",
     )
 
     if include_menu_flag:

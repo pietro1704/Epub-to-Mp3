@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import logging
 import os
 import shutil
@@ -12,7 +14,7 @@ import uuid
 import zipfile
 from pathlib import Path
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from dataclasses import replace
 
 logger = logging.getLogger(__name__)
@@ -26,7 +28,7 @@ from src.config import ConversionConfig
 from src.ebook_reader import EbookReader
 from src.tts.factory import TTSFactory
 from src.storage_manager import get_storage_manager
-from src.utils import FileManager, AudioProcessor
+from src.utils import FileManager, AudioProcessor, TextValidator
 from src.cache_manager import CacheManager
 from src.paths import OUTPUT_DIR
 from src.job_manager import JobManager
@@ -71,9 +73,29 @@ if os.getenv("OUTPUT_DIR"):
 elif os.getenv("SPACE_ID"):  # HuggingFace Spaces
     output_dir = Path("/tmp/output")
 else:
-    output_dir = OUTPUT_DIR
+output_dir = OUTPUT_DIR
 
 output_dir.mkdir(exist_ok=True, parents=True)
+cover_cache_dir = output_dir / ".cover_cache"
+cover_cache_dir.mkdir(exist_ok=True, parents=True)
+cover_index_path = cover_cache_dir / "index.json"
+
+
+def _load_cover_cache() -> Dict[str, dict]:
+    try:
+        return json.loads(cover_index_path.read_text())
+    except Exception:
+        return {}
+
+
+def _save_cover_cache(index: Dict[str, dict]) -> None:
+    try:
+        cover_index_path.write_text(json.dumps(index))
+    except Exception:
+        pass
+
+
+cover_cache_index = _load_cover_cache()
 
 # Initialize job manager with persistence
 jobs_state_dir = output_dir / ".jobs"
@@ -89,6 +111,7 @@ logger.info(f"Loaded {len(jobs)} jobs from disk")
 # Future enhancement: Save EPUB to R2 for resume capability.
 for job_id, job_data in jobs.items():
     state = job_data.get("state", "")
+    job_data.setdefault("cancelRequested", False)
     if state in ("queued", "running"):
         # Check if the source file still exists
         file_path = job_data.get("file_path")
@@ -158,6 +181,44 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
     return chain
 
 
+def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, tuple[ConversionConfig, object]]:
+    pool: dict[str, tuple[ConversionConfig, object]] = {}
+    for name in ("coqui", "edge", "piper"):
+        try:
+            candidate = _clone_config_for_engine(config, name)
+            engine_instance = tts_factory.create_engine(candidate)
+            pool[name] = (candidate, engine_instance)
+        except Exception:
+            continue
+    return pool
+
+
+def _pick_auto_engine(chapter_chars: int, estimated_seconds: float, pool: dict[str, tuple[ConversionConfig, object]]) -> tuple[str, list[str]]:
+    def append(order: list[str], candidate: str) -> None:
+        if candidate in pool and candidate not in order:
+            order.append(candidate)
+
+    # Ordem do mais rápido para mais lento: edge > piper > coqui
+    # Testado com 3053 chars: edge=21s (144 chars/s), piper=27s (112 chars/s), coqui=113s (26 chars/s)
+    order: list[str] = []
+    append(order, "edge")
+    append(order, "piper")
+    append(order, "coqui")
+
+    if not order:
+        order = list(pool.keys())
+
+    selected = order[0]
+    return selected, order
+
+
+def _next_auto_engine(order: list[str], attempted: set[str], pool: dict[str, tuple[ConversionConfig, object]]) -> Optional[str]:
+    for name in order:
+        if name in pool and name not in attempted:
+            return name
+    return None
+
+
 class JobStatus(BaseModel):
     jobId: str
     state: str
@@ -173,23 +234,27 @@ class JobStatus(BaseModel):
     bookAuthor: Optional[str] = None
     coverUrl: Optional[str] = None
     coverMimeType: Optional[str] = None
+    logUrl: Optional[str] = None
 
 
 @app.post("/api/convert")
 async def convert_ebook(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    engine: str = Form("edge"),
+    engine: str = Form("auto"),
     voice: Optional[str] = Form(None),
     chapters: Optional[str] = Form(None),
     footnote_mode: Optional[str] = Form("inline"),
     language: Optional[str] = Form(None),
+    priority: Optional[str] = Form(None),
 ) -> dict[str, str]:
     job_id = f"{uuid.uuid4()}"
     temp_file = output_dir / f"{job_id}_{file.filename}"
 
+    raw_payload = await file.read()
     with temp_file.open("wb") as buffer:
-        buffer.write(await file.read())
+        buffer.write(raw_payload)
+    file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
 
     jobs[job_id] = {
         "jobId": job_id,
@@ -201,12 +266,15 @@ async def convert_ebook(
         "chapters": chapters,
         "footnote_mode": footnote_mode,
         "language": language,
+        "priority": priority,
         "outputs": [],
         "bookTitle": None,
         "bookAuthor": None,
         "cover": None,
         "coverUrl": None,
         "coverMimeType": None,
+        "cancelRequested": False,
+        "fileHash": file_hash,
     }
 
     # Persist job state to disk
@@ -230,6 +298,34 @@ async def get_job_status(job_id: str) -> JobStatus:
         return JobStatus(**job_data)
 
     raise HTTPException(status_code=404, detail="Job not found")
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(job_id: str) -> dict:
+    job = jobs.get(job_id)
+    if job is None:
+        job_data = job_manager.load_job(job_id)
+        if not job_data:
+            raise HTTPException(status_code=404, detail="Job not found")
+        jobs[job_id] = job_data
+        job = job_data
+
+    state = job.get("state", "queued")
+    if state in {"finished", "failed", "interrupted", "cancelled"}:
+        return {"status": state}
+
+    job["cancelRequested"] = True
+
+    if state == "queued":
+        _finalize_cancel(job_id, job, "🛑 Conversão cancelada antes de iniciar")
+        return {"status": "cancelled"}
+
+    if state != "cancelling":
+        job["state"] = "cancelling"
+        job["events"].append("🛑 Cancelamento solicitado. Finalizando capítulo atual…")
+        _persist_job(job_id, force=True)
+
+    return {"status": job["state"]}
 
 
 @app.get("/api/outputs/{job_id}/{filename}")
@@ -324,10 +420,88 @@ def _persist_job(job_id: str, force: bool = False) -> None:
         job_manager.save_job(job_id, jobs[job_id])
 
 
+def _cleanup_job_output(job_id: str) -> None:
+    """Remove the job output directory."""
+    job_dir = output_dir / job_id
+    if job_dir.exists():
+        shutil.rmtree(job_dir, ignore_errors=True)
+
+
+def _clear_job_cache(job: dict) -> None:
+    """Clear cached chapters/audio for this job."""
+    try:
+        cache_manager = CacheManager()
+        source_path = Path(job.get("file_path", "")) if job.get("file_path") else None
+        book_title = job.get("bookTitle")
+        if source_path and source_path.exists():
+            cache_manager.clear_cache(source_path, title=book_title)
+        elif book_title:
+            cache_manager.clear_cache(title=book_title)
+    except Exception:
+        pass
+
+
+def _finalize_cancel(job_id: str, job: dict, note: str) -> None:
+    """Mark job as cancelled and cleanup files/cache."""
+    if job.get("state") == "cancelled":
+        return
+    if note:
+        job["events"].append(note)
+    job["events"].append("🛑 Conversão cancelada pelo usuário")
+    job["state"] = "cancelled"
+    job["error"] = "Cancelado pelo usuário"
+    job["cancelRequested"] = True
+    job["currentChapter"] = None
+    job["outputs"] = []
+    job["progressPercent"] = job.get("progressPercent") or 0.0
+    _cleanup_job_output(job_id)
+    _clear_job_cache(job)
+    _persist_job(job_id, force=True)
+    try:
+        job_manager.delete_job(job_id)
+    except Exception:
+        pass
+    _persist_job_log(job_id, job)
+
+
+def _store_cover_in_cache(file_hash: Optional[str], cover_blob) -> Optional[Path]:
+    if not file_hash or not cover_blob:
+        return None
+    filename = f"{file_hash}{cover_blob.extension}"
+    cache_path = cover_cache_dir / filename
+    try:
+        cache_path.write_bytes(cover_blob.data)
+        cover_cache_index[file_hash] = {
+            "filename": filename,
+            "mime": cover_blob.media_type,
+        }
+        _save_cover_cache(cover_cache_index)
+        return cache_path
+    except Exception:
+        return None
+
+
+def _persist_job_log(job_id: str, job: dict) -> Optional[Path]:
+    job_dir = output_dir / job_id
+    if not job_dir.exists():
+        return None
+    log_path = job_dir / "conversion.log"
+    try:
+        log_path.write_text("\n".join(job.get("events", [])), encoding="utf-8")
+        job["logUrl"] = f"/api/outputs/{job_id}/{log_path.name}"
+        return log_path
+    except Exception:
+        return None
+
+
 async def process_conversion(job_id: str) -> None:
     job = jobs[job_id]
 
     try:
+        if job.get("cancelRequested"):
+            _finalize_cancel(job_id, job, "🛑 Conversão cancelada antes de iniciar")
+            return
+
         job["state"] = "running"
         job["events"].append("📚 METADADOS DO EBOOK")
         job["events"].append("=" * 64)
@@ -335,7 +509,19 @@ async def process_conversion(job_id: str) -> None:
 
         file_path = Path(job["file_path"])
         reader = EbookReader(str(file_path))
-        cover_blob = reader.extract_cover_image()
+        cover_blob = None
+        cached_cover_entry = None
+        file_hash = job.get("fileHash")
+        if file_hash:
+            cached_cover_entry = cover_cache_index.get(file_hash)
+        cached_cover_path = None
+        if cached_cover_entry:
+            candidate = cover_cache_dir / cached_cover_entry.get("filename", "")
+            if candidate.exists():
+                cached_cover_path = candidate
+
+        if not cached_cover_path:
+            cover_blob = reader.extract_cover_image()
 
         title = reader.title or "Livro_Desconhecido"
         author = reader.author or "Autor Desconhecido"
@@ -365,6 +551,9 @@ async def process_conversion(job_id: str) -> None:
             sample_rate=16_000,  # 16 kHz - sufficient for speech
             channels=1,          # Mono - audiobooks don't need stereo
             languages=[detected_lang] if detected_lang and detected_lang.lower() != "auto" else [],
+            priority_selectors=[
+                token.strip() for token in re.split(r"[\s,;]+", job.get("priority") or "") if token.strip()
+            ],
         )
 
         selector_text = job.get("chapters")
@@ -377,25 +566,38 @@ async def process_conversion(job_id: str) -> None:
         engine_index = 0
         tts_engine = None
         active_config: Optional[ConversionConfig] = None
+        auto_mode = (config.engine or "").lower() == "auto"
 
-        while engine_index < len(engine_chain):
-            candidate = engine_chain[engine_index]
-            try:
-                tts_engine = tts_factory.create_engine(candidate)
-                active_config = candidate
-                break
-            except ImportError as exc:
-                job["events"].append(f"⚠️ Engine '{candidate.engine}' indisponível: {exc}")
-            except Exception as exc:
-                job["events"].append(f"⚠️ Falha ao iniciar engine '{candidate.engine}': {exc}")
-            engine_index += 1
+        auto_engine_pool: dict[str, tuple[ConversionConfig, object]] = {}
 
-        if tts_engine is None or active_config is None:
-            job["state"] = "failed"
-            job["error"] = "Nenhuma engine TTS disponível"
-            job["events"].append("❌ Nenhuma engine TTS disponível para iniciar")
-            _persist_job(job_id, force=True)
-            return
+        if not auto_mode:
+            while engine_index < len(engine_chain):
+                candidate = engine_chain[engine_index]
+                try:
+                    tts_engine = tts_factory.create_engine(candidate)
+                    active_config = candidate
+                    break
+                except ImportError as exc:
+                    job["events"].append(f"⚠️ Engine '{candidate.engine}' indisponível: {exc}")
+                except Exception as exc:
+                    job["events"].append(f"⚠️ Falha ao iniciar engine '{candidate.engine}': {exc}")
+                engine_index += 1
+
+            if tts_engine is None or active_config is None:
+                job["state"] = "failed"
+                job["error"] = "Nenhuma engine TTS disponível"
+                job["events"].append("❌ Nenhuma engine TTS disponível para iniciar")
+                _persist_job(job_id, force=True)
+                return
+        else:
+            active_config = config
+            auto_engine_pool = _prepare_auto_engine_pool(config)
+            if not auto_engine_pool:
+                job["state"] = "failed"
+                job["error"] = "Nenhuma engine disponível no modo automático"
+                job["events"].append("❌ Nenhuma engine disponível no modo automático")
+                _persist_job(job_id, force=True)
+                return
 
         job["events"].append("")
         job["events"].append(f"🎙️ Engine: {active_config.engine}")
@@ -405,8 +607,33 @@ async def process_conversion(job_id: str) -> None:
         if job_output_dir.exists():
             shutil.rmtree(job_output_dir, ignore_errors=True)
         job_output_dir.mkdir(exist_ok=True)
+        book_safe_name = FileManager.sanitize_filename(title)
+        zip_file = job_output_dir / f"{book_safe_name}.zip"
+        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_STORED):
+            pass
 
-        if cover_blob:
+        if job.get("cancelRequested"):
+            _finalize_cancel(job_id, job, "🛑 Conversão cancelada após processar capítulos")
+            return
+
+        if cached_cover_path:
+            filename = cached_cover_path.name
+            target_cover = job_output_dir / filename
+            try:
+                shutil.copy2(cached_cover_path, target_cover)
+                cover_url = f"/api/outputs/{job_id}/{filename}"
+                job["cover"] = {
+                    "name": filename,
+                    "url": cover_url,
+                    "mimeType": cached_cover_entry.get("mime"),
+                }
+                job["coverUrl"] = cover_url
+                job["coverMimeType"] = cached_cover_entry.get("mime")
+                job["events"].append("🖼️ Capa reutilizada do cache")
+                _persist_job(job_id, force=True)
+            except Exception as cover_exc:
+                job["events"].append(f"⚠️ Falha ao reutilizar capa: {cover_exc}")
+        elif cover_blob:
             original_name = Path(job.get("file_path", "")).name
             cover_slug = (
                 FileManager.sanitize_filename(title)
@@ -417,6 +644,7 @@ async def process_conversion(job_id: str) -> None:
             cover_path = job_output_dir / filename
             try:
                 cover_path.write_bytes(cover_blob.data)
+                _store_cover_in_cache(file_hash, cover_blob)
                 cover_url = f"/api/outputs/{job_id}/{filename}"
                 job["cover"] = {
                     "name": filename,
@@ -461,6 +689,10 @@ async def process_conversion(job_id: str) -> None:
             return False
 
         for idx, chapter in enumerate(chapters, 1):
+            if job.get("cancelRequested"):
+                _finalize_cancel(job_id, job, f"🛑 Conversão cancelada antes do capítulo {idx}")
+                return
+
             chapter_name = getattr(chapter, "name", f"Chapter {idx}")
             job["currentChapter"] = chapter_name
             job["events"].append("")
@@ -480,13 +712,38 @@ async def process_conversion(job_id: str) -> None:
 
             # Limpar marcadores Markdown antes de enviar ao TTS
             clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
+            preview = _build_text_preview(clean_text)
+            if preview:
+                job["events"].append(f"📝 Trecho: {preview}")
+            auto_order: list[str] = []
+            attempted_auto: set[str] = set()
+            if auto_mode:
+                estimated_seconds = TextValidator.estimate_duration(clean_text)
+                if estimated_seconds <= 0:
+                    estimated_seconds = max(len(clean_text) / 15.0, 30.0)
+                selected_engine, auto_order = _pick_auto_engine(len(clean_text), estimated_seconds, auto_engine_pool)
+                attempted_auto.add(selected_engine)
+                active_config, tts_engine = auto_engine_pool[selected_engine]
+                job["events"].append(f"⚡ AUTO: usando {selected_engine.upper()} para este capítulo")
+                job["events"].append(f"   ↳ Texto: {len(clean_text)} chars, estimado {int(estimated_seconds)}s")
 
             # Use TTS engine
             while True:
+                if job.get("cancelRequested"):
+                    _finalize_cancel(job_id, job, f"🛑 Conversão cancelada durante o capítulo {chapter_name}")
+                    return
+
                 tts_path, needs_transcode = _resolve_tts_output(output_file, active_config.engine if active_config else config.engine)
                 try:
                     await tts_engine.synthesize_async(clean_text, tts_path)
                 except Exception as exc:
+                    if auto_mode:
+                        next_engine = _next_auto_engine(auto_order, attempted_auto, auto_engine_pool)
+                        if next_engine:
+                            attempted_auto.add(next_engine)
+                            active_config, tts_engine = auto_engine_pool[next_engine]
+                            job["events"].append(f"   ↳ AUTO: alternando para {next_engine.upper()} após erro ({exc})")
+                            continue
                     if _switch_to_next_engine(f"Engine {active_config.engine if active_config else config.engine} falhou ({exc})"):
                         continue
                     _record_chapter_failure(job, tts_engine, chapter_name, exc)
@@ -498,6 +755,13 @@ async def process_conversion(job_id: str) -> None:
                     if not converted:
                         with contextlib.suppress(OSError):
                             tts_path.unlink(missing_ok=True)
+                        if auto_mode:
+                            next_engine = _next_auto_engine(auto_order, attempted_auto, auto_engine_pool)
+                            if next_engine:
+                                attempted_auto.add(next_engine)
+                                active_config, tts_engine = auto_engine_pool[next_engine]
+                                job["events"].append(f"   ↳ AUTO: alternando para {next_engine.upper()} após falha na conversão WAV→MP3")
+                                continue
                         if _switch_to_next_engine("Conversão WAV→MP3 falhou"):
                             continue
                         _record_chapter_failure(job, tts_engine, chapter_name, "falha ao converter WAV para MP3")
@@ -509,6 +773,13 @@ async def process_conversion(job_id: str) -> None:
                 if not target_file.exists() or target_file.stat().st_size == 0:
                     with contextlib.suppress(OSError):
                         target_file.unlink(missing_ok=True)
+                    if auto_mode:
+                        next_engine = _next_auto_engine(auto_order, attempted_auto, auto_engine_pool)
+                        if next_engine:
+                            attempted_auto.add(next_engine)
+                            active_config, tts_engine = auto_engine_pool[next_engine]
+                            job["events"].append("   ↳ AUTO: áudio vazio; tentando outra engine")
+                            continue
                     if _switch_to_next_engine("Áudio vazio ou inexistente"):
                         continue
                     _record_chapter_failure(job, tts_engine, chapter_name, "áudio não foi gerado pelo serviço de voz")
@@ -532,16 +803,9 @@ async def process_conversion(job_id: str) -> None:
                     "sizeBytes": output_file.stat().st_size,
                 }
             )
-
-        book_safe_name = FileManager.sanitize_filename(title)
-        zip_file = job_output_dir / f"{book_safe_name}.zip"
-        # Use STORED (no compression) for MP3s - they're already compressed
-        # This is MUCH faster than ZIP_DEFLATED for audio files
-        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_STORED) as archive:
-            for asset in outputs:
-                path = job_output_dir / asset["name"]
-                if path.exists():
-                    archive.write(path, arcname=asset["name"])
+            with zipfile.ZipFile(zip_file, "a", zipfile.ZIP_STORED) as archive:
+                if output_file.exists():
+                    archive.write(output_file, arcname=output_file.name)
 
         # Upload to R2 if configured
         if storage.is_enabled():
@@ -612,6 +876,19 @@ async def process_conversion(job_id: str) -> None:
             },
         )
 
+        log_path = _persist_job_log(job_id, job)
+        if log_path and log_path.exists():
+            outputs.insert(
+                0,
+                {
+                    "name": log_path.name,
+                    "url": f"/api/outputs/{job_id}/{log_path.name}",
+                    "sizeBytes": log_path.stat().st_size,
+                },
+            )
+            with zipfile.ZipFile(zip_file, "a", zipfile.ZIP_STORED) as archive:
+                archive.write(log_path, arcname=log_path.name)
+
         job["state"] = "finished"
         job["progressPercent"] = 100
         job["outputs"] = outputs
@@ -628,6 +905,7 @@ async def process_conversion(job_id: str) -> None:
         job["error"] = str(exc)
         job["events"].append(f"❌ Erro: {exc}")
         _persist_job(job_id)
+        _persist_job_log(job_id, job)
 
     finally:
         temp_path = Path(job["file_path"])
@@ -700,24 +978,10 @@ def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: obj
 
     job_id = job.get("jobId")
     if job_id:
-        try:
-            job_dir = output_dir / job_id
-            if job_dir.exists():
-                shutil.rmtree(job_dir, ignore_errors=True)
-        except Exception:
-            pass
+        _cleanup_job_output(job_id)
+        _persist_job_log(job_id, job)
 
-    # Clear cache and checkpoints related to this ebook to avoid stale data
-    try:
-        cache_manager = CacheManager()
-        source_path = Path(job.get("file_path", "")) if job.get("file_path") else None
-        book_title = job.get("bookTitle")
-        if source_path and source_path.exists():
-            cache_manager.clear_cache(source_path, title=book_title)
-        elif book_title:
-            cache_manager.clear_cache(title=book_title)
-    except Exception:
-        pass
+    _clear_job_cache(job)
 
 
 def _prepare_chapters(reader: EbookReader, config: ConversionConfig, selectors: Optional[str] = None) -> list:
@@ -752,9 +1016,55 @@ def _prepare_chapters(reader: EbookReader, config: ConversionConfig, selectors: 
         transformed_items = converter_app._apply_text_transforms(structure_items, config, reader)
         converter_app._apply_structure_to_reader(reader, transformed_items)
         chapters = reader.get_chapter_structure(preserve_all=config.preserve_all_chapters)
-        return chapters or reader.get_chapters()
+        prioritized = chapters or reader.get_chapters()
+        if getattr(config, "priority_selectors", None):
+            prioritized = _apply_priority_order(prioritized, config.priority_selectors)
+        return prioritized
     except Exception:
-        return reader.get_chapters()
+        fallback = reader.get_chapters()
+        if getattr(config, "priority_selectors", None):
+            fallback = _apply_priority_order(fallback, config.priority_selectors)
+        return fallback
+
+
+def _apply_priority_order(chapters: list, selectors: list[str]) -> list:
+    if not selectors:
+        return chapters
+    prioritized: list = []
+    seen: set[int] = set()
+    selectors_norm = [str(sel).strip().lower() for sel in selectors if str(sel).strip()]
+    for selector in selectors_norm:
+        numeric_target: Optional[int] = None
+        if selector.replace(".", "", 1).isdigit():
+            try:
+                numeric_target = int(float(selector))
+            except ValueError:
+                numeric_target = None
+        for idx, chapter in enumerate(chapters):
+            if idx in seen:
+                continue
+            name = (getattr(chapter, "name", None) or f"Chapter {idx + 1}").lower()
+            if numeric_target is not None and (idx + 1) == numeric_target:
+                prioritized.append(chapter)
+                seen.add(idx)
+                break
+            if selector in name:
+                prioritized.append(chapter)
+                seen.add(idx)
+                break
+    if not prioritized:
+        return chapters
+    remaining = [chapter for idx, chapter in enumerate(chapters) if idx not in seen]
+    return prioritized + remaining
+
+
+def _build_text_preview(text: str, limit: int = 180) -> str:
+    if not text:
+        return ""
+    preview = " ".join(text.split())
+    if len(preview) > limit:
+        preview = preview[:limit].rstrip() + "…"
+    return preview
 
 
 if __name__ == "__main__":  # pragma: no cover - manual execution helper

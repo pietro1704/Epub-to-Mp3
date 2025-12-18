@@ -38,13 +38,14 @@ class ConversionConfig:
     primary_language: str = "auto"
     languages: list[str] = field(default_factory=list)
     language_voices: Dict[str, str] = field(default_factory=dict)
+    priority_selectors: list[str] = field(default_factory=list)
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
-    edge_auto_offline_seconds: int = 480  # switch to offline engine if chapter is predicted to exceed this duration
-    edge_auto_offline_chars: int = 20000  # switch to offline engine if chapter text is bigger than this
-    edge_chunk_chars: int = 14000  # character budget per Edge chunk before splitting
-    edge_max_segment_seconds: int = 75  # hard limit for each Edge chunk duration
+    edge_auto_offline_seconds: int = 300  # switch Edge→offline when ETA proj. > 5 min
+    edge_auto_offline_chars: int = 9000  # switch Edge→offline for very long chapters
+    edge_chunk_chars: int = 11000  # character budget per Edge chunk before splitting
+    edge_max_segment_seconds: int = 65  # hard limit for each Edge chunk duration
 
     def as_dict(self) -> Dict[str, object]:
         """Return a serialisable representation useful for debugging."""
@@ -68,6 +69,7 @@ class ConversionConfig:
             "primary_language": self.primary_language,
             "languages": list(self.languages),
             "language_voices": dict(self.language_voices),
+            "priority_selectors": list(self.priority_selectors),
             "edge_auto_offline_seconds": self.edge_auto_offline_seconds,
             "edge_auto_offline_chars": self.edge_auto_offline_chars,
             "edge_chunk_chars": self.edge_chunk_chars,
@@ -100,8 +102,9 @@ class VoiceConfigProvider:
             "it": "it-IT-IsabellaNeural",
         }
         self._coqui_language_map = {
-            "default": "tts_models/pt/cv/vits",
+            "pt": "tts_models/pt/cv/vits",
         }
+        self._coqui_default_voice = "tts_models/multilingual/multi-dataset/xtts_v2"
         self._piper_language_map = {
             "pt": "pt_BR",
             "en": "en_US",
@@ -150,7 +153,14 @@ class VoiceConfigProvider:
         if engine == "edge":
             return self._edge_voices.get("1", (None,))[0]
         if engine == "coqui":
-            return self._coqui_models.get("1", (None,))[0]
+            code = (primary_language or "").split("-", 1)[0].lower()
+            if code == "pt":
+                return self._coqui_language_map.get("pt", self._coqui_default_voice)
+            return self._coqui_default_voice
+        if engine == "auto":
+            if language == "pt":
+                return self._coqui_language_map.get("pt", self._edge_voices.get("1", (None,))[0])
+            return self._edge_voices.get("1", (None,))[0]
         if engine == "piper":
             code = (primary_language or "").split("-", 1)[0].lower()
             return self._resolve_piper_model(code)
@@ -201,7 +211,13 @@ class VoiceConfigProvider:
                 if voice:
                     mapping[code] = voice
             elif engine == "coqui":
-                mapping[code] = self._coqui_language_map.get("default", fallback_voice or "coqui-tts/xtts_v2")
+                voice = self._coqui_language_map.get(code) or fallback_voice or self._coqui_default_voice
+                if voice:
+                    mapping[code] = voice
+            elif engine == "auto":
+                voice = self._coqui_language_map.get(code) or self._edge_language_map.get(code) or fallback_voice
+                if voice:
+                    mapping[code] = voice
             elif engine == "piper":
                 model_path = self._resolve_piper_model(code)
                 if model_path:
@@ -225,7 +241,8 @@ class AppConfig:
         engine = (engine or "edge").lower()
         primary_language = kwargs.pop("primary_language", None)
         languages = kwargs.pop("languages", None) or []
-        voice = kwargs.pop("voice", None) or self.voice_configs.get_voice(engine, primary_language)
+        voice_arg = kwargs.pop("voice", None)
+        voice = voice_arg or self.voice_configs.get_voice(engine, primary_language)
 
         model_value = kwargs.pop("model_path", None) or kwargs.pop("model", None)
         model_path = Path(model_value) if model_value else None
@@ -262,6 +279,7 @@ class AppConfig:
             footnote_context_words = 8
 
         language_voices = kwargs.pop("language_voices", None) or {}
+        priority_selectors = kwargs.pop("priority_selectors", None) or []
 
         raw_batch_size = kwargs.pop("batch_size", None)
         try:
@@ -318,6 +336,7 @@ class AppConfig:
             primary_language=(primary_language or (languages[0] if languages else "auto")),
             languages=list(languages),
             language_voices=dict(language_voices),
+            priority_selectors=list(priority_selectors),
             batch_size=batch_size,
             verbose=verbose,
             edge_auto_offline_seconds=edge_auto_offline_seconds,
@@ -328,6 +347,8 @@ class AppConfig:
 
         if kwargs:
             config.extra.update({str(key): str(value) for key, value in kwargs.items()})
+
+        config.extra.setdefault("voice_auto", "1" if voice_arg is None else "0")
 
         return config
 

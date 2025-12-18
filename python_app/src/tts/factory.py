@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import os
 import pathlib
+import urllib.request
 from pathlib import Path
 from typing import Optional, Protocol
 
@@ -13,6 +15,22 @@ from ..config import ConversionConfig, VoiceConfigProvider
 class TTSEngine(Protocol):
     async def synthesize_async(self, text: str, output_path: Path):  # pragma: no cover - protocol stub
         ...
+
+
+DEFAULT_PIPER_SOURCES = {
+    "pt": {
+        "model": "pt_BR-faber-medium.onnx",
+        "config": "pt_BR-faber-medium.onnx.json",
+        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR-faber-medium.onnx",
+        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR-faber-medium.onnx.json",
+    },
+    "en": {
+        "model": "en_US-lessac-medium.onnx",
+        "config": "en_US-lessac-medium.onnx.json",
+        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US-lessac-medium.onnx",
+        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US-lessac-medium.onnx.json",
+    },
+}
 
 
 class TTSFactory:
@@ -56,7 +74,8 @@ class TTSFactory:
                 candidate = Path(str(config.voice))
                 if candidate.suffix.lower() == ".onnx" and candidate.exists():
                     model_path = candidate
-            model_path = model_path or self._find_piper_model()
+            preferred_code = (config.primary_language or "").split("-", 1)[0]
+            model_path = model_path or self._find_piper_model(preferred_code=preferred_code)
             engine_instance = PiperTTSEngine(
                 model_path,
                 primary_language=config.primary_language,
@@ -67,8 +86,11 @@ class TTSFactory:
 
         raise ValueError(f"Unsupported engine: {config.engine}")
 
-    def _find_piper_model(self, models_dir: Optional[Path] = None) -> Path:
+    def _find_piper_model(self, preferred_code: Optional[str] = None, models_dir: Optional[Path] = None) -> Path:
         candidate_dirs = []
+        env_dir = os.getenv("PIPER_MODEL_DIR")
+        if env_dir:
+            candidate_dirs.append(Path(env_dir))
         if models_dir is not None:
             candidate_dirs.append(Path(models_dir))
         else:
@@ -90,7 +112,33 @@ class TTSFactory:
                 if candidate.is_file():
                     return candidate
 
+        downloaded = self._download_default_piper_model(preferred_code)
+        if downloaded:
+            return downloaded
+
         raise FileNotFoundError("No Piper models were found")
+
+    def _download_default_piper_model(self, preferred_code: Optional[str]) -> Optional[Path]:
+        code = (preferred_code or "").split("-", 1)[0].lower()
+        sources = DEFAULT_PIPER_SOURCES.get(code) or DEFAULT_PIPER_SOURCES.get("pt")
+        if not sources:
+            return None
+
+        target_dir = Path(os.getenv("PIPER_MODEL_DIR") or Path(__file__).resolve().parents[1] / "models")
+        target_dir.mkdir(parents=True, exist_ok=True)
+
+        model_path = target_dir / sources["model"]
+        config_path = target_dir / sources["config"]
+
+        try:
+            if not model_path.exists():
+                urllib.request.urlretrieve(sources["model_url"], model_path)
+            if not config_path.exists():
+                urllib.request.urlretrieve(sources["config_url"], config_path)
+        except Exception:
+            return None
+
+        return model_path if model_path.exists() else None
 
 
 __all__ = ["TTSFactory", "TTSEngine"]

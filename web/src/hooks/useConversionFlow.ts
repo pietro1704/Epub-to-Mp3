@@ -25,6 +25,9 @@ function buildCliCommand(values: ConversionFormValues): string {
   if (values.chapters) {
     parts.push('--chapter', values.chapters);
   }
+  if (values.priority) {
+    parts.push('--priority', values.priority);
+  }
 
   if (values.footnoteMode && values.footnoteMode !== 'inline') {
     if (values.footnoteMode === 'skip') {
@@ -48,6 +51,8 @@ type Action =
   | { type: 'append-entry'; entry: StatusEntry }
   | { type: 'complete'; entry: StatusEntry; downloads: DownloadAsset[] }
   | { type: 'fail'; entry: StatusEntry; error: string }
+  | { type: 'cancelling'; entry: StatusEntry }
+  | { type: 'cancelled'; entry: StatusEntry; error: string }
   | {
       type: 'update-meta';
       etaSeconds?: number | null;
@@ -181,6 +186,7 @@ export interface UseConversionFlowApi {
   submit: (values: ConversionFormValues) => Promise<void>;
   resume: (jobId: string) => Promise<void>;
   reset: () => void;
+  cancel: () => Promise<void>;
   isBusy: boolean;
   cachedJobs: Array<{ jobId: string; fileName: string; timestamp: number }>;
 }
@@ -322,6 +328,18 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
             }
           },
         });
+
+        if (finalSnapshot.state === 'cancelled') {
+          dispatch({
+            type: 'cancelled',
+            error: t.flow.cancelled,
+            entry: entryFactoryRef.current(t.flow.cancelled),
+          });
+          conversionCache.remove(jobId);
+          setCachedJobs(prev => prev.filter(j => j.jobId !== jobId));
+          startTimeRef.current = null;
+          return;
+        }
 
         if (finalSnapshot.state === 'failed') {
           const failureMessage = finalSnapshot.error || t.flow.defaultFailure;
@@ -539,6 +557,18 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
           },
         });
 
+        if (finalSnapshot.state === 'cancelled') {
+          dispatch({
+            type: 'cancelled',
+            error: t.flow.cancelled,
+            entry: entryFactoryRef.current(t.flow.cancelled),
+          });
+          conversionCache.remove(jobId);
+          setCachedJobs(prev => prev.filter(j => j.jobId !== jobId));
+          startTimeRef.current = null;
+          return;
+        }
+
         if (finalSnapshot.state === 'failed' || finalSnapshot.state === 'interrupted') {
           const failureMessage = finalSnapshot.error || t.flow.defaultFailure;
           dispatch({
@@ -610,13 +640,50 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
     };
   }, []);
 
-  const isBusy = state.phase === 'submitting' || state.phase === 'polling';
+  const cancel = useCallback(async () => {
+    if (!state.jobId || !api.cancel) {
+      return;
+    }
+    if (state.phase !== 'polling' && state.phase !== 'cancelling') {
+      return;
+    }
+    try {
+      const response = await api.cancel(state.jobId);
+      if (response.status === 'cancelled') {
+        dispatch({
+          type: 'cancelled',
+          error: t.flow.cancelled,
+          entry: entryFactoryRef.current(t.flow.cancelled),
+        });
+        conversionCache.remove(state.jobId);
+        setCachedJobs(prev => prev.filter(j => j.jobId !== state.jobId));
+        startTimeRef.current = null;
+        abortRef.current?.abort();
+      } else {
+        dispatch({
+          type: 'cancelling',
+          entry: entryFactoryRef.current(t.flow.cancelRequested),
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error && error.message
+        ? error.message
+        : t.flow.cancelFailed('');
+      dispatch({
+        type: 'append-entry',
+        entry: entryFactoryRef.current(t.flow.cancelFailed(message)),
+      });
+    }
+  }, [api, state.jobId, state.phase, t]);
+
+  const isBusy = state.phase === 'submitting' || state.phase === 'polling' || state.phase === 'cancelling';
 
   return {
     state,
     submit,
     resume,
     reset,
+    cancel,
     isBusy,
     cachedJobs,
   };

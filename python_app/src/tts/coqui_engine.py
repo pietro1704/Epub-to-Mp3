@@ -303,13 +303,22 @@ class CoquiTTSEngine:
                 return  # Success
             except (TypeError, ValueError) as e:
                 error_msg = str(e).lower()
+                stripped_error = error_msg.strip().strip("'\"")
 
                 # Coqui às vezes retorna '0' quando speaker é inválido; trate como fallback de speaker
-                if error_msg.strip().strip("'\"") == "0":
+                if stripped_error == "0":
                     kwargs.pop("speaker", None)
                     kwargs.pop("speaker_wav", None)
                     if self.verbose:
                         print("🔍 [VERBOSE] Coqui removendo speaker após erro '0'")
+                    retry_count += 1
+                    continue
+
+                if stripped_error == "default":
+                    kwargs.pop("speaker", None)
+                    kwargs.pop("speaker_wav", None)
+                    if self.verbose:
+                        print("🔍 [VERBOSE] Coqui removendo speaker após erro 'default'")
                     retry_count += 1
                     continue
 

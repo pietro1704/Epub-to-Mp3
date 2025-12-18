@@ -6,14 +6,16 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import inspect
+import os
 import shutil
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Set
 
 from .ebook_reader import EbookReader, Chapter
 from .config import ConversionConfig
@@ -399,33 +401,33 @@ class AudioConverter:
         except ImportError:
             formatter = None
 
+        def _prepare_payload(chapter_index: int, chapter_obj: Chapter) -> tuple[int, str, str, str]:
+            chapter_name_local = getattr(chapter_obj, "name", None) or f"Chapter {chapter_index}"
+            parsed_text_local = chapter_obj.text or ""
+            speech_text_local = self._speech_text(chapter_obj)
+            if formatter:
+                formatting_segments_local = getattr(chapter_obj, 'formatting_segments', None)
+                pre_tts_text_local = formatter.to_audible_text(speech_text_local, formatting_segments_local)
+            else:
+                pre_tts_text_local = speech_text_local
+            return (chapter_index, chapter_name_local, parsed_text_local, pre_tts_text_local or "")
+
         files_generated = 0
-        for idx, chapter in enumerate(chapters):
-            chapter_num = idx + 1
-            chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
+        with ThreadPoolExecutor(max_workers=min(4, (os.cpu_count() or 1))) as executor:
+            futures = [
+                executor.submit(_prepare_payload, idx + 1, chapter)
+                for idx, chapter in enumerate(chapters)
+            ]
 
-            # Sanitize filename
-            safe_name = self.file_manager.sanitize_filename(chapter_name)
+            for future in futures:
+                chapter_num, chapter_name, parsed_text, pre_tts_text = future.result()
+                safe_name = self.file_manager.sanitize_filename(chapter_name)
+                parsed_path = text_dir / f"{chapter_num} - {safe_name}-parsed.txt"
+                pre_tts_path = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
 
-            # NEW FORMAT: "N - ChapterName-parsed.txt" and "N - ChapterName-pre-tts.txt"
-            parsed_path = text_dir / f"{chapter_num} - {safe_name}-parsed.txt"
-            pre_tts_path = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
+                if parsed_path.exists() and pre_tts_path.exists():
+                    continue
 
-            # Only generate if files don't exist
-            if not pre_tts_path.exists() or not parsed_path.exists():
-                # Get texts
-                parsed_text = chapter.text or ""
-                speech_text = self._speech_text(chapter)
-                current_payload = speech_text
-                # **CRITICAL FIX**: Apply the SAME TextFormattingProcessor that TTS uses
-                # This ensures pre-tts.txt contains EXACTLY what goes to TTS
-                if formatter:
-                    formatting_segments = getattr(chapter, 'formatting_segments', None)
-                    pre_tts_text = formatter.to_audible_text(speech_text, formatting_segments)
-                else:
-                    pre_tts_text = speech_text
-
-                # Write files
                 parsed_path.write_text(parsed_text, encoding="utf-8")
                 pre_tts_path.write_text(pre_tts_text, encoding="utf-8")
                 files_generated += 2
@@ -434,8 +436,8 @@ class AudioConverter:
                     print(f"   📄 {chapter_num}. {chapter_name}")
                     print(f"      → {parsed_path.name}")
                     print(f"      → {pre_tts_path.name}")
-                    if formatter and speech_text != pre_tts_text:
-                        chars_added = len(pre_tts_text) - len(speech_text)
+                    if formatter and parsed_text != pre_tts_text:
+                        chars_added = len(pre_tts_text) - len(parsed_text)
                         print(f"      ℹ️  Formatação adicionou {chars_added} chars (cues audíveis)")
 
         if files_generated == 0 and self.verbose:
@@ -464,6 +466,8 @@ class AudioConverter:
         # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
         chapters = list(reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or [])
+        if getattr(config, "priority_selectors", None):
+            chapters = self._prioritize_chapters(chapters, config.priority_selectors)
         total_chapters = len(chapters)
         chapter_lookup: Dict[str, tuple[Chapter, int, str]] = {}
         for idx, chapter in enumerate(chapters, start=1):
@@ -491,14 +495,31 @@ class AudioConverter:
 
         self.progress.start(total_chapters, description=self.loc.t("progress_description"))
 
+        is_auto_engine = (config.engine or "").lower() == "auto"
+        auto_engine_pool: Dict[str, tuple[ConversionConfig, object]] = {}
         try:
-            tts_engine = self.tts_factory.create_engine(config)
+            if is_auto_engine:
+                auto_engine_pool = self._prepare_auto_engines(config)
+                if not auto_engine_pool:
+                    raise RuntimeError("Nenhuma engine disponível no modo automático")
+                tts_engine = None
+            else:
+                tts_engine = self.tts_factory.create_engine(config)
         except ImportError as exc:
             if self._install_requirements():
-                tts_engine = self.tts_factory.create_engine(config)
+                if is_auto_engine:
+                    auto_engine_pool = self._prepare_auto_engines(config)
+                    if not auto_engine_pool:
+                        raise RuntimeError("Nenhuma engine disponível no modo automático")
+                    tts_engine = None
+                else:
+                    tts_engine = self.tts_factory.create_engine(config)
             else:
                 raise
-        voice_label = getattr(tts_engine, "voice", None) or config.voice or "(auto)"
+        if is_auto_engine:
+            voice_label = "Auto (Edge/Coqui/Piper)"
+        else:
+            voice_label = getattr(tts_engine, "voice", None) or config.voice or "(auto)"
         print(self.loc.t("conversion_engine_voice", engine=config.engine, voice=voice_label))
         if getattr(config, "languages", None):
             print(self.loc.t("conversion_languages", languages=", ".join(config.languages)))
@@ -507,7 +528,14 @@ class AudioConverter:
             print(f"🔍 [VERBOSE] Engine configurado: {type(tts_engine).__name__}")
 
         # Always use sequential processing
-        result = await self._convert_chapters_sequential(chapters, tts_engine, temp_dir, config)
+        result = await self._convert_chapters_sequential(
+            chapters,
+            tts_engine,
+            temp_dir,
+            config,
+            is_auto_engine=is_auto_engine,
+            auto_engine_pool=auto_engine_pool,
+        )
 
         total_output_files = list(result.output_files)
         raw_failures = self._build_error_map(result.errors)
@@ -708,6 +736,9 @@ class AudioConverter:
         tts_engine,
         output_dir: Path,
         config: ConversionConfig,
+        *,
+        is_auto_engine: bool = False,
+        auto_engine_pool: Optional[Dict[str, tuple[ConversionConfig, object]]] = None,
     ) -> ConversionResult:
         """Converte capítulos sequencialmente, SEM sistema de paralelismo."""
         chapters_list = list(chapters)
@@ -728,6 +759,7 @@ class AudioConverter:
         cooldown_pattern = re.compile(r"cooldown\\s+(\\d+)s", re.IGNORECASE)
 
         edge_unavailable_hits = 0
+        auto_engine_pool = auto_engine_pool or {}
 
         def can_use_piper() -> bool:
             return shutil.which("piper") is not None
@@ -738,11 +770,13 @@ class AudioConverter:
             tracker: Optional[dict] = None,
             engine_ref: Optional[dict] = None,
         ) -> bool:
+            if is_auto_engine:
+                return False
+
             nonlocal tts_engine, config
             if config.engine.lower() != "edge":
                 return False
 
-            # PRIORIDADE = qualidade/multi-idioma (XTTS) e, se indisponível, Piper pela velocidade.
             try:
                 coqui_config = replace(config, engine="coqui", voice=None, model_path=None)
                 coqui_config.voice = (
@@ -802,8 +836,7 @@ class AudioConverter:
 
             return False
 
-        # Pré-checagem do Edge para evitar travar no primeiro capítulo
-        if (config.engine or "").lower() == "edge" and hasattr(tts_engine, "_probe_edge_health"):
+        if (config.engine or "").lower() == "edge" and not is_auto_engine and hasattr(tts_engine, "_probe_edge_health"):
             try:
                 voice = getattr(tts_engine, "voice", None)
                 healthy = await tts_engine._probe_edge_health(voice)  # type: ignore[attr-defined]
@@ -811,65 +844,70 @@ class AudioConverter:
                     if self.verbose:
                         print("   ⚠️ Edge pré-check falhou; usando engine offline antes de iniciar capítulos")
             except Exception:
-                # Se der erro no pré-check, seguimos adiante para não bloquear execução
                 pass
 
-        async def wait_edge_cooldown_if_needed(
-            context: str,
-            tracker: Optional[dict] = None,
-            engine_ref: Optional[dict] = None,
-        ) -> bool:
-            """
-            Handle Edge outages aggressively:
-              - On `NoAudioReceived` or `service_unavailable`, switch to offline (XTTS → Piper) immediately.
-              - If offline engine cannot be created, wait a short cooldown before retrying Edge.
-            """
-            if (config.engine or "").lower() != "edge":
+        if is_auto_engine:
+            async def wait_edge_cooldown_if_needed(
+                context: str,
+                tracker: Optional[dict] = None,
+                engine_ref: Optional[dict] = None,
+            ) -> bool:
                 return False
-            last_error = getattr(tts_engine, "last_error", None)
-            if not last_error:
-                return False
+        else:
+            async def wait_edge_cooldown_if_needed(
+                context: str,
+                tracker: Optional[dict] = None,
+                engine_ref: Optional[dict] = None,
+            ) -> bool:
+                """
+                Handle Edge outages aggressively:
+                  - On `NoAudioReceived` or `service_unavailable`, switch to offline (XTTS → Piper) immediately.
+                  - If offline engine cannot be created, wait a short cooldown before retrying Edge.
+                """
+                if (config.engine or "").lower() != "edge":
+                    return False
+                last_error = getattr(tts_engine, "last_error", None)
+                if not last_error:
+                    return False
 
-            error_text = str(last_error)
-            lower_error = error_text.lower()
-            should_switch = (
-                "service_unavailable" in lower_error
-                or "no_audio_payload" in lower_error
-            )
-            if not should_switch:
-                return False
+                error_text = str(last_error)
+                lower_error = error_text.lower()
+                should_switch = (
+                    "service_unavailable" in lower_error
+                    or "no_audio_payload" in lower_error
+                )
+                if not should_switch:
+                    return False
 
-            match = cooldown_pattern.search(str(last_error))
-            seconds = int(match.group(1)) if match else 0
-            if seconds <= 0:
-                # Edge costuma abrir cooldown de 60s em NoAudioReceived; use 45s conservadores
-                seconds = 45
-            if self.verbose:
-                print(f"   ⚠️ Edge indisponível ({context}) - erro: {last_error}")
-            nonlocal edge_unavailable_hits
-            edge_unavailable_hits += 1
+                match = cooldown_pattern.search(str(last_error))
+                seconds = int(match.group(1)) if match else 0
+                if seconds <= 0:
+                    seconds = 45
+                if self.verbose:
+                    print(f"   ⚠️ Edge indisponível ({context}) - erro: {last_error}")
+                nonlocal edge_unavailable_hits
+                edge_unavailable_hits += 1
 
-            # Prefer switching to an offline engine immediately (Edge costuma falhar em datacenters/HF).
-            if build_best_offline_engine(
-                f"Edge indisponível ({context})",
-                tracker=tracker,
-                engine_ref=engine_ref,
-            ):
+                if build_best_offline_engine(
+                    f"Edge indisponível ({context})",
+                    tracker=tracker,
+                    engine_ref=engine_ref,
+                ):
+                    return True
+
+                max_wait = min(seconds, 90)
+                if self.verbose:
+                    print(f"   ⏳ Sem fallback disponível; aguardando {max_wait}s antes de tentar novamente...")
+                waited = 0
+                while waited < max_wait:
+                    chunk = min(3, max_wait - waited)
+                    await asyncio.sleep(chunk)
+                    waited += chunk
+                    self.progress.tick(f"⏳ Edge indisponível - aguardando {max_wait - waited}s...")
                 return True
 
-            max_wait = min(seconds, 90)
-            if self.verbose:
-                print(f"   ⏳ Sem fallback disponível; aguardando {max_wait}s antes de tentar novamente...")
-            waited = 0
-            while waited < max_wait:
-                chunk = min(3, max_wait - waited)
-                await asyncio.sleep(chunk)
-                waited += chunk
-                self.progress.tick(f"⏳ Edge indisponível - aguardando {max_wait - waited}s...")
-            return True
-
-        def _resolve_tts_output_path(final_mp3_path: Path) -> tuple[Path, bool]:
-            engine = (config.engine or "").lower()
+        def _resolve_tts_output_path(final_mp3_path: Path, engine_name: Optional[str] = None) -> tuple[Path, bool]:
+            engine = (engine_name or config.engine or "").lower()
             if engine in {"piper", "coqui"}:
                 return final_mp3_path.with_suffix(".wav"), True
             return final_mp3_path, False
@@ -893,7 +931,6 @@ class AudioConverter:
             try:
                 # Conversão para diretório temporário
                 output_path = self.file_manager.get_temp_output_path(chapter.name, output_dir, idx + 1)
-                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
 
                 # Check if MP3 already exists and is valid (size > 1KB)
                 # Note: Cache validation already done by _validate_and_clean_cache()
@@ -919,17 +956,37 @@ class AudioConverter:
                         if self.verbose:
                             print(f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}")
                         output_path.unlink(missing_ok=True)
-                        if needs_mp3_transcode:
-                            tts_output_path.unlink(missing_ok=True)
+                        output_path.with_suffix(".wav").unlink(missing_ok=True)
 
                 # Sintetizar com heartbeat e timeout (otimizado)
                 speech_text = speech_text or ""
+                preview = self._chapter_preview(speech_text)
+                if preview:
+                    print(f"   📝 Trecho inicial: {preview}")
                 current_payload = speech_text
                 estimated_seconds = TextValidator.estimate_duration(speech_text)
                 if estimated_seconds <= 0:
                     estimated_seconds = max(chapter_chars / 15.0, 30.0)
                 switched_for_size = False
-                if (config.engine or "").lower() == "edge":
+                auto_order: Optional[List[str]] = None
+                attempted_auto: Set[str] = set()
+                if is_auto_engine:
+                    picked_engine, auto_order = self._pick_auto_engine(chapter_chars, estimated_seconds, auto_engine_pool)
+                    attempted_auto.add(picked_engine)
+                    engine_tracker["label"] = picked_engine
+                    engine_instance["object"] = auto_engine_pool[picked_engine][1]
+                else:
+                    engine_tracker["label"] = (config.engine or "").lower()
+                    engine_instance["object"] = tts_engine
+
+                current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                tts_engine = engine_instance["object"]
+                if tts_engine is None:
+                    raise RuntimeError("Nenhuma engine TTS disponível")
+
+                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
+
+                if (config.engine or "").lower() == "edge" and not is_auto_engine:
                     threshold_chars = max(getattr(config, "edge_auto_offline_chars", 0), 0)
                     threshold_seconds = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
                     edge_reason = None
@@ -943,10 +1000,8 @@ class AudioConverter:
                         engine_ref=engine_instance,
                     ):
                         switched_for_size = True
-                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
-
-                engine_tracker["label"] = (config.engine or "").lower()
-                engine_instance["object"] = tts_engine
+                        current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
 
                 decision = self.speed_controller.before_chapter(
                     engine_tracker["label"],
@@ -1002,7 +1057,8 @@ class AudioConverter:
                     last_tts_output_path = tts_output_path
                     last_needs_transcode = needs_mp3_transcode
                     for attempt in range(max_attempts):
-                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
+                        current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
                         last_tts_output_path = tts_output_path
                         last_needs_transcode = needs_mp3_transcode
                         synthesis_result = await asyncio.wait_for(
@@ -1079,7 +1135,8 @@ class AudioConverter:
                         fallback_task = asyncio.create_task(fallback_heartbeat())
 
                         try:
-                            tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
+                            current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                            tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
                             synthesis_result = await asyncio.wait_for(
                                 tts_engine.synthesize_async(clean_text, tts_output_path, formatting_segments=None),
                                 timeout=fallback_timeout
@@ -1120,7 +1177,8 @@ class AudioConverter:
                                 if self.verbose:
                                     print(f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)")
 
-                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
+                                current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
                                 synthesis_result = await asyncio.wait_for(
                                     tts_engine.synthesize_async(emergency_text, tts_output_path, formatting_segments=None),
                                     timeout=emergency_timeout
@@ -1162,6 +1220,18 @@ class AudioConverter:
                     with contextlib.suppress(asyncio.CancelledError):
                         await heartbeat_task
 
+                if not synthesis_result and is_auto_engine and auto_order:
+                    next_engine = self._next_auto_engine(auto_order, attempted_auto)
+                    if next_engine:
+                        attempted_auto.add(next_engine)
+                        engine_tracker["label"] = next_engine
+                        engine_instance["object"] = auto_engine_pool[next_engine][1]
+                        tts_engine = engine_instance["object"]
+                        if self.verbose:
+                            print(f"   ⚡ AUTO: trocando para {next_engine} e tentando novamente")
+                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, next_engine)
+                        continue
+
                 if synthesis_result and output_path.exists():
                     file_size = output_path.stat().st_size
 
@@ -1190,8 +1260,9 @@ class AudioConverter:
                             print(f"   📊 Arquivo gerado: {file_size} bytes")
                         self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
                         chapter_elapsed = time.time() - start_time
+                        current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
                         if (
-                            (config.engine or "").lower() == "edge"
+                            current_engine_label == "edge"
                             and not switched_for_size
                             and getattr(config, "edge_auto_offline_seconds", 0)
                         ):
@@ -1202,7 +1273,8 @@ class AudioConverter:
                                 ):
                                     if self.verbose:
                                         print("   ⚡ Próximos capítulos migrarão para engine offline pela performance")
-                                    tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
+                                current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
                         self._retry_original_texts.pop(chapter_label, None)
                     else:
                         # Arquivo muito pequeno - provavelmente corrompido
@@ -1274,8 +1346,9 @@ class AudioConverter:
                                         print(f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)")
                                     self.progress.complete_chapter("✅ Sucesso (retry)")
                                     chapter_elapsed = time.time() - start_time
+                                    current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
                                     if (
-                                        (config.engine or "").lower() == "edge"
+                                        current_engine_label == "edge"
                                         and not switched_for_size
                                         and getattr(config, "edge_auto_offline_seconds", 0)
                                     ):
@@ -1286,7 +1359,8 @@ class AudioConverter:
                                             ):
                                                 if self.verbose:
                                                     print("   ⚡ Próximos capítulos migrarão para engine offline pela performance")
-                                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path)
+                                                current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
                                     self._retry_original_texts.pop(chapter_label, None)
                                     continue  # Success! Continue to next chapter
 
@@ -1340,6 +1414,100 @@ class AudioConverter:
             output_files=converted_files,
             errors=errors,
         )
+
+    def _prepare_auto_engines(self, base_config: ConversionConfig) -> Dict[str, tuple[ConversionConfig, object]]:
+        pool: Dict[str, tuple[ConversionConfig, object]] = {}
+        for name in ("coqui", "edge", "piper"):
+            try:
+                cloned = replace(base_config, engine=name, voice=None, model_path=None)
+                cloned.languages = list(base_config.languages)
+                cloned.language_voices = {}
+                voice = self.tts_factory.voice_provider.get_voice(name, cloned.primary_language)
+                cloned.voice = voice
+                cloned.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
+                    name,
+                    cloned.languages
+                    or ([cloned.primary_language] if cloned.primary_language and cloned.primary_language != "auto" else []),
+                    voice,
+                    primary_language=cloned.primary_language,
+                )
+                engine_instance = self.tts_factory.create_engine(cloned)
+                pool[name] = (cloned, engine_instance)
+            except Exception:
+                continue
+        return pool
+
+    @staticmethod
+    def _pick_auto_engine(
+        chapter_chars: int,
+        estimated_seconds: float,
+        pool: Dict[str, tuple[ConversionConfig, object]],
+    ) -> tuple[str, List[str]]:
+        def append(order: List[str], candidate: str) -> None:
+            if candidate in pool and candidate not in order:
+                order.append(candidate)
+
+        # Ordem do mais rápido para mais lento: edge > piper > coqui
+        # Testado com 3053 chars: edge=21s (144 chars/s), piper=27s (112 chars/s), coqui=113s (26 chars/s)
+        order: List[str] = []
+        append(order, "edge")
+        append(order, "piper")
+        append(order, "coqui")
+
+        if not order:
+            order = list(pool.keys())
+        selected = order[0]
+        return selected, order
+
+    @staticmethod
+    def _next_auto_engine(order: List[str], attempted: Set[str]) -> Optional[str]:
+        for name in order:
+            if name not in attempted:
+                return name
+        return None
+
+    @staticmethod
+    def _chapter_preview(text: str, limit: int = 180) -> str:
+        if not text:
+            return ""
+        preview = " ".join(text.split())
+        if len(preview) > limit:
+            preview = preview[:limit].rstrip() + "…"
+        return preview
+
+    def _prioritize_chapters(self, chapters: List[Chapter], selectors: List[str]) -> List[Chapter]:
+        if not selectors:
+            return chapters
+
+        prioritized: List[Chapter] = []
+        seen_indices: Set[int] = set()
+        selectors_normalized = [str(sel).strip().lower() for sel in selectors if str(sel).strip()]
+
+        for selector in selectors_normalized:
+            numeric_target: Optional[int] = None
+            if selector.replace(".", "", 1).isdigit():
+                try:
+                    numeric_target = int(float(selector))
+                except ValueError:
+                    numeric_target = None
+            for idx, chapter in enumerate(chapters):
+                if idx in seen_indices:
+                    continue
+                display_name = self._chapter_display_name(chapter, idx + 1).lower()
+                if numeric_target is not None and (idx + 1) == numeric_target:
+                    prioritized.append(chapter)
+                    seen_indices.add(idx)
+                    break
+                if selector in display_name:
+                    prioritized.append(chapter)
+                    seen_indices.add(idx)
+                    break
+
+        if not prioritized:
+            return chapters
+
+        remaining = [chapter for idx, chapter in enumerate(chapters) if idx not in seen_indices]
+        return prioritized + remaining
 
 
     def _install_requirements(self) -> bool:

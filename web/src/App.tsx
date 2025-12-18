@@ -19,7 +19,7 @@ const CACHED_ALERT_DISMISSED_KEY = 'ebook-tts-cached-alert-dismissed';
 
 export default function App(props?: AppProps): JSX.Element {
   const { client } = props ?? {};
-  const { state, submit, resume, reset, isBusy, cachedJobs } = useConversionFlow(client);
+  const { state, submit, resume, reset, cancel, isBusy, cachedJobs } = useConversionFlow(client);
   const [formVersion, setFormVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<'setup' | 'progress' | 'downloads'>('setup');
   const [userSelectedTab, setUserSelectedTab] = useState(false);
@@ -81,7 +81,7 @@ export default function App(props?: AppProps): JSX.Element {
     if (state.phase === 'success' && activeTab !== 'downloads') {
       setActiveTab('downloads');
     }
-    if (state.phase === 'error') {
+    if (state.phase === 'error' || state.phase === 'cancelled') {
       setActiveTab('progress');
     }
   }, [state.phase, activeTab, userSelectedTab]);
@@ -155,6 +155,9 @@ export default function App(props?: AppProps): JSX.Element {
               onToggleRawLog={() => setShowRawLog((value) => !value)}
               summary={state.summary}
               cliCommand={state.cliCommand}
+              onCancel={state.jobId ? cancel : undefined}
+              canCancel={Boolean(state.jobId && (state.phase === 'polling' || state.phase === 'cancelling'))}
+              cancelDisabled={state.phase === 'cancelling'}
             />
           </Panel>
         ),

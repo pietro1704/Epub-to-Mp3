@@ -6,11 +6,12 @@ export interface ConversionFormValues {
   engine: EngineOption;
   voice?: string;
   chapters?: string;
+  priority?: string;
   footnoteMode: FootnoteMode;
   language?: string;
 }
 
-export type JobState = 'queued' | 'running' | 'finished' | 'failed' | 'interrupted';
+export type JobState = 'queued' | 'running' | 'finished' | 'failed' | 'interrupted' | 'cancelling' | 'cancelled';
 
 export interface DownloadAsset {
   name: string;
@@ -55,7 +56,7 @@ export interface ConversionSummary {
 
 export interface ConversionState {
   jobId?: string;
-  phase: 'idle' | 'submitting' | 'polling' | 'success' | 'error';
+  phase: 'idle' | 'submitting' | 'polling' | 'success' | 'error' | 'cancelling' | 'cancelled';
   log: StatusEntry[];
   downloads: DownloadAsset[];
   error?: string;

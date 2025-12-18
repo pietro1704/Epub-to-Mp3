@@ -19,9 +19,9 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
   const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
   const [showLog, setShowLog] = useState(false);
 
-  // Separate ZIP file from individual chapters
   const zipFile = downloads.find(d => d.name.toLowerCase().endsWith('.zip'));
-  const chapters = downloads.filter(d => !d.name.toLowerCase().endsWith('.zip'));
+  const logFile = downloads.find(d => d.name.toLowerCase().endsWith('.log'));
+  const chapters = downloads.filter((d) => d.name.toLowerCase().endsWith('.mp3'));
 
   const toggleChapter = (url: string) => {
     setExpandedChapters((prev) => {
@@ -70,6 +70,13 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
                   <strong>{t.downloads.downloadZip}</strong>
                   <small>{t.downloads.downloadZipHint(chapters.length)}</small>
                 </span>
+              </a>
+            </div>
+          )}
+          {logFile && (
+            <div className="downloads-panel__logfile">
+              <a href={logFile.url} download={logFile.name} className="downloads-panel__log-link">
+                📄 {logFile.name}
               </a>
             </div>
           )}

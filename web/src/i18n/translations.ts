@@ -77,6 +77,9 @@ export interface FormText {
   chaptersLabel: string;
   chaptersPlaceholder: string;
   chaptersHint: string;
+  priorityLabel: string;
+  priorityPlaceholder: string;
+  priorityHint: string;
   footnoteLegend: string;
   footnoteOptions: FootnoteOptionText[];
   languageLabel: string;
@@ -91,7 +94,7 @@ export interface FormText {
 }
 
 export interface StatusText {
-  phases: Record<'idle' | 'submitting' | 'polling' | 'success' | 'error', string>;
+  phases: Record<'idle' | 'submitting' | 'polling' | 'success' | 'error' | 'cancelling' | 'cancelled', string>;
   jobLabel: (jobId: string) => string;
   placeholder: string;
   errorPrefix: string;
@@ -101,6 +104,9 @@ export interface StatusText {
   etaCalculating: string;
   etaSoon: string;
   etaDone: string;
+  cancelButton: string;
+  cancelButtonPending: string;
+  progressLabel: string;
   summaryTitle: string;
   summaryLanguage: string;
   summaryChapters: string;
@@ -132,6 +138,9 @@ export interface FlowMessages {
   error: (message: string) => string;
   defaultFailure: string;
   defaultError: string;
+  cancelRequested: string;
+  cancelled: string;
+  cancelFailed: (message: string) => string;
 }
 
 export interface Translations {
@@ -211,14 +220,19 @@ export const translations: Record<Locale, Translations> = {
           help: 'Vozes de nuvem da Microsoft. Ótima qualidade e sotaque natural.',
         },
         {
+          value: 'auto',
+          label: 'Automático (mais rápido)',
+          help: 'Escolhe Edge/Coqui/Piper por capítulo para máxima velocidade.',
+        },
+        {
           value: 'piper',
           label: 'Piper (local)',
-          help: 'Modelos incluídos com o app. Funciona offline e é rápido.',
+          help: 'Modelos PT/EN incluídos. Funciona offline, mas exige escolher o idioma.',
         },
         {
           value: 'coqui',
           label: 'Coqui (personalizado)',
-          help: 'Use vozes próprias ou treinadas na sua máquina.',
+          help: 'Motor multilíngue (XTTS ou VITS). Detecta idioma automaticamente.',
         },
       ],
       defaultVoiceLabel: 'Voz padrão com suporte a vários idiomas',
@@ -234,6 +248,9 @@ export const translations: Record<Locale, Translations> = {
       chaptersLabel: 'Quais capítulos você quer ouvir? (opcional)',
       chaptersPlaceholder: 'Ex.: 1,2 ou 3.1 (deixe em branco para todos)',
       chaptersHint: 'Separe os números por vírgula. O app usa todos os capítulos se você deixar vazio.',
+      priorityLabel: 'Quais capítulos devem ter prioridade? (opcional)',
+      priorityPlaceholder: 'Ex.: 1,4 ou Prólogo (sintaxe igual ao campo acima)',
+      priorityHint: 'Capítulos listados aqui são narrados primeiro, depois o restante segue na ordem original.',
       footnoteLegend: 'Como tratar as notas de rodapé?',
       footnoteOptions: [
         {
@@ -276,6 +293,8 @@ export const translations: Record<Locale, Translations> = {
         polling: 'Lendo e convertendo…',
         success: 'Tudo pronto!',
         error: 'Ops, algo deu errado',
+        cancelling: 'Cancelando…',
+        cancelled: 'Cancelado',
       },
       jobLabel: (jobId: string) => `Código do pedido: ${jobId}`,
       placeholder: 'Envie um arquivo para acompanhar o passo a passo aqui.',
@@ -286,6 +305,9 @@ export const translations: Record<Locale, Translations> = {
       etaCalculating: 'calculando…',
       etaSoon: 'quase pronto',
       etaDone: 'concluído',
+      cancelButton: 'Parar conversão',
+      cancelButtonPending: 'Cancelando…',
+      progressLabel: 'Progresso geral',
       summaryTitle: 'Resumo da execução',
       summaryLanguage: 'Idioma detectado',
       summaryChapters: 'Capítulos totais',
@@ -314,6 +336,9 @@ export const translations: Record<Locale, Translations> = {
       error: (message: string) => `Erro: ${message}`,
       defaultFailure: 'A conversão falhou',
       defaultError: 'Erro inesperado',
+      cancelRequested: '🛑 Cancelamento solicitado. Concluindo passo atual…',
+      cancelled: 'Pedido cancelado pelo usuário.',
+      cancelFailed: (message: string) => `Não foi possível cancelar: ${message || 'tente novamente'}`,
     },
   },
   en: {
@@ -380,14 +405,19 @@ export const translations: Record<Locale, Translations> = {
           help: 'Microsoft cloud voices with natural accents.',
         },
         {
+          value: 'auto',
+          label: 'Auto (fastest)',
+          help: 'Chooses Edge/Coqui/Piper per chapter for maximum speed.',
+        },
+        {
           value: 'piper',
           label: 'Piper (local)',
-          help: 'Models bundled with the app. Works offline and is fast.',
+          help: 'Bundled PT/EN voices. Works offline but needs a chosen language.',
         },
         {
           value: 'coqui',
           label: 'Coqui (custom)',
-          help: 'Use your own Coqui voices running on the server.',
+          help: 'XTTS/VITS voices with automatic language detection.',
         },
       ],
       defaultVoiceLabel: 'Default voice with multi-language support',
@@ -403,6 +433,9 @@ export const translations: Record<Locale, Translations> = {
       chaptersLabel: 'Which chapters do you want? (optional)',
       chaptersPlaceholder: 'Example: 1,2 or 3.1 (leave blank for all)',
       chaptersHint: 'Separate numbers with commas. All chapters are used if left blank.',
+      priorityLabel: 'Prioritize specific chapters? (optional)',
+      priorityPlaceholder: 'Example: 1,4 or Prologue (same syntax as above)',
+      priorityHint: 'Chapters listed here will be rendered first, then the remaining ones follow the original order.',
       footnoteLegend: 'How should we read footnotes?',
       footnoteOptions: [
         {
@@ -445,6 +478,8 @@ export const translations: Record<Locale, Translations> = {
         polling: 'Reading and converting…',
         success: 'All done!',
         error: 'Something went wrong',
+        cancelling: 'Cancelling…',
+        cancelled: 'Cancelled',
       },
       jobLabel: (jobId: string) => `Request ID: ${jobId}`,
       placeholder: 'Upload a file to follow the step-by-step updates here.',
@@ -455,6 +490,9 @@ export const translations: Record<Locale, Translations> = {
       etaCalculating: 'calculating…',
       etaSoon: 'almost there',
       etaDone: 'finished',
+      cancelButton: 'Stop conversion',
+      cancelButtonPending: 'Cancelling…',
+      progressLabel: 'Overall progress',
       summaryTitle: 'Run summary',
       summaryLanguage: 'Detected language',
       summaryChapters: 'Total chapters',
@@ -483,6 +521,9 @@ export const translations: Record<Locale, Translations> = {
       error: (message: string) => `Error: ${message}`,
       defaultFailure: 'Conversion failed',
       defaultError: 'Unexpected error',
+      cancelRequested: '🛑 Cancel request received. Finishing current step…',
+      cancelled: 'Request cancelled by the user.',
+      cancelFailed: (message: string) => `Unable to cancel: ${message || 'please try again'}`,
     },
   },
 };
