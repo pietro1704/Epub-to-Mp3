@@ -975,6 +975,9 @@ class AudioConverter:
                     attempted_auto.add(picked_engine)
                     engine_tracker["label"] = picked_engine
                     engine_instance["object"] = auto_engine_pool[picked_engine][1]
+                    # Record engine selection for future ranking
+                    if not self.speed_controller._current_engine:
+                        self.speed_controller.record_engine_switch(picked_engine)
                 else:
                     engine_tracker["label"] = (config.engine or "").lower()
                     engine_instance["object"] = tts_engine
@@ -1437,26 +1440,63 @@ class AudioConverter:
                 continue
         return pool
 
-    @staticmethod
     def _pick_auto_engine(
+        self,
         chapter_chars: int,
         estimated_seconds: float,
         pool: Dict[str, tuple[ConversionConfig, object]],
     ) -> tuple[str, List[str]]:
-        def append(order: List[str], candidate: str) -> None:
-            if candidate in pool and candidate not in order:
-                order.append(candidate)
+        """
+        Pick the best engine based on real-time performance data.
 
-        # Ordem do mais rápido para mais lento: edge > piper > coqui
-        # Testado com 3053 chars: edge=21s (144 chars/s), piper=27s (112 chars/s), coqui=113s (26 chars/s)
-        order: List[str] = []
-        append(order, "edge")
-        append(order, "piper")
-        append(order, "coqui")
+        Uses SpeedController's ranking system to choose the fastest engine.
+        Falls back to static ordering if no performance data available.
+        """
+        available_engines = list(pool.keys())
 
+        if not available_engines:
+            return ("edge", [])
+
+        # Get performance-based ranking from SpeedController
+        rankings = self.speed_controller.get_engine_ranking(available_engines)
+
+        if self.verbose and rankings:
+            print(f"📊 Engine Rankings (based on recent performance):")
+            for engine, score, reason in rankings:
+                print(f"   {engine}: {score:.1f}/100 ({reason})")
+
+        # Use ranked order (best first)
+        order = [engine for engine, _, _ in rankings]
+
+        # Fallback: if no ranking data, use static optimal order
         if not order:
-            order = list(pool.keys())
+            def append(order_list: List[str], candidate: str) -> None:
+                if candidate in pool and candidate not in order_list:
+                    order_list.append(candidate)
+
+            order = []
+            append(order, "edge")   # Fastest when healthy
+            append(order, "piper")  # Good middle ground
+            append(order, "coqui")  # Most reliable but slowest
+
         selected = order[0]
+
+        # Check if we should switch from current engine
+        if hasattr(self.speed_controller, '_current_engine') and self.speed_controller._current_engine:
+            current = self.speed_controller._current_engine
+            if current in available_engines and current != selected:
+                switch_recommendation = self.speed_controller.recommend_engine_switch(
+                    current,
+                    available_engines,
+                    verbose=self.verbose
+                )
+                if switch_recommendation:
+                    new_engine, reason = switch_recommendation
+                    print(f"🔄 AUTO: Trocando {current} → {new_engine}")
+                    print(f"   Motivo: {reason}")
+                    selected = new_engine
+                    self.speed_controller.record_engine_switch(new_engine)
+
         return selected, order
 
     @staticmethod

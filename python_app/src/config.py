@@ -44,9 +44,10 @@ class ConversionConfig:
     verbose: bool = False
     edge_auto_offline_seconds: int = 0  # disabled: Edge handles large chapters via chunking
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
-    edge_chunk_chars: int = 11000  # character budget per Edge chunk before splitting
-    edge_max_segment_seconds: int = 65  # hard limit for each Edge chunk duration
+    edge_chunk_chars: int = 20000  # character budget per Edge chunk before splitting (optimized: 20K)
+    edge_max_segment_seconds: int = 75  # hard limit for each Edge chunk duration (optimized: 75s)
     edge_aggressive_mode: bool = False
+    edge_enable_parallel: bool = True  # enable parallel segment processing (5-6x faster)
 
     def as_dict(self) -> Dict[str, object]:
         """Return a serialisable representation useful for debugging."""
@@ -75,6 +76,7 @@ class ConversionConfig:
             "edge_auto_offline_chars": self.edge_auto_offline_chars,
             "edge_chunk_chars": self.edge_chunk_chars,
             "edge_max_segment_seconds": self.edge_max_segment_seconds,
+            "edge_enable_parallel": self.edge_enable_parallel,
         }
         if self.extra:
             data["extra"] = dict(self.extra)
@@ -391,6 +393,10 @@ class AppConfig:
             "edge_max_segment_seconds",
             _safe_int(os.getenv("EDGE_MAX_SEGMENT_SECONDS"), ConversionConfig.edge_max_segment_seconds),
         )
+        edge_enable_parallel = kwargs.pop(
+            "edge_enable_parallel",
+            os.getenv("EDGE_ENABLE_PARALLEL", "true").lower() in ("true", "1", "yes"),
+        )
 
         config = ConversionConfig(
             engine=engine,
@@ -419,6 +425,7 @@ class AppConfig:
             edge_auto_offline_chars=edge_auto_offline_chars,
             edge_chunk_chars=edge_chunk_chars,
             edge_max_segment_seconds=edge_max_segment_seconds,
+            edge_enable_parallel=edge_enable_parallel,
         )
 
         if kwargs:

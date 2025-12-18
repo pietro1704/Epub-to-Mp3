@@ -5,7 +5,8 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Optional
+from typing import Deque, Dict, Optional, List
+import time
 
 
 @dataclass
@@ -14,6 +15,8 @@ class ChapterSpeedDecision:
 
     timeout_scale: Optional[float] = None
     message: Optional[str] = None
+    switch_engine: Optional[str] = None  # Recommended engine to switch to
+    switch_reason: Optional[str] = None  # Why we recommend switching
 
 
 @dataclass
@@ -44,6 +47,11 @@ class AdaptiveSpeedController:
             "max_segment_seconds": None,
             "words_per_minute": None,
         }
+        # Engine performance tracking for auto-mode
+        self._engine_scores: Dict[str, float] = {}
+        self._last_switch_time: float = 0
+        self._current_engine: Optional[str] = None
+        self._switch_cooldown: float = 300.0  # 5 minutes between switches
 
     def before_chapter(
         self,
@@ -267,6 +275,167 @@ class AdaptiveSpeedController:
         if not chunk or not seconds or not wpm:
             return None
         return f"{int(chunk)} chars, {int(seconds)}s, {int(wpm)} wpm"
+
+    def get_engine_ranking(self, available_engines: List[str]) -> List[tuple[str, float, str]]:
+        """
+        Get engines ranked by performance (best first).
+
+        Returns:
+            List of (engine_name, score, reason) tuples
+        """
+        rankings = []
+
+        for engine in available_engines:
+            score, reason = self._calculate_engine_score(engine)
+            rankings.append((engine, score, reason))
+
+        # Sort by score (higher is better)
+        rankings.sort(key=lambda x: x[1], reverse=True)
+        return rankings
+
+    def _calculate_engine_score(self, engine: str) -> tuple[float, str]:
+        """
+        Calculate performance score for an engine.
+
+        Score components:
+        - Speed (chars/second): Higher is better
+        - Success rate: Higher is better
+        - Consistency: Lower variance is better
+        - Recency: Recent performance weighted more
+
+        Returns:
+            (score, reason) tuple
+        """
+        history = self._history.get(engine, deque())
+
+        if not history:
+            # No data - give neutral score
+            return (50.0, "sem histórico")
+
+        # Calculate metrics
+        recent_items = list(history)[-3:]  # Last 3 chapters
+        if not recent_items:
+            return (50.0, "sem dados recentes")
+
+        # Speed (chars/second)
+        speeds = [
+            item.chars / item.elapsed
+            for item in recent_items
+            if item.success and item.elapsed > 0
+        ]
+
+        if not speeds:
+            return (10.0, "todas falhas recentes")
+
+        avg_speed = sum(speeds) / len(speeds)
+
+        # Success rate
+        successes = sum(1 for item in recent_items if item.success)
+        success_rate = successes / len(recent_items)
+
+        # Consistency (lower std dev is better)
+        if len(speeds) >= 2:
+            mean = sum(speeds) / len(speeds)
+            variance = sum((x - mean) ** 2 for x in speeds) / len(speeds)
+            std_dev = variance ** 0.5
+            consistency = 1.0 / (1.0 + std_dev / mean)  # Normalize
+        else:
+            consistency = 0.5
+
+        # Calculate final score (0-100)
+        # Speed is primary factor (weighted 60%)
+        # Success rate (weighted 30%)
+        # Consistency (weighted 10%)
+        speed_score = min(avg_speed / 5, 100)  # Normalize to 0-100 (500 chars/s = max)
+        success_score = success_rate * 100
+        consistency_score = consistency * 100
+
+        final_score = (
+            speed_score * 0.6 +
+            success_score * 0.3 +
+            consistency_score * 0.1
+        )
+
+        reason = f"{int(avg_speed)} chars/s, {int(success_rate*100)}% sucesso"
+        return (final_score, reason)
+
+    def recommend_engine_switch(
+        self,
+        current_engine: str,
+        available_engines: List[str],
+        verbose: bool = False
+    ) -> Optional[tuple[str, str]]:
+        """
+        Recommend switching to a different engine if current one is underperforming.
+
+        Returns:
+            (recommended_engine, reason) or None if no switch recommended
+        """
+        if not available_engines or len(available_engines) < 2:
+            return None
+
+        # Respect cooldown period
+        now = time.time()
+        if now - self._last_switch_time < self._switch_cooldown:
+            return None
+
+        # Get current engine performance
+        current_score, current_reason = self._calculate_engine_score(current_engine)
+
+        # Check if current engine is performing poorly
+        if current_score >= 60:
+            # Current engine is doing fine
+            return None
+
+        # Find best alternative
+        rankings = self.get_engine_ranking(available_engines)
+
+        if verbose:
+            print(f"📊 Engine Performance Rankings:")
+            for engine, score, reason in rankings:
+                indicator = "⭐" if engine == current_engine else "  "
+                print(f"{indicator} {engine}: {score:.1f} ({reason})")
+
+        # Get best alternative (skip current engine)
+        for engine, score, reason in rankings:
+            if engine == current_engine:
+                continue
+
+            # Switch if alternative is significantly better (20+ point difference)
+            if score > current_score + 20:
+                return (engine, f"{engine} mais rápido ({reason}) vs {current_engine} ({current_reason})")
+
+        return None
+
+    def record_engine_switch(self, new_engine: str) -> None:
+        """Record that we switched to a new engine."""
+        self._current_engine = new_engine
+        self._last_switch_time = time.time()
+
+    def should_enable_parallel(self, engine: str) -> bool:
+        """
+        Determine if parallel processing should be enabled for this engine.
+
+        Returns True if:
+        - Engine is Edge (supports parallel)
+        - Recent performance is good (no recent failures)
+        """
+        if engine != "edge":
+            return False
+
+        history = self._history.get("edge", deque())
+        if not history:
+            return True  # Default to enabled
+
+        # Check last 3 chapters
+        recent = list(history)[-3:]
+        failures = sum(1 for item in recent if not item.success)
+
+        # Disable parallel if too many failures
+        if failures >= 2:
+            return False
+
+        return True
 
 
 __all__ = ["AdaptiveSpeedController", "ChapterSpeedDecision"]

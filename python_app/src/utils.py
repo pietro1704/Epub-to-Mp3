@@ -234,4 +234,96 @@ class TextValidator:
         return (len(words) / max(words_per_minute, 1)) * 60.0
 
 
-__all__ = ["FileManager", "AudioProcessor", "TextValidator"]
+class TimeFormatter:
+    """Format time durations in human-readable format."""
+
+    @staticmethod
+    def format_time(seconds: float, compact: bool = False) -> str:
+        """
+        Format seconds into d, h, m, s format.
+
+        Args:
+            seconds: Time in seconds
+            compact: If True, returns compact format (e.g., "1h 30m").
+                    If False, returns full format (e.g., "1 hora 30 minutos")
+
+        Returns:
+            Formatted time string
+
+        Examples:
+            >>> TimeFormatter.format_time(65)
+            '1m 5s'
+            >>> TimeFormatter.format_time(3665)
+            '1h 1m 5s'
+            >>> TimeFormatter.format_time(90125)
+            '1d 1h 2m 5s'
+        """
+        if seconds < 0:
+            return "0s"
+
+        seconds = int(seconds)
+
+        days = seconds // 86400
+        seconds %= 86400
+        hours = seconds // 3600
+        seconds %= 3600
+        minutes = seconds // 60
+        seconds %= 60
+
+        parts = []
+        if days > 0:
+            parts.append(f"{days}d")
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+        if seconds > 0 or not parts:  # Always show seconds if no other unit
+            parts.append(f"{seconds}s")
+
+        return " ".join(parts)
+
+    @staticmethod
+    def format_eta(seconds_remaining: float) -> str:
+        """
+        Format ETA (Estimated Time to Arrival) with appropriate precision.
+
+        Args:
+            seconds_remaining: Time remaining in seconds
+
+        Returns:
+            Formatted ETA string
+
+        Examples:
+            >>> TimeFormatter.format_eta(45)
+            '45s'
+            >>> TimeFormatter.format_eta(3665)
+            '1h 1m'
+        """
+        if seconds_remaining < 0:
+            return "--"
+
+        if seconds_remaining < 60:
+            # Less than 1 minute: show seconds
+            return f"{int(seconds_remaining)}s"
+
+        # More than 1 minute: omit seconds for cleaner display
+        seconds = int(seconds_remaining)
+
+        days = seconds // 86400
+        seconds %= 86400
+        hours = seconds // 3600
+        seconds %= 3600
+        minutes = seconds // 60
+
+        parts = []
+        if days > 0:
+            parts.append(f"{days}d")
+        if hours > 0:
+            parts.append(f"{hours}h")
+        if minutes > 0:
+            parts.append(f"{minutes}m")
+
+        return " ".join(parts) if parts else "--"
+
+
+__all__ = ["FileManager", "AudioProcessor", "TextValidator", "TimeFormatter"]

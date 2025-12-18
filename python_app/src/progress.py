@@ -9,6 +9,8 @@ import sys
 import time
 from typing import Optional
 
+from .utils import TimeFormatter
+
 
 class ProgressTracker:
     """Tracks conversion progress and prints a live ETA/percentage bar."""
@@ -79,7 +81,8 @@ class ProgressTracker:
         if self.total_chapters and self.completed_chapters < self.total_chapters:
             self.completed_chapters = self.total_chapters
             self._render("Finalizando")
-        print(f"\n✅ Conversão concluída em {self._format_time(elapsed)}")
+        formatted_time = TimeFormatter.format_time(elapsed)
+        print(f"\n✅ Conversão concluída em {formatted_time}")
 
     def mark_phase_start(self) -> None:
         """Reset the timer for the active phase (after waiting slots)."""
@@ -104,7 +107,7 @@ class ProgressTracker:
             progress_pct = 0.01
         elapsed = now - self.start_time
         eta_seconds = self._eta_seconds(elapsed)
-        eta_str = self._format_time(eta_seconds) if eta_seconds > 0 else "--"
+        eta_str = TimeFormatter.format_eta(eta_seconds) if eta_seconds > 0 else "--"
         bar = self._generate_progress_bar(progress_pct)
 
         spinner = ""
@@ -122,10 +125,10 @@ class ProgressTracker:
             f"tempo restante: {eta_str}"
         )
         if display_status:
-            chapter_elapsed = self._format_time(now - self._chapter_start_time)
-            phase_elapsed = self._format_time(now - self._phase_start_time)
+            chapter_elapsed = TimeFormatter.format_time(now - self._chapter_start_time)
+            phase_elapsed = TimeFormatter.format_time(now - self._phase_start_time)
             if status.startswith("⌛"):
-                wait_elapsed = self._format_time(now - self._chapter_start_time)
+                wait_elapsed = TimeFormatter.format_time(now - self._chapter_start_time)
                 message += f" | {display_status} (espera: {wait_elapsed})"
             else:
                 message += f" | {display_status} (fase: {phase_elapsed} | capítulo: {chapter_elapsed})"
@@ -161,13 +164,3 @@ class ProgressTracker:
     def _generate_progress_bar(self, progress_pct: float, bar_width: int = 30) -> str:
         filled = int(bar_width * progress_pct / 100)
         return "█" * filled + "░" * (bar_width - filled)
-
-    def _format_time(self, seconds: float) -> str:
-        seconds = int(max(seconds, 0))
-        mins, secs = divmod(seconds, 60)
-        hours, mins = divmod(mins, 60)
-        if hours:
-            return f"{hours}h {mins}m"
-        if mins:
-            return f"{mins}m {secs}s"
-        return f"{secs}s"

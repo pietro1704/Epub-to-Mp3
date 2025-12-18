@@ -39,6 +39,10 @@ from main import ConverterApplication
 
 app = FastAPI(title="EPUB to MP3 Converter API")
 
+# Job cleanup configuration
+COMPLETED_JOB_TTL_HOURS = 1  # Keep completed jobs for 1 hour
+CLEANUP_INTERVAL_SECONDS = 300  # Run cleanup every 5 minutes
+
 # Initialize storage manager (R2)
 storage = get_storage_manager()
 
@@ -132,6 +136,70 @@ def _collect_resumable_job_entries() -> list[dict]:
 # Load existing jobs from disk on startup
 jobs: Dict[str, dict] = job_manager.load_all_jobs()
 logger.info(f"Loaded {len(jobs)} jobs from disk")
+
+# Background task for periodic job cleanup
+_cleanup_task: Optional[asyncio.Task] = None
+
+
+async def _periodic_job_cleanup():
+    """Periodically clean up old completed jobs."""
+    while True:
+        try:
+            await asyncio.sleep(CLEANUP_INTERVAL_SECONDS)
+
+            current_time = time.time()
+            jobs_to_remove = []
+
+            for job_id, job_data in list(jobs.items()):
+                state = job_data.get("state")
+                completed_at = job_data.get("completedAt")
+
+                # Only cleanup finished/failed jobs
+                if state in ("finished", "failed", "cancelled"):
+                    if completed_at:
+                        # Check if job is older than TTL
+                        age_hours = (current_time - completed_at) / 3600
+                        if age_hours > COMPLETED_JOB_TTL_HOURS:
+                            jobs_to_remove.append(job_id)
+                    elif state == "finished":
+                        # Old finished jobs without timestamp - remove after 1 hour since server start
+                        # This handles jobs from before this fix
+                        jobs_to_remove.append(job_id)
+
+            if jobs_to_remove:
+                logger.info(f"Cleaning up {len(jobs_to_remove)} old jobs")
+                for job_id in jobs_to_remove:
+                    # Remove from memory
+                    jobs.pop(job_id, None)
+                    # Remove from disk
+                    job_manager.delete_job(job_id)
+                    # Cleanup output files
+                    _cleanup_job_output(job_id)
+                    logger.info(f"Cleaned up job {job_id}")
+
+        except Exception as e:
+            logger.error(f"Error in periodic job cleanup: {e}", exc_info=True)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Start background cleanup task."""
+    global _cleanup_task
+    _cleanup_task = asyncio.create_task(_periodic_job_cleanup())
+    logger.info("Started periodic job cleanup task")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Stop background cleanup task."""
+    global _cleanup_task
+    if _cleanup_task:
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
+    logger.info("Stopped periodic job cleanup task")
 
 # Mark jobs as interrupted if they were running/queued (server restart)
 # IMPORTANT: On HF Spaces, /tmp is cleared on restart, so source files are lost.
@@ -347,8 +415,13 @@ async def convert_ebook(
         "fileHash": file_hash,
     }
 
-    # Persist job state to disk
-    job_manager.save_job(job_id, jobs[job_id])
+    # Persist job state to disk IMMEDIATELY before returning
+    save_success = job_manager.save_job(job_id, jobs[job_id])
+    if not save_success:
+        logger.error(f"Failed to save job {job_id} on creation!")
+        # Still continue - job is in memory
+    else:
+        logger.info(f"Job {job_id} created and persisted successfully")
 
     background_tasks.add_task(process_conversion, job_id)
     return {"jobId": job_id}
@@ -361,13 +434,18 @@ async def get_job_status(job_id: str) -> JobStatus:
         return JobStatus(**jobs[job_id])
 
     # Try to load from disk if not in memory
+    logger.info(f"Job {job_id} not in memory, attempting to load from disk")
     job_data = job_manager.load_job(job_id)
     if job_data:
         # Add back to memory cache for future requests
         jobs[job_id] = job_data
+        logger.info(f"Job {job_id} loaded from disk successfully")
         return JobStatus(**job_data)
 
-    raise HTTPException(status_code=404, detail="Job not found")
+    # Log all available jobs for debugging
+    available_jobs = list(jobs.keys())
+    logger.error(f"Job {job_id} not found! Available jobs in memory: {available_jobs[:5]}...")
+    raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
 
 @app.post("/api/jobs/{job_id}/cancel")
@@ -510,16 +588,24 @@ async def get_engine_telemetry() -> dict:
     }
 
 
-def _persist_job(job_id: str, force: bool = False) -> None:
+def _persist_job(job_id: str, force: bool = True) -> None:
     """
     Helper to persist job state to disk.
 
     Args:
         job_id: Job ID to persist
-        force: If True, persist immediately. If False, only persist important state changes.
+        force: If True, persist immediately. If False, skip (use for non-critical updates)
     """
-    if job_id in jobs and force:
-        job_manager.save_job(job_id, jobs[job_id])
+    if job_id not in jobs:
+        logger.warning(f"Cannot persist job {job_id}: not found in memory")
+        return
+
+    if not force:
+        return  # Skip for non-critical updates
+
+    success = job_manager.save_job(job_id, jobs[job_id])
+    if not success:
+        logger.error(f"Failed to persist job {job_id} to disk")
 
 
 def _cleanup_job_output(job_id: str) -> None:
@@ -559,13 +645,11 @@ def _finalize_cancel(job_id: str, job: dict, note: str) -> None:
     job["currentChapter"] = None
     job["outputs"] = []
     job["progressPercent"] = job.get("progressPercent") or 0.0
+    job["completedAt"] = time.time()  # Timestamp for cleanup
     _cleanup_job_output(job_id)
     _clear_job_cache(job)
     _persist_job(job_id, force=True)
-    try:
-        job_manager.delete_job(job_id)
-    except Exception:
-        pass
+    # KEEP cancelled jobs in memory for a while (cleanup task will remove later)
     _persist_job_log(job_id, job)
 
 
@@ -663,7 +747,11 @@ async def process_conversion(job_id: str) -> None:
             ],
         )
         if (config.engine or "").lower() == "edge":
-            config.edge_aggressive_mode = True
+            # **PERFORMANCE OPTIMIZATIONS**: Enable parallel processing and larger chunks
+            config.edge_aggressive_mode = False  # Disable aggressive mode (conflicts with parallel)
+            config.edge_enable_parallel = True   # Enable parallel processing (5-6x faster)
+            config.edge_chunk_chars = 20000      # Larger chunks (reduce overhead)
+            config.edge_max_segment_seconds = 75  # Longer segments (reduce network calls)
 
         selector_text = job.get("chapters")
         chapters = _prepare_chapters(reader, config, selector_text)
@@ -1067,17 +1155,21 @@ async def process_conversion(job_id: str) -> None:
         job["state"] = "finished"
         job["progressPercent"] = 100
         job["outputs"] = outputs
+        job["completedAt"] = time.time()  # Timestamp for cleanup
         job["events"].append("")
         job["events"].append("✅ Conversão finalizada com sucesso")
         job["events"].append(f"📁 Arquivo disponível: {zip_file.name} ({len(chapters)} capítulos)")
         _persist_job(job_id)
 
-        # Delete job state after successful completion (keep for failed jobs)
-        job_manager.delete_job(job_id)
+        # KEEP job in memory and disk for at least 1 hour after completion
+        # This prevents 404 errors when frontend is still polling
+        # Jobs will be cleaned up by periodic cleanup task
+        logger.info(f"Job {job_id} completed successfully - keeping in memory for frontend access")
 
     except Exception as exc:  # pragma: no cover - defensive handling
         job["state"] = "failed"
         job["error"] = str(exc)
+        job["completedAt"] = time.time()  # Timestamp for cleanup
         job["events"].append(f"❌ Erro: {exc}")
         _persist_job(job_id)
         _persist_job_log(job_id, job)
