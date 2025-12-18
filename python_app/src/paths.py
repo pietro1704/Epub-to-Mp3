@@ -3,6 +3,7 @@ Centralized path management for the Epub-to-Mp3 project.
 Ensures cache and output directories are always in the project root,
 regardless of where Python commands are executed from.
 """
+import os
 from pathlib import Path
 
 
@@ -44,6 +45,19 @@ OUTPUT_DIR = PROJECT_ROOT / "output"
 # Cria os diretórios se não existirem
 CACHE_DIR.mkdir(exist_ok=True, parents=True)
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+
+# Diretórios dedicados para modelos/recursos pesados
+COQUI_CACHE_DIR = CACHE_DIR / "coqui_models"
+PIPER_MODEL_CACHE_DIR = CACHE_DIR / "piper_models"
+TELEMETRY_DIR = CACHE_DIR / "telemetry"
+COQUI_CACHE_DIR.mkdir(exist_ok=True, parents=True)
+PIPER_MODEL_CACHE_DIR.mkdir(exist_ok=True, parents=True)
+TELEMETRY_DIR.mkdir(exist_ok=True, parents=True)
+
+# Força bibliotecas externas a reutilizarem o cache persistente dentro do projeto
+os.environ.setdefault("TTS_HOME", str(COQUI_CACHE_DIR))
+os.environ.setdefault("COQUI_TTS_CACHE_DIR", str(COQUI_CACHE_DIR))
+os.environ.setdefault("PIPER_MODEL_DIR", str(PIPER_MODEL_CACHE_DIR))
 
 
 def get_cache_path(*parts: str) -> Path:

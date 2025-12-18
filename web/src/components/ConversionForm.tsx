@@ -1,6 +1,7 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from '../i18n/I18nProvider';
 import { ConversionFormValues, EngineOption, FootnoteMode } from '../types/conversion';
+import { API_BASE_URL, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../config';
 
 interface ConversionFormProps {
   isSubmitting: boolean;
@@ -10,11 +11,12 @@ interface ConversionFormProps {
 interface VoiceInfo {
   name: string;
   multilingual: boolean;
+  label?: string;
 }
 
-const VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
+const DEFAULT_VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
   edge: [
-    { name: 'pt-BR-ThalitaNeural', multilingual: true },
+    { name: 'pt-BR-ThalitaMultilingualNeural', multilingual: true, label: 'Thalita – pt-BR (multilingual)' },
     { name: 'pt-BR-FranciscaNeural', multilingual: false },
     { name: 'en-US-JennyNeural', multilingual: false },
     { name: 'es-ES-ElviraNeural', multilingual: false },
@@ -29,7 +31,7 @@ const VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
   ],
   auto: [
     { name: 'tts_models/pt/cv/vits', multilingual: false },
-    { name: 'pt-BR-ThalitaNeural', multilingual: true },
+    { name: 'pt-BR-ThalitaMultilingualNeural', multilingual: true },
   ],
 };
 
@@ -44,7 +46,7 @@ interface EngineInsights {
 
 const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
   edge: {
-    defaultVoice: 'pt-BR-ThalitaNeural',
+    defaultVoice: 'pt-BR-ThalitaMultilingualNeural',
     multiLingual: true,
     autoLanguage: true,
     languages: ['auto'],
@@ -88,6 +90,7 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
   const initialEngine: EngineOption = 'auto';
   const initialMeta = getEngineMeta(initialEngine);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineOption>(initialEngine);
   const [voice, setVoice] = useState(initialMeta.defaultVoice);
   const [chapters, setChapters] = useState('');
@@ -95,20 +98,73 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
   const [footnoteMode, setFootnoteMode] = useState<FootnoteMode>('inline');
   const [language, setLanguage] = useState<string>(initialMeta.autoLanguage ? 'auto' : initialMeta.languages[0] ?? '');
   const [showMissingFileError, setShowMissingFileError] = useState(false);
+  const [voiceCatalog, setVoiceCatalog] = useState<Record<string, VoiceInfo[]> | null>(null);
+  const [voiceLoading, setVoiceLoading] = useState(false);
+  const [voiceLoadFailed, setVoiceLoadFailed] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchVoices = async () => {
+      setVoiceLoading(true);
+      setVoiceLoadFailed(false);
+      try {
+        const base = (API_BASE_URL || '/api').replace(/\/$/, '');
+        const response = await fetch(`${base}/voices`);
+        if (!response.ok) {
+          throw new Error(`Failed to load voices: ${response.status}`);
+        }
+        const payload = await response.json();
+        const voiceEntries = payload?.voices as Record<string, Array<Record<string, unknown>>> | undefined;
+        if (!voiceEntries || !isMounted) {
+          return;
+        }
+        const normalized: Record<string, VoiceInfo[]> = {};
+        Object.entries(voiceEntries).forEach(([engineKey, entries]) => {
+          normalized[engineKey] = (entries || []).map((entry) => {
+            const id = String(entry?.id ?? entry?.name ?? '');
+            return {
+              name: id,
+              label: typeof entry?.label === 'string' ? entry.label : id,
+              multilingual: Boolean(entry?.multilingual),
+            };
+          }).filter((entry) => !!entry.name);
+        });
+        if (Object.keys(normalized).length > 0) {
+          setVoiceCatalog(normalized);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setVoiceLoadFailed(true);
+        }
+      } finally {
+        if (isMounted) {
+          setVoiceLoading(false);
+        }
+      }
+    };
+
+    fetchVoices();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const engineMeta = useMemo<EngineInsights>(() => getEngineMeta(engine), [engine]);
-  const voiceSuggestionListId = useMemo(() => `voices-${engine}`, [engine]);
+  const maxUploadMbDisplay = Math.round(MAX_UPLOAD_MB);
+  const voiceSource = voiceCatalog ?? DEFAULT_VOICE_SUGGESTIONS;
   const voiceSuggestions = useMemo(() => {
     const voices: VoiceInfo[] = [];
     const seenNames = new Set<string>();
 
     if (engineMeta.defaultVoice && !seenNames.has(engineMeta.defaultVoice)) {
-      const defaultInfo = (VOICE_SUGGESTIONS[engine] ?? []).find(v => v.name === engineMeta.defaultVoice);
-      voices.push(defaultInfo ?? { name: engineMeta.defaultVoice, multilingual: false });
+      const defaultInfo = (voiceSource[engine] ?? []).find((v) => v.name === engineMeta.defaultVoice);
+      voices.push(defaultInfo ?? { name: engineMeta.defaultVoice, multilingual: false, label: engineMeta.defaultVoice });
       seenNames.add(engineMeta.defaultVoice);
     }
 
-    (VOICE_SUGGESTIONS[engine] ?? []).forEach((voiceInfo) => {
+    (voiceSource[engine] ?? []).forEach((voiceInfo) => {
       if (!seenNames.has(voiceInfo.name)) {
         voices.push(voiceInfo);
         seenNames.add(voiceInfo.name);
@@ -116,7 +172,7 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
     });
 
     return voices;
-  }, [engine, engineMeta.defaultVoice]);
+  }, [engine, engineMeta.defaultVoice, voiceCatalog]);
 
   const currentVoiceMultilingual = useMemo(() => {
     return voiceSuggestions.find(v => v.name === voice)?.multilingual ?? false;
@@ -126,6 +182,10 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
     event.preventDefault();
     if (!selectedFile) {
       setShowMissingFileError(true);
+      setFileError(null);
+      return;
+    }
+    if (fileError) {
       return;
     }
 
@@ -159,6 +219,7 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
       const file = new File([blob], 'sample.epub', { type: 'application/epub+zip' });
       setSelectedFile(file);
       setShowMissingFileError(false);
+      setFileError(null);
     } catch (error) {
       console.error('Failed to load sample book:', error);
     }
@@ -177,6 +238,14 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
             disabled={isSubmitting}
             onChange={(event) => {
               const file = event.target.files?.[0] ?? null;
+              if (file && file.size > MAX_UPLOAD_BYTES) {
+                setSelectedFile(null);
+                setFileError(t.form.errorFileTooLarge(maxUploadMbDisplay));
+                setShowMissingFileError(false);
+                event.target.value = '';
+                return;
+              }
+              setFileError(null);
               setSelectedFile(file);
               if (file) {
                 setShowMissingFileError(false);
@@ -194,6 +263,11 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
             {t.form.useSampleButton}
           </button>
         </div>
+        {fileError && (
+          <p role="alert" className="form-error">
+            {fileError}
+          </p>
+        )}
         {selectedFile && (
           <p className="form-hint form-hint--filename" title={selectedFile.name}>
             <span aria-hidden="true">📄</span>
@@ -255,17 +329,26 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
           disabled={isSubmitting}
           onChange={(event) => setVoice(event.target.value)}
         >
-          {voiceSuggestions.map((voiceInfo) => (
-            <option key={voiceInfo.name} value={voiceInfo.name}>
-              {voiceInfo.name} {voiceInfo.multilingual ? '🌐' : ''}
-            </option>
-          ))}
+          {voiceSuggestions.map((voiceInfo) => {
+            const label = voiceInfo.label && voiceInfo.label !== voiceInfo.name
+              ? `${voiceInfo.label} • ${voiceInfo.name}`
+              : voiceInfo.label ?? voiceInfo.name;
+            return (
+              <option key={voiceInfo.name} value={voiceInfo.name}>
+                {label} {voiceInfo.multilingual ? '🌐' : ''}
+              </option>
+            );
+          })}
         </select>
         <p className="form-hint">
           {currentVoiceMultilingual && '🌐 '}
           {t.form.voiceHint}
           {currentVoiceMultilingual && ` ${t.form.voiceMultilingualHint}`}
         </p>
+        {voiceLoading && <p className="form-hint">{t.form.voiceLoading}</p>}
+        {voiceLoadFailed && (
+          <p className="form-hint form-hint--warning">{t.form.voiceLoadFailed}</p>
+        )}
       </fieldset>
 
       {engineMeta.autoLanguage ? (

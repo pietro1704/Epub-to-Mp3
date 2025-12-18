@@ -58,7 +58,7 @@ describe('App integration', () => {
     expect(submit).toHaveBeenCalledWith({
       file,
       engine: 'edge',
-      voice: 'pt-BR-ThalitaNeural',
+      voice: 'pt-BR-ThalitaMultilingualNeural',
       chapters: undefined,
       footnoteMode: 'inline',
       language: undefined,

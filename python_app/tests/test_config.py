@@ -12,6 +12,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from src.config import ConversionConfig, AppConfig, VoiceConfigProvider
+from src.paths import COQUI_CACHE_DIR, PIPER_MODEL_CACHE_DIR
 
 
 class TestConversionConfig(unittest.TestCase):
@@ -242,6 +243,30 @@ class TestVoiceConfigProvider(unittest.TestCase):
                 self.assertEqual(models, {})
             finally:
                 os.chdir(original_cwd)
+
+    def test_voice_suggestions_shape(self):
+        """Ensure voice suggestions list includes known engines."""
+        suggestions = self.provider.get_voice_suggestions()
+        self.assertIsInstance(suggestions, dict)
+        for key in ("edge", "coqui", "piper", "auto"):
+            self.assertIn(key, suggestions)
+            self.assertIsInstance(suggestions[key], list)
+            for entry in suggestions[key]:
+                self.assertIn("id", entry)
+                self.assertIn("label", entry)
+
+
+class TestPathConfiguration(unittest.TestCase):
+    """Ensure cache directories are enforced via environment variables."""
+
+    def test_coqui_cache_env(self):
+        expected = str(COQUI_CACHE_DIR)
+        self.assertEqual(os.environ.get("TTS_HOME"), expected)
+        self.assertEqual(os.environ.get("COQUI_TTS_CACHE_DIR"), expected)
+
+    def test_piper_cache_env(self):
+        expected = str(PIPER_MODEL_CACHE_DIR)
+        self.assertEqual(os.environ.get("PIPER_MODEL_DIR"), expected)
 
 
 class TestConstants(unittest.TestCase):

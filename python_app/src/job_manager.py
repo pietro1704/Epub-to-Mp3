@@ -191,7 +191,20 @@ class JobManager:
         resumable_jobs = []
 
         for job_id in self.list_all_jobs():
-            job_data = self.load_job(job_id)
+            job_file = self._get_job_file(job_id)
+            if not job_file.exists():
+                continue
+
+            try:
+                with open(job_file, 'r', encoding='utf-8') as handle:
+                    raw_data = json.load(handle)
+            except Exception:
+                continue
+
+            saved_at = raw_data.get("_saved_at", "")
+            raw_data.pop("_saved_at", None)
+            self._memory_cache[job_id] = raw_data
+            job_data = raw_data
 
             if not job_data:
                 continue
@@ -205,7 +218,7 @@ class JobManager:
                     "state": state,
                     "bookTitle": job_data.get("bookTitle", "Livro Desconhecido"),
                     "fileName": Path(job_data.get("file_path", "")).name if job_data.get("file_path") else "unknown",
-                    "savedAt": job_data.get("_saved_at", ""),
+                    "savedAt": saved_at,
                     "chaptersCompleted": job_data.get("chaptersCompleted", 0),
                     "chaptersTotal": job_data.get("chaptersTotal"),
                 })

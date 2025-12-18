@@ -526,6 +526,10 @@ select {
   color: var(--hint-color);
 }
 
+.form-hint--warning {
+  color: #b45309;
+}
+
 .form-hint--filename {
   display: flex;
   align-items: center;
@@ -822,6 +826,80 @@ select {
   font-weight: 600;
   color: var(--text-primary);
   font-size: 0.95rem;
+}
+
+.chapter-progress {
+  margin-top: 1.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  background: rgba(99, 102, 241, 0.04);
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.chapter-progress__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.chapter-progress__header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.chapter-progress__totals {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.chapter-progress__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.chapter-progress__item {
+  display: grid;
+  grid-template-columns: 1.5rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.25rem;
+  border-radius: 0.5rem;
+}
+
+.chapter-progress__item--processing {
+  background: rgba(59, 130, 246, 0.12);
+}
+
+.chapter-progress__item--failed,
+.chapter-progress__item--cancelled {
+  background: rgba(220, 38, 38, 0.12);
+}
+
+.chapter-progress__item--skipped {
+  background: rgba(245, 158, 11, 0.12);
+}
+
+.chapter-progress__icon {
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.chapter-progress__name {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+
+.chapter-progress__status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
 }
 
 .status-chip {

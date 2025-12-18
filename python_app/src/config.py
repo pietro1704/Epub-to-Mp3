@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, Optional
+from typing import Dict, Iterable, List, Optional
 
 from .paths import OUTPUT_DIR, CACHE_DIR
 
@@ -46,6 +46,7 @@ class ConversionConfig:
     edge_auto_offline_chars: int = 9000  # switch Edge→offline for very long chapters
     edge_chunk_chars: int = 11000  # character budget per Edge chunk before splitting
     edge_max_segment_seconds: int = 65  # hard limit for each Edge chunk duration
+    edge_aggressive_mode: bool = False
 
     def as_dict(self) -> Dict[str, object]:
         """Return a serialisable representation useful for debugging."""
@@ -84,14 +85,43 @@ class VoiceConfigProvider:
     """Expose curated voices and models used by the CLI and tests."""
 
     def __init__(self) -> None:
+        self._edge_voice_catalog: List[Dict[str, object]] = [
+            {"id": "pt-BR-ThalitaMultilingualNeural", "label": "Thalita – pt-BR (multilingual)", "multilingual": True, "language": "pt-BR"},
+            {"id": "pt-BR-FranciscaNeural", "label": "Francisca – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-AntonioNeural", "label": "Antonio – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-BrendaNeural", "label": "Brenda – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-ElzaNeural", "label": "Elza – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-GiovannaNeural", "label": "Giovanna – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-LeilaNeural", "label": "Leila – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-LeticiaNeural", "label": "Leticia – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-ManuelaNeural", "label": "Manuela – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-YaraNeural", "label": "Yara – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-DonatoNeural", "label": "Donato – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-FabioNeural", "label": "Fabio – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-HumbertoNeural", "label": "Humberto – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-JulioNeural", "label": "Julio – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-NicolauNeural", "label": "Nicolau – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "pt-BR-ValerioNeural", "label": "Valerio – pt-BR", "multilingual": False, "language": "pt-BR"},
+            {"id": "en-US-JennyNeural", "label": "Jenny – en-US", "multilingual": False, "language": "en-US"},
+            {"id": "es-ES-ElviraNeural", "label": "Elvira – es-ES", "multilingual": False, "language": "es-ES"},
+        ]
         self._edge_voices = {
-            "1": ("pt-BR-ThalitaMultilingualNeural", "Thalita – pt-BR (multilingual)"),
-            "2": ("pt-BR-AntonioNeural", "Antonio – pt-BR"),
-            "3": ("en-US-GuyNeural", "Guy – en-US"),
+            str(index): (entry["id"], entry["label"])
+            for index, entry in enumerate(self._edge_voice_catalog, start=1)
         }
+        self._coqui_model_catalog: List[Dict[str, object]] = [
+            {"id": "tts_models/multilingual/multi-dataset/xtts_v2", "label": "XTTS v2", "description": "Modelo multilingue universal", "multilingual": True, "low_resource": False},
+            {"id": "tts_models/pt/cv/vits", "label": "VITS pt-BR", "description": "Modelo otimizado para português", "multilingual": False, "low_resource": True},
+            {"id": "tts_models/multilingual/multi-dataset/xtts_v1", "label": "XTTS v1", "description": "Modelo compatível com GPU antiga", "multilingual": True, "low_resource": False},
+        ]
         self._coqui_models = {
-            "1": ("tts_models/multilingual/multi-dataset/xtts_v2", "XTTS v2", "Modelo multilingue universal", False),
-            "2": ("tts_models/pt/cv/vits", "VITS pt-BR", "Modelo treinado para português", True),
+            str(index): (
+                entry["id"],
+                entry["label"],
+                entry.get("description", ""),
+                bool(entry.get("low_resource")),
+            )
+            for index, entry in enumerate(self._coqui_model_catalog, start=1)
         }
         self._edge_language_map = {
             "pt": "pt-BR-ThalitaMultilingualNeural",
@@ -109,6 +139,16 @@ class VoiceConfigProvider:
             "pt": "pt_BR",
             "en": "en_US",
         }
+        self._piper_model_catalog: List[Dict[str, object]] = [
+            {"id": "pt_BR-faber-medium.onnx", "label": "Faber medium (pt-BR)", "language": "pt-BR", "multilingual": False},
+            {"id": "pt_BR-edresson-low.onnx", "label": "Edresson low (pt-BR)", "language": "pt-BR", "multilingual": False},
+            {"id": "en_US-lessac-medium.onnx", "label": "Lessac medium (en-US)", "language": "en-US", "multilingual": False},
+        ]
+        self._auto_voice_catalog = [
+            {"id": "pt-BR-ThalitaMultilingualNeural", "label": "Edge Thalita (auto)", "multilingual": True, "language": "pt-BR"},
+            {"id": "tts_models/pt/cv/vits", "label": "Coqui VITS (auto)", "multilingual": False, "language": "pt-BR"},
+            {"id": "tts_models/multilingual/multi-dataset/xtts_v2", "label": "XTTS v2 (auto)", "multilingual": True, "language": "multi"},
+        ]
 
     @property
     def edge_voices(self) -> Dict[str, tuple[str, str]]:
@@ -118,10 +158,46 @@ class VoiceConfigProvider:
     def coqui_models(self) -> Dict[str, tuple[str, str, str, bool]]:
         return dict(self._coqui_models)
 
+    def get_voice_suggestions(self) -> Dict[str, List[Dict[str, object]]]:
+        """
+        Return curated voice/model suggestions grouped by engine.
+        Structure is simple so the frontend can show hints dynamically.
+        """
+        def clone(entries: List[Dict[str, object]]) -> List[Dict[str, object]]:
+            return [
+                {
+                    "id": entry.get("id"),
+                    "label": entry.get("label"),
+                    "multilingual": bool(entry.get("multilingual")),
+                    "language": entry.get("language"),
+                    "description": entry.get("description"),
+                }
+                for entry in entries
+            ]
+
+        piper_entries: List[Dict[str, object]] = []
+        for entry in self._piper_model_catalog:
+            candidate = dict(entry)
+            candidate["id"] = entry["id"]
+            candidate["label"] = entry["label"]
+            candidate["multilingual"] = bool(entry.get("multilingual"))
+            candidate["language"] = entry.get("language")
+            piper_entries.append(candidate)
+
+        return {
+            "edge": clone(self._edge_voice_catalog),
+            "coqui": clone(self._coqui_model_catalog),
+            "piper": piper_entries,
+            "auto": clone(self._auto_voice_catalog),
+        }
+
     def get_piper_models(self, models_dir: Optional[Path] = None) -> Dict[str, Dict[str, object]]:
         """Discover Piper models from the configured or default locations."""
 
         candidate_dirs = []
+        env_dir = os.getenv("PIPER_MODEL_DIR")
+        if env_dir:
+            candidate_dirs.append(Path(env_dir))
         if models_dir is not None:
             candidate_dirs.append(Path(models_dir))
 

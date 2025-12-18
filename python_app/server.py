@@ -16,6 +16,7 @@ from pathlib import Path
 import re
 from typing import Dict, Optional, List
 from dataclasses import replace
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,7 @@ from src.cache_manager import CacheManager
 from src.paths import OUTPUT_DIR
 from src.job_manager import JobManager
 from src.text_formatting import TextFormattingProcessor
+from src.telemetry import TelemetryRecorder
 from main import ConverterApplication
 
 app = FastAPI(title="EPUB to MP3 Converter API")
@@ -73,7 +75,7 @@ if os.getenv("OUTPUT_DIR"):
 elif os.getenv("SPACE_ID"):  # HuggingFace Spaces
     output_dir = Path("/tmp/output")
 else:
-output_dir = OUTPUT_DIR
+    output_dir = OUTPUT_DIR
 
 output_dir.mkdir(exist_ok=True, parents=True)
 cover_cache_dir = output_dir / ".cover_cache"
@@ -100,6 +102,32 @@ cover_cache_index = _load_cover_cache()
 # Initialize job manager with persistence
 jobs_state_dir = output_dir / ".jobs"
 job_manager = JobManager(jobs_state_dir)
+
+
+def _summarize_resume_job(job_id: str, job_data: dict, saved_at: Optional[str] = None) -> dict:
+    return {
+        "jobId": job_id,
+        "state": job_data.get("state", "queued"),
+        "bookTitle": job_data.get("bookTitle", "Livro Desconhecido"),
+        "fileName": Path(job_data.get("file_path", "")).name if job_data.get("file_path") else "unknown",
+        "savedAt": saved_at or job_data.get("_saved_at") or datetime.utcnow().isoformat(),
+        "chaptersCompleted": job_data.get("chaptersCompleted", 0),
+        "chaptersTotal": job_data.get("chaptersTotal"),
+    }
+
+
+def _collect_resumable_job_entries() -> list[dict]:
+    summaries: dict[str, dict] = {}
+    for entry in job_manager.get_resumable_jobs():
+        summaries[entry["jobId"]] = entry
+    for job_id, job_data in jobs.items():
+        if not job_data:
+            continue
+        state = job_data.get("state", "")
+        if state not in {"queued", "running", "cancelling", "interrupted"}:
+            continue
+        summaries[job_id] = _summarize_resume_job(job_id, job_data)
+    return sorted(summaries.values(), key=lambda entry: entry.get("savedAt", ""), reverse=True)
 
 # Load existing jobs from disk on startup
 jobs: Dict[str, dict] = job_manager.load_all_jobs()
@@ -129,6 +157,9 @@ for job_id, job_data in jobs.items():
             logger.warning(f"Job {job_id} marked as interrupted (source file lost)")
 
 tts_factory = TTSFactory()
+telemetry = TelemetryRecorder()
+MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "100"))
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
 
 def _normalise_languages(primary_language: Optional[str], languages: Optional[list[str]] = None) -> list[str]:
@@ -175,9 +206,27 @@ def _clone_config_for_engine(base: ConversionConfig, engine_name: str) -> Conver
 def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
     _ensure_voice_and_languages(config)
     chain = [config]
+
+    def _rank_fallbacks(candidates: list[str]) -> list[str]:
+        summary = telemetry.summary()
+        ranked = sorted(
+            ((name, summary.get(name, {}).get("avg_chars_per_second", 0.0)) for name in candidates),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        ordered = [name for name, _ in ranked if name in candidates]
+        for name in candidates:
+            if name not in ordered:
+                ordered.append(name)
+        return ordered
+
     if (config.engine or "").lower() == "edge":
-        chain.append(_clone_config_for_engine(config, "coqui"))
-        chain.append(_clone_config_for_engine(config, "piper"))
+        fallback_engines = _rank_fallbacks(["coqui", "piper"])
+        for engine_name in fallback_engines:
+            clone = _clone_config_for_engine(config, engine_name)
+            if clone.engine.lower() == "edge":
+                clone.edge_aggressive_mode = True
+            chain.append(clone)
     return chain
 
 
@@ -193,17 +242,33 @@ def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, tuple[Conve
     return pool
 
 
-def _pick_auto_engine(chapter_chars: int, estimated_seconds: float, pool: dict[str, tuple[ConversionConfig, object]]) -> tuple[str, list[str]]:
+def _pick_auto_engine(
+    chapter_chars: int,
+    estimated_seconds: float,
+    pool: dict[str, tuple[ConversionConfig, object]],
+    telemetry_speeds: Optional[Dict[str, float]] = None,
+    force_skip: Optional[set[str]] = None,
+) -> tuple[str, list[str]]:
     def append(order: list[str], candidate: str) -> None:
         if candidate in pool and candidate not in order:
             order.append(candidate)
 
     # Ordem do mais rápido para mais lento: edge > piper > coqui
     # Testado com 3053 chars: edge=21s (144 chars/s), piper=27s (112 chars/s), coqui=113s (26 chars/s)
+    force_skip = force_skip or set()
     order: list[str] = []
-    append(order, "edge")
-    append(order, "piper")
-    append(order, "coqui")
+    if telemetry_speeds:
+        ranked = sorted(
+            ((name, telemetry_speeds.get(name, 0.0)) for name in pool.keys()),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        for name, _ in ranked:
+            if name not in force_skip:
+                append(order, name)
+    for default in ("edge", "piper", "coqui"):
+        if default not in force_skip:
+            append(order, default)
 
     if not order:
         order = list(pool.keys())
@@ -219,6 +284,18 @@ def _next_auto_engine(order: list[str], attempted: set[str], pool: dict[str, tup
     return None
 
 
+def _should_force_offline(config: Optional[ConversionConfig], chars: int, estimated_seconds: float) -> bool:
+    if not config or (config.engine or "").lower() != "edge":
+        return False
+    max_chars = max(getattr(config, "edge_auto_offline_chars", 0), 0)
+    max_seconds = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
+    if max_chars and chars >= max_chars:
+        return True
+    if max_seconds and estimated_seconds >= max_seconds:
+        return True
+    return False
+
+
 class JobStatus(BaseModel):
     jobId: str
     state: str
@@ -228,6 +305,7 @@ class JobStatus(BaseModel):
     chaptersCompleted: Optional[int] = None
     currentChapter: Optional[str] = None
     progressPercent: Optional[float] = None
+    chapterProgress: Optional[list[dict]] = None
     outputs: list[dict] = []
     error: Optional[str] = None
     bookTitle: Optional[str] = None
@@ -252,6 +330,11 @@ async def convert_ebook(
     temp_file = output_dir / f"{job_id}_{file.filename}"
 
     raw_payload = await file.read()
+    if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Arquivo excede o limite de {MAX_UPLOAD_MB} MB",
+        )
     with temp_file.open("wb") as buffer:
         buffer.write(raw_payload)
     file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
@@ -394,17 +477,49 @@ async def health_check() -> dict:
         "storage": {
             "r2_enabled": storage.is_enabled(),
             "local_output_dir": str(output_dir),
-        }
+        },
+        "limits": {
+            "max_upload_bytes": MAX_UPLOAD_BYTES,
+            "max_upload_mb": MAX_UPLOAD_MB,
+        },
     }
 
 
 @app.get("/api/jobs/resumable")
 async def get_resumable_jobs() -> dict:
     """Get list of jobs that can be resumed."""
-    resumable = job_manager.get_resumable_jobs()
+    resumable = _collect_resumable_job_entries()
     return {
         "resumable_jobs": resumable,
         "count": len(resumable)
+    }
+
+
+@app.get("/api/voices")
+async def list_available_voices() -> dict:
+    """Expose curated voice/model suggestions for the frontend."""
+    provider = tts_factory.voice_provider
+    return {
+        "voices": provider.get_voice_suggestions(),
+    }
+
+
+@app.get("/api/telemetry")
+async def get_engine_telemetry() -> dict:
+    """Return aggregated throughput data to compare Edge vs Coqui/Piper speeds."""
+    summary = telemetry.summary()
+    recent = [
+        {
+            "engine": entry.get("engine"),
+            "chars": entry.get("chars"),
+            "synth_seconds": entry.get("synth_seconds"),
+            "timestamp": entry.get("timestamp"),
+        }
+        for entry in telemetry.recent_samples(limit=10)
+    ]
+    return {
+        "engines": summary,
+        "recent": recent,
     }
 
 
@@ -445,6 +560,9 @@ def _finalize_cancel(job_id: str, job: dict, note: str) -> None:
     """Mark job as cancelled and cleanup files/cache."""
     if job.get("state") == "cancelled":
         return
+    current_index = job.get("_currentChapterIndex")
+    if current_index:
+        _set_chapter_status(job, current_index, "cancelled")
     if note:
         job["events"].append(note)
     job["events"].append("🛑 Conversão cancelada pelo usuário")
@@ -496,6 +614,8 @@ def _persist_job_log(job_id: str, job: dict) -> Optional[Path]:
 
 async def process_conversion(job_id: str) -> None:
     job = jobs[job_id]
+    zip_archive: Optional[zipfile.ZipFile] = None
+    zip_open = False
 
     try:
         if job.get("cancelRequested"):
@@ -555,12 +675,25 @@ async def process_conversion(job_id: str) -> None:
                 token.strip() for token in re.split(r"[\s,;]+", job.get("priority") or "") if token.strip()
             ],
         )
+        if (config.engine or "").lower() == "edge":
+            config.edge_aggressive_mode = True
 
         selector_text = job.get("chapters")
         chapters = _prepare_chapters(reader, config, selector_text)
         selection_note = " (filtro aplicado)" if selector_text else ""
         job["events"].append(f"📊 Capítulos: {len(chapters)}{selection_note}")
         job["chaptersTotal"] = len(chapters)
+        chapter_progress_entries: list[dict] = []
+        for idx, chapter in enumerate(chapters, 1):
+            chapter_name = getattr(chapter, "name", f"Chapter {idx}")
+            chapter_progress_entries.append(
+                {
+                    "index": idx,
+                    "name": chapter_name,
+                    "status": "pending",
+                }
+            )
+        job["chapterProgress"] = chapter_progress_entries
 
         engine_chain = _build_engine_chain(config)
         engine_index = 0
@@ -569,6 +702,7 @@ async def process_conversion(job_id: str) -> None:
         auto_mode = (config.engine or "").lower() == "auto"
 
         auto_engine_pool: dict[str, tuple[ConversionConfig, object]] = {}
+        telemetry_speeds: Dict[str, float] = {}
 
         if not auto_mode:
             while engine_index < len(engine_chain):
@@ -609,8 +743,8 @@ async def process_conversion(job_id: str) -> None:
         job_output_dir.mkdir(exist_ok=True)
         book_safe_name = FileManager.sanitize_filename(title)
         zip_file = job_output_dir / f"{book_safe_name}.zip"
-        with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_STORED):
-            pass
+        zip_archive = zipfile.ZipFile(zip_file, "w", zipfile.ZIP_STORED)
+        zip_open = True
 
         if job.get("cancelRequested"):
             _finalize_cancel(job_id, job, "🛑 Conversão cancelada após processar capítulos")
@@ -694,7 +828,9 @@ async def process_conversion(job_id: str) -> None:
                 return
 
             chapter_name = getattr(chapter, "name", f"Chapter {idx}")
+            job["_currentChapterIndex"] = idx
             job["currentChapter"] = chapter_name
+            _set_chapter_status(job, idx, "processing")
             job["events"].append("")
             job["events"].append(f"🎯 Convertendo capítulo {idx}/{len(chapters)}: {chapter_name}")
 
@@ -708,6 +844,8 @@ async def process_conversion(job_id: str) -> None:
             if not chapter_text or not chapter_text.strip():
                 job["events"].append("⚠️ Capítulo sem conteúdo audível, ignorado")
                 job["chaptersCompleted"] = idx
+                _set_chapter_status(job, idx, "skipped")
+                job["_currentChapterIndex"] = None
                 continue
 
             # Limpar marcadores Markdown antes de enviar ao TTS
@@ -717,11 +855,26 @@ async def process_conversion(job_id: str) -> None:
                 job["events"].append(f"📝 Trecho: {preview}")
             auto_order: list[str] = []
             attempted_auto: set[str] = set()
+            chapter_clock_start = time.time()
+            engine_runtime: Optional[float] = None
+            estimated_seconds = TextValidator.estimate_duration(clean_text)
+            if estimated_seconds <= 0:
+                estimated_seconds = max(len(clean_text) / 15.0, 30.0)
             if auto_mode:
-                estimated_seconds = TextValidator.estimate_duration(clean_text)
-                if estimated_seconds <= 0:
-                    estimated_seconds = max(len(clean_text) / 15.0, 30.0)
-                selected_engine, auto_order = _pick_auto_engine(len(clean_text), estimated_seconds, auto_engine_pool)
+                if not telemetry_speeds:
+                    summary = telemetry.summary()
+                    telemetry_speeds = {name: stats.get("avg_chars_per_second", 0.0) for name, stats in summary.items()}
+                skips: set[str] = set()
+                if _should_force_offline(config, len(clean_text), estimated_seconds):
+                    skips.add("edge")
+                    job["events"].append("⚡ AUTO: pulando EDGE (capítulo muito longo/lento)")
+                selected_engine, auto_order = _pick_auto_engine(
+                    len(clean_text),
+                    estimated_seconds,
+                    auto_engine_pool,
+                    telemetry_speeds=telemetry_speeds,
+                    force_skip=skips,
+                )
                 attempted_auto.add(selected_engine)
                 active_config, tts_engine = auto_engine_pool[selected_engine]
                 job["events"].append(f"⚡ AUTO: usando {selected_engine.upper()} para este capítulo")
@@ -733,9 +886,25 @@ async def process_conversion(job_id: str) -> None:
                     _finalize_cancel(job_id, job, f"🛑 Conversão cancelada durante o capítulo {chapter_name}")
                     return
 
+                if _should_force_offline(active_config, len(clean_text), estimated_seconds):
+                    job["events"].append("⚠️ EDGE muito lento para este capítulo; usando engine offline")
+                    if auto_mode:
+                        next_engine = _next_auto_engine(auto_order, attempted_auto, auto_engine_pool)
+                        if next_engine:
+                            attempted_auto.add(next_engine)
+                            active_config, tts_engine = auto_engine_pool[next_engine]
+                            continue
+                    if _switch_to_next_engine("EDGE muito lento para este capítulo"):
+                        continue
+                    _record_chapter_failure(job, tts_engine, chapter_name, "EDGE muito lento para este capítulo", chapter_index=idx)
+                    return
+
                 tts_path, needs_transcode = _resolve_tts_output(output_file, active_config.engine if active_config else config.engine)
+                synth_started = time.time()
+                last_stage_timestamp = synth_started
                 try:
                     await tts_engine.synthesize_async(clean_text, tts_path)
+                    last_stage_timestamp = time.time()
                 except Exception as exc:
                     if auto_mode:
                         next_engine = _next_auto_engine(auto_order, attempted_auto, auto_engine_pool)
@@ -746,7 +915,7 @@ async def process_conversion(job_id: str) -> None:
                             continue
                     if _switch_to_next_engine(f"Engine {active_config.engine if active_config else config.engine} falhou ({exc})"):
                         continue
-                    _record_chapter_failure(job, tts_engine, chapter_name, exc)
+                    _record_chapter_failure(job, tts_engine, chapter_name, exc, chapter_index=idx)
                     return
 
                 target_file = output_file
@@ -764,11 +933,12 @@ async def process_conversion(job_id: str) -> None:
                                 continue
                         if _switch_to_next_engine("Conversão WAV→MP3 falhou"):
                             continue
-                        _record_chapter_failure(job, tts_engine, chapter_name, "falha ao converter WAV para MP3")
+                        _record_chapter_failure(job, tts_engine, chapter_name, "falha ao converter WAV para MP3", chapter_index=idx)
                         return
                     with contextlib.suppress(OSError):
                         tts_path.unlink(missing_ok=True)
                     target_file = converted
+                    last_stage_timestamp = time.time()
 
                 if not target_file.exists() or target_file.stat().st_size == 0:
                     with contextlib.suppress(OSError):
@@ -782,15 +952,19 @@ async def process_conversion(job_id: str) -> None:
                             continue
                     if _switch_to_next_engine("Áudio vazio ou inexistente"):
                         continue
-                    _record_chapter_failure(job, tts_engine, chapter_name, "áudio não foi gerado pelo serviço de voz")
-                    return
+                        _record_chapter_failure(job, tts_engine, chapter_name, "áudio não foi gerado pelo serviço de voz", chapter_index=idx)
+                        return
                 break
+            engine_runtime = max((last_stage_timestamp - synth_started), 0.001)
 
             # Get duration using ffprobe (no pydub/audioop dependency)
             duration_seconds = await _get_audio_duration(output_file)
+            chapter_elapsed = time.time() - chapter_clock_start
 
             job["events"].append(f"✅ Concluído: {output_file.name}")
             job["chaptersCompleted"] = idx
+            _set_chapter_status(job, idx, "completed")
+            job["_currentChapterIndex"] = None
 
             # Persist every chapter completion (important milestone)
             _persist_job(job_id, force=True)
@@ -803,9 +977,35 @@ async def process_conversion(job_id: str) -> None:
                     "sizeBytes": output_file.stat().st_size,
                 }
             )
-            with zipfile.ZipFile(zip_file, "a", zipfile.ZIP_STORED) as archive:
-                if output_file.exists():
-                    archive.write(output_file, arcname=output_file.name)
+            if zip_open and output_file.exists():
+                try:
+                    zip_archive.write(output_file, arcname=output_file.name)
+                except Exception:
+                    pass
+
+            try:
+                telemetry.record_sample(
+                    engine=(active_config.engine if active_config else config.engine),
+                    voice=(active_config.voice if active_config else None),
+                    chars=len(clean_text),
+                    synth_seconds=engine_runtime or chapter_elapsed,
+                    total_seconds=chapter_elapsed,
+                    audio_seconds=duration_seconds,
+                    job_id=job_id,
+                    chapter=chapter_name,
+                )
+                if engine_runtime:
+                    chars_per_second = len(clean_text) / max(engine_runtime, 0.001)
+                    job["events"].append(f"⏱️ {active_config.engine.upper()} ≈ {chars_per_second:.1f} chars/s")
+            except Exception:
+                pass
+
+        job["_currentChapterIndex"] = None
+
+        if zip_open:
+            with contextlib.suppress(Exception):
+                zip_archive.close()
+            zip_open = False
 
         # Upload to R2 if configured
         if storage.is_enabled():
@@ -886,8 +1086,11 @@ async def process_conversion(job_id: str) -> None:
                     "sizeBytes": log_path.stat().st_size,
                 },
             )
-            with zipfile.ZipFile(zip_file, "a", zipfile.ZIP_STORED) as archive:
-                archive.write(log_path, arcname=log_path.name)
+            if zip_open:
+                try:
+                    zip_archive.write(log_path, arcname=log_path.name)
+                except Exception:
+                    pass
 
         job["state"] = "finished"
         job["progressPercent"] = 100
@@ -908,6 +1111,9 @@ async def process_conversion(job_id: str) -> None:
         _persist_job_log(job_id, job)
 
     finally:
+        if zip_archive:
+            with contextlib.suppress(Exception):
+                zip_archive.close()
         temp_path = Path(job["file_path"])
         if temp_path.exists():
             temp_path.unlink()
@@ -954,7 +1160,20 @@ async def _get_audio_duration(file_path: Path) -> float:
     # Fallback: estimate based on file size (rough approximation)
     return file_path.stat().st_size / 1000.0  # ~1KB per second for 8kbps
 
-def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: object) -> None:
+
+def _set_chapter_status(job: dict, chapter_index: Optional[int], status: str) -> None:
+    entries = job.get("chapterProgress")
+    if not entries or chapter_index is None:
+        return
+    if isinstance(entries, list):
+        idx = max(0, int(chapter_index) - 1)
+        if idx < len(entries):
+            entry = entries[idx]
+            if isinstance(entry, dict):
+                entry["status"] = status
+
+def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: object, chapter_index: Optional[int] = None) -> None:
+    _set_chapter_status(job, chapter_index, "failed")
     last_error = getattr(tts_engine, "last_error", None)
     error_message = str(error) if error else "erro desconhecido"
     if isinstance(error, FileNotFoundError):

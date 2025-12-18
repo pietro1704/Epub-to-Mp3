@@ -20,8 +20,10 @@ Convert EPUB/PDF ebooks into MP3 audiobooks using TTS engines.
 - **Portuguese BR Voices**: High-quality curated voices
 - **Smart Cache**: Resume interrupted conversions
 - **Chapter Structure**: Preserves book navigation hierarchy
-- **Progress Tracking**: Real-time ETA and status
+- **Progress Tracking**: Real-time ETA plus per-chapter status timeline
 - **Footnote Handling**: Inline, chapter-end, or suppressed
+- **Voice Catalog API**: Frontend pulls curated voices directly from `/api/voices`
+- **Telemetry Benchmarks**: `/api/telemetry` exposes real Edge/Coqui/Piper throughput data
 - **Interactive Menu**: Pick engine/voice/settings interactively
 
 ## Installation
@@ -105,6 +107,22 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 - `GET /api/outputs/{job_id}/{filename}` - Download output file
 - `GET /api/health` - Health check
 - `POST /api/cleanup` - Cleanup old files (R2 + local)
+- `GET /api/voices` - Dynamic list of curated voices/models for the frontend
+- `GET /api/telemetry` - Aggregated Edge/Coqui/Piper throughput (chars/s)
+
+#### Upload limits
+
+Uploads are capped at **100 MB** by default to avoid long-running requests on Hugging Face Spaces. Override the limit by setting:
+
+```
+# Backend (FastAPI)
+export MAX_UPLOAD_MB=120
+
+# Frontend build (Vite)
+export VITE_MAX_UPLOAD_MB=120
+```
+
+Both variables should match so the UI can warn users before hitting the server.
 
 ### Optional: Configure R2 Storage (Recommended)
 
@@ -130,6 +148,18 @@ Benefits:
 - ✅ 10 GB free storage
 - ✅ Free downloads (no egress fees)
 - ✅ Global CDN
+
+### Model Cache (Coqui + Piper)
+
+- Coqui downloads now live under `.cache/coqui_models`
+- Piper models download to `.cache/piper_models` (or `PIPER_MODEL_DIR`)
+- `TTS_HOME`, `COQUI_TTS_CACHE_DIR` and `PIPER_MODEL_DIR` are configured automatically so HF Spaces reuse the same files between conversions
+
+### Telemetry & Benchmarks
+
+- Every converted chapter records actual chars/second for the engine.
+- Aggregated stats are stored in `.cache/telemetry/engine_samples.json` and exposed via `/api/telemetry`.
+- Auto mode uses these measurements to prioritise the fastest engine for future chapters automatically.
 
 ## Available Voices
 

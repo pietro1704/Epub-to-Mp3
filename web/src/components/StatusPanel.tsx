@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { ConversionState, StatusEntry, ConversionSummary } from '../types/conversion';
 import { useI18n, useTranslations } from '../i18n/I18nProvider';
 import type { Locale, Translations } from '../i18n/translations';
+import ChapterProgressList from './ChapterProgressList';
 
 interface StatusPanelProps {
   entries: StatusEntry[];
@@ -47,6 +48,7 @@ export default function StatusPanel({
   const progressValue = typeof summary?.progressPercent === 'number'
     ? Math.max(0, Math.min(100, summary.progressPercent))
     : null;
+  const chapterProgress = summary?.chapterProgress ?? null;
 
   // Autoscroll when new entries are added
   useEffect(() => {
@@ -128,6 +130,9 @@ export default function StatusPanel({
           </div>
           <div className="status-progress__value">{progressValue.toFixed(1)}%</div>
         </div>
+      )}
+      {chapterProgress && chapterProgress.length > 0 && (
+        <ChapterProgressList entries={chapterProgress} />
       )}
 
       {showRawLog ? (

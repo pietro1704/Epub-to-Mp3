@@ -292,6 +292,9 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
               summaryUpdate.chaptersCompleted = snapshot.chaptersCompleted;
             }
             if (snapshot.currentChapter) summaryUpdate.currentChapter = snapshot.currentChapter;
+            if (Array.isArray(snapshot.chapterProgress)) {
+              summaryUpdate.chapterProgress = snapshot.chapterProgress.map(entry => ({ ...entry }));
+            }
             const percentFromSnapshot = typeof snapshot.progressPercent === 'number'
               ? snapshot.progressPercent
               : typeof snapshot.progress === 'number'
@@ -366,6 +369,9 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
           summaryUpdate.chaptersTotal = finalSnapshot.chaptersTotal;
         } else if (chapterCount > 0) {
           summaryUpdate.chaptersTotal = chapterCount;
+        }
+        if (Array.isArray(finalSnapshot.chapterProgress)) {
+          summaryUpdate.chapterProgress = finalSnapshot.chapterProgress.map(entry => ({ ...entry }));
         }
         summaryUpdate.progressPercent = 100;
         const detailUpdate: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>> = {};
@@ -520,6 +526,9 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
               summaryUpdate.chaptersCompleted = snapshot.chaptersCompleted;
             }
             if (snapshot.currentChapter) summaryUpdate.currentChapter = snapshot.currentChapter;
+            if (Array.isArray(snapshot.chapterProgress)) {
+              summaryUpdate.chapterProgress = snapshot.chapterProgress.map((entry) => ({ ...entry }));
+            }
             const percentFromSnapshot = typeof snapshot.progressPercent === 'number'
               ? snapshot.progressPercent
               : typeof snapshot.progress === 'number'
@@ -596,6 +605,9 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
           summaryUpdate.chaptersTotal = finalSnapshot.chaptersTotal;
         } else if (chapterCount > 0) {
           summaryUpdate.chaptersTotal = chapterCount;
+        }
+        if (Array.isArray(finalSnapshot.chapterProgress)) {
+          summaryUpdate.chapterProgress = finalSnapshot.chapterProgress.map((entry) => ({ ...entry }));
         }
         summaryUpdate.progressPercent = 100;
         const detailUpdate: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>> = {};

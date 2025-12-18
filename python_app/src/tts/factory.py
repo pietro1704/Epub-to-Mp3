@@ -44,13 +44,19 @@ class TTSFactory:
             from .edge_engine import EdgeTTSEngine
 
             voice = config.voice or self.voice_provider.get_voice("edge", config.primary_language) or "pt-BR-ThalitaMultilingualNeural"
+            chunk_chars = config.edge_chunk_chars or None
+            max_segment = config.edge_max_segment_seconds or None
+            if getattr(config, "edge_aggressive_mode", False):
+                chunk_chars = 8_000
+                max_segment = 40
+
             return EdgeTTSEngine(
                 voice,
                 primary_language=config.primary_language,
                 language_voices=config.language_voices,
                 verbose=config.verbose,
-                max_segment_seconds=config.edge_max_segment_seconds or None,
-                chunk_char_limit=config.edge_chunk_chars or None,
+                max_segment_seconds=max_segment,
+                chunk_char_limit=chunk_chars,
             )
 
         if engine == "coqui":

@@ -1,4 +1,4 @@
-import type { EngineOption, FootnoteMode } from '../types/conversion';
+import type { EngineOption, FootnoteMode, ChapterProgressStatus } from '../types/conversion';
 
 export type Locale = 'en' | 'pt';
 
@@ -74,6 +74,8 @@ export interface FormText {
   voicePlaceholder: string;
   voiceHint: string;
   voiceMultilingualHint: string;
+  voiceLoading: string;
+  voiceLoadFailed: string;
   chaptersLabel: string;
   chaptersPlaceholder: string;
   chaptersHint: string;
@@ -89,6 +91,7 @@ export interface FormText {
   languageOptions: Record<string, string>;
   availableLanguagesLabel: string;
   errorNoFile: string;
+  errorFileTooLarge: (limitMb: number) => string;
   submitIdle: string;
   submitBusy: string;
 }
@@ -112,6 +115,8 @@ export interface StatusText {
   summaryChapters: string;
   summaryCurrent: string;
   summaryProgress: string;
+  chapterProgressTitle: string;
+  chapterStatuses: Record<ChapterProgressStatus, string>;
 }
 
 export interface DownloadsText {
@@ -245,6 +250,8 @@ export const translations: Record<Locale, Translations> = {
       voicePlaceholder: 'Deixe vazio para usar a voz padrão',
       voiceHint: 'Você pode escolher uma voz específica se souber o nome dela. Caso contrário, mantenha em branco.',
       voiceMultilingualHint: 'Esta voz suporta múltiplos idiomas automaticamente.',
+      voiceLoading: 'Carregando vozes recomendadas…',
+      voiceLoadFailed: 'Não foi possível carregar a lista de vozes. Usando as sugestões padrão.',
       chaptersLabel: 'Quais capítulos você quer ouvir? (opcional)',
       chaptersPlaceholder: 'Ex.: 1,2 ou 3.1 (deixe em branco para todos)',
       chaptersHint: 'Separe os números por vírgula. O app usa todos os capítulos se você deixar vazio.',
@@ -283,6 +290,7 @@ export const translations: Record<Locale, Translations> = {
       },
       availableLanguagesLabel: 'Idiomas disponíveis',
       errorNoFile: 'Selecione um arquivo EPUB ou PDF antes de enviar.',
+      errorFileTooLarge: (limit: number) => `Arquivo maior que ${limit} MB. Envie um EPUB/PDF menor para evitar falhas.`,
       submitIdle: 'Converter agora',
       submitBusy: 'Gerando áudio…',
     },
@@ -313,6 +321,15 @@ export const translations: Record<Locale, Translations> = {
       summaryChapters: 'Capítulos totais',
       summaryCurrent: 'Capítulo em andamento',
       summaryProgress: 'Progresso',
+      chapterProgressTitle: 'Progresso por capítulo',
+      chapterStatuses: {
+        pending: 'Na fila',
+        processing: 'Convertendo',
+        completed: 'Concluído',
+        skipped: 'Ignorado',
+        failed: 'Falhou',
+        cancelled: 'Cancelado',
+      },
     },
     downloads: {
       placeholder: 'Assim que a conversão terminar, os áudios ficam disponíveis aqui para ouvir ou baixar.',
@@ -430,6 +447,8 @@ export const translations: Record<Locale, Translations> = {
       voicePlaceholder: 'Leave blank to use the default voice',
       voiceHint: 'Type a specific voice name if you know it. Otherwise keep it blank.',
       voiceMultilingualHint: 'This voice supports multiple languages automatically.',
+      voiceLoading: 'Loading recommended voices…',
+      voiceLoadFailed: 'Unable to fetch the voice list. Using the built-in suggestions.',
       chaptersLabel: 'Which chapters do you want? (optional)',
       chaptersPlaceholder: 'Example: 1,2 or 3.1 (leave blank for all)',
       chaptersHint: 'Separate numbers with commas. All chapters are used if left blank.',
@@ -468,6 +487,7 @@ export const translations: Record<Locale, Translations> = {
       },
       availableLanguagesLabel: 'Available languages',
       errorNoFile: 'Choose an EPUB or PDF file before converting.',
+      errorFileTooLarge: (limit: number) => `File exceeds the ${limit} MB limit. Please upload a smaller EPUB/PDF.`,
       submitIdle: 'Convert now',
       submitBusy: 'Generating audio…',
     },
@@ -498,6 +518,15 @@ export const translations: Record<Locale, Translations> = {
       summaryChapters: 'Total chapters',
       summaryCurrent: 'Current chapter',
       summaryProgress: 'Progress',
+      chapterProgressTitle: 'Chapter progress',
+      chapterStatuses: {
+        pending: 'Queued',
+        processing: 'Converting',
+        completed: 'Done',
+        skipped: 'Skipped',
+        failed: 'Failed',
+        cancelled: 'Cancelled',
+      },
     },
     downloads: {
       placeholder: 'When the conversion finishes, the audio files will show up here to play or download.',

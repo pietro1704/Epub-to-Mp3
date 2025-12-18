@@ -20,6 +20,14 @@ export interface DownloadAsset {
   sizeBytes?: number;
 }
 
+export type ChapterProgressStatus = 'pending' | 'processing' | 'completed' | 'skipped' | 'failed' | 'cancelled';
+
+export interface ChapterProgressEntry {
+  index: number;
+  name: string;
+  status: ChapterProgressStatus;
+}
+
 export interface JobSnapshot {
   jobId: string;
   state: JobState;
@@ -34,6 +42,7 @@ export interface JobSnapshot {
   chaptersCompleted?: number;
   currentChapter?: string;
   progressPercent?: number | null;
+  chapterProgress?: ChapterProgressEntry[];
   bookTitle?: string;
   bookAuthor?: string;
   coverUrl?: string;
@@ -52,6 +61,7 @@ export interface ConversionSummary {
   chaptersCompleted?: number;
   currentChapter?: string;
   progressPercent?: number | null;
+  chapterProgress?: ChapterProgressEntry[];
 }
 
 export interface ConversionState {
