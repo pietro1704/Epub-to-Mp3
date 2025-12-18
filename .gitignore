@@ -53,11 +53,13 @@ env/
 ENV/
 .env/
 .venv/
+.venv*/
 env.bak/
 venv.bak/
 
 # Caches and temp files
 .cache/
+.mise-cache/
 *.log
 *.tmp
 *.temp

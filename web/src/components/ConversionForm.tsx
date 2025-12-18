@@ -135,6 +135,7 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
       engine,
       voice: voice || undefined,
       chapters: chapters || undefined,
+      priority: priority || undefined,
       footnoteMode,
       language: engineMeta.autoLanguage || !language || language === 'auto' ? undefined : language,
     });
