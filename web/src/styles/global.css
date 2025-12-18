@@ -951,19 +951,20 @@ select {
 
 .status-panel__cancel {
   margin-left: auto;
-  padding: 0.4rem 0.9rem;
-  border-radius: 0.6rem;
-  border: 1px solid rgba(239, 68, 68, 0.4);
-  background: rgba(239, 68, 68, 0.18);
+  padding: 0.55rem 1.4rem;
+  border-radius: 999px;
+  border: 2px solid rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.22);
   color: var(--status-error-color);
   font-weight: 600;
-  font-size: 0.82rem;
+  font-size: 0.95rem;
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 .status-panel__cancel:not(:disabled):hover {
-  background: rgba(239, 68, 68, 0.28);
+  background: rgba(239, 68, 68, 0.32);
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.25);
 }
 
 .status-panel__cancel:disabled {
@@ -1138,6 +1139,25 @@ select {
 .cached-jobs-alert__resume:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px var(--button-shadow);
+}
+
+.cached-jobs-alert__remove {
+  border: 1px solid rgba(148, 163, 184, 0.4);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.cached-jobs-alert__remove:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--status-error-color);
 }
 
 .downloads-panel {

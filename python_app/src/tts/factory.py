@@ -50,6 +50,9 @@ class TTSFactory:
                 chunk_chars = 8_000
                 max_segment = 40
 
+            # **PARALLEL MODE**: Enable parallel processing by default, disable for HF Space if needed
+            enable_parallel = getattr(config, "edge_enable_parallel", True)
+
             return EdgeTTSEngine(
                 voice,
                 primary_language=config.primary_language,
@@ -57,6 +60,7 @@ class TTSFactory:
                 verbose=config.verbose,
                 max_segment_seconds=max_segment,
                 chunk_char_limit=chunk_chars,
+                enable_parallel=enable_parallel,
             )
 
         if engine == "coqui":

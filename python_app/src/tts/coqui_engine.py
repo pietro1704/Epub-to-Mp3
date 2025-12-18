@@ -7,12 +7,126 @@ import asyncio
 import contextlib
 import importlib
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from unittest.mock import Mock
 
 TTS = None
+
+# ============================================================================
+# PRÉ-PROCESSAMENTO DE TEXTO PARA COQUI
+# Converte números e caracteres especiais não suportados pelo vocabulário
+# ============================================================================
+
+# Números por extenso em português
+_NUMEROS_PT = {
+    '0': 'zero', '1': 'um', '2': 'dois', '3': 'três', '4': 'quatro',
+    '5': 'cinco', '6': 'seis', '7': 'sete', '8': 'oito', '9': 'nove',
+    '10': 'dez', '11': 'onze', '12': 'doze', '13': 'treze', '14': 'quatorze',
+    '15': 'quinze', '16': 'dezesseis', '17': 'dezessete', '18': 'dezoito',
+    '19': 'dezenove', '20': 'vinte', '30': 'trinta', '40': 'quarenta',
+    '50': 'cinquenta', '60': 'sessenta', '70': 'setenta', '80': 'oitenta',
+    '90': 'noventa', '100': 'cem', '200': 'duzentos', '300': 'trezentos',
+    '400': 'quatrocentos', '500': 'quinhentos', '600': 'seiscentos',
+    '700': 'setecentos', '800': 'oitocentos', '900': 'novecentos',
+    '1000': 'mil',
+}
+
+# Caracteres especiais para equivalentes ASCII
+_CHAR_REPLACEMENTS = {
+    '–': '-',      # en-dash
+    '—': '-',      # em-dash
+    '"': '"',      # aspas curvas esquerda
+    '"': '"',      # aspas curvas direita
+    ''': "'",      # apóstrofo curvo esquerdo
+    ''': "'",      # apóstrofo curvo direito
+    '…': '...',    # reticências
+    '«': '"',      # guillemet esquerdo
+    '»': '"',      # guillemet direito
+    '‹': "'",      # guillemet simples esquerdo
+    '›': "'",      # guillemet simples direito
+    '•': ',',      # bullet
+    '·': '.',      # middle dot
+    '№': 'numero', # numero sign
+    '°': ' graus', # degree
+    '²': ' ao quadrado',
+    '³': ' ao cubo',
+    '½': ' meio',
+    '¼': ' um quarto',
+    '¾': ' três quartos',
+}
+
+def _numero_por_extenso(n: int) -> str:
+    """Converte número inteiro para texto por extenso em português."""
+    if n < 0:
+        return 'menos ' + _numero_por_extenso(-n)
+    if n == 0:
+        return 'zero'
+    if n <= 20:
+        return _NUMEROS_PT.get(str(n), str(n))
+    if n < 100:
+        dezena = (n // 10) * 10
+        unidade = n % 10
+        if unidade == 0:
+            return _NUMEROS_PT.get(str(dezena), str(dezena))
+        return f"{_NUMEROS_PT.get(str(dezena), str(dezena))} e {_NUMEROS_PT.get(str(unidade), str(unidade))}"
+    if n < 1000:
+        centena = (n // 100) * 100
+        resto = n % 100
+        if resto == 0:
+            if n == 100:
+                return 'cem'
+            return _NUMEROS_PT.get(str(centena), str(centena))
+        centena_texto = 'cento' if centena == 100 else _NUMEROS_PT.get(str(centena), str(centena))
+        return f"{centena_texto} e {_numero_por_extenso(resto)}"
+    if n < 2000:
+        resto = n % 1000
+        if resto == 0:
+            return 'mil'
+        return f"mil {_numero_por_extenso(resto)}" if resto < 100 else f"mil e {_numero_por_extenso(resto)}"
+    if n < 1000000:
+        milhares = n // 1000
+        resto = n % 1000
+        milhares_texto = f"{_numero_por_extenso(milhares)} mil"
+        if resto == 0:
+            return milhares_texto
+        return f"{milhares_texto} e {_numero_por_extenso(resto)}"
+    # Para números muito grandes, retorna dígito a dígito
+    return ' '.join(_NUMEROS_PT.get(d, d) for d in str(n))
+
+def _preprocess_text_for_coqui(text: str, verbose: bool = False) -> str:
+    """Pré-processa texto para Coqui TTS, convertendo números e caracteres especiais."""
+    if not text:
+        return text
+
+    original_len = len(text)
+
+    # 1. Substituir caracteres especiais
+    for char, replacement in _CHAR_REPLACEMENTS.items():
+        text = text.replace(char, replacement)
+
+    # 2. Converter números (anos, datas, valores)
+    # Padrão para anos (1900-2099)
+    def replace_year(match):
+        year = int(match.group(0))
+        return _numero_por_extenso(year)
+    text = re.sub(r'\b(1[89]\d{2}|20\d{2})\b', replace_year, text)
+
+    # Padrão para números genéricos (até 999999)
+    def replace_number(match):
+        num = int(match.group(0))
+        if num > 999999:
+            # Números muito grandes: dígito a dígito
+            return ' '.join(_NUMEROS_PT.get(d, d) for d in match.group(0))
+        return _numero_por_extenso(num)
+    text = re.sub(r'\b\d+\b', replace_number, text)
+
+    if verbose and len(text) != original_len:
+        print(f"🔍 [VERBOSE] Coqui pré-processamento: {original_len} → {len(text)} chars")
+
+    return text
 
 # **FIXED**: Executor global com limite de threads para evitar travamentos
 _coqui_executor = None
@@ -191,6 +305,9 @@ class CoquiTTSEngine:
         else:
             text = text.strip()
 
+        # Pré-processar texto: converter números e caracteres especiais
+        text = _preprocess_text_for_coqui(text, verbose=self.verbose)
+
         contains_markup = LanguageMarkup is not None and "[[lang:" in text.lower()
         default_language = self.primary_language if self.primary_language not in {"", "auto", "unknown"} else "unknown"
         segments: List[Tuple[str, str]]
@@ -249,15 +366,23 @@ class CoquiTTSEngine:
 
         temp_files: List[Path] = []
         try:
+            # **PARALLEL OPTIMIZATION**: Process segments in parallel
+            executor = _get_coqui_executor()
+            tasks = []
             for idx, (language, segment_text) in enumerate(segments):
                 segment_text = segment_text.strip()
                 if not segment_text:
                     continue
                 temp_path = Path(f"/tmp/coqui_segment_{idx}_{hash(segment_text) % 10000}.wav")
                 temp_files.append(temp_path)
-                # **FIXED**: Usar executor limitado
-                executor = _get_coqui_executor()
-                await loop.run_in_executor(executor, self._synthesize_blocking, segment_text, temp_path, language)
+                task = loop.run_in_executor(executor, self._synthesize_blocking, segment_text, temp_path, language)
+                tasks.append(task)
+
+            # Execute all synthesis tasks in parallel
+            if tasks:
+                if self.verbose:
+                    print(f"🚀 [VERBOSE] Coqui processando {len(tasks)} segmentos em paralelo")
+                await asyncio.gather(*tasks)
 
             if not temp_files:
                 return None

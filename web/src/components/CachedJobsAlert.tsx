@@ -8,9 +8,10 @@ interface CachedJobsAlertProps {
   cachedJobs: CachedJob[];
   onResume: (jobId: string) => void;
   onDismiss: () => void;
+  onRemove: (jobId: string) => void;
 }
 
-export default function CachedJobsAlert({ cachedJobs, onResume, onDismiss }: CachedJobsAlertProps): JSX.Element | null {
+export default function CachedJobsAlert({ cachedJobs, onResume, onDismiss, onRemove }: CachedJobsAlertProps): JSX.Element | null {
   if (cachedJobs.length === 0) return null;
 
   const formatTime = (timestamp: number): string => {
@@ -55,6 +56,14 @@ export default function CachedJobsAlert({ cachedJobs, onResume, onDismiss }: Cac
               onClick={() => onResume(job.jobId)}
             >
               Retomar
+            </button>
+            <button
+              type="button"
+              className="cached-jobs-alert__remove"
+              onClick={() => onRemove(job.jobId)}
+              aria-label={`Cancelar ${job.fileName}`}
+            >
+              ✕
             </button>
           </li>
         ))}

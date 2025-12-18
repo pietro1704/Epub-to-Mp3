@@ -42,8 +42,8 @@ class ConversionConfig:
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
-    edge_auto_offline_seconds: int = 300  # switch Edge→offline when ETA proj. > 5 min
-    edge_auto_offline_chars: int = 9000  # switch Edge→offline for very long chapters
+    edge_auto_offline_seconds: int = 0  # disabled: Edge handles large chapters via chunking
+    edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
     edge_chunk_chars: int = 11000  # character budget per Edge chunk before splitting
     edge_max_segment_seconds: int = 65  # hard limit for each Edge chunk duration
     edge_aggressive_mode: bool = False

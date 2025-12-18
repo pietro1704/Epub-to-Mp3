@@ -187,6 +187,8 @@ export interface UseConversionFlowApi {
   resume: (jobId: string) => Promise<void>;
   reset: () => void;
   cancel: () => Promise<void>;
+  cancelJobById: (jobId: string) => Promise<void>;
+  removeCachedJob: (jobId: string) => void;
   isBusy: boolean;
   cachedJobs: Array<{ jobId: string; fileName: string; timestamp: number }>;
 }
@@ -688,6 +690,25 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
     }
   }, [api, state.jobId, state.phase, t]);
 
+  const cancelJobById = useCallback(async (jobId: string) => {
+    if (!jobId || !api.cancel) {
+      return;
+    }
+    try {
+      await api.cancel(jobId);
+    } catch (error) {
+      console.warn('[useConversionFlow] Failed to cancel cached job', jobId, error);
+    } finally {
+      setCachedJobs(prev => prev.filter(job => job.jobId !== jobId));
+      conversionCache.remove(jobId);
+    }
+  }, [api]);
+
+  const removeCachedJob = useCallback((jobId: string) => {
+    setCachedJobs(prev => prev.filter(job => job.jobId !== jobId));
+    conversionCache.remove(jobId);
+  }, []);
+
   const isBusy = state.phase === 'submitting' || state.phase === 'polling' || state.phase === 'cancelling';
 
   return {
@@ -696,6 +717,8 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
     resume,
     reset,
     cancel,
+    cancelJobById,
+    removeCachedJob,
     isBusy,
     cachedJobs,
   };

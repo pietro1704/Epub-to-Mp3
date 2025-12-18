@@ -34,11 +34,11 @@ _ssl_module._create_default_https_context = _ssl_module._create_unverified_conte
 edge_tts = None
 
 try:
-    _segment_seconds_env = float(os.getenv("EDGE_MAX_SEGMENT_SECONDS", "55"))
+    _segment_seconds_env = float(os.getenv("EDGE_MAX_SEGMENT_SECONDS", "75"))
 except (TypeError, ValueError):
-    _segment_seconds_env = 55.0
+    _segment_seconds_env = 75.0
 
-DEFAULT_EDGE_SEGMENT_SECONDS = max(30.0, min(_segment_seconds_env, 90.0))
+DEFAULT_EDGE_SEGMENT_SECONDS = max(30.0, min(_segment_seconds_env, 95.0))
 WORDS_PER_MINUTE = 150
 MIN_WORDS_PER_SEGMENT = 40
 MAX_SEGMENT_SPLIT_ATTEMPTS = 2
@@ -92,6 +92,7 @@ class EdgeTTSEngine:
         verbose: bool = False,
         max_segment_seconds: Optional[float] = None,
         chunk_char_limit: Optional[int] = None,
+        enable_parallel: bool = True,
     ) -> None:
         global edge_tts, _edge_rate_limiter
 
@@ -123,20 +124,23 @@ class EdgeTTSEngine:
         self.verbose = verbose
         max_seconds = max_segment_seconds if max_segment_seconds is not None else DEFAULT_EDGE_SEGMENT_SECONDS
         self._max_segment_seconds = max(30.0, min(float(max_seconds), 95.0))
-        chunk_limit = chunk_char_limit if chunk_char_limit is not None else 12000
+        chunk_limit = chunk_char_limit if chunk_char_limit is not None else 20000
         try:
             chunk_limit = int(chunk_limit)
         except (TypeError, ValueError):
-            chunk_limit = 12000
+            chunk_limit = 20000
         self._chunk_char_limit = max(4000, chunk_limit)
         self._chunk_log_every = max(25, int(self._chunk_char_limit / 400))
         self._words_per_minute = WORDS_PER_MINUTE
         self.partial_failure_detected: bool = False
         self.last_segment_report: Dict[str, int] = {"expected": 0, "generated": 0, "failed": 0}
+        self._enable_parallel = enable_parallel
 
         if self.verbose:
             print(f"🔍 [VERBOSE] EdgeTTS inicializado com voice={voice}")
-            print(f"🔍 [VERBOSE] Rate limiter slots disponíveis: {_edge_rate_limiter._value if _edge_rate_limiter else 'N/A'}")
+            parallel_mode = "ativado" if self._enable_parallel else "desativado"
+            max_concurrent = _edge_rate_limiter._value if _edge_rate_limiter and self._enable_parallel else 1
+            print(f"🔍 [VERBOSE] Processamento paralelo: {parallel_mode} (max {max_concurrent} segmentos simultâneos)")
             print(f"🔍 [VERBOSE] Segmentos limitados a {self._max_segment_seconds:.0f}s ({self._words_per_minute} wpm)")
             print(f"🔍 [VERBOSE] Chunk máximo: {self._chunk_char_limit} chars (~{int(self._chunk_char_limit/6)} palavras)")
             print(f"🔍 [VERBOSE] Sanitizador ativo para caracteres invisíveis/controle")
@@ -299,7 +303,15 @@ class EdgeTTSEngine:
             print(f"🔍 [VERBOSE] Total de caracteres nos segmentos: {total_chars}/{len(payload_text)}")
             if total_chars != len(payload_text):
                 diff = len(payload_text) - total_chars
-                print(f"⚠️ WARNING: Perdidos {diff} caracteres na segmentação!")
+                # Check if loss is only whitespace (acceptable for TTS)
+                original_no_ws = "".join(payload_text.split())
+                segments_no_ws = "".join("".join(seg_text.split()) for _, seg_text in segments)
+                if original_no_ws == segments_no_ws:
+                    print(f"🔍 [VERBOSE] Diferença de {diff} chars é apenas whitespace (OK para TTS)")
+                else:
+                    real_diff = len(original_no_ws) - len(segments_no_ws)
+                    if real_diff > 0:
+                        print(f"⚠️ WARNING: Perdidos {real_diff} caracteres não-whitespace na segmentação!")
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -321,6 +333,18 @@ class EdgeTTSEngine:
         micro_split_tracker: Set[str] = set()
         idx = 0
 
+        # **PARALLEL OPTIMIZATION**: Process segments in batches when parallel mode is enabled
+        if self._enable_parallel and _edge_rate_limiter and len(segments_to_process) > 1:
+            if self.verbose:
+                max_batch = _edge_rate_limiter._value
+                print(f"🚀 [VERBOSE] Processamento paralelo ativado (batch size: {max_batch})")
+            return await self._synthesize_parallel(
+                output_path,
+                segments_to_process,
+                force_plain_segments,
+            )
+
+        # **SEQUENTIAL MODE**: Original logic for compatibility
         try:
             while idx < len(segments_to_process):
                 voice, segment_text = segments_to_process[idx]
@@ -490,6 +514,140 @@ class EdgeTTSEngine:
             print(f"⚠️ Edge TTS: {failed_segments} segment(s) falharam, mas {success_rate*100:.1f}% foi gerado com sucesso")
             if self.verbose:
                 print(f"   Processados: {total_segments}/{expected_segments} segmentos")
+
+        return output_path
+
+    async def _synthesize_parallel(
+        self,
+        output_path: Path,
+        segments_to_process: List[Tuple[str, str]],
+        force_plain_segments: bool,
+    ) -> Optional[Path]:
+        """Process segments in parallel batches for faster synthesis."""
+        import tempfile
+        from pathlib import Path
+
+        global _edge_rate_limiter
+
+        batch_size = _edge_rate_limiter._value if _edge_rate_limiter else 2
+        total_segments = len(segments_to_process)
+        successful_segments = 0
+        temp_files: List[Path] = []
+
+        if self.verbose:
+            print(f"🚀 [PARALLEL] Processando {total_segments} segmentos em batches de {batch_size}")
+
+        # Process in batches
+        for batch_start in range(0, total_segments, batch_size):
+            batch_end = min(batch_start + batch_size, total_segments)
+            batch = segments_to_process[batch_start:batch_end]
+
+            if self.verbose:
+                print(f"🚀 [PARALLEL] Batch {batch_start//batch_size + 1}: segmentos {batch_start+1}-{batch_end}/{total_segments}")
+
+            # Create temp files for this batch
+            batch_temp_files = []
+            for i in range(len(batch)):
+                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3', dir=output_path.parent)
+                temp_file.close()
+                batch_temp_files.append(Path(temp_file.name))
+
+            # Create tasks for parallel processing
+            tasks = []
+            for i, (voice, segment_text) in enumerate(batch):
+                # Validate and prepare segment
+                if voice is None:
+                    voice = self.voice or "en-US-GuyNeural"
+
+                segment_text = segment_text.strip("\n\r") if segment_text else ""
+                if not segment_text:
+                    continue
+
+                if force_plain_segments or self._should_force_plain_text(segment_text):
+                    simplified = self._simplify_segment_text(segment_text, limit_chars=None)
+                    if simplified:
+                        segment_text = simplified
+
+                # Create synthesis task
+                task = self._synthesize_segment(
+                    segment_text,
+                    voice,
+                    batch_temp_files[i],
+                    append=False,  # Each segment gets its own file
+                )
+                tasks.append((i, task, batch_temp_files[i]))
+
+            # Execute batch in parallel
+            results = await asyncio.gather(
+                *[task for _, task, _ in tasks],
+                return_exceptions=True
+            )
+
+            # Check results and collect successful temp files
+            for (idx, _, temp_file), result in zip(tasks, results):
+                if isinstance(result, Exception):
+                    if self.verbose:
+                        print(f"⚠️ [PARALLEL] Segmento {batch_start + idx + 1} falhou: {result}")
+                    # Clean up failed temp file
+                    with suppress(OSError):
+                        temp_file.unlink()
+                elif result:  # Success
+                    successful_segments += 1
+                    temp_files.append(temp_file)
+                    if self.verbose:
+                        file_size = temp_file.stat().st_size if temp_file.exists() else 0
+                        print(f"✅ [PARALLEL] Segmento {batch_start + idx + 1} OK ({file_size} bytes)")
+                else:
+                    if self.verbose:
+                        print(f"⚠️ [PARALLEL] Segmento {batch_start + idx + 1} falhou")
+                    with suppress(OSError):
+                        temp_file.unlink()
+
+        # Concatenate all successful segments
+        if not temp_files:
+            self.last_error = "no_audio_generated_parallel"
+            return None
+
+        if self.verbose:
+            print(f"🔗 [PARALLEL] Concatenando {len(temp_files)} segmentos bem-sucedidos...")
+
+        try:
+            with output_path.open('wb') as outfile:
+                for temp_file in temp_files:
+                    if temp_file.exists():
+                        with temp_file.open('rb') as infile:
+                            outfile.write(infile.read())
+                        # Clean up temp file
+                        with suppress(OSError):
+                            temp_file.unlink()
+        except Exception as exc:
+            self.last_error = f"concatenation_failed: {exc}"
+            if self.verbose:
+                print(f"❌ [PARALLEL] Erro ao concatenar: {exc}")
+            # Clean up remaining temp files
+            for temp_file in temp_files:
+                with suppress(OSError):
+                    temp_file.unlink()
+            return None
+
+        # Update statistics
+        self.last_segment_report = {
+            "expected": total_segments,
+            "generated": successful_segments,
+            "failed": total_segments - successful_segments,
+        }
+
+        success_rate = successful_segments / total_segments
+        if success_rate < 0.95:
+            self.partial_failure_detected = True
+            print(f"⚠️ Edge TTS Paralelo: apenas {successful_segments}/{total_segments} segmentos ({success_rate*100:.1f}%)")
+            self.last_error = f"incomplete_segments:{successful_segments}/{total_segments}"
+            with suppress(OSError):
+                output_path.unlink()
+            return None
+
+        if self.verbose:
+            print(f"✅ [PARALLEL] Síntese completa: {successful_segments}/{total_segments} segmentos ({success_rate*100:.1f}%)")
 
         return output_path
 

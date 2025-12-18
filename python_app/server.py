@@ -247,7 +247,6 @@ def _pick_auto_engine(
     estimated_seconds: float,
     pool: dict[str, tuple[ConversionConfig, object]],
     telemetry_speeds: Optional[Dict[str, float]] = None,
-    force_skip: Optional[set[str]] = None,
 ) -> tuple[str, list[str]]:
     def append(order: list[str], candidate: str) -> None:
         if candidate in pool and candidate not in order:
@@ -255,7 +254,6 @@ def _pick_auto_engine(
 
     # Ordem do mais rápido para mais lento: edge > piper > coqui
     # Testado com 3053 chars: edge=21s (144 chars/s), piper=27s (112 chars/s), coqui=113s (26 chars/s)
-    force_skip = force_skip or set()
     order: list[str] = []
     if telemetry_speeds:
         ranked = sorted(
@@ -264,11 +262,10 @@ def _pick_auto_engine(
             reverse=True,
         )
         for name, _ in ranked:
-            if name not in force_skip:
-                append(order, name)
-    for default in ("edge", "piper", "coqui"):
-        if default not in force_skip:
-            append(order, default)
+            append(order, name)
+    append(order, "edge")
+    append(order, "piper")
+    append(order, "coqui")
 
     if not order:
         order = list(pool.keys())
@@ -284,16 +281,6 @@ def _next_auto_engine(order: list[str], attempted: set[str], pool: dict[str, tup
     return None
 
 
-def _should_force_offline(config: Optional[ConversionConfig], chars: int, estimated_seconds: float) -> bool:
-    if not config or (config.engine or "").lower() != "edge":
-        return False
-    max_chars = max(getattr(config, "edge_auto_offline_chars", 0), 0)
-    max_seconds = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
-    if max_chars and chars >= max_chars:
-        return True
-    if max_seconds and estimated_seconds >= max_seconds:
-        return True
-    return False
 
 
 class JobStatus(BaseModel):
@@ -857,46 +844,31 @@ async def process_conversion(job_id: str) -> None:
             attempted_auto: set[str] = set()
             chapter_clock_start = time.time()
             engine_runtime: Optional[float] = None
-            estimated_seconds = TextValidator.estimate_duration(clean_text)
-            if estimated_seconds <= 0:
-                estimated_seconds = max(len(clean_text) / 15.0, 30.0)
             if auto_mode:
                 if not telemetry_speeds:
                     summary = telemetry.summary()
                     telemetry_speeds = {name: stats.get("avg_chars_per_second", 0.0) for name, stats in summary.items()}
-                skips: set[str] = set()
-                if _should_force_offline(config, len(clean_text), estimated_seconds):
-                    skips.add("edge")
-                    job["events"].append("⚡ AUTO: pulando EDGE (capítulo muito longo/lento)")
                 selected_engine, auto_order = _pick_auto_engine(
                     len(clean_text),
-                    estimated_seconds,
+                    TextValidator.estimate_duration(clean_text),
                     auto_engine_pool,
                     telemetry_speeds=telemetry_speeds,
-                    force_skip=skips,
                 )
                 attempted_auto.add(selected_engine)
                 active_config, tts_engine = auto_engine_pool[selected_engine]
                 job["events"].append(f"⚡ AUTO: usando {selected_engine.upper()} para este capítulo")
-                job["events"].append(f"   ↳ Texto: {len(clean_text)} chars, estimado {int(estimated_seconds)}s")
+                est = TextValidator.estimate_duration(clean_text)
+                if est <= 0:
+                    est = max(len(clean_text) / 15.0, 30.0)
+                job["events"].append(f"   ↳ Texto: {len(clean_text)} chars, estimado {int(est)}s")
+            estimated_seconds = TextValidator.estimate_duration(clean_text)
+            if estimated_seconds <= 0:
+                estimated_seconds = max(len(clean_text) / 15.0, 30.0)
 
             # Use TTS engine
             while True:
                 if job.get("cancelRequested"):
                     _finalize_cancel(job_id, job, f"🛑 Conversão cancelada durante o capítulo {chapter_name}")
-                    return
-
-                if _should_force_offline(active_config, len(clean_text), estimated_seconds):
-                    job["events"].append("⚠️ EDGE muito lento para este capítulo; usando engine offline")
-                    if auto_mode:
-                        next_engine = _next_auto_engine(auto_order, attempted_auto, auto_engine_pool)
-                        if next_engine:
-                            attempted_auto.add(next_engine)
-                            active_config, tts_engine = auto_engine_pool[next_engine]
-                            continue
-                    if _switch_to_next_engine("EDGE muito lento para este capítulo"):
-                        continue
-                    _record_chapter_failure(job, tts_engine, chapter_name, "EDGE muito lento para este capítulo", chapter_index=idx)
                     return
 
                 tts_path, needs_transcode = _resolve_tts_output(output_file, active_config.engine if active_config else config.engine)
@@ -1111,8 +1083,8 @@ async def process_conversion(job_id: str) -> None:
         _persist_job_log(job_id, job)
 
     finally:
-        if zip_archive:
-            with contextlib.suppress(Exception):
+        with contextlib.suppress(Exception):
+            if zip_archive:
                 zip_archive.close()
         temp_path = Path(job["file_path"])
         if temp_path.exists():

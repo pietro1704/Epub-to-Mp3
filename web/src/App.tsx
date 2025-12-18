@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CachedJobsAlert from './components/CachedJobsAlert';
 import ConversionForm from './components/ConversionForm';
 import DownloadsPanel from './components/DownloadsPanel';
@@ -10,6 +10,7 @@ import BookCoverCard from './components/BookCoverCard';
 import { useConversionFlow } from './hooks/useConversionFlow';
 import { useTranslations } from './i18n/I18nProvider';
 import type { ConversionClient } from './services/ConversionService';
+import type { ConversionFormValues, ConversionState } from './types/conversion';
 
 export interface AppProps {
   client?: ConversionClient;
@@ -19,7 +20,7 @@ const CACHED_ALERT_DISMISSED_KEY = 'ebook-tts-cached-alert-dismissed';
 
 export default function App(props?: AppProps): JSX.Element {
   const { client } = props ?? {};
-  const { state, submit, resume, reset, cancel, isBusy, cachedJobs } = useConversionFlow(client);
+  const { state, submit, resume, reset, cancel, cancelJobById, removeCachedJob, isBusy, cachedJobs } = useConversionFlow(client);
   const [formVersion, setFormVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<'setup' | 'progress' | 'downloads'>('setup');
   const [userSelectedTab, setUserSelectedTab] = useState(false);
@@ -71,20 +72,73 @@ export default function App(props?: AppProps): JSX.Element {
     setUserSelectedTab(true);
   }, []);
 
-  useEffect(() => {
-    // Only auto-switch tabs if user hasn't manually selected a tab
-    if (userSelectedTab) return;
+  const handleFormSubmit = useCallback(async (values: ConversionFormValues) => {
+    setActiveTab('progress');
+    setUserSelectedTab(false);
+    await submit(values);
+  }, [submit]);
 
-    if (state.phase === 'polling' && activeTab !== 'progress') {
-      setActiveTab('progress');
-    }
-    if (state.phase === 'success' && activeTab !== 'downloads') {
-      setActiveTab('downloads');
+  useEffect(() => {
+    if (state.phase === 'success') {
+      if (activeTab !== 'downloads') {
+        setActiveTab('downloads');
+      }
+      setUserSelectedTab(false);
+      return;
     }
     if (state.phase === 'error' || state.phase === 'cancelled') {
       setActiveTab('progress');
+      setUserSelectedTab(false);
+      return;
+    }
+    if (state.phase === 'submitting' && activeTab !== 'progress') {
+      setActiveTab('progress');
+      return;
+    }
+    if (!userSelectedTab && state.phase === 'polling' && activeTab !== 'progress') {
+      setActiveTab('progress');
     }
   }, [state.phase, activeTab, userSelectedTab]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return;
+    }
+    if (Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  const lastPhaseRef = useRef<ConversionState['phase']>(state.phase);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      lastPhaseRef.current = state.phase;
+      return;
+    }
+    if (Notification.permission !== 'granted') {
+      lastPhaseRef.current = state.phase;
+      return;
+    }
+    if (state.phase === lastPhaseRef.current) {
+      return;
+    }
+    if (state.phase === 'success') {
+      new Notification('Conversão concluída', {
+        body: state.bookTitle ? `“${state.bookTitle}” está pronto para download.` : 'Seu audiobook está pronto.',
+      });
+    }
+    if (state.phase === 'error') {
+      new Notification('Conversão falhou', {
+        body: state.error || 'Ocorreu um erro. Verifique o log.',
+      });
+    }
+    if (state.phase === 'cancelled') {
+      new Notification('Conversão cancelada', {
+        body: 'Você pode retomar nas conversões interrompidas.',
+      });
+    }
+    lastPhaseRef.current = state.phase;
+  }, [state.phase, state.bookTitle, state.error]);
 
   const tabs = useMemo(
     () => [
@@ -110,7 +164,11 @@ export default function App(props?: AppProps): JSX.Element {
               )
             }
           >
-            <ConversionForm key={formVersion} isSubmitting={isBusy} onSubmit={submit} />
+            <ConversionForm
+              key={formVersion}
+              isSubmitting={isBusy}
+              onSubmit={handleFormSubmit}
+            />
           </Panel>
         ),
       },
@@ -194,7 +252,7 @@ export default function App(props?: AppProps): JSX.Element {
         ),
       },
     ],
-    [activeTab, formVersion, handleReset, handleTabChange, isBusy, showRawLog, state.cliCommand, state.downloads, state.error, state.etaSeconds, state.jobId, state.log, state.phase, state.summary, submit, t],
+    [activeTab, formVersion, handleFormSubmit, handleReset, handleTabChange, isBusy, showRawLog, state.cliCommand, state.downloads, state.error, state.etaSeconds, state.jobId, state.log, state.phase, state.summary, t],
   );
 
   const handleDismissAlert = useCallback(() => {
@@ -212,6 +270,17 @@ export default function App(props?: AppProps): JSX.Element {
     resume(jobId);
   }, [resume, handleDismissAlert]);
 
+  const handleRemoveCachedJob = useCallback(async (jobId: string) => {
+    handleDismissAlert();
+    await cancelJobById(jobId);
+    removeCachedJob(jobId);
+    try {
+      localStorage.setItem('ebook-tts-cached-count', Math.max(cachedJobs.length - 1, 0).toString());
+    } catch (error) {
+      console.warn('[App] Failed to update cached counter:', error);
+    }
+  }, [cancelJobById, removeCachedJob, handleDismissAlert, cachedJobs.length]);
+
   return (
     <Layout>
       <Hero />
@@ -226,6 +295,7 @@ export default function App(props?: AppProps): JSX.Element {
           cachedJobs={cachedJobs}
           onResume={handleResumeJob}
           onDismiss={handleDismissAlert}
+          onRemove={handleRemoveCachedJob}
         />
       )}
       <section className="tabs">
