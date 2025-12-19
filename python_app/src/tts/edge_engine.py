@@ -60,10 +60,12 @@ except ImportError:
     ssl = None  # type: ignore
 
 # Global rate limiter for Edge TTS to prevent resource contention
+# Default is 4 for optimal performance (same as HF web interface)
+# Set EDGE_MAX_CONCURRENCY=2 for slower connections or limited hardware
 try:
-    _edge_max_concurrency = int(os.getenv("EDGE_MAX_CONCURRENCY", "2").strip() or "2")
+    _edge_max_concurrency = int(os.getenv("EDGE_MAX_CONCURRENCY", "4").strip() or "4")
 except (TypeError, ValueError):
-    _edge_max_concurrency = 2
+    _edge_max_concurrency = 4
 _edge_max_concurrency = max(1, min(_edge_max_concurrency, 6))
 _edge_rate_limiter = None
 

@@ -297,6 +297,12 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
             if (Array.isArray(snapshot.chapterProgress)) {
               summaryUpdate.chapterProgress = snapshot.chapterProgress.map(entry => ({ ...entry }));
             }
+            if (typeof snapshot.parallelSlots === 'number') {
+              summaryUpdate.parallelSlots = snapshot.parallelSlots;
+            }
+            if (typeof snapshot.parallelActive === 'number') {
+              summaryUpdate.parallelActive = snapshot.parallelActive;
+            }
             const percentFromSnapshot = typeof snapshot.progressPercent === 'number'
               ? snapshot.progressPercent
               : typeof snapshot.progress === 'number'
@@ -374,6 +380,12 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
         }
         if (Array.isArray(finalSnapshot.chapterProgress)) {
           summaryUpdate.chapterProgress = finalSnapshot.chapterProgress.map(entry => ({ ...entry }));
+        }
+        if (typeof finalSnapshot.parallelSlots === 'number') {
+          summaryUpdate.parallelSlots = finalSnapshot.parallelSlots;
+        }
+        if (typeof finalSnapshot.parallelActive === 'number') {
+          summaryUpdate.parallelActive = finalSnapshot.parallelActive;
         }
         summaryUpdate.progressPercent = 100;
         const detailUpdate: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>> = {};
@@ -531,6 +543,12 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
             if (Array.isArray(snapshot.chapterProgress)) {
               summaryUpdate.chapterProgress = snapshot.chapterProgress.map((entry) => ({ ...entry }));
             }
+            if (typeof snapshot.parallelSlots === 'number') {
+              summaryUpdate.parallelSlots = snapshot.parallelSlots;
+            }
+            if (typeof snapshot.parallelActive === 'number') {
+              summaryUpdate.parallelActive = snapshot.parallelActive;
+            }
             const percentFromSnapshot = typeof snapshot.progressPercent === 'number'
               ? snapshot.progressPercent
               : typeof snapshot.progress === 'number'
@@ -610,6 +628,12 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
         }
         if (Array.isArray(finalSnapshot.chapterProgress)) {
           summaryUpdate.chapterProgress = finalSnapshot.chapterProgress.map((entry) => ({ ...entry }));
+        }
+        if (typeof finalSnapshot.parallelSlots === 'number') {
+          summaryUpdate.parallelSlots = finalSnapshot.parallelSlots;
+        }
+        if (typeof finalSnapshot.parallelActive === 'number') {
+          summaryUpdate.parallelActive = finalSnapshot.parallelActive;
         }
         summaryUpdate.progressPercent = 100;
         const detailUpdate: Partial<Pick<ConversionState, 'bookTitle' | 'bookAuthor' | 'coverUrl'>> = {};

@@ -44,6 +44,14 @@ export default function ChapterProgressList({ entries }: ChapterProgressListProp
               </span>
               <span className="chapter-progress__status" aria-label={statusLabel}>
                 {statusLabel}
+                {entry.status === 'completed' && typeof entry.elapsedSeconds === 'number' && (
+                  <span className="chapter-progress__time">
+                    {Math.round(entry.elapsedSeconds)}s
+                    {typeof entry.charsPerSecond === 'number'
+                      ? ` (~${entry.charsPerSecond} chars/s)`
+                      : ''}
+                  </span>
+                )}
               </span>
             </li>
           );

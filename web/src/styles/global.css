@@ -369,6 +369,13 @@ body {
   hyphens: auto;
 }
 
+.cover-card__title--wrap {
+  overflow: visible;
+  white-space: normal;
+  display: block;
+  word-break: break-word;
+}
+
 .cover-card__author {
   margin: 0.2rem 0 0;
   color: var(--text-secondary);
@@ -731,6 +738,12 @@ select {
   font-size: 0.9rem;
 }
 
+.status-summary__row--parallel {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
 .status-summary__row dt {
   margin: 0;
   font-weight: 600;
@@ -740,6 +753,37 @@ select {
 .status-summary__row dd {
   margin: 0;
   color: var(--text-primary);
+}
+
+.parallel-meter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.parallel-meter__count {
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.parallel-meter__slots {
+  display: flex;
+  gap: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.parallel-meter__slot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--panel-border);
+  background: transparent;
+}
+
+.parallel-meter__slot--active {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
 .status-panel__toolbar {
@@ -911,6 +955,15 @@ select {
 .chapter-progress__status {
   font-size: 0.8rem;
   color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+}
+
+.chapter-progress__time {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
 }
 
 .status-chip {

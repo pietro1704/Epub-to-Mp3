@@ -80,6 +80,16 @@ class ConverterApplication:
     def run(self, args: argparse.Namespace) -> int:
         """Main application entry point"""
         try:
+            # **AUTO-OPTIMIZATION**: Detect hardware and apply optimizations
+            from src.hardware_detector import HardwareDetector
+
+            hardware_profile = HardwareDetector.detect()
+            HardwareDetector.apply_optimizations(hardware_profile)
+
+            verbose = self._resolve_verbose(args)
+            if verbose:
+                HardwareDetector.print_profile(hardware_profile, verbose=True)
+
             # **NEW**: Handle clear-cache command
             if getattr(args, "command", None) == "clear_cache":
                 return self._handle_clear_cache()

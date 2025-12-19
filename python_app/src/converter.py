@@ -15,7 +15,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 import re
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
+
+import psutil
 
 from .ebook_reader import EbookReader, Chapter
 from .config import ConversionConfig
@@ -64,6 +66,15 @@ class AudioConverter:
         self._current_book_path: Optional[Path] = None
         self.show_tts_output = False  # Only show TTS output in verbose mode
         self._retry_original_texts: Dict[str, str] = {}
+        self._parallel_state: Dict[str, Any] = {
+            "ceiling": 1,
+            "current": 1,
+            "best_throughput": 0.0,
+            "last_throughput": None,
+            "degrade_runs": 0,
+        }
+        self._health_state: Dict[str, Any] = {"active": False}
+        self._health_watchdog: Optional[asyncio.Task] = None
 
     @staticmethod
     def _speech_text(chapter: Chapter) -> str:
@@ -443,6 +454,200 @@ class AudioConverter:
         if files_generated == 0 and self.verbose:
             print("   ♻️ Todos os arquivos .txt já existem (usando cache)")
 
+    def _reset_parallel_state(self, recommended_parallel: int) -> None:
+        """Initialise the dynamic parallelism state."""
+        target = max(1, int(recommended_parallel or 1))
+        self._parallel_state = {
+            "ceiling": target,
+            "current": target,
+            "best_throughput": 0.0,
+            "last_throughput": None,
+            "degrade_runs": 0,
+        }
+        with contextlib.suppress(Exception):
+            # Warm up psutil cpu_percent to avoid 0.0 on first reading
+            psutil.cpu_percent(interval=None)
+
+    def _estimate_chapter_chars(self, chapter: Chapter) -> int:
+        """Estimate the number of characters for a chapter."""
+        try:
+            text = self._speech_text(chapter)
+        except Exception:
+            text = getattr(chapter, "text", "") or ""
+        return len(text or "")
+
+    def _resource_snapshot(self) -> tuple[float, float]:
+        """Return (cpu_percent, ram_available_gb)."""
+        cpu_pct = 0.0
+        ram_gb = 0.0
+        with contextlib.suppress(Exception):
+            cpu_pct = float(psutil.cpu_percent(interval=None))
+        with contextlib.suppress(Exception):
+            mem = psutil.virtual_memory()
+            ram_gb = float(mem.available / (1024**3))
+        return (cpu_pct, ram_gb)
+
+    def _auto_tune_parallelism(
+        self,
+        *,
+        throughput: Optional[float],
+        batch_errors: int,
+    ) -> tuple[int, Optional[str]]:
+        """Decide the next chapter parallelism level based on telemetry."""
+        state = self._parallel_state or {}
+        ceiling = max(1, int(state.get("ceiling") or 1))
+        current = max(1, min(ceiling, int(state.get("current") or 1)))
+        best = float(state.get("best_throughput") or 0.0)
+        last = state.get("last_throughput")
+        degrade_runs = int(state.get("degrade_runs") or 0)
+        cpu_pct, ram_gb = self._resource_snapshot()
+        reason: Optional[str] = None
+        new_value = current
+
+        if batch_errors > 0:
+            new_value = max(1, current - 1)
+            state["degrade_runs"] = min(3, degrade_runs + 1)
+            reason = f"reduzindo para {new_value} capítulo(s) simultâneos após {batch_errors} erro(s)"
+        else:
+            state["degrade_runs"] = max(0, degrade_runs - 1)
+            if throughput:
+                if throughput > best:
+                    state["best_throughput"] = throughput
+                if last and throughput < last * 0.78 and current > 1:
+                    new_value = current - 1
+                    reason = (
+                        f"throughput caiu de ~{int(last)} para ~{int(throughput)} chars/s → "
+                        f"{new_value} capítulo(s)"
+                    )
+                elif last and throughput >= last * 1.18 and current < ceiling:
+                    new_value = current + 1
+                    reason = (
+                        f"throughput atingiu ~{int(throughput)} chars/s → "
+                        f"testando {new_value} capítulo(s)"
+                    )
+                elif not last and current < ceiling and throughput >= max(best, 1.0):
+                    new_value = current + 1
+                    reason = (
+                        f"lote inicial rápido (~{int(throughput)} chars/s) → "
+                        f"{new_value} capítulo(s)"
+                    )
+
+            if not reason:
+                if ram_gb < 0.45 and new_value > 1:
+                    new_value = new_value - 1
+                    reason = f"RAM livre baixa ({ram_gb:.1f} GB) → limitando a {new_value}"
+                elif cpu_pct < 55.0 and new_value < ceiling:
+                    new_value = new_value + 1
+                    reason = f"CPU em {int(cpu_pct)}% → liberando {new_value} capítulo(s)"
+                elif cpu_pct > 94.0 and throughput and throughput < best * 0.85 and new_value > 1:
+                    new_value = new_value - 1
+                    reason = f"CPU saturada ({int(cpu_pct)}%) sem ganho → {new_value} capítulo(s)"
+
+        new_value = max(1, min(ceiling, new_value))
+        if throughput:
+            state["last_throughput"] = throughput
+        elif "last_throughput" not in state:
+            state["last_throughput"] = None
+        state["current"] = new_value
+        self._parallel_state = state
+        return new_value, reason
+
+    def _start_health_watchdog(self, total_chapters: int) -> None:
+        """Launch watchdog to observe stalled conversions."""
+        if total_chapters <= 0:
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        state = {
+            "active": True,
+            "total": max(total_chapters, 0),
+            "completed": 0,
+            "last_progress": time.time(),
+            "warn_emitted": False,
+            "action_emitted": False,
+        }
+        self._health_state = state
+        if self._health_watchdog:
+            self._health_watchdog.cancel()
+        self._health_watchdog = loop.create_task(self._watch_conversion_health())
+
+    async def _stop_health_watchdog(self) -> None:
+        """Stop watchdog task."""
+        state = getattr(self, "_health_state", None)
+        if isinstance(state, dict):
+            state["active"] = False
+        task = self._health_watchdog
+        self._health_watchdog = None
+        if task:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+
+    def _mark_health_progress(
+        self,
+        chapter_index: int,
+        success: bool,
+        elapsed: float,
+        error: Optional[str] = None,
+    ) -> None:
+        """Update watchdog state after each chapter."""
+        state = getattr(self, "_health_state", None)
+        if not isinstance(state, dict) or not state.get("active"):
+            return
+        state["last_progress"] = time.time()
+        state["completed"] = min(state.get("completed", 0) + 1, state.get("total", 0))
+        state["last_chapter"] = chapter_index
+        state["last_success"] = bool(success)
+        state["last_elapsed"] = float(elapsed or 0.0)
+        state["last_error"] = error or ""
+        state["warn_emitted"] = False
+        state["action_emitted"] = False
+
+    async def _watch_conversion_health(self) -> None:
+        """Background loop that watches for long stalls."""
+        warning_threshold = 90.0
+        action_threshold = 150.0
+        check_interval = 15.0
+        while True:
+            await asyncio.sleep(check_interval)
+            state = getattr(self, "_health_state", None)
+            if not isinstance(state, dict) or not state.get("active"):
+                break
+            total = state.get("total", 0)
+            completed = state.get("completed", 0)
+            if total and completed >= total:
+                break
+            last_progress = state.get("last_progress") or time.time()
+            stalled = time.time() - last_progress
+            if stalled >= action_threshold and not state.get("action_emitted"):
+                state["action_emitted"] = True
+                last_chapter = state.get("last_chapter")
+                info = f"{int(stalled)}s sem concluir capítulos"
+                if last_chapter:
+                    info += f" (último capítulo #{last_chapter})"
+                print(f"\n🩺 Watchdog: {info} – investigando gargalo")
+                if not self._apply_watchdog_backpressure():
+                    print("   Sugestão: verifique conexão ou permitir fallback offline (Coqui/Piper).")
+            elif stalled >= warning_threshold and not state.get("warn_emitted"):
+                state["warn_emitted"] = True
+                print(f"\n⚠️ Watchdog: Nenhum capítulo finalizado há {int(stalled)}s – aguardando progresso...")
+
+    def _apply_watchdog_backpressure(self) -> bool:
+        """Reduce parallelism when stalling to regain stability."""
+        state = self._parallel_state or {}
+        current = int(state.get("current") or 1)
+        ceiling = int(state.get("ceiling") or current)
+        if current > 1:
+            new_value = max(1, current - 1)
+            state["current"] = new_value
+            state["ceiling"] = max(1, min(new_value, ceiling))
+            self._parallel_state = state
+            print(f"   🧠 Watchdog: reduzindo capítulos simultâneos {current} → {new_value}")
+            return True
+        return False
+
     async def convert(self, reader: EbookReader, config: ConversionConfig) -> ConversionResult:
         """Convert all chapters in ``reader`` according to ``config``."""
 
@@ -481,12 +686,19 @@ class AudioConverter:
 
         print(self.loc.t("conversion_start", title=reader.title, chapters=total_chapters))
         print(self.loc.t("conversion_output", path=output_dir))
-        print("🔄 Modo sequencial: processando capítulos um por vez")
+        chapter_parallel_count = int(os.getenv("CHAPTER_PARALLEL_COUNT", "1"))
+        self._reset_parallel_state(chapter_parallel_count)
+        if chapter_parallel_count > 1:
+            print(f"🚀 Modo paralelo automático: até {chapter_parallel_count} capítulos simultâneos")
+        else:
+            print("🔄 Modo sequencial automático: processando capítulos um por vez")
 
         if total_chapters == 0:
             empty_result = ConversionResult(True, 0, 0, [], [])
             self._report_results(empty_result)
             return empty_result
+
+        self._start_health_watchdog(total_chapters)
 
         # **NEW**: Generate ALL .txt files BEFORE starting TTS conversion
         print("\n📝 Gerando arquivos de texto...")
@@ -527,15 +739,26 @@ class AudioConverter:
         if self.verbose:
             print(f"🔍 [VERBOSE] Engine configurado: {type(tts_engine).__name__}")
 
-        # Always use sequential processing
-        result = await self._convert_chapters_sequential(
-            chapters,
-            tts_engine,
-            temp_dir,
-            config,
-            is_auto_engine=is_auto_engine,
-            auto_engine_pool=auto_engine_pool,
-        )
+        # Choose parallel or sequential based on hardware detection
+        if chapter_parallel_count > 1:
+            result = await self._convert_chapters_parallel(
+                chapters,
+                tts_engine,
+                temp_dir,
+                config,
+                max_concurrent_chapters=chapter_parallel_count,
+                is_auto_engine=is_auto_engine,
+                auto_engine_pool=auto_engine_pool,
+            )
+        else:
+            result = await self._convert_chapters_sequential(
+                chapters,
+                tts_engine,
+                temp_dir,
+                config,
+                is_auto_engine=is_auto_engine,
+                auto_engine_pool=auto_engine_pool,
+            )
 
         total_output_files = list(result.output_files)
         raw_failures = self._build_error_map(result.errors)
@@ -679,6 +902,7 @@ class AudioConverter:
         else:
             print("❌ Conversão falhou - arquivos temporários mantidos para debug")
 
+        await self._stop_health_watchdog()
         self.progress.finish()
         self._report_results(result)
         return result
@@ -729,6 +953,103 @@ class AudioConverter:
             fallback_voice=fallback_voice,
         )
 
+
+    async def _convert_chapters_parallel(
+        self,
+        chapters: Iterable[Chapter],
+        tts_engine,
+        output_dir: Path,
+        config: ConversionConfig,
+        max_concurrent_chapters: int = 3,
+        *,
+        is_auto_engine: bool = False,
+        auto_engine_pool: Optional[Dict[str, tuple[ConversionConfig, object]]] = None,
+    ) -> ConversionResult:
+        """Converte múltiplos capítulos em paralelo para máxima velocidade."""
+        chapters_list = list(chapters)
+        if not chapters_list:
+            return ConversionResult(True, 0, 0, [], [])
+
+        total_chapters = len(chapters_list)
+        recommended = max(1, int(max_concurrent_chapters or 1))
+        self._parallel_state.setdefault("ceiling", recommended)
+        self._parallel_state["ceiling"] = recommended
+        self._parallel_state["current"] = max(1, min(recommended, int(self._parallel_state.get("current") or recommended)))
+        print(f"🚀 Modo paralelo: processando {total_chapters} capítulos (atual {self._parallel_state['current']} simultâneos)")
+
+        # Validate and clean cache (once for all chapters)
+        self._validate_and_clean_cache(chapters_list, output_dir, config)
+
+        # Generate all text files (once for all chapters)
+        self._generate_all_text_files(chapters_list, output_dir, config)
+
+        all_converted_files: List[Path] = []
+        all_errors: List[str] = []
+        converted_total = 0
+        idx = 0
+        batch_index = 0
+
+        while idx < total_chapters:
+            desired = int(self._parallel_state.get("current", recommended) or recommended)
+            remaining = total_chapters - idx
+            current_parallel = max(1, min(desired, remaining))
+            batch = chapters_list[idx: idx + current_parallel]
+            idx += len(batch)
+            batch_index += 1
+            print(f"📦 Batch {batch_index}: {len(batch)} capítulo(s) em paralelo (meta {current_parallel})")
+
+            tasks = []
+            for chapter in batch:
+                task = self._convert_chapters_sequential(
+                    [chapter],
+                    tts_engine,
+                    output_dir,
+                    config,
+                    is_auto_engine=is_auto_engine,
+                    auto_engine_pool=auto_engine_pool,
+                )
+                tasks.append(task)
+
+            # Wait for all chapters in this batch to complete
+            batch_start = time.time()
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            batch_elapsed = max(time.time() - batch_start, 0.001)
+
+            batch_errors = 0
+            batch_chars = sum(self._estimate_chapter_chars(chapter) for chapter in batch)
+
+            for result in results:
+                if isinstance(result, Exception):
+                    all_errors.append(str(result))
+                    batch_errors += 1
+                elif isinstance(result, ConversionResult):
+                    all_converted_files.extend(result.output_files)
+                    all_errors.extend(result.errors)
+                    converted_total += result.converted_chapters
+                    batch_errors += len(result.errors)
+
+            batch_throughput = (batch_chars / batch_elapsed) if batch_chars else None
+            if batch_throughput and self.verbose:
+                print(f"   📈 Batch {batch_index}: ~{int(batch_throughput)} chars/s ({int(batch_elapsed)}s)")
+
+            if idx < total_chapters:
+                next_parallel, reason = self._auto_tune_parallelism(
+                    throughput=batch_throughput,
+                    batch_errors=batch_errors,
+                )
+                self._parallel_state["current"] = next_parallel
+                if reason:
+                    print(f"🧠 Auto-tune: {reason}")
+                else:
+                    print(f"🧠 Ajuste automático mantém {next_parallel} capítulo(s) simultâneos")
+
+        return ConversionResult(
+            success=len(all_errors) == 0,
+            total_chapters=total_chapters,
+            converted_chapters=converted_total or len(all_converted_files),
+            output_files=all_converted_files,
+            errors=all_errors,
+        )
 
     async def _convert_chapters_sequential(
         self,
@@ -1264,6 +1585,16 @@ class AudioConverter:
                         self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
                         chapter_elapsed = time.time() - start_time
                         current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                        if chapter_chars:
+                            throughput = int(chapter_chars / max(chapter_elapsed, 0.001))
+                        else:
+                            throughput = 0
+                        engine_display = (current_engine_label or "engine").upper()
+                        print(
+                            f"⏱️ [{engine_display}] Capítulo {chapter_num} → "
+                            f"{chapter_elapsed:.1f}s para {chapter_chars} chars "
+                            f"({throughput or '~0'} chars/s)"
+                        )
                         if (
                             current_engine_label == "edge"
                             and not switched_for_size
@@ -1408,6 +1739,7 @@ class AudioConverter:
                 )
                 if message:
                     print(message)
+                self._mark_health_progress(chapter_num, chapter_success, elapsed, chapter_error)
 
         success = len(errors) == 0
         return ConversionResult(
@@ -1478,6 +1810,9 @@ class AudioConverter:
             append(order, "edge")   # Fastest when healthy
             append(order, "piper")  # Good middle ground
             append(order, "coqui")  # Most reliable but slowest
+
+        if "edge" in order:
+            order = ["edge"] + [name for name in order if name != "edge"]
 
         selected = order[0]
 

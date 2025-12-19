@@ -5,6 +5,8 @@ Progress tracker unificado para conversões
 
 import time
 
+from .utils import TimeFormatter
+
 
 class ProgressTracker:
     """Rastreamento de progresso unificado para conversões"""
@@ -34,5 +36,4 @@ class ProgressTracker:
         return "█" * filled + "░" * (bar_width - filled)
 
     def _format_time(self, seconds: float) -> str:
-        mins, secs = divmod(int(seconds), 60)
-        return f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
+        return TimeFormatter.format_time(seconds)

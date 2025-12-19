@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+#
+# EPUB/PDF to MP3 Audiobook Converter - Turbo Mode
+#
+# Usage:
+#   ./convert book.epub
+#   ./convert "path/to/book.pdf"
+#   ./convert book.epub --chapter 5
+#
+# Features:
+# - Auto hardware detection & optimization
+# - Maximum speed settings (turbo mode)
+# - Verbose output enabled
+# - Smart engine selection (auto mode)
+#
+
+set -e  # Exit on error
+
+# Check if special flags (--help, -h, --version)
+if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "--version" ]; then
+    python -m python_app.main "$@"
+    exit 0
+fi
+
+# Check if book path provided
+if [ $# -eq 0 ]; then
+    echo "❌ Error: No book file specified"
+    echo ""
+    echo "Usage:"
+    echo "  ./convert book.epub"
+    echo "  ./convert \"path/to/book.pdf\""
+    echo "  ./convert book.epub --chapter 5"
+    echo ""
+    exit 1
+fi
+
+# Check if file exists
+BOOK_PATH="$1"
+if [ ! -f "$BOOK_PATH" ]; then
+    echo "❌ Error: File not found: $BOOK_PATH"
+    exit 1
+fi
+
+# Print header
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║  🚀 EPUB/PDF TO MP3 CONVERTER - TURBO MODE               ║"
+echo "╚════════════════════════════════════════════════════════════╝"
+echo ""
+
+# Run conversion with optimal settings
+# - convert: Use convert command
+# - --verbose: Show detailed progress and hardware info
+# - --engine auto: Smart engine selection based on performance
+# - Hardware auto-detection: Automatically applied by main.py
+python -m python_app.main convert "$@" --verbose --engine auto
+
+# Print completion
+echo ""
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║  ✅ CONVERSION COMPLETE!                                  ║"
+echo "╚════════════════════════════════════════════════════════════╝"

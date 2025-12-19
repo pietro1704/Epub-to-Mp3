@@ -360,6 +360,7 @@ Note: In production, this would be a real ZIP with all MP3 files.
     const chapter3 = this.createMockAudio('003 - Capítulo 3', 5);
     const zipUrl = this.createMockZip(bookTitle);
 
+    const parallelSlots = 3;
     const steps: JobSnapshot[] = [
       {
         jobId,
@@ -378,6 +379,8 @@ Note: In production, this would be a real ZIP with all MP3 files.
         bookTitle: 'Livro de Exemplo',
         bookAuthor: 'Autor Desconhecido',
         coverUrl,
+        parallelSlots,
+        parallelActive: 0,
      },
       {
         jobId,
@@ -403,6 +406,8 @@ Note: In production, this would be a real ZIP with all MP3 files.
         bookTitle: 'Livro de Exemplo',
         bookAuthor: 'Autor Desconhecido',
         coverUrl,
+        parallelSlots,
+        parallelActive: 0,
      },
       {
         jobId,
@@ -421,8 +426,9 @@ Note: In production, this would be a real ZIP with all MP3 files.
           '   Probabilidade: 95.2%',
           '🔍 Caracteres analisados: 12,450',
           '',
+          '🔄 Modo sequencial automático: processando capítulos um por vez',
           '🎯 Convertendo capítulo 1/3: Capítulo 1',
-          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 45s',
+          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s',
         ],
         detectedLanguage: 'pt-BR',
         chaptersTotal: 3,
@@ -432,6 +438,8 @@ Note: In production, this would be a real ZIP with all MP3 files.
         bookTitle: 'Livro de Exemplo',
         bookAuthor: 'Autor Desconhecido',
         coverUrl,
+        parallelSlots,
+        parallelActive: 1,
      },
       {
         jobId,
@@ -450,12 +458,14 @@ Note: In production, this would be a real ZIP with all MP3 files.
           '   Probabilidade: 95.2%',
           '🔍 Caracteres analisados: 12,450',
           '',
+          '🚀 Paralelo automático: até 3 capítulos simultâneos',
           '🎯 Convertendo capítulo 1/3: Capítulo 1',
-          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 45s',
+          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s',
           '✅ Concluído: 001 - Capítulo 1.mp3',
           '',
           '🎯 Convertendo capítulo 2/3: Capítulo 2',
-          'Processando: [████████████████████░░░░░░░░░░] 66.7% (2/3) ETA: 22s',
+          '🎯 Convertendo capítulo 3/3: Capítulo 3',
+          'Processando: [████████████████████░░░░░░░░░░] 66.7% (2/3) ETA: 0m 22s',
         ],
         detectedLanguage: 'pt-BR',
         chaptersTotal: 3,
@@ -465,6 +475,8 @@ Note: In production, this would be a real ZIP with all MP3 files.
         bookTitle: 'Livro de Exemplo',
         bookAuthor: 'Autor Desconhecido',
         coverUrl,
+        parallelSlots,
+        parallelActive: 2,
      },
       {
         jobId,
@@ -483,16 +495,17 @@ Note: In production, this would be a real ZIP with all MP3 files.
           '   Probabilidade: 95.2%',
           '🔍 Caracteres analisados: 12,450',
           '',
+          '🚀 Paralelo automático: até 3 capítulos simultâneos',
           '🎯 Convertendo capítulo 1/3: Capítulo 1',
-          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 45s',
+          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s',
           '✅ Concluído: 001 - Capítulo 1.mp3',
           '',
           '🎯 Convertendo capítulo 2/3: Capítulo 2',
-          'Processando: [████████████████████░░░░░░░░░░] 66.7% (2/3) ETA: 22s',
+          'Processando: [████████████████████░░░░░░░░░░] 66.7% (2/3) ETA: 0m 22s',
           '✅ Concluído: 002 - Capítulo 2.mp3',
           '',
           '🎯 Convertendo capítulo 3/3: Capítulo 3',
-          'Processando: [██████████████████████████████] 100.0% (3/3) ETA: 0s',
+          'Processando: [██████████████████████████████] 100.0% (3/3) ETA: 0m 0s',
           '✅ Concluído: 003 - Capítulo 3.mp3',
           '',
           '📦 Criando arquivo ZIP: Livro_de_Exemplo.zip',
@@ -513,6 +526,8 @@ Note: In production, this would be a real ZIP with all MP3 files.
         bookTitle: 'Livro de Exemplo',
         bookAuthor: 'Autor Desconhecido',
         coverUrl,
+        parallelSlots,
+        parallelActive: 0,
       },
     ];
 

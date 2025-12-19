@@ -26,6 +26,8 @@ export interface ChapterProgressEntry {
   index: number;
   name: string;
   status: ChapterProgressStatus;
+  elapsedSeconds?: number;
+  charsPerSecond?: number;
 }
 
 export interface JobSnapshot {
@@ -47,6 +49,8 @@ export interface JobSnapshot {
   bookAuthor?: string;
   coverUrl?: string;
   coverMimeType?: string;
+  parallelSlots?: number;
+  parallelActive?: number;
 }
 
 export interface StatusEntry {
@@ -62,6 +66,8 @@ export interface ConversionSummary {
   currentChapter?: string;
   progressPercent?: number | null;
   chapterProgress?: ChapterProgressEntry[];
+  parallelSlots?: number;
+  parallelActive?: number;
 }
 
 export interface ConversionState {

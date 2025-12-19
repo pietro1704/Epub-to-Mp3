@@ -119,6 +119,17 @@ export default function StatusPanel({
                 : '—'}
             </dd>
           </div>
+          {typeof summary.parallelSlots === 'number' && summary.parallelSlots > 0 && (
+            <div className="status-summary__row status-summary__row--parallel">
+              <dt>{t.status.summaryParallel}</dt>
+              <dd>
+                <ParallelismMeter
+                  slots={summary.parallelSlots}
+                  active={summary.parallelActive ?? 0}
+                />
+              </dd>
+            </div>
+          )}
           </dl>
         </div>
       )}
@@ -162,6 +173,36 @@ export default function StatusPanel({
   );
 }
 
+interface ParallelismMeterProps {
+  slots: number;
+  active: number;
+}
+
+function ParallelismMeter({ slots, active }: ParallelismMeterProps): JSX.Element {
+  const normalizedSlots = Math.max(1, Math.min(Math.floor(slots), 12));
+  const clampedActive = Math.max(0, Math.min(Math.floor(active), slots));
+  const items = Array.from({ length: normalizedSlots }, (_, index) => {
+    const filled = index < clampedActive;
+    return (
+      <span
+        key={`parallel-slot-${index}`}
+        className={`parallel-meter__slot${filled ? ' parallel-meter__slot--active' : ''}`}
+        aria-hidden="true"
+      />
+    );
+  });
+  return (
+    <div className="parallel-meter" aria-label={`${clampedActive}/${slots} slots`}>
+      <span className="parallel-meter__count">
+        {clampedActive}/{slots}
+      </span>
+      <div className="parallel-meter__slots">
+        {items}
+      </div>
+    </div>
+  );
+}
+
 function resolveLanguageLabel(code: string, t: Translations): string {
   if (!code) return '—';
   const direct = t.form.languageOptions?.[code];
@@ -197,10 +238,28 @@ function formatEta(
   if (etaSeconds <= 1) {
     return t.status.etaSoon;
   }
-  const minutes = Math.floor(etaSeconds / 60);
-  const seconds = Math.max(0, Math.round(etaSeconds % 60));
-  if (minutes >= 1) {
-    return locale === 'pt' ? `≈ ${minutes} min` : `≈ ${minutes} min`;
+  const totalSeconds = Math.max(0, Math.round(etaSeconds));
+  const units: Array<{ label: string; value: number }> = [
+    { label: 'd', value: 86400 },
+    { label: 'h', value: 3600 },
+    { label: 'm', value: 60 },
+    { label: 's', value: 1 },
+  ];
+  let remainder = totalSeconds;
+  const parts: string[] = [];
+  for (const unit of units) {
+    const qty = Math.floor(remainder / unit.value);
+    if (qty > 0) {
+      parts.push(`${qty}${unit.label}`);
+      remainder -= qty * unit.value;
+    }
+    if (parts.length >= 2) {
+      break;
+    }
   }
-  return locale === 'pt' ? `≈ ${seconds} s` : `≈ ${seconds} s`;
+  if (parts.length === 0) {
+    parts.push('0s');
+  }
+  const humanEta = parts.join(' ');
+  return locale === 'pt' ? `≈ ${humanEta}` : `≈ ${humanEta}`;
 }

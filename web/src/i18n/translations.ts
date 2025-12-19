@@ -115,6 +115,7 @@ export interface StatusText {
   summaryChapters: string;
   summaryCurrent: string;
   summaryProgress: string;
+  summaryParallel: string;
   chapterProgressTitle: string;
   chapterStatuses: Record<ChapterProgressStatus, string>;
 }
@@ -321,6 +322,7 @@ export const translations: Record<Locale, Translations> = {
       summaryChapters: 'Capítulos totais',
       summaryCurrent: 'Capítulo em andamento',
       summaryProgress: 'Progresso',
+      summaryParallel: 'Capítulos em paralelo',
       chapterProgressTitle: 'Progresso por capítulo',
       chapterStatuses: {
         pending: 'Na fila',
@@ -518,6 +520,7 @@ export const translations: Record<Locale, Translations> = {
       summaryChapters: 'Total chapters',
       summaryCurrent: 'Current chapter',
       summaryProgress: 'Progress',
+      summaryParallel: 'Parallel chapters',
       chapterProgressTitle: 'Chapter progress',
       chapterStatuses: {
         pending: 'Queued',

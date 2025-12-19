@@ -43,7 +43,7 @@ export default function BookCoverCard({ title, author, coverUrl, phase }: BookCo
       </div>
       <div className="cover-card__details">
         <p className="cover-card__status">{statusLabel}</p>
-        <h2 className="cover-card__title">{title || 'Livro carregado'}</h2>
+        <h2 className="cover-card__title cover-card__title--wrap">{title || 'Livro carregado'}</h2>
         <p className="cover-card__author">{author || 'Autor desconhecido'}</p>
       </div>
     </section>
