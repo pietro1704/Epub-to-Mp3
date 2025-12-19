@@ -418,6 +418,26 @@ async def convert_ebook(
         buffer.write(raw_payload)
     file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
 
+    cover_name = None
+    cover_url = None
+    cover_mime = None
+    cover_blob = None
+    try:
+        reader_for_cover = EbookReader(str(temp_file))
+        cover_blob = reader_for_cover.extract_cover_image()
+        if cover_blob:
+            cover_slug = FileManager.sanitize_filename(reader_for_cover.title or Path(file.filename).stem) or "capa"
+            filename = f"{cover_slug}_cover{cover_blob.extension}"
+            cover_path = output_dir / job_id
+            cover_path.mkdir(parents=True, exist_ok=True)
+            target = cover_path / filename
+            target.write_bytes(cover_blob.data)
+            cover_name = filename
+            cover_url = f"/api/outputs/{job_id}/{filename}"
+            cover_mime = cover_blob.media_type
+    except Exception:
+        pass
+
     jobs[job_id] = {
         "jobId": job_id,
         "state": "queued",
@@ -432,9 +452,9 @@ async def convert_ebook(
         "outputs": [],
         "bookTitle": None,
         "bookAuthor": None,
-        "cover": None,
-        "coverUrl": None,
-        "coverMimeType": None,
+        "cover": {"name": cover_name, "url": cover_url, "mimeType": cover_mime} if cover_name else None,
+        "coverUrl": cover_url,
+        "coverMimeType": cover_mime,
         "cancelRequested": False,
         "fileHash": file_hash,
         "parallelSlots": _PARALLEL_SLOTS_DEFAULT,
@@ -1110,7 +1130,7 @@ async def process_conversion(job_id: str) -> None:
                             except Exception:
                                 pass
 
-                    telemetry.record(
+                    telemetry.record_sample(
                         engine=(local_active_config.engine if local_active_config else config.engine),
                         voice=(local_active_config.voice if local_active_config else None),
                         chars=len(clean_text),
