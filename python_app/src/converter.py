@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 import psutil
+from mutagen.id3 import ID3, APIC, TIT2, TALB, TPE1
+from mutagen.mp3 import MP3
 
 from .ebook_reader import EbookReader, Chapter
 from .config import ConversionConfig
@@ -75,6 +77,7 @@ class AudioConverter:
         }
         self._health_state: Dict[str, Any] = {"active": False}
         self._health_watchdog: Optional[asyncio.Task] = None
+        self._cover_art: Optional[dict] = None
 
     @staticmethod
     def _speech_text(chapter: Chapter) -> str:
@@ -82,6 +85,105 @@ class AudioConverter:
         if text is None:
             text = chapter.text or ""
         return text
+
+    def _extract_cover_art(self, reader: EbookReader) -> Optional[dict]:
+        extractor = getattr(reader, "extract_cover_image", None)
+        if callable(extractor):
+            try:
+                cover = extractor()
+            except Exception:
+                cover = None
+            if cover and getattr(cover, "data", None):
+                return {
+                    "data": cover.data,
+                    "mime": getattr(cover, "media_type", "image/jpeg") or "image/jpeg",
+                }
+        return None
+
+    def _embed_id3_metadata(
+        self,
+        mp3_path: Path,
+        *,
+        title: str,
+        album: Optional[str],
+        artist: Optional[str],
+        cover_art: Optional[dict],
+    ) -> None:
+        try:
+            audio = MP3(mp3_path, ID3=ID3)
+            if audio.tags is None:
+                audio.add_tags()
+        except Exception:
+            return
+
+        try:
+            audio.tags.delall("TIT2")
+            audio.tags.delall("TALB")
+            audio.tags.delall("TPE1")
+            audio.tags.delall("APIC")
+        except Exception:
+            pass
+
+        try:
+            audio.tags["TIT2"] = TIT2(encoding=3, text=title or mp3_path.name)
+            if album:
+                audio.tags["TALB"] = TALB(encoding=3, text=album)
+            if artist:
+                audio.tags["TPE1"] = TPE1(encoding=3, text=artist)
+            if cover_art and cover_art.get("data"):
+                mime = cover_art.get("mime") or "image/jpeg"
+                try:
+                    audio.tags.add(
+                        APIC(
+                            encoding=3,
+                            mime=mime,
+                            type=3,
+                            desc="Cover",
+                            data=cover_art["data"],
+                        )
+                    )
+                except Exception:
+                    pass
+            audio.save()
+        except Exception:
+            if self.verbose:
+                print(f"   ⚠️ Falha ao embutir metadados ID3 em {mp3_path.name}")
+
+    @staticmethod
+    def _title_from_filename(mp3_path: Path) -> str:
+        stem = mp3_path.stem
+        parts = stem.split("_", 1)
+        candidate = stem
+        if len(parts) == 2 and parts[0].isdigit():
+            candidate = parts[1]
+        candidate = candidate.replace("_", " ").strip()
+        return candidate or mp3_path.name
+
+    def _apply_final_id3_tags(
+        self,
+        files: Iterable[Path],
+        *,
+        default_album: Optional[str],
+        artist: Optional[str],
+        cover_art: Optional[dict],
+    ) -> None:
+        album_fallback = default_album or ""
+        for mp3_path in files:
+            try:
+                path_obj = Path(mp3_path)
+            except TypeError:
+                continue
+            if path_obj.suffix.lower() != ".mp3" or not path_obj.exists():
+                continue
+            title = self._title_from_filename(path_obj)
+            album = album_fallback or path_obj.parent.name
+            self._embed_id3_metadata(
+                path_obj,
+                title=title,
+                album=album,
+                artist=artist or None,
+                cover_art=cover_art,
+            )
 
     @staticmethod
     def _bitrate_to_bps(bitrate: Optional[str]) -> Optional[int]:
@@ -705,6 +807,9 @@ class AudioConverter:
         self._generate_all_text_files(chapters, temp_dir, config)
         print(f"✅ {total_chapters} arquivos de texto gerados\n")
 
+        cover_art = self._extract_cover_art(reader)
+        book_title = reader.title or getattr(config, "book_title", None) or (self._current_book_path.stem if self._current_book_path else "")
+        book_author = reader.author or ""
         self.progress.start(total_chapters, description=self.loc.t("progress_description"))
 
         is_auto_engine = (config.engine or "").lower() == "auto"
@@ -897,6 +1002,13 @@ class AudioConverter:
 
             if moved_files:
                 print(f"📁 {len(moved_files)} arquivos movidos para: {output_dir}")
+                album_name = book_title or (self._current_book_path.stem if self._current_book_path else output_dir.name)
+                self._apply_final_id3_tags(
+                    moved_files,
+                    default_album=album_name,
+                    artist=book_author or None,
+                    cover_art=cover_art,
+                )
 
             self._cleanup_temp_audio(temp_dir)
         else:
@@ -1578,6 +1690,13 @@ class AudioConverter:
                             continue
 
                         converted_files.append(output_path)
+                        self._embed_id3_metadata(
+                            output_path,
+                            title=chapter_label,
+                            album=book_title,
+                            artist=book_author or None,
+                            cover_art=cover_art,
+                        )
                         chapter_success = True
 
                         if self.verbose:
@@ -1674,6 +1793,13 @@ class AudioConverter:
                                         continue
 
                                     converted_files.append(output_path)
+                                    self._embed_id3_metadata(
+                                        output_path,
+                                        title=chapter_label,
+                                        album=book_title,
+                                        artist=book_author or None,
+                                        cover_art=cover_art,
+                                    )
                                     chapter_success = True
 
                                     if self.verbose:

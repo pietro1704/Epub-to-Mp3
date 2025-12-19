@@ -3,6 +3,7 @@ export type FootnoteMode = 'inline' | 'chapter_end' | 'skip';
 
 export interface ConversionFormValues {
   file: File | null;
+  fileName?: string;
   uploadId?: string;
   engine: EngineOption;
   voice?: string;

@@ -83,8 +83,18 @@ else:
     output_dir = OUTPUT_DIR
 
 output_dir.mkdir(exist_ok=True, parents=True)
-uploads_dir = output_dir / ".uploads"
+
+# Dados persistentes (jobs/inputs) precisam sobreviver a reinícios em HF Spaces
+if os.getenv("SPACE_ID"):
+    persistent_root = Path(os.getenv("PERSISTENT_ROOT", "/data/epub-to-mp3"))
+else:
+    persistent_root = Path(os.getenv("PERSISTENT_ROOT", str(output_dir)))
+persistent_root.mkdir(exist_ok=True, parents=True)
+
+uploads_dir = persistent_root / ".uploads"
 uploads_dir.mkdir(exist_ok=True, parents=True)
+job_inputs_dir = persistent_root / ".job_inputs"
+job_inputs_dir.mkdir(exist_ok=True, parents=True)
 cover_cache_dir = output_dir / ".cover_cache"
 cover_cache_dir.mkdir(exist_ok=True, parents=True)
 cover_index_path = cover_cache_dir / "index.json"
@@ -107,12 +117,31 @@ def _save_cover_cache(index: Dict[str, dict]) -> None:
 cover_cache_index = _load_cover_cache()
 
 # Initialize job manager with persistence
-jobs_state_dir = output_dir / ".jobs"
+jobs_state_dir = persistent_root / ".jobs"
 job_manager = JobManager(jobs_state_dir)
+
+_JOB_WORKERS = max(1, int(os.getenv("JOB_WORKERS", "2") or "2"))
+_job_queue: Optional[asyncio.Queue[str]] = None
+_job_workers: list[asyncio.Task] = []
+_jobs_in_queue: set[str] = set()
 
 _pending_uploads: Dict[str, dict] = {}
 _pending_lock = threading.Lock()
 _PENDING_TTL_SECONDS = 3600  # 1 hour
+
+
+def _resolve_max_chapter_limit() -> int:
+    """Return the max number of chapters allowed per job (0 = sem limite)."""
+    env_limit = os.getenv("MAX_CHAPTERS_PER_JOB")
+    if env_limit:
+        try:
+            return max(0, int(env_limit))
+        except (TypeError, ValueError):
+            logger.warning("Invalid MAX_CHAPTERS_PER_JOB value: %s", env_limit)
+    return 0
+
+
+MAX_CHAPTERS_PER_JOB = _resolve_max_chapter_limit()
 
 
 def _cleanup_pending_uploads() -> None:
@@ -127,6 +156,22 @@ def _cleanup_pending_uploads() -> None:
         upload_dir = uploads_dir / upload_id
         if upload_dir.exists():
             shutil.rmtree(upload_dir, ignore_errors=True)
+
+
+def _enforce_chapter_limit(chapter_count: int) -> None:
+    if MAX_CHAPTERS_PER_JOB and chapter_count > MAX_CHAPTERS_PER_JOB:
+        logger.warning(
+            "Job rejected: %s chapters exceeds limit of %s",
+            chapter_count,
+            MAX_CHAPTERS_PER_JOB,
+        )
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"Este livro possui {chapter_count} capítulos, mas o limite atual é "
+                f"de {MAX_CHAPTERS_PER_JOB}. Envie trechos menores ou selecione menos capítulos."
+            ),
+        )
 
 
 def _summarize_resume_job(job_id: str, job_data: dict, saved_at: Optional[str] = None) -> dict:
@@ -153,6 +198,96 @@ def _collect_resumable_job_entries() -> list[dict]:
             continue
         summaries[job_id] = _summarize_resume_job(job_id, job_data)
     return sorted(summaries.values(), key=lambda entry: entry.get("savedAt", ""), reverse=True)
+
+
+def _format_duration(seconds: float) -> str:
+    """Return a ddhhmmss human readable duration."""
+    total = max(0, int(seconds or 0))
+    days, rem = divmod(total, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{days:02d}d {hours:02d}h {minutes:02d}m {secs:02d}s"
+
+
+def _format_hms(seconds: float) -> str:
+    total = max(0, int(seconds or 0))
+    hours, rem = divmod(total, 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{hours:02d}h {minutes:02d}m {secs:02d}s"
+
+
+def _ensure_job(job_id: str) -> dict:
+    job = jobs.get(job_id)
+    if job:
+        return job
+    job_data = job_manager.load_job(job_id)
+    if not job_data:
+        raise HTTPException(status_code=404, detail="Job not found")
+    jobs[job_id] = job_data
+    return job_data
+
+
+def _enqueue_job(job_id: str) -> bool:
+    """Queue a job for processing via workers. Returns False if queue unavailable."""
+    queue = _job_queue
+    if queue is None:
+        return False
+    if job_id in _jobs_in_queue:
+        return True
+    try:
+        queue.put_nowait(job_id)
+        _jobs_in_queue.add(job_id)
+        return True
+    except asyncio.QueueFull:  # pragma: no cover - defensive
+        logger.warning("Job queue is full, cannot enqueue %s", job_id)
+        return False
+
+
+async def _job_worker(worker_id: int) -> None:
+    """Dedicated worker that processes jobs from the global queue."""
+    assert _job_queue is not None
+    while True:
+        job_id = await _job_queue.get()
+        _jobs_in_queue.discard(job_id)
+        try:
+            job = jobs.get(job_id) or job_manager.load_job(job_id)
+            if not job:
+                continue
+            jobs[job_id] = job
+            state = job.get("state", "")
+            if state in {"finished", "cancelled"}:
+                continue
+            logger.info("Worker %s converting job %s (%s)", worker_id, job_id, state or "queued")
+            await process_conversion(job_id)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("Worker %s failed processing job %s: %s", worker_id, job_id, exc, exc_info=True)
+        finally:
+            _job_queue.task_done()
+
+
+async def _resume_pending_jobs() -> None:
+    """Re-enqueue jobs that were running/queued before a restart."""
+    await asyncio.sleep(0.1)
+    for job_id, job in list(jobs.items()):
+        state = job.get("state", "")
+        if state not in {"queued", "running", "cancelling"}:
+            continue
+        file_path = Path(job.get("file_path") or "")
+        if not file_path.exists():
+            job["state"] = "interrupted"
+            job["error"] = "Arquivo de origem foi perdido após reinício do servidor"
+            job["events"] = job.get("events") or []
+            job["events"].append("❌ Arquivo temporário não encontrado - envie o EPUB novamente")
+            _persist_job(job_id, force=True)
+            continue
+        job["state"] = "queued"
+        job["resumeRequested"] = True
+        job["events"] = job.get("events") or []
+        job["events"].append("♻️ Conversão retomada após reinício do servidor")
+        _persist_job(job_id, force=True)
+        if not _enqueue_job(job_id):
+            logger.warning("Job queue unavailable during resume, executing inline for %s", job_id)
+            asyncio.create_task(process_conversion(job_id))
 
 # Load existing jobs from disk on startup
 jobs: Dict[str, dict] = job_manager.load_all_jobs()
@@ -224,15 +359,18 @@ async def _periodic_job_cleanup():
 @app.on_event("startup")
 async def startup_event():
     """Start background cleanup task."""
-    global _cleanup_task
+    global _cleanup_task, _job_queue, _job_workers
+    _job_queue = asyncio.Queue()
+    _job_workers = [asyncio.create_task(_job_worker(idx + 1)) for idx in range(_JOB_WORKERS)]
     _cleanup_task = asyncio.create_task(_periodic_job_cleanup())
+    asyncio.create_task(_resume_pending_jobs())
     logger.info("Started periodic job cleanup task")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Stop background cleanup task."""
-    global _cleanup_task
+    global _cleanup_task, _job_queue, _job_workers
     if _cleanup_task:
         _cleanup_task.cancel()
         try:
@@ -240,6 +378,12 @@ async def shutdown_event():
         except asyncio.CancelledError:
             pass
     logger.info("Stopped periodic job cleanup task")
+    for worker in list(_job_workers):
+        worker.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await worker
+    _job_workers.clear()
+    _job_queue = None
 
 # Mark jobs as interrupted if they were running/queued (server restart)
 # IMPORTANT: On HF Spaces, /tmp is cleared on restart, so source files are lost.
@@ -371,14 +515,18 @@ def _pick_auto_engine(
         )
         for name, _ in ranked:
             append(order, name)
-    append(order, "edge")
-    append(order, "piper")
-    append(order, "coqui")
+    else:
+        append(order, "edge")
+        append(order, "piper")
+        append(order, "coqui")
+
+    for name in pool.keys():
+        append(order, name)
 
     if not order:
         order = list(pool.keys())
-    # Always prefer Edge when available (fastest when healthy)
-    if "edge" in order:
+    # Always prefer Edge when telemetry data is not guiding a different choice.
+    if not telemetry_speeds and "edge" in order:
         order = ["edge"] + [name for name in order if name != "edge"]
 
     selected = order[0]
@@ -428,6 +576,7 @@ async def convert_ebook(
     priority: Optional[str] = Form(None),
 ) -> dict[str, str]:
     reuse_upload = None
+    job_input_dir = None
     if upload_id:
         with _pending_lock:
             reuse_upload = _pending_uploads.pop(upload_id, None)
@@ -436,13 +585,15 @@ async def convert_ebook(
         job_id = str(uuid.uuid4())
         job_dir = output_dir / job_id
         job_dir.mkdir(parents=True, exist_ok=True)
+        job_input_dir = job_inputs_dir / job_id
+        job_input_dir.mkdir(parents=True, exist_ok=True)
         source_file = Path(reuse_upload["file_path"])
         file_hash = reuse_upload.get("file_hash")
         cover_name = reuse_upload.get("cover_filename")
         cover_mime = reuse_upload.get("cover_mime")
         cover_url = None
         original_name = reuse_upload.get("file_name") or source_file.name
-        temp_file = job_dir / original_name
+        temp_file = job_input_dir / original_name
         shutil.move(str(source_file), temp_file)
         if cover_name:
             cover_source = Path(reuse_upload.get("cover_path") or "")
@@ -457,7 +608,9 @@ async def convert_ebook(
         if file is None:
             raise HTTPException(status_code=400, detail="Nenhum arquivo enviado")
         job_id = f"{uuid.uuid4()}"
-        temp_file = output_dir / f"{job_id}_{file.filename}"
+        job_input_dir = job_inputs_dir / job_id
+        job_input_dir.mkdir(parents=True, exist_ok=True)
+        temp_file = job_input_dir / Path(file.filename or "ebook.epub").name
         raw_payload = await file.read()
         if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
             raise HTTPException(
@@ -509,6 +662,8 @@ async def convert_ebook(
         "fileHash": file_hash,
         "parallelSlots": _PARALLEL_SLOTS_DEFAULT,
         "parallelActive": 0,
+        "resumeRequested": False,
+        "uploadDir": str(job_input_dir) if job_input_dir else None,
     }
 
     # Persist job state to disk IMMEDIATELY before returning
@@ -519,7 +674,8 @@ async def convert_ebook(
     else:
         logger.info(f"Job {job_id} created and persisted successfully")
 
-    background_tasks.add_task(process_conversion, job_id)
+    if not _enqueue_job(job_id):
+        background_tasks.add_task(process_conversion, job_id)
     return {"jobId": job_id}
 
 
@@ -570,6 +726,28 @@ async def cancel_job(job_id: str) -> dict:
         _persist_job(job_id, force=True)
 
     return {"status": job["state"]}
+
+
+@app.post("/api/jobs/{job_id}/resume")
+async def resume_job(job_id: str) -> dict:
+    """Requeue an interrupted/failed job so it can continue conversion."""
+    job = _ensure_job(job_id)
+    state = job.get("state", "")
+    if state == "finished":
+        return {"status": "finished"}
+    source_path = Path(job.get("file_path") or "")
+    if not source_path.exists():
+        raise HTTPException(status_code=409, detail="Arquivo de origem não está mais disponível")
+    job["cancelRequested"] = False
+    job["resumeRequested"] = True
+    job["state"] = "queued"
+    events = job.get("events") or []
+    events.append("♻️ Retomando conversão a pedido do usuário")
+    job["events"] = events
+    _persist_job(job_id, force=True)
+    if not _enqueue_job(job_id):
+        raise HTTPException(status_code=503, detail="Fila de processamento indisponível no momento")
+    return {"status": "queued"}
 
 
 @app.get("/api/outputs/{job_id}/{filename}")
@@ -815,6 +993,7 @@ def _finalize_cancel(job_id: str, job: dict, note: str) -> None:
     job["state"] = "cancelled"
     job["error"] = "Cancelado pelo usuário"
     job["cancelRequested"] = True
+    job["resumeRequested"] = False
     job["currentChapter"] = None
     job["outputs"] = []
     job["progressPercent"] = job.get("progressPercent") or 0.0
@@ -860,6 +1039,7 @@ async def process_conversion(job_id: str) -> None:
     job = jobs[job_id]
     zip_archive: Optional[zipfile.ZipFile] = None
     zip_open = False
+    conversion_started = time.time()
 
     try:
         if job.get("cancelRequested"):
@@ -928,6 +1108,12 @@ async def process_conversion(job_id: str) -> None:
 
         selector_text = job.get("chapters")
         chapters = _prepare_chapters(reader, config, selector_text)
+        try:
+            _enforce_chapter_limit(len(chapters))
+        except HTTPException as limit_error:
+            job["events"].append(f"❌ {limit_error.detail}")
+            _persist_job(job_id, force=True)
+            raise
         selection_note = " (filtro aplicado)" if selector_text else ""
         job["events"].append(f"📊 Capítulos: {len(chapters)}{selection_note}")
         job["chaptersTotal"] = len(chapters)
@@ -992,13 +1178,68 @@ async def process_conversion(job_id: str) -> None:
             job["events"].append("🔄 Modo sequencial: 1 capítulo por vez")
 
         job_output_dir = output_dir / job_id
-        if job_output_dir.exists():
-            shutil.rmtree(job_output_dir, ignore_errors=True)
-        job_output_dir.mkdir(exist_ok=True)
+        resume_mode = bool(job.get("resumeRequested")) and job_output_dir.exists()
+
+        # Preserve uploaded source file before cleaning the output directory.
+        source_path_str = job.get("file_path")
+        if source_path_str:
+            source_path = Path(source_path_str)
+            try:
+                if source_path.exists() and source_path.is_relative_to(job_output_dir):
+                    safe_source = output_dir / f"{job_id}_{source_path.name}"
+                    safe_source.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(source_path), str(safe_source))
+                    job["file_path"] = str(safe_source)
+                    source_path = safe_source
+            except ValueError:
+                # Path.is_relative_to not supported for unrelated paths prior to 3.9
+                pass
+
+        # Preserve cover file (used for the preview) while resetting the directory.
+        cover_restore: Optional[tuple[Path, Path]] = None
+        if not resume_mode:
+            cover_entry = job.get("cover") or {}
+            cover_name = cover_entry.get("name")
+            if cover_name:
+                cover_path = job_output_dir / cover_name
+                if cover_path.exists():
+                    temp_cover = output_dir / f"{job_id}_{cover_name}"
+                    try:
+                        shutil.move(str(cover_path), str(temp_cover))
+                        cover_restore = (temp_cover, cover_path)
+                    except Exception:
+                        cover_restore = None
+
+            if job_output_dir.exists():
+                shutil.rmtree(job_output_dir, ignore_errors=True)
+            job_output_dir.mkdir(exist_ok=True)
+
+            if cover_restore:
+                temp_cover, target_cover = cover_restore
+                try:
+                    shutil.move(str(temp_cover), str(target_cover))
+                except Exception:
+                    with contextlib.suppress(FileNotFoundError):
+                        temp_cover.unlink(missing_ok=True)
+        else:
+            job_output_dir.mkdir(exist_ok=True)
+            job["events"].append("♻️ Retomando conversão anterior - mantendo capítulos já gerados")
+
         book_safe_name = FileManager.sanitize_filename(title)
         zip_file = job_output_dir / f"{book_safe_name}.zip"
         zip_archive = zipfile.ZipFile(zip_file, "w", zipfile.ZIP_STORED)
         zip_open = True
+        outputs: list[dict] = []
+        completed_indices: set[int] = set()
+        if resume_mode:
+            existing_outputs, completed_indices = await _preload_existing_outputs(job, chapters, job_output_dir)
+            if existing_outputs:
+                outputs.extend(existing_outputs)
+                job["events"].append(f"⏩ {len(existing_outputs)} capítulo(s) já estavam convertidos")
+                if chapters:
+                    progress = (len(completed_indices) / len(chapters)) * 100
+                    job["progressPercent"] = max(job.get("progressPercent") or 0.0, progress)
+                job["chaptersCompleted"] = max(job.get("chaptersCompleted", 0), max(completed_indices, default=0))
 
         if job.get("cancelRequested"):
             _finalize_cancel(job_id, job, "🛑 Conversão cancelada após processar capítulos")
@@ -1048,7 +1289,6 @@ async def process_conversion(job_id: str) -> None:
                 job["cover"] = None
                 job["coverUrl"] = None
                 job["coverMimeType"] = None
-        outputs = []
 
         def _resolve_tts_output(target_mp3: Path, engine_name: str) -> tuple[Path, bool]:
             if engine_name.lower() in {"coqui", "piper"}:
@@ -1133,7 +1373,7 @@ async def process_conversion(job_id: str) -> None:
                         est = TextValidator.estimate_duration(clean_text)
                         if est <= 0:
                             est = max(len(clean_text) / 15.0, 30.0)
-                        job["events"].append(f"   ↳ Texto: {len(clean_text)} chars, estimado {int(est)}s")
+                        job["events"].append(f"   ↳ Texto: {len(clean_text)} chars, estimado {_format_duration(est)}")
 
                     estimated_seconds = TextValidator.estimate_duration(clean_text)
                     if estimated_seconds <= 0:
@@ -1279,8 +1519,10 @@ async def process_conversion(job_id: str) -> None:
         chapter_tasks = [
             asyncio.create_task(convert_chapter(idx, chapter))
             for idx, chapter in enumerate(chapters, 1)
+            if idx not in completed_indices
         ]
-        await asyncio.gather(*chapter_tasks)
+        if chapter_tasks:
+            await asyncio.gather(*chapter_tasks)
 
         if job.get("cancelRequested"):
             _finalize_cancel(job_id, job, "🛑 Conversão cancelada durante o processamento")
@@ -1293,6 +1535,33 @@ async def process_conversion(job_id: str) -> None:
             with contextlib.suppress(Exception):
                 zip_archive.close()
             zip_open = False
+
+        # Rebuild ZIP to include todos os capítulos disponíveis (inclusive retomados)
+        job["events"].append("📦 Compactando capítulos em ZIP final...")
+        _persist_job(job_id, force=True)
+        try:
+            with zipfile.ZipFile(zip_file, "w", zipfile.ZIP_STORED) as rebuilt_zip:
+                for mp3_path in sorted(job_output_dir.glob("*.mp3")):
+                    rebuilt_zip.write(mp3_path, arcname=mp3_path.name)
+            job["events"].append("✅ ZIP final pronto")
+        except Exception as exc:
+            job["events"].append(f"⚠️ Falha ao compactar ZIP: {exc}")
+
+        # Atualiza tabela de outputs com os arquivos existentes (deduplica por nome)
+        outputs_map: dict[str, dict] = {}
+        for asset in outputs:
+            outputs_map[asset["name"]] = asset
+        for mp3_path in sorted(job_output_dir.glob("*.mp3")):
+            name = mp3_path.name
+            entry = outputs_map.get(name)
+            if not entry:
+                entry = {
+                    "name": name,
+                    "url": f"/api/outputs/{job_id}/{name}",
+                }
+                outputs_map[name] = entry
+            entry["sizeBytes"] = mp3_path.stat().st_size
+        outputs = list(outputs_map.values())
 
         cover_entry = job.get("cover")
         upload_dir_path = Path(job.get("uploadDir") or "")
@@ -1376,28 +1645,30 @@ async def process_conversion(job_id: str) -> None:
 
         log_path = _persist_job_log(job_id, job)
         if log_path and log_path.exists():
-            outputs.insert(
-                0,
-                {
-                    "name": log_path.name,
-                    "url": f"/api/outputs/{job_id}/{log_path.name}",
-                    "sizeBytes": log_path.stat().st_size,
-                },
-            )
+            log_entry = {
+                "name": log_path.name,
+                "url": f"/api/outputs/{job_id}/{log_path.name}",
+                "sizeBytes": log_path.stat().st_size,
+            }
+            insert_index = 1 if outputs else 0
+            outputs.insert(insert_index, log_entry)
             if zip_open:
                 try:
                     zip_archive.write(log_path, arcname=log_path.name)
                 except Exception:
                     pass
 
+        total_elapsed = time.time() - conversion_started
         job["state"] = "finished"
         job["progressPercent"] = 100
-        job["outputs"] = outputs
+        job["outputs"] = _sort_output_entries(outputs)
         job["completedAt"] = time.time()  # Timestamp for cleanup
         job["events"].append("")
         job["events"].append("✅ Conversão finalizada com sucesso")
+        job["events"].append(f"⏱️ Tempo total de conversão: {_format_hms(total_elapsed)}")
         job["events"].append(f"📁 Arquivo disponível: {zip_file.name} ({len(chapters)} capítulos)")
         job["parallelActive"] = 0
+        job["resumeRequested"] = False
         _persist_job(job_id)
 
         # KEEP job in memory and disk for at least 1 hour after completion
@@ -1418,9 +1689,11 @@ async def process_conversion(job_id: str) -> None:
         with contextlib.suppress(Exception):
             if zip_archive:
                 zip_archive.close()
-        temp_path = Path(job["file_path"])
-        with contextlib.suppress(FileNotFoundError):
-            temp_path.unlink()
+        temp_path_str = job.get("file_path")
+        if temp_path_str and job.get("state") in {"finished", "cancelled"}:
+            temp_path = Path(temp_path_str)
+            with contextlib.suppress(FileNotFoundError):
+                temp_path.unlink()
 
 
 def _guess_media_type(filename: str) -> str:
@@ -1479,6 +1752,30 @@ def _set_chapter_status(job: dict, chapter_index: Optional[int], status: str) ->
         processing = sum(1 for entry in entries if isinstance(entry, dict) and entry.get("status") == "processing")
         job["parallelActive"] = processing
 
+
+async def _preload_existing_outputs(job: dict, chapters: list, job_output_dir: Path) -> tuple[list[dict], set[int]]:
+    """Detect chapters that already have audio on disk (resume support)."""
+    existing_outputs: list[dict] = []
+    completed_indices: set[int] = set()
+    job_id = job.get("jobId")
+    for idx, chapter in enumerate(chapters, 1):
+        chapter_name = getattr(chapter, "name", f"Chapter {idx}")
+        safe_name = FileManager.sanitize_filename(chapter_name)
+        output_file = job_output_dir / f"{idx:03d} - {safe_name}.mp3"
+        if not output_file.exists() or output_file.stat().st_size <= 0:
+            continue
+        duration = await _get_audio_duration(output_file)
+        entry = {
+            "name": output_file.name,
+            "url": f"/api/outputs/{job_id}/{output_file.name}" if job_id else output_file.name,
+            "durationSeconds": round(duration, 2),
+            "sizeBytes": output_file.stat().st_size,
+        }
+        existing_outputs.append(entry)
+        completed_indices.add(idx)
+        _set_chapter_status(job, idx, "completed")
+    return existing_outputs, completed_indices
+
 def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: object, chapter_index: Optional[int] = None) -> None:
     _set_chapter_status(job, chapter_index, "failed")
     last_error = getattr(tts_engine, "last_error", None)
@@ -1504,7 +1801,6 @@ def _record_chapter_failure(job: dict, tts_engine, chapter_name: str, error: obj
 
     job_id = job.get("jobId")
     if job_id:
-        _cleanup_job_output(job_id)
         _persist_job_log(job_id, job)
 
     _clear_job_cache(job)
@@ -1597,3 +1893,23 @@ if __name__ == "__main__":  # pragma: no cover - manual execution helper
     import uvicorn
 
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+def _output_sort_key(entry: dict) -> tuple[int, str]:
+    name = (entry.get("name") or "").lower()
+    match = re.match(r"(\\d+)", name)
+    if match:
+        return (int(match.group(1)), name)
+    return (10**9, name)
+
+
+def _sort_output_entries(entries: list[dict]) -> list[dict]:
+    mp3_entries: list[dict] = []
+    other_entries: list[dict] = []
+    for entry in entries:
+        name = (entry.get("name") or "").lower()
+        if name.endswith(".mp3"):
+            mp3_entries.append(entry)
+        else:
+            other_entries.append(entry)
+    mp3_entries.sort(key=_output_sort_key)
+    return other_entries + mp3_entries

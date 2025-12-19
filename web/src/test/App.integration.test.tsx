@@ -55,14 +55,15 @@ describe('App integration', () => {
     expect(screen.getByText(/resumo da execução/i)).toBeInTheDocument();
     expect(screen.getByText(/português \(brasil\)/i)).toBeInTheDocument();
 
-    expect(submit).toHaveBeenCalledWith({
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({
       file,
-      engine: 'edge',
-      voice: 'pt-BR-ThalitaMultilingualNeural',
+      fileName: 'historia.pdf',
+      engine: 'auto',
+      voice: undefined,
       chapters: undefined,
       footnoteMode: 'inline',
       language: undefined,
-    });
+    }));
     expect(poll).toHaveBeenCalledWith('job-777', expect.any(Object));
 
     expect(screen.getByText(/Capítulo 1.mp3/)).toBeInTheDocument();
@@ -72,5 +73,44 @@ describe('App integration', () => {
 
     await waitFor(() => expect(screen.getByText(/pronto para começar/i)).toBeInTheDocument());
     expect(screen.queryByText(/Capítulo 1.mp3/)).not.toBeInTheDocument();
+  });
+
+  it('reaproveita o upload automático e evita reenviar o arquivo', async () => {
+    const user = userEvent.setup();
+    const submit = vi.fn().mockResolvedValue({ jobId: 'job-999' });
+    const poll = vi.fn().mockResolvedValue({
+      jobId: 'job-999',
+      state: 'finished',
+      outputs: [],
+    } satisfies JobSnapshot);
+    const upload = vi.fn().mockResolvedValue({
+      uploadId: 'upload-123',
+      fileName: 'historia.pdf',
+    });
+
+    const client: ConversionClient = {
+      submit,
+      fetch: vi.fn(),
+      poll,
+      upload,
+    };
+
+    renderWithProviders(<App client={client} />);
+
+    const file = new File(['ebook'], 'historia.pdf', { type: 'application/pdf' });
+    await user.upload(screen.getByLabelText(/arquivo do livro/i), file);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /converter agora/i })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /converter agora/i }));
+
+    await waitFor(() => {
+      expect(submit).toHaveBeenCalledTimes(1);
+      expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+        file: null,
+        uploadId: 'upload-123',
+        fileName: 'historia.pdf',
+      }));
+    });
   });
 });

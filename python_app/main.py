@@ -10,6 +10,7 @@ import asyncio
 import re
 import shutil
 import sys
+import time
 import traceback
 import unicodedata
 from dataclasses import dataclass
@@ -79,6 +80,7 @@ class ConverterApplication:
     
     def run(self, args: argparse.Namespace) -> int:
         """Main application entry point"""
+        conversion_start = time.time()
         try:
             # **AUTO-OPTIMIZATION**: Detect hardware and apply optimizations
             from src.hardware_detector import HardwareDetector
@@ -206,6 +208,9 @@ class ConverterApplication:
             # Convert
             result = asyncio.run(self.converter.convert(reader, config))
 
+            elapsed = time.time() - conversion_start
+            print(f"⏱️ Tempo total de conversão: {self._format_hms(elapsed)}")
+
             if isinstance(result, ConversionResult):
                 return 0 if result.success else 1
             if isinstance(result, int):
@@ -218,6 +223,13 @@ class ConverterApplication:
             traceback.print_exc()
             print(self.localization.t("unexpected_error", error=e))
             return 1
+
+    @staticmethod
+    def _format_hms(seconds: float) -> str:
+        total = max(0, int(seconds or 0))
+        hours, rem = divmod(total, 3600)
+        minutes, secs = divmod(rem, 60)
+        return f"{hours:02d}h {minutes:02d}m {secs:02d}s"
     
     def _generate_structure_items(self, reader: EbookReader) -> List[ChapterStructureItem]:
         """Prepare structured information for chapters shared across features"""

@@ -64,8 +64,14 @@ class HardwareDetector:
         """Detect system hardware and return optimization profile."""
 
         # CPU detection
-        cpu_count = psutil.cpu_count(logical=True) or 4
-        cpu_physical = psutil.cpu_count(logical=False) or 2
+        try:
+            cpu_count = psutil.cpu_count(logical=True) or 4
+        except Exception:
+            cpu_count = 4
+        try:
+            cpu_physical = psutil.cpu_count(logical=False) or max(1, cpu_count // 2)
+        except Exception:
+            cpu_physical = max(1, cpu_count // 2)
 
         try:
             cpu_freq = psutil.cpu_freq()
@@ -76,9 +82,13 @@ class HardwareDetector:
         cpu_brand = HardwareDetector._detect_cpu_brand()
 
         # Memory detection
-        mem = psutil.virtual_memory()
-        ram_total_gb = mem.total / (1024**3)
-        ram_available_gb = mem.available / (1024**3)
+        try:
+            mem = psutil.virtual_memory()
+            ram_total_gb = mem.total / (1024**3)
+            ram_available_gb = mem.available / (1024**3)
+        except Exception:
+            ram_total_gb = 8.0
+            ram_available_gb = 4.0
 
         # GPU detection
         has_gpu, gpu_type = HardwareDetector._detect_gpu()

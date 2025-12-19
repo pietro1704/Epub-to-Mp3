@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from '../i18n/I18nProvider';
 import { ConversionFormValues, EngineOption, FootnoteMode } from '../types/conversion';
 import { API_BASE_URL, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../config';
@@ -106,6 +106,7 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
   const [uploadId, setUploadId] = useState<string | undefined>(undefined);
   const [isUploadingFile, setIsUploadingFile] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const uploadAttemptRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -183,29 +184,57 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
     return voiceSuggestions.find(v => v.name === voice)?.multilingual ?? false;
   }, [voiceSuggestions, voice]);
 
-  const processSelectedFile = async (file: File | null) => {
-    setSelectedFile(file);
+  const beginMetadataUpload = (file: File, attemptId: number) => {
+    setIsUploadingFile(true);
+    setUploadError(null);
+    (async () => {
+      try {
+        const response = await onUploadFile(file);
+        if (uploadAttemptRef.current !== attemptId) {
+          return;
+        }
+        setUploadId(response.uploadId);
+        setUploadError(null);
+      } catch (error) {
+        if (uploadAttemptRef.current !== attemptId) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : 'Falha ao enviar arquivo';
+        setUploadError(message);
+        setUploadId(undefined);
+      } finally {
+        if (uploadAttemptRef.current === attemptId) {
+          setIsUploadingFile(false);
+        }
+      }
+    })();
+  };
+
+  const processSelectedFile = (file: File | null): boolean => {
+    const nextAttempt = uploadAttemptRef.current + 1;
+    uploadAttemptRef.current = nextAttempt;
     setUploadId(undefined);
     setUploadError(null);
+    setShowMissingFileError(false);
     if (!file) {
-      return;
-    }
-    setIsUploadingFile(true);
-    try {
-      const response = await onUploadFile(file);
-      setUploadId(response.uploadId);
-      setUploadError(null);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Falha ao enviar arquivo';
-      setUploadError(message);
-    } finally {
+      setSelectedFile(null);
       setIsUploadingFile(false);
+      return true;
     }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setSelectedFile(null);
+      setFileError(t.form.errorFileTooLarge(maxUploadMbDisplay));
+      return false;
+    }
+    setFileError(null);
+    setSelectedFile(file);
+    beginMetadataUpload(file, nextAttempt);
+    return true;
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedFile || !uploadId) {
+    if (!selectedFile) {
       setShowMissingFileError(true);
       setFileError(null);
       return;
@@ -215,8 +244,10 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
     }
 
     setShowMissingFileError(false);
+    const payloadFile = uploadId ? null : selectedFile;
     await onSubmit({
-      file: uploadId ? null : selectedFile,
+      file: payloadFile,
+      fileName: selectedFile?.name,
       uploadId,
       engine,
       voice: voice || undefined,
@@ -245,7 +276,7 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
       const file = new File([blob], 'sample.epub', { type: 'application/epub+zip' });
       setShowMissingFileError(false);
       setFileError(null);
-      await processSelectedFile(file);
+      processSelectedFile(file);
     } catch (error) {
       console.error('Failed to load sample book:', error);
     }
@@ -261,25 +292,20 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
             name="file"
             type="file"
             accept="application/epub+zip,application/pdf"
-            disabled={isSubmitting || isUploadingFile}
-            onChange={async (event) => {
+            disabled={isSubmitting}
+            onChange={(event) => {
               const file = event.target.files?.[0] ?? null;
-              if (file && file.size > MAX_UPLOAD_BYTES) {
-                setSelectedFile(null);
-                setFileError(t.form.errorFileTooLarge(maxUploadMbDisplay));
-                setShowMissingFileError(false);
+              const accepted = processSelectedFile(file);
+              if (!accepted) {
                 event.target.value = '';
-                return;
               }
-              setFileError(null);
-              await processSelectedFile(file);
             }}
             style={{ flex: 1 }}
           />
           <button
             type="button"
             onClick={handleUseSample}
-            disabled={isSubmitting || isUploadingFile}
+            disabled={isSubmitting}
             className="button-secondary"
             style={{ whiteSpace: 'nowrap' }}
           >
@@ -302,12 +328,16 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
             {uploadError}
           </p>
         )}
-        {isUploadingFile && (
-          <p className="form-hint">📤 Enviando arquivo...</p>
+        {isUploadingFile && selectedFile && (
+          <p className="form-hint">📤 {t.form.uploadingFile}</p>
         )}
-        {uploadId && !isUploadingFile && !uploadError && (
-          <p className="form-hint">✅ Arquivo pronto para conversão</p>
+        {!isUploadingFile && uploadId && selectedFile && !uploadError && (
+          <p className="form-hint">✅ {t.form.autoUploadReady}</p>
         )}
+        {!isUploadingFile && !uploadId && selectedFile && !uploadError && (
+          <p className="form-hint">{t.form.autoUploadPending}</p>
+        )}
+        <p className="form-hint">{t.form.autoUploadHint}</p>
         <p className="form-hint">{t.form.fileHint}</p>
       </fieldset>
 
@@ -466,20 +496,18 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
 
       {showMissingFileError && (
         <p role="alert" className="form-error">
-          {t.form.errorUploadPending}
+          {t.form.errorNoFile}
         </p>
       )}
 
-      {!uploadId && !isUploadingFile && (
-        <p className="form-hint">{t.form.uploadRequiredHint}</p>
-      )}
-
-      <button type="submit" disabled={isSubmitting || isUploadingFile || !uploadId} className="form-submit">
+      <button
+        type="submit"
+        disabled={isSubmitting || isUploadingFile || Boolean(fileError)}
+        className="form-submit"
+      >
         {isSubmitting
           ? t.form.submitBusy
-          : isUploadingFile
-            ? t.form.uploadingFile
-            : t.form.submitIdle}
+          : t.form.submitIdle}
       </button>
     </form>
   );

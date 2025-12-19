@@ -82,4 +82,43 @@ describe('useConversionFlow', () => {
     const lastMessage = result.current.state.log.at(-1)?.message ?? '';
     expect(lastMessage).toContain('Falha');
   });
+
+  it('remove o arquivo do payload quando já existe upload prévio', async () => {
+    const submit = vi.fn().mockResolvedValue({ jobId: '555' });
+    const poll = vi.fn().mockResolvedValue({
+      jobId: '555',
+      state: 'finished',
+      outputs: [],
+    } satisfies JobSnapshot);
+
+    const client: ConversionClient = {
+      submit,
+      fetch: vi.fn(),
+      poll,
+    };
+
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper('pt'),
+    });
+
+    const file = new File(['dados'], 'livro.epub', { type: 'application/epub+zip' });
+    await act(async () => {
+      await result.current.submit({
+        file,
+        fileName: 'livro.epub',
+        uploadId: 'upload-xyz',
+        engine: 'edge',
+        footnoteMode: 'inline',
+      });
+    });
+
+    expect(submit).toHaveBeenCalledWith(expect.objectContaining({
+      file: null,
+      uploadId: 'upload-xyz',
+      fileName: 'livro.epub',
+    }));
+
+    const firstMessage = result.current.state.log[0]?.message ?? '';
+    expect(firstMessage).toContain('arquivo já enviado');
+  });
 });

@@ -79,7 +79,8 @@ export default function App(props?: AppProps): JSX.Element {
   }, [submit]);
 
   useEffect(() => {
-    if (state.phase === 'success') {
+    const hasDownloads = Array.isArray(state.downloads) && state.downloads.length > 0;
+    if (state.phase === 'success' || (hasDownloads && state.phase !== 'error' && state.phase !== 'cancelled')) {
       if (activeTab !== 'downloads') {
         setActiveTab('downloads');
       }
@@ -87,7 +88,9 @@ export default function App(props?: AppProps): JSX.Element {
       return;
     }
     if (state.phase === 'error' || state.phase === 'cancelled') {
-      setActiveTab('progress');
+      if (activeTab !== 'progress') {
+        setActiveTab('progress');
+      }
       setUserSelectedTab(false);
       return;
     }
@@ -98,7 +101,7 @@ export default function App(props?: AppProps): JSX.Element {
     if (!userSelectedTab && state.phase === 'polling' && activeTab !== 'progress') {
       setActiveTab('progress');
     }
-  }, [state.phase, activeTab, userSelectedTab]);
+  }, [state.phase, state.downloads, activeTab, userSelectedTab]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !('Notification' in window)) {

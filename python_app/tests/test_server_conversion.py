@@ -13,6 +13,7 @@ from python_app import server
 from src.telemetry import TelemetryRecorder
 from src.config import ConversionConfig
 from types import SimpleNamespace
+from src.job_manager import JobManager
 
 FIXTURE_BOOK = Path(__file__).resolve().parents[2] / "web" / "public" / "sample.epub"
 MINIMAL_MP3 = bytes(
@@ -25,13 +26,30 @@ MINIMAL_WAV = b"RIFF\x24\x80\x00\x00WAVEfmt " + b"\x10\x00\x00\x00\x01\x00\x01\x
 requires_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg não encontrado")
 
 
+def _configure_server_paths(tmp_path, monkeypatch):
+    tmp_path.mkdir(exist_ok=True)
+    uploads = tmp_path / ".uploads"
+    uploads.mkdir(exist_ok=True)
+    job_inputs = tmp_path / ".job_inputs"
+    job_inputs.mkdir(exist_ok=True)
+    covers = tmp_path / ".cover_cache"
+    covers.mkdir(exist_ok=True)
+    jobs_dir = tmp_path / ".jobs"
+    jobs_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(server, "output_dir", tmp_path)
+    monkeypatch.setattr(server, "persistent_root", tmp_path)
+    monkeypatch.setattr(server, "uploads_dir", uploads)
+    monkeypatch.setattr(server, "job_inputs_dir", job_inputs)
+    monkeypatch.setattr(server, "cover_cache_dir", covers)
+    monkeypatch.setattr(server, "job_manager", JobManager(jobs_dir))
+
+
 @requires_ffmpeg
 def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     """Test server conversion with mocked TTS engine."""
     job_id = str(uuid4())
 
-    monkeypatch.setattr(server, "output_dir", tmp_path)
-    server.output_dir.mkdir(exist_ok=True)
+    _configure_server_paths(tmp_path, monkeypatch)
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
@@ -123,10 +141,60 @@ async def _fake_convert_to_mp3(input_file: Path, output_file: Path, bitrate: str
 
 
 @requires_ffmpeg
+def test_preserves_reused_upload_inside_job_dir(tmp_path, monkeypatch):
+    """Ensure metadata uploads stored inside job folder survive cleanup."""
+    job_id = str(uuid4())
+
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    job_dir = tmp_path / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    upload_path = job_dir / "book.epub"
+    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
+    cover_name = "cover.jpg"
+    cover_path = job_dir / cover_name
+    cover_path.write_bytes(b"fake-cover")
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "queued",
+        "events": [],
+        "file_path": str(upload_path),
+        "engine": "edge",
+        "voice": None,
+        "chapters": None,
+        "footnote_mode": "inline",
+        "language": "pt-BR",
+        "outputs": [],
+        "cover": {
+            "name": cover_name,
+            "url": f"/api/outputs/{job_id}/{cover_name}",
+            "mimeType": "image/jpeg",
+        },
+        "coverUrl": f"/api/outputs/{job_id}/{cover_name}",
+    }
+
+    _make_telemetry(tmp_path, monkeypatch)
+    creators = {
+        "edge": lambda: DummyTTSEngine("edge"),
+    }
+    dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
+    monkeypatch.setattr(server, "tts_factory", dummy_factory)
+    monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
+
+    asyncio.run(server.process_conversion(job_id))
+
+    job = server.jobs[job_id]
+    assert job["state"] == "finished", f"Job failed: {job.get('error')}"
+    # Cover should still be served from the job output directory
+    assert (tmp_path / job_id / cover_name).exists()
+    server.jobs.pop(job_id, None)
+
+
+@requires_ffmpeg
 def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     job_id = str(uuid4())
-    monkeypatch.setattr(server, "output_dir", tmp_path)
-    server.output_dir.mkdir(exist_ok=True)
+    _configure_server_paths(tmp_path, monkeypatch)
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
@@ -167,8 +235,7 @@ def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
 @requires_ffmpeg
 def test_edge_fallbacks_to_piper_when_coqui_fails(tmp_path, monkeypatch):
     job_id = str(uuid4())
-    monkeypatch.setattr(server, "output_dir", tmp_path)
-    server.output_dir.mkdir(exist_ok=True)
+    _configure_server_paths(tmp_path, monkeypatch)
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())

@@ -91,8 +91,9 @@ export interface FormText {
   languageOptions: Record<string, string>;
   availableLanguagesLabel: string;
   errorNoFile: string;
-  errorUploadPending: string;
-  uploadRequiredHint: string;
+  autoUploadHint: string;
+  autoUploadPending: string;
+  autoUploadReady: string;
   uploadingFile: string;
   advancedSummary: string;
   errorFileTooLarge: (limitMb: number) => string;
@@ -140,7 +141,8 @@ export interface LayoutText {
 }
 
 export interface FlowMessages {
-  start: string;
+  startUpload: string;
+  startReuse: string;
   jobCreated: (jobId: string) => string;
   resuming: string;
   completion: (count: number) => string;
@@ -295,9 +297,10 @@ export const translations: Record<Locale, Translations> = {
       },
       availableLanguagesLabel: 'Idiomas disponíveis',
       errorNoFile: 'Selecione um arquivo EPUB ou PDF antes de enviar.',
-      errorUploadPending: 'Envie o arquivo antes de iniciar a conversão.',
-      uploadRequiredHint: 'O botão vai liberar automaticamente após o upload do arquivo.',
-      uploadingFile: 'Enviando arquivo...',
+      autoUploadHint: 'Detectamos título e capa automaticamente ao escolher o arquivo. Esse upload é reaproveitado na conversão.',
+      autoUploadPending: 'Detectando capa e metadados…',
+      autoUploadReady: 'Metadados detectados. Você já pode converter sem reenviar o arquivo.',
+      uploadingFile: 'Enviando arquivo para detectar capa…',
       advancedSummary: 'Opções avançadas',
       errorFileTooLarge: (limit: number) => `Arquivo maior que ${limit} MB. Envie um EPUB/PDF menor para evitar falhas.`,
       submitIdle: 'Converter agora',
@@ -355,7 +358,8 @@ export const translations: Record<Locale, Translations> = {
       footer: '',
     },
     flow: {
-      start: 'Enviando arquivo para o servidor…',
+      startUpload: 'Enviando arquivo para o servidor…',
+      startReuse: 'Preparando conversão com o arquivo já enviado…',
       jobCreated: (jobId: string) => `Pedido ${jobId} recebido. Aguardando narração…`,
       resuming: '🔄 Retomando conversão interrompida…',
       completion: (count: number) => `Conversão finalizada com ${count} arquivos de áudio.`,
@@ -497,9 +501,10 @@ export const translations: Record<Locale, Translations> = {
       },
       availableLanguagesLabel: 'Available languages',
       errorNoFile: 'Choose an EPUB or PDF file before converting.',
-      errorUploadPending: 'Upload the file before starting the conversion.',
-      uploadRequiredHint: 'The convert button will unlock once the upload finishes.',
-      uploadingFile: 'Uploading file...',
+      autoUploadHint: 'We extract title and cover automatically once you pick a file. That upload is reused during conversion.',
+      autoUploadPending: 'Extracting cover and metadata…',
+      autoUploadReady: 'Metadata detected. Conversion will reuse this upload.',
+      uploadingFile: 'Uploading file to detect cover…',
       advancedSummary: 'Advanced options',
       errorFileTooLarge: (limit: number) => `File exceeds the ${limit} MB limit. Please upload a smaller EPUB/PDF.`,
       submitIdle: 'Convert now',
@@ -557,7 +562,8 @@ export const translations: Record<Locale, Translations> = {
       footer: '',
     },
     flow: {
-      start: 'Sending file to the server…',
+      startUpload: 'Sending file to the server…',
+      startReuse: 'Preparing conversion using the uploaded file…',
       jobCreated: (jobId: string) => `Request ${jobId} received. Waiting for narration…`,
       resuming: '🔄 Resuming interrupted conversion…',
       completion: (count: number) => `Finished conversion with ${count} audio file(s).`,

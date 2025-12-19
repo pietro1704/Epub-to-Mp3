@@ -32,6 +32,7 @@ langdetect>=1.0.9
 
 # Audio Processing
 static-ffmpeg
+mutagen>=1.47.0
 
 # Data/Validation
 pydantic>=2.10.0

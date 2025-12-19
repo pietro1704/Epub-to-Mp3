@@ -65,10 +65,53 @@ function buildFormData(values: ConversionFormValues): FormData {
   return formData;
 }
 
+export function normalizeErrorMessage(status: number, statusText: string | undefined, body: string | undefined): string {
+  const trimmedBody = body?.trim() ?? '';
+  const statusLabel = statusText ? `${status} ${statusText}` : `${status}`;
+  const fallback = status >= 500
+    ? `Servidor respondeu com um erro interno (${statusLabel}). Tente novamente em instantes.`
+    : `Requisição falhou (${statusLabel}). Verifique e tente novamente.`;
+
+  if (!trimmedBody) {
+    return fallback;
+  }
+
+  const tryParseJson = (): string | null => {
+    if (!trimmedBody.startsWith('{') && !trimmedBody.startsWith('[')) {
+      return null;
+    }
+    try {
+      const payload = JSON.parse(trimmedBody);
+      const detail = payload?.detail ?? payload?.error ?? payload?.message;
+      if (typeof detail === 'string' && detail.trim()) {
+        return detail.trim();
+      }
+    } catch (_error) {
+      return null;
+    }
+    return null;
+  };
+
+  const jsonMessage = tryParseJson();
+  if (jsonMessage) {
+    return jsonMessage;
+  }
+
+  if (/<!DOCTYPE\s+html/i.test(trimmedBody) || /<html/i.test(trimmedBody)) {
+    return fallback;
+  }
+
+  if (trimmedBody.length > 500) {
+    return `${trimmedBody.slice(0, 497)}...`;
+  }
+
+  return trimmedBody;
+}
+
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(text || `Backend responded with status ${response.status}`);
+    throw new Error(normalizeErrorMessage(response.status, response.statusText, text));
   }
   return response.json() as Promise<T>;
 }

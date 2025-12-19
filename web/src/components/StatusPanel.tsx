@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ConversionState, StatusEntry, ConversionSummary } from '../types/conversion';
 import { useI18n, useTranslations } from '../i18n/I18nProvider';
 import type { Locale, Translations } from '../i18n/translations';
@@ -42,6 +42,7 @@ export default function StatusPanel({
   const timeLocale = locale === 'pt' ? 'pt-BR' : 'en-US';
   const toggleLabel = showRawLog ? t.status.toggleHide : t.status.toggleShow;
   const etaDisplay = formatEta(phase, etaSeconds, locale, t);
+  const placeholderText = t.status.placeholder;
   const languageDisplay = summary?.detectedLanguage
     ? resolveLanguageLabel(summary.detectedLanguage, t)
     : '—';
@@ -49,6 +50,23 @@ export default function StatusPanel({
     ? Math.max(0, Math.min(100, summary.progressPercent))
     : null;
   const chapterProgress = summary?.chapterProgress ?? null;
+  const timeFormatOptions = useMemo(() => ({
+    hour: '2-digit' as const,
+    minute: '2-digit' as const,
+    second: '2-digit' as const,
+  }), []);
+
+  const rawLogText = useMemo(() => {
+    if (entries.length === 0) {
+      return placeholderText;
+    }
+    return entries
+      .map((entry) => {
+        const timestamp = new Date(entry.timestamp).toLocaleTimeString(timeLocale, timeFormatOptions);
+        return `${timestamp} ${entry.message}`;
+      })
+      .join('\n');
+  }, [entries, placeholderText, timeLocale, timeFormatOptions]);
 
   // Autoscroll when new entries are added
   useEffect(() => {
@@ -148,23 +166,19 @@ export default function StatusPanel({
 
       {showRawLog ? (
         <pre className="status-panel__raw" aria-live="polite" ref={rawLogRef}>
-          {entries.length > 0 ? entries.map((entry) => entry.message).join('\n') : t.status.placeholder}
+          {rawLogText}
         </pre>
       ) : (
         <ul className="status-timeline" aria-live="polite" ref={timelineRef}>
           {entries.map((entry) => (
             <li key={entry.id} className="status-timeline__item">
               <small className="status-timeline__time">
-                {new Date(entry.timestamp).toLocaleTimeString(timeLocale, {
-                  hour: '2-digit',
-                  minute: '2-digit',
-                  second: '2-digit',
-                })}
+                {new Date(entry.timestamp).toLocaleTimeString(timeLocale, timeFormatOptions)}
               </small>
               <span className="status-timeline__message">{entry.message}</span>
             </li>
           ))}
-          {entries.length === 0 && <li className="status-timeline__placeholder">{t.status.placeholder}</li>}
+          {entries.length === 0 && <li className="status-timeline__placeholder">{placeholderText}</li>}
         </ul>
       )}
 

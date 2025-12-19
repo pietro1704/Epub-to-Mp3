@@ -189,6 +189,23 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         unlimited = self.engine._simplify_segment_text(text, limit_chars=None)
         self.assertGreater(len(unlimited), len(limited), "Unlimited simplification should retain more content than limited mode")
 
+    def test_parallel_batch_size_respects_slots(self):
+        """Batch computation must follow the configured parallel slots."""
+        self.engine._enable_parallel = True
+        self.engine._parallel_slots = 4
+        self.assertEqual(self.engine._determine_parallel_batch_size(10), 4)
+        self.assertEqual(self.engine._determine_parallel_batch_size(2), 2)
+
+    def test_parallel_batch_size_never_zero(self):
+        """Even if slots are misconfigured or disabled, batch size must stay >= 1."""
+        self.engine._enable_parallel = True
+        self.engine._parallel_slots = 0
+        self.assertEqual(self.engine._determine_parallel_batch_size(5), 1)
+
+        self.engine._enable_parallel = False
+        self.engine._parallel_slots = 4
+        self.assertEqual(self.engine._determine_parallel_batch_size(5), 1)
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

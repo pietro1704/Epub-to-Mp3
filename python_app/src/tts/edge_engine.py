@@ -137,10 +137,12 @@ class EdgeTTSEngine:
         self.partial_failure_detected: bool = False
         self.last_segment_report: Dict[str, int] = {"expected": 0, "generated": 0, "failed": 0}
         self._enable_parallel = enable_parallel
+        # Stable view of how many tasks we *intend* to run in parallel regardless of current semaphore value
+        self._parallel_slots = _edge_max_concurrency if self._enable_parallel else 1
 
         if self.verbose:
             parallel_mode = "ativado" if self._enable_parallel else "desativado"
-            max_concurrent = _edge_rate_limiter._value if _edge_rate_limiter and self._enable_parallel else 1
+            max_concurrent = self._parallel_slots if self._enable_parallel else 1
             print(f"🔧 EdgeTTS inicializado: {voice}")
             print(f"   Paralelo: {parallel_mode} (max {max_concurrent} simultâneos)")
             print(f"   Limites: {self._max_segment_seconds:.0f}s/segmento, {self._chunk_char_limit} chars/chunk")
@@ -311,8 +313,8 @@ class EdgeTTSEngine:
         # **PARALLEL OPTIMIZATION**: Process segments in batches when parallel mode is enabled
         if self._enable_parallel and _edge_rate_limiter and len(segments_to_process) > 1:
             if self.verbose:
-                max_batch = _edge_rate_limiter._value
-                print(f"🚀 [VERBOSE] Processamento paralelo ativado (batch size: {max_batch})")
+                batch_size = self._determine_parallel_batch_size(len(segments_to_process))
+                print(f"🚀 [VERBOSE] Processamento paralelo ativado (batch size: {batch_size})")
             return await self._synthesize_parallel(
                 output_path,
                 segments_to_process,
@@ -487,8 +489,8 @@ class EdgeTTSEngine:
 
         global _edge_rate_limiter
 
-        batch_size = _edge_rate_limiter._value if _edge_rate_limiter else 2
         total_segments = len(segments_to_process)
+        batch_size = self._determine_parallel_batch_size(total_segments)
         successful_segments = 0
         # Use dict to maintain segment order
         segment_files: Dict[int, Optional[Path]] = {i: None for i in range(total_segments)}
@@ -974,6 +976,19 @@ class EdgeTTSEngine:
     def _supports_emphasis(self) -> bool:
         voice = (self.voice or "").lower()
         return "neural" in voice or voice.startswith("pt-br")
+
+    def _resolve_parallel_capacity(self) -> int:
+        """Return desired parallelism while clamping to a safe minimum."""
+        slots = self._parallel_slots if self._enable_parallel else 1
+        if slots <= 0:
+            slots = 1
+        return max(1, slots)
+
+    def _determine_parallel_batch_size(self, total_segments: int) -> int:
+        """Decide how many segments to launch per batch without hitting zero-step ranges."""
+        capacity = self._resolve_parallel_capacity()
+        total = max(1, total_segments)
+        return max(1, min(capacity, total))
 
     async def _synthesize_segment(
         self,

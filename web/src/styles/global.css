@@ -928,7 +928,8 @@ select {
   border-radius: 0.75rem;
   padding: 1rem;
   background: rgba(99, 102, 241, 0.04);
-  max-height: 220px;
+  max-height: 360px;
+  min-height: 220px;
   overflow-y: auto;
 }
 

@@ -13,8 +13,9 @@ import { useTranslations } from '../i18n/I18nProvider';
 
 function buildCliCommand(values: ConversionFormValues): string {
   const parts = ['python python_app/convert'];
-  if (values.file?.name) {
-    parts.push(values.file.name);
+  const displayFileName = values.file?.name || values.fileName;
+  if (displayFileName) {
+    parts.push(displayFileName);
   }
 
   if (values.engine) {
@@ -273,14 +274,19 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
       abortRef.current = controller;
       resetLogAndCounters();
       startTimeRef.current = Date.now();
-      fileNameRef.current = values.file?.name ?? '';
+      const originalFileName = values.file?.name ?? values.fileName ?? '';
+      fileNameRef.current = originalFileName;
+      const requestValues = values.uploadId
+        ? { ...values, file: null }
+        : values;
+      const startMessage = values.uploadId ? t.flow.startReuse : t.flow.startUpload;
 
       // Generate CLI command
       const cliCommand = buildCliCommand(values);
 
-      dispatch({ type: 'start', entry: entryFactoryRef.current(t.flow.start), cliCommand });
+      dispatch({ type: 'start', entry: entryFactoryRef.current(startMessage), cliCommand });
       try {
-        const { jobId } = await api.submit(values);
+        const { jobId } = await api.submit(requestValues);
         dispatch({
           type: 'job-created',
           jobId,
