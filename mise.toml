@@ -1,3 +1,7 @@
 [tools]
 python = "3.11"
 node = "20"
+
+[tasks.dev]
+description = "Start backend (uvicorn) and frontend (Vite) together"
+run = "./scripts/dev.sh"
