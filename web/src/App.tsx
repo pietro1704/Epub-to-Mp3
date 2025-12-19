@@ -20,7 +20,7 @@ const CACHED_ALERT_DISMISSED_KEY = 'ebook-tts-cached-alert-dismissed';
 
 export default function App(props?: AppProps): JSX.Element {
   const { client } = props ?? {};
-  const { state, submit, resume, reset, cancel, cancelJobById, removeCachedJob, isBusy, cachedJobs } = useConversionFlow(client);
+  const { state, submit, resume, reset, cancel, cancelJobById, removeCachedJob, isBusy, cachedJobs, uploadFile } = useConversionFlow(client);
   const [formVersion, setFormVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<'setup' | 'progress' | 'downloads'>('setup');
   const [userSelectedTab, setUserSelectedTab] = useState(false);
@@ -168,6 +168,7 @@ export default function App(props?: AppProps): JSX.Element {
               key={formVersion}
               isSubmitting={isBusy}
               onSubmit={handleFormSubmit}
+              onUploadFile={uploadFile}
             />
           </Panel>
         ),

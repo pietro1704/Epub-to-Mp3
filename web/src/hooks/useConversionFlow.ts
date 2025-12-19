@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { conversionClient, ConversionClient } from '../services/ConversionService';
+import { conversionClient, ConversionClient, UploadResponse } from '../services/ConversionService';
 import { conversionCache } from '../services/ConversionCache';
 import {
   ConversionFormValues,
@@ -12,7 +12,10 @@ import {
 import { useTranslations } from '../i18n/I18nProvider';
 
 function buildCliCommand(values: ConversionFormValues): string {
-  const parts = ['python python_app/convert', values.file.name];
+  const parts = ['python python_app/convert'];
+  if (values.file?.name) {
+    parts.push(values.file.name);
+  }
 
   if (values.engine) {
     parts.push('--engine', values.engine);
@@ -191,6 +194,7 @@ export interface UseConversionFlowApi {
   removeCachedJob: (jobId: string) => void;
   isBusy: boolean;
   cachedJobs: Array<{ jobId: string; fileName: string; timestamp: number }>;
+  uploadFile: (file: File) => Promise<UploadResponse>;
 }
 
 export function useConversionFlow(client?: ConversionClient): UseConversionFlowApi {
@@ -269,7 +273,7 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
       abortRef.current = controller;
       resetLogAndCounters();
       startTimeRef.current = Date.now();
-      fileNameRef.current = values.file.name;
+      fileNameRef.current = values.file?.name ?? '';
 
       // Generate CLI command
       const cliCommand = buildCliCommand(values);
@@ -733,6 +737,22 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
     conversionCache.remove(jobId);
   }, []);
 
+  const uploadFile = useCallback(async (file: File) => {
+    if (!api.upload) {
+      throw new Error('Upload não suportado pelo cliente atual');
+    }
+    const response = await api.upload(file);
+    dispatch({
+      type: 'update-meta',
+      details: {
+        bookTitle: response.bookTitle,
+        bookAuthor: response.bookAuthor,
+        coverUrl: response.coverUrl,
+      },
+    });
+    return response;
+  }, [api]);
+
   const isBusy = state.phase === 'submitting' || state.phase === 'polling' || state.phase === 'cancelling';
 
   return {
@@ -743,6 +763,7 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
     cancel,
     cancelJobById,
     removeCachedJob,
+    uploadFile,
     isBusy,
     cachedJobs,
   };

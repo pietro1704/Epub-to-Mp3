@@ -91,6 +91,10 @@ export interface FormText {
   languageOptions: Record<string, string>;
   availableLanguagesLabel: string;
   errorNoFile: string;
+  errorUploadPending: string;
+  uploadRequiredHint: string;
+  uploadingFile: string;
+  advancedSummary: string;
   errorFileTooLarge: (limitMb: number) => string;
   submitIdle: string;
   submitBusy: string;
@@ -291,6 +295,10 @@ export const translations: Record<Locale, Translations> = {
       },
       availableLanguagesLabel: 'Idiomas disponíveis',
       errorNoFile: 'Selecione um arquivo EPUB ou PDF antes de enviar.',
+      errorUploadPending: 'Envie o arquivo antes de iniciar a conversão.',
+      uploadRequiredHint: 'O botão vai liberar automaticamente após o upload do arquivo.',
+      uploadingFile: 'Enviando arquivo...',
+      advancedSummary: 'Opções avançadas',
       errorFileTooLarge: (limit: number) => `Arquivo maior que ${limit} MB. Envie um EPUB/PDF menor para evitar falhas.`,
       submitIdle: 'Converter agora',
       submitBusy: 'Gerando áudio…',
@@ -489,6 +497,10 @@ export const translations: Record<Locale, Translations> = {
       },
       availableLanguagesLabel: 'Available languages',
       errorNoFile: 'Choose an EPUB or PDF file before converting.',
+      errorUploadPending: 'Upload the file before starting the conversion.',
+      uploadRequiredHint: 'The convert button will unlock once the upload finishes.',
+      uploadingFile: 'Uploading file...',
+      advancedSummary: 'Advanced options',
       errorFileTooLarge: (limit: number) => `File exceeds the ${limit} MB limit. Please upload a smaller EPUB/PDF.`,
       submitIdle: 'Convert now',
       submitBusy: 'Generating audio…',

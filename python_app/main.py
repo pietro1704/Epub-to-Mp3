@@ -1228,15 +1228,13 @@ class ConverterApplication:
             base_name = Path(file_path).stem
         else:
             base_name = "livro"
-        sanitized = FileManager.sanitize_filename(base_name)
-        if not sanitized:
-            sanitized = "livro"
-        return self.cache_root / sanitized
+        sanitized = FileManager.sanitize_filename(base_name) or "livro"
+        return resolve_cache_root() / sanitized
 
     def _handle_clear_cache(self) -> int:
         """Handle global cache clearing command"""
         from src.cache_manager import CacheManager
-        cache_manager = CacheManager(cache_dir=self.cache_root)
+        cache_manager = CacheManager(cache_dir=resolve_cache_root())
 
         cache_info = cache_manager.get_cache_info()
         if cache_info['total_cached_books'] == 0:
@@ -1249,15 +1247,21 @@ class ConverterApplication:
         success = cache_manager.clear_cache()
         if success:
             print("✅ Todo o cache foi removido com sucesso!")
-            return 0
         else:
             print("❌ Erro ao remover cache.")
             return 1
 
-    @staticmethod
-    def _clear_cache_dir(cache_dir: Path) -> None:
-        if cache_dir.exists():
-            shutil.rmtree(cache_dir, ignore_errors=True)
+        output_dir = Path.cwd() / "output"
+        if output_dir.exists():
+            shutil.rmtree(output_dir, ignore_errors=True)
+            print(f"🧹 Diretório de saída limpo: {output_dir}")
+
+        cache_root = resolve_cache_root()
+        if cache_root.exists():
+            shutil.rmtree(cache_root, ignore_errors=True)
+            print(f"🧹 Diretório .cache limpo: {cache_root}")
+
+        return 0
 
     @staticmethod
     def _normalize_lookup(value: Optional[str]) -> str:
@@ -2117,7 +2121,7 @@ class ConverterApplication:
             engine=args.engine or "auto",
             voice=args.voice,
             model=args.model,
-            output_dir=args.output_dir or "output",
+            output_dir=args.output_dir or str(Path.cwd() / "output"),
             book_title=reader.title,
             preserve_all_chapters=not getattr(args, 'filter_chapters', False),
             use_simple_converter=False,

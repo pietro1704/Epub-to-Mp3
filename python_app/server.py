@@ -17,6 +17,7 @@ import re
 from typing import Dict, Optional, List
 from dataclasses import replace
 import time
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -82,6 +83,8 @@ else:
     output_dir = OUTPUT_DIR
 
 output_dir.mkdir(exist_ok=True, parents=True)
+uploads_dir = output_dir / ".uploads"
+uploads_dir.mkdir(exist_ok=True, parents=True)
 cover_cache_dir = output_dir / ".cover_cache"
 cover_cache_dir.mkdir(exist_ok=True, parents=True)
 cover_index_path = cover_cache_dir / "index.json"
@@ -106,6 +109,24 @@ cover_cache_index = _load_cover_cache()
 # Initialize job manager with persistence
 jobs_state_dir = output_dir / ".jobs"
 job_manager = JobManager(jobs_state_dir)
+
+_pending_uploads: Dict[str, dict] = {}
+_pending_lock = threading.Lock()
+_PENDING_TTL_SECONDS = 3600  # 1 hour
+
+
+def _cleanup_pending_uploads() -> None:
+    cutoff = time.time() - _PENDING_TTL_SECONDS
+    expired: List[str] = []
+    with _pending_lock:
+        for upload_id, entry in list(_pending_uploads.items()):
+            if entry.get("created_at", 0) < cutoff:
+                expired.append(upload_id)
+                _pending_uploads.pop(upload_id, None)
+    for upload_id in expired:
+        upload_dir = uploads_dir / upload_id
+        if upload_dir.exists():
+            shutil.rmtree(upload_dir, ignore_errors=True)
 
 
 def _summarize_resume_job(job_id: str, job_data: dict, saved_at: Optional[str] = None) -> dict:
@@ -397,7 +418,8 @@ class JobStatus(BaseModel):
 @app.post("/api/convert")
 async def convert_ebook(
     background_tasks: BackgroundTasks,
-    file: UploadFile = File(...),
+    file: UploadFile | None = File(None),
+    upload_id: Optional[str] = Form(None),
     engine: str = Form("auto"),
     voice: Optional[str] = Form(None),
     chapters: Optional[str] = Form(None),
@@ -405,38 +427,66 @@ async def convert_ebook(
     language: Optional[str] = Form(None),
     priority: Optional[str] = Form(None),
 ) -> dict[str, str]:
-    job_id = f"{uuid.uuid4()}"
-    temp_file = output_dir / f"{job_id}_{file.filename}"
+    reuse_upload = None
+    if upload_id:
+        with _pending_lock:
+            reuse_upload = _pending_uploads.pop(upload_id, None)
+        if not reuse_upload:
+            raise HTTPException(status_code=404, detail="Upload não encontrado ou expirado")
+        job_id = str(uuid.uuid4())
+        job_dir = output_dir / job_id
+        job_dir.mkdir(parents=True, exist_ok=True)
+        source_file = Path(reuse_upload["file_path"])
+        file_hash = reuse_upload.get("file_hash")
+        cover_name = reuse_upload.get("cover_filename")
+        cover_mime = reuse_upload.get("cover_mime")
+        cover_url = None
+        original_name = reuse_upload.get("file_name") or source_file.name
+        temp_file = job_dir / original_name
+        shutil.move(str(source_file), temp_file)
+        if cover_name:
+            cover_source = Path(reuse_upload.get("cover_path") or "")
+            if cover_source.exists():
+                dest_cover = job_dir / cover_name
+                shutil.move(str(cover_source), dest_cover)
+                cover_url = f"/api/outputs/{job_id}/{cover_name}"
+        upload_folder = source_file.parent
+        if upload_folder.exists():
+            shutil.rmtree(upload_folder, ignore_errors=True)
+    else:
+        if file is None:
+            raise HTTPException(status_code=400, detail="Nenhum arquivo enviado")
+        job_id = f"{uuid.uuid4()}"
+        temp_file = output_dir / f"{job_id}_{file.filename}"
+        raw_payload = await file.read()
+        if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Arquivo excede o limite de {MAX_UPLOAD_MB} MB",
+            )
+        with temp_file.open("wb") as buffer:
+            buffer.write(raw_payload)
+        file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
 
-    raw_payload = await file.read()
-    if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Arquivo excede o limite de {MAX_UPLOAD_MB} MB",
-        )
-    with temp_file.open("wb") as buffer:
-        buffer.write(raw_payload)
-    file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
-
-    cover_name = None
-    cover_url = None
-    cover_mime = None
-    cover_blob = None
-    try:
-        reader_for_cover = EbookReader(str(temp_file))
-        cover_blob = reader_for_cover.extract_cover_image()
-        if cover_blob:
-            cover_slug = FileManager.sanitize_filename(reader_for_cover.title or Path(file.filename).stem) or "capa"
-            filename = f"{cover_slug}_cover{cover_blob.extension}"
-            cover_path = output_dir / job_id
-            cover_path.mkdir(parents=True, exist_ok=True)
-            target = cover_path / filename
-            target.write_bytes(cover_blob.data)
-            cover_name = filename
-            cover_url = f"/api/outputs/{job_id}/{filename}"
-            cover_mime = cover_blob.media_type
-    except Exception:
-        pass
+        cover_name = None
+        cover_url = None
+        cover_mime = None
+        cover_blob = None
+        try:
+            reader_for_cover = EbookReader(str(temp_file))
+            cover_blob = reader_for_cover.extract_cover_image()
+            if cover_blob:
+                cover_slug = FileManager.sanitize_filename(reader_for_cover.title or Path(file.filename).stem) or "capa"
+                filename = f"{cover_slug}_cover{cover_blob.extension}"
+                cover_path = output_dir / job_id
+                cover_path.mkdir(parents=True, exist_ok=True)
+                target = cover_path / filename
+                target.write_bytes(cover_blob.data)
+                cover_name = filename
+                cover_url = f"/api/outputs/{job_id}/{filename}"
+                cover_mime = cover_blob.media_type
+        except Exception:
+            pass
 
     jobs[job_id] = {
         "jobId": job_id,
@@ -450,8 +500,8 @@ async def convert_ebook(
         "language": language,
         "priority": priority,
         "outputs": [],
-        "bookTitle": None,
-        "bookAuthor": None,
+        "bookTitle": reuse_upload.get("book_title") if reuse_upload else None,
+        "bookAuthor": reuse_upload.get("book_author") if reuse_upload else None,
         "cover": {"name": cover_name, "url": cover_url, "mimeType": cover_mime} if cover_name else None,
         "coverUrl": cover_url,
         "coverMimeType": cover_mime,
@@ -603,6 +653,82 @@ async def get_resumable_jobs() -> dict:
     return {
         "resumable_jobs": resumable,
         "count": len(resumable)
+    }
+
+
+@app.get("/api/uploads/{upload_id}/{filename}")
+async def serve_uploaded_asset(upload_id: str, filename: str):
+    path = uploads_dir / upload_id / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+    return FileResponse(str(path))
+
+
+@app.post("/api/uploads")
+async def upload_ebook(file: UploadFile = File(...)) -> dict:
+    """Upload ebook ahead of conversion to extract metadata/cover."""
+    if file is None:
+        raise HTTPException(status_code=400, detail="Arquivo não enviado")
+
+    raw_payload = await file.read()
+    if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Arquivo excede o limite de {MAX_UPLOAD_MB} MB",
+        )
+
+    _cleanup_pending_uploads()
+    upload_id = f"{uuid.uuid4()}"
+    upload_dir = uploads_dir / upload_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    original_name = Path(file.filename or "ebook").name
+    temp_path = upload_dir / original_name
+    temp_path.write_bytes(raw_payload)
+    file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
+
+    book_title = Path(original_name).stem
+    book_author = "Autor Desconhecido"
+    cover_url = None
+    cover_mime = None
+    cover_filename = None
+    cover_path = None
+
+    try:
+        reader = EbookReader(str(temp_path))
+        if reader.title:
+            book_title = reader.title
+        if reader.author:
+            book_author = reader.author
+        cover_blob = reader.extract_cover_image()
+        if cover_blob:
+            cover_filename = f"cover{cover_blob.extension}"
+            cover_path = upload_dir / cover_filename
+            cover_path.write_bytes(cover_blob.data)
+            cover_url = f"/api/uploads/{upload_id}/{cover_filename}"
+            cover_mime = cover_blob.media_type
+    except Exception:
+        pass
+
+    with _pending_lock:
+        _pending_uploads[upload_id] = {
+            "file_path": str(temp_path),
+            "file_name": original_name,
+            "book_title": book_title,
+            "book_author": book_author,
+            "cover_filename": cover_filename,
+            "cover_path": str(cover_path) if cover_path else None,
+            "cover_mime": cover_mime,
+            "file_hash": file_hash,
+            "created_at": time.time(),
+        }
+
+    return {
+        "uploadId": upload_id,
+        "fileName": original_name,
+        "bookTitle": book_title,
+        "bookAuthor": book_author,
+        "coverUrl": cover_url,
+        "coverMimeType": cover_mime,
     }
 
 
@@ -1168,6 +1294,17 @@ async def process_conversion(job_id: str) -> None:
                 zip_archive.close()
             zip_open = False
 
+        cover_entry = job.get("cover")
+        upload_dir_path = Path(job.get("uploadDir") or "")
+        if cover_entry and cover_entry.get("name") and upload_dir_path.exists():
+            source_cover = upload_dir_path / cover_entry["name"]
+            dest_cover = job_output_dir / cover_entry["name"]
+            if source_cover.exists():
+                with contextlib.suppress(Exception):
+                    shutil.copy2(source_cover, dest_cover)
+                    cover_entry["url"] = f"/api/outputs/{job_id}/{cover_entry['name']}"
+                    job["coverUrl"] = cover_entry["url"]
+
         # Upload to R2 if configured
         if storage.is_enabled():
             job["events"].append("")
@@ -1282,7 +1419,7 @@ async def process_conversion(job_id: str) -> None:
             if zip_archive:
                 zip_archive.close()
         temp_path = Path(job["file_path"])
-        if temp_path.exists():
+        with contextlib.suppress(FileNotFoundError):
             temp_path.unlink()
 
 

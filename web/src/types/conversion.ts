@@ -2,7 +2,8 @@ export type EngineOption = 'edge' | 'coqui' | 'piper' | string;
 export type FootnoteMode = 'inline' | 'chapter_end' | 'skip';
 
 export interface ConversionFormValues {
-  file: File;
+  file: File | null;
+  uploadId?: string;
   engine: EngineOption;
   voice?: string;
   chapters?: string;

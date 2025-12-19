@@ -2,10 +2,12 @@ import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useTranslations } from '../i18n/I18nProvider';
 import { ConversionFormValues, EngineOption, FootnoteMode } from '../types/conversion';
 import { API_BASE_URL, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../config';
+import type { UploadResponse } from '../services/ConversionService';
 
 interface ConversionFormProps {
   isSubmitting: boolean;
   onSubmit: (values: ConversionFormValues) => Promise<void> | void;
+  onUploadFile: (file: File) => Promise<UploadResponse>;
 }
 
 interface VoiceInfo {
@@ -85,7 +87,7 @@ function getEngineMeta(engine: EngineOption): EngineInsights {
   return FALLBACK_ENGINE_META;
 }
 
-export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFormProps): JSX.Element {
+export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }: ConversionFormProps): JSX.Element {
   const t = useTranslations();
   const initialEngine: EngineOption = 'auto';
   const initialMeta = getEngineMeta(initialEngine);
@@ -101,6 +103,9 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
   const [voiceCatalog, setVoiceCatalog] = useState<Record<string, VoiceInfo[]> | null>(null);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLoadFailed, setVoiceLoadFailed] = useState(false);
+  const [uploadId, setUploadId] = useState<string | undefined>(undefined);
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -178,9 +183,29 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
     return voiceSuggestions.find(v => v.name === voice)?.multilingual ?? false;
   }, [voiceSuggestions, voice]);
 
+  const processSelectedFile = async (file: File | null) => {
+    setSelectedFile(file);
+    setUploadId(undefined);
+    setUploadError(null);
+    if (!file) {
+      return;
+    }
+    setIsUploadingFile(true);
+    try {
+      const response = await onUploadFile(file);
+      setUploadId(response.uploadId);
+      setUploadError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao enviar arquivo';
+      setUploadError(message);
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedFile) {
+    if (!selectedFile || !uploadId) {
       setShowMissingFileError(true);
       setFileError(null);
       return;
@@ -191,7 +216,8 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
 
     setShowMissingFileError(false);
     await onSubmit({
-      file: selectedFile,
+      file: uploadId ? null : selectedFile,
+      uploadId,
       engine,
       voice: voice || undefined,
       chapters: chapters || undefined,
@@ -217,9 +243,9 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
       const response = await fetch('/sample.epub');
       const blob = await response.blob();
       const file = new File([blob], 'sample.epub', { type: 'application/epub+zip' });
-      setSelectedFile(file);
       setShowMissingFileError(false);
       setFileError(null);
+      await processSelectedFile(file);
     } catch (error) {
       console.error('Failed to load sample book:', error);
     }
@@ -235,8 +261,8 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
             name="file"
             type="file"
             accept="application/epub+zip,application/pdf"
-            disabled={isSubmitting}
-            onChange={(event) => {
+            disabled={isSubmitting || isUploadingFile}
+            onChange={async (event) => {
               const file = event.target.files?.[0] ?? null;
               if (file && file.size > MAX_UPLOAD_BYTES) {
                 setSelectedFile(null);
@@ -246,17 +272,14 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
                 return;
               }
               setFileError(null);
-              setSelectedFile(file);
-              if (file) {
-                setShowMissingFileError(false);
-              }
+              await processSelectedFile(file);
             }}
             style={{ flex: 1 }}
           />
           <button
             type="button"
             onClick={handleUseSample}
-            disabled={isSubmitting}
+            disabled={isSubmitting || isUploadingFile}
             className="button-secondary"
             style={{ whiteSpace: 'nowrap' }}
           >
@@ -274,165 +297,189 @@ export default function ConversionForm({ isSubmitting, onSubmit }: ConversionFor
             <span className="form-hint__filename">{selectedFile.name}</span>
           </p>
         )}
+        {uploadError && (
+          <p role="alert" className="form-error">
+            {uploadError}
+          </p>
+        )}
+        {isUploadingFile && (
+          <p className="form-hint">📤 Enviando arquivo...</p>
+        )}
+        {uploadId && !isUploadingFile && !uploadError && (
+          <p className="form-hint">✅ Arquivo pronto para conversão</p>
+        )}
         <p className="form-hint">{t.form.fileHint}</p>
       </fieldset>
 
-      <fieldset className="form-row">
-        <label htmlFor="engine">{t.form.engineLabel}</label>
-        <select
-          id="engine"
-          name="engine"
-          value={engine}
-          disabled={isSubmitting}
-          onChange={(event) => handleEngineChange(event.target.value as EngineOption)}
-        >
-          {t.form.engineOptions.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
-        <p className="form-hint">{t.form.engineOptions.find((option) => option.value === engine)?.help}</p>
-        <div className="engine-insight">
-          <div className="engine-insight__item">
-            <span className="engine-insight__label">{t.form.defaultVoiceLabel}</span>
-            <code className="engine-insight__value">{engineMeta.defaultVoice}</code>
-          </div>
-          <div className="engine-insight__item">
-            <span className="engine-insight__label">{t.form.multilingualSupportLabel}</span>
-            <span className="engine-insight__value">
-              {engineMeta.multiLingual ? t.form.multilingualYes : t.form.multilingualNo}
-            </span>
-          </div>
-          <div className="engine-insight__item">
-            <span className="engine-insight__label">{engineMeta.autoLanguage ? t.form.autoLanguageLabel : t.form.manualLanguageLabel}</span>
-          </div>
-          {!engineMeta.autoLanguage && engineMeta.languages.length > 0 && (
-            <div className="engine-insight__languages">
-              <span className="engine-insight__label">{t.form.availableLanguagesLabel}:</span>
-              <ul>
-                {engineMeta.languages.map((code) => (
-                  <li key={code}>{translateLanguage(code)}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      </fieldset>
-
-      <fieldset className="form-row">
-        <label htmlFor="voice">{t.form.voiceLabel}</label>
-        <select
-          id="voice"
-          name="voice"
-          value={voice}
-          disabled={isSubmitting}
-          onChange={(event) => setVoice(event.target.value)}
-        >
-          {voiceSuggestions.map((voiceInfo) => {
-            const label = voiceInfo.label && voiceInfo.label !== voiceInfo.name
-              ? `${voiceInfo.label} • ${voiceInfo.name}`
-              : voiceInfo.label ?? voiceInfo.name;
-            return (
-              <option key={voiceInfo.name} value={voiceInfo.name}>
-                {label} {voiceInfo.multilingual ? '🌐' : ''}
-              </option>
-            );
-          })}
-        </select>
-        <p className="form-hint">
-          {currentVoiceMultilingual && '🌐 '}
-          {t.form.voiceHint}
-          {currentVoiceMultilingual && ` ${t.form.voiceMultilingualHint}`}
-        </p>
-        {voiceLoading && <p className="form-hint">{t.form.voiceLoading}</p>}
-        {voiceLoadFailed && (
-          <p className="form-hint form-hint--warning">{t.form.voiceLoadFailed}</p>
-        )}
-      </fieldset>
-
-      {engineMeta.autoLanguage ? (
-        <p className="form-hint">{t.form.languageNotRequired}</p>
-      ) : (
-        <fieldset className="form-row">
-          <label htmlFor="language">{t.form.languageLabel}</label>
-          <select
-            id="language"
-            name="language"
-            value={language}
-            disabled={isSubmitting}
-            onChange={(event) => setLanguage(event.target.value)}
-          >
-            {engineMeta.languages.map((code) => (
-              <option key={code} value={code}>
-                {translateLanguage(code)}
-              </option>
-            ))}
-          </select>
-          <p className="form-hint">{t.form.languageHint}</p>
-        </fieldset>
-      )}
-
-      <fieldset className="form-row">
-        <label htmlFor="chapters">{t.form.chaptersLabel}</label>
-        <input
-          id="chapters"
-          name="chapters"
-          placeholder={t.form.chaptersPlaceholder}
-          value={chapters}
-          disabled={isSubmitting}
-          onChange={(event) => setChapters(event.target.value)}
-        />
-        <p className="form-hint">{t.form.chaptersHint}</p>
-      </fieldset>
-
-      <fieldset className="form-row">
-        <label htmlFor="priority">{t.form.priorityLabel}</label>
-        <input
-          id="priority"
-          name="priority"
-          placeholder={t.form.priorityPlaceholder}
-          value={priority}
-          disabled={isSubmitting}
-          onChange={(event) => setPriority(event.target.value)}
-        />
-        <p className="form-hint">{t.form.priorityHint}</p>
-      </fieldset>
-
-      <fieldset className="form-field">
-        <legend className="form-legend">{t.form.footnoteLegend}</legend>
-        <div className="segmented-list">
-          {t.form.footnoteOptions.map((option) => {
-            const inputId = `footnote-${option.value}`;
-            return (
-              <label key={option.value} className="segmented-list__item" htmlFor={inputId}>
-                <input
-                  type="radio"
-                  id={inputId}
-                  name="footnoteMode"
-                  value={option.value}
-                  checked={footnoteMode === option.value}
-                  disabled={isSubmitting}
-                  onChange={() => setFootnoteMode(option.value)}
-                />
-                <span className="segmented-list__content">
-                  <span className="segmented-list__title">{option.title}</span>
-                  <span className="segmented-list__description">{option.description}</span>
+      <details className="form-advanced">
+        <summary>{t.form.advancedSummary}</summary>
+        <div className="form-advanced__content">
+          <fieldset className="form-row">
+            <label htmlFor="engine">{t.form.engineLabel}</label>
+            <select
+              id="engine"
+              name="engine"
+              value={engine}
+              disabled={isSubmitting}
+              onChange={(event) => handleEngineChange(event.target.value as EngineOption)}
+            >
+              {t.form.engineOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="form-hint">{t.form.engineOptions.find((option) => option.value === engine)?.help}</p>
+            <div className="engine-insight">
+              <div className="engine-insight__item">
+                <span className="engine-insight__label">{t.form.defaultVoiceLabel}</span>
+                <code className="engine-insight__value">{engineMeta.defaultVoice}</code>
+              </div>
+              <div className="engine-insight__item">
+                <span className="engine-insight__label">{t.form.multilingualSupportLabel}</span>
+                <span className="engine-insight__value">
+                  {engineMeta.multiLingual ? t.form.multilingualYes : t.form.multilingualNo}
                 </span>
-              </label>
-            );
-          })}
+              </div>
+              <div className="engine-insight__item">
+                <span className="engine-insight__label">{engineMeta.autoLanguage ? t.form.autoLanguageLabel : t.form.manualLanguageLabel}</span>
+              </div>
+              {!engineMeta.autoLanguage && engineMeta.languages.length > 0 && (
+                <div className="engine-insight__languages">
+                  <span className="engine-insight__label">{t.form.availableLanguagesLabel}:</span>
+                  <ul>
+                    {engineMeta.languages.map((code) => (
+                      <li key={code}>{translateLanguage(code)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="voice">{t.form.voiceLabel}</label>
+            <select
+              id="voice"
+              name="voice"
+              value={voice}
+              disabled={isSubmitting}
+              onChange={(event) => setVoice(event.target.value)}
+            >
+              {voiceSuggestions.map((voiceInfo) => {
+                const label = voiceInfo.label && voiceInfo.label !== voiceInfo.name
+                  ? `${voiceInfo.label} • ${voiceInfo.name}`
+                  : voiceInfo.label ?? voiceInfo.name;
+                return (
+                  <option key={voiceInfo.name} value={voiceInfo.name}>
+                    {label} {voiceInfo.multilingual ? '🌐' : ''}
+                  </option>
+                );
+              })}
+            </select>
+            <p className="form-hint">
+              {currentVoiceMultilingual && '🌐 '}
+              {t.form.voiceHint}
+              {currentVoiceMultilingual && ` ${t.form.voiceMultilingualHint}`}
+            </p>
+            {voiceLoading && <p className="form-hint">{t.form.voiceLoading}</p>}
+            {voiceLoadFailed && (
+              <p className="form-hint form-hint--warning">{t.form.voiceLoadFailed}</p>
+            )}
+          </fieldset>
+
+          {engineMeta.autoLanguage ? (
+            <p className="form-hint">{t.form.languageNotRequired}</p>
+          ) : (
+            <fieldset className="form-row">
+              <label htmlFor="language">{t.form.languageLabel}</label>
+              <select
+                id="language"
+                name="language"
+                value={language}
+                disabled={isSubmitting}
+                onChange={(event) => setLanguage(event.target.value)}
+              >
+                {engineMeta.languages.map((code) => (
+                  <option key={code} value={code}>
+                    {translateLanguage(code)}
+                  </option>
+                ))}
+              </select>
+              <p className="form-hint">{t.form.languageHint}</p>
+            </fieldset>
+          )}
+
+          <fieldset className="form-row">
+            <label htmlFor="chapters">{t.form.chaptersLabel}</label>
+            <input
+              id="chapters"
+              name="chapters"
+              placeholder={t.form.chaptersPlaceholder}
+              value={chapters}
+              disabled={isSubmitting}
+              onChange={(event) => setChapters(event.target.value)}
+            />
+            <p className="form-hint">{t.form.chaptersHint}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="priority">{t.form.priorityLabel}</label>
+            <input
+              id="priority"
+              name="priority"
+              placeholder={t.form.priorityPlaceholder}
+              value={priority}
+              disabled={isSubmitting}
+              onChange={(event) => setPriority(event.target.value)}
+            />
+            <p className="form-hint">{t.form.priorityHint}</p>
+          </fieldset>
+
+          <fieldset className="form-field">
+            <legend className="form-legend">{t.form.footnoteLegend}</legend>
+            <div className="segmented-list">
+              {t.form.footnoteOptions.map((option) => {
+                const inputId = `footnote-${option.value}`;
+                return (
+                  <label key={option.value} className="segmented-list__item" htmlFor={inputId}>
+                    <input
+                      type="radio"
+                      id={inputId}
+                      name="footnoteMode"
+                      value={option.value}
+                      checked={footnoteMode === option.value}
+                      disabled={isSubmitting}
+                      onChange={() => setFootnoteMode(option.value)}
+                    />
+                    <span className="segmented-list__content">
+                      <span className="segmented-list__title">{option.title}</span>
+                      <span className="segmented-list__description">{option.description}</span>
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
         </div>
-      </fieldset>
+      </details>
 
       {showMissingFileError && (
         <p role="alert" className="form-error">
-          {t.form.errorNoFile}
+          {t.form.errorUploadPending}
         </p>
       )}
 
-      <button type="submit" disabled={isSubmitting} className="form-submit">
-        {isSubmitting ? t.form.submitBusy : t.form.submitIdle}
+      {!uploadId && !isUploadingFile && (
+        <p className="form-hint">{t.form.uploadRequiredHint}</p>
+      )}
+
+      <button type="submit" disabled={isSubmitting || isUploadingFile || !uploadId} className="form-submit">
+        {isSubmitting
+          ? t.form.submitBusy
+          : isUploadingFile
+            ? t.form.uploadingFile
+            : t.form.submitIdle}
       </button>
     </form>
   );

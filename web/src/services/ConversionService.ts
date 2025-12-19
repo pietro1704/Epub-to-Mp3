@@ -26,11 +26,26 @@ export interface ConversionClient {
   poll(jobId: string, options?: PollOptions): Promise<JobSnapshot>;
   getResumableJobs?(): Promise<ResumableJob[] | null>;
   cancel?(jobId: string): Promise<{ status: string }>;
+  upload?(file: File): Promise<UploadResponse>;
+}
+
+export interface UploadResponse {
+  uploadId: string;
+  fileName: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+  coverUrl?: string;
+  coverMimeType?: string;
 }
 
 function buildFormData(values: ConversionFormValues): FormData {
   const formData = new FormData();
-  formData.append('file', values.file);
+  if (values.uploadId) {
+    formData.append('upload_id', values.uploadId);
+  }
+  if (values.file && !values.uploadId) {
+    formData.append('file', values.file);
+  }
   formData.append('engine', values.engine);
   if (values.voice) {
     formData.append('voice', values.voice);
@@ -195,6 +210,20 @@ export class HttpConversionClient implements ConversionClient {
       method: 'POST',
     });
     return parseResponse<{ status: string }>(response);
+  }
+
+  async upload(file: File): Promise<UploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const response = await fetch(this.resolve('/api/uploads'), {
+      method: 'POST',
+      body: formData,
+    });
+    const payload = await parseResponse<UploadResponse>(response);
+    if (payload.coverUrl) {
+      payload.coverUrl = normalizeAssetUrl(this.baseUrl, payload.coverUrl);
+    }
+    return payload;
   }
 
   async getResumableJobs(): Promise<ResumableJob[] | null> {
