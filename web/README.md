@@ -2,6 +2,10 @@
 
 Static frontend for EPUB/PDF to MP3 conversion. Uses real Python backend - **no mocks** (except sample.epub file).
 
+## Batch uploads
+
+Step 1 of the UI now accepts multiple EPUB/PDF files. Drop several books, drag or use the arrow controls to reorder them, then click **Converter** to send everything sequentially while reusing the same engine/voice configuration for every title. During Step 2 you can also drop new files into the inline “Add to queue” card and they will run right after the current conversion.
+
 ## Development
 
 ### 1. Start Python Backend

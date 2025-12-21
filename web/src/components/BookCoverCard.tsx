@@ -22,13 +22,11 @@ function resolveStatusLabel(phase: ConversionState['phase']): string {
   }
 }
 
-export default function BookCoverCard({ title, author, coverUrl, phase }: BookCoverCardProps): JSX.Element | null {
-  if (!title && !coverUrl) {
-    return null;
-  }
-
+export default function BookCoverCard({ title, author, coverUrl, phase }: BookCoverCardProps): JSX.Element {
   const statusLabel = resolveStatusLabel(phase);
-  const altText = title ? `Capa do livro ${title}` : 'Capa do livro';
+  const resolvedTitle = title || 'Livro carregado';
+  const resolvedAuthor = author || 'Autor desconhecido';
+  const altText = `Capa do livro ${resolvedTitle}`;
 
   return (
     <section className="cover-card" aria-label="Dados do livro selecionado">
@@ -43,8 +41,8 @@ export default function BookCoverCard({ title, author, coverUrl, phase }: BookCo
       </div>
       <div className="cover-card__details">
         <p className="cover-card__status">{statusLabel}</p>
-        <h2 className="cover-card__title cover-card__title--wrap">{title || 'Livro carregado'}</h2>
-        <p className="cover-card__author">{author || 'Autor desconhecido'}</p>
+        <h2 className="cover-card__title cover-card__title--wrap">{resolvedTitle}</h2>
+        <p className="cover-card__author">{resolvedAuthor}</p>
       </div>
     </section>
   );

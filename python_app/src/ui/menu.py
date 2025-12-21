@@ -23,6 +23,7 @@ class MenuInterface:
         self,
         reader: EbookReader,
         language_profile=None,
+        formatting_cues: Optional[bool] = None,
     ) -> Optional[ConversionConfig]:
         """Get conversion configuration through interactive menu"""
 
@@ -43,6 +44,11 @@ class MenuInterface:
         footnote_mode = self._choose_footnote_mode()
         if footnote_mode is None:
             return None
+        cues_enabled = formatting_cues
+        if cues_enabled is None:
+            cues_enabled = self._choose_formatting_cues()
+            if cues_enabled is None:
+                return None
 
         config = ConversionConfig(
             engine=engine,
@@ -50,6 +56,8 @@ class MenuInterface:
             book_title=reader.title,
             footnote_mode=footnote_mode,
             footnote_context_words=8,
+            speak_formatting_cues=bool(cues_enabled),
+            formatting_locale=self.loc.language,
         )
 
         print(self.loc.t("summary_title"))
@@ -70,6 +78,34 @@ class MenuInterface:
         print(self.loc.highlight_default(self.loc.t("auto_start_notice")))
 
         return config
+
+    def _choose_formatting_cues(self) -> Optional[bool]:
+        options = {
+            "1": (True, self.loc.t("formatting_cues_enable")),
+            "2": (False, self.loc.t("formatting_cues_disable")),
+        }
+        default_key = "1"
+        while True:
+            print(self.loc.t("formatting_cues_title"))
+            for key, (_, label) in options.items():
+                entry = f"{key}. {label}"
+                if key == default_key:
+                    entry = self.loc.highlight_default(entry + self.loc.t("default_suffix"))
+                print(entry)
+            try:
+                choice = self.prompt.ask(
+                    self.loc.t("select_formatting_cues_prompt"),
+                    valid=options.keys(),
+                    allow_blank_default=True,
+                    default=default_key,
+                    digits_only=True,
+                )
+            except EOFError:
+                return None
+            if choice is None or choice not in options:
+                print(self.loc.t("invalid_option"))
+                continue
+            return options[choice][0]
 
     def _choose_engine(self) -> Optional[str]:
         engines = {

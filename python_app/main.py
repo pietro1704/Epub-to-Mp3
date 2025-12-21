@@ -7,6 +7,9 @@ Reduced from 564 to ~100 lines while maintaining all functionality
 
 import argparse
 import asyncio
+import copy
+import glob
+import os
 import re
 import shutil
 import sys
@@ -16,7 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 try:  # Optional dependency for shell tab completion
     import argcomplete  # type: ignore
@@ -40,6 +43,7 @@ from src.language import (
     LanguageProfile,
     get_language_detector,
 )
+from src.chapter_utils import deduplicate_chapters_by_content
 
 
 @dataclass
@@ -51,6 +55,7 @@ class ChapterStructureItem:
     preview: Optional[str]
     display_name: str
     text_override: Optional[str] = None
+    speak_heading: bool = True
 
 
 class ConverterApplication:
@@ -58,6 +63,7 @@ class ConverterApplication:
 
     PREVIEW_WORD_LIMIT = 30
     FOOTNOTE_CONTEXT_WORDS = 8
+    SUPPORTED_INPUT_SUFFIXES = (".epub", ".pdf")
 
     def __init__(self):
         self.localization = get_localization()
@@ -77,32 +83,209 @@ class ConverterApplication:
         if raw is None:
             return True
         return bool(raw)
-    
+
+    @staticmethod
+    def _resolve_formatting_cues(args: argparse.Namespace, default: bool = True) -> bool:
+        raw = getattr(args, "formatting_cues", None)
+        if raw is None:
+            return default
+        return bool(raw)
+
     def run(self, args: argparse.Namespace) -> int:
-        """Main application entry point"""
-        conversion_start = time.time()
+        """Entry point that orchestrates optional batch conversion."""
+        if getattr(args, "command", None) == "clear_cache":
+            return self._handle_clear_cache()
+
+        verbose = self._resolve_verbose(args)
+        hardware_profile = None
         try:
-            # **AUTO-OPTIMIZATION**: Detect hardware and apply optimizations
             from src.hardware_detector import HardwareDetector
 
             hardware_profile = HardwareDetector.detect()
             HardwareDetector.apply_optimizations(hardware_profile)
-
-            verbose = self._resolve_verbose(args)
             if verbose:
                 HardwareDetector.print_profile(hardware_profile, verbose=True)
+        except Exception:
+            hardware_profile = None
 
-            # **NEW**: Handle clear-cache command
-            if getattr(args, "command", None) == "clear_cache":
-                return self._handle_clear_cache()
+        targets, batch_requested = self._resolve_batch_targets(args)
+        if not targets:
+            print("⚠️ Nenhum arquivo EPUB/PDF encontrado para converter.")
+            return 1
+
+        if len(targets) == 1 and not batch_requested:
+            args.input_file = str(targets[0])
+            return self._run_single_conversion(args, hardware_profile=hardware_profile)
+
+        return self._run_batch(args, targets, hardware_profile=hardware_profile)
+
+    def _resolve_batch_targets(self, args: argparse.Namespace) -> Tuple[List[Path], bool]:
+        """Resolve positional + batch inputs into a deduplicated ordered list of books."""
+        requested_batch = any(
+            bool(getattr(args, attr, None))
+            for attr in ("extra_inputs", "batch_inputs", "batch_manifest")
+        )
+        sources: List[str] = []
+        positional: List[str] = []
+        primary = getattr(args, "input_file", None)
+        if primary:
+            positional.append(str(primary))
+        positional.extend(getattr(args, "extra_inputs", None) or [])
+        sources.extend(positional)
+
+        batch_inputs = getattr(args, "batch_inputs", None) or []
+        sources.extend(batch_inputs)
+        sources.extend(self._read_batch_manifest(getattr(args, "batch_manifest", None)))
+
+        targets: List[Path] = []
+        seen: Set[str] = set()
+        for raw in sources:
+            for expanded in self._expand_batch_source(raw):
+                for file_path in self._flatten_source_to_files(expanded):
+                    key = self._canonical_path_key(file_path)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    targets.append(file_path)
+        return targets, requested_batch
+
+    def _expand_batch_source(self, raw: str) -> List[Path]:
+        """Expand globs/user paths into concrete Path objects."""
+        pattern = os.path.expanduser(raw)
+        matches = [Path(match) for match in glob.glob(pattern)]
+        if matches:
+            return matches
+        return [Path(pattern)]
+
+    def _flatten_source_to_files(self, path: Path) -> List[Path]:
+        """Return a list of valid input files from a file or directory."""
+        resolved = path.expanduser()
+        try:
+            exists = resolved.exists()
+        except OSError:
+            exists = False
+
+        if not exists:
+            print(self.localization.t("file_not_found", path=resolved))
+            return []
+
+        if resolved.is_file():
+            if resolved.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES:
+                return [resolved]
+            print(f"⚠️ Ignorando arquivo não suportado: {resolved.name}")
+            return []
+
+        if resolved.is_dir():
+            files = [
+                candidate
+                for candidate in sorted(resolved.rglob("*"))
+                if candidate.is_file() and candidate.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES
+            ]
+            if not files:
+                print(f"⚠️ Nenhum EPUB/PDF encontrado em {resolved}")
+            return files
+
+        print(f"⚠️ Caminho inválido: {resolved}")
+
+        return []
+
+    @staticmethod
+    def _canonical_path_key(path: Path) -> str:
+        try:
+            return str(path.resolve())
+        except OSError:
+            return str(path)
+
+    def _run_batch(
+        self,
+        args: argparse.Namespace,
+        targets: List[Path],
+        *,
+        hardware_profile=None,
+    ) -> int:
+        """Execute sequential conversions for multiple books."""
+        total = len(targets)
+        stop_on_error = bool(getattr(args, "batch_stop_on_error", False))
+        successes = 0
+        exit_code = 0
+
+        for index, target in enumerate(targets, start=1):
+            self._print_batch_header(target, index, total)
+            single_args = copy.deepcopy(args)
+            single_args.input_file = str(target)
+            single_args.extra_inputs = []
+            single_args.batch_inputs = []
+            single_args.batch_manifest = None
+            result = self._run_single_conversion(single_args, hardware_profile=hardware_profile)
+            if result == 0:
+                successes += 1
+            else:
+                exit_code = exit_code or result or 1
+                if stop_on_error:
+                    print("🛑 Processamento interrompido após falha.")
+                    break
+
+        print(f"\n📚 Batch concluído: {successes}/{total} livro(s) com sucesso.")
+        return exit_code
+
+    @staticmethod
+    def _read_batch_manifest(manifest: Optional[str]) -> List[str]:
+        if not manifest:
+            return []
+        manifest_path = Path(manifest).expanduser()
+        if not manifest_path.exists():
+            print(f"⚠️ Arquivo de lista não encontrado: {manifest_path}")
+            return []
+        entries: List[str] = []
+        try:
+            with manifest_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#"):
+                        continue
+                    entries.append(stripped)
+        except OSError as exc:
+            print(f"⚠️ Falha ao ler lista de batch ({manifest_path}): {exc}")
+        return entries
+
+    @staticmethod
+    def _print_batch_header(target: Path, index: int, total: int) -> None:
+        divider = "=" * 60
+        print(f"\n{divider}")
+        print(f"📘 Livro {index}/{total}: {target.name}")
+        print(f"{divider}")
+    
+    def _run_single_conversion(
+        self,
+        args: argparse.Namespace,
+        *,
+        hardware_profile=None,
+    ) -> int:
+        """Main application entry point"""
+        conversion_start = time.time()
+        try:
+            if hardware_profile is None:
+                from src.hardware_detector import HardwareDetector
+
+                hardware_profile = HardwareDetector.detect()
+                HardwareDetector.apply_optimizations(hardware_profile)
+                verbose = self._resolve_verbose(args)
+                if verbose:
+                    HardwareDetector.print_profile(hardware_profile, verbose=True)
 
             # Validate input
-            if not Path(args.input_file).exists():
-                print(self.localization.t("file_not_found", path=args.input_file))
+            input_path = Path(getattr(args, "input_file", "")).expanduser()
+            if not input_path.exists():
+                print(self.localization.t("file_not_found", path=input_path))
+                return 1
+            suffix = input_path.suffix.lower()
+            if suffix not in {".epub", ".pdf"}:
+                friendly = suffix or "(sem extensão)"
+                print(f"❌ Formato não suportado: {friendly}. Envie um arquivo .epub ou .pdf.")
                 return 1
             
             # Load ebook
-            reader = EbookReader(args.input_file)
+            reader = EbookReader(str(input_path))
             
             # Show structure only
             if args.show_structure:
@@ -229,7 +412,13 @@ class ConverterApplication:
         total = max(0, int(seconds or 0))
         hours, rem = divmod(total, 3600)
         minutes, secs = divmod(rem, 60)
-        return f"{hours:02d}h {minutes:02d}m {secs:02d}s"
+        parts: list[str] = []
+        if hours:
+            parts.append(f"{hours:02d}h")
+        if minutes or hours:
+            parts.append(f"{minutes:02d}m")
+        parts.append(f"{secs:02d}s")
+        return " ".join(parts)
     
     def _generate_structure_items(self, reader: EbookReader) -> List[ChapterStructureItem]:
         """Prepare structured information for chapters shared across features"""
@@ -273,6 +462,7 @@ class ConverterApplication:
             return value
 
         for i, chapter in enumerate(chapters):
+            speak_heading = True
             if self._should_skip_chapter(chapters, i, toc_map):
                 continue
 
@@ -360,6 +550,7 @@ class ConverterApplication:
                     fallback_label = main_name or fallback_label
                     main_name = fallback_label or main_name
                     sub_name = None
+                    speak_heading = True
                 else:
                     fallback_counter += 1
                     division_counters[fallback_division] = fallback_counter
@@ -368,6 +559,7 @@ class ConverterApplication:
                         if main_name and main_name.lower() != fallback_label.lower():
                             sub_name = sub_name or main_name
                         main_name = fallback_label
+                    speak_heading = False
 
             main_name, sub_name, first_words = self._sanitize_display_values(
                 main_name,
@@ -401,7 +593,8 @@ class ConverterApplication:
                     main_title=main_name,
                     sub_title=sub_name,
                     preview=first_words,
-                    display_name=display_name
+                    display_name=display_name,
+                    speak_heading=speak_heading
                 )
             )
 
@@ -577,16 +770,21 @@ class ConverterApplication:
             if getattr(chapter, 'footnotes', None):
                 formatting_segments = None
 
-            # Determine text content
+            # Determine text content and ensure headings are spoken
             final_text = item.text_override if item.text_override is not None else chapter.text
+            final_text = final_text or ""
 
-            # CRITICAL FIX: Recalculate speech_text when text_override is used
-            # Otherwise all subcapters would get the same speech_text from original chapter
-            if item.text_override is not None:
-                # Recalculate speech_text based on overridden text
-                speech_text = formatter.to_audible_text(final_text, formatting_segments)
+            heading_text = self._build_heading_text(item)
+            if heading_text:
+                normalized_body = final_text.lstrip()
+                if not normalized_body.lower().startswith(heading_text.lower()):
+                    final_text = f"{heading_text}\n\n{normalized_body}"
+                else:
+                    final_text = normalized_body
             else:
-                speech_text = getattr(chapter, 'speech_text', None)
+                final_text = final_text.lstrip()
+
+            speech_text = formatter.to_audible_text(final_text, formatting_segments)
 
             new_chapters.append(
                 Chapter(
@@ -603,6 +801,36 @@ class ConverterApplication:
             )
 
         reader.book.chapters = new_chapters
+
+    def _build_heading_text(self, item: ChapterStructureItem) -> Optional[str]:
+        """Return a clean heading string that should be spoken before the chapter."""
+
+        if not getattr(item, "speak_heading", True):
+            return None
+
+        def normalize(value: Optional[str]) -> str:
+            return re.sub(r"\s+", " ", value or "").strip()
+
+        main = normalize(item.main_title)
+        sub = normalize(item.sub_title)
+        parts: List[str] = []
+
+        if sub:
+            if main and sub.lower().startswith(main.lower()):
+                parts.append(sub)
+            else:
+                if main:
+                    parts.append(main)
+                parts.append(sub)
+        elif main:
+            parts.append(main)
+        else:
+            fallback = normalize(item.display_name)
+            if fallback:
+                parts.append(fallback)
+
+        heading = "\n".join(parts).strip()
+        return heading or None
 
     def _apply_text_transforms(
         self,
@@ -643,6 +871,10 @@ class ConverterApplication:
             chapter_footnotes = getattr(chapter, 'footnotes', None)
             text_source = item.text_override if item.text_override is not None else getattr(chapter, 'text', '')
             if item.text_override is not None:
+                raw_html = None
+
+            # Reutiliza o texto já enriquecido com notas quando o modo é inline
+            if footnote_mode == "inline" and chapter_footnotes:
                 raw_html = None
 
             chapter_label = str(
@@ -754,6 +986,18 @@ class ConverterApplication:
             processor = TextFormattingProcessor()
             formatted_text = processor.apply_inline_formatting(final_text)
             speech_text = processor.strip_inline_markdown(final_text)
+
+            # **NEW**: Aplicar detecção automática de idioma se habilitado
+            if getattr(config, 'use_language_detection', True):
+                try:
+                    from src.language import LanguageMarkup
+                    markup = LanguageMarkup()
+                    speech_text = markup.annotate(speech_text, primary_language)
+                except (ImportError, Exception) as e:
+                    # Falha silenciosa - continua sem detecção
+                    if config.verbose:
+                        print(f"⚠️ Detecção de idioma desativada: {e}")
+
             chapter.speech_text = speech_text  # Clean text for TTS
 
             lines = [line.strip() for line in final_text.splitlines() if line.strip()]
@@ -899,7 +1143,19 @@ class ConverterApplication:
         max_items = min(20, len(items))  # Até 20 capítulos
         min_chars = 2000  # Mínimo 2000 chars para boa detecção
 
-        for item in items[:max_items]:
+        total_items = len(items)
+        if total_items <= max_items:
+            sample_positions = list(range(total_items))
+        else:
+            sample_positions = sorted({
+                round(i * (total_items - 1) / (max_items - 1))
+                for i in range(max_items)
+            })
+
+        for pos in sample_positions:
+            if pos >= len(items):
+                continue
+            item = items[pos]
             source_text = item.text_override if item.text_override is not None else getattr(item.chapter, 'text', '')
             if not source_text and getattr(item.chapter, 'raw_html', None):
                 source_text = TextProcessor.html_to_plain_text(item.chapter.raw_html)
@@ -915,7 +1171,10 @@ class ConverterApplication:
         if verbose:
             print(f"🔍 [VERBOSE] Idioma: analisados {items_checked} capítulos, {total_chars} caracteres")
 
+        ascii_ratio = self._ascii_ratio(sample_texts)
+        language_votes = self._collect_language_votes(sample_texts)
         profile = self.language_detector.detect_profile(sample_texts)
+        profile = self._rebalance_language_profile(profile, ascii_ratio, language_votes)
 
         if not profile.languages or not profile.primary:
             languages = self._prompt_for_languages(reader)
@@ -927,6 +1186,86 @@ class ConverterApplication:
                 analysed_chars=sum(len(text) for text in sample_texts),
             )
 
+        return profile
+
+    @staticmethod
+    def _ascii_ratio(texts: List[str]) -> float:
+        joined = " ".join(texts)
+        if not joined:
+            return 0.0
+        ascii_chars = sum(1 for ch in joined if 32 <= ord(ch) <= 126)
+        return ascii_chars / max(len(joined), 1)
+
+    def _collect_language_votes(self, sample_texts: List[str]) -> dict[str, float]:
+        votes: dict[str, float] = {}
+        detector = self.language_detector
+        for sample in sample_texts:
+            if not sample or len(sample.strip()) < 20:
+                continue
+            local_profile = detector.detect_profile([sample])
+            if not local_profile.predictions:
+                continue
+            weight = len(sample)
+            for prediction in local_profile.predictions:
+                code = ConverterApplication._normalise_lang_code(prediction.code)
+                if not code:
+                    continue
+                votes[code] = votes.get(code, 0.0) + (prediction.probability * weight)
+        return votes
+
+    @staticmethod
+    def _normalise_lang_code(code: Optional[str]) -> str:
+        if not code:
+            return ""
+        return code.split('-', 1)[0].lower()
+
+    def _rebalance_language_profile(
+        self,
+        profile: LanguageProfile,
+        ascii_ratio: float,
+        language_votes: dict[str, float],
+    ) -> LanguageProfile:
+        if not profile.predictions:
+            return profile
+
+        top_prediction = profile.predictions[0]
+        top_code = self._normalise_lang_code(top_prediction.code)
+        en_prediction = next(
+            (pred for pred in profile.predictions if self._normalise_lang_code(pred.code) == "en"), None
+        )
+
+        if (
+            en_prediction
+            and top_code != "en"
+            and ascii_ratio >= 0.65
+            and (top_prediction.probability - en_prediction.probability) <= 0.22
+        ):
+            languages = ["en"] + [
+                lang for lang in profile.languages
+                if self._normalise_lang_code(lang) != "en"
+            ]
+            return LanguageProfile(
+                primary="en",
+                languages=languages,
+                predictions=profile.predictions,
+                analysed_chars=profile.analysed_chars,
+            )
+        total_votes = sum(language_votes.values())
+        if total_votes > 0:
+            best_code, best_votes = max(language_votes.items(), key=lambda item: item[1])
+            vote_ratio = best_votes / total_votes
+            normalized_primary = self._normalise_lang_code(profile.primary)
+            if vote_ratio >= 0.55 and best_code and normalized_primary != best_code:
+                languages = [best_code] + [
+                    lang for lang in profile.languages
+                    if self._normalise_lang_code(lang) != best_code
+                ]
+                return LanguageProfile(
+                    primary=best_code,
+                    languages=languages,
+                    predictions=profile.predictions,
+                    analysed_chars=profile.analysed_chars,
+                )
         return profile
 
     def _prompt_for_languages(self, reader: EbookReader) -> List[str]:
@@ -1364,6 +1703,9 @@ class ConverterApplication:
         preview_config.footnote_context_words = self.FOOTNOTE_CONTEXT_WORDS
 
         structure_items = self._apply_text_transforms(structure_items, preview_config, reader)
+        structure_items, duplicates_removed = deduplicate_chapters_by_content(structure_items)
+        if duplicates_removed:
+            print(f"🧹 {duplicates_removed} capítulo(s) duplicado(s) ocultados")
 
         print(f"{self.localization.t('chapters_label')}: {len(structure_items)}")
 
@@ -2109,8 +2451,13 @@ class ConverterApplication:
 
     def _get_conversion_config(self, args: argparse.Namespace, reader: EbookReader):
         """Get conversion configuration"""
+        formatting_cues_pref = getattr(args, "formatting_cues", None)
         if getattr(args, "menu", False):
-            config = self.menu.get_conversion_config(reader, language_profile=self.language_profile)
+            config = self.menu.get_conversion_config(
+                reader,
+                language_profile=self.language_profile,
+                formatting_cues=formatting_cues_pref,
+            )
             if config:
                 if getattr(args, "listen", False):
                     config.listen = True
@@ -2121,6 +2468,9 @@ class ConverterApplication:
                 config.footnote_mode = self._resolve_footnote_mode(args)
                 config.footnote_context_words = self.FOOTNOTE_CONTEXT_WORDS
                 self._apply_language_preferences(config)
+                cues_enabled = formatting_cues_pref if formatting_cues_pref is not None else getattr(config, "speak_formatting_cues", True)
+                config.speak_formatting_cues = bool(cues_enabled)
+                config.formatting_locale = self.localization.language
             return config
         config = self._create_config_from_args(args, reader)
         self._apply_language_preferences(config)
@@ -2129,6 +2479,8 @@ class ConverterApplication:
     def _create_config_from_args(self, args: argparse.Namespace, reader: EbookReader):
         """Create config from command line arguments"""
         verbose = self._resolve_verbose(args)
+        formatting_cues_pref = getattr(args, "formatting_cues", None)
+        cues_enabled = True if formatting_cues_pref is None else bool(formatting_cues_pref)
         return self.config.create_conversion_config(
             engine=args.engine or "auto",
             voice=args.voice,
@@ -2144,6 +2496,8 @@ class ConverterApplication:
             footnote_context_words=self.FOOTNOTE_CONTEXT_WORDS,
             verbose=verbose,
             priority_selectors=getattr(args, 'priority', []) or [],
+            speak_formatting_cues=cues_enabled,
+            formatting_locale=self.localization.language,
         )
 
 
@@ -2157,8 +2511,13 @@ def _add_conversion_arguments(
 
     input_arg = parser.add_argument(
         "input_file",
-        nargs=None if input_required else "?",
+        nargs="?",
         help="Input EPUB or PDF file",
+    )
+    parser.add_argument(
+        "extra_inputs",
+        nargs="*",
+        help="Additional EPUB/PDF files to convert sequentially",
     )
     engine_arg = parser.add_argument(
         "--engine",
@@ -2192,6 +2551,21 @@ def _add_conversion_arguments(
         action="store_false",
         default=None,
         help="Disable verbose logging",
+    )
+    cues_group = parser.add_mutually_exclusive_group()
+    cues_group.add_argument(
+        "--formatting-cues",
+        dest="formatting_cues",
+        action="store_true",
+        default=None,
+        help="Read formatting cues aloud (quotes, italics, bold)",
+    )
+    cues_group.add_argument(
+        "--no-formatting-cues",
+        dest="formatting_cues",
+        action="store_false",
+        default=None,
+        help="Disable spoken formatting cues",
     )
     parser.add_argument(
         "--listen",
@@ -2233,6 +2607,25 @@ def _add_conversion_arguments(
         dest="priority",
         metavar="PRIORITY",
         help="Prioritize chapters before the rest (same syntax as --chapter)",
+    )
+    parser.add_argument(
+        "--batch",
+        action="append",
+        dest="batch_inputs",
+        metavar="PATH",
+        help="Additional EPUB/PDF files or directories to convert sequentially (accepts glob patterns)",
+    )
+    parser.add_argument(
+        "--batch-file",
+        dest="batch_manifest",
+        metavar="FILE",
+        help="Path to a text file containing one EPUB/PDF path per line for batch conversion",
+    )
+    parser.add_argument(
+        "--stop-on-error",
+        dest="batch_stop_on_error",
+        action="store_true",
+        help="Stop batch conversions after the first failed book (default: continue processing)",
     )
 
     if include_menu_flag:
@@ -2318,6 +2711,14 @@ def main() -> int:
         args.chapters = []
     if not hasattr(args, "sections"):
         args.sections = []
+    if not hasattr(args, "extra_inputs"):
+        args.extra_inputs = []
+    if not hasattr(args, "batch_inputs") or args.batch_inputs is None:
+        args.batch_inputs = []
+    if not hasattr(args, "batch_manifest"):
+        args.batch_manifest = None
+    if not hasattr(args, "batch_stop_on_error"):
+        args.batch_stop_on_error = False
 
     app = ConverterApplication()
     return app.run(args)

@@ -2,8 +2,8 @@ import { useI18n, useTranslations } from '../i18n/I18nProvider';
 import { useTheme } from '../theme/ThemeProvider';
 
 export default function TopBar(): JSX.Element {
-  const { theme, setTheme } = useTheme();
-  const { locale, setLocale } = useI18n();
+  const { mode: themeMode, setMode: setThemeMode } = useTheme();
+  const { mode: localeMode, setLocale, setMode: setLocaleMode } = useI18n();
   const t = useTranslations();
 
   return (
@@ -12,15 +12,22 @@ export default function TopBar(): JSX.Element {
         <span className="topbar__label">{t.topBar.themeLabel}</span>
         <button
           type="button"
-          className={`topbar__button${theme === 'light' ? ' topbar__button--active' : ''}`}
-          onClick={() => setTheme('light')}
+          className={`topbar__button${themeMode === 'auto' ? ' topbar__button--active' : ''}`}
+          onClick={() => setThemeMode('auto')}
+        >
+          {t.topBar.themeAuto}
+        </button>
+        <button
+          type="button"
+          className={`topbar__button${themeMode === 'light' ? ' topbar__button--active' : ''}`}
+          onClick={() => setThemeMode('light')}
         >
           {t.topBar.themeLight}
         </button>
         <button
           type="button"
-          className={`topbar__button${theme === 'dark' ? ' topbar__button--active' : ''}`}
-          onClick={() => setTheme('dark')}
+          className={`topbar__button${themeMode === 'dark' ? ' topbar__button--active' : ''}`}
+          onClick={() => setThemeMode('dark')}
         >
           {t.topBar.themeDark}
         </button>
@@ -30,14 +37,21 @@ export default function TopBar(): JSX.Element {
         <span className="topbar__label">{t.topBar.localeLabel}</span>
         <button
           type="button"
-          className={`topbar__button${locale === 'pt' ? ' topbar__button--active' : ''}`}
+          className={`topbar__button${localeMode === 'auto' ? ' topbar__button--active' : ''}`}
+          onClick={() => setLocaleMode('auto')}
+        >
+          {t.topBar.localeAuto}
+        </button>
+        <button
+          type="button"
+          className={`topbar__button${localeMode === 'pt' ? ' topbar__button--active' : ''}`}
           onClick={() => setLocale('pt')}
         >
           {t.topBar.localePortuguese}
         </button>
         <button
           type="button"
-          className={`topbar__button${locale === 'en' ? ' topbar__button--active' : ''}`}
+          className={`topbar__button${localeMode === 'en' ? ' topbar__button--active' : ''}`}
           onClick={() => setLocale('en')}
         >
           {t.topBar.localeEnglish}

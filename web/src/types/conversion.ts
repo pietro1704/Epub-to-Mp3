@@ -11,6 +11,14 @@ export interface ConversionFormValues {
   priority?: string;
   footnoteMode: FootnoteMode;
   language?: string;
+  formattingCues?: boolean;
+  uiLanguage?: string;
+}
+
+export type ConversionTemplate = Omit<ConversionFormValues, 'file' | 'fileName' | 'uploadId'>;
+
+export interface SubmitBatchOptions {
+  batchQueue?: ConversionFormValues[];
 }
 
 export type JobState = 'queued' | 'running' | 'finished' | 'failed' | 'interrupted' | 'cancelling' | 'cancelled';
@@ -53,6 +61,13 @@ export interface JobSnapshot {
   coverMimeType?: string;
   parallelSlots?: number;
   parallelActive?: number;
+  rawLog?: string[];
+  statusHint?: string;
+  engine?: string;
+  voice?: string;
+  language?: string;
+  formattingCues?: boolean;
+  uiLanguage?: string;
 }
 
 export interface StatusEntry {
@@ -70,6 +85,7 @@ export interface ConversionSummary {
   chapterProgress?: ChapterProgressEntry[];
   parallelSlots?: number;
   parallelActive?: number;
+  statusHint?: string;
 }
 
 export interface ConversionState {
@@ -84,4 +100,30 @@ export interface ConversionState {
   bookTitle?: string;
   bookAuthor?: string;
   coverUrl?: string;
+  rawLog: string[];
+  engine?: string;
+  voice?: string;
+  language?: string;
+  uiLanguage?: string;
+  speakFormattingCues?: boolean;
+}
+
+export interface RecentJobEntry {
+  jobId: string;
+  state: string;
+  bookTitle: string;
+  fileName: string;
+  savedAt?: string;
+  chaptersCompleted?: number;
+  chaptersTotal?: number;
+  progressPercent?: number | null;
+  downloadUrl?: string | null;
+  hasOutputs?: boolean;
+  canResume?: boolean;
+  outputs?: DownloadAsset[];
+  engine?: string;
+  voice?: string;
+  language?: string;
+  formattingCues?: boolean;
+  uiLanguage?: string;
 }

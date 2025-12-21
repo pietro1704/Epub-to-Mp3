@@ -29,6 +29,7 @@ from .progress import ProgressTracker
 from .i18n import Localization, get_localization
 from .cache_manager import CacheManager
 from .speed_controller import AdaptiveSpeedController
+from .chapter_utils import deduplicate_chapters_by_content
 
 
 @dataclass
@@ -773,6 +774,9 @@ class AudioConverter:
         # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
         chapters = list(reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or [])
+        chapters, duplicates_removed = deduplicate_chapters_by_content(chapters)
+        if duplicates_removed:
+            print(f"🧹 Capítulos duplicados removidos automaticamente: {duplicates_removed}")
         if getattr(config, "priority_selectors", None):
             chapters = self._prioritize_chapters(chapters, config.priority_selectors)
         total_chapters = len(chapters)

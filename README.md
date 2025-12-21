@@ -21,6 +21,7 @@ Convert EPUB/PDF ebooks into MP3 audiobooks using TTS engines.
 - **Smart Cache**: Resume interrupted conversions
 - **Chapter Structure**: Preserves book navigation hierarchy
 - **Progress Tracking**: Real-time ETA plus per-chapter status timeline
+- **Batch Conversion**: Queue multiple EPUB/PDF files or entire folders for unattended runs
 - **Footnote Handling**: Inline, chapter-end, or suppressed
 - **Voice Catalog API**: Frontend pulls curated voices directly from `/api/voices`
 - **Telemetry Benchmarks**: `/api/telemetry` exposes real Edge/Coqui/Piper throughput data
@@ -42,6 +43,36 @@ pip install -r requirements.txt
 ```
 
 ## CLI Usage
+
+### Shell Autocomplete (Optional)
+
+Enable `.epub` and `.pdf` file autocomplete in your shell:
+
+**For Zsh (macOS default):**
+```bash
+# Add to ~/.zshrc
+echo "source $(pwd)/shell-completion.zsh" >> ~/.zshrc
+source ~/.zshrc
+```
+
+**For Bash:**
+```bash
+# Install bash-completion if not already installed
+# macOS: brew install bash-completion
+# Ubuntu: sudo apt install bash-completion
+
+# Add to ~/.bashrc
+eval "$(register-python-argcomplete python_app/convert)"
+source ~/.bashrc
+```
+
+After setup, you can use Tab to autocomplete:
+```bash
+./python_app/convert ~/Downloads/Book[TAB]  # Completes .epub/.pdf files
+./python_app/convert book.epub --engine [TAB]  # Completes: auto, edge, coqui, piper
+```
+
+### Basic Commands
 
 ```bash
 # Basic conversion (auto picks the fastest engine per chapter)
@@ -68,6 +99,34 @@ python -m python_app.main book.epub --show-structure
 # Clear cache and reprocess
 python -m python_app.main book.epub --clear-cache
 ```
+
+### Batch Conversion
+
+Convert several books sequentially without babysitting the CLI:
+
+```bash
+# Same settings for every file (main positional + extras)
+python python_app/convert book1.epub book2.pdf book3.epub
+
+# Prefer the module entrypoint? Add the convert subcommand explicitly
+python -m python_app.main convert book1.epub book2.pdf
+
+# Process an entire folder (recursively picks .epub/.pdf)
+python -m python_app.main convert --batch ~/Audiobooks/to_convert/
+
+# Use a newline-separated manifest file and stop after the first error
+python -m python_app.main convert --batch-file books.txt --stop-on-error
+```
+
+The helper script `python_app/convert` also supports batch-only runs:
+
+```bash
+python python_app/convert --batch ~/Downloads/*.epub --batch-file favorites.txt
+```
+
+Arguments such as `--engine`, `--voice`, and formatting options apply to every book in the queue. `--batch` and `--batch-file` remain handy for folders, glob patterns, or long manifests. By default the converter continues after failures; add `--stop-on-error` to abort the batch on the first unsuccessful conversion.
+
+On the Hugging Face Space, **Step 1** (“Preparar conversão”) now accepts multiple EPUB/PDF uploads at once. Drop every book into the queue, drag or use the arrows to reorder, then click “Converter” and the backend will process them sequentially using the same settings. While Step 2 is running you can drop extra files in the “Adicionar livros” card and they’ll join the queue automatically.
 
 ### Tuning Edge-TTS performance
 

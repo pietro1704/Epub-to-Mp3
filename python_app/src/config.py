@@ -39,6 +39,8 @@ class ConversionConfig:
     languages: list[str] = field(default_factory=list)
     language_voices: Dict[str, str] = field(default_factory=dict)
     priority_selectors: list[str] = field(default_factory=list)
+    use_language_detection: bool = True  # **NEW**: Ativar detecção automática de idioma
+    prioritize_primary_language: bool = True  # **NEW**: Priorizar idioma primário em ambiguidades
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
@@ -48,6 +50,8 @@ class ConversionConfig:
     edge_max_segment_seconds: int = 75  # hard limit for each Edge chunk duration (optimized: 75s)
     edge_aggressive_mode: bool = False
     edge_enable_parallel: bool = True  # enable parallel segment processing (5-6x faster)
+    speak_formatting_cues: bool = True
+    formatting_locale: str = "pt"
 
     def as_dict(self) -> Dict[str, object]:
         """Return a serialisable representation useful for debugging."""
@@ -80,6 +84,8 @@ class ConversionConfig:
         }
         if self.extra:
             data["extra"] = dict(self.extra)
+        data["speak_formatting_cues"] = self.speak_formatting_cues
+        data["formatting_locale"] = self.formatting_locale
         return data
 
 
@@ -358,6 +364,11 @@ class AppConfig:
 
         language_voices = kwargs.pop("language_voices", None) or {}
         priority_selectors = kwargs.pop("priority_selectors", None) or []
+        speak_formatting_cues = bool(kwargs.pop("speak_formatting_cues", True))
+        formatting_locale_raw = kwargs.pop("formatting_locale", None) or ConversionConfig.formatting_locale
+        formatting_locale = str(formatting_locale_raw or ConversionConfig.formatting_locale).split("-", 1)[0].lower()
+        if formatting_locale not in {"pt", "en"}:
+            formatting_locale = "en"
 
         raw_batch_size = kwargs.pop("batch_size", None)
         try:
@@ -426,6 +437,8 @@ class AppConfig:
             edge_chunk_chars=edge_chunk_chars,
             edge_max_segment_seconds=edge_max_segment_seconds,
             edge_enable_parallel=edge_enable_parallel,
+            speak_formatting_cues=speak_formatting_cues,
+            formatting_locale=formatting_locale,
         )
 
         if kwargs:

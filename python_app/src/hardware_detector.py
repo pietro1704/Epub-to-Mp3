@@ -453,8 +453,38 @@ class HardwareDetector:
     @staticmethod
     def apply_optimizations(profile: HardwareProfile) -> None:
         """Apply optimizations to environment."""
-        os.environ["EDGE_MAX_CONCURRENCY"] = str(profile.recommended_concurrency)
-        os.environ["CHAPTER_PARALLEL_COUNT"] = str(profile.recommended_chapter_parallel)
+        def _env_truthy(name: str, default: bool = False) -> bool:
+            raw = os.getenv(name)
+            if raw is None:
+                return default
+            return raw.strip().lower() in {"1", "true", "on", "yes"}
+
+        def _set_env_max(name: str, minimum: int) -> None:
+            current = os.getenv(name)
+            try:
+                if current is None or int(current) < minimum:
+                    os.environ[name] = str(minimum)
+            except ValueError:
+                os.environ[name] = str(minimum)
+
+        turbo_mode = _env_truthy("MAX_PERFORMANCE", True)
+
+        edge_concurrency = profile.recommended_concurrency
+        chapter_parallel = profile.recommended_chapter_parallel
+
+        if turbo_mode:
+            if profile.performance_tier in ("ultra", "high"):
+                edge_concurrency = max(edge_concurrency, 8)
+                chapter_parallel = max(chapter_parallel, 3)
+            elif profile.performance_tier == "medium":
+                edge_concurrency = max(edge_concurrency, 6)
+                chapter_parallel = max(chapter_parallel, 2)
+            else:
+                edge_concurrency = max(edge_concurrency, 4)
+                chapter_parallel = max(chapter_parallel, 1)
+
+        os.environ["EDGE_MAX_CONCURRENCY"] = str(edge_concurrency)
+        os.environ["CHAPTER_PARALLEL_COUNT"] = str(chapter_parallel)
         os.environ["EDGE_FORCE_SEQUENTIAL"] = "true" if profile.force_sequential else "false"
 
         # Set other performance hints
@@ -466,8 +496,19 @@ class HardwareDetector:
             # Mac without dedicated GPU - use efficient settings
             # Intel Macs benefit from slightly lower concurrency
             if "Intel" in profile.cpu_brand:
-                adjusted = max(2, profile.recommended_concurrency - 1)
+                adjusted = max(2, edge_concurrency - 1)
                 os.environ["EDGE_MAX_CONCURRENCY"] = str(adjusted)
+
+        if turbo_mode:
+            desired_workers = max(
+                2,
+                min(
+                    8,
+                    profile.cpu_physical,
+                    chapter_parallel * 2,
+                ),
+            )
+            _set_env_max("JOB_WORKERS", desired_workers)
 
 
 __all__ = ["HardwareDetector", "HardwareProfile"]

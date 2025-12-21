@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { ConversionState, StatusEntry, ConversionSummary } from '../types/conversion';
 import { useI18n, useTranslations } from '../i18n/I18nProvider';
 import type { Locale, Translations } from '../i18n/translations';
@@ -6,6 +6,7 @@ import ChapterProgressList from './ChapterProgressList';
 
 interface StatusPanelProps {
   entries: StatusEntry[];
+  rawLog?: string[];
   phase: ConversionState['phase'];
   jobId?: string;
   error?: string;
@@ -17,10 +18,14 @@ interface StatusPanelProps {
   onCancel?: () => void;
   canCancel?: boolean;
   cancelDisabled?: boolean;
+  bookTitle?: string;
+  bookAuthor?: string;
+  coverUrl?: string;
 }
 
 export default function StatusPanel({
   entries,
+  rawLog,
   phase,
   jobId,
   error,
@@ -32,12 +37,23 @@ export default function StatusPanel({
   onCancel,
   canCancel,
   cancelDisabled,
+  bookTitle,
+  bookAuthor,
+  coverUrl,
 }: StatusPanelProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
   const rawLogRef = useRef<HTMLPreElement>(null);
   const timelineRef = useRef<HTMLUListElement>(null);
   const showError = (phase === 'error' || phase === 'cancelled') && error;
+
+  const scrollToBottom = useCallback(() => {
+    if (showRawLog && rawLogRef.current) {
+      rawLogRef.current.scrollTop = rawLogRef.current.scrollHeight;
+    } else if (!showRawLog && timelineRef.current) {
+      timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
+    }
+  }, [showRawLog]);
   const errorText = showError ? t.status.errorPrefix.replace('{message}', error) : null;
   const timeLocale = locale === 'pt' ? 'pt-BR' : 'en-US';
   const toggleLabel = showRawLog ? t.status.toggleHide : t.status.toggleShow;
@@ -57,6 +73,9 @@ export default function StatusPanel({
   }), []);
 
   const rawLogText = useMemo(() => {
+    if (rawLog && rawLog.length > 0) {
+      return rawLog.join('\n');
+    }
     if (entries.length === 0) {
       return placeholderText;
     }
@@ -66,16 +85,7 @@ export default function StatusPanel({
         return `${timestamp} ${entry.message}`;
       })
       .join('\n');
-  }, [entries, placeholderText, timeLocale, timeFormatOptions]);
-
-  // Autoscroll when new entries are added
-  useEffect(() => {
-    if (showRawLog && rawLogRef.current) {
-      rawLogRef.current.scrollTop = rawLogRef.current.scrollHeight;
-    } else if (!showRawLog && timelineRef.current) {
-      timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
-    }
-  }, [entries, showRawLog]);
+  }, [rawLog, entries, placeholderText, timeLocale, timeFormatOptions]);
 
   return (
     <div className="status-panel">
@@ -129,6 +139,12 @@ export default function StatusPanel({
             <dt>{t.status.summaryCurrent}</dt>
             <dd>{summary.currentChapter ?? '—'}</dd>
           </div>
+          {summary.statusHint && (
+            <div className="status-summary__row">
+              <dt>{t.status.summaryHint}</dt>
+              <dd>{summary.statusHint}</dd>
+            </div>
+          )}
           <div className="status-summary__row">
             <dt>{t.status.summaryProgress}</dt>
             <dd>
@@ -164,22 +180,26 @@ export default function StatusPanel({
         <ChapterProgressList entries={chapterProgress} />
       )}
 
-      {showRawLog ? (
-        <pre className="status-panel__raw" aria-live="polite" ref={rawLogRef}>
-          {rawLogText}
-        </pre>
-      ) : (
-        <ul className="status-timeline" aria-live="polite" ref={timelineRef}>
-          {entries.map((entry) => (
-            <li key={entry.id} className="status-timeline__item">
-              <small className="status-timeline__time">
-                {new Date(entry.timestamp).toLocaleTimeString(timeLocale, timeFormatOptions)}
-              </small>
-              <span className="status-timeline__message">{entry.message}</span>
-            </li>
-          ))}
-          {entries.length === 0 && <li className="status-timeline__placeholder">{placeholderText}</li>}
-        </ul>
+      {showRawLog && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <h3 style={{ margin: 0, fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+              {locale === 'pt' ? 'Log do Terminal' : 'Terminal Log'}
+            </h3>
+            <button
+              type="button"
+              className="status-panel__toggle"
+              onClick={scrollToBottom}
+              title={locale === 'pt' ? 'Ir para o final' : 'Go to bottom'}
+              style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
+            >
+              ↓ {locale === 'pt' ? 'Ver atual' : 'Go to current'}
+            </button>
+          </div>
+          <pre className="status-panel__raw" aria-live="polite" ref={rawLogRef}>
+            {rawLogText}
+          </pre>
+        </div>
       )}
 
       {errorText && <p className="status-panel__error">{errorText}</p>}
@@ -231,7 +251,7 @@ function resolveLanguageLabel(code: string, t: Translations): string {
   return code;
 }
 
-function formatEta(
+export function formatEta(
   phase: ConversionState['phase'],
   etaSeconds: number | null | undefined,
   locale: Locale,

@@ -58,6 +58,8 @@ class PiperTTSEngine:
         *,
         primary_language: Optional[str] = None,
         language_voices: Optional[Dict[str, str]] = None,
+        formatting_cues_enabled: bool = True,
+        formatting_locale: str = "pt",
     ) -> None:
         self.model_path = Path(model_path)
         if not self.model_path.exists():
@@ -78,6 +80,11 @@ class PiperTTSEngine:
             if candidate.exists() and candidate.is_file():
                 self.language_models[code] = candidate
         self.verbose = False
+        locale_root = (formatting_locale or "pt").split("-", 1)[0].lower()
+        if locale_root not in {"pt", "en"}:
+            locale_root = "en"
+        self.formatting_locale = locale_root
+        self.formatting_cues_enabled = bool(formatting_cues_enabled)
 
     def supports_multilingual(self) -> bool:
         """Piper supports multilingual via language-specific models"""
@@ -93,7 +100,10 @@ class PiperTTSEngine:
             return None
 
         if TextFormattingProcessor:
-            formatter = TextFormattingProcessor()
+            formatter = TextFormattingProcessor(
+                cues_enabled=getattr(self, "formatting_cues_enabled", True),
+                cue_locale=getattr(self, "formatting_locale", "pt"),
+            )
             try:
                 converted = formatter.to_audible_text(text, formatting_segments)
                 if converted:

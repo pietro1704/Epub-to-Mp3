@@ -1,11 +1,14 @@
 import { createContext, PropsWithChildren, useContext, useEffect, useMemo, useState } from 'react';
 
 export type Theme = 'light' | 'dark';
+export type ThemeMode = 'light' | 'dark' | 'auto';
 
 interface ThemeContextValue {
   theme: Theme;
+  mode: ThemeMode;
   prefersDarkMode: boolean;
   setTheme: (next: Theme) => void;
+  setMode: (mode: ThemeMode) => void;
   toggleTheme: () => void;
 }
 
@@ -31,11 +34,11 @@ function applyThemeClass(theme: Theme): void {
   root.classList.add(`theme-${theme}`);
 }
 
-function loadStoredTheme(): Theme | null {
+function loadStoredMode(): ThemeMode | null {
   if (typeof window === 'undefined') return null;
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY) as Theme | null;
-    if (stored === 'light' || stored === 'dark') {
+    const stored = window.localStorage.getItem(STORAGE_KEY) as ThemeMode | null;
+    if (stored === 'light' || stored === 'dark' || stored === 'auto') {
       return stored;
     }
   } catch {
@@ -44,10 +47,10 @@ function loadStoredTheme(): Theme | null {
   return null;
 }
 
-function persistTheme(theme: Theme): void {
+function persistMode(mode: ThemeMode): void {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(STORAGE_KEY, theme);
+    window.localStorage.setItem(STORAGE_KEY, mode);
   } catch {
     /* ignore localStorage errors */
   }
@@ -55,9 +58,14 @@ function persistTheme(theme: Theme): void {
 
 export function ThemeProvider({ children }: PropsWithChildren): JSX.Element {
   const [prefersDarkMode, setPrefersDarkMode] = useState<boolean>(() => detectSystemTheme() === 'dark');
-  const storedTheme = useMemo(() => loadStoredTheme(), []);
-  const [isManualSelection, setIsManualSelection] = useState<boolean>(storedTheme !== null);
-  const [theme, setThemeInternal] = useState<Theme>(storedTheme ?? (prefersDarkMode ? 'dark' : 'light'));
+  const storedMode = useMemo(() => loadStoredMode(), []);
+  const [mode, setModeInternal] = useState<ThemeMode>(storedMode ?? 'auto');
+  const [theme, setThemeInternal] = useState<Theme>(() => {
+    if (storedMode === 'auto' || storedMode === null) {
+      return prefersDarkMode ? 'dark' : 'light';
+    }
+    return storedMode;
+  });
 
   useEffect(() => {
     applyThemeClass(theme);
@@ -69,32 +77,38 @@ export function ThemeProvider({ children }: PropsWithChildren): JSX.Element {
     if (!media || typeof media.addEventListener !== 'function') return;
     const listener = (event: MediaQueryListEvent) => {
       setPrefersDarkMode(event.matches);
-      if (!isManualSelection) {
+      if (mode === 'auto') {
         setThemeInternal(event.matches ? 'dark' : 'light');
       }
     };
     media.addEventListener('change', listener);
     return () => media.removeEventListener('change', listener);
-  }, [isManualSelection]);
+  }, [mode]);
+
+  const setMode = (newMode: ThemeMode) => {
+    setModeInternal(newMode);
+    persistMode(newMode);
+    if (newMode === 'auto') {
+      setThemeInternal(prefersDarkMode ? 'dark' : 'light');
+    } else {
+      setThemeInternal(newMode);
+    }
+  };
 
   const setTheme = (next: Theme) => {
+    setModeInternal(next);
     setThemeInternal(next);
-    setIsManualSelection(true);
-    persistTheme(next);
+    persistMode(next);
   };
 
   const toggleTheme = () => {
-    setThemeInternal((current) => {
-      const next = current === 'dark' ? 'light' : 'dark';
-      persistTheme(next);
-      return next;
-    });
-    setIsManualSelection(true);
+    const next = theme === 'dark' ? 'light' : 'dark';
+    setMode(next);
   };
 
   const value = useMemo<ThemeContextValue>(
-    () => ({ theme, prefersDarkMode, setTheme, toggleTheme }),
-    [theme, prefersDarkMode],
+    () => ({ theme, mode, prefersDarkMode, setTheme, setMode, toggleTheme }),
+    [theme, mode, prefersDarkMode],
   );
 
   return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;

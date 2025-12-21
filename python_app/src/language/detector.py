@@ -68,6 +68,7 @@ class LanguageDetector:
         min_probability: float = 0.7,  # **OPTIMIZED**: Maior confiança
         timeout_seconds: float = 2.0,  # **NEW**: Timeout para cada detecção
         fallback_language: str = "pt",  # **NEW**: Idioma de fallback
+        primary_language: Optional[str] = None,  # **NEW**: Idioma primário para priorização
     ) -> List[LanguageSegment]:
         if not text or detect_langs is None:
             return [LanguageSegment(language="unknown", text=text)]
@@ -91,7 +92,8 @@ class LanguageDetector:
                 paragraph,
                 min_probability=min_probability,
                 timeout_seconds=timeout_seconds,
-                fallback_language=fallback_language
+                fallback_language=fallback_language,
+                primary_language=primary_language
             )
             if not candidate_lang or candidate_lang == "unknown":
                 buffer.append(paragraph)
@@ -121,7 +123,8 @@ class LanguageDetector:
             fallback_lang = self._detect_language_with_timeout(
                 text,
                 timeout_seconds=timeout_seconds,
-                fallback_language=fallback_language
+                fallback_language=fallback_language,
+                primary_language=primary_language
             )
             return [LanguageSegment(language=fallback_lang, text=text)]
 
@@ -135,7 +138,8 @@ class LanguageDetector:
                 stripped,
                 min_probability=min_probability,
                 timeout_seconds=timeout_seconds,
-                fallback_language=fallback_language
+                fallback_language=fallback_language,
+                primary_language=primary_language
             ) or segment.language
             refined_segments.append(LanguageSegment(language=language or "unknown", text=stripped))
 
@@ -173,9 +177,15 @@ class LanguageDetector:
         *,
         min_probability: float = 0.4,
         timeout_seconds: float = 2.0,
-        fallback_language: str = "pt"
+        fallback_language: str = "pt",
+        primary_language: Optional[str] = None,
+        ambiguity_threshold: float = 0.15  # **NEW**: Diferença máxima para considerar ambíguo
     ) -> str:
-        """Detect language with timeout and fallback."""
+        """Detect language with timeout, fallback, and primary language prioritization.
+
+        When multiple languages are detected with similar probabilities (within ambiguity_threshold),
+        and one of them is the primary_language, the primary language will be preferred.
+        """
         if not text or len(text.strip()) < 10:
             return fallback_language
 
@@ -183,12 +193,38 @@ class LanguageDetector:
             # Run detection in a thread to enable timeout
             import concurrent.futures
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(self._detect_language_simple, text, min_probability=min_probability)
+                # Get multiple language predictions instead of just one
+                future = executor.submit(self._detect_languages, text, top_n=3)
                 try:
-                    result = future.result(timeout=timeout_seconds)
-                    if result == "unknown":
+                    predictions = future.result(timeout=timeout_seconds)
+                    if not predictions:
                         return fallback_language
-                    return result
+
+                    # Check if primary language should be prioritized
+                    if primary_language and len(predictions) > 1:
+                        primary_normalized = self._normalise_code(primary_language)
+                        best_prediction = predictions[0]
+
+                        # Look for primary language in predictions
+                        primary_prediction = None
+                        for pred in predictions:
+                            if pred.code == primary_normalized:
+                                primary_prediction = pred
+                                break
+
+                        # If primary language found and probabilities are similar, prefer it
+                        if primary_prediction:
+                            prob_diff = abs(best_prediction.probability - primary_prediction.probability)
+                            if prob_diff <= ambiguity_threshold:
+                                # Ambiguous: primary language is within threshold, use it
+                                return primary_prediction.code
+
+                    # No ambiguity or no primary language match: use best prediction
+                    best = predictions[0]
+                    if best.probability < min_probability:
+                        return fallback_language
+                    return best.code
+
                 except concurrent.futures.TimeoutError:
                     print(f"⚠️ Timeout na detecção de idioma ({timeout_seconds}s) - usando fallback: {fallback_language}")
                     return fallback_language

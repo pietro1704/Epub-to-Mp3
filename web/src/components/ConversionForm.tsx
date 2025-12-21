@@ -1,13 +1,22 @@
-import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useTranslations } from '../i18n/I18nProvider';
-import { ConversionFormValues, EngineOption, FootnoteMode } from '../types/conversion';
+import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useI18n, useTranslations } from '../i18n/I18nProvider';
+import { ConversionFormValues, ConversionState, EngineOption, FootnoteMode, SubmitBatchOptions } from '../types/conversion';
 import { API_BASE_URL, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../config';
 import type { UploadResponse } from '../services/ConversionService';
 
 interface ConversionFormProps {
   isSubmitting: boolean;
-  onSubmit: (values: ConversionFormValues) => Promise<void> | void;
+  onSubmit: (values: ConversionFormValues, options?: SubmitBatchOptions) => Promise<void> | void;
   onUploadFile: (file: File) => Promise<UploadResponse>;
+  currentJob?: {
+    jobId?: string;
+    phase: ConversionState['phase'];
+    bookTitle?: string | null;
+    engine?: string;
+    voice?: string;
+    language?: string;
+    formattingCues?: boolean;
+  };
 }
 
 interface VoiceInfo {
@@ -80,6 +89,17 @@ const FALLBACK_ENGINE_META: EngineInsights = {
   languages: ['auto'],
 };
 
+interface QueuedFileEntry {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  uploadId?: string;
+  status: 'uploading' | 'ready' | 'error';
+  error?: string;
+  attemptId?: number;
+}
+
 function getEngineMeta(engine: EngineOption): EngineInsights {
   if ((ENGINE_INFO as Record<string, EngineInsights>)[engine]) {
     return (ENGINE_INFO as Record<string, EngineInsights>)[engine];
@@ -87,11 +107,12 @@ function getEngineMeta(engine: EngineOption): EngineInsights {
   return FALLBACK_ENGINE_META;
 }
 
-export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }: ConversionFormProps): JSX.Element {
+export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, currentJob }: ConversionFormProps): JSX.Element {
   const t = useTranslations();
+  const { locale } = useI18n();
   const initialEngine: EngineOption = 'auto';
   const initialMeta = getEngineMeta(initialEngine);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileQueue, setFileQueue] = useState<QueuedFileEntry[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineOption>(initialEngine);
   const [voice, setVoice] = useState(initialMeta.defaultVoice);
@@ -99,14 +120,14 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
   const [priority, setPriority] = useState('');
   const [footnoteMode, setFootnoteMode] = useState<FootnoteMode>('inline');
   const [language, setLanguage] = useState<string>(initialMeta.autoLanguage ? 'auto' : initialMeta.languages[0] ?? '');
+  const [formattingCues, setFormattingCues] = useState(true);
   const [showMissingFileError, setShowMissingFileError] = useState(false);
   const [voiceCatalog, setVoiceCatalog] = useState<Record<string, VoiceInfo[]> | null>(null);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLoadFailed, setVoiceLoadFailed] = useState(false);
-  const [uploadId, setUploadId] = useState<string | undefined>(undefined);
-  const [isUploadingFile, setIsUploadingFile] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
   const uploadAttemptRef = useRef(0);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverInfo, setDragOverInfo] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -158,6 +179,24 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
   }, []);
 
   const engineMeta = useMemo<EngineInsights>(() => getEngineMeta(engine), [engine]);
+  const languageOptionsList = useMemo(() => {
+    const entries = Array.isArray(engineMeta.languages) ? engineMeta.languages.filter(Boolean) : [];
+    const seen = new Set<string>();
+    const normalized: string[] = [];
+    entries.forEach((code) => {
+      if (!seen.has(code)) {
+        seen.add(code);
+        normalized.push(code);
+      }
+    });
+    if (engineMeta.autoLanguage && !seen.has('auto')) {
+      normalized.unshift('auto');
+    }
+    if (normalized.length === 0) {
+      return engineMeta.autoLanguage ? ['auto'] : [];
+    }
+    return normalized;
+  }, [engineMeta]);
   const maxUploadMbDisplay = Math.round(MAX_UPLOAD_MB);
   const voiceSource = voiceCatalog ?? DEFAULT_VOICE_SUGGESTIONS;
   const voiceSuggestions = useMemo(() => {
@@ -184,78 +223,214 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
     return voiceSuggestions.find(v => v.name === voice)?.multilingual ?? false;
   }, [voiceSuggestions, voice]);
 
-  const beginMetadataUpload = (file: File, attemptId: number) => {
-    setIsUploadingFile(true);
-    setUploadError(null);
+  const uploadsInProgress = useMemo(() => fileQueue.some(entry => entry.status === 'uploading'), [fileQueue]);
+  const usableEntries = useMemo(() => fileQueue.filter(entry => entry.status !== 'error'), [fileQueue]);
+  const disableSubmit = isSubmitting || uploadsInProgress || usableEntries.length === 0;
+  const END_DROP_ID = '__queue_end__';
+
+  const handleDragStart = (event: DragEvent<HTMLLIElement>, entryId: string) => {
+    if (fileQueue.length <= 1 || isSubmitting) {
+      event.preventDefault();
+      return;
+    }
+    setDraggingId(entryId);
+    setDragOverInfo(null);
+    if (event.dataTransfer) {
+      event.dataTransfer.setData('text/plain', entryId);
+      event.dataTransfer.effectAllowed = 'move';
+    }
+  };
+
+  const handleDragOverItem = (event: DragEvent<HTMLLIElement>, entryId: string) => {
+    if (!draggingId || entryId === draggingId) {
+      return;
+    }
+    event.preventDefault();
+    const rect = event.currentTarget.getBoundingClientRect();
+    const offset = event.clientY - rect.top;
+    const position: 'before' | 'after' = offset > rect.height / 2 ? 'after' : 'before';
+    setDragOverInfo({ id: entryId, position });
+  };
+
+  const handleDropOnItem = (event: DragEvent<HTMLLIElement>, entryId: string) => {
+    if (!draggingId) {
+      return;
+    }
+    event.preventDefault();
+    const info = dragOverInfo && dragOverInfo.id === entryId ? dragOverInfo : { id: entryId, position: 'before' as const };
+    const targetIndex = fileQueue.findIndex((entry) => entry.id === entryId);
+    if (targetIndex === -1) {
+      return;
+    }
+    const insertIndex = info.position === 'after' ? targetIndex + 1 : targetIndex;
+    moveEntryToIndex(draggingId, insertIndex);
+    setDragOverInfo(null);
+  };
+
+  const handleDropAtEnd = (event: DragEvent<HTMLElement>) => {
+    if (!draggingId) {
+      return;
+    }
+    event.preventDefault();
+    moveEntryToIndex(draggingId, fileQueue.length);
+    setDragOverInfo(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingId(null);
+    setDragOverInfo(null);
+  };
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) {
+      return `${bytes} B`;
+    }
+    if (bytes < 1024 * 1024) {
+      return `${(bytes / 1024).toFixed(1)} KB`;
+    }
+    if (bytes < 1024 * 1024 * 1024) {
+      return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    }
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+  };
+
+  const startUploadForEntry = (entryId: string, file: File) => {
+    const attemptId = uploadAttemptRef.current + 1;
+    uploadAttemptRef.current = attemptId;
+    setFileQueue((prev) => prev.map((entry) => (
+      entry.id === entryId
+        ? { ...entry, status: 'uploading', error: undefined, attemptId }
+        : entry
+    )));
     (async () => {
       try {
         const response = await onUploadFile(file);
-        if (uploadAttemptRef.current !== attemptId) {
-          return;
-        }
-        setUploadId(response.uploadId);
-        setUploadError(null);
+        setFileQueue((prev) => prev.map((entry) => {
+          if (entry.id !== entryId || entry.attemptId !== attemptId) {
+            return entry;
+          }
+          return {
+            ...entry,
+            status: 'ready',
+            uploadId: response.uploadId,
+            name: response.fileName || entry.name,
+            attemptId: undefined,
+          };
+        }));
       } catch (error) {
-        if (uploadAttemptRef.current !== attemptId) {
-          return;
-        }
         const message = error instanceof Error ? error.message : 'Falha ao enviar arquivo';
-        setUploadError(message);
-        setUploadId(undefined);
-      } finally {
-        if (uploadAttemptRef.current === attemptId) {
-          setIsUploadingFile(false);
-        }
+        setFileQueue((prev) => prev.map((entry) => {
+          if (entry.id !== entryId || entry.attemptId !== attemptId) {
+            return entry;
+          }
+          return {
+            ...entry,
+            status: 'error',
+            error: message,
+            attemptId: undefined,
+          };
+        }));
       }
     })();
   };
 
-  const processSelectedFile = (file: File | null): boolean => {
-    const nextAttempt = uploadAttemptRef.current + 1;
-    uploadAttemptRef.current = nextAttempt;
-    setUploadId(undefined);
-    setUploadError(null);
-    setShowMissingFileError(false);
-    if (!file) {
-      setSelectedFile(null);
-      setIsUploadingFile(false);
-      return true;
-    }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setSelectedFile(null);
-      setFileError(t.form.errorFileTooLarge(maxUploadMbDisplay));
-      return false;
+  const addFilesToQueue = (files: FileList | File[]) => {
+    const additions: QueuedFileEntry[] = [];
+    Array.from(files).forEach((file) => {
+      if (!file) return;
+      if (file.size > MAX_UPLOAD_BYTES) {
+        setFileError(`${t.form.errorFileTooLarge(maxUploadMbDisplay)} (${file.name})`);
+        return;
+      }
+      const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `queued-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      additions.push({
+        id,
+        file,
+        name: file.name,
+        size: file.size,
+        status: 'uploading',
+      });
+    });
+    if (additions.length === 0) {
+      return;
     }
     setFileError(null);
-    setSelectedFile(file);
-    beginMetadataUpload(file, nextAttempt);
-    return true;
+    setShowMissingFileError(false);
+    setFileQueue((prev) => [...prev, ...additions]);
+    additions.forEach((entry) => startUploadForEntry(entry.id, entry.file));
+  };
+
+  const removeFromQueue = (entryId: string) => {
+    setFileQueue((prev) => prev.filter((entry) => entry.id !== entryId));
+  };
+
+  const moveEntry = (entryId: string, delta: number) => {
+    setFileQueue((prev) => {
+      const index = prev.findIndex((entry) => entry.id === entryId);
+      if (index === -1) {
+        return prev;
+      }
+      const targetIndex = index + delta;
+      if (targetIndex < 0 || targetIndex >= prev.length) {
+        return prev;
+      }
+      const next = [...prev];
+      const [item] = next.splice(index, 1);
+      next.splice(targetIndex, 0, item);
+      return next;
+    });
+  };
+
+  const moveEntryToIndex = (entryId: string, targetIndex: number) => {
+    setFileQueue((prev) => {
+      const currentIndex = prev.findIndex((entry) => entry.id === entryId);
+      if (currentIndex === -1) {
+        return prev;
+      }
+      const constrained = Math.max(0, Math.min(prev.length, targetIndex));
+      if (constrained === currentIndex || constrained === currentIndex + 1) {
+        return prev;
+      }
+      const next = [...prev];
+      const [item] = next.splice(currentIndex, 1);
+      const insertIndex = constrained > currentIndex ? constrained - 1 : constrained;
+      next.splice(insertIndex, 0, item);
+      return next;
+    });
   };
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!selectedFile) {
+    if (usableEntries.length === 0) {
       setShowMissingFileError(true);
-      setFileError(null);
       return;
     }
-    if (fileError) {
+    if (uploadsInProgress) {
       return;
     }
 
     setShowMissingFileError(false);
-    const payloadFile = uploadId ? null : selectedFile;
-    await onSubmit({
-      file: payloadFile,
-      fileName: selectedFile?.name,
-      uploadId,
+    const sharedConfig = {
       engine,
       voice: voice || undefined,
       chapters: chapters || undefined,
       priority: priority || undefined,
       footnoteMode,
       language: engineMeta.autoLanguage || !language || language === 'auto' ? undefined : language,
-    });
+      formattingCues,
+      uiLanguage: locale,
+    };
+    const payloads = usableEntries.map((entry) => ({
+      ...sharedConfig,
+      file: entry.uploadId ? null : entry.file,
+      fileName: entry.file?.name ?? entry.name,
+      uploadId: entry.uploadId,
+    }));
+    const [first, ...rest] = payloads;
+    await onSubmit(first, { batchQueue: rest });
+    setFileQueue([]);
   };
 
   const translateLanguage = (code: string): string => {
@@ -269,14 +444,31 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
     setLanguage(meta.autoLanguage ? 'auto' : meta.languages[0] ?? '');
   };
 
+  useEffect(() => {
+    if (languageOptionsList.length === 0) {
+      return;
+    }
+    if (!languageOptionsList.includes(language)) {
+      setLanguage(languageOptionsList[0] ?? '');
+    }
+  }, [languageOptionsList, language]);
+
+  useEffect(() => {
+    if (typeof currentJob?.formattingCues === 'boolean') {
+      setFormattingCues(currentJob.formattingCues);
+    }
+  }, [currentJob?.formattingCues]);
+
   const handleUseSample = async () => {
     try {
-      const response = await fetch('/sample.epub');
+      const basePath = import.meta.env.BASE_URL || '/';
+      const normalizedBase = basePath.endsWith('/') ? basePath : `${basePath}/`;
+      const response = await fetch(`${normalizedBase}sample.epub`);
       const blob = await response.blob();
       const file = new File([blob], 'sample.epub', { type: 'application/epub+zip' });
       setShowMissingFileError(false);
       setFileError(null);
-      processSelectedFile(file);
+      addFilesToQueue([file]);
     } catch (error) {
       console.error('Failed to load sample book:', error);
     }
@@ -286,28 +478,28 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
     <form className="conversion-form" onSubmit={handleSubmit}>
       <fieldset className="form-field">
         <label htmlFor="file">{t.form.fileLabel}</label>
-        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <div className="file-input-row">
           <input
             id="file"
             name="file"
             type="file"
             accept="application/epub+zip,application/pdf"
+            multiple
             disabled={isSubmitting}
             onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              const accepted = processSelectedFile(file);
-              if (!accepted) {
+              const files = event.target.files;
+              if (files && files.length > 0) {
+                addFilesToQueue(files);
                 event.target.value = '';
               }
             }}
-            style={{ flex: 1 }}
+            className="file-input-row__input"
           />
           <button
             type="button"
             onClick={handleUseSample}
             disabled={isSubmitting}
-            className="button-secondary"
-            style={{ whiteSpace: 'nowrap' }}
+            className="button-secondary file-input-row__sample"
           >
             {t.form.useSampleButton}
           </button>
@@ -317,26 +509,130 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
             {fileError}
           </p>
         )}
-        {selectedFile && (
-          <p className="form-hint form-hint--filename" title={selectedFile.name}>
-            <span aria-hidden="true">📄</span>
-            <span className="form-hint__filename">{selectedFile.name}</span>
-          </p>
-        )}
-        {uploadError && (
-          <p role="alert" className="form-error">
-            {uploadError}
-          </p>
-        )}
-        {isUploadingFile && selectedFile && (
-          <p className="form-hint">📤 {t.form.uploadingFile}</p>
-        )}
-        {!isUploadingFile && uploadId && selectedFile && !uploadError && (
-          <p className="form-hint">✅ {t.form.autoUploadReady}</p>
-        )}
-        {!isUploadingFile && !uploadId && selectedFile && !uploadError && (
-          <p className="form-hint">{t.form.autoUploadPending}</p>
-        )}
+        <div className="file-queue">
+          <div className="file-queue__header">
+            <span className="file-queue__title">{t.form.fileQueueLabel}</span>
+            {fileQueue.length > 0 && (
+              <span className="file-queue__count">{t.form.fileQueueCount(fileQueue.length)}</span>
+            )}
+          </div>
+          {fileQueue.length === 0 ? (
+            <p className="form-hint">
+              {currentJob && currentJob.bookTitle
+                ? t.form.fileQueueWithCurrent(currentJob.bookTitle)
+                : t.form.fileQueueEmpty}
+            </p>
+          ) : (
+            <>
+              <ul
+                className="file-queue__list"
+                onDragOver={(event) => {
+                  if (!draggingId || event.target !== event.currentTarget) return;
+                  event.preventDefault();
+                  setDragOverInfo({ id: END_DROP_ID, position: 'after' });
+                }}
+                onDrop={(event) => {
+                  if (event.target === event.currentTarget) {
+                    handleDropAtEnd(event);
+                  }
+                }}
+              >
+                {fileQueue.map((entry, index) => {
+                  const canMoveUp = index > 0;
+                  const canMoveDown = index < fileQueue.length - 1;
+                  const isDragging = entry.id === draggingId;
+                  const dropBefore = dragOverInfo?.id === entry.id && dragOverInfo.position === 'before';
+                  const dropAfter = dragOverInfo?.id === entry.id && dragOverInfo.position === 'after';
+                  const itemClasses = [
+                    'file-queue__item',
+                    isDragging ? 'file-queue__item--dragging' : '',
+                    dropBefore ? 'file-queue__item--drop-before' : '',
+                    dropAfter ? 'file-queue__item--drop-after' : '',
+                  ].filter(Boolean).join(' ');
+                  return (
+                    <li
+                      key={entry.id}
+                      className={itemClasses}
+                      draggable={fileQueue.length > 1 && !isSubmitting}
+                      onDragStart={(event) => handleDragStart(event, entry.id)}
+                      onDragOver={(event) => handleDragOverItem(event, entry.id)}
+                      onDrop={(event) => handleDropOnItem(event, entry.id)}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <div className="file-queue__meta">
+                        <span className="file-queue__name" title={entry.name}>
+                          {index + 1}. {entry.name}
+                        </span>
+                        <span className="file-queue__details">
+                          {formatFileSize(entry.size)} •{' '}
+                          {entry.status === 'ready' && (
+                            <span>✅ {t.form.autoUploadReady}</span>
+                          )}
+                          {entry.status === 'uploading' && (
+                            <span>📤 {t.form.uploadingFile}</span>
+                          )}
+                          {entry.status === 'error' && (
+                            <span>⚠️ {entry.error}</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="file-queue__actions">
+                        <button
+                          type="button"
+                          className="file-queue__swap"
+                          onClick={() => moveEntry(entry.id, -1)}
+                          disabled={!canMoveUp || isSubmitting}
+                          aria-label={t.form.fileQueueMoveUp}
+                          title={t.form.fileQueueMoveUp}
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          className="file-queue__swap"
+                          onClick={() => moveEntry(entry.id, 1)}
+                          disabled={!canMoveDown || isSubmitting}
+                          aria-label={t.form.fileQueueMoveDown}
+                          title={t.form.fileQueueMoveDown}
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          className="file-queue__remove"
+                          onClick={() => removeFromQueue(entry.id)}
+                          disabled={isSubmitting}
+                        >
+                          {t.form.fileQueueRemove}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {fileQueue.length > 1 && (
+                <>
+                  <div
+                    className={`file-queue__dropzone ${dragOverInfo?.id === END_DROP_ID ? 'file-queue__dropzone--active' : ''}`}
+                    onDragOver={(event) => {
+                      if (!draggingId) return;
+                      event.preventDefault();
+                      setDragOverInfo({ id: END_DROP_ID, position: 'after' });
+                    }}
+                    onDrop={handleDropAtEnd}
+                    onDragLeave={() => {
+                      if (dragOverInfo?.id === END_DROP_ID) {
+                        setDragOverInfo(null);
+                      }
+                    }}
+                  >
+                    {t.form.fileQueueReorderHint}
+                  </div>
+                </>
+              )}
+            </>
+          )}
+        </div>
         <p className="form-hint">{t.form.autoUploadHint}</p>
         <p className="form-hint">{t.form.fileHint}</p>
       </fieldset>
@@ -388,6 +684,26 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
           </fieldset>
 
           <fieldset className="form-row">
+            <label htmlFor="language">{t.form.languageLabel}</label>
+            <select
+              id="language"
+              name="language"
+              value={language}
+              disabled={isSubmitting || languageOptionsList.length === 0}
+              onChange={(event) => setLanguage(event.target.value)}
+            >
+              {languageOptionsList.map((code) => (
+                <option key={code} value={code}>
+                  {translateLanguage(code)}
+                </option>
+              ))}
+            </select>
+            <p className="form-hint">
+              {engineMeta.autoLanguage ? t.form.languageNotRequired : t.form.languageHint}
+            </p>
+          </fieldset>
+
+          <fieldset className="form-row">
             <label htmlFor="voice">{t.form.voiceLabel}</label>
             <select
               id="voice"
@@ -418,27 +734,20 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
             )}
           </fieldset>
 
-          {engineMeta.autoLanguage ? (
-            <p className="form-hint">{t.form.languageNotRequired}</p>
-          ) : (
-            <fieldset className="form-row">
-              <label htmlFor="language">{t.form.languageLabel}</label>
-              <select
-                id="language"
-                name="language"
-                value={language}
+          <fieldset className="form-row">
+            <label htmlFor="formattingCuesToggle">{t.form.formattingCuesLabel}</label>
+            <label className="form-toggle" htmlFor="formattingCuesToggle">
+              <input
+                id="formattingCuesToggle"
+                type="checkbox"
+                checked={formattingCues}
                 disabled={isSubmitting}
-                onChange={(event) => setLanguage(event.target.value)}
-              >
-                {engineMeta.languages.map((code) => (
-                  <option key={code} value={code}>
-                    {translateLanguage(code)}
-                  </option>
-                ))}
-              </select>
-              <p className="form-hint">{t.form.languageHint}</p>
-            </fieldset>
-          )}
+                onChange={(event) => setFormattingCues(event.target.checked)}
+              />
+              <span>{formattingCues ? t.form.formattingCuesOn : t.form.formattingCuesOff}</span>
+            </label>
+            <p className="form-hint">{t.form.formattingCuesDescription}</p>
+          </fieldset>
 
           <fieldset className="form-row">
             <label htmlFor="chapters">{t.form.chaptersLabel}</label>
@@ -502,7 +811,7 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile }:
 
       <button
         type="submit"
-        disabled={isSubmitting || isUploadingFile || Boolean(fileError)}
+        disabled={disableSubmit}
         className="form-submit"
       >
         {isSubmitting

@@ -1484,51 +1484,160 @@ class EbookReader:
         return list(book.toc)
 
     def extract_cover_image(self) -> Optional[CoverImage]:
-        """Return the raw cover image bundled in the EPUB, if available."""
-        if not self.file_path or self.file_path.suffix.lower() != ".epub":
+        """Return the raw cover image bundled in the EPUB or PDF, if available."""
+        if not self.file_path:
+            return None
+
+        suffix = self.file_path.suffix.lower()
+
+        # EPUB cover extraction
+        if suffix == ".epub":
+            try:
+                parser = EpubParser(str(self.file_path))
+                with zipfile.ZipFile(self.file_path, "r") as archive:
+                    opf_path = parser._find_opf_path(archive)
+                    opf_dir = parser._opf_dir(opf_path)
+                    opf_content = parser._read_zip_text(archive, opf_path)
+                    opf_tree = ET.fromstring(opf_content)
+
+                    manifest: Dict[str, Dict[str, str]] = {}
+                    for item in opf_tree.findall("opf:manifest/opf:item", XML_NS):
+                        item_id = item.attrib.get("id")
+                        href = item.attrib.get("href")
+                        if not item_id or not href:
+                            continue
+                        manifest[item_id] = {
+                            "href": href,
+                            "media_type": item.attrib.get("media-type", ""),
+                            "properties": item.attrib.get("properties", ""),
+                        }
+
+                    cover_entry = self._detect_cover_entry(opf_tree, manifest)
+                    if not cover_entry:
+                        return None
+
+                    cover_href = cover_entry.get("href")
+                    if not cover_href:
+                        return None
+
+                    cover_path = parser._join_path(opf_dir, cover_href)
+                    try:
+                        data = archive.read(cover_path)
+                    except KeyError:
+                        data = archive.read(unquote(cover_path))
+
+                    media_type = cover_entry.get("media_type") or mimetypes.guess_type(cover_href)[0] or "image/jpeg"
+                    extension = Path(cover_path).suffix or mimetypes.guess_extension(media_type) or ".jpg"
+                    if not extension.startswith("."):
+                        extension = f".{extension}"
+                    return CoverImage(data=data, media_type=media_type, extension=extension)
+            except Exception:
+                return None
+
+        # PDF cover extraction
+        elif suffix == ".pdf":
+            return self._extract_pdf_cover()
+
+        return None
+
+    def _extract_pdf_cover(self) -> Optional[CoverImage]:
+        """Extract cover image from PDF's first page."""
+        if not PDF_AVAILABLE or not pypdf:
             return None
 
         try:
-            parser = EpubParser(str(self.file_path))
-            with zipfile.ZipFile(self.file_path, "r") as archive:
-                opf_path = parser._find_opf_path(archive)
-                opf_dir = parser._opf_dir(opf_path)
-                opf_content = parser._read_zip_text(archive, opf_path)
-                opf_tree = ET.fromstring(opf_content)
-
-                manifest: Dict[str, Dict[str, str]] = {}
-                for item in opf_tree.findall("opf:manifest/opf:item", XML_NS):
-                    item_id = item.attrib.get("id")
-                    href = item.attrib.get("href")
-                    if not item_id or not href:
-                        continue
-                    manifest[item_id] = {
-                        "href": href,
-                        "media_type": item.attrib.get("media-type", ""),
-                        "properties": item.attrib.get("properties", ""),
-                    }
-
-                cover_entry = self._detect_cover_entry(opf_tree, manifest)
-                if not cover_entry:
+            # Open PDF and get first page
+            with open(self.file_path, "rb") as handle:
+                reader = pypdf.PdfReader(handle)  # type: ignore[arg-type]
+                if not reader.pages:
                     return None
 
-                cover_href = cover_entry.get("href")
-                if not cover_href:
-                    return None
+                first_page = reader.pages[0]
 
-                cover_path = parser._join_path(opf_dir, cover_href)
-                try:
-                    data = archive.read(cover_path)
-                except KeyError:
-                    data = archive.read(unquote(cover_path))
+                # Try to extract images from first page
+                if hasattr(first_page, "images"):
+                    # pypdf >= 3.1.0 has images property
+                    images = first_page.images
+                    if images:
+                        # Get the largest image (likely the cover)
+                        largest_image = max(images, key=lambda img: len(img.data) if hasattr(img, 'data') else 0)
+                        if hasattr(largest_image, 'data') and largest_image.data:
+                            # Determine media type and extension
+                            image_name = getattr(largest_image, 'name', '') or ''
+                            extension = Path(image_name).suffix if image_name else ''
 
-                media_type = cover_entry.get("media_type") or mimetypes.guess_type(cover_href)[0] or "image/jpeg"
-                extension = Path(cover_path).suffix or mimetypes.guess_extension(media_type) or ".jpg"
-                if not extension.startswith("."):
-                    extension = f".{extension}"
-                return CoverImage(data=data, media_type=media_type, extension=extension)
+                            # Try to detect image format from data
+                            data = largest_image.data
+                            if data.startswith(b'\xff\xd8\xff'):
+                                media_type = "image/jpeg"
+                                extension = extension or ".jpg"
+                            elif data.startswith(b'\x89PNG\r\n\x1a\n'):
+                                media_type = "image/png"
+                                extension = extension or ".png"
+                            elif data.startswith(b'GIF87a') or data.startswith(b'GIF89a'):
+                                media_type = "image/gif"
+                                extension = extension or ".gif"
+                            else:
+                                media_type = "image/jpeg"
+                                extension = extension or ".jpg"
+
+                            if not extension.startswith("."):
+                                extension = f".{extension}"
+
+                            return CoverImage(data=data, media_type=media_type, extension=extension)
+
+                # Fallback: Try XObject images (older pypdf versions or complex PDFs)
+                if "/Resources" in first_page and "/XObject" in first_page["/Resources"]:
+                    xobject = first_page["/Resources"]["/XObject"]
+                    if hasattr(xobject, 'get_object'):
+                        xobject = xobject.get_object()
+
+                    # Find largest image
+                    largest_data = None
+                    largest_size = 0
+                    image_filter = None
+
+                    for obj_name in xobject:
+                        obj = xobject[obj_name]
+                        if hasattr(obj, 'get_object'):
+                            obj = obj.get_object()
+
+                        if obj.get("/Subtype") == "/Image":
+                            try:
+                                data = obj.get_data()
+                                if len(data) > largest_size:
+                                    largest_size = len(data)
+                                    largest_data = data
+                                    image_filter = obj.get("/Filter", "")
+                            except Exception:
+                                continue
+
+                    if largest_data:
+                        # Determine format from filter
+                        if "DCTDecode" in str(image_filter):
+                            media_type = "image/jpeg"
+                            extension = ".jpg"
+                        elif "FlateDecode" in str(image_filter):
+                            media_type = "image/png"
+                            extension = ".png"
+                        else:
+                            # Try to detect from data
+                            if largest_data.startswith(b'\xff\xd8\xff'):
+                                media_type = "image/jpeg"
+                                extension = ".jpg"
+                            elif largest_data.startswith(b'\x89PNG\r\n\x1a\n'):
+                                media_type = "image/png"
+                                extension = ".png"
+                            else:
+                                media_type = "image/jpeg"
+                                extension = ".jpg"
+
+                        return CoverImage(data=largest_data, media_type=media_type, extension=extension)
+
         except Exception:
             return None
+
+        return None
 
     def _detect_cover_entry(
         self,

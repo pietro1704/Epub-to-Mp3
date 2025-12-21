@@ -2,6 +2,7 @@ import { API_BASE_URL, POLL_INTERVAL_MS } from '../config';
 import {
   ConversionFormValues,
   JobSnapshot,
+  RecentJobEntry,
 } from '../types/conversion';
 
 export interface PollOptions {
@@ -18,6 +19,11 @@ export interface ResumableJob {
   savedAt: string;
   chaptersCompleted?: number;
   chaptersTotal?: number;
+  engine?: string;
+  voice?: string;
+  language?: string;
+  formattingCues?: boolean;
+  uiLanguage?: string;
 }
 
 export interface ConversionClient {
@@ -25,7 +31,9 @@ export interface ConversionClient {
   fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot>;
   poll(jobId: string, options?: PollOptions): Promise<JobSnapshot>;
   getResumableJobs?(): Promise<ResumableJob[] | null>;
+  getRecentJobs?(): Promise<RecentJobEntry[] | null>;
   cancel?(jobId: string): Promise<{ status: string }>;
+  resume?(jobId: string): Promise<{ status: string }>;
   upload?(file: File): Promise<UploadResponse>;
 }
 
@@ -61,6 +69,12 @@ function buildFormData(values: ConversionFormValues): FormData {
   }
   if (values.language) {
     formData.append('language', values.language);
+  }
+  if (typeof values.formattingCues === 'boolean') {
+    formData.append('formatting_cues', values.formattingCues ? 'on' : 'off');
+  }
+  if (values.uiLanguage) {
+    formData.append('ui_language', values.uiLanguage);
   }
   return formData;
 }
@@ -255,6 +269,13 @@ export class HttpConversionClient implements ConversionClient {
     return parseResponse<{ status: string }>(response);
   }
 
+  async resume(jobId: string): Promise<{ status: string }> {
+    const response = await fetch(this.resolve(`/api/jobs/${encodeURIComponent(jobId)}/resume`), {
+      method: 'POST',
+    });
+    return parseResponse<{ status: string }>(response);
+  }
+
   async upload(file: File): Promise<UploadResponse> {
     const formData = new FormData();
     formData.append('file', file);
@@ -291,6 +312,20 @@ export class HttpConversionClient implements ConversionClient {
       console.warn('[ConversionClient] Failed to fetch resumable jobs:', error);
       return null;
     }
+  }
+
+  async getRecentJobs(): Promise<RecentJobEntry[] | null> {
+    const response = await fetch(this.resolve('/api/jobs/recent'), {
+      method: 'GET',
+    });
+    if (!response.ok) {
+      return null;
+    }
+    const payload = await response.json();
+    if (!payload || !Array.isArray(payload.jobs)) {
+      return null;
+    }
+    return payload.jobs as RecentJobEntry[];
   }
 }
 
@@ -392,6 +427,14 @@ export class MockConversionClient implements ConversionClient {
     const jobId = `mock-job-${this.jobCounter}`;
     console.log('[MockClient] Conversion started:', { jobId, request });
     return { jobId };
+  }
+
+  async cancel(_jobId: string): Promise<{ status: string }> {
+    return { status: 'cancelled' };
+  }
+
+  async resume(_jobId: string): Promise<{ status: string }> {
+    return { status: 'queued' };
   }
 
   async fetch(jobId: string): Promise<JobSnapshot> {

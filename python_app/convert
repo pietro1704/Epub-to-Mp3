@@ -14,6 +14,44 @@ from main import (
 )
 
 
+def _normalize_cli_args(raw_args: list[str]) -> list[str]:
+    """Join space-split file paths back into a single argument when possible."""
+    if not raw_args:
+        return raw_args
+
+    # If the first token is an option we can't infer a path
+    if raw_args[0].startswith("-"):
+        return raw_args
+
+    result: list[str] = []
+    tokens: list[str] = []
+    consumed = 0
+    detected_path: str | None = None
+
+    for idx, token in enumerate(raw_args):
+        if token.startswith("--") and tokens:
+            break
+        if token.startswith("-") and not Path(token).suffix:
+            break
+        tokens.append(token)
+        candidate = " ".join(tokens)
+        expanded = Path(candidate).expanduser()
+        if expanded.exists():
+            detected_path = str(expanded)
+            consumed = idx + 1
+            break
+
+    if detected_path is None and tokens:
+        detected_path = " ".join(tokens)
+        consumed = len(tokens)
+
+    if detected_path:
+        result.append(detected_path)
+
+    result.extend(raw_args[consumed:])
+    return result if result else raw_args
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="EBook to Audiobook Converter",
@@ -41,15 +79,29 @@ def main() -> int:
     if argcomplete is not None:
         argcomplete.autocomplete(parser)
 
-    args = parser.parse_args()
+    normalized_args = _normalize_cli_args(sys.argv[1:])
+    args = parser.parse_args(normalized_args)
+    # Restore original input file token for downstream use (preserves quoting)
+    if getattr(args, "input_file", None):
+        args.input_file = normalized_args[0]
 
-    has_input = bool(getattr(args, "input_file", None))
+    if not hasattr(args, "extra_inputs"):
+        args.extra_inputs = []
+    if not hasattr(args, "batch_inputs") or args.batch_inputs is None:
+        args.batch_inputs = []
+    if not hasattr(args, "batch_manifest"):
+        args.batch_manifest = None
+    if not hasattr(args, "batch_stop_on_error"):
+        args.batch_stop_on_error = False
 
-    if args.clear_cache and not has_input:
+    has_input = bool(getattr(args, "input_file", None) or args.extra_inputs)
+    has_batch = bool(args.batch_inputs) or bool(args.batch_manifest)
+
+    if args.clear_cache and not has_input and not has_batch:
         _clear_cache_all(assume_yes=args.yes)
         return 0
 
-    if not has_input:
+    if not has_input and not has_batch:
         parser.print_help()
         return 1
 

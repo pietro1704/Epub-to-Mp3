@@ -221,6 +221,11 @@ class JobManager:
                     "savedAt": saved_at,
                     "chaptersCompleted": job_data.get("chaptersCompleted", 0),
                     "chaptersTotal": job_data.get("chaptersTotal"),
+                    "engine": job_data.get("engine"),
+                    "voice": job_data.get("voice"),
+                    "language": job_data.get("detectedLanguage") or job_data.get("language"),
+                    "formattingCues": job_data.get("formattingCues"),
+                    "uiLanguage": job_data.get("uiLanguage"),
                 })
 
         # Sort by saved timestamp (newest first)

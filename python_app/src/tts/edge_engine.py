@@ -95,6 +95,8 @@ class EdgeTTSEngine:
         max_segment_seconds: Optional[float] = None,
         chunk_char_limit: Optional[int] = None,
         enable_parallel: bool = True,
+        formatting_cues_enabled: bool = True,
+        formatting_locale: str = "pt",
     ) -> None:
         global edge_tts, _edge_rate_limiter
 
@@ -122,6 +124,11 @@ class EdgeTTSEngine:
             for key, value in (language_voices or {}).items()
             if value
         }
+        locale_root = (formatting_locale or "pt").split("-", 1)[0].lower()
+        if locale_root not in {"pt", "en"}:
+            locale_root = "en"
+        self.formatting_locale = locale_root
+        self.formatting_cues_enabled = bool(formatting_cues_enabled)
         self.last_error: Optional[str] = None
         self.verbose = verbose
         max_seconds = max_segment_seconds if max_segment_seconds is not None else DEFAULT_EDGE_SEGMENT_SECONDS
@@ -269,7 +276,10 @@ class EdgeTTSEngine:
         payload_text = text or ""
 
         if TextFormattingProcessor:
-            formatter = TextFormattingProcessor()
+            formatter = TextFormattingProcessor(
+                cues_enabled=self.formatting_cues_enabled,
+                cue_locale=self.formatting_locale,
+            )
             payload_text = formatter.to_audible_text(payload_text, formatting_segments)
 
         sanitized = self._sanitize_for_edge(payload_text)

@@ -37,6 +37,10 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
   });
 }
 
+if (typeof window !== 'undefined' && typeof window.confirm !== 'function') {
+  window.confirm = () => true;
+}
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();

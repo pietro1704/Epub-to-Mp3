@@ -61,6 +61,8 @@ class TTSFactory:
                 max_segment_seconds=max_segment,
                 chunk_char_limit=chunk_chars,
                 enable_parallel=enable_parallel,
+                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+                formatting_locale=getattr(config, "formatting_locale", "pt"),
             )
 
         if engine == "coqui":
@@ -74,6 +76,8 @@ class TTSFactory:
                 primary_language=config.primary_language,
                 language_voices=config.language_voices,
                 verbose=config.verbose,
+                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+                formatting_locale=getattr(config, "formatting_locale", "pt"),
             )
 
         if engine == "piper":
@@ -90,6 +94,8 @@ class TTSFactory:
                 model_path,
                 primary_language=config.primary_language,
                 language_voices=config.language_voices,
+                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+                formatting_locale=getattr(config, "formatting_locale", "pt"),
             )
             engine_instance.verbose = config.verbose
             return engine_instance

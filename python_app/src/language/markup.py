@@ -87,11 +87,34 @@ class LanguageMarkup:
             print(f"⚠️ Erro na detecção de perfil: {e} - usando idioma padrão: {default_short}")
             return text
 
+        def _short(code: Optional[str]) -> str:
+            if not code:
+                return ""
+            return code.split('-', 1)[0].lower()
+
         profile_languages = {
-            (lang or "").split("-", 1)[0]
+            _short(lang)
             for lang in profile.languages
             if lang and lang != "unknown"
         }
+
+        predictions = list(getattr(profile, "predictions", []) or [])
+        primary_prediction = next((pred for pred in predictions if _short(pred.code) == default_short), None)
+        best_alternative = next((pred for pred in predictions if _short(pred.code) != default_short), None)
+
+        if default_short and default_short not in {"", "unknown", "auto"}:
+            allow_mixed = best_alternative is not None
+            if best_alternative:
+                alt_prob = best_alternative.probability
+                primary_prob = primary_prediction.probability if primary_prediction else 0.0
+                # Require strong evidence before overriding configured primary language
+                if alt_prob < 0.35:
+                    allow_mixed = False
+                elif primary_prediction and primary_prob >= 0.45:
+                    if alt_prob <= primary_prob and alt_prob < 0.75:
+                        allow_mixed = False
+            if not allow_mixed:
+                return text
 
         if not profile_languages or (default_short and profile_languages <= {default_short}):
             return text
@@ -103,7 +126,8 @@ class LanguageMarkup:
                     self.detector.detect_segments,
                     text,
                     timeout_seconds=1.5,  # Timeout mais agressivo para segmentos
-                    fallback_language=default_short
+                    fallback_language=default_short,
+                    primary_language=default_short  # **NEW**: Priorizar idioma primário em ambiguidades
                 )
                 try:
                     segments = future.result(timeout=5.0)  # 5 segundos max total

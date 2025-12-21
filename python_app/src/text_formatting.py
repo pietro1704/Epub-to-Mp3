@@ -98,8 +98,34 @@ class TextFormattingProcessor:
         'lower': lambda value: value,
     }
 
-    def __init__(self):
+    DEFAULT_CUE_LOCALE = "pt"
+
+    CUE_LABELS = {
+        "pt": {
+            "italic": ("em itálico", "fim do itálico"),
+            "bold": ("em negrito", "fim do negrito"),
+            "emphasis": ("diálogo", "fim do diálogo"),
+            "code": ("trecho de código", "fim do código"),
+            "quote": ("entre aspas", "fim das aspas"),
+            "small": ("texto pequeno", "fim do texto pequeno"),
+        },
+        "en": {
+            "italic": ("italic text", "end italic"),
+            "bold": ("bold text", "end bold"),
+            "emphasis": ("dialogue", "end dialogue"),
+            "code": ("code snippet", "end code"),
+            "quote": ("quote", "end quote"),
+            "small": ("small text", "end small text"),
+        },
+    }
+
+    def __init__(self, *, cues_enabled: bool = True, cue_locale: str = DEFAULT_CUE_LOCALE):
         self.compiled_patterns = {}
+        self.cues_enabled = bool(cues_enabled)
+        locale_root = (cue_locale or self.DEFAULT_CUE_LOCALE).split("-", 1)[0].lower()
+        if locale_root not in self.CUE_LABELS:
+            locale_root = "en"
+        self.cue_locale = locale_root
         for fmt_type, patterns in self.FORMATTING_PATTERNS.items():
             self.compiled_patterns[fmt_type] = [
                 re.compile(pattern, re.IGNORECASE | re.DOTALL) for pattern in patterns
@@ -249,29 +275,38 @@ class TextFormattingProcessor:
         ssml_parts.append('</speak>')
         return ''.join(ssml_parts)
 
+    def _get_cue_phrases(self, fmt_type: str) -> tuple[str, str]:
+        locale_map = self.CUE_LABELS.get(self.cue_locale) or self.CUE_LABELS["en"]
+        fallback_map = self.CUE_LABELS["en"]
+        return locale_map.get(fmt_type) or fallback_map.get(fmt_type, ("", ""))
+
+    @staticmethod
+    def _render_with_cues(start: str, text: str, end: str) -> str:
+        parts = []
+        if start:
+            parts.append(start.strip())
+        parts.append(text.strip())
+        if end:
+            parts.append(end.strip())
+        return ' '.join(part for part in parts if part)
+
     def to_plain_text_with_cues(self, segments: List[FormattingSegment]) -> str:
         """Converte para texto simples com indicações verbais de formatação"""
         if not segments:
             return ""
+
+        if not self.cues_enabled:
+            return ' '.join(segment.text for segment in segments if segment.text)
 
         parts = []
 
         for segment in segments:
             text = segment.text
 
-            if segment.formatting == 'italic':
-                parts.append(f"em itálico: {text}")
-            elif segment.formatting == 'bold':
-                parts.append(f"em negrito: {text}")
-            elif segment.formatting == 'emphasis':
-                # Diálogo ou trecho enfatizado (travessão, exclamações etc.)
-                parts.append(f"diálogo com ênfase: {text}")
-            elif segment.formatting == 'code':
-                parts.append(f"trecho de código: {text}")
-            elif segment.formatting == 'quote':
-                parts.append(f"entre aspas: {text}")
-            elif segment.formatting == 'small':
-                parts.append(f"texto pequeno: {text}")
+            if segment.formatting in {'italic', 'bold', 'emphasis', 'code', 'quote', 'small'}:
+                start, end = self._get_cue_phrases(segment.formatting)
+                formatted = self._render_with_cues(start, text, end)
+                parts.append(formatted)
             else:  # normal
                 parts.append(text)
 

@@ -226,6 +226,8 @@ class CoquiTTSEngine:
         primary_language: Optional[str] = None,
         language_voices: Optional[Dict[str, str]] = None,
         verbose: bool = False,
+        formatting_cues_enabled: bool = True,
+        formatting_locale: str = "pt",
     ) -> None:
         global TTS
 
@@ -249,6 +251,11 @@ class CoquiTTSEngine:
         self.language_voices = language_voices or {}
         self.verbose = verbose
         self.last_error: Optional[str] = None
+        locale_root = (formatting_locale or "pt").split("-", 1)[0].lower()
+        if locale_root not in {"pt", "en"}:
+            locale_root = "en"
+        self.formatting_locale = locale_root
+        self.formatting_cues_enabled = bool(formatting_cues_enabled)
 
     def supports_multilingual(self) -> bool:
         """Coqui TTS models like XTTS_v2 support multilingual synthesis"""
@@ -291,7 +298,10 @@ class CoquiTTSEngine:
 
         # Preparar texto com pistas audíveis quando possível
         if TextFormattingProcessor:
-            formatter = TextFormattingProcessor()
+            formatter = TextFormattingProcessor(
+                cues_enabled=getattr(self, "formatting_cues_enabled", True),
+                cue_locale=getattr(self, "formatting_locale", "pt"),
+            )
             try:
                 converted = formatter.to_audible_text(text, formatting_segments)
                 if converted:
