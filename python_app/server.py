@@ -754,6 +754,8 @@ class JobStatus(BaseModel):
     currentChapter: Optional[str] = None
     progressPercent: Optional[float] = None
     chapterProgress: Optional[list[dict]] = None
+    totalSegments: Optional[int] = None
+    completedSegments: Optional[int] = None
     outputs: list[dict] = []
     error: Optional[str] = None
     bookTitle: Optional[str] = None

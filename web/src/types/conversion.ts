@@ -56,6 +56,8 @@ export interface JobSnapshot {
   currentChapter?: string;
   progressPercent?: number | null;
   chapterProgress?: ChapterProgressEntry[];
+  totalSegments?: number;
+  completedSegments?: number;
   bookTitle?: string;
   bookAuthor?: string;
   coverUrl?: string;
