@@ -106,6 +106,7 @@ export interface ConversionState {
   language?: string;
   uiLanguage?: string;
   speakFormattingCues?: boolean;
+  pendingBatchQueue?: ConversionFormValues[];
 }
 
 export interface RecentJobEntry {

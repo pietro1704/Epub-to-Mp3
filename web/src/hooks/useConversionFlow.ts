@@ -652,9 +652,23 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
         const total = currentIndex + jobQueueRef.current.length;
         const meta = total > 1 ? { index: currentIndex, total } : undefined;
         const result = await runConversion(currentJob, meta);
-        if (result === 'cancelled') {
-          jobQueueRef.current = [];
-          break;
+
+        // Save remaining queue if there was a failure or cancellation
+        if (result === 'cancelled' || result === 'failed') {
+          if (jobQueueRef.current.length > 0 && state.jobId) {
+            // Save the remaining queue with the current job state
+            const stateWithQueue = {
+              ...state,
+              pendingBatchQueue: jobQueueRef.current,
+            };
+            conversionCache.save(state.jobId, fileNameRef.current, stateWithQueue);
+          }
+
+          if (result === 'cancelled') {
+            jobQueueRef.current = [];
+            break;
+          }
+          // For 'failed', continue to next job in queue
         }
         processedCountRef.current += 1;
       }
@@ -662,7 +676,7 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
       queueActiveRef.current = false;
       processedCountRef.current = 0;
     }
-  }, [runConversion]);
+  }, [runConversion, state]);
 
   const submit = useCallback(
     async (values: ConversionFormValues, options?: SubmitBatchOptions) => {
@@ -720,6 +734,12 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
             },
             rawLog: cached.state.rawLog,
           });
+        }
+
+        // Restore batch queue if it was saved
+        if (Array.isArray(cached.state.pendingBatchQueue) && cached.state.pendingBatchQueue.length > 0) {
+          jobQueueRef.current = cached.state.pendingBatchQueue;
+          console.log(`[Resume] Restored batch queue with ${cached.state.pendingBatchQueue.length} pending jobs`);
         }
       }
 
@@ -888,6 +908,13 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
         conversionCache.remove(jobId);
         setCachedJobs(prev => prev.filter(j => j.jobId !== jobId));
         startTimeRef.current = null;
+
+        // Continue processing batch queue if there are pending jobs
+        if (jobQueueRef.current.length > 0) {
+          console.log(`[Resume] Continuing batch queue with ${jobQueueRef.current.length} remaining jobs`);
+          processedCountRef.current = 1; // Count the resumed job as processed
+          await drainQueue();
+        }
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return;
@@ -904,7 +931,7 @@ export function useConversionFlow(client?: ConversionClient): UseConversionFlowA
         startTimeRef.current = null;
       }
     },
-    [api, apiAvailable, applySnapshotMeta, appendSnapshotEvents, markApiOffline, markApiOnline, persistCancelledJob, resetLogAndCounters, setCachedJobs, state, t],
+    [api, apiAvailable, applySnapshotMeta, appendSnapshotEvents, drainQueue, markApiOffline, markApiOnline, persistCancelledJob, resetLogAndCounters, setCachedJobs, state, t],
   );
 
   useEffect(() => {
