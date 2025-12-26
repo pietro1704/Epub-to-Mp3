@@ -6,7 +6,10 @@ COPY web/package*.json ./
 # Usar npm install para atualizar dependências automaticamente
 RUN npm install --legacy-peer-deps
 COPY web/ ./
-RUN npm run build
+# Build with error output
+RUN npm run build || (echo "Frontend build failed!" && exit 1)
+# Verify build output
+RUN ls -la dist/ && echo "Frontend build successful!"
 
 # Stage 2: Python runtime
 FROM python:3.11-slim
@@ -30,11 +33,18 @@ COPY hf_app.py ./
 # Copy built frontend from stage 1
 COPY --from=frontend-builder /app/web/dist ./web/dist
 
+# Verify frontend files were copied
+RUN ls -la web/dist/ && echo "Frontend files copied successfully"
+
 # Create output directory
 RUN mkdir -p /tmp/output
 
 # Expose port for HF Spaces
 EXPOSE 7860
 
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD python -c "import requests; requests.get('http://localhost:7860/api/health', timeout=5)" || exit 1
+
 # Run the FastAPI server with React frontend
-CMD ["python", "hf_app.py"]
+CMD ["python", "-u", "hf_app.py"]

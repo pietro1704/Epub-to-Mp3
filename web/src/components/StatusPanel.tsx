@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ConversionState, StatusEntry, ConversionSummary } from '../types/conversion';
 import { useI18n, useTranslations } from '../i18n/I18nProvider';
 import type { Locale, Translations } from '../i18n/translations';
@@ -46,14 +46,8 @@ export default function StatusPanel({
   const rawLogRef = useRef<HTMLPreElement>(null);
   const timelineRef = useRef<HTMLUListElement>(null);
   const showError = (phase === 'error' || phase === 'cancelled') && error;
+  const isAutoScrollingRef = useRef(true);
 
-  const scrollToBottom = useCallback(() => {
-    if (showRawLog && rawLogRef.current) {
-      rawLogRef.current.scrollTop = rawLogRef.current.scrollHeight;
-    } else if (!showRawLog && timelineRef.current) {
-      timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
-    }
-  }, [showRawLog]);
   const errorText = showError ? t.status.errorPrefix.replace('{message}', error) : null;
   const timeLocale = locale === 'pt' ? 'pt-BR' : 'en-US';
   const toggleLabel = showRawLog ? t.status.toggleHide : t.status.toggleShow;
@@ -86,6 +80,48 @@ export default function StatusPanel({
       })
       .join('\n');
   }, [rawLog, entries, placeholderText, timeLocale, timeFormatOptions]);
+
+  const scrollToBottom = useCallback(() => {
+    if (showRawLog && rawLogRef.current) {
+      rawLogRef.current.scrollTop = rawLogRef.current.scrollHeight;
+      isAutoScrollingRef.current = true;
+    } else if (!showRawLog && timelineRef.current) {
+      timelineRef.current.scrollTop = timelineRef.current.scrollHeight;
+      isAutoScrollingRef.current = true;
+    }
+  }, [showRawLog]);
+
+  // Auto-scroll when log updates (only if user is near bottom)
+  useEffect(() => {
+    const element = showRawLog ? rawLogRef.current : timelineRef.current;
+    if (!element) return;
+
+    const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+
+    if (isAutoScrollingRef.current || isNearBottom) {
+      const scrollToEnd = () => {
+        element.scrollTop = element.scrollHeight;
+      };
+
+      scrollToEnd();
+      // Use requestAnimationFrame to ensure smooth scroll after render
+      requestAnimationFrame(scrollToEnd);
+    }
+  }, [rawLogText, entries, showRawLog]);
+
+  // Track manual scrolling
+  useEffect(() => {
+    const element = showRawLog ? rawLogRef.current : timelineRef.current;
+    if (!element) return;
+
+    const handleScroll = () => {
+      const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 50;
+      isAutoScrollingRef.current = isNearBottom;
+    };
+
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    return () => element.removeEventListener('scroll', handleScroll);
+  }, [showRawLog]);
 
   return (
     <div className="status-panel">

@@ -33,6 +33,39 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
     error: null,
   });
   const verboseLogRef = useRef<HTMLPreElement>(null);
+  const isAutoScrollingRef = useRef(true);
+
+  // Auto-scroll when log updates (only if user is near bottom)
+  useEffect(() => {
+    const element = verboseLogRef.current;
+    if (!element || !showRawLog || log.length === 0) return;
+
+    const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
+
+    if (isAutoScrollingRef.current || isNearBottom) {
+      const scrollToEnd = () => {
+        element.scrollTop = element.scrollHeight;
+      };
+
+      scrollToEnd();
+      // Use requestAnimationFrame to ensure smooth scroll after render
+      requestAnimationFrame(scrollToEnd);
+    }
+  }, [log, showRawLog]);
+
+  // Track manual scrolling
+  useEffect(() => {
+    const element = verboseLogRef.current;
+    if (!element || !showRawLog) return;
+
+    const handleScroll = () => {
+      const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 50;
+      isAutoScrollingRef.current = isNearBottom;
+    };
+
+    element.addEventListener('scroll', handleScroll, { passive: true });
+    return () => element.removeEventListener('scroll', handleScroll);
+  }, [showRawLog]);
 
   useEffect(() => {
     const handlePlay = (event: Event) => {
@@ -53,12 +86,6 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
     document.addEventListener('play', handlePlay, true);
     return () => document.removeEventListener('play', handlePlay, true);
   }, []);
-
-  const scrollLogToBottom = () => {
-    if (verboseLogRef.current) {
-      verboseLogRef.current.scrollTop = verboseLogRef.current.scrollHeight;
-    }
-  };
 
   const zipFile = downloads.find(d => d.name.toLowerCase().endsWith('.zip'));
   const logFile = downloads.find(d => d.name.toLowerCase().endsWith('.log'));
@@ -128,18 +155,7 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
 
       {showRawLog && log.length > 0 && (
         <div className="downloads-panel__command-section">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <h3 style={{ margin: 0 }}>Saída do terminal (verbose)</h3>
-            <button
-              type="button"
-              className="status-panel__toggle"
-              onClick={scrollLogToBottom}
-              title={locale === 'pt' ? 'Ir para o final' : 'Go to bottom'}
-              style={{ fontSize: '0.8rem', padding: '0.35rem 0.75rem' }}
-            >
-              ↓ {locale === 'pt' ? 'Ver atual' : 'Go to current'}
-            </button>
-          </div>
+          <h3>Saída do terminal (verbose)</h3>
           <pre className="downloads-panel__log" ref={verboseLogRef}>
             {log.map(entry => entry.message).join('\n')}
           </pre>

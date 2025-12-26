@@ -484,6 +484,15 @@ export default function App(props?: AppProps): JSX.Element {
                 phase={state.phase}
               />
             )}
+            {readyDownloadJobs.length > 0 && (
+              <div style={{ marginTop: '1.5rem' }}>
+                <ReadyDownloadsList
+                  jobs={readyDownloadJobs}
+                  activeJobId={viewingRecentJob?.jobId}
+                  onSelect={handleSelectReadyDownload}
+                />
+              </div>
+            )}
           </Panel>
         ),
       },
