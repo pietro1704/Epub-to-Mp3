@@ -38,6 +38,7 @@ export interface ChapterProgressEntry {
   status: ChapterProgressStatus;
   elapsedSeconds?: number;
   charsPerSecond?: number;
+  downloadUrl?: string;
 }
 
 export interface JobSnapshot {

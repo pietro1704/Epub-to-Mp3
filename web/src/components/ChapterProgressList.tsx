@@ -90,12 +90,25 @@ export default function ChapterProgressList({ entries }: ChapterProgressListProp
               <span className="chapter-progress__status" aria-label={statusLabel}>
                 {statusLabel}
                 {entry.status === 'completed' && (
-                  <span className="chapter-progress__time">
-                    {formatChapterDuration(entry.elapsedSeconds) ?? '--'}
-                    {typeof entry.charsPerSecond === 'number'
-                      ? ` • ~${entry.charsPerSecond} chars/s`
-                      : ''}
-                  </span>
+                  <>
+                    <span className="chapter-progress__time">
+                      {formatChapterDuration(entry.elapsedSeconds) ?? '--'}
+                      {typeof entry.charsPerSecond === 'number'
+                        ? ` • ~${entry.charsPerSecond} chars/s`
+                        : ''}
+                    </span>
+                    {entry.downloadUrl && (
+                      <a
+                        href={entry.downloadUrl}
+                        download
+                        className="chapter-progress__download"
+                        title={locale === 'pt' ? 'Baixar capítulo' : 'Download chapter'}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        💾 {locale === 'pt' ? 'Download' : 'Download'}
+                      </a>
+                    )}
+                  </>
                 )}
               </span>
             </li>

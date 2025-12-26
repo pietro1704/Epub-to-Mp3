@@ -1910,7 +1910,15 @@ async def process_conversion(job_id: str) -> None:
                     chapter_elapsed = time.time() - start_time
 
                     _append_event(job, f"✅ Concluído: {output_file.name} (em {_format_hms(chapter_elapsed)})")
-                    _set_chapter_status(job, idx, "completed")
+
+                    # Add download URL to chapter progress
+                    chapter_output = {
+                        "name": output_file.name,
+                        "url": f"/api/outputs/{job_id}/{output_file.name}",
+                        "durationSeconds": round(duration_seconds, 2),
+                        "sizeBytes": output_file.stat().st_size,
+                    }
+                    _set_chapter_status(job, idx, "completed", download_url=chapter_output["url"])
                     _refresh_chapter_completion()
                     _update_job_progress()
 
@@ -1923,14 +1931,7 @@ async def process_conversion(job_id: str) -> None:
                     )
                     _persist_job(job_id, force=should_persist)
 
-                    outputs.append(
-                        {
-                            "name": output_file.name,
-                            "url": f"/api/outputs/{job_id}/{output_file.name}",
-                            "durationSeconds": round(duration_seconds, 2),
-                            "sizeBytes": output_file.stat().st_size,
-                        }
-                    )
+                    outputs.append(chapter_output)
                     if zip_open and output_file.exists():
                         async with zip_lock:
                             try:
@@ -2208,7 +2209,7 @@ async def _get_audio_duration(file_path: Path) -> float:
     return file_path.stat().st_size / 1000.0  # ~1KB per second for 8kbps
 
 
-def _set_chapter_status(job: dict, chapter_index: Optional[int], status: str) -> None:
+def _set_chapter_status(job: dict, chapter_index: Optional[int], status: str, download_url: Optional[str] = None) -> None:
     entries = job.get("chapterProgress")
     if not entries or chapter_index is None:
         return
@@ -2218,6 +2219,8 @@ def _set_chapter_status(job: dict, chapter_index: Optional[int], status: str) ->
             entry = entries[idx]
             if isinstance(entry, dict):
                 entry["status"] = status
+                if download_url:
+                    entry["downloadUrl"] = download_url
     if isinstance(entries, list):
         processing = sum(1 for entry in entries if isinstance(entry, dict) and entry.get("status") == "processing")
         job["parallelActive"] = processing
