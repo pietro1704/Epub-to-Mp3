@@ -70,6 +70,7 @@ class Book:
     author: str
     chapters: List[Chapter]
     toc: List[TocItem] = field(default_factory=list)
+    language: Optional[str] = None  # ISO language code from EPUB metadata (e.g., 'en', 'pt')
 
 
 @dataclass(slots=True)
@@ -795,7 +796,7 @@ class EpubParser:
     def parse(self) -> Book:
         with zipfile.ZipFile(self.path, "r") as archive:
             opf_path = self._find_opf_path(archive)
-            manifest, spine_ids, title, author = self._parse_opf(archive, opf_path)
+            manifest, spine_ids, title, author, language = self._parse_opf(archive, opf_path)
             base_dir = self._opf_dir(opf_path)
             toc = self._parse_toc(archive, base_dir)
 
@@ -804,7 +805,7 @@ class EpubParser:
 
         title = title or self.path.stem
         author = author or ""
-        return Book(title=title.strip(), author=author.strip(), chapters=chapters, toc=toc)
+        return Book(title=title.strip(), author=author.strip(), chapters=chapters, toc=toc, language=language)
 
     def _find_opf_path(self, archive: zipfile.ZipFile) -> str:
         try:
@@ -822,7 +823,7 @@ class EpubParser:
         self,
         archive: zipfile.ZipFile,
         opf_path: str,
-    ) -> Tuple[Dict[str, str], List[str], str, str]:
+    ) -> Tuple[Dict[str, str], List[str], str, str, Optional[str]]:
         opf_content = self._read_zip_text(archive, opf_path)
         opf_tree = ET.fromstring(opf_content)
 
@@ -841,16 +842,22 @@ class EpubParser:
 
         title = ""
         author = ""
+        language = None
         metadata = opf_tree.find("opf:metadata", XML_NS)
         if metadata is not None:
             title_elem = metadata.find("dc:title", XML_NS)
             author_elem = metadata.find("dc:creator", XML_NS)
+            language_elem = metadata.find("dc:language", XML_NS)
             if title_elem is not None and title_elem.text:
                 title = title_elem.text.strip()
             if author_elem is not None and author_elem.text:
                 author = author_elem.text.strip()
+            if language_elem is not None and language_elem.text:
+                # Normalize to lowercase 2-letter code (e.g., 'en-US' -> 'en')
+                lang_code = language_elem.text.strip().lower()
+                language = lang_code.split('-')[0] if lang_code else None
 
-        return manifest, spine, title, author
+        return manifest, spine, title, author, language
 
     def _extract_chapters_from_toc(
         self,
@@ -1453,6 +1460,11 @@ class EbookReader:
     @property
     def author(self) -> str:
         return self.book.author if self.book else ""
+
+    @property
+    def language(self) -> Optional[str]:
+        """Get the language code from EPUB metadata (e.g., 'en', 'pt')."""
+        return self.book.language if self.book else None
 
     def get_chapters(self) -> List[Chapter]:
         return list(self.book.chapters) if self.book else []
