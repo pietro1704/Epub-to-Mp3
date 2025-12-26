@@ -6,9 +6,11 @@ from typing import Any, Iterable, List, Tuple
 
 logger = logging.getLogger(__name__)
 
-MIN_DUPLICATE_CHARS = 400
-_PREFIX_SLICE = 2000
-_LENGTH_TOLERANCE = 120
+# Conservative deduplication: only removes chapters with EXACT identical content
+# Prefix-based fuzzy matching is disabled to prevent false positives
+MIN_DUPLICATE_CHARS = 400  # Only check chapters with 400+ chars
+_PREFIX_SLICE = 2000  # Not used anymore
+_LENGTH_TOLERANCE = 5  # Not used anymore
 
 
 def _extract_text_payload(candidate: Any) -> str:
@@ -45,50 +47,26 @@ def deduplicate_chapters_by_content(
         payload = _extract_text_payload(chapter)
         normalized_len = len(payload)
 
+        # Skip deduplication for chapters below threshold
         if normalized_len < max(0, min_chars):
             deduplicated.append(chapter)
             continue
 
-        prefix = payload[:_PREFIX_SLICE]
-        mark_duplicate = False
-        duplicate_reason = ""
-
-        if prefix:
-            existing_len = seen_prefixes.get(prefix)
-            if existing_len is not None and abs(existing_len - normalized_len) <= _LENGTH_TOLERANCE:
-                mark_duplicate = True
-                duplicate_reason = f"similar prefix ({normalized_len} vs {existing_len} chars)"
-
-        digest = None
-        if not mark_duplicate:
-            digest = hashlib.sha1(payload.encode("utf-8", "ignore")).hexdigest()
-            if digest in seen_hashes:
-                mark_duplicate = True
-                duplicate_reason = "identical content hash"
-
-        if mark_duplicate:
+        # ONLY check for exact content hash duplicates (no prefix checking)
+        # This prevents false positives from similar but different chapters
+        digest = hashlib.sha1(payload.encode("utf-8", "ignore")).hexdigest()
+        if digest in seen_hashes:
+            # Exact duplicate found
             removed += 1
-            removed_details.append((chapter_name, duplicate_reason))
-            logger.info(f"Removing duplicate chapter '{chapter_name}': {duplicate_reason}")
+            removed_details.append((chapter_name, "identical content"))
+            # Silently skip - no logging to avoid noise
             continue
 
-        if digest is None:
-            digest = hashlib.sha1(payload.encode("utf-8", "ignore")).hexdigest()
+        # Not a duplicate - keep it
         seen_hashes.add(digest)
-        if prefix:
-            seen_prefixes[prefix] = normalized_len
         deduplicated.append(chapter)
 
-    # Log summary and warn if too many chapters were removed
-    if removed > 0:
-        logger.info(f"Deduplication: {removed}/{total_chapters} chapters removed as duplicates")
-        removal_rate = (removed / total_chapters) * 100 if total_chapters > 0 else 0
-        if removal_rate > 20:  # Warn if more than 20% were removed
-            logger.warning(
-                f"⚠️  HIGH REMOVAL RATE: {removal_rate:.1f}% of chapters were removed! "
-                f"This might indicate a problem. Removed chapters: {removed_details}"
-            )
-
+    # No logging - deduplication happens silently
     return deduplicated, removed
 
 
