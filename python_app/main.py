@@ -616,10 +616,24 @@ class ConverterApplication:
 
         text = str(getattr(chapter, "text", ""))
 
-        entries_with_titles = [entry for entry in toc_entries if entry[2]]
+        # Filter entries that have child_title (excluding None and 'None' string)
+        entries_with_titles = [entry for entry in toc_entries
+                               if entry[2] is not None and str(entry[2]).lower() != 'none']
         segments_map: Dict[str, str] = {}
 
-        if entries_with_titles:
+        # If we have multiple entries for the same file but only one has content (others are None),
+        # we should use division_label as the split key instead
+        if not entries_with_titles and len(toc_entries) > 1:
+            # Use division_label (entry[1]) as title for splitting
+            titles_for_split = [entry[1] for entry in toc_entries if entry[1]]
+            if titles_for_split:
+                segments = self._split_text_by_titles(text, titles_for_split)
+                for entry, segment in zip(toc_entries, segments):
+                    if segment and entry[1]:
+                        # Map by division_label since child_title is None
+                        segments_map[entry[1]] = segment
+
+        if entries_with_titles and not segments_map:
             titles = [entry[2] for entry in entries_with_titles]
             segments = self._split_text_by_titles(text, titles)
             for entry, segment in zip(entries_with_titles, segments):
@@ -643,7 +657,12 @@ class ConverterApplication:
             if child_title and not parent_title and not child_title.strip().startswith('§'):
                 parent_title = child_title.strip()
 
-            segment_text = segments_map.get(child_title) if child_title else text
+            # Try to get segment from map (check both child_title and division_label)
+            segment_text = None
+            if child_title:
+                segment_text = segments_map.get(child_title)
+            elif division_label:
+                segment_text = segments_map.get(division_label)
             if not segment_text:
                 segment_text = text
 
@@ -715,10 +734,21 @@ class ConverterApplication:
                 continue
 
             normalized = re.sub(r"\s+", " ", title.strip().lower())
-            idx = lowered.find(normalized, cursor)
 
-            if idx == -1:
-                idx = lowered.find(normalized)
+            # Headings appear at line start - look for title after newline or at text start
+            # Search in full text and find first match >= cursor to avoid ^ matching substring start
+            pattern = r'(^|\n)\s*' + re.escape(normalized) + r'\b'
+            idx = -1
+            for match in re.finditer(pattern, lowered):
+                # Calculate actual position (skip newline if present, then skip whitespace)
+                temp_idx = match.start() + (1 if match.group(1) == '\n' else 0)
+                while temp_idx < len(lowered) and lowered[temp_idx] in ' \t':
+                    temp_idx += 1
+
+                # Use first match that comes at or after cursor
+                if temp_idx >= cursor:
+                    idx = temp_idx
+                    break
 
             if idx == -1 and normalized.startswith('§'):
                 section_marker = normalized.split(' ', 1)[0]
