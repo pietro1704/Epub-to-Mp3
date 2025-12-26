@@ -1421,9 +1421,21 @@ async def process_conversion(job_id: str) -> None:
 
         selector_text = job.get("chapters")
         chapters = _prepare_chapters(reader, config, selector_text)
+
+        # Store original before deduplication for potential restoration
+        original_chapters = chapters.copy()
+
         chapters, duplicates_removed = deduplicate_chapters_by_content(chapters)
         if duplicates_removed:
             _append_event(job, f"🧹 Capítulo duplicado detectado: {duplicates_removed} removido(s)")
+
+        # Validate chapter count against TOC
+        expected_count = getattr(reader, '_toc_expected_chapters', 0)
+        if expected_count > 0 and len(chapters) != expected_count and duplicates_removed > 0:
+            if len(chapters) + duplicates_removed == expected_count:
+                _append_event(job, f"⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {len(chapters)}")
+                _append_event(job, f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s)")
+                chapters = original_chapters
         try:
             _enforce_chapter_limit(len(chapters))
         except HTTPException as limit_error:

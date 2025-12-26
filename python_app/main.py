@@ -19,7 +19,7 @@ import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import unquote
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 try:  # Optional dependency for shell tab completion
     import argcomplete  # type: ignore
@@ -598,7 +598,93 @@ class ConverterApplication:
                 )
             )
 
+        # Store expected chapter count from TOC for later validation
+        if hasattr(reader, '_toc_expected_chapters'):
+            delattr(reader, '_toc_expected_chapters')
+        expected_count = self._count_toc_chapters(reader)
+        if expected_count > 0:
+            reader._toc_expected_chapters = expected_count
+
         return structure_items
+
+    def _count_toc_chapters(self, reader: EbookReader) -> int:
+        """Count expected chapters from TOC (top-level divisions)"""
+        get_toc = getattr(reader, 'get_toc', None)
+        if not callable(get_toc):
+            return 0
+
+        try:
+            toc_entries = list(get_toc() or [])
+        except Exception:
+            return 0
+
+        # Count only top-level entries (divisions)
+        count = 0
+        def walk(entries, is_top_level=True):
+            nonlocal count
+            for entry in entries:
+                if is_top_level:
+                    count += 1
+                # Recursively count children
+                if hasattr(entry, 'children') and entry.children:
+                    walk(entry.children, is_top_level=False)
+
+        walk(toc_entries, is_top_level=True)
+        return count
+
+    def _validate_chapter_count(
+        self,
+        chapters: List[Any],
+        reader: EbookReader,
+        duplicates_removed: int = 0
+    ) -> Tuple[List[Any], bool]:
+        """Validate chapter count against TOC and auto-correct if needed.
+
+        Returns:
+            Tuple of (chapters_list, was_corrected)
+        """
+        expected_count = getattr(reader, '_toc_expected_chapters', 0)
+
+        # Skip validation if no TOC info or too few chapters in TOC
+        if expected_count == 0 or expected_count < 3:
+            return chapters, False
+
+        actual_count = len(chapters)
+
+        # If counts match or differ by 1 (common due to cover/title pages), everything is good
+        diff = abs(actual_count - expected_count)
+        if diff == 0:
+            return chapters, False
+
+        if diff == 1:
+            # Small difference (likely cover page, title page, etc.) - just warn
+            print(f"\nℹ️  TOC: {expected_count} capítulos | Detectados: {actual_count} capítulos")
+            if actual_count < expected_count:
+                print(f"💡 Diferença: {diff} (provavelmente folha de rosto ou capa ignorada)")
+            return chapters, False
+
+        # Significant count mismatch - attempt auto-correction
+        print(f"\n⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {actual_count}")
+
+        # If we removed duplicates and that caused the mismatch, restore original
+        if duplicates_removed > 0 and (actual_count + duplicates_removed) == expected_count:
+            print(f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata")
+            print(f"💡 Motivo: deduplicação causou perda de capítulos válidos")
+
+            # Return the chapters WITHOUT deduplication
+            # Note: we need to re-generate or get the original list
+            # For now, we'll signal that deduplication should be skipped
+            return chapters, True
+
+        # If actual > expected, deduplication might help
+        if actual_count > expected_count:
+            print(f"💡 Detectados {actual_count - expected_count} capítulos a mais que o esperado")
+            print(f"✓ Mantendo resultado atual (possível subcapítulos no TOC)")
+        else:
+            print(f"⚠️  Faltam {expected_count - actual_count} capítulos!")
+            print(f"💡 Verifique se o EPUB tem estrutura complexa ou TOC incorreto")
+
+        return chapters, False
 
     def _create_items_from_toc_entries(
         self,
@@ -1733,9 +1819,23 @@ class ConverterApplication:
         preview_config.footnote_context_words = self.FOOTNOTE_CONTEXT_WORDS
 
         structure_items = self._apply_text_transforms(structure_items, preview_config, reader)
+
+        # Store original before deduplication for potential restoration
+        original_items = structure_items.copy()
+
         structure_items, duplicates_removed = deduplicate_chapters_by_content(structure_items)
         if duplicates_removed:
             print(f"🧹 {duplicates_removed} capítulo(s) duplicado(s) ocultados")
+
+        # Validate chapter count against TOC
+        structure_items, was_corrected = self._validate_chapter_count(
+            structure_items, reader, duplicates_removed
+        )
+
+        # If correction was needed, restore original without deduplication
+        if was_corrected:
+            print(f"✅ Restaurando {duplicates_removed} capítulo(s) - usando versão sem deduplicação\n")
+            structure_items = original_items
 
         print(f"{self.localization.t('chapters_label')}: {len(structure_items)}")
 

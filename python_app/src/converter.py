@@ -774,9 +774,22 @@ class AudioConverter:
         # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
         chapters = list(reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or [])
+
+        # Store original before deduplication for potential restoration
+        original_chapters = chapters.copy()
+
         chapters, duplicates_removed = deduplicate_chapters_by_content(chapters)
         if duplicates_removed:
             print(f"🧹 Capítulos duplicados removidos automaticamente: {duplicates_removed}")
+
+        # Validate chapter count against TOC (if available from CLI flow)
+        expected_count = getattr(reader, '_toc_expected_chapters', 0)
+        if expected_count > 0 and len(chapters) != expected_count and duplicates_removed > 0:
+            if len(chapters) + duplicates_removed == expected_count:
+                print(f"\n⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {len(chapters)}")
+                print(f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata")
+                print(f"💡 Motivo: deduplicação causou perda de capítulos válidos\n")
+                chapters = original_chapters
         if getattr(config, "priority_selectors", None):
             chapters = self._prioritize_chapters(chapters, config.priority_selectors)
         total_chapters = len(chapters)
