@@ -673,7 +673,7 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
 
 def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, tuple[ConversionConfig, object]]:
     pool: dict[str, tuple[ConversionConfig, object]] = {}
-    for name in ("coqui", "edge", "piper"):
+    for name in ("coqui", "edge"):
         try:
             candidate = _clone_config_for_engine(config, name)
             engine_instance = tts_factory.create_engine(candidate)
@@ -694,8 +694,9 @@ def _pick_auto_engine(
         if candidate in pool and candidate not in order:
             order.append(candidate)
 
-    # Ordem do mais rápido para mais lento: edge > piper > coqui
-    # Testado com 3053 chars: edge=21s (144 chars/s), piper=27s (112 chars/s), coqui=113s (26 chars/s)
+    # Ordem do mais rápido para mais lento: edge > coqui
+    # Testado com 3053 chars: edge=21s (144 chars/s), coqui=113s (26 chars/s)
+    # Piper removido do modo automático por qualidade inferior
     order: list[str] = []
     if telemetry_speeds:
         ranked = sorted(
@@ -707,7 +708,6 @@ def _pick_auto_engine(
             append(order, name)
     else:
         append(order, "edge")
-        append(order, "piper")
         append(order, "coqui")
 
     for name in pool.keys():

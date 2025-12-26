@@ -1895,7 +1895,7 @@ class AudioConverter:
 
     def _prepare_auto_engines(self, base_config: ConversionConfig) -> Dict[str, tuple[ConversionConfig, object]]:
         pool: Dict[str, tuple[ConversionConfig, object]] = {}
-        for name in ("coqui", "edge", "piper"):
+        for name in ("coqui", "edge"):
             try:
                 cloned = replace(base_config, engine=name, voice=None, model_path=None)
                 cloned.languages = list(base_config.languages)
@@ -1951,8 +1951,7 @@ class AudioConverter:
 
             order = []
             append(order, "edge")   # Fastest when healthy
-            append(order, "piper")  # Good middle ground
-            append(order, "coqui")  # Most reliable but slowest
+            append(order, "coqui")  # Most reliable but slower (piper removed for quality)
 
         if "edge" in order:
             order = ["edge"] + [name for name in order if name != "edge"]

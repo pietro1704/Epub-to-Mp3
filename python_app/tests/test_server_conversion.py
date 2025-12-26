@@ -277,11 +277,10 @@ def test_pick_auto_engine_prefers_fastest_telemetry():
     pool = {
         "edge": (ConversionConfig(engine="edge"), SimpleNamespace()),
         "coqui": (ConversionConfig(engine="coqui"), SimpleNamespace()),
-        "piper": (ConversionConfig(engine="piper"), SimpleNamespace()),
     }
-    telemetry_speeds = {"piper": 180.0, "edge": 140.0, "coqui": 50.0}
+    telemetry_speeds = {"edge": 180.0, "coqui": 50.0}
     selected, order = server._pick_auto_engine(12_000, 600, pool, telemetry_speeds=telemetry_speeds)
-    assert order[0] == "piper"
+    assert order[0] == "edge"
     assert selected == order[0]
 
 
