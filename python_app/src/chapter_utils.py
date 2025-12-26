@@ -14,14 +14,26 @@ _LENGTH_TOLERANCE = 5  # Not used anymore
 
 
 def _extract_text_payload(candidate: Any) -> str:
-    """Return a normalized text payload for any chapter-like object."""
-    for attr in ("speech_text", "text_override", "text"):
+    """Return a normalized text payload for any chapter-like object.
+
+    Prefers text_override > text > speech_text to avoid false positives
+    from shared speech_text between parent/child chapters.
+    """
+    # First try text_override and text (more specific)
+    for attr in ("text_override", "text"):
         value = getattr(candidate, attr, None)
         if value:
             return " ".join(str(value).split())
+
+    # Fall back to speech_text only if nothing else available
+    value = getattr(candidate, "speech_text", None)
+    if value:
+        return " ".join(str(value).split())
+
+    # Try nested chapter object
     chapter = getattr(candidate, "chapter", None)
     if chapter is not None:
-        for attr in ("speech_text", "text"):
+        for attr in ("text_override", "text", "speech_text"):
             value = getattr(chapter, attr, None)
             if value:
                 return " ".join(str(value).split())
