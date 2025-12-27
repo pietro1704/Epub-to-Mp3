@@ -1742,31 +1742,32 @@ select {
   color: var(--text-secondary);
 }
 
-.chapter-progress__download {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.25rem;
-  padding: 0.25rem 0.6rem;
-  border-radius: 0.35rem;
-  background: rgba(59, 130, 246, 0.12);
-  color: var(--accent-primary);
-  font-size: 0.75rem;
-  font-weight: 500;
-  text-decoration: none;
+.chapter-progress__audio {
+  margin-top: 0.35rem;
+  width: 100%;
+  max-width: 280px;
+  height: 32px;
+  border-radius: 0.5rem;
+  outline: none;
   transition: all 0.2s ease;
+}
+
+.chapter-progress__audio::-webkit-media-controls-panel {
+  background: rgba(59, 130, 246, 0.12);
   border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 0.5rem;
 }
 
-.chapter-progress__download:hover {
-  background: rgba(59, 130, 246, 0.22);
-  border-color: rgba(59, 130, 246, 0.45);
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.2);
+.chapter-progress__audio::-webkit-media-controls-play-button,
+.chapter-progress__audio::-webkit-media-controls-current-time-display,
+.chapter-progress__audio::-webkit-media-controls-time-remaining-display {
+  color: var(--text-primary);
 }
 
-.chapter-progress__download:active {
-  transform: translateY(0);
+.chapter-progress__audio:hover::-webkit-media-controls-panel {
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 0 2px 6px rgba(59, 130, 246, 0.15);
 }
 
 .status-chip {

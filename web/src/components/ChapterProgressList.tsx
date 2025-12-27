@@ -98,15 +98,15 @@ export default function ChapterProgressList({ entries }: ChapterProgressListProp
                         : ''}
                     </span>
                     {entry.downloadUrl && (
-                      <a
-                        href={entry.downloadUrl}
-                        download
-                        className="chapter-progress__download"
-                        title={locale === 'pt' ? 'Baixar capítulo' : 'Download chapter'}
+                      <audio
+                        controls
+                        preload="metadata"
+                        className="chapter-progress__audio"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        💾 {locale === 'pt' ? 'Download' : 'Download'}
-                      </a>
+                        <source src={entry.downloadUrl} type="audio/mpeg" />
+                        {locale === 'pt' ? 'Seu navegador não suporta áudio' : 'Your browser does not support audio'}
+                      </audio>
                     )}
                   </>
                 )}
