@@ -3,17 +3,16 @@
 Unit tests for simplified utils module
 """
 
-import unittest
-import tempfile
-import asyncio
 import os
-from pathlib import Path
-from unittest.mock import patch, Mock, AsyncMock
-
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import AsyncMock, patch
 
-from src.utils import FileManager, AudioProcessor, TextValidator
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+
+from src.utils import AudioProcessor, FileManager, TextValidator
 
 
 class TestFileManager(unittest.TestCase):
@@ -52,16 +51,16 @@ class TestFileManager(unittest.TestCase):
 
     def test_sanitize_filename_only_invalid(self):
         """Test sanitizing filename with only invalid characters"""
-        result = FileManager.sanitize_filename("<>:\"/\\|?*")
+        result = FileManager.sanitize_filename('<>:"/\\|?*')
         self.assertEqual(result, "_________")
 
     def test_ensure_directory_new(self):
         """Test ensuring new directory exists"""
         with tempfile.TemporaryDirectory() as temp_dir:
             new_dir = Path(temp_dir) / "new_directory"
-            
+
             result = FileManager.ensure_directory(new_dir)
-            
+
             self.assertEqual(result, new_dir)
             self.assertTrue(new_dir.exists())
             self.assertTrue(new_dir.is_dir())
@@ -70,9 +69,9 @@ class TestFileManager(unittest.TestCase):
         """Test ensuring existing directory"""
         with tempfile.TemporaryDirectory() as temp_dir:
             existing_dir = Path(temp_dir)
-            
+
             result = FileManager.ensure_directory(existing_dir)
-            
+
             self.assertEqual(result, existing_dir)
             self.assertTrue(existing_dir.exists())
 
@@ -80,9 +79,9 @@ class TestFileManager(unittest.TestCase):
         """Test ensuring nested directory creation"""
         with tempfile.TemporaryDirectory() as temp_dir:
             nested_dir = Path(temp_dir) / "level1" / "level2" / "level3"
-            
+
             result = FileManager.ensure_directory(nested_dir)
-            
+
             self.assertEqual(result, nested_dir)
             self.assertTrue(nested_dir.exists())
 
@@ -90,18 +89,18 @@ class TestFileManager(unittest.TestCase):
         """Test cleaning up temporary files"""
         with tempfile.TemporaryDirectory() as temp_dir:
             temp_path = Path(temp_dir)
-            
+
             # Create some temp files
             temp1 = temp_path / "file1.tmp"
             temp2 = temp_path / "file2.tmp"
             regular_file = temp_path / "regular.txt"
-            
+
             temp1.write_text("temp1")
             temp2.write_text("temp2")
             regular_file.write_text("regular")
-            
+
             FileManager.cleanup_temp_files(temp_path, "*.tmp")
-            
+
             # Temp files should be gone, regular file should remain
             self.assertFalse(temp1.exists())
             self.assertFalse(temp2.exists())
@@ -110,7 +109,7 @@ class TestFileManager(unittest.TestCase):
     def test_cleanup_temp_files_nonexistent_directory(self):
         """Test cleaning up temp files in non-existent directory"""
         nonexistent = Path("/nonexistent/directory")
-        
+
         # Should not raise exception
         FileManager.cleanup_temp_files(nonexistent)
 
@@ -125,6 +124,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         """Clean up test fixtures"""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     async def test_convert_to_mp3_success(self):
@@ -136,7 +136,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         input_file.write_text("dummy wav content")
 
         # Mock ffmpeg subprocess
-        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock successful ffmpeg process
             mock_process = AsyncMock()
             mock_process.wait.return_value = None
@@ -155,41 +155,41 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         """Test MP3 conversion with non-existent input file"""
         input_file = Path(self.temp_dir) / "nonexistent.wav"
         output_file = Path(self.temp_dir) / "output.mp3"
-        
+
         result = await AudioProcessor.convert_to_mp3(input_file, output_file)
-        
+
         self.assertIsNone(result)
 
     async def test_convert_to_mp3_ffmpeg_failure(self):
         """Test MP3 conversion with ffmpeg failure"""
         input_file = Path(self.temp_dir) / "input.wav"
         output_file = Path(self.temp_dir) / "output.mp3"
-        
+
         input_file.write_text("dummy wav content")
-        
-        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
+
+        with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock failed ffmpeg process
             mock_process = AsyncMock()
             mock_process.wait.return_value = None
             mock_process.returncode = 1  # Failure
             mock_subprocess.return_value = mock_process
-            
+
             result = await AudioProcessor.convert_to_mp3(input_file, output_file)
-            
+
             self.assertIsNone(result)
 
     async def test_convert_to_mp3_exception(self):
         """Test MP3 conversion with exception"""
         input_file = Path(self.temp_dir) / "input.wav"
         output_file = Path(self.temp_dir) / "output.mp3"
-        
+
         input_file.write_text("dummy wav content")
-        
-        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
+
+        with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
             mock_subprocess.side_effect = Exception("Test error")
-            
+
             result = await AudioProcessor.convert_to_mp3(input_file, output_file)
-            
+
             self.assertIsNone(result)
 
     async def test_convert_to_mp3_custom_bitrate(self):
@@ -200,7 +200,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         input_file.write_text("dummy wav content")
 
         # Mock ffmpeg subprocess
-        with patch('src.utils.asyncio.create_subprocess_exec') as mock_subprocess:
+        with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
             mock_process = AsyncMock()
             mock_process.wait.return_value = None
             mock_process.returncode = 0
@@ -220,7 +220,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         """Test validating valid audio file"""
         audio_file = Path(self.temp_dir) / "audio.mp3"
         audio_file.write_text("A" * 2000)  # 2KB file
-        
+
         result = AudioProcessor.validate_audio_file(audio_file)
         self.assertTrue(result)
 
@@ -228,14 +228,14 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         """Test validating audio file that's too small"""
         audio_file = Path(self.temp_dir) / "audio.mp3"
         audio_file.write_text("small")  # Very small file
-        
+
         result = AudioProcessor.validate_audio_file(audio_file)
         self.assertFalse(result)
 
     def test_validate_audio_file_nonexistent(self):
         """Test validating non-existent audio file"""
         audio_file = Path(self.temp_dir) / "nonexistent.mp3"
-        
+
         result = AudioProcessor.validate_audio_file(audio_file)
         self.assertFalse(result)
 
@@ -272,10 +272,10 @@ class TestTextValidator(unittest.TestCase):
     def test_is_valid_text_custom_min_length(self):
         """Test validating text with custom minimum length"""
         text = "Short"
-        
+
         result_default = TextValidator.is_valid_text(text)
         self.assertFalse(result_default)  # Default min_length=10
-        
+
         result_custom = TextValidator.is_valid_text(text, min_length=3)
         self.assertTrue(result_custom)
 
@@ -283,7 +283,7 @@ class TestTextValidator(unittest.TestCase):
         """Test estimating duration for normal text"""
         text = "This is a test text with exactly ten words in total."
         duration = TextValidator.estimate_duration(text, words_per_minute=150)
-        
+
         # 11 words / 150 wpm * 60 = 4.4 seconds
         self.assertAlmostEqual(duration, 4.4, places=1)
 
@@ -302,10 +302,10 @@ class TestTextValidator(unittest.TestCase):
         """Test estimating duration with custom words per minute"""
         text = "One two three four five"  # 5 words
         duration = TextValidator.estimate_duration(text, words_per_minute=300)
-        
+
         # 5 words / 300 wpm * 60 = 1 second
         self.assertAlmostEqual(duration, 1.0, places=1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

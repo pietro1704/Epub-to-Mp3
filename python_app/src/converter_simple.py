@@ -3,22 +3,22 @@
 Simplified converter without checkpoint system - just checks if MP3 exists
 """
 
-import asyncio
-from pathlib import Path
-from typing import Optional, List, Union, Any, Dict
 from dataclasses import dataclass
+from pathlib import Path
+from typing import List, Optional
 
 from .config import ConversionConfig
 from .ebook_reader import EbookReader
-from .tts.factory import TTSFactory
-from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
-from .progress import ProgressTracker
 from .i18n import Localization, get_localization
+from .progress import ProgressTracker
+from .tts.factory import TTSFactory
+from .utils import AudioProcessor, FileManager, resolve_cache_root
 
 
 @dataclass
 class ConversionResult:
     """Result of audio conversion"""
+
     success: bool
     output_paths: List[Path]
     total_chapters: int
@@ -40,13 +40,15 @@ class SimpleAudioConverter:
 
     async def convert(self, config: ConversionConfig, reader: EbookReader) -> ConversionResult:
         """Convert ebook to audiobook with simple MP3 cache check"""
-        self.verbose = getattr(config, 'verbose', False)
+        self.verbose = getattr(config, "verbose", False)
 
         if self.verbose:
             print("🔍 [VERBOSE] SimpleAudioConverter.convert() iniciado")
 
         output_dir = self._setup_output_directory(config)
-        chapters = list(reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or [])
+        chapters = list(
+            reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or []
+        )
         total_chapters = len(chapters)
 
         if self.verbose:
@@ -72,7 +74,7 @@ class SimpleAudioConverter:
                 output_path = output_dir / output_filename
 
                 # Simple cache check: skip if MP3 already exists
-                if output_path.exists() and not getattr(config, 'force_reprocess', False):
+                if output_path.exists() and not getattr(config, "force_reprocess", False):
                     if self.verbose:
                         print(f"✅ Capítulo {chapter_num} já existe: {output_path}")
                     self.progress.tick("✅ Já existe (cache)")
@@ -115,7 +117,7 @@ class SimpleAudioConverter:
                         # Simple duration estimation based on file size
                         size_mb = path.stat().st_size / (1024 * 1024)
                         total_duration += size_mb * 60  # Rough estimate: 1MB ≈ 1 minute
-                    except:
+                    except OSError:
                         pass
 
             success = completed_count > 0
@@ -125,7 +127,7 @@ class SimpleAudioConverter:
                 output_paths=output_paths,
                 total_chapters=total_chapters,
                 completed_chapters=completed_count,
-                total_duration=total_duration
+                total_duration=total_duration,
             )
 
         except Exception as e:
@@ -134,7 +136,7 @@ class SimpleAudioConverter:
                 output_paths=[],
                 total_chapters=total_chapters,
                 completed_chapters=0,
-                error_message=str(e)
+                error_message=str(e),
             )
         finally:
             pass  # Progress tracker cleanup not needed

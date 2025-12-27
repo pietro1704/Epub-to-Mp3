@@ -3,14 +3,14 @@
 Hugging Face Space: EPUB to MP3 Converter
 Serves React frontend + FastAPI backend in one app
 """
-import sys
+
 import logging
+import sys
 from pathlib import Path
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -20,9 +20,11 @@ sys.path.insert(0, str(Path(__file__).parent / "python_app"))
 logger.info("Starting HF app initialization...")
 
 try:
-    from fastapi.staticfiles import StaticFiles
     from fastapi.responses import FileResponse
+    from fastapi.staticfiles import StaticFiles
+
     from python_app.server import app as api_app
+
     logger.info("Successfully imported server modules")
 except Exception as e:
     logger.error(f"Failed to import modules: {e}", exc_info=True)
@@ -57,6 +59,7 @@ if web_dist.exists():
         # Don't intercept API routes
         if full_path.startswith("api/"):
             from fastapi import HTTPException
+
             raise HTTPException(status_code=404, detail="Not found")
         return FileResponse(str(web_dist / "index.html"))
 
@@ -68,6 +71,7 @@ else:
     async def root():
         return {"error": "Frontend not built. Run: cd web && npm run build"}
 
+
 @app.on_event("startup")
 async def startup_event():
     logger.info("=" * 60)
@@ -78,9 +82,12 @@ async def startup_event():
         logger.info(f"Files in web/dist: {list(web_dist.iterdir())[:10]}")
     logger.info("=" * 60)
 
+
 if __name__ == "__main__":
-    import uvicorn
     import os
+
+    import uvicorn
+
     port = int(os.getenv("PORT", 7860))
     logger.info(f"Starting uvicorn on port {port}")
     uvicorn.run(app, host="0.0.0.0", port=port, log_level="info")

@@ -6,10 +6,9 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Callable, Dict, Iterable, List, Optional
 
-from .paths import OUTPUT_DIR, CACHE_DIR
-
+from .paths import CACHE_DIR, OUTPUT_DIR
 
 SUPPORTED_FORMATS = [".epub", ".pdf"]
 AUDIO_FORMATS = ["mp3", "wav", "ogg"]
@@ -44,12 +43,17 @@ class ConversionConfig:
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
+    log_callback: Optional[Callable[[str], None]] = None  # Callback for verbose logging
     edge_auto_offline_seconds: int = 0  # disabled: Edge handles large chapters via chunking
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
-    edge_chunk_chars: int = 20000  # character budget per Edge chunk before splitting (optimized: 20K)
+    edge_chunk_chars: int = 8000  # Research-based: 8k safe (3k-8k recommended, >15k = incomplete)
     edge_max_segment_seconds: int = 75  # hard limit for each Edge chunk duration (optimized: 75s)
     edge_aggressive_mode: bool = False
     edge_enable_parallel: bool = True  # enable parallel segment processing (5-6x faster)
+    coqui_chunk_chars: Optional[int] = None  # override Coqui chunk size when auto-tuning
+    coqui_max_workers: Optional[int] = None  # override Coqui worker pool size
+    coqui_safe_mode: Optional[bool] = None  # force safe mode for Coqui (limits parallelism)
+    piper_max_procs: Optional[int] = None  # override Piper concurrent process limit
     speak_formatting_cues: bool = True
     formatting_locale: str = "pt"
 
@@ -81,6 +85,10 @@ class ConversionConfig:
             "edge_chunk_chars": self.edge_chunk_chars,
             "edge_max_segment_seconds": self.edge_max_segment_seconds,
             "edge_enable_parallel": self.edge_enable_parallel,
+            "coqui_chunk_chars": self.coqui_chunk_chars,
+            "coqui_max_workers": self.coqui_max_workers,
+            "coqui_safe_mode": self.coqui_safe_mode,
+            "piper_max_procs": self.piper_max_procs,
         }
         if self.extra:
             data["extra"] = dict(self.extra)
@@ -94,33 +102,141 @@ class VoiceConfigProvider:
 
     def __init__(self) -> None:
         self._edge_voice_catalog: List[Dict[str, object]] = [
-            {"id": "pt-BR-ThalitaMultilingualNeural", "label": "Thalita – pt-BR (multilingual)", "multilingual": True, "language": "pt-BR"},
-            {"id": "pt-BR-FranciscaNeural", "label": "Francisca – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-AntonioNeural", "label": "Antonio – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-BrendaNeural", "label": "Brenda – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-ElzaNeural", "label": "Elza – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-GiovannaNeural", "label": "Giovanna – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-LeilaNeural", "label": "Leila – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-LeticiaNeural", "label": "Leticia – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-ManuelaNeural", "label": "Manuela – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-YaraNeural", "label": "Yara – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-DonatoNeural", "label": "Donato – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-FabioNeural", "label": "Fabio – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-HumbertoNeural", "label": "Humberto – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-JulioNeural", "label": "Julio – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-NicolauNeural", "label": "Nicolau – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "pt-BR-ValerioNeural", "label": "Valerio – pt-BR", "multilingual": False, "language": "pt-BR"},
-            {"id": "en-US-JennyNeural", "label": "Jenny – en-US", "multilingual": False, "language": "en-US"},
-            {"id": "es-ES-ElviraNeural", "label": "Elvira – es-ES", "multilingual": False, "language": "es-ES"},
+            {
+                "id": "pt-BR-ThalitaMultilingualNeural",
+                "label": "Thalita – pt-BR (multilingual)",
+                "multilingual": True,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-FranciscaNeural",
+                "label": "Francisca – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-AntonioNeural",
+                "label": "Antonio – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-BrendaNeural",
+                "label": "Brenda – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-ElzaNeural",
+                "label": "Elza – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-GiovannaNeural",
+                "label": "Giovanna – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-LeilaNeural",
+                "label": "Leila – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-LeticiaNeural",
+                "label": "Leticia – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-ManuelaNeural",
+                "label": "Manuela – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-YaraNeural",
+                "label": "Yara – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-DonatoNeural",
+                "label": "Donato – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-FabioNeural",
+                "label": "Fabio – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-HumbertoNeural",
+                "label": "Humberto – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-JulioNeural",
+                "label": "Julio – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-NicolauNeural",
+                "label": "Nicolau – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "pt-BR-ValerioNeural",
+                "label": "Valerio – pt-BR",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "en-US-JennyNeural",
+                "label": "Jenny – en-US",
+                "multilingual": False,
+                "language": "en-US",
+            },
+            {
+                "id": "es-ES-ElviraNeural",
+                "label": "Elvira – es-ES",
+                "multilingual": False,
+                "language": "es-ES",
+            },
         ]
         self._edge_voices = {
             str(index): (entry["id"], entry["label"])
             for index, entry in enumerate(self._edge_voice_catalog, start=1)
         }
         self._coqui_model_catalog: List[Dict[str, object]] = [
-            {"id": "tts_models/multilingual/multi-dataset/xtts_v2", "label": "XTTS v2", "description": "Modelo multilingue universal", "multilingual": True, "low_resource": False},
-            {"id": "tts_models/pt/cv/vits", "label": "VITS pt-BR", "description": "Modelo otimizado para português", "multilingual": False, "low_resource": True},
-            {"id": "tts_models/multilingual/multi-dataset/xtts_v1", "label": "XTTS v1", "description": "Modelo compatível com GPU antiga", "multilingual": True, "low_resource": False},
+            {
+                "id": "tts_models/multilingual/multi-dataset/xtts_v2",
+                "label": "XTTS v2",
+                "description": "Modelo multilingue universal",
+                "multilingual": True,
+                "low_resource": False,
+            },
+            {
+                "id": "tts_models/pt/cv/vits",
+                "label": "VITS pt-BR",
+                "description": "Modelo otimizado para português",
+                "multilingual": False,
+                "low_resource": True,
+            },
+            {
+                "id": "tts_models/multilingual/multi-dataset/xtts_v1",
+                "label": "XTTS v1",
+                "description": "Modelo compatível com GPU antiga",
+                "multilingual": True,
+                "low_resource": False,
+            },
         ]
         self._coqui_models = {
             str(index): (
@@ -148,14 +264,44 @@ class VoiceConfigProvider:
             "en": "en_US",
         }
         self._piper_model_catalog: List[Dict[str, object]] = [
-            {"id": "pt_BR-faber-medium.onnx", "label": "Faber medium (pt-BR)", "language": "pt-BR", "multilingual": False},
-            {"id": "pt_BR-edresson-low.onnx", "label": "Edresson low (pt-BR)", "language": "pt-BR", "multilingual": False},
-            {"id": "en_US-lessac-medium.onnx", "label": "Lessac medium (en-US)", "language": "en-US", "multilingual": False},
+            {
+                "id": "pt_BR-faber-medium.onnx",
+                "label": "Faber medium (pt-BR)",
+                "language": "pt-BR",
+                "multilingual": False,
+            },
+            {
+                "id": "pt_BR-edresson-low.onnx",
+                "label": "Edresson low (pt-BR)",
+                "language": "pt-BR",
+                "multilingual": False,
+            },
+            {
+                "id": "en_US-lessac-medium.onnx",
+                "label": "Lessac medium (en-US)",
+                "language": "en-US",
+                "multilingual": False,
+            },
         ]
         self._auto_voice_catalog = [
-            {"id": "pt-BR-ThalitaMultilingualNeural", "label": "Edge Thalita (auto)", "multilingual": True, "language": "pt-BR"},
-            {"id": "tts_models/pt/cv/vits", "label": "Coqui VITS (auto)", "multilingual": False, "language": "pt-BR"},
-            {"id": "tts_models/multilingual/multi-dataset/xtts_v2", "label": "XTTS v2 (auto)", "multilingual": True, "language": "multi"},
+            {
+                "id": "pt-BR-ThalitaMultilingualNeural",
+                "label": "Edge Thalita (auto)",
+                "multilingual": True,
+                "language": "pt-BR",
+            },
+            {
+                "id": "tts_models/pt/cv/vits",
+                "label": "Coqui VITS (auto)",
+                "multilingual": False,
+                "language": "pt-BR",
+            },
+            {
+                "id": "tts_models/multilingual/multi-dataset/xtts_v2",
+                "label": "XTTS v2 (auto)",
+                "multilingual": True,
+                "language": "multi",
+            },
         ]
 
     @property
@@ -171,6 +317,7 @@ class VoiceConfigProvider:
         Return curated voice/model suggestions grouped by engine.
         Structure is simple so the frontend can show hints dynamically.
         """
+
         def clone(entries: List[Dict[str, object]]) -> List[Dict[str, object]]:
             return [
                 {
@@ -214,7 +361,10 @@ class VoiceConfigProvider:
         python_root = Path(__file__).resolve().parents[1]
         candidate_dirs.append(python_root / "models")
 
-        directory = next((path for path in dict.fromkeys(candidate_dirs) if path.exists() and path.is_dir()), None)
+        directory = next(
+            (path for path in dict.fromkeys(candidate_dirs) if path.exists() and path.is_dir()),
+            None,
+        )
         if directory is None:
             return {}
 
@@ -232,7 +382,7 @@ class VoiceConfigProvider:
         """Return a sensible default voice/model for the given engine."""
 
         engine = (engine or "").lower()
-        language = (primary_language or "").split('-', 1)[0].lower() or None
+        language = (primary_language or "").split("-", 1)[0].lower() or None
 
         if engine == "edge":
             return self._edge_voices.get("1", (None,))[0]
@@ -257,7 +407,8 @@ class VoiceConfigProvider:
 
         prefix = self._piper_language_map.get(code, "")
         candidates = [
-            entry for name, entry in discovered.items()
+            entry
+            for name, entry in discovered.items()
             if prefix and str(name).lower().startswith(prefix.lower())
         ]
         if not candidates:
@@ -278,12 +429,12 @@ class VoiceConfigProvider:
     ) -> Dict[str, str]:
         engine = (engine or "").lower()
         mapping: Dict[str, str] = {}
-        primary_code = (primary_language or "").split('-', 1)[0]
+        primary_code = (primary_language or "").split("-", 1)[0]
         if not primary_code and fallback_voice:
             primary_code = (languages[0] if languages else "") or ""
         valid_primary = None
         for language in languages:
-            code = (language or "").split('-', 1)[0]
+            code = (language or "").split("-", 1)[0]
             if not code:
                 continue
             if valid_primary is None:
@@ -295,11 +446,19 @@ class VoiceConfigProvider:
                 if voice:
                     mapping[code] = voice
             elif engine == "coqui":
-                voice = self._coqui_language_map.get(code) or fallback_voice or self._coqui_default_voice
+                voice = (
+                    self._coqui_language_map.get(code)
+                    or fallback_voice
+                    or self._coqui_default_voice
+                )
                 if voice:
                     mapping[code] = voice
             elif engine == "auto":
-                voice = self._coqui_language_map.get(code) or self._edge_language_map.get(code) or fallback_voice
+                voice = (
+                    self._coqui_language_map.get(code)
+                    or self._edge_language_map.get(code)
+                    or fallback_voice
+                )
                 if voice:
                     mapping[code] = voice
             elif engine == "piper":
@@ -365,8 +524,14 @@ class AppConfig:
         language_voices = kwargs.pop("language_voices", None) or {}
         priority_selectors = kwargs.pop("priority_selectors", None) or []
         speak_formatting_cues = bool(kwargs.pop("speak_formatting_cues", True))
-        formatting_locale_raw = kwargs.pop("formatting_locale", None) or ConversionConfig.formatting_locale
-        formatting_locale = str(formatting_locale_raw or ConversionConfig.formatting_locale).split("-", 1)[0].lower()
+        formatting_locale_raw = (
+            kwargs.pop("formatting_locale", None) or ConversionConfig.formatting_locale
+        )
+        formatting_locale = (
+            str(formatting_locale_raw or ConversionConfig.formatting_locale)
+            .split("-", 1)[0]
+            .lower()
+        )
         if formatting_locale not in {"pt", "en"}:
             formatting_locale = "en"
 
@@ -381,6 +546,7 @@ class AppConfig:
         # Extract new parameters
         use_simple_converter = bool(kwargs.pop("use_simple_converter", False))
         verbose = bool(kwargs.pop("verbose", False))
+
         def _safe_int(env_value: Optional[str], default: int) -> int:
             try:
                 parsed = int(env_value) if env_value is not None else default
@@ -390,11 +556,15 @@ class AppConfig:
 
         edge_auto_offline_seconds = kwargs.pop(
             "edge_auto_offline_seconds",
-            _safe_int(os.getenv("EDGE_AUTO_OFFLINE_SECONDS"), ConversionConfig.edge_auto_offline_seconds),
+            _safe_int(
+                os.getenv("EDGE_AUTO_OFFLINE_SECONDS"), ConversionConfig.edge_auto_offline_seconds
+            ),
         )
         edge_auto_offline_chars = kwargs.pop(
             "edge_auto_offline_chars",
-            _safe_int(os.getenv("EDGE_AUTO_OFFLINE_CHARS"), ConversionConfig.edge_auto_offline_chars),
+            _safe_int(
+                os.getenv("EDGE_AUTO_OFFLINE_CHARS"), ConversionConfig.edge_auto_offline_chars
+            ),
         )
         edge_chunk_chars = kwargs.pop(
             "edge_chunk_chars",
@@ -402,12 +572,18 @@ class AppConfig:
         )
         edge_max_segment_seconds = kwargs.pop(
             "edge_max_segment_seconds",
-            _safe_int(os.getenv("EDGE_MAX_SEGMENT_SECONDS"), ConversionConfig.edge_max_segment_seconds),
+            _safe_int(
+                os.getenv("EDGE_MAX_SEGMENT_SECONDS"), ConversionConfig.edge_max_segment_seconds
+            ),
         )
         edge_enable_parallel = kwargs.pop(
             "edge_enable_parallel",
             os.getenv("EDGE_ENABLE_PARALLEL", "true").lower() in ("true", "1", "yes"),
         )
+        coqui_chunk_chars = kwargs.pop("coqui_chunk_chars", None)
+        coqui_max_workers = kwargs.pop("coqui_max_workers", None)
+        coqui_safe_mode = kwargs.pop("coqui_safe_mode", None)
+        piper_max_procs = kwargs.pop("piper_max_procs", None)
 
         config = ConversionConfig(
             engine=engine,
@@ -437,6 +613,10 @@ class AppConfig:
             edge_chunk_chars=edge_chunk_chars,
             edge_max_segment_seconds=edge_max_segment_seconds,
             edge_enable_parallel=edge_enable_parallel,
+            coqui_chunk_chars=coqui_chunk_chars,
+            coqui_max_workers=coqui_max_workers,
+            coqui_safe_mode=coqui_safe_mode,
+            piper_max_procs=piper_max_procs,
             speak_formatting_cues=speak_formatting_cues,
             formatting_locale=formatting_locale,
         )

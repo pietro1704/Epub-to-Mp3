@@ -3,11 +3,19 @@
 Unit tests for data classes (Chapter, Book) and module constants
 """
 
-import unittest
 import re
+import unittest
+
 from src.ebook_reader import (
-    Chapter, Book, XML_NS, TAG_RE, WHITESPACE_RE, 
-    NBSP_RE, PARA_BLOCK_RE, H_TAG, PDF_AVAILABLE
+    H_TAG,
+    NBSP_RE,
+    PARA_BLOCK_RE,
+    PDF_AVAILABLE,
+    TAG_RE,
+    WHITESPACE_RE,
+    XML_NS,
+    Book,
+    Chapter,
 )
 
 
@@ -20,9 +28,9 @@ class TestDataClasses(unittest.TestCase):
             index=1,
             name="Test Chapter",
             source_path="chapter1.html",
-            text="This is the chapter content."
+            text="This is the chapter content.",
         )
-        
+
         self.assertEqual(chapter.index, 1)
         self.assertEqual(chapter.name, "Test Chapter")
         self.assertEqual(chapter.source_path, "chapter1.html")
@@ -33,7 +41,7 @@ class TestDataClasses(unittest.TestCase):
         chapter1 = Chapter(1, "Chapter 1", "ch1.html", "Content 1")
         chapter2 = Chapter(1, "Chapter 1", "ch1.html", "Content 1")
         chapter3 = Chapter(2, "Chapter 2", "ch2.html", "Content 2")
-        
+
         self.assertEqual(chapter1, chapter2)
         self.assertNotEqual(chapter1, chapter3)
 
@@ -41,7 +49,7 @@ class TestDataClasses(unittest.TestCase):
         """Test Chapter string representation"""
         chapter = Chapter(1, "Test", "test.html", "Content")
         repr_str = repr(chapter)
-        
+
         self.assertIn("Chapter", repr_str)
         self.assertIn("index=1", repr_str)
         self.assertIn("name='Test'", repr_str)
@@ -50,15 +58,11 @@ class TestDataClasses(unittest.TestCase):
         """Test Book dataclass creation and attributes"""
         chapters = [
             Chapter(1, "Chapter 1", "ch1.html", "Content 1"),
-            Chapter(2, "Chapter 2", "ch2.html", "Content 2")
+            Chapter(2, "Chapter 2", "ch2.html", "Content 2"),
         ]
-        
-        book = Book(
-            title="Test Book",
-            author="Test Author",
-            chapters=chapters
-        )
-        
+
+        book = Book(title="Test Book", author="Test Author", chapters=chapters)
+
         self.assertEqual(book.title, "Test Book")
         self.assertEqual(book.author, "Test Author")
         self.assertEqual(len(book.chapters), 2)
@@ -70,11 +74,11 @@ class TestDataClasses(unittest.TestCase):
         chapters1 = [Chapter(1, "Ch1", "ch1.html", "Content")]
         chapters2 = [Chapter(1, "Ch1", "ch1.html", "Content")]
         chapters3 = [Chapter(2, "Ch2", "ch2.html", "Different")]
-        
+
         book1 = Book("Title", "Author", chapters1)
         book2 = Book("Title", "Author", chapters2)
         book3 = Book("Title", "Author", chapters3)
-        
+
         self.assertEqual(book1, book2)
         self.assertNotEqual(book1, book3)
 
@@ -83,7 +87,7 @@ class TestDataClasses(unittest.TestCase):
         chapters = [Chapter(1, "Ch1", "ch1.html", "Content")]
         book = Book("Test Title", "Test Author", chapters)
         repr_str = repr(book)
-        
+
         self.assertIn("Book", repr_str)
         self.assertIn("title='Test Title'", repr_str)
         self.assertIn("author='Test Author'", repr_str)
@@ -91,7 +95,7 @@ class TestDataClasses(unittest.TestCase):
     def test_book_empty_chapters(self):
         """Test Book with empty chapters list"""
         book = Book("Title", "Author", [])
-        
+
         self.assertEqual(book.title, "Title")
         self.assertEqual(book.author, "Author")
         self.assertEqual(len(book.chapters), 0)
@@ -108,7 +112,7 @@ class TestModuleConstants(unittest.TestCase):
         self.assertIn("opf", XML_NS)
         self.assertIn("dc", XML_NS)
         self.assertIn("ncx", XML_NS)
-        
+
         # Check specific namespace URLs
         self.assertEqual(XML_NS["ocf"], "urn:oasis:names:tc:opendocument:xmlns:container")
         self.assertEqual(XML_NS["opf"], "http://www.idpf.org/2007/opf")
@@ -120,12 +124,12 @@ class TestModuleConstants(unittest.TestCase):
     def test_tag_re_pattern(self):
         """Test TAG_RE regex pattern"""
         self.assertIsInstance(TAG_RE, re.Pattern)
-        
+
         # Test pattern matches HTML tags
         self.assertTrue(TAG_RE.search("<p>"))
         self.assertTrue(TAG_RE.search("<div class='test'>"))
         self.assertTrue(TAG_RE.search("</html>"))
-        
+
         # Test pattern doesn't match non-tags
         self.assertIsNone(TAG_RE.search("plain text"))
         self.assertIsNone(TAG_RE.search("< not a tag"))
@@ -133,13 +137,13 @@ class TestModuleConstants(unittest.TestCase):
     def test_whitespace_re_pattern(self):
         """Test WHITESPACE_RE regex pattern"""
         self.assertIsInstance(WHITESPACE_RE, re.Pattern)
-        
+
         # Test pattern matches various whitespace
         self.assertTrue(WHITESPACE_RE.search("  "))  # spaces
-        self.assertTrue(WHITESPACE_RE.search("\t"))   # tab
-        self.assertTrue(WHITESPACE_RE.search("\f"))   # form feed
-        self.assertTrue(WHITESPACE_RE.search("\v"))   # vertical tab
-        
+        self.assertTrue(WHITESPACE_RE.search("\t"))  # tab
+        self.assertTrue(WHITESPACE_RE.search("\f"))  # form feed
+        self.assertTrue(WHITESPACE_RE.search("\v"))  # vertical tab
+
         # Test pattern doesn't match newlines or regular chars
         self.assertIsNone(WHITESPACE_RE.search("\n"))
         self.assertIsNone(WHITESPACE_RE.search("abc"))
@@ -147,12 +151,12 @@ class TestModuleConstants(unittest.TestCase):
     def test_nbsp_re_pattern(self):
         """Test NBSP_RE regex pattern"""
         self.assertIsInstance(NBSP_RE, re.Pattern)
-        
+
         # Test pattern matches non-breaking spaces
         self.assertTrue(NBSP_RE.search("&nbsp;"))
         self.assertTrue(NBSP_RE.search("&NBSP;"))  # case insensitive
-        self.assertTrue(NBSP_RE.search("\u00A0"))   # Unicode nbsp
-        
+        self.assertTrue(NBSP_RE.search("\u00a0"))  # Unicode nbsp
+
         # Test pattern doesn't match regular spaces
         self.assertIsNone(NBSP_RE.search(" "))
         self.assertIsNone(NBSP_RE.search("&space;"))
@@ -160,15 +164,27 @@ class TestModuleConstants(unittest.TestCase):
     def test_para_block_re_pattern(self):
         """Test PARA_BLOCK_RE regex pattern"""
         self.assertIsInstance(PARA_BLOCK_RE, re.Pattern)
-        
+
         # Test pattern matches block elements
-        block_tags = ["<p>", "</p>", "<div>", "</div>", "<br>", "<li>", 
-                     "<tr>", "<td>", "<th>", "<blockquote>", "<section>", 
-                     "<article>", "<hr>"]
-        
+        block_tags = [
+            "<p>",
+            "</p>",
+            "<div>",
+            "</div>",
+            "<br>",
+            "<li>",
+            "<tr>",
+            "<td>",
+            "<th>",
+            "<blockquote>",
+            "<section>",
+            "<article>",
+            "<hr>",
+        ]
+
         for tag in block_tags:
             self.assertTrue(PARA_BLOCK_RE.search(tag), f"Should match {tag}")
-        
+
         # Test pattern doesn't match inline elements
         self.assertIsNone(PARA_BLOCK_RE.search("<span>"))
         self.assertIsNone(PARA_BLOCK_RE.search("<strong>"))
@@ -176,7 +192,7 @@ class TestModuleConstants(unittest.TestCase):
     def test_h_tag_pattern(self):
         """Test H_TAG regex pattern"""
         self.assertIsInstance(H_TAG, re.Pattern)
-        
+
         # Test pattern matches heading tags
         headings = [
             "<h1>Title</h1>",
@@ -184,18 +200,18 @@ class TestModuleConstants(unittest.TestCase):
             "<h3>Section</h3>",
             "<h4>Subsection</h4>",
             "<h5>Minor heading</h5>",
-            "<h6>Smallest heading</h6>"
+            "<h6>Smallest heading</h6>",
         ]
-        
+
         for heading in headings:
             match = H_TAG.search(heading)
             self.assertIsNotNone(match, f"Should match {heading}")
-            
+
         # Test pattern extracts content
         match = H_TAG.search("<h1>Test Title</h1>")
         self.assertEqual(match.group(1), "1")  # heading level
         self.assertEqual(match.group(2), "Test Title")  # content
-        
+
         # Test pattern doesn't match non-heading tags
         self.assertIsNone(H_TAG.search("<h7>Invalid</h7>"))
         self.assertIsNone(H_TAG.search("<p>Paragraph</p>"))
@@ -205,12 +221,12 @@ class TestModuleConstants(unittest.TestCase):
         # Test case insensitive matching
         self.assertTrue(H_TAG.search("<H1>Title</H1>"))
         self.assertTrue(H_TAG.search("<h1>Title</H1>"))  # mixed case
-        
+
     def test_h_tag_with_attributes(self):
         """Test H_TAG matches headings with attributes"""
         heading_with_attrs = '<h1 class="title" id="main">Title</h1>'
         match = H_TAG.search(heading_with_attrs)
-        
+
         self.assertIsNotNone(match)
         self.assertEqual(match.group(1), "1")
         self.assertEqual(match.group(2), "Title")
@@ -220,7 +236,7 @@ class TestModuleConstants(unittest.TestCase):
         multiline_heading = """<h1>Title
         with multiple
         lines</h1>"""
-        
+
         match = H_TAG.search(multiline_heading)
         self.assertIsNotNone(match)
         self.assertIn("Title", match.group(2))
@@ -234,15 +250,22 @@ class TestModuleImports(unittest.TestCase):
     def test_all_exports(self):
         """Test __all__ contains expected exports"""
         from src.ebook_reader import __all__
-        
+
         expected_exports = ["EbookReader", "read_book", "Book", "Chapter"]
         self.assertEqual(set(__all__), set(expected_exports))
 
     def test_imports_available(self):
         """Test that all expected classes and functions can be imported"""
-        from src.ebook_reader import EbookReader, read_book, Book, Chapter
-        from src.ebook_reader import TextProcessor, EpubParser, PdfParser
-        
+        from src.ebook_reader import (
+            Book,
+            Chapter,
+            EbookReader,
+            EpubParser,
+            PdfParser,
+            TextProcessor,
+            read_book,
+        )
+
         # Test classes exist and are callable
         self.assertTrue(callable(EbookReader))
         self.assertTrue(callable(read_book))
@@ -256,10 +279,10 @@ class TestModuleImports(unittest.TestCase):
         """Test PDF import is handled gracefully"""
         # This tests the try/except block for pypdf import
         from src.ebook_reader import PDF_AVAILABLE
-        
+
         # Should be boolean regardless of whether pypdf is available
         self.assertIsInstance(PDF_AVAILABLE, bool)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

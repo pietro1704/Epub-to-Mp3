@@ -15,7 +15,7 @@ class TestLanguageMarkup(unittest.TestCase):
     def test_annotate_small_foreign_snippet_keeps_default(self):
         text = (
             "Agradeço a todos pelo apoio."  # pt
-            " \"Thank you\" foi a única frase em inglês."  # tiny en quote
+            ' "Thank you" foi a única frase em inglês.'  # tiny en quote
         )
         annotated = self.markup.annotate(text, "pt")
         self.assertEqual(annotated, text)

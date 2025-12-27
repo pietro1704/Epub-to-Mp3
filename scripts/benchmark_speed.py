@@ -16,8 +16,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "python_app"))
 
 from src.ebook_reader import EbookReader
-from src.tts.edge_engine import EdgeTTSEngine
 from src.tts.coqui_engine import CoquiTTSEngine
+from src.tts.edge_engine import EdgeTTSEngine
 
 
 async def benchmark_edge(text: str, mode: str) -> dict:
@@ -95,7 +95,9 @@ async def benchmark_coqui(text: str) -> dict:
 async def main():
     parser = argparse.ArgumentParser(description="Benchmark TTS engine speeds")
     parser.add_argument("input_file", help="EPUB file to test")
-    parser.add_argument("--chapters", type=int, default=3, help="Number of chapters to test (default: 3)")
+    parser.add_argument(
+        "--chapters", type=int, default=3, help="Number of chapters to test (default: 3)"
+    )
     parser.add_argument("--skip-coqui", action="store_true", help="Skip Coqui TTS benchmark")
     args = parser.parse_args()
 
@@ -103,9 +105,9 @@ async def main():
         print(f"❌ Arquivo não encontrado: {args.input_file}")
         return 1
 
-    print("="*80)
+    print("=" * 80)
     print("🚀 BENCHMARK DE VELOCIDADE - TTS ENGINES")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Load book
@@ -119,7 +121,7 @@ async def main():
 
     # Get sample text from first N chapters
     sample_text = ""
-    for i, chapter in enumerate(chapters[:args.chapters]):
+    for i, chapter in enumerate(chapters[: args.chapters]):
         if i >= args.chapters:
             break
         sample_text += chapter.text + "\n\n"
@@ -134,13 +136,17 @@ async def main():
     print("⏱️ Testando Edge TTS (modo sequencial)...")
     result_edge_seq = await benchmark_edge(sample_text, "sequential")
     results.append(result_edge_seq)
-    print(f"   ✅ {result_edge_seq['duration']:.1f}s ({result_edge_seq['chars_per_sec']:.0f} chars/s)")
+    print(
+        f"   ✅ {result_edge_seq['duration']:.1f}s ({result_edge_seq['chars_per_sec']:.0f} chars/s)"
+    )
     print()
 
     print("⏱️ Testando Edge TTS (modo paralelo)...")
     result_edge_par = await benchmark_edge(sample_text, "parallel")
     results.append(result_edge_par)
-    print(f"   ✅ {result_edge_par['duration']:.1f}s ({result_edge_par['chars_per_sec']:.0f} chars/s)")
+    print(
+        f"   ✅ {result_edge_par['duration']:.1f}s ({result_edge_par['chars_per_sec']:.0f} chars/s)"
+    )
     print()
 
     if not args.skip_coqui:
@@ -148,46 +154,50 @@ async def main():
         result_coqui = await benchmark_coqui(sample_text)
         if result_coqui:
             results.append(result_coqui)
-            print(f"   ✅ {result_coqui['duration']:.1f}s ({result_coqui['chars_per_sec']:.0f} chars/s)")
+            print(
+                f"   ✅ {result_coqui['duration']:.1f}s ({result_coqui['chars_per_sec']:.0f} chars/s)"
+            )
         print()
 
     # Display results
-    print("="*80)
+    print("=" * 80)
     print("📊 RESULTADOS DO BENCHMARK")
-    print("="*80)
+    print("=" * 80)
     print()
 
     print(f"{'Engine':<20} {'Modo':<15} {'Tempo':<10} {'Chars/s':<12} {'Speedup'}")
-    print("-"*80)
+    print("-" * 80)
 
-    baseline = result_edge_seq['duration']
+    baseline = result_edge_seq["duration"]
     for result in results:
-        speedup = baseline / result['duration'] if result['duration'] > 0 else 0
+        speedup = baseline / result["duration"] if result["duration"] > 0 else 0
         speedup_str = f"{speedup:.2f}x" if speedup != 1.0 else "baseline"
 
-        print(f"{result['engine']:<20} {result['mode']:<15} {result['duration']:>7.1f}s  "
-              f"{result['chars_per_sec']:>10.0f}  {speedup_str:>8}")
+        print(
+            f"{result['engine']:<20} {result['mode']:<15} {result['duration']:>7.1f}s  "
+            f"{result['chars_per_sec']:>10.0f}  {speedup_str:>8}"
+        )
 
     print()
-    print("="*80)
+    print("=" * 80)
     print("💡 RECOMENDAÇÕES")
-    print("="*80)
+    print("=" * 80)
     print()
 
     # Find fastest
-    fastest = min(results, key=lambda x: x['duration'])
-    improvement = (baseline - fastest['duration']) / baseline * 100
+    fastest = min(results, key=lambda x: x["duration"])
+    improvement = (baseline - fastest["duration"]) / baseline * 100
 
     print(f"🏆 Engine mais rápido: {fastest['engine']} ({fastest['mode']})")
     print(f"⚡ Melhoria sobre baseline: {improvement:.1f}%")
     print()
 
     # Recommendations
-    if fastest['engine'] == "Edge TTS" and fastest['mode'] == "parallel":
+    if fastest["engine"] == "Edge TTS" and fastest["mode"] == "parallel":
         print("✅ Recomendação: Use Edge TTS com processamento paralelo (padrão)")
         print("   - Já ativado por padrão no CLI")
         print("   - Configuração: edge_enable_parallel=True")
-    elif fastest['engine'] == "Coqui TTS":
+    elif fastest["engine"] == "Coqui TTS":
         print("✅ Recomendação: Use Coqui TTS para processamento local rápido")
         print("   - Não depende de conexão de rede")
         print("   - Requer instalação: pip install TTS")

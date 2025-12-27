@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
 from dataclasses import dataclass
 from functools import lru_cache
@@ -58,7 +57,12 @@ class LanguageDetector:
         predictions = self._detect_languages(sample)
         languages = [pred.code for pred in predictions]
         primary = languages[0] if languages else None
-        return LanguageProfile(primary=primary, languages=languages, predictions=predictions, analysed_chars=len(sample))
+        return LanguageProfile(
+            primary=primary,
+            languages=languages,
+            predictions=predictions,
+            analysed_chars=len(sample),
+        )
 
     def detect_segments(
         self,
@@ -74,7 +78,7 @@ class LanguageDetector:
             return [LanguageSegment(language="unknown", text=text)]
 
         # **OPTIMIZED**: Processar por parágrafos ao invés de frases individuais
-        paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         if not paragraphs:
             paragraphs = [text]
 
@@ -93,7 +97,7 @@ class LanguageDetector:
                 min_probability=min_probability,
                 timeout_seconds=timeout_seconds,
                 fallback_language=fallback_language,
-                primary_language=primary_language
+                primary_language=primary_language,
             )
             if not candidate_lang or candidate_lang == "unknown":
                 buffer.append(paragraph)
@@ -124,7 +128,7 @@ class LanguageDetector:
                 text,
                 timeout_seconds=timeout_seconds,
                 fallback_language=fallback_language,
-                primary_language=primary_language
+                primary_language=primary_language,
             )
             return [LanguageSegment(language=fallback_lang, text=text)]
 
@@ -134,13 +138,16 @@ class LanguageDetector:
             if len(stripped) < min_segment_chars:
                 refined_segments.append(LanguageSegment(language=segment.language, text=stripped))
                 continue
-            language = self._detect_language_with_timeout(
-                stripped,
-                min_probability=min_probability,
-                timeout_seconds=timeout_seconds,
-                fallback_language=fallback_language,
-                primary_language=primary_language
-            ) or segment.language
+            language = (
+                self._detect_language_with_timeout(
+                    stripped,
+                    min_probability=min_probability,
+                    timeout_seconds=timeout_seconds,
+                    fallback_language=fallback_language,
+                    primary_language=primary_language,
+                )
+                or segment.language
+            )
             refined_segments.append(LanguageSegment(language=language or "unknown", text=stripped))
 
         return self._merge_adjacent(refined_segments)
@@ -179,19 +186,21 @@ class LanguageDetector:
         timeout_seconds: float = 2.0,
         fallback_language: str = "pt",
         primary_language: Optional[str] = None,
-        ambiguity_threshold: float = 0.15  # **NEW**: Diferença máxima para considerar ambíguo
+        ambiguity_threshold: float = 0.15,  # **NEW**: Diferença máxima para considerar ambíguo
     ) -> str:
         """Detect language with timeout, fallback, and primary language prioritization.
 
         When multiple languages are detected with similar probabilities (within ambiguity_threshold),
         and one of them is the primary_language, the primary language will be preferred.
         """
-        if not text or len(text.strip()) < 10:
+        stripped = (text or "").strip()
+        if not stripped or len(stripped) < 10:
             return fallback_language
 
         try:
             # Run detection in a thread to enable timeout
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 # Get multiple language predictions instead of just one
                 future = executor.submit(self._detect_languages, text, top_n=3)
@@ -200,6 +209,7 @@ class LanguageDetector:
                     if not predictions:
                         return fallback_language
 
+                    text_len = len(stripped)
                     # Check if primary language should be prioritized
                     if primary_language and len(predictions) > 1:
                         primary_normalized = self._normalise_code(primary_language)
@@ -212,9 +222,13 @@ class LanguageDetector:
                                 primary_prediction = pred
                                 break
 
-                        # If primary language found and probabilities are similar, prefer it
+                        # If primary language found and text is short/ambiguous, prefer it
                         if primary_prediction:
-                            prob_diff = abs(best_prediction.probability - primary_prediction.probability)
+                            if text_len <= 240:
+                                return primary_prediction.code
+                            prob_diff = abs(
+                                best_prediction.probability - primary_prediction.probability
+                            )
                             if prob_diff <= ambiguity_threshold:
                                 # Ambiguous: primary language is within threshold, use it
                                 return primary_prediction.code
@@ -226,7 +240,9 @@ class LanguageDetector:
                     return best.code
 
                 except concurrent.futures.TimeoutError:
-                    print(f"⚠️ Timeout na detecção de idioma ({timeout_seconds}s) - usando fallback: {fallback_language}")
+                    print(
+                        f"⚠️ Timeout na detecção de idioma ({timeout_seconds}s) - usando fallback: {fallback_language}"
+                    )
                     return fallback_language
         except Exception as e:
             print(f"⚠️ Erro na detecção de idioma: {e} - usando fallback: {fallback_language}")
@@ -238,7 +254,9 @@ class LanguageDetector:
         previous: Optional[LanguageSegment] = None
         for segment in segments:
             if previous and segment.language == previous.language:
-                previous = LanguageSegment(language=previous.language, text=f"{previous.text} {segment.text}".strip())
+                previous = LanguageSegment(
+                    language=previous.language, text=f"{previous.text} {segment.text}".strip()
+                )
                 merged[-1] = previous
             else:
                 merged.append(segment)
@@ -252,7 +270,7 @@ class LanguageDetector:
         clean = code.replace("_", "-").strip().lower()
         if not clean:
             return ""
-        return clean.split('-', 1)[0]
+        return clean.split("-", 1)[0]
 
     @staticmethod
     def _prepare_sample(texts: Sequence[str], *, max_chars: int) -> str:
@@ -284,4 +302,3 @@ __all__ = [
     "LanguageSegment",
     "get_language_detector",
 ]
-

@@ -12,10 +12,11 @@ from typing import Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 
-from .text_formatting import TextFormattingProcessor, FormattingSegment
+from .text_formatting import FormattingSegment, TextFormattingProcessor
 
 try:  # pragma: no cover - exercised indirectly in tests
     import pypdf  # type: ignore
+
     PDF_AVAILABLE = True
 except ImportError:  # pragma: no cover - when pypdf is missing
     pypdf = None
@@ -61,7 +62,7 @@ class TocItem:
     title: str
     href: str
     level: int
-    children: List['TocItem'] = field(default_factory=list)
+    children: List["TocItem"] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -84,7 +85,9 @@ class TextProcessor:
     """Utility helpers for dealing with HTML text inside EPUB files."""
 
     @staticmethod
-    def html_to_plain_text_with_formatting(content: Optional[str]) -> Tuple[str, List[FormattingSegment]]:
+    def html_to_plain_text_with_formatting(
+        content: Optional[str],
+    ) -> Tuple[str, List[FormattingSegment]]:
         """Convert HTML to plain text while preserving formatting information"""
         if not content:
             return "", []
@@ -106,7 +109,9 @@ class TextProcessor:
         text = PARA_BLOCK_RE.sub("\n", text)
 
         # Clean remaining HTML tags but preserve formatting markers
-        text = re.sub(r'<(?!/?fmt)[^>]+>', '', text)  # Remove HTML tags but keep [[fmt:...]] markers
+        text = re.sub(
+            r"<(?!/?fmt)[^>]+>", "", text
+        )  # Remove HTML tags but keep [[fmt:...]] markers
         text = WHITESPACE_RE.sub(" ", text)
         text = re.sub(r"\n{3,}", "\n\n", text)
 
@@ -151,7 +156,7 @@ class TextProcessor:
         markup: Optional[str],
         mode: str = "inline",
         context_words: int = 8,
-        external_file_resolver = None,
+        external_file_resolver=None,
     ) -> tuple[str, List[Dict[str, str]]]:
         if not markup:
             return "", []
@@ -162,14 +167,18 @@ class TextProcessor:
             BeautifulSoup = None
 
         if BeautifulSoup is not None:
-            processed_markup, footnotes = TextProcessor._collect_footnotes_bs4(str(markup), BeautifulSoup, external_file_resolver)
+            processed_markup, footnotes = TextProcessor._collect_footnotes_bs4(
+                str(markup), BeautifulSoup, external_file_resolver
+            )
         else:
             processed_markup, footnotes = TextProcessor._collect_footnotes_fallback(str(markup))
 
         return processed_markup, footnotes
 
     @staticmethod
-    def _collect_footnotes_bs4(markup: str, BeautifulSoup, external_file_resolver=None) -> Tuple[str, List[Dict[str, str]]]:
+    def _collect_footnotes_bs4(
+        markup: str, BeautifulSoup, external_file_resolver=None
+    ) -> Tuple[str, List[Dict[str, str]]]:
         soup = BeautifulSoup(markup, "html.parser")
         if soup is None:
             return markup, []
@@ -182,7 +191,7 @@ class TextProcessor:
         def normalise_fragment(href: str) -> str:
             if not href:
                 return ""
-            fragment = href.split('#', 1)[-1] if '#' in href else ""
+            fragment = href.split("#", 1)[-1] if "#" in href else ""
             return fragment.strip()
 
         def looks_like_noteref(anchor, target_text: str) -> bool:
@@ -197,7 +206,9 @@ class TextProcessor:
                     epub_type = str(value).lower()
                     break
             classes = normalise_classes(safe_get(anchor, "class", []))
-            href_value = (safe_get(anchor, "href", "") or safe_get(anchor, "xlink:href", "") or "").lower()
+            href_value = (
+                safe_get(anchor, "href", "") or safe_get(anchor, "xlink:href", "") or ""
+            ).lower()
             anchor_id = (safe_get(anchor, "id", "") or "").lower()
 
             if (
@@ -214,7 +225,9 @@ class TextProcessor:
                 digits_only = "".join(ch for ch in anchor_text if ch.isdigit())
                 if digits_only.isdigit():
                     return True
-            if target_text and any(token in target_text.lower() for token in ("nota", "footnote", "rodapé", "rodape")):
+            if target_text and any(
+                token in target_text.lower() for token in ("nota", "footnote", "rodapé", "rodape")
+            ):
                 return True
             return False
 
@@ -238,13 +251,13 @@ class TextProcessor:
             if node is None:
                 return ""
             # If node is an empty anchor, use parent instead
-            if node.name == 'a' and not node.get_text(strip=True) and node.parent:
+            if node.name == "a" and not node.get_text(strip=True) and node.parent:
                 node = node.parent
-            for backlink in node.find_all('a'):
+            for backlink in node.find_all("a"):
                 if backlink is None or not hasattr(backlink, "get"):
                     continue
-                href = safe_get(backlink, 'href', '')
-                if href.startswith('#'):
+                href = safe_get(backlink, "href", "")
+                if href.startswith("#"):
                     backlink.decompose()
             raw = node.get_text(" ", strip=True)
             return TextProcessor.normalise_whitespace(raw)
@@ -262,8 +275,16 @@ class TextProcessor:
                 # Tentar remover várias formas do número/label no início
                 candidates = [
                     label,  # Label completo (ex: "[1]")
-                    f"[{label}]", f"({label})", f"{label}.", f"{label}:", f"{label}-",
-                    f"[{label_digits}]", f"({label_digits})", f"{label_digits}.", f"{label_digits}:", f"{label_digits}-",
+                    f"[{label}]",
+                    f"({label})",
+                    f"{label}.",
+                    f"{label}:",
+                    f"{label}-",
+                    f"[{label_digits}]",
+                    f"({label_digits})",
+                    f"{label_digits}.",
+                    f"{label_digits}:",
+                    f"{label_digits}-",
                     label_digits,  # Apenas o número (ex: "1")
                 ]
 
@@ -273,15 +294,15 @@ class TextProcessor:
                     if not candidate_clean:
                         continue
                     if lowered.startswith(candidate_clean.lower()):
-                        cleaned = cleaned[len(candidate_clean):].lstrip(" .:-)–—")
+                        cleaned = cleaned[len(candidate_clean) :].lstrip(" .:-)–—")
                         break
 
             return cleaned.strip()
 
-        for anchor in list(soup.find_all('a')):
+        for anchor in list(soup.find_all("a")):
             if anchor is None or not hasattr(anchor, "get"):
                 continue
-            href = safe_get(anchor, 'href', '') or safe_get(anchor, 'xlink:href', '')
+            href = safe_get(anchor, "href", "") or safe_get(anchor, "xlink:href", "")
             fragment = normalise_fragment(href)
             if not fragment:
                 continue
@@ -290,13 +311,15 @@ class TextProcessor:
             note_node = soup.find(id=fragment)
 
             # If not found and href points to external file, try to load it
-            if not note_node and external_file_resolver and '#' in href:
-                external_file = href.split('#')[0]
+            if not note_node and external_file_resolver and "#" in href:
+                external_file = href.split("#")[0]
                 if external_file and external_file not in external_footnote_cache:
                     try:
                         external_html = external_file_resolver(external_file)
                         if external_html:
-                            external_footnote_cache[external_file] = BeautifulSoup(external_html, "html.parser")
+                            external_footnote_cache[external_file] = BeautifulSoup(
+                                external_html, "html.parser"
+                            )
                     except Exception:
                         external_footnote_cache[external_file] = None
 
@@ -325,16 +348,18 @@ class TextProcessor:
                 cleaned_text = note_text.strip()
 
             marker_token = f"[[FOOTNOTE_{len(footnotes) + 1}]]"
-            footnotes.append({
-                "marker": marker_token,
-                "number": note_number,
-                "text": cleaned_text,
-                "original_text": TextProcessor.normalise_whitespace(note_text),
-            })
+            footnotes.append(
+                {
+                    "marker": marker_token,
+                    "number": note_number,
+                    "text": cleaned_text,
+                    "original_text": TextProcessor.normalise_whitespace(note_text),
+                }
+            )
 
             anchor.replace_with(marker_token)
             parent = anchor.parent
-            if parent and parent.name == 'sup' and not parent.get_text(strip=True):
+            if parent and parent.name == "sup" and not parent.get_text(strip=True):
                 parent.decompose()
 
             processed_targets.append(fragment)
@@ -356,7 +381,7 @@ class TextProcessor:
         referenced_fragments: set[str] = set()
         referenced_fragments_lower: set[str] = set()
         for match in anchor_pattern.finditer(markup):
-            fragment = match.group('fragment')
+            fragment = match.group("fragment")
             if not fragment:
                 continue
             referenced_fragments.add(fragment)
@@ -374,24 +399,24 @@ class TextProcessor:
             lowered = foot_id.lower()
             if lowered in referenced_fragments_lower or foot_id in referenced_fragments:
                 return True
-            if re.search(r'(foot|note|rodape|rodapé)', lowered):
+            if re.search(r"(foot|note|rodape|rodapé)", lowered):
                 return True
-            if re.match(r'(?:fn|n|nota|rodape|rodapé)[\w\-]*\d*$', lowered):
+            if re.match(r"(?:fn|n|nota|rodape|rodapé)[\w\-]*\d*$", lowered):
                 return True
             return False
 
         def capture(match: re.Match) -> str:
-            foot_id = match.group('id')
+            foot_id = match.group("id")
             if not looks_like_footnote_id(foot_id):
                 return match.group(0)
-            body = match.group('body')
+            body = match.group("body")
             plain = TextProcessor.html_to_plain_text(body)
             cleaned = TextProcessor.normalise_whitespace(plain)
             footnote_map[foot_id] = cleaned
             lower_id = foot_id.lower()
             if lower_id not in footnote_map:
                 footnote_map[lower_id] = cleaned
-            return ''
+            return ""
 
         markup_without_footnotes = footnote_pattern.sub(capture, markup)
 
@@ -401,13 +426,13 @@ class TextProcessor:
 
         def replace(match: re.Match) -> str:
             nonlocal counter
-            fragment = match.group('fragment')
+            fragment = match.group("fragment")
             fragment_key = fragment.lower()
             if fragment not in footnote_map and fragment_key not in footnote_map:
                 return match.group(0)
             lookup_key = fragment if fragment in footnote_map else fragment_key
-            label = TextProcessor.html_to_plain_text(match.group('label'))
-            digits = ''.join(ch for ch in label if ch.isdigit())
+            label = TextProcessor.html_to_plain_text(match.group("label"))
+            digits = "".join(ch for ch in label if ch.isdigit())
             if fragment_key in note_numbers:
                 number = note_numbers[fragment_key]
             else:
@@ -415,30 +440,42 @@ class TextProcessor:
                 note_numbers[fragment_key] = number
             counter += 1
             marker_token = f"[[FOOTNOTE_{counter}]]"
-            footnote_text = footnote_map.get(lookup_key, '').strip()
+            footnote_text = footnote_map.get(lookup_key, "").strip()
 
             # Remover número/label duplicado no início do texto
             if digits:
                 # Tentar remover várias formas do número no início
                 candidates = [
-                    f"[{digits}]", f"({digits})", f"{digits}.", f"{digits}:", f"{digits}-",
-                    f"[{label}]", f"({label})", f"{label}.", f"{label}:", f"{label}-",
+                    f"[{digits}]",
+                    f"({digits})",
+                    f"{digits}.",
+                    f"{digits}:",
+                    f"{digits}-",
+                    f"[{label}]",
+                    f"({label})",
+                    f"{label}.",
+                    f"{label}:",
+                    f"{label}-",
                     digits,  # Apenas o número
                 ]
                 lowered = footnote_text.lower()
                 for candidate in candidates:
                     if lowered.startswith(candidate.lower()):
-                        footnote_text = footnote_text[len(candidate):].lstrip(' .:-)–—')
+                        footnote_text = footnote_text[len(candidate) :].lstrip(" .:-)–—")
                         break
 
             if not footnote_text:
-                footnote_text = footnote_map.get(lookup_key, '').strip()
-            footnotes.append({
-                "marker": marker_token,
-                "number": number,
-                "text": TextProcessor.normalise_whitespace(footnote_text),
-                "original_text": TextProcessor.normalise_whitespace(footnote_map.get(lookup_key, '')),
-            })
+                footnote_text = footnote_map.get(lookup_key, "").strip()
+            footnotes.append(
+                {
+                    "marker": marker_token,
+                    "number": number,
+                    "text": TextProcessor.normalise_whitespace(footnote_text),
+                    "original_text": TextProcessor.normalise_whitespace(
+                        footnote_map.get(lookup_key, "")
+                    ),
+                }
+            )
             return marker_token
 
         markup_with_markers = anchor_pattern.sub(replace, markup_without_footnotes)
@@ -464,7 +501,10 @@ class TextProcessor:
         template = phrases.get("template", "nota de rodapé {number}: {text}")
         suffix_text = phrases.get("suffix_text", " fim da nota de rodapé")
         closing = phrases.get("closing", "")
-        chapter_end_template = phrases.get("chapter_end_template", "nota de rodapé {number}: {snippet} - {text} fim da nota de rodapé")
+        chapter_end_template = phrases.get(
+            "chapter_end_template",
+            "nota de rodapé {number}: {snippet} - {text} fim da nota de rodapé",
+        )
 
         text = base_text
 
@@ -486,11 +526,9 @@ class TextProcessor:
                     break
                 preceding = text[:idx]
                 snippet = TextProcessor._extract_context_snippet(preceding, context_words)
-                text = text[:idx] + text[idx + len(marker):]
+                text = text[:idx] + text[idx + len(marker) :]
                 if mode == "chapter_end":
-                    appended_entries.append(
-                        (footnote["number"], snippet, footnote["text"])
-                    )
+                    appended_entries.append((footnote["number"], snippet, footnote["text"]))
                 break
 
             if mode == "chapter_end" and appended_entries:
@@ -622,7 +660,7 @@ class TextProcessor:
         if not text:
             return ""
 
-        lines = text.split('\n')
+        lines = text.split("\n")
 
         # Primeiro: detectar e remover cabeçalhos/rodapés repetidos
         lines = TextProcessor._remove_pdf_headers_footers(lines)
@@ -638,7 +676,7 @@ class TextProcessor:
                 continue
 
             # Verifica se linha termina com pontuação que indica fim de frase
-            ends_with_punctuation = current_line.endswith(('.', '!', '?', ':', ';'))
+            ends_with_punctuation = current_line.endswith((".", "!", "?", ":", ";"))
 
             # Se não termina com pontuação E existe próxima linha, tenta juntar
             while not ends_with_punctuation and i + 1 < len(lines):
@@ -649,16 +687,16 @@ class TextProcessor:
                     break
 
                 # Junta com espaço
-                current_line = current_line + ' ' + next_line
+                current_line = current_line + " " + next_line
                 i += 1
 
                 # Atualiza flag de pontuação
-                ends_with_punctuation = current_line.endswith(('.', '!', '?', ':', ';'))
+                ends_with_punctuation = current_line.endswith((".", "!", "?", ":", ";"))
 
             joined_lines.append(current_line)
             i += 1
 
-        return '\n'.join(joined_lines)
+        return "\n".join(joined_lines)
 
     @staticmethod
     def _remove_pdf_headers_footers(lines: List[str]) -> List[str]:
@@ -679,8 +717,6 @@ class TextProcessor:
 
         # Primeiro: analisar padrões comuns nas primeiras e últimas linhas
         # Cabeçalhos/rodapés geralmente estão nas primeiras 3-4 ou últimas 3-4 linhas
-        non_empty_lines = [l.strip() for l in lines if l.strip()]
-
         for i, line in enumerate(lines):
             stripped = line.strip()
 
@@ -706,12 +742,14 @@ class TextProcessor:
                 if len(words) >= 2:
                     cap_count = sum(1 for w in words if w and len(w) > 1 and w[0].isupper())
                     # Se maioria das palavras são capitalizadas e não termina com pontuação
-                    if cap_count >= len(words) * 0.6 and not stripped.endswith(('.', '!', '?', ':')):
+                    if cap_count >= len(words) * 0.6 and not stripped.endswith(
+                        (".", "!", "?", ":")
+                    ):
                         # Provável título de livro/autor
                         continue
 
                 # Remover linhas que são apenas "Página X" ou similares
-                if stripped.lower().startswith('página') or stripped.lower().startswith('pagina'):
+                if stripped.lower().startswith("página") or stripped.lower().startswith("pagina"):
                     continue
 
             filtered_lines.append(line)
@@ -727,7 +765,7 @@ class TextProcessor:
         signal_count = sum(1 for token in css_signals if token in lowered)
         if signal_count < 2:
             return False
-        if '<html' in lowered or '<body' in lowered or '<div' in lowered:
+        if "<html" in lowered or "<body" in lowered or "<div" in lowered:
             return False
         return True
 
@@ -764,7 +802,9 @@ class EpubParser:
         self.path = Path(file_path)
 
     @staticmethod
-    def _prepare_speech_text(text: str, formatting_segments: Optional[List[FormattingSegment]]) -> str:
+    def _prepare_speech_text(
+        text: str, formatting_segments: Optional[List[FormattingSegment]]
+    ) -> str:
         """
         Prepara o texto para envio ao TTS com pistas audíveis de formatação.
 
@@ -805,7 +845,13 @@ class EpubParser:
 
         title = title or self.path.stem
         author = author or ""
-        return Book(title=title.strip(), author=author.strip(), chapters=chapters, toc=toc, language=language)
+        return Book(
+            title=title.strip(),
+            author=author.strip(),
+            chapters=chapters,
+            toc=toc,
+            language=language,
+        )
 
     def _find_opf_path(self, archive: zipfile.ZipFile) -> str:
         try:
@@ -855,7 +901,7 @@ class EpubParser:
             if language_elem is not None and language_elem.text:
                 # Normalize to lowercase 2-letter code (e.g., 'en-US' -> 'en')
                 lang_code = language_elem.text.strip().lower()
-                language = lang_code.split('-')[0] if lang_code else None
+                language = lang_code.split("-")[0] if lang_code else None
 
         return manifest, spine, title, author, language
 
@@ -883,7 +929,7 @@ class EpubParser:
         def get_html_content(href: str) -> str:
             """Obtém conteúdo HTML de um arquivo, usando cache."""
             # Extrair apenas o arquivo (sem âncora)
-            file_path = href.split('#')[0] if '#' in href else href
+            file_path = href.split("#")[0] if "#" in href else href
             if not file_path:
                 return ""
 
@@ -904,14 +950,14 @@ class EpubParser:
             Se o arquivo for part0006_split_000.html, também carrega:
             part0006_split_001.html, part0006_split_002.html, etc.
             """
-            file_path = href.split('#')[0] if '#' in href else href
+            file_path = href.split("#")[0] if "#" in href else href
             if not file_path:
                 return ""
 
             # Verificar se é arquivo split
-            if '_split_' in file_path:
+            if "_split_" in file_path:
                 # Extrair base e número do split
-                base_pattern = file_path.rsplit('_split_', 1)[0]
+                base_pattern = file_path.rsplit("_split_", 1)[0]
 
                 # Coletar todos os splits deste arquivo
                 all_content = []
@@ -927,7 +973,7 @@ class EpubParser:
                         break
 
                 if all_content:
-                    return '\n'.join(all_content)
+                    return "\n".join(all_content)
 
             # Se não é split ou não encontrou splits, retornar arquivo único
             return get_html_content(href)
@@ -937,17 +983,17 @@ class EpubParser:
             nonlocal index_counter
 
             # Extrair arquivo e âncora
-            if '#' in item.href:
-                file_path_only = item.href.split('#')[0]
-                anchor = item.href.split('#')[1]
+            if "#" in item.href:
+                file_path_only = item.href.split("#")[0]
+                anchor = item.href.split("#")[1]
             else:
                 file_path_only = item.href
                 anchor = ""
 
             # Para arquivos split, usar base sem número do split
             base_file = file_path_only
-            if '_split_' in file_path_only:
-                base_file = file_path_only.rsplit('_split_', 1)[0]
+            if "_split_" in file_path_only:
+                base_file = file_path_only.rsplit("_split_", 1)[0]
 
             # Se não há âncora e o arquivo/base já foi processado, pular
             if not anchor and base_file in processed_full_files:
@@ -963,7 +1009,7 @@ class EpubParser:
                 processed_full_files.add(base_file)
 
             # Criar resolver para footnotes externos
-            file_path = item.href.split('#')[0] if '#' in item.href else item.href
+            file_path = item.href.split("#")[0] if "#" in item.href else item.href
             chapter_dir = str(Path(self._join_path(base_dir, file_path)).parent).replace("\\", "/")
 
             def resolve_external_file(relative_path: str) -> Optional[str]:
@@ -975,10 +1021,11 @@ class EpubParser:
 
             # Processar texto
             markup_with_markers, footnotes = TextProcessor.inject_footnotes(
-                raw_content,
-                external_file_resolver=resolve_external_file
+                raw_content, external_file_resolver=resolve_external_file
             )
-            text_with_formatting, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+            text_with_formatting, formatting_segments = (
+                TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+            )
 
             if footnotes:
                 text_with_footnotes = TextProcessor._render_footnotes(
@@ -1055,7 +1102,10 @@ class EpubParser:
                 continue
 
             # Create resolver for external footnote files (relative to current chapter)
-            chapter_dir = str(Path(asset_path).parent).replace("\\", "/") if "/" in asset_path else ""
+            chapter_dir = (
+                str(Path(asset_path).parent).replace("\\", "/") if "/" in asset_path else ""
+            )
+
             def resolve_external_file(relative_path: str) -> Optional[str]:
                 try:
                     # Resolve relative to current chapter's directory
@@ -1066,10 +1116,11 @@ class EpubParser:
 
             # Process text with formatting awareness
             markup_with_markers, footnotes = TextProcessor.inject_footnotes(
-                raw_content,
-                external_file_resolver=resolve_external_file
+                raw_content, external_file_resolver=resolve_external_file
             )
-            text_with_formatting, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+            text_with_formatting, formatting_segments = (
+                TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+            )
             if footnotes:
                 text_with_footnotes = TextProcessor._render_footnotes(
                     text_with_formatting,
@@ -1086,7 +1137,11 @@ class EpubParser:
             else:
                 text_with_footnotes = text_with_formatting
             text = TextProcessor.add_pause_before_dash(text_with_footnotes)
-            title = TextProcessor.extract_title(raw_content, f"Capítulo {index_counter}") if text else f"Capítulo {index_counter}"
+            title = (
+                TextProcessor.extract_title(raw_content, f"Capítulo {index_counter}")
+                if text
+                else f"Capítulo {index_counter}"
+            )
 
             # Adicionar todos os capítulos, mesmo que estejam vazios
             # IMPORTANTE: speech_text deve ser o que será enviado ao TTS
@@ -1153,7 +1208,7 @@ class EpubParser:
             window_size = 300
             step = 150  # Janelas sobrepostas
             for start in range(0, len(current_norm) - window_size, step):
-                windows.append(current_norm[start:start + window_size])
+                windows.append(current_norm[start : start + window_size])
 
             # Verificar se o núcleo aparece em outros capítulos (anteriores ou posteriores)
             for j, other_chapter in enumerate(chapters):
@@ -1213,11 +1268,11 @@ class EpubParser:
         # Criar conjuntos de 3-gramas
         ngrams1 = set()
         for i in range(len(words1) - 2):
-            ngrams1.add(' '.join(words1[i:i+3]))
+            ngrams1.add(" ".join(words1[i : i + 3]))
 
         ngrams2 = set()
         for i in range(len(words2) - 2):
-            ngrams2.add(' '.join(words2[i:i+3]))
+            ngrams2.add(" ".join(words2[i : i + 3]))
 
         if not ngrams1 or not ngrams2:
             return 0.0
@@ -1234,16 +1289,16 @@ class EpubParser:
             return ""
 
         # Remover marcações markdown
-        cleaned = re.sub(r'\*+', '', text)  # Remove asteriscos
-        cleaned = re.sub(r'_+', '', cleaned)  # Remove underscores
-        cleaned = re.sub(r'\[\[.*?\]\]', '', cleaned)  # Remove marcadores [[...]]
-        cleaned = re.sub(r'§\s*\d+', '', cleaned)  # Remove seções §1, §2, etc.
+        cleaned = re.sub(r"\*+", "", text)  # Remove asteriscos
+        cleaned = re.sub(r"_+", "", cleaned)  # Remove underscores
+        cleaned = re.sub(r"\[\[.*?\]\]", "", cleaned)  # Remove marcadores [[...]]
+        cleaned = re.sub(r"§\s*\d+", "", cleaned)  # Remove seções §1, §2, etc.
 
         # Normalizar espaços
-        cleaned = ' '.join(cleaned.split())
+        cleaned = " ".join(cleaned.split())
 
         # Remover pontuação comum no início
-        cleaned = cleaned.lstrip(' .-:')
+        cleaned = cleaned.lstrip(" .-:")
 
         return cleaned.lower()
 
@@ -1251,7 +1306,7 @@ class EpubParser:
         self,
         original_chapters: List[Chapter],
         filtered_chapters: List[Chapter],
-        removed_chapters: List[Chapter]
+        removed_chapters: List[Chapter],
     ) -> None:
         """Verifica que todo o conteúdo original está presente após a filtragem.
 
@@ -1292,7 +1347,7 @@ class EpubParser:
         if significant_missing:
             # Há conteúdo significativo faltando! Isso é um problema.
             missing_sample = list(significant_missing)[:20]
-            print(f"⚠️ AVISO: Detectado conteúdo possivelmente perdido na filtragem de duplicatas!")
+            print("⚠️ AVISO: Detectado conteúdo possivelmente perdido na filtragem de duplicatas!")
             print(f"   Palavras faltando (amostra): {' '.join(missing_sample)}")
             print(f"   Total de palavras únicas faltando: {len(significant_missing)}")
 
@@ -1303,11 +1358,14 @@ class EpubParser:
                 removed_unique = removed_words - filtered_words
                 # Filtrar marcações
                 removed_unique = set(
-                    w for w in removed_unique
+                    w
+                    for w in removed_unique
                     if w and len(w) > 0 and sum(1 for c in w if c.isalpha()) / len(w) >= 0.5
                 )
                 if removed_unique:
-                    print(f"   ❌ Capítulo '{removed.name}' tinha {len(removed_unique)} palavras únicas perdidas")
+                    print(
+                        f"   ❌ Capítulo '{removed.name}' tinha {len(removed_unique)} palavras únicas perdidas"
+                    )
 
             # Restaurar capítulos removidos que tinham conteúdo único
             # NÃO fazer isso automaticamente - apenas alertar
@@ -1317,7 +1375,7 @@ class EpubParser:
             )
 
     def _parse_toc(self, archive: zipfile.ZipFile, base_dir: str) -> List[TocItem]:
-        candidates = [name for name in archive.namelist() if name.lower().endswith('.ncx')]
+        candidates = [name for name in archive.namelist() if name.lower().endswith(".ncx")]
         if not candidates:
             return []
 
@@ -1331,7 +1389,7 @@ class EpubParser:
         except ET.ParseError:
             return []
 
-        nav_map = tree.find('ncx:navMap', XML_NS)
+        nav_map = tree.find("ncx:navMap", XML_NS)
 
         if nav_map is None:
             return []
@@ -1339,20 +1397,24 @@ class EpubParser:
         def build(entries, level=1):
             items = []
             for nav_point in entries:
-                label_elem = nav_point.find('ncx:navLabel/ncx:text', XML_NS)
-                content_elem = nav_point.find('ncx:content', XML_NS)
-                title = label_elem.text.strip() if label_elem is not None and label_elem.text else ''
-                href = content_elem.attrib.get('src', '') if content_elem is not None else ''
-                children_points = nav_point.findall('ncx:navPoint', XML_NS)
-                items.append(TocItem(
-                    title=title,
-                    href=href,
-                    level=level,
-                    children=build(children_points, level + 1)
-                ))
+                label_elem = nav_point.find("ncx:navLabel/ncx:text", XML_NS)
+                content_elem = nav_point.find("ncx:content", XML_NS)
+                title = (
+                    label_elem.text.strip() if label_elem is not None and label_elem.text else ""
+                )
+                href = content_elem.attrib.get("src", "") if content_elem is not None else ""
+                children_points = nav_point.findall("ncx:navPoint", XML_NS)
+                items.append(
+                    TocItem(
+                        title=title,
+                        href=href,
+                        level=level,
+                        children=build(children_points, level + 1),
+                    )
+                )
             return items
 
-        top_level_points = nav_map.findall('ncx:navPoint', XML_NS)
+        top_level_points = nav_map.findall("ncx:navPoint", XML_NS)
         return build(top_level_points, level=1)
 
     @staticmethod
@@ -1411,7 +1473,12 @@ class PdfParser:
                     raw_text = page.extract_text() or ""
                 except Exception:
                     chapters.append(
-                        Chapter(index=idx, name=f"Página {idx} (erro)", source_path=f"page_{idx}", text="")
+                        Chapter(
+                            index=idx,
+                            name=f"Página {idx} (erro)",
+                            source_path=f"page_{idx}",
+                            text="",
+                        )
                     )
                     continue
 
@@ -1422,7 +1489,9 @@ class PdfParser:
                     continue
                 cleaned = TextProcessor.add_pause_before_dash(cleaned)
                 chapters.append(
-                    Chapter(index=idx, name=f"Página {idx}", source_path=f"page_{idx}", text=cleaned)
+                    Chapter(
+                        index=idx, name=f"Página {idx}", source_path=f"page_{idx}", text=cleaned
+                    )
                 )
 
         return Book(title=str(title), author=str(author), chapters=chapters)
@@ -1538,8 +1607,14 @@ class EbookReader:
                     except KeyError:
                         data = archive.read(unquote(cover_path))
 
-                    media_type = cover_entry.get("media_type") or mimetypes.guess_type(cover_href)[0] or "image/jpeg"
-                    extension = Path(cover_path).suffix or mimetypes.guess_extension(media_type) or ".jpg"
+                    media_type = (
+                        cover_entry.get("media_type")
+                        or mimetypes.guess_type(cover_href)[0]
+                        or "image/jpeg"
+                    )
+                    extension = (
+                        Path(cover_path).suffix or mimetypes.guess_extension(media_type) or ".jpg"
+                    )
                     if not extension.startswith("."):
                         extension = f".{extension}"
                     return CoverImage(data=data, media_type=media_type, extension=extension)
@@ -1572,21 +1647,23 @@ class EbookReader:
                     images = first_page.images
                     if images:
                         # Get the largest image (likely the cover)
-                        largest_image = max(images, key=lambda img: len(img.data) if hasattr(img, 'data') else 0)
-                        if hasattr(largest_image, 'data') and largest_image.data:
+                        largest_image = max(
+                            images, key=lambda img: len(img.data) if hasattr(img, "data") else 0
+                        )
+                        if hasattr(largest_image, "data") and largest_image.data:
                             # Determine media type and extension
-                            image_name = getattr(largest_image, 'name', '') or ''
-                            extension = Path(image_name).suffix if image_name else ''
+                            image_name = getattr(largest_image, "name", "") or ""
+                            extension = Path(image_name).suffix if image_name else ""
 
                             # Try to detect image format from data
                             data = largest_image.data
-                            if data.startswith(b'\xff\xd8\xff'):
+                            if data.startswith(b"\xff\xd8\xff"):
                                 media_type = "image/jpeg"
                                 extension = extension or ".jpg"
-                            elif data.startswith(b'\x89PNG\r\n\x1a\n'):
+                            elif data.startswith(b"\x89PNG\r\n\x1a\n"):
                                 media_type = "image/png"
                                 extension = extension or ".png"
-                            elif data.startswith(b'GIF87a') or data.startswith(b'GIF89a'):
+                            elif data.startswith(b"GIF87a") or data.startswith(b"GIF89a"):
                                 media_type = "image/gif"
                                 extension = extension or ".gif"
                             else:
@@ -1601,7 +1678,7 @@ class EbookReader:
                 # Fallback: Try XObject images (older pypdf versions or complex PDFs)
                 if "/Resources" in first_page and "/XObject" in first_page["/Resources"]:
                     xobject = first_page["/Resources"]["/XObject"]
-                    if hasattr(xobject, 'get_object'):
+                    if hasattr(xobject, "get_object"):
                         xobject = xobject.get_object()
 
                     # Find largest image
@@ -1611,7 +1688,7 @@ class EbookReader:
 
                     for obj_name in xobject:
                         obj = xobject[obj_name]
-                        if hasattr(obj, 'get_object'):
+                        if hasattr(obj, "get_object"):
                             obj = obj.get_object()
 
                         if obj.get("/Subtype") == "/Image":
@@ -1634,17 +1711,19 @@ class EbookReader:
                             extension = ".png"
                         else:
                             # Try to detect from data
-                            if largest_data.startswith(b'\xff\xd8\xff'):
+                            if largest_data.startswith(b"\xff\xd8\xff"):
                                 media_type = "image/jpeg"
                                 extension = ".jpg"
-                            elif largest_data.startswith(b'\x89PNG\r\n\x1a\n'):
+                            elif largest_data.startswith(b"\x89PNG\r\n\x1a\n"):
                                 media_type = "image/png"
                                 extension = ".png"
                             else:
                                 media_type = "image/jpeg"
                                 extension = ".jpg"
 
-                        return CoverImage(data=largest_data, media_type=media_type, extension=extension)
+                        return CoverImage(
+                            data=largest_data, media_type=media_type, extension=extension
+                        )
 
         except Exception:
             return None
@@ -1662,7 +1741,7 @@ class EbookReader:
             meta_cover = metadata.find("opf:meta[@name='cover']", XML_NS)
             if meta_cover is None:
                 for meta in metadata.findall(".//*"):
-                    tag = meta.tag.split('}', 1)[-1]
+                    tag = meta.tag.split("}", 1)[-1]
                     if tag.lower() == "meta" and meta.attrib.get("name") == "cover":
                         meta_cover = meta
                         break

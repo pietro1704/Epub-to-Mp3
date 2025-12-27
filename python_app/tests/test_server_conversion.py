@@ -3,25 +3,35 @@ from __future__ import annotations
 import asyncio
 import shutil
 from pathlib import Path
-from uuid import uuid4
+from types import SimpleNamespace
 from unittest.mock import patch
+from uuid import uuid4
 
 import pytest
 from fastapi.testclient import TestClient
+from src.config import ConversionConfig
+from src.job_manager import JobManager
+from src.telemetry import TelemetryRecorder
 
 from python_app import server
-from src.telemetry import TelemetryRecorder
-from src.config import ConversionConfig
-from types import SimpleNamespace
-from src.job_manager import JobManager
 
 FIXTURE_BOOK = Path(__file__).resolve().parents[2] / "web" / "public" / "sample.epub"
-MINIMAL_MP3 = bytes(
-    [
-        0xFF, 0xFB, 0x90, 0x00,
-    ]
-) * 10
-MINIMAL_WAV = b"RIFF\x24\x80\x00\x00WAVEfmt " + b"\x10\x00\x00\x00\x01\x00\x01\x00" + b"\x40\x1f\x00\x00\x80>\x00\x00\x02\x00\x10\x00data\x00\x80\x00\x00"
+MINIMAL_MP3 = (
+    bytes(
+        [
+            0xFF,
+            0xFB,
+            0x90,
+            0x00,
+        ]
+    )
+    * 10
+)
+MINIMAL_WAV = (
+    b"RIFF\x24\x80\x00\x00WAVEfmt "
+    + b"\x10\x00\x00\x00\x01\x00\x01\x00"
+    + b"\x40\x1f\x00\x00\x80>\x00\x00\x02\x00\x10\x00data\x00\x80\x00\x00"
+)
 
 requires_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg não encontrado")
 
@@ -73,15 +83,21 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         # Create a minimal valid MP3 file (ID3 header + silence)
         # This is a minimal MP3 frame that ffprobe can read
-        mp3_header = bytes([
-            0xFF, 0xFB, 0x90, 0x00,  # MP3 frame header
-        ] + [0x00] * 417)  # Padding to make valid frame
+        mp3_header = bytes(
+            [
+                0xFF,
+                0xFB,
+                0x90,
+                0x00,  # MP3 frame header
+            ]
+            + [0x00] * 417
+        )  # Padding to make valid frame
         output_path.write_bytes(mp3_header * 10)  # Multiple frames
         return output_path
 
     _make_telemetry(tmp_path, monkeypatch)
 
-    with patch('src.tts.edge_engine.EdgeTTSEngine.synthesize_async', mock_synthesize):
+    with patch("src.tts.edge_engine.EdgeTTSEngine.synthesize_async", mock_synthesize):
         asyncio.run(server.process_conversion(job_id))
 
     job = server.jobs[job_id]
@@ -296,6 +312,8 @@ def test_convert_endpoint_rejects_large_files(monkeypatch):
         },
     )
     assert response.status_code == 413
+
+
 def _make_telemetry(tmp_path, monkeypatch):
     telemetry_path = Path(tmp_path) / "telemetry.json"
     recorder = TelemetryRecorder(telemetry_file=telemetry_path, max_samples=20)

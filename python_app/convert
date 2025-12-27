@@ -4,7 +4,6 @@
 import argparse
 import sys
 from pathlib import Path
-
 from src.ui.prompt import TerminalPrompt
 
 from main import (
@@ -94,6 +93,26 @@ def main() -> int:
     if not hasattr(args, "batch_stop_on_error"):
         args.batch_stop_on_error = False
 
+    expanded_inputs: list[str] = []
+    original_inputs: list[str] = []
+    if getattr(args, "input_file", None):
+        original_inputs.append(args.input_file)
+    original_inputs.extend(args.extra_inputs or [])
+
+    for entry in original_inputs:
+        expanded = _collect_files_from_path(Path(entry).expanduser())
+        if expanded:
+            expanded_inputs.extend(expanded)
+        else:
+            print(f"[warn] nenhum EPUB/PDF encontrado em: {entry}")
+
+    if expanded_inputs:
+        args.input_file = expanded_inputs[0]
+        args.extra_inputs = expanded_inputs[1:]
+    else:
+        args.input_file = None
+        args.extra_inputs = []
+
     has_input = bool(getattr(args, "input_file", None) or args.extra_inputs)
     has_batch = bool(args.batch_inputs) or bool(args.batch_manifest)
 
@@ -166,3 +185,19 @@ def _clear_cache_all(*, assume_yes: bool = False) -> None:
 
 if __name__ == "__main__":
     sys.exit(main())
+SUPPORTED_EXTENSIONS = {".epub", ".pdf"}
+
+
+def _collect_files_from_path(path: Path) -> list[str]:
+    if not path.exists():
+        return []
+    if path.is_file():
+        return [str(path)]
+    if path.is_dir():
+        files = sorted(
+            child
+            for child in path.rglob("*")
+            if child.is_file() and child.suffix.lower() in SUPPORTED_EXTENSIONS
+        )
+        return [str(child) for child in files]
+    return []

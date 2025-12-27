@@ -3,19 +3,18 @@
 Unit tests for main application
 """
 
-import asyncio
-import unittest
-import tempfile
 import os
+import sys
+import tempfile
+import unittest
+from argparse import Namespace
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch, Mock, MagicMock
-from argparse import Namespace
+from unittest.mock import Mock, patch
 
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from main import ConverterApplication, create_argument_parser, main, ChapterStructureItem
+from main import ChapterStructureItem, ConverterApplication, create_argument_parser, main
 from src.ebook_reader import Chapter
 
 
@@ -34,11 +33,11 @@ class TestConverterApplication(unittest.TestCase):
         """Set up test fixtures"""
         self.temp_dir = tempfile.mkdtemp()
         self.test_file = os.path.join(self.temp_dir, "test.epub")
-        
+
         # Create dummy file
-        with open(self.test_file, 'w') as f:
+        with open(self.test_file, "w") as f:
             f.write("dummy content")
-        
+
         self.app = ConverterApplication()
 
     def tearDown(self):
@@ -53,7 +52,7 @@ class TestConverterApplication(unittest.TestCase):
         self.assertIsNotNone(self.app.menu)
         self.assertIsNotNone(self.app.converter)
 
-    @patch('main.EbookReader')
+    @patch("main.EbookReader")
     def test_run_file_not_found(self, mock_reader):
         """Test running with non-existent file"""
         args = Namespace(
@@ -64,15 +63,15 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
-            parallel=None
+            parallel=None,
         )
-        
+
         result = self.app.run(args)
         self.assertEqual(result, 1)
         mock_reader.assert_not_called()
 
-    @patch('main.asyncio.run')
-    @patch('main.EbookReader')
+    @patch("main.asyncio.run")
+    @patch("main.EbookReader")
     def test_run_with_show_structure(self, mock_reader, mock_asyncio_run):
         """Test running with show structure option"""
         # Mock reader
@@ -81,10 +80,10 @@ class TestConverterApplication(unittest.TestCase):
         mock_reader_instance.author = "Test Author"
         mock_reader_instance.get_chapters.return_value = [
             Mock(name="Chapter 1", text="Content 1"),
-            Mock(name="Chapter 2", text="Content 2")
+            Mock(name="Chapter 2", text="Content 2"),
         ]
         mock_reader.return_value = mock_reader_instance
-        
+
         args = Namespace(
             input_file=self.test_file,
             show_structure=True,
@@ -93,17 +92,17 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
-            parallel=None
+            parallel=None,
         )
-        
+
         result = self.app.run(args)
-        
+
         self.assertEqual(result, 0)
         mock_reader.assert_called_once_with(self.test_file)
         mock_asyncio_run.assert_not_called()
 
-    @patch('main.asyncio.run')
-    @patch('main.EbookReader')
+    @patch("main.asyncio.run")
+    @patch("main.EbookReader")
     def test_run_with_engine_specified(self, mock_reader, mock_asyncio_run):
         """Test running with specific engine"""
         mock_reader_instance = Mock()
@@ -134,7 +133,7 @@ class TestConverterApplication(unittest.TestCase):
             footnote_chapter_end=False,
         )
 
-        with patch.object(self.app, '_create_config_from_args') as mock_config:
+        with patch.object(self.app, "_create_config_from_args") as mock_config:
             # Return a real ConversionConfig with Path for output_dir
             mock_config.return_value = self.app.config.create_conversion_config(
                 engine="edge",
@@ -150,7 +149,7 @@ class TestConverterApplication(unittest.TestCase):
             self.assertGreaterEqual(mock_config.call_count, 1)
             mock_asyncio_run.assert_called_once()
 
-    @patch('main.EbookReader')
+    @patch("main.EbookReader")
     def test_run_with_menu(self, mock_reader):
         """Test running with interactive menu"""
         mock_reader_instance = Mock()
@@ -179,7 +178,7 @@ class TestConverterApplication(unittest.TestCase):
             footnote_chapter_end=False,
         )
 
-        with patch.object(self.app.menu, 'get_conversion_config') as mock_menu:
+        with patch.object(self.app.menu, "get_conversion_config") as mock_menu:
             mock_menu.return_value = None  # User cancelled
 
             result = self.app.run(args)
@@ -195,21 +194,21 @@ class TestConverterApplication(unittest.TestCase):
         """Test creating config from command line arguments"""
         mock_reader = Mock()
         mock_reader.title = "Test Book"
-        
+
         args = Namespace(
             engine="edge",
             voice="test-voice",
             model=None,
             output_dir="test_output",
             filter_chapters=True,
-            parallel=5
+            parallel=5,
         )
-        
-        with patch.object(self.app.config, 'create_conversion_config') as mock_create:
+
+        with patch.object(self.app.config, "create_conversion_config") as mock_create:
             mock_create.return_value = Mock()
-            
+
             config = self.app._create_config_from_args(args, mock_reader)
-            
+
             self.assertIsNotNone(config)
             mock_create.assert_called_once()
             called_kwargs = mock_create.call_args.kwargs
@@ -272,14 +271,16 @@ class TestConverterApplication(unittest.TestCase):
         self.assertIn("nota de rodapé 1: Esta nota explicativa.", text)
 
         segments = item.chapter.formatting_segments or []
-        self.assertTrue(any(seg.formatting == 'italic' and seg.text == 'itálico' for seg in segments))
-        self.assertTrue(any(seg.formatting == 'bold' and seg.text == 'negrito' for seg in segments))
-        self.assertTrue(any(seg.formatting == 'quote' and seg.text == 'aspas' for seg in segments))
-        self.assertFalse(any('[[FOOTNOTE' in seg.text for seg in segments))
-        self.assertNotIn('*', item.chapter.speech_text or '')
-        self.assertNotIn('_', item.chapter.speech_text or '')
-        self.assertIn('nota de rodapé 1', item.chapter.speech_text or '')
-        self.assertIn('nota de rodapé 1: Esta nota explicativa.', item.chapter.speech_text or '')
+        self.assertTrue(
+            any(seg.formatting == "italic" and seg.text == "itálico" for seg in segments)
+        )
+        self.assertTrue(any(seg.formatting == "bold" and seg.text == "negrito" for seg in segments))
+        self.assertTrue(any(seg.formatting == "quote" and seg.text == "aspas" for seg in segments))
+        self.assertFalse(any("[[FOOTNOTE" in seg.text for seg in segments))
+        self.assertNotIn("*", item.chapter.speech_text or "")
+        self.assertNotIn("_", item.chapter.speech_text or "")
+        self.assertIn("nota de rodapé 1", item.chapter.speech_text or "")
+        self.assertIn("nota de rodapé 1: Esta nota explicativa.", item.chapter.speech_text or "")
 
     @unittest.skip("Text transform API changed")
     def test_apply_text_transforms_chapter_end_moves_notes(self):
@@ -299,11 +300,13 @@ class TestConverterApplication(unittest.TestCase):
         self.assertNotIn("[[FOOTNOTE", text)
 
         segments = item.chapter.formatting_segments or []
-        self.assertTrue(any(seg.formatting == 'italic' and seg.text == 'itálico' for seg in segments))
-        self.assertFalse(any('[[FOOTNOTE' in seg.text for seg in segments))
-        speech = item.chapter.speech_text or ''
-        self.assertNotIn('*', speech)
-        self.assertNotIn('_', speech)
+        self.assertTrue(
+            any(seg.formatting == "italic" and seg.text == "itálico" for seg in segments)
+        )
+        self.assertFalse(any("[[FOOTNOTE" in seg.text for seg in segments))
+        speech = item.chapter.speech_text or ""
+        self.assertNotIn("*", speech)
+        self.assertNotIn("_", speech)
         self.assertIn("nota de rodapé 1", speech)
 
     @unittest.skip("Text transform API changed")
@@ -324,12 +327,14 @@ class TestConverterApplication(unittest.TestCase):
         self.assertNotIn("[[FOOTNOTE", text)
 
         segments = item.chapter.formatting_segments or []
-        self.assertTrue(any(seg.formatting == 'italic' and seg.text == 'itálico' for seg in segments))
-        self.assertFalse(any('[[FOOTNOTE' in seg.text for seg in segments))
-        speech = item.chapter.speech_text or ''
-        self.assertNotIn('*', speech)
-        self.assertNotIn('_', speech)
-        self.assertNotIn('nota de rodapé', speech)
+        self.assertTrue(
+            any(seg.formatting == "italic" and seg.text == "itálico" for seg in segments)
+        )
+        self.assertFalse(any("[[FOOTNOTE" in seg.text for seg in segments))
+        speech = item.chapter.speech_text or ""
+        self.assertNotIn("*", speech)
+        self.assertNotIn("_", speech)
+        self.assertNotIn("nota de rodapé", speech)
 
     def test_run_with_exception(self):
         """Test running with exception"""
@@ -341,10 +346,10 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
-            parallel=None
+            parallel=None,
         )
 
-        with patch('main.EbookReader') as mock_reader:
+        with patch("main.EbookReader") as mock_reader:
             mock_reader.side_effect = Exception("Test exception")
 
             result = self.app.run(args)
@@ -368,23 +373,29 @@ class TestArgumentParser(unittest.TestCase):
     def test_create_argument_parser(self):
         """Test argument parser creation"""
         parser = create_argument_parser()
-        
+
         # Test required argument
         args = parser.parse_args(["convert", "test.epub"])
         self.assertEqual(args.input_file, "test.epub")
-        
+
         # Test optional arguments
-        args = parser.parse_args([
-            "convert",
-            "test.epub",
-            "--engine", "edge",
-            "--voice", "test-voice",
-            "--model", "test-model",
-            "--output-dir", "test-output",
-            "--show-structure",
-            "--filter-chapters"
-        ])
-        
+        args = parser.parse_args(
+            [
+                "convert",
+                "test.epub",
+                "--engine",
+                "edge",
+                "--voice",
+                "test-voice",
+                "--model",
+                "test-model",
+                "--output-dir",
+                "test-output",
+                "--show-structure",
+                "--filter-chapters",
+            ]
+        )
+
         self.assertEqual(args.engine, "edge")
         self.assertEqual(args.voice, "test-voice")
         self.assertEqual(args.model, "test-model")
@@ -395,7 +406,7 @@ class TestArgumentParser(unittest.TestCase):
     def test_parser_engine_choices(self):
         """Test engine choices validation"""
         parser = create_argument_parser()
-        
+
         # Valid engines
         for engine in ["edge", "coqui", "piper"]:
             args = parser.parse_args(["convert", "test.epub", "--engine", engine])
@@ -405,30 +416,30 @@ class TestArgumentParser(unittest.TestCase):
 class TestMainFunction(unittest.TestCase):
     """Test cases for main function"""
 
-    @patch('main.ConverterApplication')
-    @patch('sys.argv', ['main.py', 'convert', 'test.epub'])
+    @patch("main.ConverterApplication")
+    @patch("sys.argv", ["main.py", "convert", "test.epub"])
     def test_main_function(self, mock_app_class):
         """Test main function"""
         mock_app = Mock()
         mock_app.run.return_value = 0
         mock_app_class.return_value = mock_app
-        
+
         result = main()
         self.assertEqual(result, 0)
         mock_app.run.assert_called_once()
 
-    @patch('main.ConverterApplication')
-    @patch('sys.argv', ['main.py', 'convert', 'test.epub'])
+    @patch("main.ConverterApplication")
+    @patch("sys.argv", ["main.py", "convert", "test.epub"])
     def test_main_function_with_error(self, mock_app_class):
         """Test main function with error"""
         mock_app = Mock()
         mock_app.run.return_value = 1
         mock_app_class.return_value = mock_app
-        
+
         result = main()
         self.assertEqual(result, 1)
         mock_app.run.assert_called_once()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -1,4 +1,5 @@
-import { useTranslations } from '../i18n/I18nProvider';
+import { useState } from "react";
+import { useTranslations } from "../i18n/I18nProvider";
 
 interface ResumableJobEntry {
   jobId: string;
@@ -12,11 +13,23 @@ interface ResumableJobEntry {
 interface ResumableJobsPanelProps {
   jobs: ResumableJobEntry[];
   onResume: (jobId: string) => void;
+  onRemove?: (jobId: string) => void;
+  queueDisplay?: JSX.Element | null;
+  collapsedCount?: number;
+  loading?: boolean;
 }
 
-export default function ResumableJobsPanel({ jobs, onResume }: ResumableJobsPanelProps): JSX.Element {
+export default function ResumableJobsPanel({
+  jobs,
+  onResume,
+  onRemove,
+  queueDisplay,
+  collapsedCount = 1,
+  loading = false,
+}: ResumableJobsPanelProps): JSX.Element {
   const t = useTranslations();
   const hasJobs = Array.isArray(jobs) && jobs.length > 0;
+  const [expanded, setExpanded] = useState(false);
 
   const formatWhen = (timestamp: number): string => {
     if (!timestamp || Number.isNaN(timestamp)) return t.resumableJobs.justNow;
@@ -53,23 +66,60 @@ export default function ResumableJobsPanel({ jobs, onResume }: ResumableJobsPane
         </div>
       </div>
       <ul className="resumable-jobs__list">
-        {hasJobs ? (
-          jobs.map((job) => {
+        {loading ? (
+          <li className="resumable-jobs__item resumable-jobs__item--loading">
+            <div className="resumable-jobs__loading">
+              <div className="resumable-jobs__spinner" />
+              <span>
+                {t.resumableJobs.loading ||
+                  "Carregando conversões pendentes..."}
+              </span>
+            </div>
+          </li>
+        ) : hasJobs ? (
+          (expanded ? jobs : jobs.slice(0, collapsedCount)).map((job) => {
             const languageDisplay = formatLanguage(job.language);
             return (
               <li key={job.jobId} className="resumable-jobs__item">
                 <div className="resumable-jobs__meta">
-                  <strong className="resumable-jobs__title">{job.fileName}</strong>
-                  <span className="resumable-jobs__time">{formatWhen(job.timestamp)}</span>
+                  <strong className="resumable-jobs__title">
+                    {job.fileName}
+                  </strong>
+                  <span className="resumable-jobs__time">
+                    {formatWhen(job.timestamp)}
+                  </span>
                 </div>
                 <div className="resumable-jobs__details">
-                  {job.engine && <span>{t.resumableJobs.engineLabel(job.engine)}</span>}
-                  {job.voice && <span>{t.resumableJobs.voiceLabel(job.voice)}</span>}
-                  {languageDisplay && <span>{t.resumableJobs.languageLabel(languageDisplay)}</span>}
+                  {job.engine && (
+                    <span>{t.resumableJobs.engineLabel(job.engine)}</span>
+                  )}
+                  {job.voice && (
+                    <span>{t.resumableJobs.voiceLabel(job.voice)}</span>
+                  )}
+                  {languageDisplay && (
+                    <span>
+                      {t.resumableJobs.languageLabel(languageDisplay)}
+                    </span>
+                  )}
                 </div>
-                <button type="button" className="resumable-jobs__action" onClick={() => onResume(job.jobId)}>
-                  {t.resumableJobs.resumeButton}
-                </button>
+                <div className="resumable-jobs__actions">
+                  {onRemove && (
+                    <button
+                      type="button"
+                      className="resumable-jobs__remove"
+                      onClick={() => onRemove(job.jobId)}
+                    >
+                      {t.resumableJobs.removeButton}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="resumable-jobs__action"
+                    onClick={() => onResume(job.jobId)}
+                  >
+                    {t.resumableJobs.resumeButton}
+                  </button>
+                </div>
               </li>
             );
           })
@@ -79,6 +129,18 @@ export default function ResumableJobsPanel({ jobs, onResume }: ResumableJobsPane
           </li>
         )}
       </ul>
+      {hasJobs && jobs.length > collapsedCount && (
+        <button
+          type="button"
+          className="resumable-jobs__toggle"
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {t.resumableJobs.toggleMore(expanded)}
+        </button>
+      )}
+      {queueDisplay && (
+        <div className="resumable-jobs__queue">{queueDisplay}</div>
+      )}
     </section>
   );
 }

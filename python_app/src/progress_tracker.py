@@ -21,10 +21,16 @@ class ProgressTracker:
         """Atualiza progresso atual"""
         self.current_item = current_item
         elapsed = time.time() - self.start_time
-        eta = (elapsed / current_item) * (self.total_items - current_item) if current_item > 0 else 0
+        eta = (
+            (elapsed / current_item) * (self.total_items - current_item) if current_item > 0 else 0
+        )
         progress_pct = (current_item / self.total_items) * 100
         bar = self._generate_progress_bar(progress_pct)
-        print(f"\r{self.description}: [{bar}] {progress_pct:.1f}% ({current_item}/{self.total_items}) ETA: {self._format_time(eta)} - {status_message}", end="", flush=True)
+        print(
+            f"\r{self.description}: [{bar}] {progress_pct:.1f}% ({current_item}/{self.total_items}) ETA: {self._format_time(eta)} - {status_message}",
+            end="",
+            flush=True,
+        )
 
     def finish(self):
         """Marca o progresso como concluído"""

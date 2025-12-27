@@ -7,7 +7,6 @@ import sys
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-
 try:  # pragma: no cover - platform dependent
     import termios  # type: ignore
     import tty  # type: ignore
@@ -30,7 +29,9 @@ class TerminalPrompt:
     def __init__(self) -> None:
         self._stdin = sys.stdin
         self._stdout = sys.stdout
-        self._supports_termios = bool(termios and tty and self._stdin.isatty() and self._stdout.isatty())
+        self._supports_termios = bool(
+            termios and tty and self._stdin.isatty() and self._stdout.isatty()
+        )
 
     # Public API ---------------------------------------------------------
     def ask(

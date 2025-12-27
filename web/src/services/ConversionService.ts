@@ -1,9 +1,9 @@
-import { API_BASE_URL, POLL_INTERVAL_MS } from '../config';
+import { API_BASE_URL, ENABLE_SSE, POLL_INTERVAL_MS } from "../config";
 import {
   ConversionFormValues,
   JobSnapshot,
   RecentJobEntry,
-} from '../types/conversion';
+} from "../types/conversion";
 
 export interface PollOptions {
   intervalMs?: number;
@@ -26,6 +26,11 @@ export interface ResumableJob {
   uiLanguage?: string;
 }
 
+export interface RestartOptions {
+  keep_cache?: boolean;
+  keep_finished?: boolean;
+}
+
 export interface ConversionClient {
   submit(request: ConversionFormValues): Promise<{ jobId: string }>;
   fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot>;
@@ -34,7 +39,9 @@ export interface ConversionClient {
   getRecentJobs?(): Promise<RecentJobEntry[] | null>;
   cancel?(jobId: string): Promise<{ status: string }>;
   resume?(jobId: string): Promise<{ status: string }>;
+  removeJob?(jobId: string): Promise<{ status: string }>;
   upload?(file: File): Promise<UploadResponse>;
+  restartBackend?(options?: RestartOptions): Promise<{ status: string }>;
 }
 
 export interface UploadResponse {
@@ -49,55 +56,216 @@ export interface UploadResponse {
 function buildFormData(values: ConversionFormValues): FormData {
   const formData = new FormData();
   if (values.uploadId) {
-    formData.append('upload_id', values.uploadId);
+    formData.append("upload_id", values.uploadId);
   }
   if (values.file && !values.uploadId) {
-    formData.append('file', values.file);
+    formData.append("file", values.file);
   }
-  formData.append('engine', values.engine);
+  formData.append("engine", values.engine);
   if (values.voice) {
-    formData.append('voice', values.voice);
+    formData.append("voice", values.voice);
+  }
+  if (values.model) {
+    formData.append("model", values.model);
   }
   if (values.chapters) {
-    formData.append('chapters', values.chapters);
+    formData.append("chapters", values.chapters);
+  }
+  if (values.sections) {
+    formData.append("sections", values.sections);
   }
   if (values.priority) {
-    formData.append('priority', values.priority);
+    formData.append("priority", values.priority);
   }
   if (values.footnoteMode) {
-    formData.append('footnote_mode', values.footnoteMode);
+    formData.append("footnote_mode", values.footnoteMode);
   }
   if (values.language) {
-    formData.append('language', values.language);
+    formData.append("language", values.language);
   }
-  if (typeof values.formattingCues === 'boolean') {
-    formData.append('formatting_cues', values.formattingCues ? 'on' : 'off');
+  if (typeof values.formattingCues === "boolean") {
+    formData.append("formatting_cues", values.formattingCues ? "on" : "off");
+  }
+  if (values.noParallel) {
+    formData.append("no_parallel", "on");
+  }
+  if (typeof values.maxPerformance === "boolean") {
+    formData.append("max_performance", values.maxPerformance ? "on" : "off");
+  }
+  if (
+    typeof values.parallelSlots === "number" &&
+    Number.isFinite(values.parallelSlots)
+  ) {
+    formData.append("parallel_slots", String(values.parallelSlots));
+  }
+  if (
+    typeof values.edgeChunkChars === "number" &&
+    Number.isFinite(values.edgeChunkChars)
+  ) {
+    formData.append("edge_chunk_chars", String(values.edgeChunkChars));
+  }
+  if (
+    typeof values.edgeMaxSegmentSeconds === "number" &&
+    Number.isFinite(values.edgeMaxSegmentSeconds)
+  ) {
+    formData.append(
+      "edge_max_segment_seconds",
+      String(values.edgeMaxSegmentSeconds),
+    );
+  }
+  if (typeof values.edgeEnableParallel === "boolean") {
+    formData.append(
+      "edge_enable_parallel",
+      values.edgeEnableParallel ? "on" : "off",
+    );
+  }
+  if (typeof values.edgeAutoTune === "boolean") {
+    formData.append("edge_auto_tune", values.edgeAutoTune ? "on" : "off");
+  }
+  if (
+    typeof values.coquiChunkChars === "number" &&
+    Number.isFinite(values.coquiChunkChars)
+  ) {
+    formData.append("coqui_chunk_chars", String(values.coquiChunkChars));
+  }
+  if (
+    typeof values.coquiMaxWorkers === "number" &&
+    Number.isFinite(values.coquiMaxWorkers)
+  ) {
+    formData.append("coqui_max_workers", String(values.coquiMaxWorkers));
+  }
+  if (typeof values.coquiSafeMode === "boolean") {
+    formData.append("coqui_safe_mode", values.coquiSafeMode ? "on" : "off");
+  }
+  if (
+    typeof values.piperMaxProcs === "number" &&
+    Number.isFinite(values.piperMaxProcs)
+  ) {
+    formData.append("piper_max_procs", String(values.piperMaxProcs));
+  }
+  if (values.bitrate) {
+    formData.append("bitrate", values.bitrate);
+  }
+  if (
+    typeof values.sampleRate === "number" &&
+    Number.isFinite(values.sampleRate)
+  ) {
+    formData.append("sample_rate", String(values.sampleRate));
+  }
+  if (typeof values.channels === "number" && Number.isFinite(values.channels)) {
+    formData.append("channels", String(values.channels));
+  }
+  if (typeof values.clearCache === "boolean") {
+    formData.append("clear_cache", values.clearCache ? "on" : "off");
+  }
+  if (typeof values.forceReprocess === "boolean") {
+    formData.append("force_reprocess", values.forceReprocess ? "on" : "off");
+  }
+  if (typeof values.filterChapters === "boolean") {
+    formData.append("filter_chapters", values.filterChapters ? "on" : "off");
+  }
+  if (typeof values.verbose === "boolean") {
+    formData.append("verbose", values.verbose ? "on" : "off");
+  }
+  if (typeof values.useLanguageDetection === "boolean") {
+    formData.append(
+      "use_language_detection",
+      values.useLanguageDetection ? "on" : "off",
+    );
+  }
+  if (typeof values.prioritizePrimaryLanguage === "boolean") {
+    formData.append(
+      "prioritize_primary_language",
+      values.prioritizePrimaryLanguage ? "on" : "off",
+    );
+  }
+  if (
+    typeof values.healthCheckIntervalSeconds === "number" &&
+    Number.isFinite(values.healthCheckIntervalSeconds)
+  ) {
+    formData.append(
+      "health_check_interval_seconds",
+      String(values.healthCheckIntervalSeconds),
+    );
+  }
+  if (
+    typeof values.healthCheckSlowEdgeCps === "number" &&
+    Number.isFinite(values.healthCheckSlowEdgeCps)
+  ) {
+    formData.append(
+      "health_check_slow_edge_cps",
+      String(values.healthCheckSlowEdgeCps),
+    );
+  }
+  if (
+    typeof values.healthCheckSlowCps === "number" &&
+    Number.isFinite(values.healthCheckSlowCps)
+  ) {
+    formData.append("health_check_slow_cps", String(values.healthCheckSlowCps));
+  }
+  if (
+    typeof values.healthCheckHighCpu === "number" &&
+    Number.isFinite(values.healthCheckHighCpu)
+  ) {
+    formData.append("health_check_high_cpu", String(values.healthCheckHighCpu));
+  }
+  if (
+    typeof values.healthCheckHighMem === "number" &&
+    Number.isFinite(values.healthCheckHighMem)
+  ) {
+    formData.append("health_check_high_mem", String(values.healthCheckHighMem));
+  }
+  if (
+    typeof values.healthCheckOkCpu === "number" &&
+    Number.isFinite(values.healthCheckOkCpu)
+  ) {
+    formData.append("health_check_ok_cpu", String(values.healthCheckOkCpu));
+  }
+  if (
+    typeof values.healthCheckOkMem === "number" &&
+    Number.isFinite(values.healthCheckOkMem)
+  ) {
+    formData.append("health_check_ok_mem", String(values.healthCheckOkMem));
+  }
+  if (
+    typeof values.healthCheckSlowStreak === "number" &&
+    Number.isFinite(values.healthCheckSlowStreak)
+  ) {
+    formData.append(
+      "health_check_slow_streak",
+      String(values.healthCheckSlowStreak),
+    );
   }
   if (values.uiLanguage) {
-    formData.append('ui_language', values.uiLanguage);
+    formData.append("ui_language", values.uiLanguage);
   }
   return formData;
 }
 
-export function normalizeErrorMessage(status: number, statusText: string | undefined, body: string | undefined): string {
-  const trimmedBody = body?.trim() ?? '';
+export function normalizeErrorMessage(
+  status: number,
+  statusText: string | undefined,
+  body: string | undefined,
+): string {
+  const trimmedBody = body?.trim() ?? "";
   const statusLabel = statusText ? `${status} ${statusText}` : `${status}`;
-  const fallback = status >= 500
-    ? `Servidor respondeu com um erro interno (${statusLabel}). Tente novamente em instantes.`
-    : `Requisição falhou (${statusLabel}). Verifique e tente novamente.`;
+  const fallback =
+    status >= 500
+      ? `Servidor respondeu com um erro interno (${statusLabel}). Tente novamente em instantes.`
+      : `Requisição falhou (${statusLabel}). Verifique e tente novamente.`;
 
   if (!trimmedBody) {
     return fallback;
   }
 
   const tryParseJson = (): string | null => {
-    if (!trimmedBody.startsWith('{') && !trimmedBody.startsWith('[')) {
+    if (!trimmedBody.startsWith("{") && !trimmedBody.startsWith("[")) {
       return null;
     }
     try {
       const payload = JSON.parse(trimmedBody);
       const detail = payload?.detail ?? payload?.error ?? payload?.message;
-      if (typeof detail === 'string' && detail.trim()) {
+      if (typeof detail === "string" && detail.trim()) {
         return detail.trim();
       }
     } catch (_error) {
@@ -125,7 +293,9 @@ export function normalizeErrorMessage(status: number, statusText: string | undef
 async function parseResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(normalizeErrorMessage(response.status, response.statusText, text));
+    throw new Error(
+      normalizeErrorMessage(response.status, response.statusText, text),
+    );
   }
   return response.json() as Promise<T>;
 }
@@ -138,8 +308,11 @@ export function normalizeAssetUrl(baseUrl: string, assetUrl: string): string {
     return assetUrl;
   }
 
-  const origin = typeof window !== 'undefined' && window.location ? window.location.origin : '';
-  const trimmedBase = (baseUrl || '').trim();
+  const origin =
+    typeof window !== "undefined" && window.location
+      ? window.location.origin
+      : "";
+  const trimmedBase = (baseUrl || "").trim();
 
   if (trimmedBase && /^https?:\/\//i.test(trimmedBase)) {
     try {
@@ -149,42 +322,42 @@ export function normalizeAssetUrl(baseUrl: string, assetUrl: string): string {
     }
   }
 
-  if (assetUrl.startsWith('/')) {
+  if (assetUrl.startsWith("/")) {
     return origin ? `${origin}${assetUrl}` : assetUrl;
   }
 
   if (trimmedBase) {
-    const prefix = trimmedBase.startsWith('/')
+    const prefix = trimmedBase.startsWith("/")
       ? `${origin}${trimmedBase}`
       : origin
         ? `${origin}/${trimmedBase}`
         : trimmedBase;
-    return `${prefix.replace(/\/$/, '')}/${assetUrl.replace(/^\//, '')}`;
+    return `${prefix.replace(/\/$/, "")}/${assetUrl.replace(/^\//, "")}`;
   }
 
-  return origin ? `${origin}/${assetUrl.replace(/^\//, '')}` : assetUrl;
+  return origin ? `${origin}/${assetUrl.replace(/^\//, "")}` : assetUrl;
 }
 
 async function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   if (signal?.aborted) {
-    throw new DOMException('Aborted', 'AbortError');
+    throw new DOMException("Aborted", "AbortError");
   }
 
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
       if (signal) {
-        signal.removeEventListener('abort', onAbort);
+        signal.removeEventListener("abort", onAbort);
       }
       resolve();
     }, ms);
 
     const onAbort = () => {
       clearTimeout(timeout);
-      reject(new DOMException('Aborted', 'AbortError'));
+      reject(new DOMException("Aborted", "AbortError"));
     };
 
     if (signal) {
-      signal.addEventListener('abort', onAbort, { once: true });
+      signal.addEventListener("abort", onAbort, { once: true });
     }
   });
 }
@@ -194,9 +367,43 @@ export class HttpConversionClient implements ConversionClient {
 
   constructor(private readonly baseUrl: string = API_BASE_URL) {}
 
+  private supportsEventStream(): boolean {
+    return (
+      ENABLE_SSE &&
+      typeof window !== "undefined" &&
+      typeof window.EventSource === "function"
+    );
+  }
+
+  private isTerminalState(state?: string | null): boolean {
+    if (!state) {
+      return false;
+    }
+    return ["finished", "failed", "interrupted", "cancelled"].includes(state);
+  }
+
+  private isTransientPollError(error: unknown): boolean {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      return false;
+    }
+    if (!(error instanceof Error)) {
+      return false;
+    }
+    const status = (error as Error & { status?: number }).status;
+    if (typeof status === "number") {
+      return status === 429 || status >= 500;
+    }
+    const message = error.message.toLowerCase();
+    return (
+      message.includes("failed to fetch") ||
+      message.includes("network") ||
+      message.includes("timeout")
+    );
+  }
+
   private resolve(path: string): string {
-    const normalizedBase = this.baseUrl.replace(/\/$/, '');
-    const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+    const normalizedBase = this.baseUrl.replace(/\/$/, "");
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     if (!normalizedBase) {
       return normalizedPath;
     }
@@ -205,82 +412,129 @@ export class HttpConversionClient implements ConversionClient {
       return `${normalizedBase}${normalizedPath}`;
     }
 
-    if (normalizedBase.endsWith('/api') && normalizedPath.startsWith('/api')) {
+    if (normalizedBase.endsWith("/api") && normalizedPath.startsWith("/api")) {
       return `${normalizedBase}${normalizedPath.substring(4)}`;
     }
 
     return `${normalizedBase}${normalizedPath}`;
   }
 
+  private normalizeSnapshot(snapshot: JobSnapshot): JobSnapshot {
+    const normalized: JobSnapshot = { ...snapshot };
+
+    if (Array.isArray(snapshot.outputs)) {
+      normalized.outputs = snapshot.outputs.map((asset) => ({
+        ...asset,
+        url: normalizeAssetUrl(this.baseUrl, asset.url),
+      }));
+    }
+
+    if (normalized.coverUrl) {
+      normalized.coverUrl = normalizeAssetUrl(
+        this.baseUrl,
+        normalized.coverUrl,
+      );
+    }
+
+    if (Array.isArray(normalized.chapterProgress)) {
+      normalized.chapterProgress = normalized.chapterProgress.map(
+        (chapter) => ({
+          ...chapter,
+          downloadUrl: chapter.downloadUrl
+            ? normalizeAssetUrl(this.baseUrl, chapter.downloadUrl)
+            : undefined,
+        }),
+      );
+    }
+
+    return normalized;
+  }
+
   async submit(request: ConversionFormValues): Promise<{ jobId: string }> {
-    const response = await fetch(this.resolve('/api/convert'), {
-      method: 'POST',
+    const response = await fetch(this.resolve("/api/convert"), {
+      method: "POST",
       body: buildFormData(request),
     });
     return parseResponse<{ jobId: string }>(response);
   }
 
   async fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot> {
-    const response = await fetch(this.resolve(`/api/jobs/${encodeURIComponent(jobId)}`), {
-      method: 'GET',
-      signal,
-    });
+    const response = await fetch(
+      this.resolve(`/api/jobs/${encodeURIComponent(jobId)}`),
+      {
+        method: "GET",
+        signal,
+      },
+    );
     if (response.status === 404) {
       throw new Error(`Job ${jobId} not found (404)`);
     }
-    const snapshot = await parseResponse<JobSnapshot>(response);
-    if (Array.isArray(snapshot.outputs)) {
-      snapshot.outputs = snapshot.outputs.map((asset) => ({
-        ...asset,
-        url: normalizeAssetUrl(this.baseUrl, asset.url),
-      }));
+    if (!response.ok) {
+      const text = await response.text();
+      const error = new Error(
+        normalizeErrorMessage(response.status, response.statusText, text),
+      ) as Error & { status?: number };
+      error.status = response.status;
+      throw error;
     }
-    if (snapshot.coverUrl) {
-      snapshot.coverUrl = normalizeAssetUrl(this.baseUrl, snapshot.coverUrl);
-    }
-    return snapshot;
+    const snapshot = (await response.json()) as JobSnapshot;
+    return this.normalizeSnapshot(snapshot);
   }
 
   async poll(jobId: string, options: PollOptions = {}): Promise<JobSnapshot> {
-    const interval = options.intervalMs ?? POLL_INTERVAL_MS;
-    const { signal } = options;
-
-    while (true) {
-      const snapshot = await this.fetch(jobId, signal);
-      options.onSnapshot?.(snapshot);
-
-      if (
-        snapshot.state === 'finished'
-        || snapshot.state === 'failed'
-        || snapshot.state === 'interrupted'
-        || snapshot.state === 'cancelled'
-      ) {
-        return snapshot;
+    if (this.supportsEventStream()) {
+      const streamed = await this.pollWithEventSource(jobId, options);
+      if (streamed) {
+        return streamed;
       }
-
-      await sleep(interval, signal);
     }
+    return this.pollWithHttp(jobId, options);
   }
 
   async cancel(jobId: string): Promise<{ status: string }> {
-    const response = await fetch(this.resolve(`/api/jobs/${encodeURIComponent(jobId)}/cancel`), {
-      method: 'POST',
-    });
+    const response = await fetch(
+      this.resolve(`/api/jobs/${encodeURIComponent(jobId)}/cancel`),
+      {
+        method: "POST",
+      },
+    );
     return parseResponse<{ status: string }>(response);
   }
 
   async resume(jobId: string): Promise<{ status: string }> {
-    const response = await fetch(this.resolve(`/api/jobs/${encodeURIComponent(jobId)}/resume`), {
-      method: 'POST',
+    const response = await fetch(
+      this.resolve(`/api/jobs/${encodeURIComponent(jobId)}/resume`),
+      {
+        method: "POST",
+      },
+    );
+    return parseResponse<{ status: string }>(response);
+  }
+
+  async removeJob(jobId: string): Promise<{ status: string }> {
+    const response = await fetch(
+      this.resolve(`/api/jobs/${encodeURIComponent(jobId)}`),
+      {
+        method: "DELETE",
+      },
+    );
+    return parseResponse<{ status: string }>(response);
+  }
+
+  async restartBackend(options?: RestartOptions): Promise<{ status: string }> {
+    const response = await fetch(this.resolve("/api/system/restart"), {
+      method: "POST",
+      headers: options ? { "Content-Type": "application/json" } : undefined,
+      body: options ? JSON.stringify(options) : undefined,
     });
     return parseResponse<{ status: string }>(response);
   }
 
   async upload(file: File): Promise<UploadResponse> {
     const formData = new FormData();
-    formData.append('file', file);
-    const response = await fetch(this.resolve('/api/uploads'), {
-      method: 'POST',
+    formData.append("file", file);
+    const response = await fetch(this.resolve("/api/uploads"), {
+      method: "POST",
       body: formData,
     });
     const payload = await parseResponse<UploadResponse>(response);
@@ -295,28 +549,31 @@ export class HttpConversionClient implements ConversionClient {
       return null;
     }
     try {
-      const response = await fetch(this.resolve('/api/jobs/resumable'), {
-        method: 'GET',
+      const response = await fetch(this.resolve("/api/jobs/resumable"), {
+        method: "GET",
       });
       if (response.status === 404) {
         this.resumableEndpointAvailable = false;
         return null;
       }
-      const data = await parseResponse<{ resumable_jobs: ResumableJob[]; count: number }>(response);
+      const data = await parseResponse<{
+        resumable_jobs: ResumableJob[];
+        count: number;
+      }>(response);
       return data.resumable_jobs || [];
     } catch (error) {
-      if (error instanceof Error && error.message.includes('404')) {
+      if (error instanceof Error && error.message.includes("404")) {
         this.resumableEndpointAvailable = false;
         return null;
       }
-      console.warn('[ConversionClient] Failed to fetch resumable jobs:', error);
+      console.warn("[ConversionClient] Failed to fetch resumable jobs:", error);
       return null;
     }
   }
 
   async getRecentJobs(): Promise<RecentJobEntry[] | null> {
-    const response = await fetch(this.resolve('/api/jobs/recent'), {
-      method: 'GET',
+    const response = await fetch(this.resolve("/api/jobs/recent"), {
+      method: "GET",
     });
     if (!response.ok) {
       return null;
@@ -327,14 +584,143 @@ export class HttpConversionClient implements ConversionClient {
     }
     return payload.jobs as RecentJobEntry[];
   }
+
+  private async pollWithHttp(
+    jobId: string,
+    options: PollOptions,
+  ): Promise<JobSnapshot> {
+    const interval = options.intervalMs ?? POLL_INTERVAL_MS;
+    const { signal } = options;
+    let retryDelay = interval;
+
+    while (!signal?.aborted) {
+      try {
+        const snapshot = await this.fetch(jobId, signal);
+        options.onSnapshot?.(snapshot);
+        retryDelay = interval;
+
+        if (this.isTerminalState(snapshot.state)) {
+          return snapshot;
+        }
+
+        await sleep(interval, signal);
+      } catch (error) {
+        if (signal?.aborted) {
+          throw error;
+        }
+        if (this.isTransientPollError(error)) {
+          await sleep(retryDelay, signal);
+          retryDelay = Math.min(Math.round(retryDelay * 1.6), 15000);
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new DOMException("Aborted", "AbortError");
+  }
+
+  private async pollWithEventSource(
+    jobId: string,
+    options: PollOptions,
+  ): Promise<JobSnapshot | null> {
+    if (!this.supportsEventStream()) {
+      return null;
+    }
+    const { signal } = options;
+    if (signal?.aborted) {
+      throw new DOMException("Aborted", "AbortError");
+    }
+
+    const streamUrl = this.resolve(
+      `/api/jobs/${encodeURIComponent(jobId)}/stream`,
+    );
+
+    return new Promise<JobSnapshot | null>((resolve, reject) => {
+      let settled = false;
+      let source: EventSource | null = null;
+
+      const cleanup = () => {
+        if (source) {
+          source.onmessage = null;
+          source.onerror = null;
+          source.close();
+          source = null;
+        }
+        if (signal) {
+          signal.removeEventListener("abort", handleAbort);
+        }
+      };
+
+      const finalize = (payload: JobSnapshot | null) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(payload);
+      };
+
+      const handleAbort = () => {
+        cleanup();
+        reject(new DOMException("Aborted", "AbortError"));
+      };
+
+      const handleMessage = (event: MessageEvent) => {
+        try {
+          const payload = JSON.parse(event.data) as JobSnapshot;
+          const snapshot = this.normalizeSnapshot(payload);
+          options.onSnapshot?.(snapshot);
+          if (this.isTerminalState(snapshot.state)) {
+            finalize(snapshot);
+          }
+        } catch (error) {
+          console.warn(
+            "[ConversionClient] Failed to parse SSE payload:",
+            error,
+          );
+        }
+      };
+
+      const handleError = () => {
+        finalize(null);
+      };
+
+      try {
+        source = new EventSource(streamUrl, { withCredentials: true });
+      } catch (error) {
+        console.warn(
+          "[ConversionClient] Failed to establish SSE connection:",
+          error,
+        );
+        finalize(null);
+        return;
+      }
+
+      source.onmessage = handleMessage;
+      source.onerror = handleError;
+
+      if (signal) {
+        signal.addEventListener("abort", handleAbort, { once: true });
+      }
+    });
+  }
 }
 
 export class MockConversionClient implements ConversionClient {
   private jobCounter = 0;
 
-  private createMockAudio(chapterName: string, durationSeconds: number): string {
+  private createMockAudio(
+    chapterName: string,
+    durationSeconds: number,
+  ): string {
     // Create a simple audio context to generate a beep tone
-    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const webkitAudioContext = (
+      window as Window & { webkitAudioContext?: typeof AudioContext }
+    ).webkitAudioContext;
+    const AudioContextCtor = window.AudioContext ?? webkitAudioContext;
+    if (!AudioContextCtor) {
+      throw new Error("AudioContext is not supported in this environment.");
+    }
+    const audioContext = new AudioContextCtor();
     const sampleRate = audioContext.sampleRate;
     const duration = durationSeconds;
     const numSamples = sampleRate * duration;
@@ -352,7 +738,7 @@ export class MockConversionClient implements ConversionClient {
 
     // Convert to WAV format
     const wav = this.audioBufferToWav(audioBuffer);
-    const blob = new Blob([wav], { type: 'audio/wav' });
+    const blob = new Blob([wav], { type: "audio/wav" });
     return URL.createObjectURL(blob);
   }
 
@@ -374,10 +760,10 @@ export class MockConversionClient implements ConversionClient {
     const view = new DataView(arrayBuffer);
 
     // Write WAV header
-    this.writeString(view, 0, 'RIFF');
+    this.writeString(view, 0, "RIFF");
     view.setUint32(4, totalLength - 8, true);
-    this.writeString(view, 8, 'WAVE');
-    this.writeString(view, 12, 'fmt ');
+    this.writeString(view, 8, "WAVE");
+    this.writeString(view, 12, "fmt ");
     view.setUint32(16, 16, true); // fmt chunk size
     view.setUint16(20, format, true);
     view.setUint16(22, numChannels, true);
@@ -385,7 +771,7 @@ export class MockConversionClient implements ConversionClient {
     view.setUint32(28, sampleRate * blockAlign, true);
     view.setUint16(32, blockAlign, true);
     view.setUint16(34, bitDepth, true);
-    this.writeString(view, 36, 'data');
+    this.writeString(view, 36, "data");
     view.setUint32(40, dataLength, true);
 
     // Write audio data
@@ -415,33 +801,45 @@ export class MockConversionClient implements ConversionClient {
     }
   }
 
-  private floatTo16BitPCM(view: DataView, offset: number, input: Float32Array): void {
+  private floatTo16BitPCM(
+    view: DataView,
+    offset: number,
+    input: Float32Array,
+  ): void {
     for (let i = 0; i < input.length; i++, offset += 2) {
       const s = Math.max(-1, Math.min(1, input[i]));
-      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+      view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true);
     }
   }
 
   async submit(request: ConversionFormValues): Promise<{ jobId: string }> {
     this.jobCounter++;
     const jobId = `mock-job-${this.jobCounter}`;
-    console.log('[MockClient] Conversion started:', { jobId, request });
+    console.log("[MockClient] Conversion started:", { jobId, request });
     return { jobId };
   }
 
   async cancel(_jobId: string): Promise<{ status: string }> {
-    return { status: 'cancelled' };
+    return { status: "cancelled" };
   }
 
   async resume(_jobId: string): Promise<{ status: string }> {
-    return { status: 'queued' };
+    return { status: "queued" };
+  }
+
+  async removeJob(_jobId: string): Promise<{ status: string }> {
+    return { status: "deleted" };
+  }
+
+  async restartBackend(_options?: RestartOptions): Promise<{ status: string }> {
+    return { status: "restarting" };
   }
 
   async fetch(jobId: string): Promise<JobSnapshot> {
     return {
       jobId,
-      state: 'queued',
-      events: ['Mock: Job received', 'Mock: Processing started'],
+      state: "queued",
+      events: ["Mock: Job received", "Mock: Processing started"],
     };
   }
 
@@ -461,185 +859,186 @@ This ZIP file would contain:
 Generated: ${new Date().toISOString()}
 Note: In production, this would be a real ZIP with all MP3 files.
 `;
-    const blob = new Blob([content], { type: 'application/zip' });
+    const blob = new Blob([content], { type: "application/zip" });
     return URL.createObjectURL(blob);
   }
 
   async poll(jobId: string, options: PollOptions = {}): Promise<JobSnapshot> {
-    const bookTitle = 'Livro_de_Exemplo';
-    const coverUrl = 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=720&auto=format&fit=crop';
+    const bookTitle = "Livro_de_Exemplo";
+    const coverUrl =
+      "https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=720&auto=format&fit=crop";
 
     // Create individual chapter MP3s with different durations
-    const chapter1 = this.createMockAudio('001 - Capítulo 1', 3);
-    const chapter2 = this.createMockAudio('002 - Capítulo 2', 4);
-    const chapter3 = this.createMockAudio('003 - Capítulo 3', 5);
+    const chapter1 = this.createMockAudio("001 - Capítulo 1", 3);
+    const chapter2 = this.createMockAudio("002 - Capítulo 2", 4);
+    const chapter3 = this.createMockAudio("003 - Capítulo 3", 5);
     const zipUrl = this.createMockZip(bookTitle);
 
     const parallelSlots = 3;
     const steps: JobSnapshot[] = [
       {
         jobId,
-        state: 'running',
+        state: "running",
         events: [
-          '📚 METADADOS DO EBOOK',
-          '================================================================',
-          '📜 Título: Livro de Exemplo',
-          '✍️ Autor: Autor Desconhecido',
-          '📊 Capítulos: 3',
-          '📝 Total de caracteres: 12,450',
+          "📚 METADADOS DO EBOOK",
+          "================================================================",
+          "📜 Título: Livro de Exemplo",
+          "✍️ Autor: Autor Desconhecido",
+          "📊 Capítulos: 3",
+          "📝 Total de caracteres: 12,450",
         ],
         chaptersTotal: 3,
         chaptersCompleted: 0,
         progressPercent: 5,
-        bookTitle: 'Livro de Exemplo',
-        bookAuthor: 'Autor Desconhecido',
+        bookTitle: "Livro de Exemplo",
+        bookAuthor: "Autor Desconhecido",
         coverUrl,
         parallelSlots,
         parallelActive: 0,
-     },
+      },
       {
         jobId,
-        state: 'running',
+        state: "running",
         events: [
-          '📚 METADADOS DO EBOOK',
-          '================================================================',
-          '📜 Título: Livro de Exemplo',
-          '✍️ Autor: Autor Desconhecido',
-          '📊 Capítulos: 3',
-          '📝 Total de caracteres: 12,450',
-          '',
-          '🌐 DETECÇÃO DE IDIOMA',
-          '----------------------------------------------------------------',
-          '🌐 Idioma principal: pt-BR (confiança: Alta)',
-          '   Probabilidade: 95.2%',
-          '🔍 Caracteres analisados: 12,450',
+          "📚 METADADOS DO EBOOK",
+          "================================================================",
+          "📜 Título: Livro de Exemplo",
+          "✍️ Autor: Autor Desconhecido",
+          "📊 Capítulos: 3",
+          "📝 Total de caracteres: 12,450",
+          "",
+          "🌐 DETECÇÃO DE IDIOMA",
+          "----------------------------------------------------------------",
+          "🌐 Idioma principal: pt-BR (confiança: Alta)",
+          "   Probabilidade: 95.2%",
+          "🔍 Caracteres analisados: 12,450",
         ],
-        detectedLanguage: 'pt-BR',
+        detectedLanguage: "pt-BR",
         chaptersTotal: 3,
         chaptersCompleted: 0,
         progressPercent: 15,
-        bookTitle: 'Livro de Exemplo',
-        bookAuthor: 'Autor Desconhecido',
+        bookTitle: "Livro de Exemplo",
+        bookAuthor: "Autor Desconhecido",
         coverUrl,
         parallelSlots,
         parallelActive: 0,
-     },
+      },
       {
         jobId,
-        state: 'running',
+        state: "running",
         events: [
-          '📚 METADADOS DO EBOOK',
-          '================================================================',
-          '📜 Título: Livro de Exemplo',
-          '✍️ Autor: Autor Desconhecido',
-          '📊 Capítulos: 3',
-          '📝 Total de caracteres: 12,450',
-          '',
-          '🌐 DETECÇÃO DE IDIOMA',
-          '----------------------------------------------------------------',
-          '🌐 Idioma principal: pt-BR (confiança: Alta)',
-          '   Probabilidade: 95.2%',
-          '🔍 Caracteres analisados: 12,450',
-          '',
-          '🔄 Modo sequencial automático: processando capítulos um por vez',
-          '🎯 Convertendo capítulo 1/3: Capítulo 1',
-          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s',
+          "📚 METADADOS DO EBOOK",
+          "================================================================",
+          "📜 Título: Livro de Exemplo",
+          "✍️ Autor: Autor Desconhecido",
+          "📊 Capítulos: 3",
+          "📝 Total de caracteres: 12,450",
+          "",
+          "🌐 DETECÇÃO DE IDIOMA",
+          "----------------------------------------------------------------",
+          "🌐 Idioma principal: pt-BR (confiança: Alta)",
+          "   Probabilidade: 95.2%",
+          "🔍 Caracteres analisados: 12,450",
+          "",
+          "🔄 Modo sequencial automático: processando capítulos um por vez",
+          "🎯 Convertendo capítulo 1/3: Capítulo 1",
+          "Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s",
         ],
-        detectedLanguage: 'pt-BR',
+        detectedLanguage: "pt-BR",
         chaptersTotal: 3,
         chaptersCompleted: 1,
-        currentChapter: 'Capítulo 1',
+        currentChapter: "Capítulo 1",
         progressPercent: 33,
-        bookTitle: 'Livro de Exemplo',
-        bookAuthor: 'Autor Desconhecido',
+        bookTitle: "Livro de Exemplo",
+        bookAuthor: "Autor Desconhecido",
         coverUrl,
         parallelSlots,
         parallelActive: 1,
-     },
+      },
       {
         jobId,
-        state: 'running',
+        state: "running",
         events: [
-          '📚 METADADOS DO EBOOK',
-          '================================================================',
-          '📜 Título: Livro de Exemplo',
-          '✍️ Autor: Autor Desconhecido',
-          '📊 Capítulos: 3',
-          '📝 Total de caracteres: 12,450',
-          '',
-          '🌐 DETECÇÃO DE IDIOMA',
-          '----------------------------------------------------------------',
-          '🌐 Idioma principal: pt-BR (confiança: Alta)',
-          '   Probabilidade: 95.2%',
-          '🔍 Caracteres analisados: 12,450',
-          '',
-          '🚀 Paralelo automático: até 3 capítulos simultâneos',
-          '🎯 Convertendo capítulo 1/3: Capítulo 1',
-          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s',
-          '✅ Concluído: 001 - Capítulo 1.mp3',
-          '',
-          '🎯 Convertendo capítulo 2/3: Capítulo 2',
-          '🎯 Convertendo capítulo 3/3: Capítulo 3',
-          'Processando: [████████████████████░░░░░░░░░░] 66.7% (2/3) ETA: 0m 22s',
+          "📚 METADADOS DO EBOOK",
+          "================================================================",
+          "📜 Título: Livro de Exemplo",
+          "✍️ Autor: Autor Desconhecido",
+          "📊 Capítulos: 3",
+          "📝 Total de caracteres: 12,450",
+          "",
+          "🌐 DETECÇÃO DE IDIOMA",
+          "----------------------------------------------------------------",
+          "🌐 Idioma principal: pt-BR (confiança: Alta)",
+          "   Probabilidade: 95.2%",
+          "🔍 Caracteres analisados: 12,450",
+          "",
+          "🚀 Paralelo automático: até 3 capítulos simultâneos",
+          "🎯 Convertendo capítulo 1/3: Capítulo 1",
+          "Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s",
+          "✅ Concluído: 001 - Capítulo 1.mp3",
+          "",
+          "🎯 Convertendo capítulo 2/3: Capítulo 2",
+          "🎯 Convertendo capítulo 3/3: Capítulo 3",
+          "Processando: [████████████████████░░░░░░░░░░] 66.7% (2/3) ETA: 0m 22s",
         ],
-        detectedLanguage: 'pt-BR',
+        detectedLanguage: "pt-BR",
         chaptersTotal: 3,
         chaptersCompleted: 2,
-        currentChapter: 'Capítulo 2',
+        currentChapter: "Capítulo 2",
         progressPercent: 67,
-        bookTitle: 'Livro de Exemplo',
-        bookAuthor: 'Autor Desconhecido',
+        bookTitle: "Livro de Exemplo",
+        bookAuthor: "Autor Desconhecido",
         coverUrl,
         parallelSlots,
         parallelActive: 2,
-     },
+      },
       {
         jobId,
-        state: 'finished',
+        state: "finished",
         events: [
-          '📚 METADADOS DO EBOOK',
-          '================================================================',
-          '📜 Título: Livro de Exemplo',
-          '✍️ Autor: Autor Desconhecido',
-          '📊 Capítulos: 3',
-          '📝 Total de caracteres: 12,450',
-          '',
-          '🌐 DETECÇÃO DE IDIOMA',
-          '----------------------------------------------------------------',
-          '🌐 Idioma principal: pt-BR (confiança: Alta)',
-          '   Probabilidade: 95.2%',
-          '🔍 Caracteres analisados: 12,450',
-          '',
-          '🚀 Paralelo automático: até 3 capítulos simultâneos',
-          '🎯 Convertendo capítulo 1/3: Capítulo 1',
-          'Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s',
-          '✅ Concluído: 001 - Capítulo 1.mp3',
-          '',
-          '🎯 Convertendo capítulo 2/3: Capítulo 2',
-          'Processando: [████████████████████░░░░░░░░░░] 66.7% (2/3) ETA: 0m 22s',
-          '✅ Concluído: 002 - Capítulo 2.mp3',
-          '',
-          '🎯 Convertendo capítulo 3/3: Capítulo 3',
-          'Processando: [██████████████████████████████] 100.0% (3/3) ETA: 0m 0s',
-          '✅ Concluído: 003 - Capítulo 3.mp3',
-          '',
-          '📦 Criando arquivo ZIP: Livro_de_Exemplo.zip',
-          '✅ Conversão finalizada em 1m 8s',
-          '📁 Arquivo disponível: Livro_de_Exemplo.zip (3 capítulos)',
+          "📚 METADADOS DO EBOOK",
+          "================================================================",
+          "📜 Título: Livro de Exemplo",
+          "✍️ Autor: Autor Desconhecido",
+          "📊 Capítulos: 3",
+          "📝 Total de caracteres: 12,450",
+          "",
+          "🌐 DETECÇÃO DE IDIOMA",
+          "----------------------------------------------------------------",
+          "🌐 Idioma principal: pt-BR (confiança: Alta)",
+          "   Probabilidade: 95.2%",
+          "🔍 Caracteres analisados: 12,450",
+          "",
+          "🚀 Paralelo automático: até 3 capítulos simultâneos",
+          "🎯 Convertendo capítulo 1/3: Capítulo 1",
+          "Processando: [██████████░░░░░░░░░░░░░░░░░░░░] 33.3% (1/3) ETA: 0m 45s",
+          "✅ Concluído: 001 - Capítulo 1.mp3",
+          "",
+          "🎯 Convertendo capítulo 2/3: Capítulo 2",
+          "Processando: [████████████████████░░░░░░░░░░] 66.7% (2/3) ETA: 0m 22s",
+          "✅ Concluído: 002 - Capítulo 2.mp3",
+          "",
+          "🎯 Convertendo capítulo 3/3: Capítulo 3",
+          "Processando: [██████████████████████████████] 100.0% (3/3) ETA: 0m 0s",
+          "✅ Concluído: 003 - Capítulo 3.mp3",
+          "",
+          "📦 Criando arquivo ZIP: Livro_de_Exemplo.zip",
+          "✅ Conversão finalizada em 1m 8s",
+          "📁 Arquivo disponível: Livro_de_Exemplo.zip (3 capítulos)",
         ],
-        detectedLanguage: 'pt-BR',
+        detectedLanguage: "pt-BR",
         chaptersTotal: 3,
         chaptersCompleted: 3,
-        currentChapter: 'Capítulo 3',
+        currentChapter: "Capítulo 3",
         progressPercent: 100,
         outputs: [
-          { name: 'Livro_de_Exemplo.zip', url: zipUrl },
-          { name: '001 - Capítulo 1.mp3', url: chapter1, durationSeconds: 180 },
-          { name: '002 - Capítulo 2.mp3', url: chapter2, durationSeconds: 240 },
-          { name: '003 - Capítulo 3.mp3', url: chapter3, durationSeconds: 300 },
+          { name: "Livro_de_Exemplo.zip", url: zipUrl },
+          { name: "001 - Capítulo 1.mp3", url: chapter1, durationSeconds: 180 },
+          { name: "002 - Capítulo 2.mp3", url: chapter2, durationSeconds: 240 },
+          { name: "003 - Capítulo 3.mp3", url: chapter3, durationSeconds: 300 },
         ],
-        bookTitle: 'Livro de Exemplo',
-        bookAuthor: 'Autor Desconhecido',
+        bookTitle: "Livro de Exemplo",
+        bookAuthor: "Autor Desconhecido",
         coverUrl,
         parallelSlots,
         parallelActive: 0,
@@ -649,7 +1048,7 @@ Note: In production, this would be a real ZIP with all MP3 files.
     for (const step of steps) {
       await sleep(1800);
       options.onSnapshot?.(step);
-      if (step.state === 'finished') {
+      if (step.state === "finished") {
         return step;
       }
     }

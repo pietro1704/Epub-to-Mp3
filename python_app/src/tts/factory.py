@@ -13,7 +13,9 @@ from ..config import ConversionConfig, VoiceConfigProvider
 
 
 class TTSEngine(Protocol):
-    async def synthesize_async(self, text: str, output_path: Path):  # pragma: no cover - protocol stub
+    async def synthesize_async(
+        self, text: str, output_path: Path
+    ):  # pragma: no cover - protocol stub
         ...
 
 
@@ -43,7 +45,11 @@ class TTSFactory:
         if engine == "edge":
             from .edge_engine import EdgeTTSEngine
 
-            voice = config.voice or self.voice_provider.get_voice("edge", config.primary_language) or "pt-BR-ThalitaMultilingualNeural"
+            voice = (
+                config.voice
+                or self.voice_provider.get_voice("edge", config.primary_language)
+                or "pt-BR-ThalitaMultilingualNeural"
+            )
             chunk_chars = config.edge_chunk_chars or None
             max_segment = config.edge_max_segment_seconds or None
             if getattr(config, "edge_aggressive_mode", False):
@@ -63,6 +69,7 @@ class TTSFactory:
                 enable_parallel=enable_parallel,
                 formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
                 formatting_locale=getattr(config, "formatting_locale", "pt"),
+                log_callback=config.log_callback,
             )
 
         if engine == "coqui":
@@ -78,6 +85,10 @@ class TTSFactory:
                 verbose=config.verbose,
                 formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
                 formatting_locale=getattr(config, "formatting_locale", "pt"),
+                status_callback=config.log_callback,  # Reusa log_callback para status do modelo
+                chunk_char_limit=getattr(config, "coqui_chunk_chars", None),
+                max_workers=getattr(config, "coqui_max_workers", None),
+                safe_mode=getattr(config, "coqui_safe_mode", None),
             )
 
         if engine == "piper":
@@ -96,13 +107,16 @@ class TTSFactory:
                 language_voices=config.language_voices,
                 formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
                 formatting_locale=getattr(config, "formatting_locale", "pt"),
+                max_procs=getattr(config, "piper_max_procs", None),
             )
             engine_instance.verbose = config.verbose
             return engine_instance
 
         raise ValueError(f"Unsupported engine: {config.engine}")
 
-    def _find_piper_model(self, preferred_code: Optional[str] = None, models_dir: Optional[Path] = None) -> Path:
+    def _find_piper_model(
+        self, preferred_code: Optional[str] = None, models_dir: Optional[Path] = None
+    ) -> Path:
         candidate_dirs = []
         env_dir = os.getenv("PIPER_MODEL_DIR")
         if env_dir:
@@ -115,6 +129,10 @@ class TTSFactory:
             if isinstance(mocked_directory, pathlib.Path):
                 candidate_dirs.append(mocked_directory)
 
+        # Prioridade: root/models, root/models/piper, python_app/models
+        project_root = Path(__file__).resolve().parents[3]  # Epub-to-Mp3/
+        candidate_dirs.append(project_root / "models")
+        candidate_dirs.append(project_root / "models" / "piper")
         candidate_dirs.append(Path("models"))
         candidate_dirs.append(Path.cwd() / "models")
         python_root = Path(__file__).resolve().parents[1]
@@ -140,7 +158,9 @@ class TTSFactory:
         if not sources:
             return None
 
-        target_dir = Path(os.getenv("PIPER_MODEL_DIR") or Path(__file__).resolve().parents[1] / "models")
+        # Prioridade: PIPER_MODEL_DIR env, depois root/models
+        project_root = Path(__file__).resolve().parents[3]  # Epub-to-Mp3/
+        target_dir = Path(os.getenv("PIPER_MODEL_DIR") or project_root / "models")
         target_dir.mkdir(parents=True, exist_ok=True)
 
         model_path = target_dir / sources["model"]

@@ -3,15 +3,15 @@
 Unit tests for simplified configuration module
 """
 
-import unittest
-import tempfile
 import os
+import sys
+import tempfile
+import unittest
 from pathlib import Path
 
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.config import ConversionConfig, AppConfig, VoiceConfigProvider
+from src.config import AppConfig, ConversionConfig, VoiceConfigProvider
 from src.paths import COQUI_CACHE_DIR, PIPER_MODEL_CACHE_DIR
 
 
@@ -45,7 +45,7 @@ class TestConversionConfig(unittest.TestCase):
             bitrate="64k",
             sample_rate=44100,
             channels=2,
-            force_reprocess=True
+            force_reprocess=True,
         )
 
         self.assertEqual(config.engine, "piper")
@@ -96,31 +96,22 @@ class TestAppConfig(unittest.TestCase):
 
     def test_create_conversion_config_with_voice(self):
         """Test creating conversion config with voice"""
-        config = self.config.create_conversion_config(
-            engine="edge",
-            voice="pt-BR-FranciscaNeural"
-        )
-        
+        config = self.config.create_conversion_config(engine="edge", voice="pt-BR-FranciscaNeural")
+
         self.assertEqual(config.engine, "edge")
         self.assertEqual(config.voice, "pt-BR-FranciscaNeural")
 
     def test_create_conversion_config_with_model(self):
         """Test creating conversion config with model"""
-        config = self.config.create_conversion_config(
-            engine="piper",
-            model="test_model.onnx"
-        )
-        
+        config = self.config.create_conversion_config(engine="piper", model="test_model.onnx")
+
         self.assertEqual(config.engine, "piper")
         self.assertEqual(config.model_path, Path("test_model.onnx"))
 
     def test_create_conversion_config_with_kwargs(self):
         """Test creating conversion config with additional kwargs"""
         config = self.config.create_conversion_config(
-            engine="coqui",
-            book_title="Test Book",
-            output_dir="custom",
-            preserve_all_chapters=False
+            engine="coqui", book_title="Test Book", output_dir="custom", preserve_all_chapters=False
         )
 
         self.assertEqual(config.engine, "coqui")
@@ -140,10 +131,10 @@ class TestVoiceConfigProvider(unittest.TestCase):
     def test_edge_voices(self):
         """Test Edge-TTS voices"""
         voices = self.provider.edge_voices
-        
+
         self.assertIsInstance(voices, dict)
         self.assertGreater(len(voices), 0)
-        
+
         # Check structure
         for key, value in voices.items():
             self.assertIsInstance(key, str)
@@ -152,7 +143,7 @@ class TestVoiceConfigProvider(unittest.TestCase):
             voice_id, description = value
             self.assertIsInstance(voice_id, str)
             self.assertIsInstance(description, str)
-            
+
         # Check for expected voices
         self.assertIn("1", voices)
         thalita_voice, thalita_desc = voices["1"]
@@ -162,10 +153,10 @@ class TestVoiceConfigProvider(unittest.TestCase):
     def test_coqui_models(self):
         """Test Coqui TTS models"""
         models = self.provider.coqui_models
-        
+
         self.assertIsInstance(models, dict)
         self.assertGreater(len(models), 0)
-        
+
         # Check structure
         for key, value in models.items():
             self.assertIsInstance(key, str)
@@ -176,7 +167,7 @@ class TestVoiceConfigProvider(unittest.TestCase):
             self.assertIsInstance(name, str)
             self.assertIsInstance(desc, str)
             self.assertIsInstance(multilingual, bool)
-        
+
         # Check for expected model
         self.assertIn("1", models)
         xtts_model, xtts_name, xtts_desc, xtts_multi = models["1"]
@@ -200,33 +191,33 @@ class TestVoiceConfigProvider(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             models_dir = Path(temp_dir) / "models"
             models_dir.mkdir()
-            
+
             # Create mock model files
             model1 = models_dir / "faber-medium.onnx"
             model2 = models_dir / "other-model.onnx"
-            
+
             model1.write_text("dummy model 1")
             model2.write_text("dummy model 2")
-            
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(temp_dir)
                 models = self.provider.get_piper_models()
-                
+
                 self.assertEqual(len(models), 2)
-                
+
                 # Check faber model
                 self.assertIn("faber-medium", models)
                 faber_info = models["faber-medium"]
                 self.assertEqual(faber_info["name"], "faber-medium")
                 self.assertTrue(faber_info["recommended"])
-                
-                # Check other model  
+
+                # Check other model
                 self.assertIn("other-model", models)
                 other_info = models["other-model"]
                 self.assertEqual(other_info["name"], "other-model")
                 self.assertFalse(other_info["recommended"])
-                
+
             finally:
                 os.chdir(original_cwd)
 
@@ -235,7 +226,7 @@ class TestVoiceConfigProvider(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             models_dir = Path(temp_dir) / "models"
             models_dir.mkdir()
-            
+
             original_cwd = os.getcwd()
             try:
                 os.chdir(temp_dir)
@@ -275,14 +266,14 @@ class TestConstants(unittest.TestCase):
     def test_default_config(self):
         """Test default config constant"""
         from src.config import DEFAULT_CONFIG
-        
+
         self.assertIsInstance(DEFAULT_CONFIG, ConversionConfig)
         self.assertEqual(DEFAULT_CONFIG.engine, "edge")
 
     def test_supported_formats(self):
         """Test supported formats constant"""
         from src.config import SUPPORTED_FORMATS
-        
+
         self.assertIsInstance(SUPPORTED_FORMATS, list)
         self.assertIn(".epub", SUPPORTED_FORMATS)
         self.assertIn(".pdf", SUPPORTED_FORMATS)
@@ -290,10 +281,10 @@ class TestConstants(unittest.TestCase):
     def test_audio_formats(self):
         """Test audio formats constant"""
         from src.config import AUDIO_FORMATS
-        
+
         self.assertIsInstance(AUDIO_FORMATS, list)
         self.assertIn("mp3", AUDIO_FORMATS)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

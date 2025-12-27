@@ -11,8 +11,9 @@ EPUB/PDF to MP3 audiobook converter using TTS engines (Edge-TTS, Coqui, Piper). 
 ### Setup
 ```bash
 # Requires Python 3.11 (for Coqui TTS compatibility)
-python3.11 -m venv .venv311
-source .venv311/bin/activate
+# Use mise to install Python 3.11 and create venv automatically
+mise install
+source .venv/bin/activate
 pip install -r requirements.txt
 # FFmpeg required: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)
 ```

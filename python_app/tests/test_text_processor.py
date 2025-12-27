@@ -4,6 +4,7 @@ Unit tests for TextProcessor class
 """
 
 import unittest
+
 from src.ebook_reader import TextProcessor
 
 
@@ -39,7 +40,7 @@ class TestTextProcessor(unittest.TestCase):
         </html>
         """
         result = TextProcessor.html_to_plain_text(html)
-        
+
         # Should remove title tag
         self.assertNotIn("Test Title", result)
         # Should contain the actual content
@@ -54,7 +55,7 @@ class TestTextProcessor(unittest.TestCase):
         result = TextProcessor.html_to_plain_text(html)
         self.assertEqual(result, "Text with nbsp")
 
-        html_unicode = "<p>Text\u00A0with\u00A0unicode\u00A0nbsp</p>"
+        html_unicode = "<p>Text\u00a0with\u00a0unicode\u00a0nbsp</p>"
         result_unicode = TextProcessor.html_to_plain_text(html_unicode)
         self.assertEqual(result_unicode, "Text with unicode nbsp")
 
@@ -62,9 +63,9 @@ class TestTextProcessor(unittest.TestCase):
         """Test html_to_plain_text with block elements creating line breaks"""
         html = "<p>Para 1</p><div>Div content</div><br><li>List item</li>"
         result = TextProcessor.html_to_plain_text(html)
-        
+
         # Should contain line breaks between block elements
-        lines = result.split('\n')
+        lines = result.split("\n")
         self.assertGreater(len(lines), 1)
         self.assertIn("Para 1", result)
         self.assertIn("Div content", result)
@@ -84,7 +85,7 @@ class TestTextProcessor(unittest.TestCase):
         """Test html_to_plain_text normalizes multiple line breaks"""
         html = "<p>Para 1</p><br><br><br><p>Para 2</p>"
         result = TextProcessor.html_to_plain_text(html)
-        
+
         # Should normalize multiple line breaks to double line break
         self.assertNotIn("\n\n\n", result)
         self.assertIn("Para 1", result)
@@ -186,9 +187,9 @@ class TestTextProcessor(unittest.TestCase):
     def test_collect_footnotes_fallback_handles_short_ids(self):
         """Fallback extraction should handle short footnote ids like 'fn1'."""
         markup = (
-            "<p>Texto com nota<a href=\"#fn1\">1</a>.</p>"
-            "<section epub:type=\"footnotes\">"
-            "<p id=\"fn1\"><a href=\"#ref-fn1\">1</a> Nota explicativa detalhada.</p>"
+            '<p>Texto com nota<a href="#fn1">1</a>.</p>'
+            '<section epub:type="footnotes">'
+            '<p id="fn1"><a href="#ref-fn1">1</a> Nota explicativa detalhada.</p>'
             "</section>"
         )
 
@@ -199,10 +200,12 @@ class TestTextProcessor(unittest.TestCase):
         self.assertIn("Nota explicativa", footnotes[0]["text"])
 
         plain_text, _ = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
-        rendered = TextProcessor._render_footnotes(plain_text, footnotes, mode="inline", context_words=8)
+        rendered = TextProcessor._render_footnotes(
+            plain_text, footnotes, mode="inline", context_words=8
+        )
 
         self.assertIn("nota de rodapé 1", rendered.lower())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

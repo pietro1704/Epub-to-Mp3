@@ -1,0 +1,27 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+        files: "\\.py$"
+      - id: ruff-format
+        files: "\\.py$"
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v4.0.0-alpha.8
+    hooks:
+      - id: prettier
+        args: ["--config", "web/.prettierrc.json"]
+        files: "^web/.*\\.(ts|tsx|js|jsx|json|css|md|html)$"
+  - repo: https://github.com/pre-commit/mirrors-eslint
+    rev: v9.17.0
+    hooks:
+      - id: eslint
+        args: ["--config", "web/.eslintrc.cjs", "--ext", ".ts,.tsx", "--max-warnings=0", "web/src"]
+        additional_dependencies:
+          - "eslint@8.57.0"
+          - "@typescript-eslint/parser@8.15.0"
+          - "@typescript-eslint/eslint-plugin@8.15.0"
+          - "eslint-plugin-react@7.37.2"
+          - "eslint-plugin-react-hooks@4.6.2"
+          - "eslint-config-prettier@9.1.0"

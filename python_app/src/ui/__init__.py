@@ -5,4 +5,4 @@ UI module for TTS converter
 
 from .menu import MenuInterface
 
-__all__ = ['MenuInterface']
+__all__ = ["MenuInterface"]

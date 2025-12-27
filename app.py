@@ -3,8 +3,13 @@
 Hugging Face Space: EPUB to MP3 Converter
 FastAPI backend for converting ebooks to audiobooks.
 """
+
+import os
 import sys
 from pathlib import Path
+
+# Auto-aceitar licença Coqui TTS (CPML não-comercial) antes de qualquer import
+os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
 # Add python_app to path
 sys.path.insert(0, str(Path(__file__).parent / "python_app"))
@@ -12,7 +17,9 @@ sys.path.insert(0, str(Path(__file__).parent / "python_app"))
 from python_app.server import app
 
 if __name__ == "__main__":
-    import uvicorn
     import os
+
+    import uvicorn
+
     port = int(os.getenv("PORT", 7860))
     uvicorn.run(app, host="0.0.0.0", port=port)

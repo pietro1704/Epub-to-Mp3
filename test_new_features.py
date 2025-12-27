@@ -18,13 +18,15 @@ def test_cover_extraction():
     print("=" * 80)
 
     # Teste com EPUB
-    epub_file = "/Users/pietropugliesi/Downloads/Box Dom Quixote de la Mancha - Miguel de Cervantes.epub"
+    epub_file = (
+        "/Users/pietropugliesi/Downloads/Box Dom Quixote de la Mancha - Miguel de Cervantes.epub"
+    )
     if Path(epub_file).exists():
         print(f"\n📚 Testando EPUB: {Path(epub_file).name}")
         reader = EbookReader(epub_file)
         cover = reader.extract_cover_image()
         if cover:
-            print(f"✅ Capa extraída!")
+            print("✅ Capa extraída!")
             print(f"   - Tipo: {cover.media_type}")
             print(f"   - Extensão: {cover.extension}")
             print(f"   - Tamanho: {len(cover.data)} bytes")
@@ -40,7 +42,7 @@ def test_cover_extraction():
         reader = EbookReader(pdf_file)
         cover = reader.extract_cover_image()
         if cover:
-            print(f"✅ Capa extraída!")
+            print("✅ Capa extraída!")
             print(f"   - Tipo: {cover.media_type}")
             print(f"   - Extensão: {cover.extension}")
             print(f"   - Tamanho: {len(cover.data)} bytes")
@@ -112,23 +114,19 @@ def test_language_detection():
 
     # Detectar múltiplas línguas
     predictions = detector._detect_languages(ambiguous, top_n=3)
-    print(f"\nPredições do detector:")
+    print("\nPredições do detector:")
     for pred in predictions:
         print(f"  - {pred.code}: {pred.probability:.2%}")
 
     # Com priorização pt
     result_pt = detector._detect_language_with_timeout(
-        ambiguous,
-        primary_language="pt",
-        ambiguity_threshold=0.15
+        ambiguous, primary_language="pt", ambiguity_threshold=0.15
     )
     print(f"\nCom primary_language='pt': {result_pt}")
 
     # Com priorização es
     result_es = detector._detect_language_with_timeout(
-        ambiguous,
-        primary_language="es",
-        ambiguity_threshold=0.15
+        ambiguous, primary_language="es", ambiguity_threshold=0.15
     )
     print(f"Com primary_language='es': {result_es}")
 
@@ -147,5 +145,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ ERRO: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

@@ -1,7 +1,77 @@
 [tools]
-python = "3.11"
-node = "20"
+# Versão exata do Python para Coqui TTS (requer 3.11)
+python = { version = "3.11.11", virtualenv = ".venv" }
+# Node LTS para frontend (Vite 7.x requer >=20.19.0)
+node = "20.19.0"
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"
 run = "./scripts/dev.sh"
+
+[tasks.clean]
+description = "Clean backend cache, pycache, and completed outputs"
+run = """
+#!/bin/bash
+set -e
+
+echo "🧹 Limpando cache do backend..."
+
+# Remove __pycache__ directories
+echo "  → Removendo __pycache__..."
+find python_app -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find . -maxdepth 1 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+
+# Remove .pyc files
+echo "  → Removendo arquivos .pyc..."
+find python_app -type f -name "*.pyc" -delete 2>/dev/null || true
+find . -maxdepth 2 -type f -name "*.pyc" -delete 2>/dev/null || true
+
+# Remove pytest cache
+echo "  → Removendo .pytest_cache..."
+rm -rf .pytest_cache 2>/dev/null || true
+rm -rf python_app/.pytest_cache 2>/dev/null || true
+
+# Remove output directory (completed conversions)
+echo "  → Removendo arquivos de output..."
+rm -rf output/* 2>/dev/null || true
+
+# Remove TTS cache
+echo "  → Removendo cache do TTS..."
+rm -rf .cache 2>/dev/null || true
+
+# Remove mise cache
+echo "  → Removendo .mise-cache..."
+rm -rf .mise-cache 2>/dev/null || true
+
+echo "✅ Limpeza concluída!"
+echo ""
+echo "Diretórios limpos:"
+echo "  - __pycache__"
+echo "  - .pyc files"
+echo "  - .pytest_cache"
+echo "  - output/*"
+echo "  - .cache (TTS models cache)"
+echo "  - .mise-cache"
+"""
+
+[tasks.install]
+description = "Install Python and web dependencies (venv + npm)"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+echo "📦 Instalando dependências com mise..."
+mise install
+
+echo "🐍 Instalando dependências Python (root)..."
+.venv/bin/python -m pip install -r requirements.txt
+
+echo "🐍 Instalando dependências Python (python_app)..."
+.venv/bin/python -m pip install -r python_app/requirements.txt
+
+echo "🔍 Instalando ferramentas de lint/format..."
+.venv/bin/python -m pip install ruff pre-commit
+
+echo "🌐 Instalando dependências web..."
+(cd web && mise exec -- npm install)
+"""

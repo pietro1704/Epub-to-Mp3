@@ -11,7 +11,12 @@ interface CachedJobsAlertProps {
   onRemove: (jobId: string) => void;
 }
 
-export default function CachedJobsAlert({ cachedJobs, onResume, onDismiss, onRemove }: CachedJobsAlertProps): JSX.Element | null {
+export default function CachedJobsAlert({
+  cachedJobs,
+  onResume,
+  onDismiss,
+  onRemove,
+}: CachedJobsAlertProps): JSX.Element | null {
   if (cachedJobs.length === 0) return null;
 
   const formatTime = (timestamp: number): string => {
@@ -21,34 +26,46 @@ export default function CachedJobsAlert({ cachedJobs, onResume, onDismiss, onRem
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
 
-    if (days > 0) return `há ${days} dia${days > 1 ? 's' : ''}`;
-    if (hours > 0) return `há ${hours} hora${hours > 1 ? 's' : ''}`;
-    if (minutes > 0) return `há ${minutes} minuto${minutes > 1 ? 's' : ''}`;
-    return 'agora mesmo';
+    if (days > 0) return `há ${days} dia${days > 1 ? "s" : ""}`;
+    if (hours > 0) return `há ${hours} hora${hours > 1 ? "s" : ""}`;
+    if (minutes > 0) return `há ${minutes} minuto${minutes > 1 ? "s" : ""}`;
+    return "agora mesmo";
   };
 
   return (
     <div className="cached-jobs-alert">
       <div className="cached-jobs-alert__header">
         <h3>🔄 Conversões Interrompidas</h3>
-        <button type="button" className="cached-jobs-alert__close" onClick={onDismiss} aria-label="Fechar aviso">
+        <button
+          type="button"
+          className="cached-jobs-alert__close"
+          onClick={onDismiss}
+          aria-label="Fechar aviso"
+        >
           ✕
         </button>
       </div>
       <p className="cached-jobs-alert__message">
         {cachedJobs.length === 1
-          ? 'Encontramos 1 conversão que foi interrompida. Deseja retomar?'
+          ? "Encontramos 1 conversão que foi interrompida. Deseja retomar?"
           : `Encontramos ${cachedJobs.length} conversões que foram interrompidas. Deseja retomar alguma?`}
       </p>
       <ul className="cached-jobs-alert__list">
         {cachedJobs.map((job) => (
           <li key={job.jobId} className="cached-jobs-alert__item">
             <div className="cached-jobs-alert__info">
-              <span className="cached-jobs-alert__filename" title={job.fileName}>
+              <span
+                className="cached-jobs-alert__filename"
+                title={job.fileName}
+              >
                 <span aria-hidden="true">📄</span>
-                <span className="cached-jobs-alert__filename-text">{job.fileName}</span>
+                <span className="cached-jobs-alert__filename-text">
+                  {job.fileName}
+                </span>
               </span>
-              <span className="cached-jobs-alert__time">{formatTime(job.timestamp)}</span>
+              <span className="cached-jobs-alert__time">
+                {formatTime(job.timestamp)}
+              </span>
             </div>
             <button
               type="button"

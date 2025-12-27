@@ -5,19 +5,17 @@ TDD Tests: Verificar que a conversão COMPLETA não gera duplicações
 Test-Driven Development - Testes end-to-end
 """
 
-import asyncio
 import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List
 
 # Add python_app to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.ebook_reader import EbookReader
+from src.cache_manager import CacheManager
 from src.config import ConversionConfig
 from src.converter import AudioConverter
-from src.cache_manager import CacheManager
+from src.ebook_reader import EbookReader
 
 
 def test_conversion_creates_exactly_two_files():
@@ -59,13 +57,11 @@ def test_conversion_creates_exactly_two_files():
             prepared.append(ch)
 
         # Deve ter exatamente 2 capítulos preparados
-        assert len(prepared) == 2, \
-            f"Preparação deve ter 2 capítulos, tem {len(prepared)}"
+        assert len(prepared) == 2, f"Preparação deve ter 2 capítulos, tem {len(prepared)}"
 
         # Verificar que os nomes são diferentes
         names = [ch.name for ch in prepared]
-        assert len(set(names)) == 2, \
-            f"Capítulos preparados têm nomes duplicados: {names}"
+        assert len(set(names)) == 2, f"Capítulos preparados têm nomes duplicados: {names}"
 
 
 def test_cache_does_not_duplicate_chapters():
@@ -89,19 +85,13 @@ def test_cache_does_not_duplicate_chapters():
 
         # Preparar dados para cache
         chapters_data = {
-            'title': reader.title,
-            'author': reader.author,
-            'chapters': [
-                {'title': ch.name, 'text': ch.text}
-                for ch in chapters
-            ]
+            "title": reader.title,
+            "author": reader.author,
+            "chapters": [{"title": ch.name, "text": ch.text} for ch in chapters],
         }
 
         # Salvar no cache
-        success = cache_manager.save_chapters_to_cache(
-            Path(epub_path),
-            chapters_data
-        )
+        success = cache_manager.save_chapters_to_cache(Path(epub_path), chapters_data)
 
         assert success, "Falha ao salvar no cache"
 
@@ -109,18 +99,18 @@ def test_cache_does_not_duplicate_chapters():
         cached = cache_manager.get_cached_chapters(Path(epub_path))
 
         assert cached is not None, "Cache não retornou dados"
-        assert 'chapters' in cached, "Cache sem campo 'chapters'"
+        assert "chapters" in cached, "Cache sem campo 'chapters'"
 
-        cached_chapters = cached['chapters']
+        cached_chapters = cached["chapters"]
 
         # Verificar que NÃO há duplicação
-        assert len(cached_chapters) == 2, \
-            f"Cache deve ter 2 capítulos, tem {len(cached_chapters)}. Há duplicação!"
+        assert (
+            len(cached_chapters) == 2
+        ), f"Cache deve ter 2 capítulos, tem {len(cached_chapters)}. Há duplicação!"
 
         # Verificar que os títulos são únicos
-        titles = [ch['title'] for ch in cached_chapters]
-        assert len(set(titles)) == 2, \
-            f"Capítulos no cache têm títulos duplicados: {titles}"
+        titles = [ch["title"] for ch in cached_chapters]
+        assert len(set(titles)) == 2, f"Capítulos no cache têm títulos duplicados: {titles}"
 
 
 def test_text_chunks_no_overlap():
@@ -147,17 +137,18 @@ def test_text_chunks_no_overlap():
         start = end  # NÃO adicionar overlap!
 
     # Verificar que não há overlap
-    all_text = ''.join(chunks)
+    all_text = "".join(chunks)
 
     # Texto reconstruído deve ser EXATAMENTE igual ao original
-    assert all_text == long_text, \
-        "Chunks têm overlap ou lacunas! Texto reconstruído diferente do original"
+    assert (
+        all_text == long_text
+    ), "Chunks têm overlap ou lacunas! Texto reconstruído diferente do original"
 
     # Verificar que cada parte aparece apenas 1x
     # Contar 'A', 'B', 'C'
-    assert all_text.count('A ') == 1000, "Letra A duplicada ou faltando"
-    assert all_text.count('B ') == 1000, "Letra B duplicada ou faltando"
-    assert all_text.count('C ') == 1000, "Letra C duplicada ou faltando"
+    assert all_text.count("A ") == 1000, "Letra A duplicada ou faltando"
+    assert all_text.count("B ") == 1000, "Letra B duplicada ou faltando"
+    assert all_text.count("C ") == 1000, "Letra C duplicada ou faltando"
 
 
 def test_footnote_processing_no_duplication():
@@ -179,21 +170,18 @@ def test_footnote_processing_no_duplication():
     import re
 
     # Encontrar marcadores [N]
-    markers = re.findall(r'\[(\d+)\]', text_with_footnote)
+    markers = re.findall(r"\[(\d+)\]", text_with_footnote)
 
     # Deve ter exatamente 2 ocorrências: [1] no texto e [1] na nota
-    assert len(markers) == 2, \
-        f"Esperado 2 marcadores [1], encontrado {len(markers)}: {markers}"
+    assert len(markers) == 2, f"Esperado 2 marcadores [1], encontrado {len(markers)}: {markers}"
 
     # Ambos devem ser '1'
-    assert markers == ['1', '1'], \
-        f"Marcadores incorretos: {markers}"
+    assert markers == ["1", "1"], f"Marcadores incorretos: {markers}"
 
     # Se processar novamente, NÃO deve duplicar
     # (teste de idempotência)
-    markers_again = re.findall(r'\[(\d+)\]', text_with_footnote)
-    assert markers == markers_again, \
-        "Segunda passagem de processamento duplicou marcadores!"
+    markers_again = re.findall(r"\[(\d+)\]", text_with_footnote)
+    assert markers == markers_again, "Segunda passagem de processamento duplicou marcadores!"
 
 
 def test_chapter_structure_stability():
@@ -226,12 +214,14 @@ def test_chapter_structure_stability():
     names3 = [ch.name for ch in chapters3]
 
     # Todas devem ter 2 capítulos
-    assert count1 == count2 == count3 == 2, \
-        f"Contagens diferem: {count1}, {count2}, {count3}. Há instabilidade!"
+    assert (
+        count1 == count2 == count3 == 2
+    ), f"Contagens diferem: {count1}, {count2}, {count3}. Há instabilidade!"
 
     # Todos devem ter os mesmos nomes
-    assert names1 == names2 == names3, \
-        f"Nomes diferem entre leituras:\n  1: {names1}\n  2: {names2}\n  3: {names3}"
+    assert (
+        names1 == names2 == names3
+    ), f"Nomes diferem entre leituras:\n  1: {names1}\n  2: {names2}\n  3: {names3}"
 
 
 if __name__ == "__main__":

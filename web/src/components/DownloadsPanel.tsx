@@ -1,7 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
-import { useI18n, useTranslations } from '../i18n/I18nProvider';
-import type { Locale } from '../i18n/translations';
-import { ConversionState, DownloadAsset, StatusEntry } from '../types/conversion';
+import { useEffect, useRef, useState } from "react";
+import { useI18n, useTranslations } from "../i18n/I18nProvider";
+import type { Locale } from "../i18n/translations";
+import {
+  ConversionState,
+  DownloadAsset,
+  StatusEntry,
+} from "../types/conversion";
 
 interface DownloadsPanelContext {
   title: string;
@@ -12,60 +16,44 @@ interface DownloadsPanelContext {
 
 interface DownloadsPanelProps {
   downloads: DownloadAsset[];
-  phase: ConversionState['phase'];
+  phase: ConversionState["phase"];
   onReset: () => void;
   isBusy: boolean;
   cliCommand?: string;
   log: StatusEntry[];
+  rawLog?: string[] | null;
   showRawLog?: boolean;
   context?: DownloadsPanelContext;
+  shareTitle?: string;
 }
 
-export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliCommand, log, showRawLog = false, context }: DownloadsPanelProps): JSX.Element {
+export default function DownloadsPanel({
+  downloads,
+  phase,
+  onReset,
+  isBusy,
+  cliCommand,
+  log,
+  rawLog,
+  showRawLog = false,
+  context,
+  shareTitle,
+}: DownloadsPanelProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
   const hasDownloads = downloads.length > 0;
-  const [expandedChapters, setExpandedChapters] = useState<Set<string>>(new Set());
-  const [logPreview, setLogPreview] = useState<{ open: boolean; loading: boolean; content: string; error: string | null }>({
+  const [logPreview, setLogPreview] = useState<{
+    open: boolean;
+    loading: boolean;
+    content: string;
+    error: string | null;
+  }>({
     open: false,
     loading: false,
-    content: '',
+    content: "",
     error: null,
   });
   const verboseLogRef = useRef<HTMLPreElement>(null);
-  const isAutoScrollingRef = useRef(true);
-
-  // Auto-scroll when log updates (only if user is near bottom)
-  useEffect(() => {
-    const element = verboseLogRef.current;
-    if (!element || !showRawLog || log.length === 0) return;
-
-    const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 100;
-
-    if (isAutoScrollingRef.current || isNearBottom) {
-      const scrollToEnd = () => {
-        element.scrollTop = element.scrollHeight;
-      };
-
-      scrollToEnd();
-      // Use requestAnimationFrame to ensure smooth scroll after render
-      requestAnimationFrame(scrollToEnd);
-    }
-  }, [log, showRawLog]);
-
-  // Track manual scrolling
-  useEffect(() => {
-    const element = verboseLogRef.current;
-    if (!element || !showRawLog) return;
-
-    const handleScroll = () => {
-      const isNearBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 50;
-      isAutoScrollingRef.current = isNearBottom;
-    };
-
-    element.addEventListener('scroll', handleScroll, { passive: true });
-    return () => element.removeEventListener('scroll', handleScroll);
-  }, [showRawLog]);
 
   useEffect(() => {
     const handlePlay = (event: Event) => {
@@ -73,39 +61,50 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
       if (!(target instanceof HTMLAudioElement)) {
         return;
       }
-      if (!target.classList.contains('chapter-item__player')) {
+      if (!target.classList.contains("chapter-item__player")) {
         return;
       }
-      const players = document.querySelectorAll<HTMLAudioElement>('audio.chapter-item__player');
+      const players = document.querySelectorAll<HTMLAudioElement>(
+        "audio.chapter-item__player",
+      );
       players.forEach((audio) => {
         if (audio !== target && !audio.paused) {
           audio.pause();
         }
       });
     };
-    document.addEventListener('play', handlePlay, true);
-    return () => document.removeEventListener('play', handlePlay, true);
+    document.addEventListener("play", handlePlay, true);
+    return () => document.removeEventListener("play", handlePlay, true);
   }, []);
 
-  const zipFile = downloads.find(d => d.name.toLowerCase().endsWith('.zip'));
-  const logFile = downloads.find(d => d.name.toLowerCase().endsWith('.log'));
-  const chapters = downloads.filter((d) => d.name.toLowerCase().endsWith('.mp3'));
+  const zipFile = downloads.find((d) => d.name.toLowerCase().endsWith(".zip"));
+  const logFile = downloads.find((d) => d.name.toLowerCase().endsWith(".log"));
+  const chapters = downloads.filter((d) =>
+    d.name.toLowerCase().endsWith(".mp3"),
+  );
+
+  const shareUrl = zipFile?.url ?? downloads[0]?.url;
+  const shareBookTitle = shareTitle?.trim() || t.status.bookFallbackTitle;
+  const [shareFeedback, setShareFeedback] = useState<string | null>(null);
 
   useEffect(() => {
-    setLogPreview({ open: false, loading: false, content: '', error: null });
-  }, [logFile?.url]);
+    setShareFeedback(null);
+  }, [shareTitle, shareUrl]);
 
-  const toggleChapter = (url: string) => {
-    setExpandedChapters((prev) => {
-      const next = new Set(prev);
-      if (next.has(url)) {
-        next.delete(url);
-      } else {
-        next.add(url);
-      }
-      return next;
-    });
-  };
+  useEffect(() => {
+    if (!shareFeedback) {
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const timeout = window.setTimeout(() => setShareFeedback(null), 3500);
+    return () => window.clearTimeout(timeout);
+  }, [shareFeedback]);
+
+  useEffect(() => {
+    setLogPreview({ open: false, loading: false, content: "", error: null });
+  }, [logFile?.url]);
 
   const toggleLogPreview = async () => {
     if (!logFile) return;
@@ -113,7 +112,7 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
       setLogPreview((prev) => ({ ...prev, open: false }));
       return;
     }
-    setLogPreview({ open: true, loading: true, content: '', error: null });
+    setLogPreview({ open: true, loading: true, content: "", error: null });
     try {
       const response = await fetch(logFile.url);
       if (!response.ok) {
@@ -122,14 +121,87 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
       const text = await response.text();
       setLogPreview({ open: true, loading: false, content: text, error: null });
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown';
+      const message = error instanceof Error ? error.message : "unknown";
       setLogPreview({
         open: true,
         loading: false,
-        content: '',
+        content: "",
         error: t.downloads.logError(message),
       });
     }
+  };
+
+  const shareMessage = t.downloads.shareMessage(shareBookTitle);
+
+  const handleCopyLink = async () => {
+    if (!shareUrl) {
+      setShareFeedback(t.downloads.shareUnavailable);
+      return;
+    }
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        navigator.clipboard &&
+        typeof navigator.clipboard.writeText === "function"
+      ) {
+        await navigator.clipboard.writeText(shareUrl);
+      } else if (typeof document !== "undefined") {
+        const textarea = document.createElement("textarea");
+        textarea.value = shareUrl;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      } else {
+        throw new Error("clipboard-not-supported");
+      }
+      setShareFeedback(t.downloads.shareCopied);
+    } catch (error) {
+      console.warn("[DownloadsPanel] Failed to copy share link", error);
+      setShareFeedback(t.downloads.shareCopyError);
+    }
+  };
+
+  const handleNativeShare = async () => {
+    if (!shareUrl) {
+      setShareFeedback(t.downloads.shareUnavailable);
+      return;
+    }
+    try {
+      if (
+        typeof navigator !== "undefined" &&
+        typeof navigator.share === "function"
+      ) {
+        await navigator.share({
+          title: shareBookTitle,
+          text: shareMessage,
+          url: shareUrl,
+        });
+        setShareFeedback(null);
+        return;
+      }
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+      console.warn("[DownloadsPanel] Native share failed", error);
+    }
+    setShareFeedback(t.downloads.shareNativeUnavailable);
+  };
+
+  const handleWhatsappShare = () => {
+    if (!shareUrl) {
+      setShareFeedback(t.downloads.shareUnavailable);
+      return;
+    }
+    if (typeof window === "undefined") {
+      return;
+    }
+    const encoded = encodeURIComponent(`${shareMessage} ${shareUrl}`);
+    const url = `https://wa.me/?text=${encoded}`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -138,9 +210,17 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
         <div className="downloads-panel__context">
           <div>
             <p className="downloads-panel__context-title">{context.title}</p>
-            {context.subtitle && <p className="downloads-panel__context-subtitle">{context.subtitle}</p>}
+            {context.subtitle && (
+              <p className="downloads-panel__context-subtitle">
+                {context.subtitle}
+              </p>
+            )}
           </div>
-          <button type="button" className="downloads-panel__context-action" onClick={context.onAction}>
+          <button
+            type="button"
+            className="downloads-panel__context-action"
+            onClick={context.onAction}
+          >
             {context.actionLabel}
           </button>
         </div>
@@ -153,24 +233,32 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
         </div>
       )}
 
-      {showRawLog && log.length > 0 && (
+      {showRawLog && (rawLog?.length || log.length) > 0 && (
         <div className="downloads-panel__command-section">
           <h3>Saída do terminal (verbose)</h3>
           <pre className="downloads-panel__log" ref={verboseLogRef}>
-            {log.map(entry => entry.message).join('\n')}
+            {Array.isArray(rawLog) && rawLog.length > 0
+              ? rawLog.join("\n")
+              : log.map((entry) => entry.message).join("\n")}
           </pre>
         </div>
       )}
 
-      {!hasDownloads && phase !== 'success' && (
-        <p className="downloads-panel__placeholder">{t.downloads.placeholder}</p>
+      {!hasDownloads && phase !== "success" && (
+        <p className="downloads-panel__placeholder">
+          {t.downloads.placeholder}
+        </p>
       )}
 
       {hasDownloads && (
         <>
           {zipFile && (
             <div className="downloads-panel__primary">
-              <a href={zipFile.url} download={zipFile.name} className="downloads-panel__zip-button">
+              <a
+                href={zipFile.url}
+                download={zipFile.name}
+                className="downloads-panel__zip-button"
+              >
                 <span className="downloads-panel__zip-icon">📦</span>
                 <span className="downloads-panel__zip-text">
                   <strong>{t.downloads.downloadZip}</strong>
@@ -189,7 +277,11 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
                 >
                   {logPreview.open ? t.downloads.hideLog : t.downloads.viewLog}
                 </button>
-                <a href={logFile.url} download={logFile.name} className="downloads-panel__log-link">
+                <a
+                  href={logFile.url}
+                  download={logFile.name}
+                  className="downloads-panel__log-link"
+                >
                   {t.downloads.downloadLog}
                 </a>
               </div>
@@ -197,7 +289,9 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
                 <div className="downloads-panel__log-preview">
                   {logPreview.loading && <p>{t.downloads.logLoading}</p>}
                   {!logPreview.loading && logPreview.error && (
-                    <p className="downloads-panel__log-error">{logPreview.error}</p>
+                    <p className="downloads-panel__log-error">
+                      {logPreview.error}
+                    </p>
                   )}
                   {!logPreview.loading && !logPreview.error && (
                     <pre>{logPreview.content}</pre>
@@ -207,6 +301,43 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
             </div>
           )}
 
+          <div className="downloads-share downloads-share--top">
+            <div className="downloads-share__text">
+              <p className="downloads-share__title">{t.downloads.shareTitle}</p>
+              <p className="downloads-share__subtitle">
+                {t.downloads.shareSubtitle(shareBookTitle)}
+              </p>
+            </div>
+            <div className="downloads-share__actions">
+              <button
+                type="button"
+                className="downloads-share__button downloads-share__button--primary"
+                onClick={handleNativeShare}
+              >
+                {t.downloads.shareNative}
+              </button>
+              <button
+                type="button"
+                className="downloads-share__button downloads-share__button--whatsapp"
+                onClick={handleWhatsappShare}
+              >
+                {t.downloads.shareWhatsapp}
+              </button>
+              <button
+                type="button"
+                className="downloads-share__button downloads-share__button--secondary"
+                onClick={handleCopyLink}
+              >
+                {t.downloads.shareCopyLink}
+              </button>
+            </div>
+            {(shareFeedback || !shareUrl) && (
+              <div className="downloads-share__feedback">
+                {shareFeedback ?? t.downloads.shareUnavailable}
+              </div>
+            )}
+          </div>
+
           {chapters.length > 0 && (
             <>
               <div className="downloads-panel__divider">
@@ -214,34 +345,38 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
               </div>
               <div className="downloads-chapters">
                 {chapters.map((asset) => {
-                  const isExpanded = expandedChapters.has(asset.url);
                   return (
-                    <div key={asset.url} className="chapter-item">
-                      <button
-                        type="button"
-                        className="chapter-item__header"
-                        onClick={() => toggleChapter(asset.url)}
-                        aria-expanded={isExpanded}
-                      >
-                        <span className="chapter-item__icon">{isExpanded ? '▼' : '▶'}</span>
+                    <div
+                      key={asset.url}
+                      className="chapter-item chapter-item--expanded"
+                    >
+                      <div className="chapter-item__header">
                         <span className="chapter-item__name" title={asset.name}>
                           {asset.name}
                         </span>
-                        {typeof asset.durationSeconds === 'number' && (
-                          <span className="chapter-item__duration">{formatDuration(asset.durationSeconds, locale)}</span>
+                        {typeof asset.durationSeconds === "number" && (
+                          <span className="chapter-item__duration">
+                            {formatDuration(asset.durationSeconds, locale)}
+                          </span>
                         )}
-                      </button>
-                      {isExpanded && (
-                        <div className="chapter-item__content">
-                          <audio controls className="chapter-item__player" preload="metadata">
-                            <source src={asset.url} type="audio/mpeg" />
-                            {t.downloads.audioNotSupported}
-                          </audio>
-                          <a href={asset.url} download={asset.name} className="chapter-item__download">
-                            {t.downloads.downloadChapter}
-                          </a>
-                        </div>
-                      )}
+                      </div>
+                      <div className="chapter-item__content">
+                        <audio
+                          controls
+                          className="chapter-item__player"
+                          preload="metadata"
+                        >
+                          <source src={asset.url} type="audio/mpeg" />
+                          {t.downloads.audioNotSupported}
+                        </audio>
+                        <a
+                          href={asset.url}
+                          download={asset.name}
+                          className="chapter-item__download"
+                        >
+                          {t.downloads.downloadChapter}
+                        </a>
+                      </div>
                     </div>
                   );
                 })}
@@ -251,8 +386,15 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
         </>
       )}
 
-      <button type="button" className="downloads-panel__cta" onClick={onReset} disabled={isBusy}>
-        {hasDownloads ? t.downloads.resetWithDownloads : t.downloads.resetWithoutDownloads}
+      <button
+        type="button"
+        className="downloads-panel__cta"
+        onClick={onReset}
+        disabled={isBusy}
+      >
+        {hasDownloads
+          ? t.downloads.resetWithDownloads
+          : t.downloads.resetWithoutDownloads}
       </button>
     </div>
   );
@@ -260,12 +402,14 @@ export default function DownloadsPanel({ downloads, phase, onReset, isBusy, cliC
 
 function formatDuration(seconds: number, locale: Locale): string {
   const totalMinutes = Math.round(seconds / 60);
-  if (totalMinutes < 1) return locale === 'pt' ? '< 1 min' : '< 1 min';
+  if (totalMinutes < 1) return locale === "pt" ? "< 1 min" : "< 1 min";
   if (totalMinutes < 60) return `${totalMinutes} min`;
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
   if (minutes === 0) {
-    return locale === 'pt' ? `${hours} h` : `${hours} h`;
+    return locale === "pt" ? `${hours} h` : `${hours} h`;
   }
-  return locale === 'pt' ? `${hours} h ${minutes} min` : `${hours} h ${minutes} min`;
+  return locale === "pt"
+    ? `${hours} h ${minutes} min`
+    : `${hours} h ${minutes} min`;
 }

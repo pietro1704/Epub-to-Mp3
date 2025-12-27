@@ -3,15 +3,14 @@
 Critical test: Detect audio truncation at ~1 minute mark
 """
 
-import unittest
+import os
+import sys
 import tempfile
-import asyncio
+import unittest
 from pathlib import Path
 from unittest.mock import Mock
 
-import os
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.tts import edge_engine
 from src.tts.edge_engine import EdgeTTSEngine
@@ -29,6 +28,7 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
     def tearDown(self) -> None:
         edge_engine.edge_tts = self._original_edge_tts
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     async def test_realistic_chapter_length_5_minutes(self):
@@ -37,8 +37,7 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
         # Average word length: 5 chars + 1 space = 6 chars/word
         # Total: 750 * 6 = ~4500 chars
         realistic_text = " ".join(
-            f"Esta é a frase número {i} com conteúdo realista que faz sentido."
-            for i in range(750)
+            f"Esta é a frase número {i} com conteúdo realista que faz sentido." for i in range(750)
         )
 
         output_path = Path(self.temp_dir) / "test_5min.mp3"
@@ -78,14 +77,17 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
             file_size,
             expected_min_size,
             f"File too small ({file_size} bytes)! Expected at least {expected_min_size} bytes. "
-            f"This suggests segments were not all processed (truncation bug)."
+            f"This suggests segments were not all processed (truncation bug).",
         )
 
-        self.assertFalse(self.engine.partial_failure_detected, "No partial failure should be flagged for successful synthesis")
+        self.assertFalse(
+            self.engine.partial_failure_detected,
+            "No partial failure should be flagged for successful synthesis",
+        )
         self.assertEqual(
             self.engine.last_segment_report["generated"],
             self.engine.last_segment_report["expected"],
-            "Generated segments should match expected count"
+            "Generated segments should match expected count",
         )
 
     async def test_all_segments_processed_not_just_first(self):
@@ -94,9 +96,11 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
         # Each segment: ~1000 chars (roughly 40 seconds of speech)
         parts = []
         for i in range(5):
-            part = f"PARTE {i} início. " + " ".join(
-                f"Frase {j} da parte {i}." for j in range(80)
-            ) + f" PARTE {i} fim."
+            part = (
+                f"PARTE {i} início. "
+                + " ".join(f"Frase {j} da parte {i}." for j in range(80))
+                + f" PARTE {i} fim."
+            )
             parts.append(part)
 
         full_text = " ".join(parts)
@@ -132,16 +136,19 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
             len(processed_segments),
             5,
             f"Only {len(processed_segments)}/5 parts processed! "
-            f"Processed: {processed_segments}. This is the TRUNCATION BUG!"
+            f"Processed: {processed_segments}. This is the TRUNCATION BUG!",
         )
 
         # Verify they were processed in order
         self.assertEqual(
             processed_segments,
             [0, 1, 2, 3, 4],
-            f"Segments processed out of order or skipped: {processed_segments}"
+            f"Segments processed out of order or skipped: {processed_segments}",
         )
-        self.assertFalse(self.engine.partial_failure_detected, "Full processing should not set partial failure flag")
+        self.assertFalse(
+            self.engine.partial_failure_detected,
+            "Full processing should not set partial failure flag",
+        )
 
     async def test_segment_failure_flags_partial_output(self):
         """Partial synthesis must be flagged as failure to avoid truncated chapters"""
@@ -184,13 +191,20 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
         # Partial output must be rejected
         self.assertIsNone(result, "Engine must return None when segments fail")
         self.assertTrue(self.engine.partial_failure_detected, "Partial failure flag should be set")
-        self.assertIn("incomplete_segments", self.engine.last_error or "", "Last error must report incomplete segments")
+        self.assertIn(
+            "incomplete_segments",
+            self.engine.last_error or "",
+            "Last error must report incomplete segments",
+        )
         self.assertFalse(output_path.exists(), "Partial audio artifact should be removed")
 
         # Segments other than the failed one should still have been attempted
         expected_processed = [0, 2, 3, 4]
         self.assertEqual(sorted(set(processed)), expected_processed)
-        self.assertGreaterEqual(call_count[0], 6, "Retry logic should attempt the failing segment at least twice")
+        self.assertGreaterEqual(
+            call_count[0], 6, "Retry logic should attempt the failing segment at least twice"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

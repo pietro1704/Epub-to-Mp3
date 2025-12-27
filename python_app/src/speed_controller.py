@@ -3,10 +3,10 @@
 
 from __future__ import annotations
 
+import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Deque, Dict, Optional, List
-import time
+from typing import Deque, Dict, List, Optional
 
 
 @dataclass
@@ -204,9 +204,7 @@ class AdaptiveSpeedController:
         max_seconds = float(getattr(config, "edge_max_segment_seconds", 75) or 75)
 
         profile = getattr(tts_engine, "speed_profile", None)
-        words_per_minute = (
-            profile.get("words_per_minute") if isinstance(profile, dict) else 150
-        )
+        words_per_minute = profile.get("words_per_minute") if isinstance(profile, dict) else 150
 
         adjustments: Dict[str, float] = {}
         chars = max(chapter_chars, 0)
@@ -319,9 +317,7 @@ class AdaptiveSpeedController:
 
         # Speed (chars/second)
         speeds = [
-            item.chars / item.elapsed
-            for item in recent_items
-            if item.success and item.elapsed > 0
+            item.chars / item.elapsed for item in recent_items if item.success and item.elapsed > 0
         ]
 
         if not speeds:
@@ -337,7 +333,7 @@ class AdaptiveSpeedController:
         if len(speeds) >= 2:
             mean = sum(speeds) / len(speeds)
             variance = sum((x - mean) ** 2 for x in speeds) / len(speeds)
-            std_dev = variance ** 0.5
+            std_dev = variance**0.5
             consistency = 1.0 / (1.0 + std_dev / mean)  # Normalize
         else:
             consistency = 0.5
@@ -350,20 +346,13 @@ class AdaptiveSpeedController:
         success_score = success_rate * 100
         consistency_score = consistency * 100
 
-        final_score = (
-            speed_score * 0.6 +
-            success_score * 0.3 +
-            consistency_score * 0.1
-        )
+        final_score = speed_score * 0.6 + success_score * 0.3 + consistency_score * 0.1
 
-        reason = f"{int(avg_speed)} chars/s, {int(success_rate*100)}% sucesso"
+        reason = f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% sucesso"
         return (final_score, reason)
 
     def recommend_engine_switch(
-        self,
-        current_engine: str,
-        available_engines: List[str],
-        verbose: bool = False
+        self, current_engine: str, available_engines: List[str], verbose: bool = False
     ) -> Optional[tuple[str, str]]:
         """
         Recommend switching to a different engine if current one is underperforming.
@@ -391,7 +380,7 @@ class AdaptiveSpeedController:
         rankings = self.get_engine_ranking(available_engines)
 
         if verbose:
-            print(f"📊 Engine Performance Rankings:")
+            print("📊 Engine Performance Rankings:")
             for engine, score, reason in rankings:
                 indicator = "⭐" if engine == current_engine else "  "
                 print(f"{indicator} {engine}: {score:.1f} ({reason})")
@@ -403,7 +392,10 @@ class AdaptiveSpeedController:
 
             # Switch if alternative is significantly better (20+ point difference)
             if score > current_score + 20:
-                return (engine, f"{engine} mais rápido ({reason}) vs {current_engine} ({current_reason})")
+                return (
+                    engine,
+                    f"{engine} mais rápido ({reason}) vs {current_engine} ({current_reason})",
+                )
 
         return None
 

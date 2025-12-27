@@ -31,24 +31,21 @@ O resultado final foi bastante satisfatório para todos os envolvidos.
 """
 
     print("Texto de teste:")
-    for line in ambiguous_text.strip().split('\n'):
+    for line in ambiguous_text.strip().split("\n"):
         print(f"  {line}")
 
     # Detectar com múltiplas análises
     predictions = detector._detect_languages(ambiguous_text, top_n=5)
-    print(f"\n🔍 Predições do langdetect:")
+    print("\n🔍 Predições do langdetect:")
     for pred in predictions:
         print(f"   {pred.code}: {pred.probability:.1%}")
 
     # Testar priorização
-    print(f"\n🎯 Teste de priorização:")
+    print("\n🎯 Teste de priorização:")
 
     for primary in ["pt", "es", None]:
         result = detector._detect_language_with_timeout(
-            ambiguous_text,
-            primary_language=primary,
-            ambiguity_threshold=0.15,
-            min_probability=0.4
+            ambiguous_text, primary_language=primary, ambiguity_threshold=0.15, min_probability=0.4
         )
         label = primary if primary else "nenhum"
         print(f"   primary_language='{label}' → {result}")
@@ -66,21 +63,18 @@ Everything worked out perfectly in the end for all parties involved.
 """
 
     print("Texto de teste:")
-    for line in mixed_text.strip().split('\n'):
+    for line in mixed_text.strip().split("\n"):
         print(f"  {line}")
 
     predictions = detector._detect_languages(mixed_text, top_n=5)
-    print(f"\n🔍 Predições do langdetect:")
+    print("\n🔍 Predições do langdetect:")
     for pred in predictions:
         print(f"   {pred.code}: {pred.probability:.1%}")
 
-    print(f"\n🎯 Teste de priorização:")
+    print("\n🎯 Teste de priorização:")
     for primary in ["en", "de", None]:
         result = detector._detect_language_with_timeout(
-            mixed_text,
-            primary_language=primary,
-            ambiguity_threshold=0.15,
-            min_probability=0.4
+            mixed_text, primary_language=primary, ambiguity_threshold=0.15, min_probability=0.4
         )
         label = primary if primary else "nenhum"
         print(f"   primary_language='{label}' → {result}")
@@ -104,9 +98,7 @@ Everything worked out perfectly in the end for all parties involved.
         results = []
         for prim in primaries:
             result = detector._detect_language_with_timeout(
-                phrase,
-                primary_language=prim,
-                ambiguity_threshold=0.15
+                phrase, primary_language=prim, ambiguity_threshold=0.15
             )
             results.append(f"{prim}→{result}")
         print(f"  Com priorização: {', '.join(results)}")
@@ -126,5 +118,6 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ ERRO: {e}")
         import traceback
+
         traceback.print_exc()
         sys.exit(1)

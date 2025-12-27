@@ -1,20 +1,73 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import ConversionForm from './components/ConversionForm';
-import DownloadsPanel from './components/DownloadsPanel';
-import Hero from './components/Hero';
-import Layout from './components/Layout';
-import Panel from './components/Panel';
-import StatusPanel from './components/StatusPanel';
-import RecentJobsPanel from './components/RecentJobsPanel';
-import ResumableJobsPanel from './components/ResumableJobsPanel';
-import QuickQueueAdder from './components/QuickQueueAdder';
-import ActiveConversionBanner from './components/ActiveConversionBanner';
-import ReadyDownloadsList, { ReadyDownloadJob } from './components/ReadyDownloadsList';
-import { useConversionFlow } from './hooks/useConversionFlow';
-import { useI18n, useTranslations } from './i18n/I18nProvider';
-import type { ConversionClient } from './services/ConversionService';
-import type { ConversionFormValues, ConversionState, RecentJobEntry, SubmitBatchOptions, ConversionTemplate } from './types/conversion';
-import { formatEta } from './components/StatusPanel';
+import {
+  CSSProperties,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import Hero from "./components/Hero";
+import Layout from "./components/Layout";
+import Panel from "./components/Panel";
+
+// Lazy load heavy components
+const ConversionForm = lazy(() => import("./components/ConversionForm"));
+const DownloadsPanel = lazy(() => import("./components/DownloadsPanel"));
+const StatusPanel = lazy(() => import("./components/StatusPanel"));
+const RecentJobsPanel = lazy(() => import("./components/RecentJobsPanel"));
+const ResumableJobsPanel = lazy(
+  () => import("./components/ResumableJobsPanel"),
+);
+const QuickQueueAdder = lazy(() => import("./components/QuickQueueAdder"));
+const ActiveConversionBanner = lazy(
+  () => import("./components/ActiveConversionBanner"),
+);
+const ReadyDownloadsList = lazy(() =>
+  import("./components/ReadyDownloadsList").then((m) => ({
+    default: m.default,
+  })),
+);
+const QueueDisplay = lazy(() => import("./components/QueueDisplay"));
+const SystemStatsPanel = lazy(() => import("./components/SystemStatsPanel"));
+const ConfirmDialog = lazy(() => import("./components/ConfirmDialog"));
+import { useConversionFlow } from "./hooks/useConversionFlow";
+import { useSystemStats } from "./hooks/useSystemStats";
+import { useI18n, useTranslations } from "./i18n/I18nProvider";
+import type { ConversionClient } from "./services/ConversionService";
+import type {
+  ConversionFormValues,
+  ConversionState,
+  RecentJobEntry,
+  SubmitBatchOptions,
+  ConversionTemplate,
+} from "./types/conversion";
+import type { ReadyDownloadJob } from "./components/ReadyDownloadsList";
+import { formatEta } from "./components/StatusPanel";
+import { resolveApiUrl } from "./config";
+
+// Loading fallback component
+const ComponentFallback = () => <div style={{ minHeight: "100px" }} />;
+
+type HfNotificationVariant = "info" | "success" | "error";
+
+interface HfNotificationEntry {
+  id: number;
+  title: string;
+  body?: string;
+  variant: HfNotificationVariant;
+}
+
+interface HfNotificationPayload {
+  title: string;
+  body?: string;
+  variant?: HfNotificationVariant;
+  durationMs?: number;
+}
+
+const HIDDEN_RECENT_KEY = "ebook-tts-hidden-recent";
+const HIDDEN_RESUMABLE_KEY = "ebook-tts-hidden-resumable";
 
 export interface AppProps {
   client?: ConversionClient;
@@ -22,25 +75,177 @@ export interface AppProps {
 
 export default function App(props?: AppProps): JSX.Element {
   const { client } = props ?? {};
-  const { state, submit, enqueue, resume, reset, cancel, isBusy, cachedJobs, uploadFile, recentJobs, apiAvailable, healthStatus } = useConversionFlow(client);
-  const [formVersion, setFormVersion] = useState(0);
-  const [activeTab, setActiveTab] = useState<'setup' | 'progress' | 'downloads'>('setup');
-  const [userSelectedTab, setUserSelectedTab] = useState(false);
-  const [showRawLog, setShowRawLog] = useState(false);
-  const [viewingRecentJob, setViewingRecentJob] = useState<RecentJobEntry | null>(null);
-  const [repeatConfig, setRepeatConfig] = useState<ConversionTemplate | null>(null);
-  const [batchHistory, setBatchHistory] = useState<RecentJobEntry[]>([]);
+  const {
+    state,
+    submit,
+    enqueue,
+    resume,
+    reset,
+    cancel,
+    skipCurrent,
+    isBusy,
+    cachedJobs,
+    cachedJobsLoading,
+    removeCachedJob,
+    uploadFile,
+    recentJobs,
+    healthStatus,
+    queue,
+    queuePaused,
+    resumeQueue,
+    clearQueue,
+    reorderQueue,
+    restartBackend,
+  } = useConversionFlow(client);
   const t = useTranslations();
   const { locale } = useI18n();
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const statsPollInterval = isHelpOpen ? 5000 : 0;
+  const apiHealthLabel = useMemo(() => {
+    const url = resolveApiUrl("/api/health");
+    if (url.startsWith("http")) {
+      return url;
+    }
+    if (typeof window === "undefined") {
+      return url;
+    }
+    const prefix = url.startsWith("/") ? "" : "/";
+    return `${window.location.origin}${prefix}${url}`;
+  }, []);
+  const {
+    data: systemStats,
+    error: systemStatsError,
+    loading: systemStatsLoading,
+    lastUpdated: systemStatsUpdatedAt,
+    nextRetryMs: systemStatsNextRetry,
+  } = useSystemStats(statsPollInterval);
+  const systemStatsLabels = useMemo(
+    () => ({
+      title: t.layout.statsTitle,
+      loading: t.layout.statsLoading,
+      error: t.layout.statsError,
+      uptime: t.layout.statsUptime,
+      cpu: t.layout.statsCpu,
+      memory: t.layout.statsMemory,
+      queue: t.layout.statsQueue,
+      running: t.layout.statsRunning,
+      workers: t.layout.statsWorkers,
+      recommendation: t.layout.statsRecommendation,
+      gpu: t.layout.statsGpu,
+      offline: t.layout.statsOffline,
+      lastUpdated: t.layout.statsLastUpdated,
+      retrying: t.layout.statsRetrying,
+    }),
+    [
+      t.layout.statsCpu,
+      t.layout.statsGpu,
+      t.layout.statsLoading,
+      t.layout.statsMemory,
+      t.layout.statsQueue,
+      t.layout.statsRecommendation,
+      t.layout.statsRunning,
+      t.layout.statsTitle,
+      t.layout.statsUptime,
+      t.layout.statsOffline,
+      t.layout.statsLastUpdated,
+      t.layout.statsRetrying,
+    ],
+  );
+  const [formVersion, setFormVersion] = useState(0);
+  const [activeTab, setActiveTab] = useState<
+    "setup" | "progress" | "downloads"
+  >("setup");
+  const [userSelectedTab, setUserSelectedTab] = useState(false);
+  const [showRawLog, setShowRawLog] = useState(false);
+  const [viewingRecentJob, setViewingRecentJob] =
+    useState<RecentJobEntry | null>(null);
+  const [repeatConfig, setRepeatConfig] = useState<ConversionTemplate | null>(
+    null,
+  );
+  const [batchHistory, setBatchHistory] = useState<RecentJobEntry[]>([]);
+  const [queuePlanTotal, setQueuePlanTotal] = useState(0);
   const lastCompletedJobIdRef = useRef<string | null>(null);
   const manualDownloadOverrideRef = useRef(false);
-  const lastPhaseRef = useRef<ConversionState['phase']>(state.phase);
+  const lastPhaseRef = useRef<ConversionState["phase"]>(state.phase);
   const notifiedBatchJobsRef = useRef<Set<string>>(new Set());
+  const [pendingUploads, setPendingUploads] = useState(0);
+  const hfNotificationCounterRef = useRef(0);
+  const [isHfSpace, setIsHfSpace] = useState(false);
+  const [hfNotifications, setHfNotifications] = useState<HfNotificationEntry[]>(
+    [],
+  );
+  const [isRestartingBackend, setIsRestartingBackend] = useState(false);
+  const [restartDialog, setRestartDialog] = useState<
+    "confirm" | "cache" | "finished" | null
+  >(null);
+  const restartOptionsRef = useRef({ keepCache: false, keepFinished: false });
+  const [hiddenRecentIds, setHiddenRecentIds] = useState<Set<string>>(() => {
+    if (typeof window === "undefined") {
+      return new Set();
+    }
+    try {
+      const stored = localStorage.getItem(HIDDEN_RECENT_KEY);
+      if (!stored) return new Set();
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed)) {
+        return new Set(parsed.filter((id) => typeof id === "string"));
+      }
+    } catch (_error) {}
+    return new Set();
+  });
+  const [hiddenResumableIds, setHiddenResumableIds] = useState<Set<string>>(
+    () => {
+      if (typeof window === "undefined") {
+        return new Set();
+      }
+      try {
+        const stored = localStorage.getItem(HIDDEN_RESUMABLE_KEY);
+        if (!stored) return new Set();
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          return new Set(parsed.filter((id) => typeof id === "string"));
+        }
+      } catch (_error) {}
+      return new Set();
+    },
+  );
 
-  const hasDownloads = Array.isArray(state.downloads) && state.downloads.length > 0;
-  const canViewProgress = state.phase !== 'idle' || state.log.length > 0 || Boolean(state.summary) || Boolean(state.error) || Boolean(state.jobId);
-  const canViewDownloads = hasDownloads || state.phase === 'success';
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    localStorage.setItem(
+      HIDDEN_RECENT_KEY,
+      JSON.stringify(Array.from(hiddenRecentIds)),
+    );
+  }, [hiddenRecentIds]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    localStorage.setItem(
+      HIDDEN_RESUMABLE_KEY,
+      JSON.stringify(Array.from(hiddenResumableIds)),
+    );
+  }, [hiddenResumableIds]);
+
+  const formLocked =
+    state.phase === "submitting" || state.phase === "cancelling";
+  const showUploadingStatus = pendingUploads > 0 && state.phase === "idle";
+  const statusLabelOverride = showUploadingStatus
+    ? t.status.uploadingFiles
+    : t.status.phases[state.phase];
+  const hasDownloads =
+    Array.isArray(state.downloads) && state.downloads.length > 0;
+  const canViewProgress =
+    showUploadingStatus ||
+    state.phase !== "idle" ||
+    state.log.length > 0 ||
+    Boolean(state.summary) ||
+    Boolean(state.error) ||
+    Boolean(state.jobId);
+  const canViewDownloads = hasDownloads || state.phase === "success";
   const clearRecentJobView = useCallback(() => {
     manualDownloadOverrideRef.current = true;
     setViewingRecentJob(null);
@@ -49,84 +254,167 @@ export default function App(props?: AppProps): JSX.Element {
   const handleReset = useCallback(() => {
     reset();
     setFormVersion((value) => value + 1);
-    setActiveTab('setup');
+    setActiveTab("setup");
     setUserSelectedTab(false);
     setShowRawLog(false);
     clearRecentJobView();
     setBatchHistory([]);
     lastCompletedJobIdRef.current = null;
+    setQueuePlanTotal(0);
   }, [clearRecentJobView, reset]);
 
-  const handleTabChange = useCallback((tabId: 'setup' | 'progress' | 'downloads') => {
-    const allowed = tabId === 'setup'
-      ? true
-      : tabId === 'progress'
-        ? canViewProgress
-        : canViewDownloads;
-    if (!allowed) {
-      return;
-    }
-    setActiveTab(tabId);
-    setUserSelectedTab(true);
-  }, [canViewDownloads, canViewProgress]);
+  const handleTabChange = useCallback(
+    (tabId: "setup" | "progress" | "downloads") => {
+      const allowed =
+        tabId === "setup"
+          ? true
+          : tabId === "progress"
+            ? canViewProgress
+            : canViewDownloads;
+      if (!allowed) {
+        return;
+      }
+      setActiveTab(tabId);
+      setUserSelectedTab(true);
+    },
+    [canViewDownloads, canViewProgress],
+  );
 
   const handleSelectReadyDownload = useCallback((job: ReadyDownloadJob) => {
     manualDownloadOverrideRef.current = true;
     setViewingRecentJob(job);
-    setActiveTab('downloads');
+    setActiveTab("downloads");
     setUserSelectedTab(true);
   }, []);
 
-  const handleFormSubmit = useCallback(async (values: ConversionFormValues, options?: SubmitBatchOptions) => {
-    setActiveTab('progress');
+  const handleSubmitIntent = useCallback(() => {
+    setActiveTab("progress");
     setUserSelectedTab(false);
-    clearRecentJobView();
-    setRepeatConfig({
-      engine: values.engine,
-      voice: values.voice,
-      chapters: values.chapters,
-      priority: values.priority,
-      footnoteMode: values.footnoteMode,
-      language: values.language,
-      formattingCues: values.formattingCues ?? true,
-      uiLanguage: locale,
-    });
+  }, []);
 
-    const queue = [values, ...(options?.batchQueue ?? [])].filter(Boolean);
-    if (queue.length === 0) {
-      return;
+  const handleQueueJobsAdded = useCallback((count: number) => {
+    if (count > 0) {
+      setQueuePlanTotal((prev) => prev + count);
     }
-    if (state.phase === 'idle') {
-      const [first, ...rest] = queue;
-      await submit(first, { batchQueue: rest });
-      return;
-    }
-    await enqueue(queue);
-  }, [clearRecentJobView, enqueue, state.phase, submit]);
+  }, []);
+
+  const handleFormSubmit = useCallback(
+    async (values: ConversionFormValues, options?: SubmitBatchOptions) => {
+      setActiveTab("progress");
+      setUserSelectedTab(false);
+      clearRecentJobView();
+      setRepeatConfig({
+        engine: values.engine,
+        voice: values.voice,
+        model: values.model,
+        chapters: values.chapters,
+        sections: values.sections,
+        priority: values.priority,
+        footnoteMode: values.footnoteMode,
+        language: values.language,
+        formattingCues: values.formattingCues ?? true,
+        noParallel: values.noParallel,
+        maxPerformance: values.maxPerformance,
+        parallelSlots: values.parallelSlots,
+        edgeChunkChars: values.edgeChunkChars,
+        edgeMaxSegmentSeconds: values.edgeMaxSegmentSeconds,
+        edgeEnableParallel: values.edgeEnableParallel,
+        edgeAutoTune: values.edgeAutoTune,
+        coquiChunkChars: values.coquiChunkChars,
+        coquiMaxWorkers: values.coquiMaxWorkers,
+        coquiSafeMode: values.coquiSafeMode,
+        piperMaxProcs: values.piperMaxProcs,
+        bitrate: values.bitrate,
+        sampleRate: values.sampleRate,
+        channels: values.channels,
+        clearCache: values.clearCache,
+        forceReprocess: values.forceReprocess,
+        filterChapters: values.filterChapters,
+        verbose: values.verbose,
+        useLanguageDetection: values.useLanguageDetection,
+        prioritizePrimaryLanguage: values.prioritizePrimaryLanguage,
+        healthCheckIntervalSeconds: values.healthCheckIntervalSeconds,
+        healthCheckSlowEdgeCps: values.healthCheckSlowEdgeCps,
+        healthCheckSlowCps: values.healthCheckSlowCps,
+        healthCheckHighCpu: values.healthCheckHighCpu,
+        healthCheckHighMem: values.healthCheckHighMem,
+        healthCheckOkCpu: values.healthCheckOkCpu,
+        healthCheckOkMem: values.healthCheckOkMem,
+        healthCheckSlowStreak: values.healthCheckSlowStreak,
+        uiLanguage: locale,
+      });
+
+      const queue = [values, ...(options?.batchQueue ?? [])].filter(Boolean);
+      if (queue.length === 0) {
+        return;
+      }
+      setQueuePlanTotal(queue.length);
+      if (state.phase === "idle") {
+        const [first, ...rest] = queue;
+        await submit(first, { batchQueue: rest });
+        return;
+      }
+      await enqueue(queue);
+    },
+    [clearRecentJobView, enqueue, state.phase, submit],
+  );
 
   const handleCancelClick = useCallback(() => {
     if (!state.jobId) return;
     const message = t.flow.cancelConfirm;
-    if (typeof window !== 'undefined' && typeof window.confirm === 'function') {
+    if (typeof window !== "undefined" && typeof window.confirm === "function") {
       if (!window.confirm(message)) {
         return;
       }
     }
     void (async () => {
-      const cancelled = await cancel();
-      if (cancelled) {
-        handleReset();
-      }
+      await cancel();
+      // Don't auto-reset after cancellation - let user see the "cancelled" state
+      // User can start a new conversion to reset
     })();
-  }, [cancel, handleReset, state.jobId, t.flow.cancelConfirm]);
+  }, [cancel, state.jobId, t.flow.cancelConfirm]);
+
+  const handleSkipClick = useCallback(() => {
+    if (!state.jobId) return;
+    const message = t.flow.skipConfirm;
+    if (typeof window !== "undefined" && typeof window.confirm === "function") {
+      if (!window.confirm(message)) {
+        return;
+      }
+    }
+    void (async () => {
+      await skipCurrent();
+    })();
+  }, [skipCurrent, state.jobId, t.flow.skipConfirm]);
+
+  const handleRemoveRecentJob = useCallback(
+    (jobId: string) => {
+      setHiddenRecentIds((prev) => {
+        const next = new Set(prev);
+        next.add(jobId);
+        return next;
+      });
+      if (viewingRecentJob?.jobId === jobId) {
+        clearRecentJobView();
+      }
+      // Also remove from backend cache
+      removeCachedJob(jobId);
+    },
+    [clearRecentJobView, removeCachedJob, viewingRecentJob],
+  );
 
   const displayedDownloads = useMemo(() => {
     if (viewingRecentJob) {
-      if (Array.isArray(viewingRecentJob.outputs) && viewingRecentJob.outputs.length > 0) {
+      if (
+        Array.isArray(viewingRecentJob.outputs) &&
+        viewingRecentJob.outputs.length > 0
+      ) {
         return viewingRecentJob.outputs;
       }
       if (viewingRecentJob.downloadUrl) {
-        const fallbackName = viewingRecentJob.fileName || `${viewingRecentJob.bookTitle || 'book'}.zip`;
+        const fallbackName =
+          viewingRecentJob.fileName ||
+          `${viewingRecentJob.bookTitle || "book"}.zip`;
         return [
           {
             name: fallbackName,
@@ -138,25 +426,42 @@ export default function App(props?: AppProps): JSX.Element {
     return state.downloads;
   }, [state.downloads, viewingRecentJob]);
 
-  const formatLanguageLabel = useCallback((code?: string | null) => {
-    if (!code) return '';
-    const options = t.form.languageOptions ?? {};
-    if (options[code as keyof typeof options]) {
-      return options[code as keyof typeof options];
+  const shareDownloadTitle = useMemo(() => {
+    if (viewingRecentJob?.bookTitle) {
+      return viewingRecentJob.bookTitle;
     }
-    const normalized = code.toLowerCase();
-    if (options[normalized as keyof typeof options]) {
-      return options[normalized as keyof typeof options];
+    if (state.bookTitle) {
+      return state.bookTitle;
     }
-    const [base] = normalized.split(/[-_]/);
-    if (base && options[base as keyof typeof options]) {
-      return options[base as keyof typeof options];
-    }
-    return code.toUpperCase();
-  }, [t.form.languageOptions]);
+    return t.status.bookFallbackTitle;
+  }, [state.bookTitle, t.status.bookFallbackTitle, viewingRecentJob]);
+
+  const formatLanguageLabel = useCallback(
+    (code?: string | null) => {
+      if (!code) return "";
+      const options = t.form.languageOptions ?? {};
+      if (options[code as keyof typeof options]) {
+        return options[code as keyof typeof options];
+      }
+      const normalized = code.toLowerCase();
+      if (options[normalized as keyof typeof options]) {
+        return options[normalized as keyof typeof options];
+      }
+      const [base] = normalized.split(/[-_]/);
+      if (base && options[base as keyof typeof options]) {
+        return options[base as keyof typeof options];
+      }
+      return code.toUpperCase();
+    },
+    [t.form.languageOptions],
+  );
 
   const downloadsContext = useMemo(() => {
-    if (!viewingRecentJob || !viewingRecentJob.outputs || viewingRecentJob.outputs.length === 0) {
+    if (
+      !viewingRecentJob ||
+      !viewingRecentJob.outputs ||
+      viewingRecentJob.outputs.length === 0
+    ) {
       return undefined;
     }
     return {
@@ -169,10 +474,14 @@ export default function App(props?: AppProps): JSX.Element {
 
   const readyDownloadJobs = useMemo<ReadyDownloadJob[]>(() => {
     const dedup = new Map<string, ReadyDownloadJob>();
-    const register = (job: RecentJobEntry | null | undefined, source: 'current' | 'recent') => {
+    const register = (
+      job: RecentJobEntry | null | undefined,
+      source: "current" | "recent",
+    ) => {
       if (!job) return;
       const hasOutputs = Array.isArray(job.outputs) && job.outputs.length > 0;
-      const hasDownload = hasOutputs || Boolean(job.downloadUrl) || Boolean(job.hasOutputs);
+      const hasDownload =
+        hasOutputs || Boolean(job.downloadUrl) || Boolean(job.hasOutputs);
       if (!hasDownload) {
         return;
       }
@@ -187,83 +496,291 @@ export default function App(props?: AppProps): JSX.Element {
       }
     };
 
-    batchHistory.forEach((job) => register(job, 'current'));
-    recentJobs.forEach((job) => register(job, 'recent'));
+    // Register recent jobs first so current jobs override them
+    // Jobs in current session should not have remove button
+    recentJobs.forEach((job) => register(job, "recent"));
+    batchHistory.forEach((job) => register(job, "current"));
 
-    return Array.from(dedup.values()).sort((a, b) => (b.savedAtMs ?? 0) - (a.savedAtMs ?? 0));
+    return Array.from(dedup.values()).sort(
+      (a, b) => (b.savedAtMs ?? 0) - (a.savedAtMs ?? 0),
+    );
   }, [batchHistory, recentJobs]);
 
   const currentEngine = state.engine ?? repeatConfig?.engine;
   const currentVoice = state.voice ?? repeatConfig?.voice;
-  const currentLanguageLabel = formatLanguageLabel(state.summary?.detectedLanguage ?? state.language ?? repeatConfig?.language);
+  const currentLanguageLabel = formatLanguageLabel(
+    state.summary?.detectedLanguage ?? state.language ?? repeatConfig?.language,
+  );
 
-  const canCancelJob = Boolean(state.jobId && (state.phase === 'polling' || state.phase === 'cancelling'));
-  const cancelDisabled = state.phase === 'cancelling';
+  // Format queue for display (MUST be declared before queuePosition)
+  const queueForDisplay = useMemo(() => {
+    return queue.map((item) => ({
+      fileName: item.file?.name || item.fileName,
+      bookTitle: item.file?.name || item.fileName,
+      engine: item.engine,
+      voice: item.voice,
+    }));
+  }, [queue]);
+
+  // Calculate queue position for display
+  const queuePosition = useMemo(() => {
+    const activeJobCount =
+      state.phase === "polling" || state.phase === "submitting" ? 1 : 0;
+    if (activeJobCount === 0) return undefined;
+    return queuePlanTotal > 0
+      ? queuePlanTotal - queueForDisplay.length
+      : undefined;
+  }, [queueForDisplay.length, queuePlanTotal, state.phase]);
+
+  const queueTotal = useMemo(() => {
+    const activeJobCount =
+      state.phase === "polling" || state.phase === "submitting" ? 1 : 0;
+    if (activeJobCount === 0) return undefined;
+    return queuePlanTotal > 1 ? queuePlanTotal : undefined;
+  }, [queuePlanTotal, state.phase]);
+
+  const canCancelJob = Boolean(
+    state.jobId && (state.phase === "polling" || state.phase === "cancelling"),
+  );
+  const canSkipJob = Boolean(
+    state.jobId && state.phase === "polling" && queue.length > 0,
+  );
+  const cancelDisabled = state.phase === "cancelling";
   const activeEtaDisplay = formatEta(state.phase, state.etaSeconds, locale, t);
-  const showActiveConversion = activeTab === 'setup' && state.phase !== 'idle';
-  const canShowQueueAdder = Boolean(repeatConfig && state.phase !== 'idle');
-
-  const formLocked = state.phase === 'submitting' || state.phase === 'cancelling';
+  const showActiveConversion =
+    activeTab === "setup" && (state.phase !== "idle" || showUploadingStatus);
+  const canShowQueueAdder = Boolean(repeatConfig && state.phase !== "idle");
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const host = window.location.hostname.toLowerCase();
+    const hfMatch =
+      host.endsWith(".hf.space") || host.includes("huggingface.co");
+    setIsHfSpace(hfMatch);
+  }, []);
+
+  const dismissHfNotification = useCallback((id: number) => {
+    setHfNotifications((prev) => prev.filter((entry) => entry.id !== id));
+  }, []);
+
+  const pushHfNotification = useCallback(
+    (payload: HfNotificationPayload) => {
+      if (!isHfSpace) {
+        return false;
+      }
+      hfNotificationCounterRef.current += 1;
+      const id = hfNotificationCounterRef.current;
+      const entry: HfNotificationEntry = {
+        id,
+        title: payload.title,
+        body: payload.body,
+        variant: payload.variant ?? "info",
+      };
+      setHfNotifications((prev) => [...prev, entry]);
+      if (typeof window !== "undefined") {
+        window.setTimeout(
+          () => dismissHfNotification(id),
+          payload.durationMs ?? 5000,
+        );
+      }
+      return true;
+    },
+    [dismissHfNotification, isHfSpace],
+  );
+
+  const notifyUser = useCallback(
+    (title: string, body: string, variant: HfNotificationVariant = "info") => {
+      if (
+        typeof window !== "undefined" &&
+        "Notification" in window &&
+        Notification.permission === "granted"
+      ) {
+        new Notification(title, { body });
+        return;
+      }
+      if (isHfSpace) {
+        pushHfNotification({ title, body, variant });
+      }
+    },
+    [isHfSpace, pushHfNotification],
+  );
+
+  // Filter recent jobs to show only completed ones
+  const completedRecentJobs = useMemo(() => {
+    return recentJobs.filter(
+      (job) =>
+        job.state === "finished" &&
+        job.hasOutputs &&
+        !hiddenRecentIds.has(job.jobId),
+    );
+  }, [hiddenRecentIds, recentJobs]);
+
+  useEffect(() => {
+    const activeJobCount =
+      state.phase === "polling" || state.phase === "submitting" ? 1 : 0;
+    if (queuePlanTotal === 0 && queueForDisplay.length + activeJobCount > 0) {
+      setQueuePlanTotal(queueForDisplay.length + activeJobCount);
+    }
+  }, [queueForDisplay.length, queuePlanTotal, state.phase]);
+
+  const currentJobForQueue = useMemo(() => {
+    if (state.phase !== "polling" && state.phase !== "submitting") {
+      return undefined;
+    }
+    return {
+      fileName: state.bookTitle,
+      bookTitle: state.bookTitle,
+    };
+  }, [state.phase, state.bookTitle]);
+
+  const visibleCachedJobs = useMemo(
+    () => cachedJobs.filter((job) => !hiddenResumableIds.has(job.jobId)),
+    [cachedJobs, hiddenResumableIds],
+  );
+
+  const renderQueueDisplay = useCallback(
+    (style?: CSSProperties) => {
+      if (!currentJobForQueue && queueForDisplay.length === 0) {
+        return null;
+      }
+      const activeJobCount =
+        state.phase === "polling" || state.phase === "submitting" ? 1 : 0;
+      const currentProgressFraction = activeJobCount
+        ? Math.min(1, Math.max(0, (state.summary?.progressPercent ?? 0) / 100))
+        : 0;
+      const pendingJobs = queueForDisplay.length;
+      const totalJobs = queuePlanTotal || pendingJobs + activeJobCount;
+      const completedJobs = Math.max(
+        0,
+        totalJobs - (pendingJobs + activeJobCount),
+      );
+      const overallPercent =
+        totalJobs > 0
+          ? ((completedJobs + currentProgressFraction) / totalJobs) * 100
+          : null;
+
+      return (
+        <div style={{ margin: "1.5rem 0", ...style }}>
+          <Suspense fallback={<ComponentFallback />}>
+            <QueueDisplay
+              currentJob={currentJobForQueue}
+              queue={queueForDisplay}
+              queuePaused={queuePaused}
+              onResumeQueue={queuePaused ? resumeQueue : undefined}
+              onClearQueue={
+                queueForDisplay.length > 0
+                  ? () => {
+                      clearQueue();
+                      setQueuePlanTotal(0);
+                    }
+                  : undefined
+              }
+              onReorderQueue={
+                queueForDisplay.length > 1 ? reorderQueue : undefined
+              }
+              totalJobs={totalJobs}
+              overallPercent={overallPercent}
+            />
+          </Suspense>
+        </div>
+      );
+    },
+    [
+      clearQueue,
+      currentJobForQueue,
+      queueForDisplay,
+      queuePaused,
+      queuePlanTotal,
+      reorderQueue,
+      resumeQueue,
+      setQueuePlanTotal,
+      state.phase,
+      state.summary?.progressPercent,
+    ],
+  );
+
+  useEffect(() => {
+    if (state.phase === "cancelled") {
+      if (activeTab !== "setup") {
+        setActiveTab("setup");
+      }
+      if (userSelectedTab) {
+        setUserSelectedTab(false);
+      }
+      return;
+    }
     if (userSelectedTab) {
       return;
     }
-    if (state.phase === 'success' || (hasDownloads && state.phase !== 'error' && state.phase !== 'cancelled')) {
-      if (activeTab !== 'downloads') {
-        setActiveTab('downloads');
+    if (
+      state.phase === "success" ||
+      (hasDownloads && state.phase !== "error")
+    ) {
+      if (activeTab !== "downloads") {
+        setActiveTab("downloads");
       }
       return;
     }
-    if (state.phase === 'error' || state.phase === 'cancelled') {
-      if (activeTab !== 'progress') {
-        setActiveTab('progress');
+    if (state.phase === "error") {
+      if (activeTab !== "progress") {
+        setActiveTab("progress");
       }
       return;
     }
-    if (state.phase === 'submitting' && activeTab !== 'progress') {
-      setActiveTab('progress');
+    if (state.phase === "submitting" && activeTab !== "progress") {
+      setActiveTab("progress");
       return;
     }
-    if (state.phase === 'polling' && activeTab !== 'progress') {
-      setActiveTab('progress');
+    if (state.phase === "polling" && activeTab !== "progress") {
+      setActiveTab("progress");
     }
   }, [state.phase, hasDownloads, activeTab, userSelectedTab]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
+    if (typeof window === "undefined" || !("Notification" in window)) {
       return;
     }
-    if (Notification.permission === 'default') {
+    if (Notification.permission === "default") {
       Notification.requestPermission().catch(() => {});
     }
   }, []);
 
   useEffect(() => {
-    if (state.phase !== 'success') {
+    if (state.phase !== "success") {
       return;
     }
-    if (!state.jobId || !Array.isArray(state.downloads) || state.downloads.length === 0) {
+    if (
+      !state.jobId ||
+      !Array.isArray(state.downloads) ||
+      state.downloads.length === 0
+    ) {
       return;
     }
     if (lastCompletedJobIdRef.current === state.jobId) {
       return;
     }
     const resolvedTitle = state.bookTitle?.trim() || t.status.bookFallbackTitle;
-    const mp3Count = state.downloads.filter((asset) => asset.name.toLowerCase().endsWith('.mp3')).length;
+    const mp3Count = state.downloads.filter((asset) =>
+      asset.name.toLowerCase().endsWith(".mp3"),
+    ).length;
     const chapterCount = mp3Count || state.summary?.chaptersCompleted || 0;
-    const downloadUrl = state.downloads.find((asset) => asset.name.toLowerCase().endsWith('.zip'))?.url
-      ?? state.downloads[0]?.url;
+    const downloadUrl =
+      state.downloads.find((asset) => asset.name.toLowerCase().endsWith(".zip"))
+        ?.url ?? state.downloads[0]?.url;
+    const completedAtIso = state.completedAt ?? new Date().toISOString();
     const entry: RecentJobEntry = {
       jobId: state.jobId,
-      state: 'finished',
+      state: "finished",
       bookTitle: resolvedTitle,
       fileName: resolvedTitle,
-      savedAt: new Date().toISOString(),
+      savedAt: completedAtIso,
       outputs: state.downloads,
       downloadUrl,
       chaptersCompleted: state.summary?.chaptersCompleted ?? chapterCount,
-      chaptersTotal: state.summary?.chaptersTotal ?? (chapterCount || undefined),
+      chaptersTotal:
+        state.summary?.chaptersTotal ?? (chapterCount || undefined),
       progressPercent: 100,
       engine: state.engine,
       voice: state.voice,
@@ -272,6 +789,9 @@ export default function App(props?: AppProps): JSX.Element {
       uiLanguage: state.uiLanguage,
       hasOutputs: true,
       canResume: false,
+      startedAt: state.startedAt,
+      completedAt: completedAtIso,
+      totalDurationSeconds: state.totalDurationSeconds,
     };
     setBatchHistory((prev) => {
       const next = [entry, ...prev.filter((job) => job.jobId !== entry.jobId)];
@@ -279,15 +799,33 @@ export default function App(props?: AppProps): JSX.Element {
     });
     manualDownloadOverrideRef.current = false;
     lastCompletedJobIdRef.current = state.jobId;
-  }, [state.bookTitle, state.downloads, state.engine, state.language, state.phase, state.summary, state.jobId, state.speakFormattingCues, state.uiLanguage, state.voice, t.status.bookFallbackTitle]);
+  }, [
+    state.bookTitle,
+    state.downloads,
+    state.engine,
+    state.language,
+    state.phase,
+    state.summary,
+    state.jobId,
+    state.speakFormattingCues,
+    state.uiLanguage,
+    state.voice,
+    t.status.bookFallbackTitle,
+  ]);
 
   useEffect(() => {
     if (!readyDownloadJobs.length) {
       return;
     }
-    const currentJob = state.jobId ? readyDownloadJobs.find((job) => job.jobId === state.jobId) : undefined;
-    if (state.phase === 'success' && currentJob) {
-      if (!viewingRecentJob || viewingRecentJob.jobId !== currentJob.jobId || manualDownloadOverrideRef.current) {
+    const currentJob = state.jobId
+      ? readyDownloadJobs.find((job) => job.jobId === state.jobId)
+      : undefined;
+    if (state.phase === "success" && currentJob) {
+      if (
+        !viewingRecentJob ||
+        viewingRecentJob.jobId !== currentJob.jobId ||
+        manualDownloadOverrideRef.current
+      ) {
         manualDownloadOverrideRef.current = false;
         setViewingRecentJob(currentJob);
       }
@@ -303,41 +841,140 @@ export default function App(props?: AppProps): JSX.Element {
   }, [readyDownloadJobs, state.jobId, state.phase, viewingRecentJob]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
-      lastPhaseRef.current = state.phase;
-      return;
-    }
-    if (Notification.permission !== 'granted') {
-      lastPhaseRef.current = state.phase;
-      return;
-    }
     if (state.phase === lastPhaseRef.current) {
       return;
     }
-    if (state.phase === 'success') {
-      lastPhaseRef.current = state.phase;
-      return;
+    if (state.phase === "error") {
+      notifyUser(
+        t.flow.notificationErrorTitle,
+        state.error || t.flow.notificationErrorBody,
+        "error",
+      );
     }
-    if (state.phase === 'error') {
-      new Notification(t.flow.notificationErrorTitle, {
-        body: state.error || t.flow.notificationErrorBody,
-      });
-    }
-    if (state.phase === 'cancelled') {
-      new Notification(t.flow.notificationCancelTitle, {
-        body: t.flow.notificationCancelBody,
-      });
+    if (state.phase === "cancelled") {
+      notifyUser(
+        t.flow.notificationCancelTitle,
+        t.flow.notificationCancelBody,
+        "info",
+      );
     }
     lastPhaseRef.current = state.phase;
-  }, [state.phase, state.error, t.flow]);
+  }, [
+    notifyUser,
+    state.error,
+    state.phase,
+    t.flow.notificationCancelBody,
+    t.flow.notificationCancelTitle,
+    t.flow.notificationErrorBody,
+    t.flow.notificationErrorTitle,
+  ]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || !('Notification' in window)) {
+    if (!isHelpOpen) {
       return;
     }
-    if (Notification.permission !== 'granted') {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsHelpOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isHelpOpen]);
+
+  const handleRestartBackend = useCallback(() => {
+    if (isRestartingBackend) {
       return;
     }
+    restartOptionsRef.current = { keepCache: false, keepFinished: false };
+    setRestartDialog("confirm");
+  }, [isRestartingBackend]);
+
+  const handleRestartDialogConfirm = useCallback(async () => {
+    if (restartDialog === "confirm") {
+      setRestartDialog("cache");
+    } else if (restartDialog === "cache") {
+      restartOptionsRef.current.keepCache = true;
+      setRestartDialog("finished");
+    } else if (restartDialog === "finished") {
+      restartOptionsRef.current.keepFinished = true;
+      setRestartDialog(null);
+      try {
+        setIsRestartingBackend(true);
+        await restartBackend({
+          keep_cache: restartOptionsRef.current.keepCache,
+          keep_finished: restartOptionsRef.current.keepFinished,
+        });
+        notifyUser(
+          t.layout.restartNotifyTitle,
+          t.layout.restartNotifyBody,
+          "info",
+        );
+      } catch (error) {
+        console.error("[App] Failed to restart backend:", error);
+        setIsRestartingBackend(false);
+        notifyUser(
+          t.layout.restartNotifyTitle,
+          t.layout.restartErrorBody,
+          "error",
+        );
+      }
+    }
+  }, [
+    restartDialog,
+    notifyUser,
+    restartBackend,
+    t.layout.restartNotifyTitle,
+    t.layout.restartNotifyBody,
+    t.layout.restartErrorBody,
+  ]);
+
+  const handleRestartDialogCancel = useCallback(async () => {
+    if (restartDialog === "confirm") {
+      setRestartDialog(null);
+    } else if (restartDialog === "cache") {
+      restartOptionsRef.current.keepCache = false;
+      setRestartDialog("finished");
+    } else if (restartDialog === "finished") {
+      restartOptionsRef.current.keepFinished = false;
+      setRestartDialog(null);
+      try {
+        setIsRestartingBackend(true);
+        await restartBackend({
+          keep_cache: restartOptionsRef.current.keepCache,
+          keep_finished: restartOptionsRef.current.keepFinished,
+        });
+        notifyUser(
+          t.layout.restartNotifyTitle,
+          t.layout.restartNotifyBody,
+          "info",
+        );
+      } catch (error) {
+        console.error("[App] Failed to restart backend:", error);
+        setIsRestartingBackend(false);
+        notifyUser(
+          t.layout.restartNotifyTitle,
+          t.layout.restartErrorBody,
+          "error",
+        );
+      }
+    }
+  }, [
+    restartDialog,
+    notifyUser,
+    restartBackend,
+    t.layout.restartNotifyTitle,
+    t.layout.restartNotifyBody,
+    t.layout.restartErrorBody,
+  ]);
+
+  const handleRestartDialogClose = useCallback(() => {
+    setRestartDialog(null);
+  }, []);
+
+  useEffect(() => {
     batchHistory.forEach((job) => {
       if (!job.jobId || notifiedBatchJobsRef.current.has(job.jobId)) {
         return;
@@ -346,16 +983,20 @@ export default function App(props?: AppProps): JSX.Element {
       const body = job.bookTitle
         ? t.downloads.readyNotificationBody(job.bookTitle)
         : t.downloads.readyNotificationBodyFallback;
-      new Notification(t.downloads.readyNotificationTitle, {
-        body,
-      });
+      notifyUser(t.downloads.readyNotificationTitle, body, "success");
     });
-  }, [batchHistory, t.downloads]);
+  }, [
+    batchHistory,
+    notifyUser,
+    t.downloads.readyNotificationBody,
+    t.downloads.readyNotificationBodyFallback,
+    t.downloads.readyNotificationTitle,
+  ]);
 
   const tabs = useMemo(
     () => [
       {
-        id: 'setup' as const,
+        id: "setup" as const,
         label: t.tabs.setup.label,
         description: t.tabs.setup.description,
         content: (
@@ -363,12 +1004,19 @@ export default function App(props?: AppProps): JSX.Element {
             title={t.tabs.setup.panelTitle}
             description={t.tabs.setup.panelDescription}
             footer={
-              activeTab === 'setup' && state.phase !== 'idle' && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem' }}>
+              activeTab === "setup" &&
+              (state.phase !== "idle" || showUploadingStatus) && (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: "0.5rem",
+                  }}
+                >
                   <button
                     type="button"
                     className="button-secondary"
-                    onClick={() => handleTabChange('progress')}
+                    onClick={() => handleTabChange("progress")}
                   >
                     Ver Progresso →
                   </button>
@@ -376,13 +1024,18 @@ export default function App(props?: AppProps): JSX.Element {
               )
             }
           >
+            {renderQueueDisplay()}
             {showActiveConversion && (
-              <>
+              <Suspense fallback={<ComponentFallback />}>
                 <ActiveConversionBanner
                   phase={state.phase}
-                  statusLabel={t.status.phases[state.phase]}
-                  jobLabel={state.jobId ? t.status.jobLabel(state.jobId) : undefined}
-                  bookTitle={state.bookTitle?.trim() || t.status.bookFallbackTitle}
+                  statusLabel={statusLabelOverride}
+                  jobLabel={
+                    state.jobId ? t.status.jobLabel(state.jobId) : undefined
+                  }
+                  bookTitle={
+                    state.bookTitle?.trim() || t.status.bookFallbackTitle
+                  }
                   bookAuthor={state.bookAuthor?.trim()}
                   etaLabel={t.activeConversion.etaLabel}
                   etaValue={activeEtaDisplay}
@@ -397,39 +1050,53 @@ export default function App(props?: AppProps): JSX.Element {
                   queueHint={t.activeConversion.queueHint}
                   viewLabel={t.activeConversion.viewProgress}
                   cancelLabel={t.activeConversion.cancel}
-                  onViewProgress={() => handleTabChange('progress')}
+                  skipLabel={t.activeConversion.skip}
+                  onViewProgress={() => handleTabChange("progress")}
                   onCancel={handleCancelClick}
+                  onSkip={handleSkipClick}
                   canCancel={canCancelJob}
+                  canSkip={canSkipJob}
                   cancelDisabled={cancelDisabled}
                   summary={state.summary}
                 />
                 {canShowQueueAdder && repeatConfig && (
-                  <QuickQueueAdder template={repeatConfig} enqueue={enqueue} phase={state.phase} />
+                  <QuickQueueAdder
+                    template={repeatConfig}
+                    enqueue={enqueue}
+                    phase={state.phase}
+                    uploadFile={uploadFile}
+                    onJobsAdded={handleQueueJobsAdded}
+                  />
                 )}
-              </>
+              </Suspense>
             )}
-            <ConversionForm
-              key={formVersion}
-              isSubmitting={formLocked}
-              onSubmit={handleFormSubmit}
-              onUploadFile={uploadFile}
-              currentJob={{
-                jobId: state.jobId,
-                phase: state.phase,
-                bookTitle: state.bookTitle,
-                engine: currentEngine || undefined,
-                voice: currentVoice || undefined,
-                language: currentLanguageLabel || undefined,
-                formattingCues: typeof state.speakFormattingCues === 'boolean'
-                  ? state.speakFormattingCues
-                  : repeatConfig?.formattingCues,
-              }}
-            />
+            <Suspense fallback={<ComponentFallback />}>
+              <ConversionForm
+                key={formVersion}
+                isSubmitting={formLocked}
+                onSubmit={handleFormSubmit}
+                onUploadFile={uploadFile}
+                onUploadStateChange={setPendingUploads}
+                onSubmitIntent={handleSubmitIntent}
+                currentJob={{
+                  jobId: state.jobId,
+                  phase: state.phase,
+                  bookTitle: state.bookTitle,
+                  engine: currentEngine || undefined,
+                  voice: currentVoice || undefined,
+                  language: currentLanguageLabel || undefined,
+                  formattingCues:
+                    typeof state.speakFormattingCues === "boolean"
+                      ? state.speakFormattingCues
+                      : repeatConfig?.formattingCues,
+                }}
+              />
+            </Suspense>
           </Panel>
         ),
       },
       {
-        id: 'progress' as const,
+        id: "progress" as const,
         label: t.tabs.progress.label,
         description: t.tabs.progress.description,
         content: (
@@ -437,20 +1104,26 @@ export default function App(props?: AppProps): JSX.Element {
             title={t.tabs.progress.panelTitle}
             description={t.tabs.progress.panelDescription}
             footer={
-              activeTab === 'progress' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}>
+              activeTab === "progress" && (
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: "0.5rem",
+                  }}
+                >
                   <button
                     type="button"
                     className="button-secondary"
-                    onClick={() => handleTabChange('setup')}
+                    onClick={() => handleTabChange("setup")}
                   >
                     ← Voltar
                   </button>
-                  {state.phase === 'success' && (
+                  {state.phase === "success" && (
                     <button
                       type="button"
                       className="button-secondary"
-                      onClick={() => handleTabChange('downloads')}
+                      onClick={() => handleTabChange("downloads")}
                     >
                       Ver Downloads →
                     </button>
@@ -459,107 +1132,170 @@ export default function App(props?: AppProps): JSX.Element {
               )
             }
           >
-            <StatusPanel
-              entries={state.log}
-              rawLog={state.rawLog}
-              phase={state.phase}
-              jobId={state.jobId}
-              error={state.error}
-              etaSeconds={state.etaSeconds}
-              showRawLog={showRawLog}
-              onToggleRawLog={() => setShowRawLog((value) => !value)}
-              summary={state.summary}
-              cliCommand={state.cliCommand}
-              onCancel={state.jobId ? handleCancelClick : undefined}
-              canCancel={canCancelJob}
-              cancelDisabled={cancelDisabled}
-              bookTitle={state.bookTitle}
-              bookAuthor={state.bookAuthor}
-              coverUrl={state.coverUrl}
-            />
-            {canShowQueueAdder && repeatConfig && (
-              <QuickQueueAdder
-                template={repeatConfig}
-                enqueue={enqueue}
+            {renderQueueDisplay()}
+            <Suspense fallback={<ComponentFallback />}>
+              <StatusPanel
+                entries={state.log}
+                rawLog={state.rawLog}
                 phase={state.phase}
+                phaseLabelOverride={statusLabelOverride}
+                jobId={state.jobId}
+                error={state.error}
+                etaSeconds={state.etaSeconds}
+                showRawLog={showRawLog}
+                onToggleRawLog={() => setShowRawLog((value) => !value)}
+                summary={state.summary}
+                cliCommand={state.cliCommand}
+                onCancel={state.jobId ? handleCancelClick : undefined}
+                onSkip={state.jobId ? handleSkipClick : undefined}
+                canCancel={canCancelJob}
+                canSkip={canSkipJob}
+                cancelDisabled={cancelDisabled}
               />
+            </Suspense>
+            {canShowQueueAdder && repeatConfig && (
+              <Suspense fallback={<ComponentFallback />}>
+                <QuickQueueAdder
+                  template={repeatConfig}
+                  enqueue={enqueue}
+                  phase={state.phase}
+                  uploadFile={uploadFile}
+                  onJobsAdded={handleQueueJobsAdded}
+                />
+              </Suspense>
             )}
             {readyDownloadJobs.length > 0 && (
-              <div style={{ marginTop: '1.5rem' }}>
-                <ReadyDownloadsList
-                  jobs={readyDownloadJobs}
-                  activeJobId={viewingRecentJob?.jobId}
-                  onSelect={handleSelectReadyDownload}
-                />
+              <div style={{ marginTop: "1.5rem" }}>
+                <Suspense fallback={<ComponentFallback />}>
+                  <ReadyDownloadsList
+                    jobs={readyDownloadJobs}
+                    activeJobId={viewingRecentJob?.jobId}
+                    onSelect={handleSelectReadyDownload}
+                    onRemove={handleRemoveRecentJob}
+                  />
+                </Suspense>
               </div>
             )}
           </Panel>
         ),
       },
       {
-        id: 'downloads' as const,
+        id: "downloads" as const,
         label: t.tabs.downloads.label,
         description: t.tabs.downloads.description,
         content: (
           <Panel
             title={t.tabs.downloads.panelTitle}
             description={t.tabs.downloads.panelDescription}
-            footer={activeTab === 'downloads' && (
-              <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                <button
-                  type="button"
-                  className="button-secondary"
-                  onClick={() => handleTabChange('progress')}
-                >
-                  ← Voltar
-                </button>
-              </div>
-            )}
+            footer={
+              activeTab === "downloads" && (
+                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => handleTabChange("progress")}
+                  >
+                    ← Voltar
+                  </button>
+                </div>
+              )
+            }
           >
+            {renderQueueDisplay()}
             {readyDownloadJobs.length > 0 && (
-              <ReadyDownloadsList
-                jobs={readyDownloadJobs}
-                activeJobId={viewingRecentJob?.jobId}
-                onSelect={handleSelectReadyDownload}
-              />
+              <Suspense fallback={<ComponentFallback />}>
+                <ReadyDownloadsList
+                  jobs={readyDownloadJobs}
+                  activeJobId={viewingRecentJob?.jobId}
+                  onSelect={handleSelectReadyDownload}
+                  onRemove={handleRemoveRecentJob}
+                />
+              </Suspense>
             )}
-            <DownloadsPanel
-              downloads={displayedDownloads}
-              phase={state.phase}
-              onReset={handleReset}
-              isBusy={isBusy}
-              cliCommand={state.cliCommand}
-              log={state.log}
-              showRawLog={showRawLog}
-              context={downloadsContext}
-            />
+            <Suspense fallback={<ComponentFallback />}>
+              <DownloadsPanel
+                downloads={displayedDownloads}
+                phase={state.phase}
+                onReset={handleReset}
+                isBusy={isBusy}
+                cliCommand={state.cliCommand}
+                log={state.log}
+                rawLog={state.rawLog}
+                showRawLog={showRawLog}
+                context={downloadsContext}
+                shareTitle={shareDownloadTitle}
+              />
+            </Suspense>
           </Panel>
         ),
       },
     ],
-    [activeTab, displayedDownloads, downloadsContext, enqueue, formVersion, handleFormSubmit, handleReset, handleSelectReadyDownload, handleTabChange, isBusy, readyDownloadJobs, repeatConfig, showRawLog, state.cliCommand, state.error, state.etaSeconds, state.jobId, state.log, state.phase, state.summary, t, viewingRecentJob],
+    [
+      activeTab,
+      displayedDownloads,
+      downloadsContext,
+      enqueue,
+      formVersion,
+      handleFormSubmit,
+      handleRemoveRecentJob,
+      handleReset,
+      handleSelectReadyDownload,
+      handleTabChange,
+      isBusy,
+      readyDownloadJobs,
+      repeatConfig,
+      shareDownloadTitle,
+      showRawLog,
+      state.cliCommand,
+      state.error,
+      state.etaSeconds,
+      state.jobId,
+      state.log,
+      state.phase,
+      state.summary,
+      t,
+      viewingRecentJob,
+    ],
   );
 
-  const handleResumeJob = useCallback((jobId: string) => {
-    setActiveTab('progress');
-    clearRecentJobView();
-    resume(jobId);
-  }, [clearRecentJobView, resume]);
-
-  const handleViewRecentJobOutputs = useCallback((job: RecentJobEntry) => {
-    manualDownloadOverrideRef.current = true;
-    if (job.outputs && job.outputs.length > 0) {
-      setViewingRecentJob(job);
-    } else {
+  const handleResumeJob = useCallback(
+    (jobId: string) => {
+      console.log("[App] Resuming job:", jobId);
+      setActiveTab("progress");
       clearRecentJobView();
-    }
-    setActiveTab('downloads');
-    setUserSelectedTab(true);
-  }, [clearRecentJobView, setActiveTab, setUserSelectedTab, setViewingRecentJob]);
+      resume(jobId);
+    },
+    [clearRecentJobView, resume],
+  );
 
+  const handleViewRecentJobOutputs = useCallback(
+    (job: RecentJobEntry) => {
+      manualDownloadOverrideRef.current = true;
+      if (job.outputs && job.outputs.length > 0) {
+        setViewingRecentJob(job);
+      } else {
+        clearRecentJobView();
+      }
+      setActiveTab("downloads");
+      setUserSelectedTab(true);
+    },
+    [clearRecentJobView, setActiveTab, setUserSelectedTab, setViewingRecentJob],
+  );
 
-  const showSetupPanels = activeTab === 'setup' && state.phase === 'idle';
-  const showOfflineBanner = showSetupPanels && healthStatus === 'fail';
+  const handleRemoveResumableJob = useCallback(
+    (jobId: string) => {
+      setHiddenResumableIds((prev) => {
+        const next = new Set(prev);
+        next.add(jobId);
+        return next;
+      });
+      removeCachedJob(jobId);
+    },
+    [removeCachedJob],
+  );
+
+  const showSetupPanels = activeTab === "setup" && state.phase === "idle";
+  const showOfflineBanner = showSetupPanels && healthStatus === "fail";
 
   return (
     <Layout>
@@ -573,41 +1309,73 @@ export default function App(props?: AppProps): JSX.Element {
         engineLabel={currentEngine}
         voiceLabel={currentVoice}
         languageLabel={currentLanguageLabel}
+        queuePosition={queuePosition}
+        queueTotal={queueTotal}
       />
+      <div className="help-toggle">
+        <button
+          type="button"
+          onClick={() => setIsHelpOpen(true)}
+          aria-expanded={isHelpOpen}
+          aria-controls="help-drawer"
+        >
+          {t.layout.helpToggle}
+        </button>
+      </div>
       {showOfflineBanner && (
         <div className="api-offline-banner" role="alert">
           <strong>{t.flow.backendOffline}</strong>
           <span>{t.flow.backendOfflineBanner}</span>
+          <span>API: {apiHealthLabel}</span>
         </div>
       )}
-      {showSetupPanels && cachedJobs.length > 0 && (
-        <ResumableJobsPanel jobs={cachedJobs} onResume={handleResumeJob} />
-      )}
-      {showSetupPanels && (
-        <RecentJobsPanel
-          jobs={recentJobs}
-          onResume={handleResumeJob}
-          onViewOutputs={handleViewRecentJobOutputs}
-        />
+      {showSetupPanels &&
+        (cachedJobsLoading || visibleCachedJobs.length > 0) && (
+          <Suspense fallback={<ComponentFallback />}>
+            <ResumableJobsPanel
+              jobs={visibleCachedJobs}
+              onResume={handleResumeJob}
+              onRemove={handleRemoveResumableJob}
+              queueDisplay={renderQueueDisplay({ margin: "0.75rem 0 0" })}
+              loading={cachedJobsLoading}
+            />
+          </Suspense>
+        )}
+      {showSetupPanels && completedRecentJobs.length > 0 && (
+        <>
+          <Suspense fallback={<ComponentFallback />}>
+            <RecentJobsPanel
+              jobs={completedRecentJobs}
+              onViewOutputs={handleViewRecentJobOutputs}
+              onRemoveJob={handleRemoveRecentJob}
+            />
+          </Suspense>
+          {renderQueueDisplay({ marginTop: "1rem" })}
+        </>
       )}
       <section className="tabs">
-        <div className="tabs__list" role="tablist" aria-label="Fluxo de conversão">
+        <div
+          className="tabs__list"
+          role="tablist"
+          aria-label="Fluxo de conversão"
+        >
           {tabs.map((tab) => {
             const buttonId = `tab-${tab.id}`;
             const panelId = `panel-${tab.id}`;
             const isActive = activeTab === tab.id;
-            const isDisabled = tab.id === 'setup'
-              ? false
-              : tab.id === 'progress'
-                ? !canViewProgress
-                : !canViewDownloads;
+            const isDisabled =
+              tab.id === "setup"
+                ? false
+                : tab.id === "progress"
+                  ? !canViewProgress
+                  : !canViewDownloads;
             return (
               <button
                 key={tab.id}
                 id={buttonId}
                 type="button"
                 role="tab"
-                className={`tabs__trigger${isActive ? ' tabs__trigger--active' : ''}${isDisabled ? ' tabs__trigger--disabled' : ''}`}
+                className={`tabs__trigger${isActive ? " tabs__trigger--active" : ""}${isDisabled ? " tabs__trigger--disabled" : ""}`}
                 aria-selected={isActive}
                 aria-controls={panelId}
                 onClick={() => handleTabChange(tab.id)}
@@ -616,9 +1384,14 @@ export default function App(props?: AppProps): JSX.Element {
               >
                 <div className="tabs__header">
                   <span className="tabs__label">{tab.label}</span>
-                  {tab.id === 'progress' && state.phase !== 'idle' && t.tabs.progress.activeBadge && (
-                    <span className="tabs__badge">{t.tabs.progress.activeBadge}</span>
-                  )}
+                  {tab.id === "progress" &&
+                    (state.phase === "polling" ||
+                      state.phase === "submitting") &&
+                    t.tabs.progress.activeBadge && (
+                      <span className="tabs__badge">
+                        {t.tabs.progress.activeBadge}
+                      </span>
+                    )}
                 </div>
                 <span className="tabs__description">{tab.description}</span>
               </button>
@@ -645,6 +1418,129 @@ export default function App(props?: AppProps): JSX.Element {
           })}
         </div>
       </section>
+      {isHelpOpen && (
+        <div
+          className="help-drawer__overlay"
+          role="button"
+          tabIndex={0}
+          aria-label={t.layout.helpClose}
+          onClick={() => setIsHelpOpen(false)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              setIsHelpOpen(false);
+            }
+          }}
+        />
+      )}
+      <aside
+        id="help-drawer"
+        className={`help-drawer${isHelpOpen ? " help-drawer--open" : ""}`}
+        aria-hidden={!isHelpOpen}
+      >
+        <div className="help-drawer__header">
+          <strong>{t.layout.helpTitle}</strong>
+          <button
+            type="button"
+            className="help-drawer__close"
+            onClick={() => setIsHelpOpen(false)}
+            aria-label={t.layout.helpClose}
+          >
+            ×
+          </button>
+        </div>
+        <Suspense fallback={<ComponentFallback />}>
+          <SystemStatsPanel
+            stats={systemStats}
+            labels={systemStatsLabels}
+            hasError={systemStatsError}
+            isLoading={systemStatsLoading}
+            updatedAt={systemStatsUpdatedAt}
+            nextRetryMs={systemStatsNextRetry}
+          />
+        </Suspense>
+        <div className="system-control">
+          <div className="system-control__text">
+            <strong>{t.layout.restartTitle}</strong>
+            <p>{t.layout.restartDescription}</p>
+          </div>
+          <button
+            type="button"
+            className="button-danger"
+            onClick={handleRestartBackend}
+            disabled={isRestartingBackend}
+          >
+            {isRestartingBackend
+              ? t.layout.restartProgress
+              : t.layout.restartButton}
+          </button>
+        </div>
+      </aside>
+      {isHfSpace && hfNotifications.length > 0 && (
+        <div
+          className="hf-notifications"
+          role="region"
+          aria-live="polite"
+          aria-atomic="false"
+        >
+          {hfNotifications.map((notification) => (
+            <div
+              key={notification.id}
+              className={`hf-notification hf-notification--${notification.variant}`}
+              role="status"
+            >
+              <button
+                type="button"
+                className="hf-notification__close"
+                onClick={() => dismissHfNotification(notification.id)}
+                aria-label={t.layout.closeNotification}
+              >
+                ×
+              </button>
+              <div className="hf-notification__title">{notification.title}</div>
+              {notification.body && (
+                <div className="hf-notification__body">{notification.body}</div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Restart backend dialogs */}
+      <Suspense fallback={null}>
+        <ConfirmDialog
+          open={restartDialog === "confirm"}
+          title={t.layout.restartTitle}
+          message={t.layout.restartConfirm}
+          confirmLabel={t.layout.restartConfirmYes}
+          cancelLabel={t.layout.restartConfirmNo}
+          onConfirm={handleRestartDialogConfirm}
+          onCancel={handleRestartDialogCancel}
+          variant="danger"
+        />
+        <ConfirmDialog
+          open={restartDialog === "cache"}
+          title={t.layout.restartKeepCacheTitle}
+          message={t.layout.restartKeepCacheConfirm}
+          confirmLabel={t.layout.restartKeepCacheYes}
+          cancelLabel={t.layout.restartKeepCacheNo}
+          onConfirm={handleRestartDialogConfirm}
+          onCancel={handleRestartDialogCancel}
+          onClose={handleRestartDialogClose}
+          showCloseButton
+        />
+        <ConfirmDialog
+          open={restartDialog === "finished"}
+          title={t.layout.restartKeepFinishedTitle}
+          message={t.layout.restartKeepFinishedConfirm}
+          confirmLabel={t.layout.restartKeepFinishedYes}
+          cancelLabel={t.layout.restartKeepFinishedNo}
+          onConfirm={handleRestartDialogConfirm}
+          onCancel={handleRestartDialogCancel}
+          onClose={handleRestartDialogClose}
+          showCloseButton
+        />
+      </Suspense>
     </Layout>
   );
 }

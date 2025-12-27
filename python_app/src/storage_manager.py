@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import logging
 import os
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional, List
-from dataclasses import dataclass
+from typing import List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class UploadResult:
     """Result of file upload to R2."""
+
     success: bool
     public_url: Optional[str] = None
     object_key: Optional[str] = None
@@ -49,14 +50,16 @@ class R2StorageManager:
         self.secret_access_key = secret_access_key or os.getenv("R2_SECRET_ACCESS_KEY")
         self.bucket_name = bucket_name or os.getenv("R2_BUCKET_NAME", "epub-to-mp3")
         self.public_url_base = public_url_base or os.getenv("R2_PUBLIC_URL")
-        
+
         self._s3_client = None
         self._enabled = self._check_enabled()
 
     def _check_enabled(self) -> bool:
         """Check if R2 is properly configured."""
         if not all([self.account_id, self.access_key_id, self.secret_access_key]):
-            logger.warning("R2 not configured - missing credentials. Files will be stored locally only.")
+            logger.warning(
+                "R2 not configured - missing credentials. Files will be stored locally only."
+            )
             return False
         return True
 
@@ -109,23 +112,14 @@ class R2StorageManager:
             UploadResult with success status and public URL
         """
         if not self.is_enabled():
-            return UploadResult(
-                success=False,
-                error="R2 storage not configured"
-            )
+            return UploadResult(success=False, error="R2 storage not configured")
 
         if not file_path.exists():
-            return UploadResult(
-                success=False,
-                error=f"File not found: {file_path}"
-            )
+            return UploadResult(success=False, error=f"File not found: {file_path}")
 
         client = self._get_s3_client()
         if client is None:
-            return UploadResult(
-                success=False,
-                error="Failed to initialize R2 client"
-            )
+            return UploadResult(success=False, error="Failed to initialize R2 client")
 
         try:
             # Generate object key if not provided
@@ -136,36 +130,32 @@ class R2StorageManager:
             # Detect content type
             if content_type is None:
                 import mimetypes
+
                 content_type, _ = mimetypes.guess_type(str(file_path))
                 if content_type is None:
-                    if file_path.suffix.lower() == '.mp3':
-                        content_type = 'audio/mpeg'
-                    elif file_path.suffix.lower() == '.zip':
-                        content_type = 'application/zip'
+                    if file_path.suffix.lower() == ".mp3":
+                        content_type = "audio/mpeg"
+                    elif file_path.suffix.lower() == ".zip":
+                        content_type = "application/zip"
                     else:
-                        content_type = 'application/octet-stream'
+                        content_type = "application/octet-stream"
 
             # Upload file
             file_size = file_path.stat().st_size
             expiry = datetime.utcnow() + timedelta(hours=ttl_hours)
 
             extra_args = {
-                'ContentType': content_type,
-                'Metadata': {
-                    'ttl-hours': str(ttl_hours),
-                    'expires-at': expiry.isoformat(),
-                }
+                "ContentType": content_type,
+                "Metadata": {
+                    "ttl-hours": str(ttl_hours),
+                    "expires-at": expiry.isoformat(),
+                },
             }
 
             logger.info(f"Uploading {file_path.name} ({file_size / 1024 / 1024:.2f} MB) to R2...")
 
-            with open(file_path, 'rb') as f:
-                client.put_object(
-                    Bucket=self.bucket_name,
-                    Key=object_key,
-                    Body=f,
-                    **extra_args
-                )
+            with open(file_path, "rb") as f:
+                client.put_object(Bucket=self.bucket_name, Key=object_key, Body=f, **extra_args)
 
             # Generate public URL
             if self.public_url_base:
@@ -173,26 +163,20 @@ class R2StorageManager:
             else:
                 # Fallback: generate presigned URL (expires in 24h)
                 public_url = client.generate_presigned_url(
-                    'get_object',
-                    Params={'Bucket': self.bucket_name, 'Key': object_key},
-                    ExpiresIn=86400  # 24 hours
+                    "get_object",
+                    Params={"Bucket": self.bucket_name, "Key": object_key},
+                    ExpiresIn=86400,  # 24 hours
                 )
 
             logger.info(f"✅ Uploaded to R2: {object_key}")
 
             return UploadResult(
-                success=True,
-                public_url=public_url,
-                object_key=object_key,
-                size_bytes=file_size
+                success=True, public_url=public_url, object_key=object_key, size_bytes=file_size
             )
 
         except Exception as e:
             logger.error(f"Failed to upload {file_path} to R2: {e}", exc_info=True)
-            return UploadResult(
-                success=False,
-                error=str(e)
-            )
+            return UploadResult(success=False, error=str(e))
 
     def delete_file(self, object_key: str) -> bool:
         """Delete file from R2 bucket."""
@@ -230,17 +214,17 @@ class R2StorageManager:
             deleted_count = 0
 
             # List all objects in bucket
-            paginator = client.get_paginator('list_objects_v2')
+            paginator = client.get_paginator("list_objects_v2")
             pages = paginator.paginate(Bucket=self.bucket_name)
 
             for page in pages:
-                if 'Contents' not in page:
+                if "Contents" not in page:
                     continue
 
-                for obj in page['Contents']:
+                for obj in page["Contents"]:
                     # Check last modified time
-                    if obj['LastModified'].replace(tzinfo=None) < cutoff_time:
-                        self.delete_file(obj['Key'])
+                    if obj["LastModified"].replace(tzinfo=None) < cutoff_time:
+                        self.delete_file(obj["Key"])
                         deleted_count += 1
 
             logger.info(f"R2 cleanup: deleted {deleted_count} files older than {max_age_hours}h")
@@ -260,19 +244,18 @@ class R2StorageManager:
             return []
 
         try:
-            response = client.list_objects_v2(
-                Bucket=self.bucket_name,
-                Prefix=prefix
-            )
+            response = client.list_objects_v2(Bucket=self.bucket_name, Prefix=prefix)
 
             files = []
-            if 'Contents' in response:
-                for obj in response['Contents']:
-                    files.append({
-                        'key': obj['Key'],
-                        'size': obj['Size'],
-                        'last_modified': obj['LastModified'],
-                    })
+            if "Contents" in response:
+                for obj in response["Contents"]:
+                    files.append(
+                        {
+                            "key": obj["Key"],
+                            "size": obj["Size"],
+                            "last_modified": obj["LastModified"],
+                        }
+                    )
 
             return files
 

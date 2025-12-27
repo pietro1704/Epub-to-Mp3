@@ -5,36 +5,80 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import inspect
 import os
+import re
 import shutil
 import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
-import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Set
 
 import psutil
-from mutagen.id3 import ID3, APIC, TIT2, TALB, TPE1
+from mutagen.id3 import APIC, ID3, TALB, TIT2, TPE1
 from mutagen.mp3 import MP3
 
-from .ebook_reader import EbookReader, Chapter
+from .cache_manager import CacheManager
+from .chapter_utils import deduplicate_chapters_by_content
 from .config import ConversionConfig
+from .ebook_reader import Chapter, EbookReader
+from .engine_pool import JobEnginePool, ResourceSnapshot
+from .hardware_detector import HardwareProfile
+from .i18n import Localization, get_localization
+from .progress import ProgressTracker
+from .speed_controller import AdaptiveSpeedController
 from .tts.factory import TTSFactory
 from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
-from .progress import ProgressTracker
-from .i18n import Localization, get_localization
-from .cache_manager import CacheManager
-from .speed_controller import AdaptiveSpeedController
-from .chapter_utils import deduplicate_chapters_by_content
+
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+EDGE_AUTO_TUNE = _env_bool("EDGE_AUTO_TUNE", True)
+EDGE_MIN_CHARS_PER_SECOND = _env_float("EDGE_MIN_CHARS_PER_SECOND", 45.0)
+EDGE_SLOW_RATIO_THRESHOLD = _env_float("EDGE_SLOW_RATIO_THRESHOLD", 1.7)
+EDGE_SAFE_CHUNK_CHARS = _env_int("EDGE_SAFE_CHUNK_CHARS", 8000)
+EDGE_SAFE_MAX_SEGMENT_SECONDS = _env_float("EDGE_SAFE_MAX_SEGMENT_SECONDS", 45.0)
+EDGE_SAFE_CHAPTER_PARALLEL = _env_int("EDGE_SAFE_CHAPTER_PARALLEL", 1)
+EDGE_SAFE_TIMEOUT_MAX = _env_float("EDGE_SAFE_TIMEOUT_MAX", 420.0)
+EDGE_AUTO_PARALLEL_CAPS = {
+    "slow": _env_int("EDGE_AUTO_PARALLEL_CAP_SLOW", 1),
+    "medium": _env_int("EDGE_AUTO_PARALLEL_CAP_MEDIUM", 2),
+    "fast": _env_int("EDGE_AUTO_PARALLEL_CAP_FAST", 3),
+    "ultra": _env_int("EDGE_AUTO_PARALLEL_CAP_ULTRA", 4),
+}
 
 
 @dataclass
 class ConversionResult:
     """Result of audio conversion"""
+
     success: bool
     total_chapters: int
     converted_chapters: int
@@ -76,6 +120,8 @@ class AudioConverter:
             "last_throughput": None,
             "degrade_runs": 0,
         }
+        self._edge_auto_state: Dict[str, Any] = {}
+        self.hardware_profile: Optional[HardwareProfile] = None
         self._health_state: Dict[str, Any] = {"active": False}
         self._health_watchdog: Optional[asyncio.Task] = None
         self._cover_art: Optional[dict] = None
@@ -212,7 +258,9 @@ class AudioConverter:
         return bps if bps > 0 else None
 
     @classmethod
-    def _expected_audio_bytes(cls, estimated_seconds: float, bitrate: Optional[str]) -> Optional[int]:
+    def _expected_audio_bytes(
+        cls, estimated_seconds: float, bitrate: Optional[str]
+    ) -> Optional[int]:
         if estimated_seconds <= 0:
             return None
         bps = cls._bitrate_to_bps(bitrate)
@@ -276,10 +324,14 @@ class AudioConverter:
         actual_seconds = self._probe_audio_duration(audio_path)
         if actual_seconds and actual_seconds >= estimated_seconds * 0.60:
             return None
-        if actual_seconds and actual_seconds >= max(estimated_seconds - 90, estimated_seconds * 0.5):
+        if actual_seconds and actual_seconds >= max(
+            estimated_seconds - 90, estimated_seconds * 0.5
+        ):
             return None
 
-        expected_bytes = self._expected_audio_bytes(estimated_seconds, getattr(config, "bitrate", "8k"))
+        expected_bytes = self._expected_audio_bytes(
+            estimated_seconds, getattr(config, "bitrate", "8k")
+        )
         ratio_warning = False
         approx_seconds = None
         if expected_bytes:
@@ -304,9 +356,7 @@ class AudioConverter:
         if short_seconds <= 0:
             short_seconds = max(int((file_size or 1) / 1000), 1)
 
-        return (
-            f"Áudio possivelmente truncado ({file_size} bytes ≈ {short_seconds}s, esperado ≈ {expected_display}s)"
-        )
+        return f"Áudio possivelmente truncado ({file_size} bytes ≈ {short_seconds}s, esperado ≈ {expected_display}s)"
 
     def _load_cached_payload(
         self,
@@ -316,7 +366,9 @@ class AudioConverter:
     ) -> Optional[str]:
         try:
             text_dir = Path(temp_dir) / "text"
-            safe_name = self.file_manager.sanitize_filename(getattr(chapter, "name", None) or f"Chapter {index}")
+            safe_name = self.file_manager.sanitize_filename(
+                getattr(chapter, "name", None) or f"Chapter {index}"
+            )
             candidate = text_dir / f"{index} - {safe_name}-pre-tts.txt"
             if candidate.exists():
                 return candidate.read_text(encoding="utf-8")
@@ -477,10 +529,17 @@ class AudioConverter:
                 detected[label] = f"Arquivo inválido ({size} bytes)"
         return detected
 
-    def _validate_and_clean_cache(self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig) -> None:
-        """Validate cache: if MP3 exists but pre-tts.txt doesn't, delete MP3"""
+    def _validate_and_clean_cache(
+        self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig
+    ) -> None:
+        """Validate cache: if MP3 exists but pre-tts.txt doesn't, delete MP3.
+        Also copy existing files from final output_dir back to temp for resume capability."""
         text_dir = Path(output_dir) / "text"
         deleted_count = 0
+        copied_count = 0
+
+        # Get final output directory to check for already converted chapters
+        final_output_dir = self._setup_output_directory(config)
 
         for idx, chapter in enumerate(chapters):
             chapter_num = idx + 1
@@ -490,8 +549,26 @@ class AudioConverter:
             # Check for pre-tts.txt
             pre_tts_file = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
 
-            # Check for MP3
+            # Check for MP3 in temp/cache dir
             mp3_path = self.file_manager.get_temp_output_path(chapter.name, output_dir, chapter_num)
+
+            # Check for MP3 in final output dir (for resume capability)
+            final_mp3_path = final_output_dir / mp3_path.name
+
+            # If MP3 exists in final output but not in temp, copy it for reuse
+            if not mp3_path.exists() and final_mp3_path.exists():
+                try:
+                    final_size = final_mp3_path.stat().st_size
+                    if final_size > 1000:  # Valid file (> 1KB)
+                        import shutil
+
+                        shutil.copy2(str(final_mp3_path), str(mp3_path))
+                        copied_count += 1
+                        if self.verbose:
+                            print(f"   ♻️ Reaproveitando capítulo {chapter_num}: {mp3_path.name}")
+                except OSError as e:
+                    if self.verbose:
+                        print(f"   ⚠️ Erro ao copiar capítulo {chapter_num}: {e}")
 
             # If MP3 exists but pre-tts.txt doesn't → cache invalidated, delete MP3
             if mp3_path.exists() and not pre_tts_file.exists():
@@ -500,10 +577,14 @@ class AudioConverter:
                 mp3_path.unlink()
                 deleted_count += 1
 
+        if copied_count > 0:
+            print(f"♻️ {copied_count} capítulo(s) reaproveitado(s) de conversão anterior")
         if deleted_count > 0:
             print(f"🗑️ {deleted_count} arquivo(s) MP3 removido(s) (cache inválido)")
 
-    def _generate_all_text_files(self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig) -> None:
+    def _generate_all_text_files(
+        self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig
+    ) -> None:
         """Generate all text files BEFORE starting TTS conversion"""
         text_dir = Path(output_dir) / "text"
         text_dir.mkdir(parents=True, exist_ok=True)
@@ -511,6 +592,7 @@ class AudioConverter:
         # Import TextFormattingProcessor to apply the same processing as TTS
         try:
             from .text_formatting import TextFormattingProcessor
+
             formatter = TextFormattingProcessor()
         except ImportError:
             formatter = None
@@ -520,21 +602,50 @@ class AudioConverter:
             parsed_text_local = chapter_obj.text or ""
             speech_text_local = self._speech_text(chapter_obj)
             if formatter:
-                formatting_segments_local = getattr(chapter_obj, 'formatting_segments', None)
-                pre_tts_text_local = formatter.to_audible_text(speech_text_local, formatting_segments_local)
+                formatting_segments_local = getattr(chapter_obj, "formatting_segments", None)
+                pre_tts_text_local = formatter.to_audible_text(
+                    speech_text_local, formatting_segments_local
+                )
             else:
                 pre_tts_text_local = speech_text_local
             return (chapter_index, chapter_name_local, parsed_text_local, pre_tts_text_local or "")
 
         files_generated = 0
-        with ThreadPoolExecutor(max_workers=min(4, (os.cpu_count() or 1))) as executor:
+        with ThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 1))) as executor:
             futures = [
                 executor.submit(_prepare_payload, idx + 1, chapter)
                 for idx, chapter in enumerate(chapters)
             ]
 
-            for future in futures:
-                chapter_num, chapter_name, parsed_text, pre_tts_text = future.result()
+            for idx, future in enumerate(futures):
+                # **FIX**: Add timeout with retry to ensure all chapters complete
+                max_retries = 3
+                retry_count = 0
+                result_data = None
+
+                while retry_count < max_retries:
+                    try:
+                        result_data = future.result(timeout=120)
+                        break  # Success
+                    except TimeoutError:
+                        retry_count += 1
+                        if retry_count < max_retries:
+                            print(
+                                f"⚠️ Timeout ao processar capítulo {idx + 1} - tentativa {retry_count}/{max_retries}"
+                            )
+                            # Recreate future for retry
+                            chapter = chapters[idx]
+                            future = executor.submit(_prepare_payload, idx + 1, chapter)
+                        else:
+                            print(f"❌ Capítulo {idx + 1} falhou após {max_retries} tentativas")
+                            raise Exception(
+                                f"Capítulo {idx + 1} não pode ser processado após {max_retries} tentativas"
+                            )
+
+                if result_data is None:
+                    raise Exception(f"Capítulo {idx + 1} retornou dados nulos")
+
+                chapter_num, chapter_name, parsed_text, pre_tts_text = result_data
                 safe_name = self.file_manager.sanitize_filename(chapter_name)
                 parsed_path = text_dir / f"{chapter_num} - {safe_name}-parsed.txt"
                 pre_tts_path = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
@@ -579,8 +690,8 @@ class AudioConverter:
             text = getattr(chapter, "text", "") or ""
         return len(text or "")
 
-    def _resource_snapshot(self) -> tuple[float, float]:
-        """Return (cpu_percent, ram_available_gb)."""
+    def _resource_snapshot(self) -> ResourceSnapshot:
+        """Return a best-effort resource snapshot for tuning."""
         cpu_pct = 0.0
         ram_gb = 0.0
         with contextlib.suppress(Exception):
@@ -588,7 +699,13 @@ class AudioConverter:
         with contextlib.suppress(Exception):
             mem = psutil.virtual_memory()
             ram_gb = float(mem.available / (1024**3))
-        return (cpu_pct, ram_gb)
+        cpu_idle = max(0.0, 100.0 - cpu_pct)
+        return ResourceSnapshot(
+            cpu_percent=cpu_pct,
+            cpu_idle=cpu_idle,
+            ram_gb=ram_gb,
+            active_jobs=1,
+        )
 
     def _auto_tune_parallelism(
         self,
@@ -603,14 +720,18 @@ class AudioConverter:
         best = float(state.get("best_throughput") or 0.0)
         last = state.get("last_throughput")
         degrade_runs = int(state.get("degrade_runs") or 0)
-        cpu_pct, ram_gb = self._resource_snapshot()
+        snapshot = self._resource_snapshot()
+        cpu_pct = snapshot.cpu_percent
+        ram_gb = snapshot.ram_gb
         reason: Optional[str] = None
         new_value = current
 
         if batch_errors > 0:
             new_value = max(1, current - 1)
             state["degrade_runs"] = min(3, degrade_runs + 1)
-            reason = f"reduzindo para {new_value} capítulo(s) simultâneos após {batch_errors} erro(s)"
+            reason = (
+                f"reduzindo para {new_value} capítulo(s) simultâneos após {batch_errors} erro(s)"
+            )
         else:
             state["degrade_runs"] = max(0, degrade_runs - 1)
             if throughput:
@@ -654,6 +775,79 @@ class AudioConverter:
         state["current"] = new_value
         self._parallel_state = state
         return new_value, reason
+
+    def _apply_edge_slow_mode(
+        self,
+        reason: str,
+        *,
+        engine_pool: Optional[JobEnginePool] = None,
+        engine_obj: Optional[object] = None,
+    ) -> bool:
+        """Clamp Edge settings when latency/throughput indicates throttling."""
+        state = self._edge_auto_state or {}
+        if not state.get("enabled"):
+            return False
+
+        announce = not state.get("slow_mode")
+        state["slow_mode"] = True
+        safe_profile = state.get("safe_profile") or {}
+        chunk_chars = int(safe_profile.get("chunk_chars") or EDGE_SAFE_CHUNK_CHARS)
+        max_segment = float(
+            safe_profile.get("max_segment_seconds") or EDGE_SAFE_MAX_SEGMENT_SECONDS
+        )
+        timeout_max = float(safe_profile.get("timeout_max") or EDGE_SAFE_TIMEOUT_MAX)
+        cap = int(safe_profile.get("parallel_cap") or EDGE_SAFE_CHAPTER_PARALLEL)
+        if state.get("parallel_cap"):
+            with contextlib.suppress(TypeError, ValueError):
+                cap = min(cap, int(state["parallel_cap"]))
+        state["parallel_cap"] = max(1, cap)
+        state["safe_profile"] = {
+            "chunk_chars": chunk_chars,
+            "max_segment_seconds": max_segment,
+            "timeout_max": timeout_max,
+            "parallel_cap": state["parallel_cap"],
+        }
+
+        for cfg in state.get("configs") or []:
+            if (cfg.engine or "").lower() != "edge":
+                continue
+            cfg.edge_chunk_chars = min(cfg.edge_chunk_chars or chunk_chars, chunk_chars)
+            cfg.edge_max_segment_seconds = min(
+                cfg.edge_max_segment_seconds or max_segment,
+                max_segment,
+            )
+            cfg.edge_enable_parallel = False
+
+        if engine_obj is not None:
+            if hasattr(engine_obj, "apply_speed_profile"):
+                with contextlib.suppress(Exception):
+                    engine_obj.apply_speed_profile(
+                        chunk_char_limit=chunk_chars,
+                        max_segment_seconds=max_segment,
+                        words_per_minute=160,
+                    )
+            if hasattr(engine_obj, "_enable_parallel"):
+                with contextlib.suppress(Exception):
+                    setattr(engine_obj, "_enable_parallel", False)
+                    setattr(engine_obj, "_parallel_slots", 1)
+
+        state_current = self._parallel_state or {}
+        current = max(1, int(state_current.get("current") or 1))
+        ceiling = max(1, int(state_current.get("ceiling") or current))
+        new_current = min(current, state["parallel_cap"])
+        new_ceiling = min(ceiling, state["parallel_cap"])
+        state_current["current"] = max(1, new_current)
+        state_current["ceiling"] = max(1, new_ceiling)
+        self._parallel_state = state_current
+        if engine_pool is not None:
+            engine_pool.update_parallel_slots(state_current["current"])
+
+        if announce:
+            print(
+                "🧯 Edge modo seguro: "
+                f"{reason} → chunk={chunk_chars} seg={int(max_segment)}s paralelo={state_current['current']}"
+            )
+        return announce
 
     def _start_health_watchdog(self, total_chapters: int) -> None:
         """Launch watchdog to observe stalled conversions."""
@@ -708,6 +902,43 @@ class AudioConverter:
         state["warn_emitted"] = False
         state["action_emitted"] = False
 
+    def _mark_health_activity(self, chapter_index: int, status: str = "") -> None:
+        """Update watchdog state for in-flight activity."""
+        state = getattr(self, "_health_state", None)
+        if not isinstance(state, dict) or not state.get("active"):
+            return
+        state["last_progress"] = time.time()
+        state["last_chapter"] = chapter_index
+        state["last_activity"] = status
+        state["warn_emitted"] = False
+        state["action_emitted"] = False
+
+    async def _watch_chapter_stall(
+        self,
+        chapter_index: int,
+        task: asyncio.Task,
+        stall_seconds: float,
+        stall_event: asyncio.Event,
+    ) -> None:
+        """Cancel synthesis task if no progress is detected for too long."""
+        if stall_seconds <= 0:
+            return
+        check_interval = max(5.0, min(15.0, stall_seconds / 3))
+        while not task.done():
+            await asyncio.sleep(check_interval)
+            if task.done():
+                return
+            if self.progress.seconds_since_activity() >= stall_seconds:
+                stall_event.set()
+                print(
+                    f"\n🛟 Watchdog: capítulo {chapter_index} sem progresso por {int(stall_seconds)}s"
+                )
+                self.progress.tick(
+                    f"🛟 Sem progresso há {int(stall_seconds)}s - reiniciando capítulo..."
+                )
+                task.cancel()
+                return
+
     async def _watch_conversion_health(self) -> None:
         """Background loop that watches for long stalls."""
         warning_threshold = 90.0
@@ -732,10 +963,14 @@ class AudioConverter:
                     info += f" (último capítulo #{last_chapter})"
                 print(f"\n🩺 Watchdog: {info} – investigando gargalo")
                 if not self._apply_watchdog_backpressure():
-                    print("   Sugestão: verifique conexão ou permitir fallback offline (Coqui/Piper).")
+                    print(
+                        "   Sugestão: verifique conexão ou permitir fallback offline (Coqui/Piper)."
+                    )
             elif stalled >= warning_threshold and not state.get("warn_emitted"):
                 state["warn_emitted"] = True
-                print(f"\n⚠️ Watchdog: Nenhum capítulo finalizado há {int(stalled)}s – aguardando progresso...")
+                print(
+                    f"\n⚠️ Watchdog: Nenhum capítulo finalizado há {int(stalled)}s – aguardando progresso..."
+                )
 
     def _apply_watchdog_backpressure(self) -> bool:
         """Reduce parallelism when stalling to regain stability."""
@@ -755,13 +990,15 @@ class AudioConverter:
         """Convert all chapters in ``reader`` according to ``config``."""
 
         # Enable verbose mode if requested
-        self.verbose = getattr(config, 'verbose', False)
+        self.verbose = getattr(config, "verbose", False)
         # Show TTS output only in verbose mode
         self.show_tts_output = self.verbose
 
         if self.verbose:
             print("🔍 [VERBOSE] AudioConverter.convert() iniciado")
-            print(f"🔍 [VERBOSE] Configuração: engine={getattr(config, 'engine', 'unknown')}, mode=sequential")
+            print(
+                f"🔍 [VERBOSE] Configuração: engine={getattr(config, 'engine', 'unknown')}, mode=sequential"
+            )
 
         # Setup paths
         reader_path = getattr(reader, "file_path", None)
@@ -773,7 +1010,9 @@ class AudioConverter:
         output_dir = self._setup_output_directory(config)
         # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
-        chapters = list(reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or [])
+        chapters = list(
+            reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or []
+        )
 
         # Store original before deduplication for potential restoration
         original_chapters = chapters.copy()
@@ -783,12 +1022,16 @@ class AudioConverter:
             print(f"🧹 Capítulos duplicados removidos automaticamente: {duplicates_removed}")
 
         # Validate chapter count against TOC (if available from CLI flow)
-        expected_count = getattr(reader, '_toc_expected_chapters', 0)
+        expected_count = getattr(reader, "_toc_expected_chapters", 0)
         if expected_count > 0 and len(chapters) != expected_count and duplicates_removed > 0:
             if len(chapters) + duplicates_removed == expected_count:
-                print(f"\n⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {len(chapters)}")
-                print(f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata")
-                print(f"💡 Motivo: deduplicação causou perda de capítulos válidos\n")
+                print(
+                    f"\n⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {len(chapters)}"
+                )
+                print(
+                    f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata"
+                )
+                print("💡 Motivo: deduplicação causou perda de capítulos válidos\n")
                 chapters = original_chapters
         if getattr(config, "priority_selectors", None):
             chapters = self._prioritize_chapters(chapters, config.priority_selectors)
@@ -807,10 +1050,6 @@ class AudioConverter:
         print(self.loc.t("conversion_output", path=output_dir))
         chapter_parallel_count = int(os.getenv("CHAPTER_PARALLEL_COUNT", "1"))
         self._reset_parallel_state(chapter_parallel_count)
-        if chapter_parallel_count > 1:
-            print(f"🚀 Modo paralelo automático: até {chapter_parallel_count} capítulos simultâneos")
-        else:
-            print("🔄 Modo sequencial automático: processando capítulos um por vez")
 
         if total_chapters == 0:
             empty_result = ConversionResult(True, 0, 0, [], [])
@@ -825,66 +1064,182 @@ class AudioConverter:
         print(f"✅ {total_chapters} arquivos de texto gerados\n")
 
         cover_art = self._extract_cover_art(reader)
-        book_title = reader.title or getattr(config, "book_title", None) or (self._current_book_path.stem if self._current_book_path else "")
+        book_title = (
+            reader.title
+            or getattr(config, "book_title", None)
+            or (self._current_book_path.stem if self._current_book_path else "")
+        )
         book_author = reader.author or ""
         self.progress.start(total_chapters, description=self.loc.t("progress_description"))
 
         is_auto_engine = (config.engine or "").lower() == "auto"
         auto_engine_pool: Dict[str, tuple[ConversionConfig, object]] = {}
+        engine_seeds: Dict[str, object] = {}
         try:
             if is_auto_engine:
                 auto_engine_pool = self._prepare_auto_engines(config)
                 if not auto_engine_pool:
                     raise RuntimeError("Nenhuma engine disponível no modo automático")
+                for name, (_, engine_obj) in auto_engine_pool.items():
+                    if engine_obj is not None:
+                        engine_seeds[name.lower()] = engine_obj
                 tts_engine = None
             else:
                 tts_engine = self.tts_factory.create_engine(config)
-        except ImportError as exc:
+                engine_seeds[(config.engine or "").lower()] = tts_engine
+        except ImportError:
             if self._install_requirements():
                 if is_auto_engine:
                     auto_engine_pool = self._prepare_auto_engines(config)
                     if not auto_engine_pool:
                         raise RuntimeError("Nenhuma engine disponível no modo automático")
+                    engine_seeds = {
+                        name.lower(): engine_obj
+                        for name, (_, engine_obj) in auto_engine_pool.items()
+                        if engine_obj is not None
+                    }
                     tts_engine = None
                 else:
                     tts_engine = self.tts_factory.create_engine(config)
+                    engine_seeds[(config.engine or "").lower()] = tts_engine
             else:
                 raise
         if is_auto_engine:
             voice_label = "Auto (Edge/Coqui/Piper)"
         else:
-            voice_label = getattr(tts_engine, "voice", None) or config.voice or "(auto)"
+            primary_engine = engine_seeds.get((config.engine or "").lower())
+            voice_label = getattr(primary_engine, "voice", None) or config.voice or "(auto)"
         print(self.loc.t("conversion_engine_voice", engine=config.engine, voice=voice_label))
         if getattr(config, "languages", None):
             print(self.loc.t("conversion_languages", languages=", ".join(config.languages)))
 
         if self.verbose:
-            print(f"🔍 [VERBOSE] Engine configurado: {type(tts_engine).__name__}")
+            if engine_seeds:
+                sample_engine = next(iter(engine_seeds.values()))
+                print(f"🔍 [VERBOSE] Engine configurado: {type(sample_engine).__name__}")
+            else:
+                print("🔍 [VERBOSE] Engine configurado: AUTO")
+
+        has_edge_engine = (config.engine or "").lower() == "edge"
+        if is_auto_engine and auto_engine_pool:
+            has_edge_engine = has_edge_engine or "edge" in auto_engine_pool
+        edge_network_tier = (
+            getattr(self.hardware_profile, "network_speed_estimate", None)
+            if self.hardware_profile
+            else None
+        )
+        if not edge_network_tier:
+            edge_network_tier = os.getenv("EDGE_NETWORK_TIER", "fast")
+        edge_network_tier = (edge_network_tier or "fast").strip().lower()
+        if edge_network_tier not in EDGE_AUTO_PARALLEL_CAPS:
+            edge_network_tier = "fast"
+        edge_auto_enabled = EDGE_AUTO_TUNE and has_edge_engine
+        parallel_slots_cap: Optional[int] = None
+        if edge_auto_enabled:
+            parallel_slots_cap = EDGE_AUTO_PARALLEL_CAPS.get(
+                edge_network_tier, EDGE_SAFE_CHAPTER_PARALLEL
+            )
+        edge_configs: List[ConversionConfig] = []
+        edge_seen: Set[int] = set()
+        for cfg in (
+            config,
+            auto_engine_pool.get("edge")[0]
+            if is_auto_engine and auto_engine_pool and "edge" in auto_engine_pool
+            else None,
+        ):
+            if cfg and (cfg.engine or "").lower() == "edge" and id(cfg) not in edge_seen:
+                edge_configs.append(cfg)
+                edge_seen.add(id(cfg))
+        self._edge_auto_state = {
+            "enabled": edge_auto_enabled,
+            "network_tier": edge_network_tier,
+            "parallel_cap": parallel_slots_cap,
+            "slow_mode": False,
+            "safe_profile": {
+                "chunk_chars": EDGE_SAFE_CHUNK_CHARS,
+                "max_segment_seconds": EDGE_SAFE_MAX_SEGMENT_SECONDS,
+                "timeout_max": EDGE_SAFE_TIMEOUT_MAX,
+                "parallel_cap": EDGE_SAFE_CHAPTER_PARALLEL,
+            },
+            "min_chars_per_second": EDGE_MIN_CHARS_PER_SECOND,
+            "slow_ratio_threshold": EDGE_SLOW_RATIO_THRESHOLD,
+            "configs": edge_configs,
+        }
+        if edge_auto_enabled and parallel_slots_cap:
+            if chapter_parallel_count > parallel_slots_cap:
+                chapter_parallel_count = parallel_slots_cap
+                self._reset_parallel_state(chapter_parallel_count)
+            print(
+                f"🌐 Edge auto-ajuste: limite {parallel_slots_cap} capítulo(s) em paralelo ({edge_network_tier})"
+            )
+
+        if chapter_parallel_count > 1:
+            print(
+                f"🚀 Modo paralelo automático: até {chapter_parallel_count} capítulos simultâneos"
+            )
+        else:
+            print("🔄 Modo sequencial automático: processando capítulos um por vez")
+
+        edge_cap = 0
+        try:
+            edge_cap = int(os.getenv("EDGE_MAX_CONCURRENCY", "") or "0")
+        except ValueError:
+            edge_cap = 0
+        parallel_slots = max(1, int(self._parallel_state.get("current") or chapter_parallel_count))
+        engine_pool = JobEnginePool(
+            create_engine=self.tts_factory.create_engine,
+            parallel_slots=parallel_slots,
+            edge_cap=edge_cap,
+            hardware_profile=self.hardware_profile,
+            stats_provider=self._resource_snapshot,
+        )
+        if is_auto_engine:
+            for name, (pool_config, engine_obj) in auto_engine_pool.items():
+                engine_pool.register_engine(name, pool_config, engine_obj)
+        else:
+            engine_name = (config.engine or "").lower()
+            engine_pool.register_engine(engine_name, config, engine_seeds.get(engine_name))
+            for fallback_name in ("coqui", "piper"):
+                if fallback_name == engine_name:
+                    continue
+                try:
+                    fallback_config = self._clone_engine_config(config, fallback_name)
+                except Exception:
+                    continue
+                engine_pool.register_engine(fallback_name, fallback_config)
 
         # Choose parallel or sequential based on hardware detection
         if chapter_parallel_count > 1:
             result = await self._convert_chapters_parallel(
                 chapters,
-                tts_engine,
+                engine_pool,
                 temp_dir,
                 config,
                 max_concurrent_chapters=chapter_parallel_count,
                 is_auto_engine=is_auto_engine,
                 auto_engine_pool=auto_engine_pool,
+                book_title=book_title,
+                book_author=book_author,
+                cover_art=cover_art,
             )
         else:
             result = await self._convert_chapters_sequential(
                 chapters,
-                tts_engine,
+                engine_pool,
                 temp_dir,
                 config,
                 is_auto_engine=is_auto_engine,
                 auto_engine_pool=auto_engine_pool,
+                book_title=book_title,
+                book_author=book_author,
+                cover_art=cover_art,
             )
 
         total_output_files = list(result.output_files)
         raw_failures = self._build_error_map(result.errors)
-        pending_failures, unresolved_failures = self._normalise_failure_keys(raw_failures, chapter_lookup)
+        pending_failures, unresolved_failures = self._normalise_failure_keys(
+            raw_failures, chapter_lookup
+        )
         unresolved_pool: Dict[str, str] = dict(unresolved_failures)
         attempts_used: Dict[str, int] = {label: 1 for label in pending_failures}
 
@@ -894,7 +1249,9 @@ class AudioConverter:
         max_retry_rounds = 5
         extra_retry_value = None
         if getattr(config, "extra", None):
-            extra_retry_value = config.extra.get("max_auto_retries") or config.extra.get("max_retries")
+            extra_retry_value = config.extra.get("max_auto_retries") or config.extra.get(
+                "max_retries"
+            )
         if extra_retry_value is None:
             extra_retry_value = getattr(config, "max_auto_retries", None)
         try:
@@ -945,18 +1302,34 @@ class AudioConverter:
                 failure_message = pending_failures.get(canonical_label, "")
                 if "Áudio possivelmente truncado" in (failure_message or ""):
                     attempts_so_far = attempts_used.get(canonical_label, 1)
-                    self._prepare_truncation_retry_payload(chapter_obj, canonical_label, attempts_so_far)
+                    self._prepare_truncation_retry_payload(
+                        chapter_obj, canonical_label, attempts_so_far
+                    )
 
             chapters_to_retry_info.sort(key=lambda item: item[1])
             chapters_to_retry = [item[0] for item in chapters_to_retry_info]
 
-            print(f"\n🔁 Reprocessando {len(chapters_to_retry)} capítulo(s) com falha (tentativa {retry_round}/{max_retry_rounds})")
+            print(
+                f"\n🔁 Reprocessando {len(chapters_to_retry)} capítulo(s) com falha (tentativa {retry_round}/{max_retry_rounds})"
+            )
             retry_config = replace(config, force_reprocess=True)
-            retry_result = await self._convert_chapters_sequential(chapters_to_retry, tts_engine, temp_dir, retry_config)
+            retry_result = await self._convert_chapters_sequential(
+                chapters_to_retry,
+                engine_pool,
+                temp_dir,
+                retry_config,
+                is_auto_engine=is_auto_engine,
+                auto_engine_pool=auto_engine_pool,
+                book_title=book_title,
+                book_author=book_author,
+                cover_art=cover_art,
+            )
 
             total_output_files.extend(retry_result.output_files)
             retry_error_map = self._build_error_map(retry_result.errors)
-            normalised_retry, unresolved_retry = self._normalise_failure_keys(retry_error_map, chapter_lookup)
+            normalised_retry, unresolved_retry = self._normalise_failure_keys(
+                retry_error_map, chapter_lookup
+            )
             for unresolved, message in unresolved_retry.items():
                 print(f"⚠️ Falha retornada sem correspondência: {unresolved}")
                 unresolved_pool[unresolved] = message or "Motivo desconhecido"
@@ -997,7 +1370,9 @@ class AudioConverter:
                 ordered_errors.append((idx, name, message))
             ordered_errors.sort(key=lambda item: item[0])
             result.errors = [
-                f"{name}: {message} (tentativas: {attempts_used.get(name, 'n/d')})" if message else f"{name} (tentativas: {attempts_used.get(name, 'n/d')})"
+                f"{name}: {message} (tentativas: {attempts_used.get(name, 'n/d')})"
+                if message
+                else f"{name} (tentativas: {attempts_used.get(name, 'n/d')})"
                 for _, name, message in ordered_errors
             ]
         else:
@@ -1009,17 +1384,25 @@ class AudioConverter:
 
         result.success = not pending_failures and not unresolved_pool
 
-        # Move files from temp to final output directory only if conversion was successful
-        if result.success and result.converted_chapters > 0:
+        # Move successfully converted files even on partial failure (for resume capability)
+        if result.converted_chapters > 0:
             if self.verbose:
-                print(f"🔍 [VERBOSE] Movendo {len(result.output_files)} arquivos para diretório final...")
+                print(
+                    f"🔍 [VERBOSE] Movendo {len(result.output_files)} arquivos para diretório final..."
+                )
 
             moved_files = self.file_manager.move_files_to_final_output(temp_dir, output_dir)
             result.output_files = moved_files
 
             if moved_files:
-                print(f"📁 {len(moved_files)} arquivos movidos para: {output_dir}")
-                album_name = book_title or (self._current_book_path.stem if self._current_book_path else output_dir.name)
+                if result.success:
+                    print(f"📁 {len(moved_files)} arquivos movidos para: {output_dir}")
+                else:
+                    print(f"📁 {len(moved_files)} capítulos convertidos movidos para: {output_dir}")
+                    print("   💡 Execute novamente para converter os capítulos restantes")
+                album_name = book_title or (
+                    self._current_book_path.stem if self._current_book_path else output_dir.name
+                )
                 self._apply_final_id3_tags(
                     moved_files,
                     default_album=album_name,
@@ -1028,8 +1411,12 @@ class AudioConverter:
                 )
 
             self._cleanup_temp_audio(temp_dir)
-        else:
-            print("❌ Conversão falhou - arquivos temporários mantidos para debug")
+
+        if not result.success:
+            if result.converted_chapters > 0:
+                print(f"⚠️ Conversão parcial - {len(pending_failures)} capítulo(s) falharam")
+            else:
+                print("❌ Conversão falhou - nenhum capítulo convertido")
 
         await self._stop_health_watchdog()
         self.progress.finish()
@@ -1060,6 +1447,7 @@ class AudioConverter:
             except (RuntimeError, OSError) as e:
                 # Fallback para diretório temporário do sistema
                 import tempfile
+
                 print(f"⚠️ Cache indisponível: {e}")
                 print("💡 Usando diretório temporário do sistema")
                 base_cache = Path(tempfile.mkdtemp(prefix="epub_to_mp3_"))
@@ -1082,17 +1470,19 @@ class AudioConverter:
             fallback_voice=fallback_voice,
         )
 
-
     async def _convert_chapters_parallel(
         self,
         chapters: Iterable[Chapter],
-        tts_engine,
+        engine_pool: JobEnginePool,
         output_dir: Path,
         config: ConversionConfig,
         max_concurrent_chapters: int = 3,
         *,
         is_auto_engine: bool = False,
         auto_engine_pool: Optional[Dict[str, tuple[ConversionConfig, object]]] = None,
+        book_title: str = "",
+        book_author: str = "",
+        cover_art: Optional[dict] = None,
     ) -> ConversionResult:
         """Converte múltiplos capítulos em paralelo para máxima velocidade."""
         chapters_list = list(chapters)
@@ -1103,8 +1493,12 @@ class AudioConverter:
         recommended = max(1, int(max_concurrent_chapters or 1))
         self._parallel_state.setdefault("ceiling", recommended)
         self._parallel_state["ceiling"] = recommended
-        self._parallel_state["current"] = max(1, min(recommended, int(self._parallel_state.get("current") or recommended)))
-        print(f"🚀 Modo paralelo: processando {total_chapters} capítulos (atual {self._parallel_state['current']} simultâneos)")
+        self._parallel_state["current"] = max(
+            1, min(recommended, int(self._parallel_state.get("current") or recommended))
+        )
+        print(
+            f"🚀 Modo paralelo: processando {total_chapters} capítulos (atual {self._parallel_state['current']} simultâneos)"
+        )
 
         # Validate and clean cache (once for all chapters)
         self._validate_and_clean_cache(chapters_list, output_dir, config)
@@ -1115,63 +1509,113 @@ class AudioConverter:
         all_converted_files: List[Path] = []
         all_errors: List[str] = []
         converted_total = 0
-        idx = 0
-        batch_index = 0
 
-        while idx < total_chapters:
-            desired = int(self._parallel_state.get("current", recommended) or recommended)
-            remaining = total_chapters - idx
-            current_parallel = max(1, min(desired, remaining))
-            batch = chapters_list[idx: idx + current_parallel]
-            idx += len(batch)
-            batch_index += 1
-            print(f"📦 Batch {batch_index}: {len(batch)} capítulo(s) em paralelo (meta {current_parallel})")
+        # **OPTIMIZED**: Dynamic task completion - eliminates batch starvation
+        # Process chapters with max concurrency, starting new tasks as any task completes
+        pending_tasks = {}  # task -> chapter
+        chapter_iter = iter(chapters_list)
+        batch_start = time.time()
 
-            tasks = []
-            for chapter in batch:
-                task = self._convert_chapters_sequential(
+        # Helper to create chapter task
+        def create_chapter_task(chapter: Chapter) -> asyncio.Task:
+            return asyncio.create_task(
+                self._convert_chapters_sequential(
                     [chapter],
-                    tts_engine,
+                    engine_pool,
                     output_dir,
                     config,
                     is_auto_engine=is_auto_engine,
                     auto_engine_pool=auto_engine_pool,
+                    book_title=book_title,
+                    book_author=book_author,
+                    cover_art=cover_art,
                 )
-                tasks.append(task)
+            )
 
-            # Wait for all chapters in this batch to complete
-            batch_start = time.time()
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            batch_elapsed = max(time.time() - batch_start, 0.001)
+        parallel_slots = int(self._parallel_state.get("current", recommended) or recommended)
+        parallel_slots = max(1, min(parallel_slots, recommended))
+        engine_pool.update_parallel_slots(parallel_slots)
 
-            batch_errors = 0
-            batch_chars = sum(self._estimate_chapter_chars(chapter) for chapter in batch)
+        overall_start = time.time()
+        batch_chars = 0
+        total_chars_processed = 0
+        batch_errors = 0
+        completed_since_tune = 0
 
-            for result in results:
-                if isinstance(result, Exception):
-                    all_errors.append(str(result))
+        for _ in range(min(parallel_slots, total_chapters)):
+            try:
+                chapter = next(chapter_iter)
+                task = create_chapter_task(chapter)
+                pending_tasks[task] = chapter
+            except StopIteration:
+                break
+
+        while pending_tasks:
+            done, _ = await asyncio.wait(pending_tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+
+            for task in done:
+                chapter = pending_tasks.pop(task)
+                chapter_chars = self._estimate_chapter_chars(chapter)
+                batch_chars += chapter_chars
+                total_chars_processed += chapter_chars
+                completed_since_tune += 1
+
+                try:
+                    result = task.result()
+                    if isinstance(result, Exception):
+                        all_errors.append(str(result))
+                        batch_errors += 1
+                    elif isinstance(result, ConversionResult):
+                        all_converted_files.extend(result.output_files)
+                        all_errors.extend(result.errors)
+                        converted_total += result.converted_chapters
+                        batch_errors += len(result.errors)
+                except Exception as exc:
+                    all_errors.append(str(exc))
                     batch_errors += 1
-                elif isinstance(result, ConversionResult):
-                    all_converted_files.extend(result.output_files)
-                    all_errors.extend(result.errors)
-                    converted_total += result.converted_chapters
-                    batch_errors += len(result.errors)
 
-            batch_throughput = (batch_chars / batch_elapsed) if batch_chars else None
-            if batch_throughput and self.verbose:
-                print(f"   📈 Batch {batch_index}: ~{int(batch_throughput)} chars/s ({int(batch_elapsed)}s)")
+            tuned_slots = int(self._parallel_state.get("current") or parallel_slots)
+            if tuned_slots < parallel_slots:
+                parallel_slots = max(1, tuned_slots)
+                engine_pool.update_parallel_slots(parallel_slots)
 
-            if idx < total_chapters:
-                next_parallel, reason = self._auto_tune_parallelism(
-                    throughput=batch_throughput,
+            while len(pending_tasks) < parallel_slots:
+                try:
+                    chapter = next(chapter_iter)
+                    task = create_chapter_task(chapter)
+                    pending_tasks[task] = chapter
+                except StopIteration:
+                    break
+
+            if completed_since_tune >= 2:
+                elapsed = max(time.time() - batch_start, 0.001)
+                throughput = (batch_chars / elapsed) if batch_chars else None
+                new_slots, reason = self._auto_tune_parallelism(
+                    throughput=throughput,
                     batch_errors=batch_errors,
                 )
-                self._parallel_state["current"] = next_parallel
-                if reason:
-                    print(f"🧠 Auto-tune: {reason}")
-                else:
-                    print(f"🧠 Ajuste automático mantém {next_parallel} capítulo(s) simultâneos")
+                if new_slots != parallel_slots:
+                    parallel_slots = new_slots
+                    engine_pool.update_parallel_slots(parallel_slots)
+                    if reason:
+                        print(f"⚙️ {reason}")
+                batch_start = time.time()
+                batch_chars = 0
+                batch_errors = 0
+                completed_since_tune = 0
 
+        batch_elapsed = max(time.time() - overall_start, 0.001)
+
+        # Calculate final metrics
+        batch_throughput = (
+            (total_chars_processed / batch_elapsed) if total_chars_processed else None
+        )
+        if batch_throughput and self.verbose:
+            print(
+                f"   📈 Dynamic processing: ~{int(batch_throughput)} chars/s ({int(batch_elapsed)}s total)"
+            )
+
+        # All chapters processed dynamically
         return ConversionResult(
             success=len(all_errors) == 0,
             total_chapters=total_chapters,
@@ -1183,12 +1627,15 @@ class AudioConverter:
     async def _convert_chapters_sequential(
         self,
         chapters: Iterable[Chapter],
-        tts_engine,
+        engine_pool: JobEnginePool,
         output_dir: Path,
         config: ConversionConfig,
         *,
         is_auto_engine: bool = False,
         auto_engine_pool: Optional[Dict[str, tuple[ConversionConfig, object]]] = None,
+        book_title: str = "",
+        book_author: str = "",
+        cover_art: Optional[dict] = None,
     ) -> ConversionResult:
         """Converte capítulos sequencialmente, SEM sistema de paralelismo."""
         chapters_list = list(chapters)
@@ -1210,6 +1657,22 @@ class AudioConverter:
 
         edge_unavailable_hits = 0
         auto_engine_pool = auto_engine_pool or {}
+        unavailable_engines: Set[str] = set()
+        edge_state = self._edge_auto_state or {}
+        edge_auto_enabled = bool(edge_state.get("enabled"))
+
+        def _maybe_apply_edge_slow_mode(reason: str, engine_obj: Optional[object] = None) -> None:
+            if edge_auto_enabled:
+                self._apply_edge_slow_mode(reason, engine_pool=engine_pool, engine_obj=engine_obj)
+
+        def available_auto_pool() -> Dict[str, tuple[ConversionConfig, object]]:
+            if not auto_engine_pool:
+                return {}
+            return {
+                name: entry
+                for name, entry in auto_engine_pool.items()
+                if name not in unavailable_engines
+            }
 
         def can_use_piper() -> bool:
             return shutil.which("piper") is not None
@@ -1223,80 +1686,56 @@ class AudioConverter:
             if is_auto_engine:
                 return False
 
-            nonlocal tts_engine, config
-            if config.engine.lower() != "edge":
+            nonlocal config
+            if (config.engine or "").lower() != "edge":
                 return False
-
-            try:
-                coqui_config = replace(config, engine="coqui", voice=None, model_path=None)
-                coqui_config.voice = (
-                    self.tts_factory.voice_provider.get_voice("coqui", coqui_config.primary_language)
-                    or "tts_models/multilingual/multi-dataset/xtts_v2"
-                )
-                coqui_config.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
-                    "coqui",
-                    coqui_config.languages
-                    or ([coqui_config.primary_language] if coqui_config.primary_language != "auto" else []),
-                    coqui_config.voice,
-                    primary_language=coqui_config.primary_language,
-                )
-                tts_engine = self.tts_factory.create_engine(coqui_config)
-                config = coqui_config
-                if tracker is not None:
-                    tracker["label"] = (config.engine or "").lower()
-                if engine_ref is not None:
-                    engine_ref["object"] = tts_engine
-                if reason:
-                    print(f"⚡ {reason} → migrando para XTTS (Coqui, offline)")
-                else:
-                    print("🔁 Fallback automático: Edge indisponível → XTTS (Coqui, offline)")
-                return True
-            except ImportError:
-                if self.verbose:
-                    print("   ⚠️ XTTS indisponível (pacote TTS não instalado)")
-            except Exception as exc:
-                if self.verbose:
-                    print(f"   ⚠️ Fallback para XTTS falhou: {exc}")
-
-            if can_use_piper():
+            for engine_name in ("coqui", "piper"):
+                if engine_name == "piper" and not can_use_piper():
+                    continue
                 try:
-                    piper_config = replace(config, engine="piper", voice=None, model_path=None)
-                    piper_config.voice = self.tts_factory.voice_provider.get_voice("piper", piper_config.primary_language)
-                    piper_config.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
-                        "piper",
-                        piper_config.languages
-                        or ([piper_config.primary_language] if piper_config.primary_language != "auto" else []),
-                        piper_config.voice,
-                        primary_language=piper_config.primary_language,
-                    )
-                    tts_engine = self.tts_factory.create_engine(piper_config)
-                    config = piper_config
-                    if tracker is not None:
-                        tracker["label"] = (config.engine or "").lower()
-                    if engine_ref is not None:
-                        engine_ref["object"] = tts_engine
-                    if reason:
-                        print(f"⚡ {reason} → migrando para Piper (offline)")
-                    else:
-                        print("🔁 Fallback automático: Edge indisponível → Piper (offline)")
-                    return True
+                    next_config = self._clone_engine_config(config, engine_name)
                 except Exception as exc:
                     if self.verbose:
-                        print(f"   ⚠️ Fallback para Piper falhou: {exc}")
+                        print(f"   ⚠️ Fallback para {engine_name} falhou: {exc}")
+                    continue
+                engine_pool.register_engine(engine_name, next_config)
+                config = next_config
+                if tracker is not None:
+                    tracker["label"] = engine_name
+                if engine_ref is not None:
+                    engine_ref["object"] = None
+                if reason:
+                    print(f"⚡ {reason} → migrando para {engine_name.upper()} (offline)")
+                else:
+                    print(
+                        f"🔁 Fallback automático: Edge indisponível → {engine_name.upper()} (offline)"
+                    )
+                return True
 
             return False
 
-        if (config.engine or "").lower() == "edge" and not is_auto_engine and hasattr(tts_engine, "_probe_edge_health"):
+        if (config.engine or "").lower() == "edge" and not is_auto_engine:
+            edge_engine = None
             try:
-                voice = getattr(tts_engine, "voice", None)
-                healthy = await tts_engine._probe_edge_health(voice)  # type: ignore[attr-defined]
-                if not healthy and build_best_offline_engine("Edge indisponível no health-check"):
-                    if self.verbose:
-                        print("   ⚠️ Edge pré-check falhou; usando engine offline antes de iniciar capítulos")
+                _, edge_engine = await engine_pool.acquire("edge")
+                if edge_engine and hasattr(edge_engine, "_probe_edge_health"):
+                    voice = getattr(edge_engine, "voice", None)
+                    healthy = await edge_engine._probe_edge_health(voice)  # type: ignore[attr-defined]
+                    if not healthy and build_best_offline_engine(
+                        "Edge indisponível no health-check"
+                    ):
+                        if self.verbose:
+                            print(
+                                "   ⚠️ Edge pré-check falhou; usando engine offline antes de iniciar capítulos"
+                            )
             except Exception:
                 pass
+            finally:
+                if edge_engine is not None:
+                    engine_pool.release("edge", edge_engine)
 
         if is_auto_engine:
+
             async def wait_edge_cooldown_if_needed(
                 context: str,
                 tracker: Optional[dict] = None,
@@ -1304,6 +1743,7 @@ class AudioConverter:
             ) -> bool:
                 return False
         else:
+
             async def wait_edge_cooldown_if_needed(
                 context: str,
                 tracker: Optional[dict] = None,
@@ -1316,15 +1756,15 @@ class AudioConverter:
                 """
                 if (config.engine or "").lower() != "edge":
                     return False
-                last_error = getattr(tts_engine, "last_error", None)
+                engine_obj = engine_ref.get("object") if isinstance(engine_ref, dict) else None
+                last_error = getattr(engine_obj, "last_error", None) if engine_obj else None
                 if not last_error:
                     return False
 
                 error_text = str(last_error)
                 lower_error = error_text.lower()
                 should_switch = (
-                    "service_unavailable" in lower_error
-                    or "no_audio_payload" in lower_error
+                    "service_unavailable" in lower_error or "no_audio_payload" in lower_error
                 )
                 if not should_switch:
                     return False
@@ -1337,6 +1777,7 @@ class AudioConverter:
                     print(f"   ⚠️ Edge indisponível ({context}) - erro: {last_error}")
                 nonlocal edge_unavailable_hits
                 edge_unavailable_hits += 1
+                _maybe_apply_edge_slow_mode(f"Edge indisponível ({context})", engine_obj=engine_obj)
 
                 if build_best_offline_engine(
                     f"Edge indisponível ({context})",
@@ -1347,7 +1788,9 @@ class AudioConverter:
 
                 max_wait = min(seconds, 90)
                 if self.verbose:
-                    print(f"   ⏳ Sem fallback disponível; aguardando {max_wait}s antes de tentar novamente...")
+                    print(
+                        f"   ⏳ Sem fallback disponível; aguardando {max_wait}s antes de tentar novamente..."
+                    )
                 waited = 0
                 while waited < max_wait:
                     chunk = min(3, max_wait - waited)
@@ -1356,14 +1799,22 @@ class AudioConverter:
                     self.progress.tick(f"⏳ Edge indisponível - aguardando {max_wait - waited}s...")
                 return True
 
-        def _resolve_tts_output_path(final_mp3_path: Path, engine_name: Optional[str] = None) -> tuple[Path, bool]:
+        def _resolve_tts_output_path(
+            final_mp3_path: Path, engine_name: Optional[str] = None
+        ) -> tuple[Path, bool]:
             engine = (engine_name or config.engine or "").lower()
             if engine in {"piper", "coqui"}:
                 return final_mp3_path.with_suffix(".wav"), True
             return final_mp3_path, False
 
         for idx, chapter in enumerate(chapters_list):
-            chapter_num = idx + 1
+            # Use chapter's original index if available (important for parallel mode)
+            # where each task receives a single-chapter list
+            try:
+                original_index = int(chapter.index) if hasattr(chapter, "index") else idx + 1
+            except (ValueError, TypeError):
+                original_index = idx + 1
+            chapter_num = original_index if original_index > 0 else idx + 1
             start_time = time.time()
 
             # **RESTORED**: Usar progress tracker
@@ -1376,19 +1827,27 @@ class AudioConverter:
             chapter_error: Optional[str] = None
             chapter_cached = False
             engine_tracker = {"label": (config.engine or "").lower()}
-            engine_instance = {"object": tts_engine}
+            engine_instance = {"object": None}
+            engine_name_used: Optional[str] = None
+            engine_obj: Optional[object] = None
 
             try:
                 # Conversão para diretório temporário
-                output_path = self.file_manager.get_temp_output_path(chapter.name, output_dir, idx + 1)
+                output_path = self.file_manager.get_temp_output_path(
+                    chapter.name, output_dir, idx + 1
+                )
 
                 # Check if MP3 already exists and is valid (size > 1KB)
                 # Note: Cache validation already done by _validate_and_clean_cache()
                 if output_path.exists() and not config.force_reprocess:
                     file_size = output_path.stat().st_size
                     if file_size > 1000:  # Mínimo 1KB para áudio válido
-                        cached_payload = self._load_cached_payload(chapter, chapter_num, output_dir) or self._speech_text(chapter)
-                        truncation_warning = self._detect_short_audio_output(output_path, cached_payload, config)
+                        cached_payload = self._load_cached_payload(
+                            chapter, chapter_num, output_dir
+                        ) or self._speech_text(chapter)
+                        truncation_warning = self._detect_short_audio_output(
+                            output_path, cached_payload, config
+                        )
                         if truncation_warning:
                             if self.verbose:
                                 print(f"   ⚠️ Cache inválido detectado: {truncation_warning}")
@@ -1404,7 +1863,9 @@ class AudioConverter:
                     else:
                         # Arquivo vazio ou corrompido - remover e reconverter
                         if self.verbose:
-                            print(f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}")
+                            print(
+                                f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}"
+                            )
                         output_path.unlink(missing_ok=True)
                         output_path.with_suffix(".wav").unlink(missing_ok=True)
 
@@ -1421,25 +1882,29 @@ class AudioConverter:
                 auto_order: Optional[List[str]] = None
                 attempted_auto: Set[str] = set()
                 if is_auto_engine:
-                    picked_engine, auto_order = self._pick_auto_engine(chapter_chars, estimated_seconds, auto_engine_pool)
+                    pool_view = available_auto_pool()
+                    if not pool_view:
+                        chapter_error = "Nenhuma engine disponível no modo automático"
+                        errors.append(f"{chapter.name}: {chapter_error}")
+                        self.progress.complete_chapter(f"❌ {chapter_error}")
+                        continue
+                    picked_engine, auto_order = self._pick_auto_engine(
+                        chapter_chars, estimated_seconds, pool_view
+                    )
                     attempted_auto.add(picked_engine)
                     engine_tracker["label"] = picked_engine
-                    engine_instance["object"] = auto_engine_pool[picked_engine][1]
                     # Record engine selection for future ranking
                     if not self.speed_controller._current_engine:
                         self.speed_controller.record_engine_switch(picked_engine)
                 else:
                     engine_tracker["label"] = (config.engine or "").lower()
-                    engine_instance["object"] = tts_engine
 
                 current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
-                tts_engine = engine_instance["object"]
-                if tts_engine is None:
-                    raise RuntimeError("Nenhuma engine TTS disponível")
+                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                    output_path, current_engine_label
+                )
 
-                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
-
-                if (config.engine or "").lower() == "edge" and not is_auto_engine:
+                if current_engine_label == "edge" and not is_auto_engine:
                     threshold_chars = max(getattr(config, "edge_auto_offline_chars", 0), 0)
                     threshold_seconds = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
                     edge_reason = None
@@ -1453,8 +1918,52 @@ class AudioConverter:
                         engine_ref=engine_instance,
                     ):
                         switched_for_size = True
-                        current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
-                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
+                        current_engine_label = (
+                            engine_tracker.get("label") or (config.engine or "").lower()
+                        )
+                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                            output_path, current_engine_label
+                        )
+
+                while True:
+                    try:
+                        engine_config, engine_obj = await engine_pool.acquire(current_engine_label)
+                        engine_instance["object"] = engine_obj
+                        engine_name_used = current_engine_label
+                        if engine_config and engine_config.engine:
+                            engine_tracker["label"] = (
+                                engine_config.engine or current_engine_label
+                            ).lower()
+                            current_engine_label = engine_tracker["label"]
+                        break
+                    except Exception as exc:
+                        unavailable_engines.add(current_engine_label)
+                        if is_auto_engine and auto_order:
+                            next_engine = self._next_auto_engine(auto_order, attempted_auto)
+                            if next_engine:
+                                attempted_auto.add(next_engine)
+                                engine_tracker["label"] = next_engine
+                                current_engine_label = next_engine
+                                continue
+                        if not is_auto_engine and build_best_offline_engine(
+                            f"Engine {current_engine_label} indisponível",
+                            tracker=engine_tracker,
+                            engine_ref=engine_instance,
+                        ):
+                            current_engine_label = (
+                                engine_tracker.get("label") or current_engine_label
+                            )
+                            continue
+                        chapter_error = f"Engine {current_engine_label} indisponível: {exc}"
+                        errors.append(f"{chapter.name}: {chapter_error}")
+                        self.progress.complete_chapter(f"❌ {chapter_error}")
+                        engine_obj = None
+                        break
+
+                if engine_obj is None:
+                    continue
+
+                tts_engine = engine_obj
 
                 decision = self.speed_controller.before_chapter(
                     engine_tracker["label"],
@@ -1467,6 +1976,16 @@ class AudioConverter:
                 )
                 if decision.message:
                     print(decision.message)
+                if (
+                    edge_auto_enabled
+                    and edge_state.get("slow_mode")
+                    and current_engine_label == "edge"
+                ):
+                    self._apply_edge_slow_mode(
+                        "modo seguro ativo",
+                        engine_pool=engine_pool,
+                        engine_obj=tts_engine,
+                    )
 
                 # Timeout otimizado: mais agressivo para falhar rápido
                 # Base: duração estimada * 1.5 + 30s buffer
@@ -1476,12 +1995,27 @@ class AudioConverter:
                 if decision.timeout_scale:
                     timeout_seconds = timeout_seconds * decision.timeout_scale
                 timeout_seconds = int(timeout_seconds)
+                if (
+                    edge_auto_enabled
+                    and edge_state.get("slow_mode")
+                    and current_engine_label == "edge"
+                ):
+                    safe_timeout = (edge_state.get("safe_profile") or {}).get("timeout_max")
+                    if safe_timeout:
+                        timeout_seconds = min(timeout_seconds, int(safe_timeout))
+                stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "120") or "120")
+                if stall_seconds < 0:
+                    stall_seconds = 0.0
 
                 if self.verbose:
-                    print(f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Iniciando síntese TTS")
+                    print(
+                        f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Iniciando síntese TTS"
+                    )
                     print(f"   📝 Texto: {chapter_chars} caracteres (timeout: {timeout_seconds}s)")
 
-                self.progress.tick(f"🎤 Sintetizando {chapter_chars} chars (timeout: {timeout_seconds}s)...")
+                self.progress.tick(
+                    f"🎤 Sintetizando {chapter_chars} chars (timeout: {timeout_seconds}s)..."
+                )
 
                 # Heartbeat para mostrar progresso (otimizado: 3s em vez de 1s)
                 heartbeat_active = True
@@ -1491,12 +2025,15 @@ class AudioConverter:
                     spinner_frames = ["⚙️", "🔧"]
                     frame_idx = 0
                     while heartbeat_active:
-                        await asyncio.sleep(3)  # Atualizar a cada 3 segundos (reduz overhead)
+                        await asyncio.sleep(5)  # Atualizar a cada 5 segundos (reduz overhead)
                         if not heartbeat_active:
                             break
                         elapsed = int(time.time() - start_synthesis)
                         frame = spinner_frames[frame_idx % len(spinner_frames)]
-                        self.progress.tick(f"{frame} Sintetizando... {elapsed}s/{timeout_seconds}s ({chapter_chars} chars)")
+                        self.progress.tick(
+                            f"{frame} Sintetizando... {elapsed}s/{timeout_seconds}s ({chapter_chars} chars)"
+                        )
+                        self._mark_health_activity(chapter_num, "heartbeat")
                         frame_idx += 1
 
                 heartbeat_task = asyncio.create_task(synthesis_heartbeat())
@@ -1506,22 +2043,50 @@ class AudioConverter:
                         print(f"   🔄 Executando comando TTS: {type(tts_engine).__name__}")
 
                     synthesis_result = None
-                    max_attempts = 1 if (config.engine or "").lower() == "edge" else 2
+                    max_attempts = 1 if current_engine_label == "edge" else 2
                     last_tts_output_path = tts_output_path
                     last_needs_transcode = needs_mp3_transcode
                     for attempt in range(max_attempts):
-                        current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
-                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
+                        current_engine_label = (
+                            engine_tracker.get("label") or (config.engine or "").lower()
+                        )
+                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                            output_path, current_engine_label
+                        )
                         last_tts_output_path = tts_output_path
                         last_needs_transcode = needs_mp3_transcode
-                        synthesis_result = await asyncio.wait_for(
+
+                        # Create progress callback for granular updates
+                        def on_segment_complete(text: str, total_chars: int):
+                            self.progress.update_chars_progress(text, total_chars)
+                            self._mark_health_activity(chapter_num, "segment")
+
+                        stall_event = asyncio.Event()
+                        synthesis_task = asyncio.create_task(
                             tts_engine.synthesize_async(
                                 speech_text,
                                 tts_output_path,
-                                formatting_segments=getattr(chapter, 'formatting_segments', None)
-                            ),
-                            timeout=timeout_seconds
+                                formatting_segments=getattr(chapter, "formatting_segments", None),
+                                progress_callback=on_segment_complete,
+                            )
                         )
+                        stall_task = asyncio.create_task(
+                            self._watch_chapter_stall(
+                                chapter_num, synthesis_task, stall_seconds, stall_event
+                            )
+                        )
+                        try:
+                            synthesis_result = await asyncio.wait_for(
+                                synthesis_task, timeout=timeout_seconds
+                            )
+                        except asyncio.CancelledError as exc:
+                            if stall_event.is_set():
+                                raise asyncio.TimeoutError() from exc
+                            raise
+                        finally:
+                            stall_task.cancel()
+                            with contextlib.suppress(asyncio.CancelledError):
+                                await stall_task
                         if synthesis_result:
                             break
                         waited = await wait_edge_cooldown_if_needed(
@@ -1533,8 +2098,11 @@ class AudioConverter:
                             break
 
                     if synthesis_result and last_needs_transcode:
+                        self.progress.tick("🎼 Convertendo WAV→MP3...")
                         if self.verbose:
-                            print(f"🔍 [VERBOSE] Convertendo WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})")
+                            print(
+                                f"🔍 [VERBOSE] Convertendo WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                            )
                         converted = await self.audio_processor.convert_to_mp3(
                             last_tts_output_path,
                             output_path,
@@ -1552,22 +2120,35 @@ class AudioConverter:
                     elapsed = int(time.time() - start_synthesis)
                     if self.verbose:
                         print(f"   ⚠️ TIMEOUT: Capítulo travado após {elapsed}s")
-                    self.progress.tick(f"⚠️ TIMEOUT após {elapsed}s - tentando fallback sem idioma...")
+                    self.progress.tick(
+                        f"⚠️ TIMEOUT após {elapsed}s - tentando fallback sem idioma..."
+                    )
+                    if current_engine_label == "edge":
+                        _maybe_apply_edge_slow_mode(
+                            f"timeout após {elapsed}s", engine_obj=tts_engine
+                        )
 
                     # **FALLBACK**: Remover marcação de idioma e tentar novamente
                     try:
                         from ..language import LanguageMarkup
+
                         base_text = self._speech_text(chapter)
-                        clean_text = LanguageMarkup.strip(base_text) if LanguageMarkup else base_text
+                        clean_text = (
+                            LanguageMarkup.strip(base_text) if LanguageMarkup else base_text
+                        )
                         current_payload = clean_text
                         clean_chars = len(clean_text)
                         fallback_timeout = timeout_seconds // 2
 
                         if self.verbose:
-                            print(f"   🔄 RETRY: Tentando novamente sem marcas de idioma")
-                            print(f"   📝 RETRY: {clean_chars} chars (timeout: {fallback_timeout}s)")
+                            print("   🔄 RETRY: Tentando novamente sem marcas de idioma")
+                            print(
+                                f"   📝 RETRY: {clean_chars} chars (timeout: {fallback_timeout}s)"
+                            )
 
-                        self.progress.tick(f"🔄 Fallback: {clean_chars} chars (timeout: {fallback_timeout}s)")
+                        self.progress.tick(
+                            f"🔄 Fallback: {clean_chars} chars (timeout: {fallback_timeout}s)"
+                        )
 
                         # Heartbeat para fallback (otimizado: 3s)
                         heartbeat_active = True
@@ -1577,26 +2158,38 @@ class AudioConverter:
                             spinner_frames = ["🚑", "🔥"]
                             frame_idx = 0
                             while heartbeat_active:
-                                await asyncio.sleep(3)
+                                await asyncio.sleep(5)
                                 if not heartbeat_active:
                                     break
                                 elapsed_fb = int(time.time() - start_fallback)
                                 frame = spinner_frames[frame_idx % len(spinner_frames)]
-                                self.progress.tick(f"{frame} FALLBACK {elapsed_fb}s/{fallback_timeout}s")
+                                self.progress.tick(
+                                    f"{frame} FALLBACK {elapsed_fb}s/{fallback_timeout}s"
+                                )
+                                self._mark_health_activity(chapter_num, "fallback")
                                 frame_idx += 1
 
                         fallback_task = asyncio.create_task(fallback_heartbeat())
 
                         try:
-                            current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
-                            tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
+                            current_engine_label = (
+                                engine_tracker.get("label") or (config.engine or "").lower()
+                            )
+                            tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                                output_path, current_engine_label
+                            )
                             synthesis_result = await asyncio.wait_for(
-                                tts_engine.synthesize_async(clean_text, tts_output_path, formatting_segments=None),
-                                timeout=fallback_timeout
+                                tts_engine.synthesize_async(
+                                    clean_text, tts_output_path, formatting_segments=None
+                                ),
+                                timeout=fallback_timeout,
                             )
                             if synthesis_result and needs_mp3_transcode:
+                                self.progress.tick("🎼 Convertendo WAV→MP3 (fallback)...")
                                 if self.verbose:
-                                    print(f"🔍 [VERBOSE] Convertendo WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})")
+                                    print(
+                                        f"🔍 [VERBOSE] Convertendo WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                    )
                                 converted = await self.audio_processor.convert_to_mp3(
                                     tts_output_path,
                                     output_path,
@@ -1608,7 +2201,7 @@ class AudioConverter:
                                 with contextlib.suppress(OSError):
                                     tts_output_path.unlink(missing_ok=True)
                             if self.verbose and synthesis_result:
-                                print(f"   ✅ RETRY: Sucesso no fallback!")
+                                print("   ✅ RETRY: Sucesso no fallback!")
                         finally:
                             heartbeat_active = False
                             fallback_task.cancel()
@@ -1618,8 +2211,8 @@ class AudioConverter:
                     except (ImportError, asyncio.TimeoutError):
                         total_elapsed = int(time.time() - start_synthesis)
                         if self.verbose:
-                            print(f"   ⚠️ FALLBACK: Tentativa dupla falhou, tentando síntese simples")
-                        self.progress.tick(f"🔄 Última tentativa: síntese simples...")
+                            print("   ⚠️ FALLBACK: Tentativa dupla falhou, tentando síntese simples")
+                        self.progress.tick("🔄 Última tentativa: síntese simples...")
 
                         # **THIRD ATTEMPT**: Synthesis with minimal text processing
                         try:
@@ -1628,29 +2221,42 @@ class AudioConverter:
                             if emergency_text:
                                 emergency_timeout = 30  # Short timeout for emergency
                                 if self.verbose:
-                                    print(f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)")
+                                    print(
+                                        f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)"
+                                    )
 
-                                current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
-                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
+                                current_engine_label = (
+                                    engine_tracker.get("label") or (config.engine or "").lower()
+                                )
+                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                                    output_path, current_engine_label
+                                )
                                 synthesis_result = await asyncio.wait_for(
-                                    tts_engine.synthesize_async(emergency_text, tts_output_path, formatting_segments=None),
-                                    timeout=emergency_timeout
+                                    tts_engine.synthesize_async(
+                                        emergency_text, tts_output_path, formatting_segments=None
+                                    ),
+                                    timeout=emergency_timeout,
                                 )
                                 if synthesis_result and needs_mp3_transcode:
+                                    self.progress.tick("🎼 Convertendo WAV→MP3 (emergência)...")
                                     if self.verbose:
-                                        print(f"🔍 [VERBOSE] Convertendo WAV→MP3 (emergência): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})")
+                                        print(
+                                            f"🔍 [VERBOSE] Convertendo WAV→MP3 (emergência): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                        )
                                     converted = await self.audio_processor.convert_to_mp3(
                                         tts_output_path,
                                         output_path,
                                         bitrate=config.bitrate,
                                     )
                                     if self.verbose and converted is None:
-                                        print("🔍 [VERBOSE] Falha ao converter WAV→MP3 (emergência)")
+                                        print(
+                                            "🔍 [VERBOSE] Falha ao converter WAV→MP3 (emergência)"
+                                        )
                                     synthesis_result = converted
                                     with contextlib.suppress(OSError):
                                         tts_output_path.unlink(missing_ok=True)
                                 if synthesis_result and self.verbose:
-                                    print(f"   ✅ EMERGÊNCIA: Sucesso com texto reduzido!")
+                                    print("   ✅ EMERGÊNCIA: Sucesso com texto reduzido!")
                             else:
                                 synthesis_result = None
                         except Exception as final_e:
@@ -1678,11 +2284,11 @@ class AudioConverter:
                     if next_engine:
                         attempted_auto.add(next_engine)
                         engine_tracker["label"] = next_engine
-                        engine_instance["object"] = auto_engine_pool[next_engine][1]
-                        tts_engine = engine_instance["object"]
                         if self.verbose:
                             print(f"   ⚡ AUTO: trocando para {next_engine} e tentando novamente")
-                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, next_engine)
+                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                            output_path, next_engine
+                        )
                         continue
 
                 if synthesis_result and output_path.exists():
@@ -1720,7 +2326,9 @@ class AudioConverter:
                             print(f"   📊 Arquivo gerado: {file_size} bytes")
                         self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
                         chapter_elapsed = time.time() - start_time
-                        current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                        current_engine_label = (
+                            engine_tracker.get("label") or (config.engine or "").lower()
+                        )
                         if chapter_chars:
                             throughput = int(chapter_chars / max(chapter_elapsed, 0.001))
                         else:
@@ -1742,14 +2350,42 @@ class AudioConverter:
                                     f"Edge levou {int(chapter_elapsed)}s para este capítulo"
                                 ):
                                     if self.verbose:
-                                        print("   ⚡ Próximos capítulos migrarão para engine offline pela performance")
-                                current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
-                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
+                                        print(
+                                            "   ⚡ Próximos capítulos migrarão para engine offline pela performance"
+                                        )
+                                current_engine_label = (
+                                    engine_tracker.get("label") or (config.engine or "").lower()
+                                )
+                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                                    output_path, current_engine_label
+                                )
+                        if (
+                            edge_auto_enabled
+                            and current_engine_label == "edge"
+                            and not chapter_cached
+                        ):
+                            chars_per_second = chapter_chars / max(chapter_elapsed, 0.001)
+                            min_cps = float(
+                                edge_state.get("min_chars_per_second", EDGE_MIN_CHARS_PER_SECOND)
+                            )
+                            slow_ratio = float(
+                                edge_state.get("slow_ratio_threshold", EDGE_SLOW_RATIO_THRESHOLD)
+                            )
+                            if chars_per_second < min_cps or (
+                                estimated_seconds > 0
+                                and chapter_elapsed > (estimated_seconds * slow_ratio)
+                            ):
+                                _maybe_apply_edge_slow_mode(
+                                    f"velocidade baixa ({chars_per_second:.1f} chars/s)",
+                                    engine_obj=tts_engine,
+                                )
                         self._retry_original_texts.pop(chapter_label, None)
                     else:
                         # Arquivo muito pequeno - provavelmente corrompido
                         if self.verbose:
-                            print(f"   ⚠️ Arquivo muito pequeno ({file_size} bytes) - considerando falha")
+                            print(
+                                f"   ⚠️ Arquivo muito pequeno ({file_size} bytes) - considerando falha"
+                            )
                         output_path.unlink(missing_ok=True)
                         synthesis_result = None  # Forçar retry
                 else:
@@ -1775,7 +2411,9 @@ class AudioConverter:
                             synthesis_result = None
                             for attempt in range(2):
                                 synthesis_result = await asyncio.wait_for(
-                                    tts_engine.synthesize_async(simple_text, output_path, formatting_segments=None),
+                                    tts_engine.synthesize_async(
+                                        simple_text, output_path, formatting_segments=None
+                                    ),
                                     timeout=retry_timeout,
                                 )
                                 if synthesis_result:
@@ -1820,24 +2458,39 @@ class AudioConverter:
                                     chapter_success = True
 
                                     if self.verbose:
-                                        print(f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)")
+                                        print(
+                                            f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)"
+                                        )
                                     self.progress.complete_chapter("✅ Sucesso (retry)")
                                     chapter_elapsed = time.time() - start_time
-                                    current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                                    current_engine_label = (
+                                        engine_tracker.get("label") or (config.engine or "").lower()
+                                    )
                                     if (
                                         current_engine_label == "edge"
                                         and not switched_for_size
                                         and getattr(config, "edge_auto_offline_seconds", 0)
                                     ):
-                                        slow_cutoff = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
+                                        slow_cutoff = max(
+                                            getattr(config, "edge_auto_offline_seconds", 0), 0
+                                        )
                                         if slow_cutoff and chapter_elapsed >= slow_cutoff * 1.4:
                                             if build_best_offline_engine(
                                                 f"Edge levou {int(chapter_elapsed)}s para este capítulo"
                                             ):
                                                 if self.verbose:
-                                                    print("   ⚡ Próximos capítulos migrarão para engine offline pela performance")
-                                                current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
-                                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(output_path, current_engine_label)
+                                                    print(
+                                                        "   ⚡ Próximos capítulos migrarão para engine offline pela performance"
+                                                    )
+                                                current_engine_label = (
+                                                    engine_tracker.get("label")
+                                                    or (config.engine or "").lower()
+                                                )
+                                                tts_output_path, needs_mp3_transcode = (
+                                                    _resolve_tts_output_path(
+                                                        output_path, current_engine_label
+                                                    )
+                                                )
                                     self._retry_original_texts.pop(chapter_label, None)
                                     continue  # Success! Continue to next chapter
 
@@ -1849,8 +2502,8 @@ class AudioConverter:
                             print(f"   ❌ RETRY falhou: {retry_e}")
 
                     # If all retries failed
-                    error_msg = f"Falha na síntese"
-                    if hasattr(tts_engine, 'last_error') and tts_engine.last_error:
+                    error_msg = "Falha na síntese"
+                    if hasattr(tts_engine, "last_error") and tts_engine.last_error:
                         error_msg += f": {tts_engine.last_error}"
                     if self.verbose:
                         print(f"   ❌ ERRO FINAL: {error_msg}")
@@ -1883,6 +2536,10 @@ class AudioConverter:
                 if message:
                     print(message)
                 self._mark_health_progress(chapter_num, chapter_success, elapsed, chapter_error)
+                if engine_obj is not None and engine_name_used:
+                    engine_pool.release(engine_name_used, engine_obj)
+                    engine_obj = None
+                    engine_name_used = None
 
         success = len(errors) == 0
         return ConversionResult(
@@ -1893,27 +2550,41 @@ class AudioConverter:
             errors=errors,
         )
 
-    def _prepare_auto_engines(self, base_config: ConversionConfig) -> Dict[str, tuple[ConversionConfig, object]]:
+    def _prepare_auto_engines(
+        self, base_config: ConversionConfig
+    ) -> Dict[str, tuple[ConversionConfig, object]]:
         pool: Dict[str, tuple[ConversionConfig, object]] = {}
-        for name in ("coqui", "edge"):
+        for name in ("edge", "coqui", "piper"):
             try:
-                cloned = replace(base_config, engine=name, voice=None, model_path=None)
-                cloned.languages = list(base_config.languages)
-                cloned.language_voices = {}
-                voice = self.tts_factory.voice_provider.get_voice(name, cloned.primary_language)
-                cloned.voice = voice
-                cloned.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
-                    name,
-                    cloned.languages
-                    or ([cloned.primary_language] if cloned.primary_language and cloned.primary_language != "auto" else []),
-                    voice,
-                    primary_language=cloned.primary_language,
-                )
+                cloned = self._clone_engine_config(base_config, name)
                 engine_instance = self.tts_factory.create_engine(cloned)
                 pool[name] = (cloned, engine_instance)
             except Exception:
                 continue
         return pool
+
+    def _clone_engine_config(
+        self, base_config: ConversionConfig, engine_name: str
+    ) -> ConversionConfig:
+        cloned = replace(base_config, engine=engine_name, voice=None, model_path=None)
+        cloned.languages = list(base_config.languages)
+        cloned.language_voices = {}
+        voice = self.tts_factory.voice_provider.get_voice(engine_name, cloned.primary_language)
+        if engine_name == "coqui" and not voice:
+            voice = "tts_models/multilingual/multi-dataset/xtts_v2"
+        cloned.voice = voice
+        cloned.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
+            engine_name,
+            cloned.languages
+            or (
+                [cloned.primary_language]
+                if cloned.primary_language and cloned.primary_language != "auto"
+                else []
+            ),
+            voice,
+            primary_language=cloned.primary_language,
+        )
+        return cloned
 
     def _pick_auto_engine(
         self,
@@ -1936,7 +2607,7 @@ class AudioConverter:
         rankings = self.speed_controller.get_engine_ranking(available_engines)
 
         if self.verbose and rankings:
-            print(f"📊 Engine Rankings (based on recent performance):")
+            print("📊 Engine Rankings (based on recent performance):")
             for engine, score, reason in rankings:
                 print(f"   {engine}: {score:.1f}/100 ({reason})")
 
@@ -1945,27 +2616,35 @@ class AudioConverter:
 
         # Fallback: if no ranking data, use static optimal order
         if not order:
+
             def append(order_list: List[str], candidate: str) -> None:
                 if candidate in pool and candidate not in order_list:
                     order_list.append(candidate)
 
             order = []
-            append(order, "edge")   # Fastest when healthy
+            append(order, "edge")  # Fastest when healthy
             append(order, "coqui")  # Most reliable but slower (piper removed for quality)
+            for name in available_engines:
+                if name not in order:
+                    order.append(name)
 
         if "edge" in order:
             order = ["edge"] + [name for name in order if name != "edge"]
 
+        if not order:
+            order = available_engines
+
         selected = order[0]
 
         # Check if we should switch from current engine
-        if hasattr(self.speed_controller, '_current_engine') and self.speed_controller._current_engine:
+        if (
+            hasattr(self.speed_controller, "_current_engine")
+            and self.speed_controller._current_engine
+        ):
             current = self.speed_controller._current_engine
             if current in available_engines and current != selected:
                 switch_recommendation = self.speed_controller.recommend_engine_switch(
-                    current,
-                    available_engines,
-                    verbose=self.verbose
+                    current, available_engines, verbose=self.verbose
                 )
                 if switch_recommendation:
                     new_engine, reason = switch_recommendation
@@ -2026,7 +2705,6 @@ class AudioConverter:
         remaining = [chapter for idx, chapter in enumerate(chapters) if idx not in seen_indices]
         return prioritized + remaining
 
-
     def _install_requirements(self) -> bool:
         if self._requirements_attempted:
             return False
@@ -2084,7 +2762,11 @@ class AudioConverter:
             if getattr(config, "listen", False):
                 progress.tick(self.loc.t("status_playing"))
                 played = await self.audio_processor.play_audio(output_path)
-                status = self.loc.t("status_complete") if played else self.loc.t("status_play_unavailable")
+                status = (
+                    self.loc.t("status_complete")
+                    if played
+                    else self.loc.t("status_play_unavailable")
+                )
                 self._announce_stage(index, chapter_label, status)
             progress.complete_chapter(status)
             outcome = ChapterConversionOutcome(index=index, name=chapter_label, path=output_path)
@@ -2113,7 +2795,7 @@ class AudioConverter:
             try:
                 if self.verbose:
                     chapter_text = chapter.text
-                    text_info = f"None" if chapter_text is None else f"{len(chapter_text)} chars"
+                    text_info = "None" if chapter_text is None else f"{len(chapter_text)} chars"
                     print(f"🔍 [VERBOSE] Chapter {index} text: {text_info}")
                     if chapter_text:
                         print(f"🔍 [VERBOSE] Chapter {index} preview: {str(chapter_text)[:100]}")
@@ -2133,8 +2815,9 @@ class AudioConverter:
                     chunks = ChapterProcessor.chunk_text(self._speech_text(chapter) or "")
                     chapter_payload = "\n".join(chunks)
                     if self.verbose:
-                        print(f"🔍 [VERBOSE] Chapter {index} chunks: {len(chunks)}, payload: {len(chapter_payload)} chars")
-
+                        print(
+                            f"🔍 [VERBOSE] Chapter {index} chunks: {len(chunks)}, payload: {len(chapter_payload)} chars"
+                        )
 
                 except Exception as e:
                     if self.verbose:
@@ -2148,7 +2831,9 @@ class AudioConverter:
                 char_count = len(chapter_payload or "")
                 lang_tag_count = chapter_payload.lower().count("[[lang:") if chapter_payload else 0
 
-                use_immediate_fallback = lang_tag_count > 50 or (lang_tag_count > 20 and char_count > 15000)
+                use_immediate_fallback = lang_tag_count > 50 or (
+                    lang_tag_count > 20 and char_count > 15000
+                )
 
                 if use_immediate_fallback:
                     if self.verbose:
@@ -2158,18 +2843,27 @@ class AudioConverter:
                         )
                     try:
                         from ..language import LanguageMarkup
-                        simplified = LanguageMarkup.strip(chapter_payload) if LanguageMarkup else chapter_payload
+
+                        simplified = (
+                            LanguageMarkup.strip(chapter_payload)
+                            if LanguageMarkup
+                            else chapter_payload
+                        )
                         if self.verbose:
                             print(
                                 f"🔍 [VERBOSE] Chapter {index} FALLBACK IMEDIATO: "
                                 f"{char_count} → {len(simplified)} chars"
                             )
-                        status_holder["text"] = f"🔄 Fallback: removendo {lang_tag_count} tags de idioma"
+                        status_holder["text"] = (
+                            f"🔄 Fallback: removendo {lang_tag_count} tags de idioma"
+                        )
                         self._announce_stage(index, chapter_label, status_holder["text"])
                         chapter_payload = simplified
                     except ImportError:
                         if self.verbose:
-                            print(f"🔍 [VERBOSE] Chapter {index} FALLBACK: LanguageMarkup não disponível")
+                            print(
+                                f"🔍 [VERBOSE] Chapter {index} FALLBACK: LanguageMarkup não disponível"
+                            )
 
                 # Recalcular métricas após fallback
                 char_count = len(chapter_payload or "")
@@ -2205,26 +2899,41 @@ class AudioConverter:
                     if attempt == 2 and not use_immediate_fallback:
                         try:
                             from ..language import LanguageMarkup
-                            simplified_payload = LanguageMarkup.strip(chapter_payload) if LanguageMarkup else chapter_payload
+
+                            simplified_payload = (
+                                LanguageMarkup.strip(chapter_payload)
+                                if LanguageMarkup
+                                else chapter_payload
+                            )
                             original_count = chapter_payload.lower().count("[[lang:")
                             if self.verbose:
-                                print(f"🔍 [VERBOSE] Chapter {index} FALLBACK: removendo {original_count} tags [[lang:]]")
-                                print(f"🔍 [VERBOSE] Chapter {index} FALLBACK: {len(chapter_payload)} → {len(simplified_payload)} chars")
-                            status_holder["text"] = f"🔄 Tentativa 2: removendo {original_count} tags de idioma"
+                                print(
+                                    f"🔍 [VERBOSE] Chapter {index} FALLBACK: removendo {original_count} tags [[lang:]]"
+                                )
+                                print(
+                                    f"🔍 [VERBOSE] Chapter {index} FALLBACK: {len(chapter_payload)} → {len(simplified_payload)} chars"
+                                )
+                            status_holder["text"] = (
+                                f"🔄 Tentativa 2: removendo {original_count} tags de idioma"
+                            )
                             self._announce_stage(index, chapter_label, status_holder["text"])
                             chapter_payload = simplified_payload
                         except ImportError:
                             if self.verbose:
-                                print(f"🔍 [VERBOSE] Chapter {index} FALLBACK: LanguageMarkup não disponível")
+                                print(
+                                    f"🔍 [VERBOSE] Chapter {index} FALLBACK: LanguageMarkup não disponível"
+                                )
 
                     try:
                         if self.verbose:
-                            print(f"🔍 [VERBOSE] Chapter {index} tentativa {attempt}/{max_attempts}")
+                            print(
+                                f"🔍 [VERBOSE] Chapter {index} tentativa {attempt}/{max_attempts}"
+                            )
 
                         # Pass formatting segments only on first attempt with original payload
                         speech_text = self._speech_text(chapter)
                         chapter_formatting = (
-                            getattr(chapter, 'formatting_segments', None)
+                            getattr(chapter, "formatting_segments", None)
                             if attempt == 1 and chapter_payload == speech_text
                             else None
                         )
@@ -2232,7 +2941,7 @@ class AudioConverter:
                             tts_engine.synthesize_async(
                                 chapter_payload,
                                 output_path.with_suffix(".wav"),
-                                formatting_segments=chapter_formatting
+                                formatting_segments=chapter_formatting,
                             )
                         )
                         temp_wav = await asyncio.wait_for(synthesis_task, timeout=chapter_timeout)
@@ -2243,7 +2952,9 @@ class AudioConverter:
 
                     except asyncio.TimeoutError:
                         if self.verbose:
-                            print(f"🔍 [VERBOSE] Chapter {index} tentativa {attempt} timeout após {chapter_timeout}s")
+                            print(
+                                f"🔍 [VERBOSE] Chapter {index} tentativa {attempt} timeout após {chapter_timeout}s"
+                            )
                         if synthesis_task and not synthesis_task.done():
                             synthesis_task.cancel()
                             try:
@@ -2253,7 +2964,7 @@ class AudioConverter:
 
                         if attempt == max_attempts:
                             temp_wav = None
-                            if hasattr(tts_engine, 'last_error'):
+                            if hasattr(tts_engine, "last_error"):
                                 tts_engine.last_error = "timeout_final"
 
                     except Exception as e:
@@ -2266,7 +2977,7 @@ class AudioConverter:
 
                         if attempt == max_attempts:
                             temp_wav = None
-                            if hasattr(tts_engine, 'last_error'):
+                            if hasattr(tts_engine, "last_error"):
                                 tts_engine.last_error = f"error: {e}"
 
                     attempt += 1
@@ -2306,10 +3017,6 @@ class AudioConverter:
                     )
                     return None if legacy_mode else outcome
 
-                try:
-                    file_size = converted.stat().st_size
-                except OSError:
-                    file_size = 0
                 truncation_warning = self._detect_short_audio_output(
                     converted,
                     chapter_payload,
@@ -2344,7 +3051,11 @@ class AudioConverter:
                     status_holder["text"] = self.loc.t("status_playing")
                     self._announce_stage(index, chapter_label, status_holder["text"])
                     played = await self.audio_processor.play_audio(converted)
-                    status_holder["text"] = self.loc.t("status_complete") if played else self.loc.t("status_play_unavailable")
+                    status_holder["text"] = (
+                        self.loc.t("status_complete")
+                        if played
+                        else self.loc.t("status_play_unavailable")
+                    )
                     self._announce_stage(index, chapter_label, status_holder["text"])
                 self._cache_audio(cache_dir, converted, chapter, index, config)
                 outcome = ChapterConversionOutcome(index=index, name=chapter_label, path=converted)
@@ -2355,6 +3066,7 @@ class AudioConverter:
             if self.verbose:
                 print(f"🔍 [VERBOSE] Chapter {index} exception: {type(exc).__name__}: {exc}")
                 import traceback
+
                 traceback.print_exc()
             if not status_holder["text"].startswith("❌"):
                 status_holder["text"] = self.loc.t("status_internal_error")
@@ -2371,7 +3083,13 @@ class AudioConverter:
 
     def _report_results(self, result: ConversionResult) -> None:
         print(self.loc.t("conversion_results_title"))
-        print(self.loc.t("conversion_results_success", converted=result.converted_chapters, total=result.total_chapters))
+        print(
+            self.loc.t(
+                "conversion_results_success",
+                converted=result.converted_chapters,
+                total=result.total_chapters,
+            )
+        )
         print(self.loc.t("conversion_results_files", files=len(result.output_files)))
         if result.errors:
             print(self.loc.t("conversion_results_errors", errors=len(result.errors)))
@@ -2493,12 +3211,14 @@ class AudioConverter:
             error_lower = str(error_msg).lower()
         except Exception:
             return False
-        return any(keyword in error_lower for keyword in ["timeout", "rate", "limit", "throttle", "quota"])
+        return any(
+            keyword in error_lower for keyword in ["timeout", "rate", "limit", "throttle", "quota"]
+        )
 
 
 class ChapterProcessor:
     """Handles chapter-specific processing following SRP"""
-    
+
     @staticmethod
     def chunk_text(text: str, max_size: int = 5000) -> List[str]:
         """Split text into manageable chunks for TTS engines."""

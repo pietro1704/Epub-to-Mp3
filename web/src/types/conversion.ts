@@ -1,5 +1,5 @@
-export type EngineOption = 'edge' | 'coqui' | 'piper' | string;
-export type FootnoteMode = 'inline' | 'chapter_end' | 'skip';
+export type EngineOption = "edge" | "coqui" | "piper" | string;
+export type FootnoteMode = "inline" | "chapter_end" | "skip";
 
 export interface ConversionFormValues {
   file: File | null;
@@ -7,21 +7,61 @@ export interface ConversionFormValues {
   uploadId?: string;
   engine: EngineOption;
   voice?: string;
+  model?: string;
   chapters?: string;
+  sections?: string;
   priority?: string;
   footnoteMode: FootnoteMode;
   language?: string;
   formattingCues?: boolean;
+  noParallel?: boolean;
+  maxPerformance?: boolean;
+  parallelSlots?: number;
+  edgeChunkChars?: number;
+  edgeMaxSegmentSeconds?: number;
+  edgeEnableParallel?: boolean;
+  edgeAutoTune?: boolean;
+  coquiChunkChars?: number;
+  coquiMaxWorkers?: number;
+  coquiSafeMode?: boolean;
+  piperMaxProcs?: number;
+  bitrate?: string;
+  sampleRate?: number;
+  channels?: number;
+  clearCache?: boolean;
+  forceReprocess?: boolean;
+  filterChapters?: boolean;
+  verbose?: boolean;
+  useLanguageDetection?: boolean;
+  prioritizePrimaryLanguage?: boolean;
+  healthCheckIntervalSeconds?: number;
+  healthCheckSlowEdgeCps?: number;
+  healthCheckSlowCps?: number;
+  healthCheckHighCpu?: number;
+  healthCheckHighMem?: number;
+  healthCheckOkCpu?: number;
+  healthCheckOkMem?: number;
+  healthCheckSlowStreak?: number;
   uiLanguage?: string;
 }
 
-export type ConversionTemplate = Omit<ConversionFormValues, 'file' | 'fileName' | 'uploadId'>;
+export type ConversionTemplate = Omit<
+  ConversionFormValues,
+  "file" | "fileName" | "uploadId"
+>;
 
 export interface SubmitBatchOptions {
   batchQueue?: ConversionFormValues[];
 }
 
-export type JobState = 'queued' | 'running' | 'finished' | 'failed' | 'interrupted' | 'cancelling' | 'cancelled';
+export type JobState =
+  | "queued"
+  | "running"
+  | "finished"
+  | "failed"
+  | "interrupted"
+  | "cancelling"
+  | "cancelled";
 
 export interface DownloadAsset {
   name: string;
@@ -30,7 +70,13 @@ export interface DownloadAsset {
   sizeBytes?: number;
 }
 
-export type ChapterProgressStatus = 'pending' | 'processing' | 'completed' | 'skipped' | 'failed' | 'cancelled';
+export type ChapterProgressStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "skipped"
+  | "failed"
+  | "cancelled";
 
 export interface ChapterProgressEntry {
   index: number;
@@ -50,6 +96,9 @@ export interface JobSnapshot {
   updatedAt?: string;
   etaSeconds?: number | null;
   progress?: number | null;
+  startedAt?: string;
+  completedAt?: string;
+  totalElapsedSeconds?: number | null;
   detectedLanguage?: string;
   chaptersTotal?: number;
   chaptersCompleted?: number;
@@ -71,6 +120,8 @@ export interface JobSnapshot {
   language?: string;
   formattingCues?: boolean;
   uiLanguage?: string;
+  lastActivityAt?: number;
+  noParallel?: boolean;
 }
 
 export interface StatusEntry {
@@ -93,7 +144,14 @@ export interface ConversionSummary {
 
 export interface ConversionState {
   jobId?: string;
-  phase: 'idle' | 'submitting' | 'polling' | 'success' | 'error' | 'cancelling' | 'cancelled';
+  phase:
+    | "idle"
+    | "submitting"
+    | "polling"
+    | "success"
+    | "error"
+    | "cancelling"
+    | "cancelled";
   log: StatusEntry[];
   downloads: DownloadAsset[];
   error?: string;
@@ -110,6 +168,9 @@ export interface ConversionState {
   uiLanguage?: string;
   speakFormattingCues?: boolean;
   pendingBatchQueue?: ConversionFormValues[];
+  startedAt?: string;
+  completedAt?: string;
+  totalDurationSeconds?: number;
 }
 
 export interface RecentJobEntry {
@@ -130,4 +191,7 @@ export interface RecentJobEntry {
   language?: string;
   formattingCues?: boolean;
   uiLanguage?: string;
+  startedAt?: string;
+  completedAt?: string;
+  totalDurationSeconds?: number;
 }

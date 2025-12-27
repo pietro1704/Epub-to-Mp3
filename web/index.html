@@ -3,15 +3,92 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- **PERFORMANCE**: DNS Prefetch para APIs externas -->
+    <link rel="dns-prefetch" href="//localhost:8000" />
+
+    <!-- **PERFORMANCE**: Preconnect para reduzir latência -->
+    <link rel="preconnect" href="//localhost:8000" crossorigin />
+
     <title>Epub to MP3 Converter</title>
     <meta
       name="description"
       content="Interface web moderna para converter livros EPUB/PDF em arquivos MP3 usando o serviço Python."
     />
+
+    <!-- **SEO & PERFORMANCE** -->
+    <meta name="theme-color" content="#1a1a1a" />
+    <meta name="color-scheme" content="dark light" />
+
+    <!-- **PERFORMANCE**: Favicon otimizado -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+
+    <!-- **PERFORMANCE**: Inline critical CSS para evitar FOUC -->
+    <style>
+      /* Critical CSS - Skeleton screen */
+      body {
+        margin: 0;
+        padding: 0;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
+          "Ubuntu", "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue",
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        background-color: #f5f5f5;
+      }
+      #root {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      /* Loading skeleton */
+      .app-loading {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        color: #666;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background-color: #1a1a1a;
+          color: #e0e0e0;
+        }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <!-- **PERFORMANCE**: Loading skeleton enquanto JS carrega -->
+      <div class="app-loading">
+        <div>Carregando...</div>
+      </div>
+    </div>
+
+    <!-- **PERFORMANCE**: Module preload para reduzir cascata de requisições -->
+    <link rel="modulepreload" href="/src/main.tsx" />
+
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- **PERFORMANCE**: Script para detectar suporte a features -->
+    <script>
+      // Feature detection para otimizações
+      if ("connection" in navigator) {
+        // Adaptar qualidade baseado na conexão
+        const connection =
+          navigator.connection ||
+          navigator.mozConnection ||
+          navigator.webkitConnection;
+        if (connection && connection.effectiveType) {
+          document.documentElement.dataset.connectionType =
+            connection.effectiveType;
+        }
+      }
+      // Detectar se tem GPU disponível
+      if ("gpu" in navigator) {
+        document.documentElement.dataset.hasGpu = "true";
+      }
+    </script>
   </body>
 </html>

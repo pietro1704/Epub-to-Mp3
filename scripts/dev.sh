@@ -12,12 +12,13 @@ cleanup() {
 
 trap cleanup EXIT
 
-python -m uvicorn python_app.server:app --reload --port 8000 &
+BACKEND_PORT="${BACKEND_PORT:-8000}"
+python -m uvicorn python_app.server:app --reload --port "$BACKEND_PORT" &
 BACK_PID=$!
 
 cd web
 npm install >/dev/null 2>&1 || true
-npm run dev -- --host &
+VITE_API_BASE="${VITE_API_BASE:-http://127.0.0.1:${BACKEND_PORT}}" npm run dev -- --host &
 FRONT_PID=$!
 
 wait "$BACK_PID" "$FRONT_PID"

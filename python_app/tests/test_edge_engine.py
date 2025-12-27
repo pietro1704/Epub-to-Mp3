@@ -8,10 +8,10 @@ import sys
 import unittest
 from unittest.mock import Mock
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.tts import edge_engine
-from src.tts.edge_engine import EdgeTTSEngine, SIMPLIFIED_SEGMENT_MAX_CHARS
+from src.tts.edge_engine import SIMPLIFIED_SEGMENT_MAX_CHARS, EdgeTTSEngine
 
 
 class TestEdgeTTSSegmentation(unittest.TestCase):
@@ -74,8 +74,7 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         segments = self.engine._prepare_segments(long_text)
 
         # Should generate multiple segments for long text
-        self.assertGreater(len(segments), 1,
-                          "Long text should generate multiple segments")
+        self.assertGreater(len(segments), 1, "Long text should generate multiple segments")
 
         # Reconstruct full text from segments
         reconstructed = " ".join(segment_text for _, segment_text in segments)
@@ -84,13 +83,14 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         self.assertEqual(
             self._normalise(reconstructed),
             self._normalise(long_text),
-            "CRITICAL BUG: Some segments are being lost! This causes audio truncation."
+            "CRITICAL BUG: Some segments are being lost! This causes audio truncation.",
         )
 
         # Verify each segment is non-empty
         for idx, (voice, segment_text) in enumerate(segments):
-            self.assertTrue(segment_text.strip(),
-                           f"Segment {idx} is empty - segments should contain text")
+            self.assertTrue(
+                segment_text.strip(), f"Segment {idx} is empty - segments should contain text"
+            )
 
     def test_segment_loop_processes_all_segments(self):
         """Verify that the segment processing loop doesn't stop prematurely."""
@@ -116,7 +116,8 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
     def test_no_segments_lost_in_preparation(self):
         """Ensure _prepare_segments doesn't drop any text chunks."""
         # Text WITHOUT language tags to avoid cleanup interference
-        complex_text = """
+        complex_text = (
+            """
         Chapter 1: Introduction
 
         This is the first paragraph with some content.
@@ -126,7 +127,9 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
 
         Back to English with numbers: 1, 2, 3, 4, 5.
         More content here to make it realistic and long enough.
-        """ * 20  # Repeat to make it long enough for multiple segments
+        """
+            * 20
+        )  # Repeat to make it long enough for multiple segments
 
         segments = self.engine._prepare_segments(complex_text)
 
@@ -151,7 +154,7 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         self.assertLessEqual(
             char_diff,
             tolerance,
-            f"Lost {char_diff} characters during segmentation (>{tolerance:.0f} tolerance)!"
+            f"Lost {char_diff} characters during segmentation (>{tolerance:.0f} tolerance)!",
         )
 
     def test_force_micro_segments_breaks_text(self):
@@ -165,7 +168,11 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         self.assertGreater(len(micro_segments), 1, "Micro splitting must produce multiple segments")
 
         for _, chunk in micro_segments:
-            self.assertLess(len(chunk), len(stubborn_text), "Each micro chunk must be smaller than original text")
+            self.assertLess(
+                len(chunk),
+                len(stubborn_text),
+                "Each micro chunk must be smaller than original text",
+            )
             self.assertTrue(chunk.strip(), "Micro segments must contain text")
 
     def test_should_force_plain_text_detects_markup(self):
@@ -187,7 +194,11 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         self.assertLessEqual(len(limited), SIMPLIFIED_SEGMENT_MAX_CHARS)
 
         unlimited = self.engine._simplify_segment_text(text, limit_chars=None)
-        self.assertGreater(len(unlimited), len(limited), "Unlimited simplification should retain more content than limited mode")
+        self.assertGreater(
+            len(unlimited),
+            len(limited),
+            "Unlimited simplification should retain more content than limited mode",
+        )
 
     def test_parallel_batch_size_respects_slots(self):
         """Batch computation must follow the configured parallel slots."""

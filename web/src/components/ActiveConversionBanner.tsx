@@ -1,7 +1,7 @@
-import type { ConversionState, ConversionSummary } from '../types/conversion';
+import type { ConversionState, ConversionSummary } from "../types/conversion";
 
 interface ActiveConversionBannerProps {
-  phase: ConversionState['phase'];
+  phase: ConversionState["phase"];
   statusLabel: string;
   jobLabel?: string;
   bookTitle: string;
@@ -19,9 +19,12 @@ interface ActiveConversionBannerProps {
   queueHint: string;
   viewLabel: string;
   cancelLabel: string;
+  skipLabel?: string;
   onViewProgress: () => void;
   onCancel?: () => void;
+  onSkip?: () => void;
   canCancel?: boolean;
+  canSkip?: boolean;
   cancelDisabled?: boolean;
   summary?: ConversionSummary;
 }
@@ -45,9 +48,12 @@ export default function ActiveConversionBanner({
   queueHint,
   viewLabel,
   cancelLabel,
+  skipLabel,
   onViewProgress,
   onCancel,
+  onSkip,
   canCancel,
+  canSkip,
   cancelDisabled,
   summary,
 }: ActiveConversionBannerProps): JSX.Element {
@@ -56,46 +62,66 @@ export default function ActiveConversionBanner({
   return (
     <section className="active-conversion">
       <div className="active-conversion__header">
-        <span className={`status-chip status-chip--${phase}`}>{statusLabel}</span>
+        <span className={`status-chip status-chip--${phase}`}>
+          {statusLabel}
+        </span>
         {jobLabel && <span className="active-conversion__job">{jobLabel}</span>}
       </div>
       <div className="active-conversion__body">
         <div className="active-conversion__info">
           <p className="active-conversion__label">{currentLabel}</p>
           <h3>{bookTitle}</h3>
-          {bookAuthor && <p className="active-conversion__author">{bookAuthor}</p>}
-        {currentChapter && <p className="active-conversion__chapter">{currentChapter}</p>}
-        <p className="active-conversion__eta">
-          <span>{etaLabel}</span>
-          <strong>{etaValue}</strong>
-        </p>
-        {(engineValue || voiceValue || languageValue) && (
-          <div className="active-conversion__meta">
-            {engineValue && (
-              <p>
-                <span>{engineLabel}</span>
-                <strong>{engineValue}</strong>
-              </p>
-            )}
-            {voiceValue && (
-              <p>
-                <span>{voiceLabel}</span>
-                <strong>{voiceValue}</strong>
-              </p>
-            )}
-            {languageValue && (
-              <p>
-                <span>{languageLabel}</span>
-                <strong>{languageValue}</strong>
-              </p>
-            )}
-          </div>
-        )}
-      </div>
+          {bookAuthor && (
+            <p className="active-conversion__author">{bookAuthor}</p>
+          )}
+          {currentChapter && (
+            <p className="active-conversion__chapter">{currentChapter}</p>
+          )}
+          <p className="active-conversion__eta">
+            <span>{etaLabel}</span>
+            <strong>{etaValue}</strong>
+          </p>
+          {(engineValue || voiceValue || languageValue) && (
+            <div className="active-conversion__meta">
+              {engineValue && (
+                <p>
+                  <span>{engineLabel}</span>
+                  <strong>{engineValue}</strong>
+                </p>
+              )}
+              {voiceValue && (
+                <p>
+                  <span>{voiceLabel}</span>
+                  <strong>{voiceValue}</strong>
+                </p>
+              )}
+              {languageValue && (
+                <p>
+                  <span>{languageLabel}</span>
+                  <strong>{languageValue}</strong>
+                </p>
+              )}
+            </div>
+          )}
+        </div>
         <div className="active-conversion__actions">
-          <button type="button" className="button-secondary" onClick={onViewProgress}>
+          <button
+            type="button"
+            className="button-secondary"
+            onClick={onViewProgress}
+          >
             {viewLabel}
           </button>
+          {canSkip && onSkip && skipLabel && (
+            <button
+              type="button"
+              className="button-warning"
+              onClick={onSkip}
+              disabled={cancelDisabled}
+            >
+              {skipLabel}
+            </button>
+          )}
           {canCancel && onCancel && (
             <button
               type="button"

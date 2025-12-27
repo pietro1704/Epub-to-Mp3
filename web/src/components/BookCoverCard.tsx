@@ -22,7 +22,12 @@ function resolveStatusLabel(phase: ConversionState['phase']): string {
   }
 }
 
-export default function BookCoverCard({ title, author, coverUrl, phase }: BookCoverCardProps): JSX.Element {
+export default function BookCoverCard({
+  title,
+  author,
+  coverUrl,
+  phase,
+}: BookCoverCardProps): JSX.Element {
   const statusLabel = resolveStatusLabel(phase);
   const resolvedTitle = title || 'Livro carregado';
   const resolvedAuthor = author || 'Autor desconhecido';

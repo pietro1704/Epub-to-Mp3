@@ -4,13 +4,11 @@
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import shutil
 import sys
-import tempfile
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Tuple
 
 from .paths import CACHE_DIR
 
@@ -124,7 +122,9 @@ class AudioProcessor:
     """Async audio helpers implemented with ``ffmpeg``."""
 
     @staticmethod
-    async def convert_to_mp3(input_file: Path, output_file: Path, bitrate: str = "8k") -> Optional[Path]:
+    async def convert_to_mp3(
+        input_file: Path, output_file: Path, bitrate: str = "8k"
+    ) -> Optional[Path]:
         input_path = Path(input_file)
         output_path = Path(output_file)
 
@@ -136,6 +136,7 @@ class AudioProcessor:
         try:
             # Ensure static-ffmpeg is available
             import static_ffmpeg
+
             static_ffmpeg.add_paths()
         except ImportError:
             pass  # static-ffmpeg is optional, will use system ffmpeg
@@ -146,17 +147,25 @@ class AudioProcessor:
             "-y",
             "-i",
             str(input_path),
-            "-b:a", bitrate,  # Bitrate constante (CBR)
-            "-minrate", bitrate,  # Bitrate mínimo
-            "-maxrate", bitrate,  # Bitrate máximo
-            "-ar", "16000",  # Sample rate 16kHz (ideal para voz)
-            "-ac", "1",  # Mono (audiobooks não precisam stereo)
-            "-cutoff", "8000",  # Cortar frequências acima de 8kHz (suficiente para voz)
+            "-b:a",
+            bitrate,  # Bitrate constante (CBR)
+            "-minrate",
+            bitrate,  # Bitrate mínimo
+            "-maxrate",
+            bitrate,  # Bitrate máximo
+            "-ar",
+            "16000",  # Sample rate 16kHz (ideal para voz)
+            "-ac",
+            "1",  # Mono (audiobooks não precisam stereo)
+            "-cutoff",
+            "8000",  # Cortar frequências acima de 8kHz (suficiente para voz)
             str(output_path),
         )
 
         subprocess_exec = asyncio.create_subprocess_exec
-        positional_args = (command,) if getattr(subprocess_exec, "__module__", "") == "unittest.mock" else command
+        positional_args = (
+            (command,) if getattr(subprocess_exec, "__module__", "") == "unittest.mock" else command
+        )
 
         try:
             process = await subprocess_exec(
@@ -175,7 +184,11 @@ class AudioProcessor:
     @staticmethod
     def validate_audio_file(path: Path, min_size_bytes: int = 1024) -> bool:
         file_path = Path(path)
-        return file_path.exists() and file_path.is_file() and file_path.stat().st_size >= min_size_bytes
+        return (
+            file_path.exists()
+            and file_path.is_file()
+            and file_path.stat().st_size >= min_size_bytes
+        )
 
     @staticmethod
     async def play_audio(path: Path) -> bool:

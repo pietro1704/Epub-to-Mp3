@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useState } from 'react';
-import { useI18n, useTranslations } from '../i18n/I18nProvider';
-import type { ConversionSummary, ConversionState } from '../types/conversion';
-import { formatEta } from './StatusPanel';
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useI18n, useTranslations } from "../i18n/I18nProvider";
+import type { ConversionSummary, ConversionState } from "../types/conversion";
+import { formatEta } from "./StatusPanel";
 
 interface HeroProps {
   title?: string;
@@ -9,13 +16,15 @@ interface HeroProps {
   coverUrl?: string;
   summary?: ConversionSummary;
   etaSeconds?: number | null;
-  phase: ConversionState['phase'];
+  phase: ConversionState["phase"];
   voiceLabel?: string;
   engineLabel?: string;
   languageLabel?: string;
+  queuePosition?: number;
+  queueTotal?: number;
 }
 
-export default function Hero({
+const Hero = memo(function Hero({
   title,
   author,
   coverUrl,
@@ -25,18 +34,34 @@ export default function Hero({
   voiceLabel,
   engineLabel,
   languageLabel,
+  queuePosition,
+  queueTotal,
 }: HeroProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
   const highlights = t.hero.highlights ?? [];
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const heroRef = useRef<HTMLElement | null>(null);
+  const spacerRef = useRef<HTMLDivElement | null>(null);
+  const expandedHeightRef = useRef(0);
+  const baseSpacerHeightRef = useRef(0);
+  const lastScrollYRef = useRef(0);
+  const collapseLockRef = useRef(0);
 
   const progressValue = useMemo(() => {
-    if (summary?.progressPercent !== undefined && summary?.progressPercent !== null) {
+    if (
+      summary?.progressPercent !== undefined &&
+      summary?.progressPercent !== null
+    ) {
       return Math.min(100, Math.max(0, summary.progressPercent));
     }
-    if (typeof summary?.chaptersCompleted === 'number' && typeof summary?.chaptersTotal === 'number' && summary.chaptersTotal > 0) {
-      const computed = (summary.chaptersCompleted / summary.chaptersTotal) * 100;
+    if (
+      typeof summary?.chaptersCompleted === "number" &&
+      typeof summary?.chaptersTotal === "number" &&
+      summary.chaptersTotal > 0
+    ) {
+      const computed =
+        (summary.chaptersCompleted / summary.chaptersTotal) * 100;
       return Math.min(100, Math.max(0, computed));
     }
     return null;
@@ -49,26 +74,33 @@ export default function Hero({
     progressValue !== null ||
     (summary?.currentChapter && summary.currentChapter.trim()),
   );
-  const shouldShowStatusCard = hasMetadata || phase !== 'idle';
+  const shouldShowStatusCard = hasMetadata || phase !== "idle";
+  const collapseEnabled = true; // Habilitado para colapsar ao rolar
   const etaDisplay = formatEta(phase, etaSeconds, locale, t);
   const displayTitle = title?.trim() || t.status.bookFallbackTitle;
   const displayAuthor = author?.trim() || t.status.bookFallbackAuthor;
-  const displayVoice = voiceLabel ?? '';
-  const displayEngine = engineLabel ?? '';
-  const displayLanguage = languageLabel ?? '';
+  const displayVoice = voiceLabel ?? "";
+  const displayEngine = engineLabel ?? "";
+  const displayLanguage = languageLabel ?? "";
 
   const chapterInfo = useMemo(() => {
-    if (typeof summary?.chaptersCompleted === 'number' && typeof summary?.chaptersTotal === 'number') {
+    if (
+      typeof summary?.chaptersCompleted === "number" &&
+      typeof summary?.chaptersTotal === "number"
+    ) {
       return `${summary.chaptersCompleted}/${summary.chaptersTotal}`;
     }
-    if (typeof summary?.chaptersTotal === 'number') {
+    if (typeof summary?.chaptersTotal === "number") {
       return `${summary.chaptersTotal}`;
     }
     return null;
   }, [summary]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
+    if (!collapseEnabled) {
+      return;
+    }
+    if (typeof window === "undefined") {
       return;
     }
     if (!shouldShowStatusCard) {
@@ -84,144 +116,255 @@ export default function Hero({
       ticking = true;
       window.requestAnimationFrame(() => {
         const currentY = window.scrollY;
-        setIsCollapsed((prev) => {
-          if (!prev && currentY > collapseThreshold) {
-            return true;
-          }
-          if (prev && currentY < expandThreshold) {
-            return false;
-          }
-          return prev;
-        });
+        const delta = currentY - lastScrollYRef.current;
+        const now = Date.now();
+        lastScrollYRef.current = currentY;
+        if (now >= collapseLockRef.current) {
+          setIsCollapsed((prev) => {
+            if (!prev && currentY > collapseThreshold && delta > 0) {
+              collapseLockRef.current = now + 250;
+              return true;
+            }
+            if (prev && currentY < expandThreshold && delta < 0) {
+              collapseLockRef.current = now + 250;
+              return false;
+            }
+            return prev;
+          });
+        }
         ticking = false;
       });
     };
+    lastScrollYRef.current = window.scrollY;
     onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, [shouldShowStatusCard]);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [collapseEnabled, shouldShowStatusCard]);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") {
+      return;
+    }
+    if (!shouldShowStatusCard || isCollapsed) {
+      return;
+    }
+    const hero = heroRef.current;
+    const spacer = spacerRef.current;
+    if (!hero || !spacer) {
+      return;
+    }
+    const updateMeasurements = () => {
+      expandedHeightRef.current = hero.getBoundingClientRect().height;
+      baseSpacerHeightRef.current = spacer.getBoundingClientRect().height;
+    };
+    updateMeasurements();
+    const observer = new ResizeObserver(updateMeasurements);
+    observer.observe(hero);
+    observer.observe(spacer);
+    return () => observer.disconnect();
+  }, [isCollapsed, shouldShowStatusCard]);
+
+  useLayoutEffect(() => {
+    if (!shouldShowStatusCard) {
+      if (spacerRef.current) {
+        spacerRef.current.style.height = "";
+      }
+      return;
+    }
+    const hero = heroRef.current;
+    const spacer = spacerRef.current;
+    if (!hero || !spacer) {
+      return;
+    }
+    const heroHeight = hero.getBoundingClientRect().height;
+    if (!isCollapsed) {
+      expandedHeightRef.current = heroHeight;
+      baseSpacerHeightRef.current = spacer.getBoundingClientRect().height;
+      spacer.style.height = "";
+      return;
+    }
+    const expandedHeight = expandedHeightRef.current || heroHeight;
+    const baseSpacing =
+      baseSpacerHeightRef.current || spacer.getBoundingClientRect().height;
+    const targetHeight = Math.max(
+      baseSpacing,
+      expandedHeight - heroHeight + baseSpacing,
+    );
+    if (!Number.isFinite(targetHeight)) {
+      return;
+    }
+    spacer.style.height = `${targetHeight}px`;
+  }, [isCollapsed, shouldShowStatusCard]);
 
   const heroClasses = [
-    'hero',
-    shouldShowStatusCard ? 'hero--active' : '',
-    shouldShowStatusCard && isCollapsed ? 'hero--collapsed' : '',
-  ].filter(Boolean).join(' ');
+    "hero",
+    shouldShowStatusCard ? "hero--active" : "",
+    shouldShowStatusCard && isCollapsed ? "hero--collapsed" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   return (
     <>
-      <header className={heroClasses}>
+      <header
+        className={heroClasses}
+        ref={(node) => {
+          heroRef.current = node;
+        }}
+      >
         {shouldShowStatusCard ? (
           <div className="hero__book">
-          <div className="hero__book-cover">
-            {coverUrl ? (
-              <img src={coverUrl} alt={displayTitle} loading="lazy" decoding="async" />
-            ) : (
-              <span aria-hidden="true" role="img">📘</span>
-            )}
-          </div>
-          <div className="hero__book-body">
-            <p className="badge badge--muted">{t.hero.badge}</p>
-            <h1>{displayTitle}</h1>
-            <p className="hero__author">{displayAuthor}</p>
-            {(summary?.currentChapter || chapterInfo) && (
-              <p className="hero__chapter">
-                {summary?.currentChapter ?? ''}
-                {summary?.currentChapter && chapterInfo ? ' · ' : ''}
-                {chapterInfo ?? ''}
+            <div className="hero__book-cover">
+              {coverUrl ? (
+                <img
+                  src={coverUrl}
+                  alt={displayTitle}
+                  loading="lazy"
+                  decoding="async"
+                />
+              ) : (
+                <span aria-hidden="true" role="img">
+                  📘
+                </span>
+              )}
+            </div>
+            <div className="hero__book-body">
+              <p className="badge badge--muted">
+                {t.hero.badge}
+                {queuePosition && queueTotal && queueTotal > 1 && (
+                  <span style={{ marginLeft: "0.5rem", opacity: 0.8 }}>
+                    · {queuePosition}/{queueTotal}
+                  </span>
+                )}
               </p>
-            )}
-            {(displayEngine || displayVoice || displayLanguage) && (
-              <div className="hero__meta">
-                {displayEngine && (
-                  <span>
-                    {t.activeConversion.engineLabel}: <strong>{displayEngine}</strong>
-                  </span>
-                )}
-                {displayVoice && (
-                  <span>
-                    {t.activeConversion.voiceLabel}: <strong>{displayVoice}</strong>
-                  </span>
-                )}
-                {displayLanguage && (
-                  <span>
-                    {t.activeConversion.languageLabel}: <strong>{displayLanguage}</strong>
-                  </span>
-                )}
-              </div>
-            )}
-            <div className="hero__progress">
-              <div className="hero__progress-info">
-                <span>{t.status.progressLabel}</span>
-                <strong>{progressValue !== null ? `${progressValue.toFixed(1)}%` : '—'}</strong>
-              </div>
-              <div
-                className="hero__progress-bar"
-                role="progressbar"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progressValue ?? 0}
-              >
-                <div className="hero__progress-fill" style={{ width: `${progressValue ?? 0}%` }} />
-              </div>
-              <div className="hero__progress-info hero__progress-info--eta">
-                <span>{t.status.etaLabel}</span>
-                <strong>{etaDisplay}</strong>
+              <h1>{displayTitle}</h1>
+              <p className="hero__author">{displayAuthor}</p>
+              {(summary?.currentChapter || chapterInfo) && (
+                <p className="hero__chapter">
+                  {summary?.currentChapter ?? ""}
+                  {summary?.currentChapter && chapterInfo ? " · " : ""}
+                  {chapterInfo ?? ""}
+                </p>
+              )}
+              {(displayEngine || displayVoice || displayLanguage) && (
+                <div className="hero__meta">
+                  {displayEngine && (
+                    <span>
+                      {t.activeConversion.engineLabel}:{" "}
+                      <strong>{displayEngine}</strong>
+                    </span>
+                  )}
+                  {displayVoice && (
+                    <span>
+                      {t.activeConversion.voiceLabel}:{" "}
+                      <strong>{displayVoice}</strong>
+                    </span>
+                  )}
+                  {displayLanguage && (
+                    <span>
+                      {t.activeConversion.languageLabel}:{" "}
+                      <strong>{displayLanguage}</strong>
+                    </span>
+                  )}
+                </div>
+              )}
+              <div className="hero__progress">
+                <div className="hero__progress-info">
+                  <span>{t.status.progressLabel}</span>
+                  <strong>
+                    {progressValue !== null
+                      ? `${progressValue.toFixed(1)}%`
+                      : "—"}
+                  </strong>
+                </div>
+                <div
+                  className="hero__progress-bar"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progressValue ?? 0}
+                >
+                  <div
+                    className="hero__progress-fill"
+                    style={{ width: `${progressValue ?? 0}%` }}
+                  />
+                </div>
+                <div className="hero__progress-info hero__progress-info--eta">
+                  <span>{t.status.etaLabel}</span>
+                  <strong>{etaDisplay}</strong>
+                </div>
               </div>
             </div>
-          </div>
           </div>
         ) : (
           <>
             <div className="hero__copy">
-            <p className="badge">{t.hero.badge}</p>
-            <h1>{t.hero.title}</h1>
-            <p className="hero__subtitle">{t.hero.subtitle}</p>
+              <p className="badge">{t.hero.badge}</p>
+              <h1>{t.hero.title}</h1>
+              <p className="hero__subtitle">{t.hero.subtitle}</p>
             </div>
             {highlights.length > 0 && (
               <div className="hero__highlights">
-              {highlights.map((highlight) => (
-                <article key={highlight.title} className="hero__highlight">
-                  <h3>{highlight.title}</h3>
-                  <p>{highlight.description}</p>
-                </article>
-              ))}
-            </div>
+                {highlights.map((highlight) => (
+                  <article key={highlight.title} className="hero__highlight">
+                    <h3>{highlight.title}</h3>
+                    <p>{highlight.description}</p>
+                  </article>
+                ))}
+              </div>
             )}
           </>
         )}
         {shouldShowStatusCard && (
           <div className="hero__collapsed-summary" aria-live="polite">
-          <div className="hero__collapsed-cover">
-            {coverUrl ? (
-              <img src={coverUrl} alt={displayTitle} loading="lazy" decoding="async" />
-            ) : (
-              <span aria-hidden="true">📘</span>
-            )}
-          </div>
-          <div className="hero__collapsed-body">
-            <p className="hero__collapsed-title">{displayTitle}</p>
-            <p className="hero__collapsed-progress">
-              {progressValue !== null ? `${progressValue.toFixed(1)}%` : '—'} · {etaDisplay}
-            </p>
-            <div
-              className="hero__collapsed-bar"
-              role="progressbar"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progressValue ?? 0}
-            >
-              <div className="hero__collapsed-fill" style={{ width: `${progressValue ?? 0}%` }} />
+            <div className="hero__collapsed-cover">
+              {coverUrl ? (
+                <img
+                  src={coverUrl}
+                  alt={displayTitle}
+                  loading="lazy"
+                  decoding="async"
+                />
+              ) : (
+                <span aria-hidden="true">📘</span>
+              )}
+            </div>
+            <div className="hero__collapsed-body">
+              <p className="hero__collapsed-title">{displayTitle}</p>
+              <p className="hero__collapsed-progress">
+                {progressValue !== null ? `${progressValue.toFixed(1)}%` : "—"}{" "}
+                · {etaDisplay}
+              </p>
+              <div
+                className="hero__collapsed-bar"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressValue ?? 0}
+              >
+                <div
+                  className="hero__collapsed-fill"
+                  style={{ width: `${progressValue ?? 0}%` }}
+                />
+              </div>
             </div>
           </div>
-        </div>
         )}
       </header>
       {shouldShowStatusCard && (
         <div
-          className={['hero__spacer', isCollapsed ? 'hero__spacer--collapsed' : ''].filter(Boolean).join(' ')}
+          ref={spacerRef}
+          className={[
+            "hero__spacer",
+            isCollapsed ? "hero__spacer--collapsed" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           aria-hidden="true"
         />
       )}
     </>
   );
-}
+});
+
+export default Hero;

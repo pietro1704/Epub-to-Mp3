@@ -99,7 +99,9 @@ class Scenario:
     text_variant: str  # 'pt', 'multi-auto', 'multi-detected'
 
 
-def _edge_builder(voice: str, chunk_chars: Optional[int], max_secs: Optional[int]) -> Callable[[], object]:
+def _edge_builder(
+    voice: str, chunk_chars: Optional[int], max_secs: Optional[int]
+) -> Callable[[], object]:
     from python_app.src.tts.edge_engine import EdgeTTSEngine
 
     def factory() -> object:
@@ -126,7 +128,9 @@ def _factory_builder(config: ConversionConfig) -> Callable[[], object]:
 
 def build_scenarios(provider: VoiceConfigProvider) -> List[Scenario]:
     voice_edge = provider.get_voice("edge", "pt-BR") or "pt-BR-ThalitaMultilingualNeural"
-    voice_coqui = provider.get_voice("coqui", "pt-BR") or "tts_models/multilingual/multi-dataset/xtts_v2"
+    voice_coqui = (
+        provider.get_voice("coqui", "pt-BR") or "tts_models/multilingual/multi-dataset/xtts_v2"
+    )
     voice_piper = provider.get_voice("piper", "pt-BR")
 
     scenarios: List[Scenario] = [
@@ -281,8 +285,12 @@ async def run_benchmarks(repeat: int, include_multilingual: bool) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Benchmark Edge/Coqui/Piper engines and multilingual strategies.")
-    parser.add_argument("--repeat", type=int, default=2, help="Quantas vezes repetir o texto base em cada teste")
+    parser = argparse.ArgumentParser(
+        description="Benchmark Edge/Coqui/Piper engines and multilingual strategies."
+    )
+    parser.add_argument(
+        "--repeat", type=int, default=2, help="Quantas vezes repetir o texto base em cada teste"
+    )
     parser.add_argument(
         "--no-multilingual",
         action="store_true",

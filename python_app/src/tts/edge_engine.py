@@ -8,25 +8,28 @@ import importlib
 import inspect
 import os
 import re
-import traceback
-from contextlib import suppress
-from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Set
-from unittest.mock import Mock
 
 # **SSL BYPASS**: Monkeypatch SSL ANTES de importar edge_tts
 # IMPORTANTE: Necessário porque certificado da Microsoft (api.msedgeservices.com) está expirado
 # Edge-TTS usa ssl.create_default_context(cafile=certifi.where())
 import ssl as _ssl_module
+from contextlib import AsyncExitStack, suppress
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Set, Tuple
+from unittest.mock import Mock
+
+from ..utils import TextValidator
 
 # Salvar função original
 _original_create_default_context = _ssl_module.create_default_context
+
 
 # Substituir por versão não-verificada
 def _create_unverified_context_wrapper(*args, **kwargs):
     """Sempre retorna contexto SSL não-verificado, ignorando parâmetros"""
     ctx = _ssl_module._create_unverified_context()
     return ctx
+
 
 _ssl_module.create_default_context = _create_unverified_context_wrapper
 _ssl_module._create_default_https_context = _ssl_module._create_unverified_context
@@ -52,22 +55,267 @@ EDGE_NOAUDIO_COOLDOWN_SECONDS = float(os.getenv("EDGE_NOAUDIO_COOLDOWN_SECONDS",
 
 # Import SSL/Certificate error types
 try:
-    from aiohttp import ClientConnectorCertificateError, ClientConnectorError
     import ssl
+
+    from aiohttp import ClientConnectorCertificateError, ClientConnectorError
 except ImportError:
     ClientConnectorCertificateError = None  # type: ignore
     ClientConnectorError = None  # type: ignore
     ssl = None  # type: ignore
 
-# Global rate limiter for Edge TTS to prevent resource contention
-# Default is 4 for optimal performance (same as HF web interface)
-# Set EDGE_MAX_CONCURRENCY=2 for slower connections or limited hardware
+# ==============================================================================
+# **PERFORMANCE**: Research-based settings for Edge-TTS optimization
+# ==============================================================================
+# Pesquisa (Jan 2026):
+#
+# CHUNK SIZE:
+#   - Safe range: 3,000-8,000 chars (recommended)
+#   - Max safe: 15,000 chars (Obsidian Edge-TTS plugin limit)
+#   - 39k+ chars: Audio often incomplete (GitHub #190)
+#   - Audio limit: 10 minutes per request
+#
+# PARALLELISM:
+#   - Safe: 2-4 concurrent connections
+#   - When rate limited: 1 concurrent + 5s delays (pyVideoTrans)
+#   - Max tested: 8 (above triggers 403 errors)
+#   - Microsoft uses new WebSocket per request (no connection pooling)
+#
+# RATE LIMITING:
+#   - IP-based blocking (undocumented threshold)
+#   - 403 errors = too many requests from same IP
+#   - Solution: Exponential backoff + reduce parallelism
+#
+# Sources:
+#   - github.com/rany2/edge-tts/issues/190 (chunk limits)
+#   - github.com/rany2/edge-tts/issues/290 (403 errors)
+#   - github.com/travisvn/obsidian-edge-tts (15k char limit)
+#   - pyvideotrans.com/edgetts-error (rate limiting)
+#   - learn.microsoft.com/azure/ai-services/speech-service (Azure limits)
+# ==============================================================================
+
+# Defaults based on research - OPTIMIZED FOR MAXIMUM SPEED
+# Note: Library internally chunks at ~4096 bytes, but our chunks control text batching
+_DEFAULT_CHUNK_SIZE = 8000  # Safe upper limit (research: 3k-8k safe, >15k = incomplete)
+_DEFAULT_CONCURRENCY = 4  # Balanced speed (research: 2-4 safe, >8 = 403)
+_SAFE_CHUNK_MIN = 3000  # Minimum for efficiency
+_SAFE_CHUNK_MAX = 10000  # Maximum safe limit (library handles internal chunking)
+_SAFE_CONCURRENCY_MIN = 1  # Minimum when rate limited
+_SAFE_CONCURRENCY_MAX = 6  # Maximum safe (research: 8 causes 403)
+
+# Inter-batch delay for HF/web deployments (helps avoid rate limits)
 try:
-    _edge_max_concurrency = int(os.getenv("EDGE_MAX_CONCURRENCY", "4").strip() or "4")
+    _edge_batch_delay = float(os.getenv("EDGE_BATCH_DELAY_MS", "0").strip() or "0")
 except (TypeError, ValueError):
-    _edge_max_concurrency = 4
-_edge_max_concurrency = max(1, min(_edge_max_concurrency, 6))
-_edge_rate_limiter = None
+    _edge_batch_delay = 0.0
+_edge_batch_delay = max(0.0, min(_edge_batch_delay, 5000.0)) / 1000.0  # Convert to seconds
+
+try:
+    _edge_max_concurrency = int(
+        os.getenv("EDGE_MAX_CONCURRENCY", str(_DEFAULT_CONCURRENCY)).strip()
+        or str(_DEFAULT_CONCURRENCY)
+    )
+except (TypeError, ValueError):
+    _edge_max_concurrency = _DEFAULT_CONCURRENCY
+try:
+    _edge_concurrency_cap = int(
+        os.getenv("EDGE_MAX_CONCURRENCY_CAP", str(_SAFE_CONCURRENCY_MAX)).strip()
+        or str(_SAFE_CONCURRENCY_MAX)
+    )
+except (TypeError, ValueError):
+    _edge_concurrency_cap = _SAFE_CONCURRENCY_MAX
+_edge_concurrency_cap = max(_SAFE_CONCURRENCY_MIN, min(_edge_concurrency_cap, 8))
+_edge_max_concurrency = max(
+    _SAFE_CONCURRENCY_MIN, min(_edge_max_concurrency, _edge_concurrency_cap)
+)
+_edge_rate_limiters: Dict[int, asyncio.Semaphore] = {}
+
+# Global rate limit tracking
+_edge_rate_limit_until: float = 0.0
+_edge_rate_limit_count: int = 0
+_edge_consecutive_successes: int = 0
+
+# Adaptive chunk size tracking
+_edge_current_chunk_size: int = _DEFAULT_CHUNK_SIZE
+_edge_chunk_failure_count: int = 0
+
+
+def _get_global_edge_limiter(loop: asyncio.AbstractEventLoop) -> asyncio.Semaphore:
+    """Return a shared limiter per event loop to avoid cross-job oversubscription."""
+    limiter = _edge_rate_limiters.get(id(loop))
+    if limiter is None:
+        limiter = asyncio.Semaphore(_edge_max_concurrency)
+        _edge_rate_limiters[id(loop)] = limiter
+    return limiter
+
+
+def _is_rate_limit_error(exc: Exception) -> bool:
+    """Check if exception indicates a 403 rate limit from Microsoft."""
+    exc_str = str(exc).lower()
+    exc_class = exc.__class__.__name__.lower()
+
+    # Check for 403 status code
+    if "403" in exc_str:
+        return True
+
+    # Check for rate limit indicators
+    rate_limit_indicators = [
+        "rate limit",
+        "too many requests",
+        "temporarily blocked",
+        "forbidden",
+        "throttl",
+    ]
+    return any(
+        indicator in exc_str or indicator in exc_class for indicator in rate_limit_indicators
+    )
+
+
+async def _handle_rate_limit(log_callback: Optional[Callable] = None) -> float:
+    """
+    Handle rate limit by applying exponential backoff.
+
+    Returns recommended wait time in seconds.
+    """
+    global \
+        _edge_rate_limit_until, \
+        _edge_rate_limit_count, \
+        _edge_consecutive_successes, \
+        _edge_max_concurrency
+
+    now = asyncio.get_event_loop().time()
+    _edge_rate_limit_count += 1
+    _edge_consecutive_successes = 0
+
+    # Exponential backoff: 5s, 10s, 20s, 40s (max 60s)
+    backoff = min(5.0 * (2 ** min(_edge_rate_limit_count - 1, 3)), 60.0)
+    _edge_rate_limit_until = now + backoff
+
+    # Auto-reduce parallelism on rate limit
+    if _edge_rate_limit_count >= 2 and _edge_max_concurrency > 2:
+        old_concurrency = _edge_max_concurrency
+        _edge_max_concurrency = max(2, _edge_max_concurrency - 1)
+        # Update existing limiters
+        for loop_id in list(_edge_rate_limiters.keys()):
+            _edge_rate_limiters[loop_id] = asyncio.Semaphore(_edge_max_concurrency)
+        if log_callback:
+            log_callback(
+                f"🔻 Rate limit (403), reduzindo paralelismo: {old_concurrency} → {_edge_max_concurrency}"
+            )
+
+    if log_callback:
+        log_callback(
+            f"⏳ Rate limit detectado, aguardando {backoff:.1f}s (total: {_edge_rate_limit_count})"
+        )
+
+    return backoff
+
+
+async def _record_success() -> None:
+    """Record successful request for adaptive scaling."""
+    global \
+        _edge_consecutive_successes, \
+        _edge_rate_limit_count, \
+        _edge_max_concurrency, \
+        _edge_concurrency_cap
+    global _edge_current_chunk_size, _edge_chunk_failure_count
+
+    _edge_consecutive_successes += 1
+
+    # Scale up after 30 consecutive successes and no recent rate limits
+    if _edge_consecutive_successes >= 30 and _edge_rate_limit_count > 0:
+        now = asyncio.get_event_loop().time()
+        time_since_limit = now - _edge_rate_limit_until + 60  # Add 60s buffer
+
+        if time_since_limit > 120:
+            # Scale up parallelism
+            if _edge_max_concurrency < _edge_concurrency_cap:
+                _edge_max_concurrency = min(_edge_concurrency_cap, _edge_max_concurrency + 1)
+                # Update existing limiters
+                for loop_id in list(_edge_rate_limiters.keys()):
+                    _edge_rate_limiters[loop_id] = asyncio.Semaphore(_edge_max_concurrency)
+
+            # Scale up chunk size
+            if _edge_current_chunk_size < _DEFAULT_CHUNK_SIZE:
+                _edge_current_chunk_size = min(_DEFAULT_CHUNK_SIZE, _edge_current_chunk_size + 1000)
+
+            _edge_consecutive_successes = 0
+
+
+def _reduce_chunk_size(log_callback: Optional[Callable] = None) -> int:
+    """Reduce chunk size on failure. Returns new chunk size."""
+    global _edge_current_chunk_size, _edge_chunk_failure_count
+
+    _edge_chunk_failure_count += 1
+
+    # Reduce by 20% on each failure, minimum 3000
+    old_size = _edge_current_chunk_size
+    reduction = max(1000, int(_edge_current_chunk_size * 0.2))
+    _edge_current_chunk_size = max(_SAFE_CHUNK_MIN, _edge_current_chunk_size - reduction)
+
+    if log_callback and old_size != _edge_current_chunk_size:
+        log_callback(f"🔻 Reduzindo chunk size: {old_size} → {_edge_current_chunk_size}")
+
+    return _edge_current_chunk_size
+
+
+def get_adaptive_chunk_size() -> int:
+    """Get current adaptive chunk size."""
+    return _edge_current_chunk_size
+
+
+def get_adaptive_concurrency() -> int:
+    """Get current adaptive concurrency."""
+    return _edge_max_concurrency
+
+
+def reset_adaptive_settings() -> None:
+    """Reset adaptive settings to defaults (for new conversion)."""
+    global _edge_current_chunk_size, _edge_chunk_failure_count
+    global _edge_rate_limit_count, _edge_consecutive_successes, _edge_max_concurrency
+
+    _edge_current_chunk_size = _DEFAULT_CHUNK_SIZE
+    _edge_chunk_failure_count = 0
+    _edge_rate_limit_count = 0
+    _edge_consecutive_successes = 0
+    _edge_max_concurrency = _DEFAULT_CONCURRENCY
+
+    # Update existing limiters
+    for loop_id in list(_edge_rate_limiters.keys()):
+        _edge_rate_limiters[loop_id] = asyncio.Semaphore(_edge_max_concurrency)
+
+
+async def _wait_if_rate_limited() -> bool:
+    """Wait if currently in rate limit cooldown. Returns True if waited."""
+    global _edge_rate_limit_until
+
+    now = asyncio.get_event_loop().time()
+    if now < _edge_rate_limit_until:
+        wait_time = _edge_rate_limit_until - now
+        await asyncio.sleep(wait_time)
+        return True
+    return False
+
+
+def get_edge_performance_stats() -> Dict[str, any]:
+    """Get current Edge TTS performance statistics for monitoring."""
+    try:
+        loop_time = asyncio.get_event_loop().time()
+        is_limited = loop_time < _edge_rate_limit_until if _edge_rate_limit_until > 0 else False
+    except RuntimeError:
+        is_limited = False
+
+    return {
+        "current_concurrency": _edge_max_concurrency,
+        "concurrency_cap": _edge_concurrency_cap,
+        "current_chunk_size": _edge_current_chunk_size,
+        "chunk_size_default": _DEFAULT_CHUNK_SIZE,
+        "chunk_size_range": (_SAFE_CHUNK_MIN, _SAFE_CHUNK_MAX),
+        "batch_delay_ms": _edge_batch_delay * 1000,
+        "rate_limit_count": _edge_rate_limit_count,
+        "chunk_failure_count": _edge_chunk_failure_count,
+        "consecutive_successes": _edge_consecutive_successes,
+        "is_rate_limited": is_limited,
+    }
 
 
 try:  # pragma: no cover - lazily loaded
@@ -76,8 +324,6 @@ try:  # pragma: no cover - lazily loaded
 except ImportError:  # pragma: no cover - during optional dependency resolution
     LanguageMarkup = None  # type: ignore
     TextFormattingProcessor = None  # type: ignore
-
-from ..utils import TextValidator
 
 
 class EdgeTTSEngine:
@@ -97,8 +343,9 @@ class EdgeTTSEngine:
         enable_parallel: bool = True,
         formatting_cues_enabled: bool = True,
         formatting_locale: str = "pt",
+        log_callback: Optional[Callable[[str], None]] = None,
     ) -> None:
-        global edge_tts, _edge_rate_limiter
+        global edge_tts
 
         if isinstance(edge_tts, Mock):
             if getattr(edge_tts, "side_effect", None):
@@ -112,13 +359,15 @@ class EdgeTTSEngine:
                     raise ImportError("Edge-TTS not installed") from exc
             module = edge_tts
 
-        # Rate limiter for Edge TTS concurrent requests
-        if _edge_rate_limiter is None:
-            _edge_rate_limiter = asyncio.Semaphore(_edge_max_concurrency)
+        # Per-instance rate limiter (instead of global) for better multi-chapter performance
+        # This prevents artificial serialization when processing multiple chapters in parallel
+        self._rate_limiter = asyncio.Semaphore(_edge_max_concurrency)
+        self._global_rate_limiter: Optional[asyncio.Semaphore] = None
+        self._global_rate_limiter_loop: Optional[asyncio.AbstractEventLoop] = None
 
         self.voice = voice
         self._edge_tts = module
-        self.primary_language = (primary_language or "auto").split('-', 1)[0].lower()
+        self.primary_language = (primary_language or "auto").split("-", 1)[0].lower()
         self.language_voices = {
             (key or "").split("-", 1)[0].lower(): value
             for key, value in (language_voices or {}).items()
@@ -131,14 +380,22 @@ class EdgeTTSEngine:
         self.formatting_cues_enabled = bool(formatting_cues_enabled)
         self.last_error: Optional[str] = None
         self.verbose = verbose
-        max_seconds = max_segment_seconds if max_segment_seconds is not None else DEFAULT_EDGE_SEGMENT_SECONDS
+        self.log_callback = log_callback
+        max_seconds = (
+            max_segment_seconds if max_segment_seconds is not None else DEFAULT_EDGE_SEGMENT_SECONDS
+        )
         self._max_segment_seconds = max(30.0, min(float(max_seconds), 95.0))
-        chunk_limit = chunk_char_limit if chunk_char_limit is not None else 20000
-        try:
-            chunk_limit = int(chunk_limit)
-        except (TypeError, ValueError):
-            chunk_limit = 20000
-        self._chunk_char_limit = max(4000, chunk_limit)
+        # Use adaptive chunk size if no override provided
+        if chunk_char_limit is not None:
+            try:
+                chunk_limit = int(chunk_char_limit)
+            except (TypeError, ValueError):
+                chunk_limit = _edge_current_chunk_size
+        else:
+            chunk_limit = _edge_current_chunk_size  # Use adaptive setting
+        self._chunk_char_limit = max(
+            _SAFE_CHUNK_MIN, min(chunk_limit, _SAFE_CHUNK_MAX)
+        )  # Clamp to safe range
         self._chunk_log_every = max(25, int(self._chunk_char_limit / 400))
         self._words_per_minute = WORDS_PER_MINUTE
         self.partial_failure_detected: bool = False
@@ -150,9 +407,18 @@ class EdgeTTSEngine:
         if self.verbose:
             parallel_mode = "ativado" if self._enable_parallel else "desativado"
             max_concurrent = self._parallel_slots if self._enable_parallel else 1
-            print(f"🔧 EdgeTTS inicializado: {voice}")
-            print(f"   Paralelo: {parallel_mode} (max {max_concurrent} simultâneos)")
-            print(f"   Limites: {self._max_segment_seconds:.0f}s/segmento, {self._chunk_char_limit} chars/chunk")
+            self._log(f"🔧 EdgeTTS inicializado: {voice}")
+            self._log(f"   Paralelo: {parallel_mode} (max {max_concurrent} simultâneos)")
+            self._log(
+                f"   Limites: {self._max_segment_seconds:.0f}s/segmento, {self._chunk_char_limit} chars/chunk"
+            )
+
+    def _log(self, message: str) -> None:
+        """Log message using callback if available, otherwise print."""
+        if self.log_callback:
+            self.log_callback(message)
+        else:
+            print(message)
 
     def supports_multilingual(self) -> bool:
         """Edge TTS suporta multiidioma via voice switching e [[lang:]] tags"""
@@ -203,7 +469,7 @@ class EdgeTTSEngine:
                 updates.append(f"wpm={wpm}")
 
         if updates and self.verbose:
-            print(f"⚡ EdgeTTS speed profile atualizado: {', '.join(updates)}")
+            self._log(f"⚡ EdgeTTS speed profile atualizado: {', '.join(updates)}")
 
     @property
     def speed_profile(self) -> Dict[str, float]:
@@ -222,10 +488,14 @@ class EdgeTTSEngine:
         test_text = "Teste rápido do Edge TTS."
         timeout = 8
         try:
-            async with _edge_rate_limiter:
+            async with self._rate_limiter:
                 communicator = self._edge_tts.Communicate(test_text, voice or self.voice)
                 stream_candidate = communicator.stream()
-                stream = await stream_candidate if inspect.isawaitable(stream_candidate) else stream_candidate
+                stream = (
+                    await stream_candidate
+                    if inspect.isawaitable(stream_candidate)
+                    else stream_candidate
+                )
 
                 async def _consume_probe():
                     got_audio = False
@@ -240,7 +510,7 @@ class EdgeTTSEngine:
                 return await asyncio.wait_for(_consume_probe(), timeout=timeout)
         except Exception as exc:
             if self.verbose:
-                print(f"🔍 [VERBOSE] EdgeTTS health-check falhou: {exc}")
+                self._log(f"🔍 [VERBOSE] EdgeTTS health-check falhou: {exc}")
             return False
 
     @staticmethod
@@ -258,15 +528,17 @@ class EdgeTTSEngine:
         cleaned = cleaned.strip()
         return cleaned
 
-    async def synthesize_async(self, text: str, output_path: Path, formatting_segments=None) -> Optional[Path]:
+    async def synthesize_async(
+        self, text: str, output_path: Path, formatting_segments=None, progress_callback=None
+    ) -> Optional[Path]:
         if not text:
             return None
 
         if self.verbose:
             text_preview = text[:150] + "..." if len(text) > 150 else text
-            print(f"\n📝 EdgeTTS iniciando síntese para {output_path.name}")
-            print(f"   Tamanho: {len(text)} caracteres")
-            print(f"   Preview: {text_preview}")
+            self._log(f"\n📝 EdgeTTS iniciando síntese para {output_path.name}")
+            self._log(f"   Tamanho: {len(text)} caracteres")
+            self._log(f"   Preview: {text_preview}")
 
         self.last_error = None
         self.partial_failure_detected = False
@@ -286,7 +558,7 @@ class EdgeTTSEngine:
         payload_text = sanitized
 
         if self.verbose and payload_text != text:
-            print(f"   ⚙️ Texto processado (sanitizado/formatado): {len(payload_text)} chars")
+            self._log(f"   ⚙️ Texto processado (sanitizado/formatado): {len(payload_text)} chars")
 
         force_plain_segments = self._should_force_plain_text(payload_text)
         if force_plain_segments:
@@ -298,7 +570,7 @@ class EdgeTTSEngine:
             return None
 
         if self.verbose:
-            print(f"   📦 Dividido em {len(segments)} segmentos")
+            self._log(f"   📦 Dividido em {len(segments)} segmentos")
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -319,16 +591,20 @@ class EdgeTTSEngine:
         segment_split_attempts: Dict[str, int] = {}
         micro_split_tracker: Set[str] = set()
         idx = 0
+        total_text_chars = None
+        if progress_callback:
+            total_text_chars = sum(len(text) for _, text in segments_to_process)
 
         # **PARALLEL OPTIMIZATION**: Process segments in batches when parallel mode is enabled
-        if self._enable_parallel and _edge_rate_limiter and len(segments_to_process) > 1:
+        if self._enable_parallel and self._rate_limiter and len(segments_to_process) > 1:
             if self.verbose:
                 batch_size = self._determine_parallel_batch_size(len(segments_to_process))
-                print(f"🚀 [VERBOSE] Processamento paralelo ativado (batch size: {batch_size})")
+                self._log(f"🚀 [VERBOSE] Processamento paralelo ativado (batch size: {batch_size})")
             return await self._synthesize_parallel(
                 output_path,
                 segments_to_process,
                 force_plain_segments,
+                progress_callback=progress_callback,
             )
 
         # **SEQUENTIAL MODE**: Original logic for compatibility
@@ -353,9 +629,13 @@ class EdgeTTSEngine:
                         force_plain_segments = True
 
                 if self.verbose:
-                    text_preview = segment_text[:200] + "..." if len(segment_text) > 200 else segment_text
-                    print(f"\n🎙️ Segmento {idx+1}/{len(segments_to_process)} ({len(segment_text)} chars, voz: {voice})")
-                    print(f"   Texto: {text_preview}")
+                    text_preview = (
+                        segment_text[:200] + "..." if len(segment_text) > 200 else segment_text
+                    )
+                    self._log(
+                        f"\n🎙️ Segmento {idx + 1}/{len(segments_to_process)} ({len(segment_text)} chars, voz: {voice})"
+                    )
+                    self._log(f"   Texto: {text_preview}")
 
                 # **CRITICAL FIX**: Try to process segment with retries
                 success = await self._synthesize_segment(
@@ -368,26 +648,34 @@ class EdgeTTSEngine:
                 if not success:
                     # If the Edge service is returning *no audio at all*, splitting/cleaning won't help.
                     # Fail fast so the converter can move on instead of spending minutes in retries.
-                    if idx == 0 and self.last_error and (
-                        "noaudioreceived" in self.last_error.lower()
-                        or "service_unavailable" in self.last_error.lower()
-                        or "no_audio" == self.last_error.lower()
+                    if (
+                        idx == 0
+                        and self.last_error
+                        and (
+                            "noaudioreceived" in self.last_error.lower()
+                            or "service_unavailable" in self.last_error.lower()
+                            or "no_audio" == self.last_error.lower()
+                        )
                     ):
                         if self.verbose:
-                            print(f"   ⛔ Abortando: {self.last_error}")
+                            self._log(f"   ⛔ Abortando: {self.last_error}")
                         return None
 
-                    retry_segments = self._split_failed_segment(voice, segment_text, segment_split_attempts)
+                    retry_segments = self._split_failed_segment(
+                        voice, segment_text, segment_split_attempts
+                    )
                     if retry_segments:
                         if self.verbose:
-                            print(f"   ⚠️ Falhou, dividindo em {len(retry_segments)} sub-segmentos...")
-                        segments_to_process[idx:idx + 1] = retry_segments
+                            self._log(
+                                f"   ⚠️ Falhou, dividindo em {len(retry_segments)} sub-segmentos..."
+                            )
+                        segments_to_process[idx : idx + 1] = retry_segments
                         continue
 
                     simplified_text = self._simplify_segment_text(segment_text)
                     if simplified_text and simplified_text != segment_text:
                         if self.verbose:
-                            print(f"   ⚠️ Tentando com texto simplificado...")
+                            self._log("   ⚠️ Tentando com texto simplificado...")
                         success = await self._synthesize_segment(
                             simplified_text,
                             voice,
@@ -396,7 +684,7 @@ class EdgeTTSEngine:
                         )
                         if success:
                             if self.verbose:
-                                print(f"   ✅ Sucesso com texto simplificado")
+                                self._log("   ✅ Sucesso com texto simplificado")
                             force_plain_segments = True
                             total_segments += 1
                             idx += 1
@@ -404,13 +692,13 @@ class EdgeTTSEngine:
 
                     failed_segments += 1
                     if self.verbose:
-                        print(f"   ❌ FALHOU: {self.last_error}")
+                        self._log(f"   ❌ FALHOU: {self.last_error}")
 
                     # Retry com backoff exponencial mais curto (1s, 2s)
                     if failed_segments <= 2:
                         backoff = min(1.0 * (2 ** (failed_segments - 1)), 3.0)
                         if self.verbose:
-                            print(f"   🔄 Tentando novamente após {backoff}s...")
+                            self._log(f"   🔄 Tentando novamente após {backoff}s...")
                         await asyncio.sleep(backoff)
 
                         success = await self._synthesize_segment(
@@ -422,20 +710,26 @@ class EdgeTTSEngine:
 
                         if success:
                             if self.verbose:
-                                print(f"   ✅ Sucesso no retry")
+                                self._log("   ✅ Sucesso no retry")
                             failed_segments = max(0, failed_segments - 1)
 
                     # Falhar se mais de 2 segmentos consecutivos falharem
                     if failed_segments > 2:
-                        micro_segments = self._force_micro_segments(voice, segment_text, micro_split_tracker)
+                        micro_segments = self._force_micro_segments(
+                            voice, segment_text, micro_split_tracker
+                        )
                         if micro_segments:
                             if self.verbose:
-                                print(f"   ⚡ Forçando divisão em {len(micro_segments)} microsegmentos")
-                            segments_to_process[idx:idx + 1] = micro_segments
+                                self._log(
+                                    f"   ⚡ Forçando divisão em {len(micro_segments)} microsegmentos"
+                                )
+                            segments_to_process[idx : idx + 1] = micro_segments
                             force_plain_segments = True
                             failed_segments = 0
                             continue
-                        print(f"❌ Edge TTS: muitas falhas consecutivas ({failed_segments}), abortando")
+                        self._log(
+                            f"❌ Edge TTS: muitas falhas consecutivas ({failed_segments}), abortando"
+                        )
                         return None
 
                     idx += 1
@@ -443,6 +737,8 @@ class EdgeTTSEngine:
 
                 # Success!
                 total_segments += 1
+                if progress_callback:
+                    progress_callback(segment_text, total_text_chars or 0)
                 idx += 1
         except asyncio.TimeoutError:
             self.last_error = "timeout"
@@ -468,22 +764,33 @@ class EdgeTTSEngine:
         if success_rate < 0.95:
             # Menos de 95% dos segmentos -> falha crítica
             self.partial_failure_detected = True
+
+            # Adaptive: reduce chunk size for next attempt
+            new_chunk = _reduce_chunk_size(self._log if self.verbose else None)
+            self._chunk_char_limit = new_chunk
+
             if failed_segments > 0:
-                print(f"⚠️ Edge TTS: {failed_segments} segment(s) falharam durante a síntese")
-                print(f"   Processados: {total_segments}/{expected_segments} segmentos ({success_rate*100:.0f}%)")
+                self._log(f"⚠️ Edge TTS: {failed_segments} segment(s) falharam durante a síntese")
+                self._log(
+                    f"   Processados: {total_segments}/{expected_segments} segmentos ({success_rate * 100:.0f}%)"
+                )
                 if self.verbose:
-                    print(f"   Use --verbose para mais detalhes sobre os segmentos com falha")
+                    self._log("   Use --verbose para mais detalhes sobre os segmentos com falha")
             else:
-                print(f"⚠️ Edge TTS: somente {total_segments}/{expected_segments} segmentos foram gerados (saída incompleta)")
+                self._log(
+                    f"⚠️ Edge TTS: somente {total_segments}/{expected_segments} segmentos foram gerados (saída incompleta)"
+                )
             self.last_error = f"incomplete_segments:{total_segments}/{expected_segments}"
             with suppress(OSError):
                 output_path.unlink(missing_ok=True)
             return None
         elif failed_segments > 0 and success_rate < 1.0:
             # Entre 95-100% dos segmentos -> avisar mas aceitar o áudio
-            print(f"⚠️ Edge TTS: {failed_segments} segment(s) falharam, mas {success_rate*100:.1f}% foi gerado com sucesso")
+            self._log(
+                f"⚠️ Edge TTS: {failed_segments} segment(s) falharam, mas {success_rate * 100:.1f}% foi gerado com sucesso"
+            )
             if self.verbose:
-                print(f"   Processados: {total_segments}/{expected_segments} segmentos")
+                self._log(f"   Processados: {total_segments}/{expected_segments} segmentos")
 
         return output_path
 
@@ -492,12 +799,11 @@ class EdgeTTSEngine:
         output_path: Path,
         segments_to_process: List[Tuple[str, str]],
         force_plain_segments: bool,
+        progress_callback=None,
     ) -> Optional[Path]:
         """Process segments in parallel batches for faster synthesis."""
         import tempfile
         from pathlib import Path
-
-        global _edge_rate_limiter
 
         total_segments = len(segments_to_process)
         batch_size = self._determine_parallel_batch_size(total_segments)
@@ -505,27 +811,28 @@ class EdgeTTSEngine:
         # Use dict to maintain segment order
         segment_files: Dict[int, Optional[Path]] = {i: None for i in range(total_segments)}
 
+        # **OPTIMIZED**: Process in fixed batches to avoid semaphore queue explosion
+        # asyncio.gather respects rate limiter naturally without creating excessive queue
+        completed_count = 0
+
         if self.verbose:
-            print(f"🚀 [PARALLEL] Processando {total_segments} segmentos em batches de {batch_size}")
+            self._log(
+                f"🚀 [PARALLEL] Processando {total_segments} segmentos em batches de {batch_size}"
+            )
 
-        # Process in batches
-        for batch_start in range(0, total_segments, batch_size):
+        # Process segments in fixed batches
+        for batch_idx, batch_start in enumerate(range(0, total_segments, batch_size)):
+            # Inter-batch delay to avoid rate limits (configurable via EDGE_BATCH_DELAY_MS)
+            if batch_idx > 0 and _edge_batch_delay > 0:
+                await asyncio.sleep(_edge_batch_delay)
+
             batch_end = min(batch_start + batch_size, total_segments)
-            batch = segments_to_process[batch_start:batch_end]
+            batch_segments = segments_to_process[batch_start:batch_end]
 
-            if self.verbose:
-                print(f"🚀 [PARALLEL] Batch {batch_start//batch_size + 1}: segmentos {batch_start+1}-{batch_end}/{total_segments}")
-
-            # Create temp files for this batch
-            batch_temp_files = []
-            for i in range(len(batch)):
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3', dir=output_path.parent)
-                temp_file.close()
-                batch_temp_files.append(Path(temp_file.name))
-
-            # Create tasks for parallel processing
             tasks = []
-            for i, (voice, segment_text) in enumerate(batch):
+            task_metadata = []  # (segment_idx, temp_path)
+
+            for i, (voice, segment_text) in enumerate(batch_segments, start=batch_start):
                 # Validate and prepare segment
                 if voice is None:
                     voice = self.voice or "en-US-GuyNeural"
@@ -539,42 +846,62 @@ class EdgeTTSEngine:
                     if simplified:
                         segment_text = simplified
 
-                # Create synthesis task
-                task = self._synthesize_segment(
-                    segment_text,
-                    voice,
-                    batch_temp_files[i],
-                    append=False,  # Each segment gets its own file
+                # Create temp file
+                temp_file = tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".mp3", dir=output_path.parent
                 )
-                tasks.append((i, task, batch_temp_files[i]))
+                temp_file.close()
+                temp_path = Path(temp_file.name)
 
-            # Execute batch in parallel
-            results = await asyncio.gather(
-                *[task for _, task, _ in tasks],
-                return_exceptions=True
-            )
+                # Add synthesis task
+                task = self._synthesize_segment(segment_text, voice, temp_path, append=False)
+                tasks.append(task)
+                task_metadata.append((i, temp_path))
 
-            # Check results and collect successful temp files
-            for (idx, _, temp_file), result in zip(tasks, results):
-                segment_idx = batch_start + idx
+            # Process batch - gather respects rate limiter without queueing
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            # Process results
+            for (segment_idx, temp_file), result in zip(task_metadata, results):
                 segment_num = segment_idx + 1
+                completed_count += 1
 
-                if isinstance(result, Exception):
+                try:
+                    if isinstance(result, Exception):
+                        raise result
+
+                    if result:  # Success
+                        successful_segments += 1
+                        segment_files[segment_idx] = temp_file
+
+                        # **NOVO**: Report progress to callback
+                        if progress_callback:
+                            try:
+                                if segment_idx < len(segments_to_process):
+                                    _, segment_text = segments_to_process[segment_idx]
+                                    total_text_chars = sum(
+                                        len(text) for _, text in segments_to_process
+                                    )
+                                    progress_callback(segment_text, total_text_chars)
+                            except Exception as e:
+                                if self.verbose:
+                                    self._log(f"⚠️ Progress callback error: {e}")
+
+                        if self.verbose:
+                            file_size = temp_file.stat().st_size if temp_file.exists() else 0
+                            self._log(
+                                f"✅ [PARALLEL] Segmento {segment_num} OK ({file_size} bytes, {completed_count}/{total_segments})"
+                            )
+                    else:
+                        if self.verbose:
+                            self._log(f"⚠️ [PARALLEL] Segmento {segment_num} falhou (sem áudio)")
+                        with suppress(OSError):
+                            temp_file.unlink()
+
+                except Exception as exc:
                     if self.verbose:
-                        error_msg = str(result)[:100]
-                        print(f"⚠️ [PARALLEL] Segmento {segment_num} falhou: {error_msg}")
-                    # Clean up failed temp file
-                    with suppress(OSError):
-                        temp_file.unlink()
-                elif result:  # Success
-                    successful_segments += 1
-                    segment_files[segment_idx] = temp_file
-                    if self.verbose:
-                        file_size = temp_file.stat().st_size if temp_file.exists() else 0
-                        print(f"✅ [PARALLEL] Segmento {segment_num} OK ({file_size} bytes)")
-                else:
-                    if self.verbose:
-                        print(f"⚠️ [PARALLEL] Segmento {segment_num} falhou (sem áudio)")
+                        error_msg = str(exc)[:100]
+                        self._log(f"⚠️ [PARALLEL] Segmento {segment_num} falhou: {error_msg}")
                     with suppress(OSError):
                         temp_file.unlink()
 
@@ -582,7 +909,9 @@ class EdgeTTSEngine:
         failed_indices = [i for i, path in segment_files.items() if path is None]
         if failed_indices and successful_segments >= total_segments * 0.8:
             if self.verbose:
-                print(f"🔄 [PARALLEL] Tentando {len(failed_indices)} segmentos falhados sequencialmente...")
+                self._log(
+                    f"🔄 [PARALLEL] Tentando {len(failed_indices)} segmentos falhados sequencialmente..."
+                )
 
             for fail_idx in failed_indices:
                 voice, segment_text = segments_to_process[fail_idx]
@@ -594,7 +923,9 @@ class EdgeTTSEngine:
                     if simplified:
                         segment_text = simplified
 
-                temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp3', dir=output_path.parent)
+                temp_file = tempfile.NamedTemporaryFile(
+                    delete=False, suffix=".mp3", dir=output_path.parent
+                )
                 temp_file.close()
                 retry_path = Path(temp_file.name)
 
@@ -610,13 +941,13 @@ class EdgeTTSEngine:
                         successful_segments += 1
                         segment_files[fail_idx] = retry_path
                         if self.verbose:
-                            print(f"✅ [PARALLEL] Segmento {fail_idx + 1} recuperado no retry")
+                            self._log(f"✅ [PARALLEL] Segmento {fail_idx + 1} recuperado no retry")
                     else:
                         with suppress(OSError):
                             retry_path.unlink()
                 except Exception as exc:
                     if self.verbose:
-                        print(f"⚠️ [PARALLEL] Retry segmento {fail_idx + 1} falhou: {exc}")
+                        self._log(f"⚠️ [PARALLEL] Retry segmento {fail_idx + 1} falhou: {exc}")
                     with suppress(OSError):
                         retry_path.unlink()
 
@@ -628,21 +959,27 @@ class EdgeTTSEngine:
             return None
 
         if self.verbose:
-            print(f"🔗 [PARALLEL] Concatenando {len(temp_files)} segmentos bem-sucedidos...")
+            self._log(f"🔗 [PARALLEL] Concatenando {len(temp_files)} segmentos bem-sucedidos...")
 
         try:
-            with output_path.open('wb') as outfile:
+            # **OPTIMIZED**: Buffered chunked I/O to reduce memory pressure
+            CHUNK_SIZE = 1024 * 1024  # 1MB chunks
+            with output_path.open("wb") as outfile:
                 for temp_file in temp_files:
                     if temp_file.exists():
-                        with temp_file.open('rb') as infile:
-                            outfile.write(infile.read())
+                        with temp_file.open("rb") as infile:
+                            while True:
+                                chunk = infile.read(CHUNK_SIZE)
+                                if not chunk:
+                                    break
+                                outfile.write(chunk)
                         # Clean up temp file
                         with suppress(OSError):
                             temp_file.unlink()
         except Exception as exc:
             self.last_error = f"concatenation_failed: {exc}"
             if self.verbose:
-                print(f"❌ [PARALLEL] Erro ao concatenar: {exc}")
+                self._log(f"❌ [PARALLEL] Erro ao concatenar: {exc}")
             # Clean up remaining temp files
             for temp_file in temp_files:
                 with suppress(OSError):
@@ -659,14 +996,23 @@ class EdgeTTSEngine:
         success_rate = successful_segments / total_segments
         if success_rate < 0.95:
             self.partial_failure_detected = True
-            print(f"⚠️ Edge TTS Paralelo: apenas {successful_segments}/{total_segments} segmentos ({success_rate*100:.1f}%)")
+
+            # Adaptive: reduce chunk size for next attempt
+            new_chunk = _reduce_chunk_size(self._log if self.verbose else None)
+            self._chunk_char_limit = new_chunk
+
+            self._log(
+                f"⚠️ Edge TTS Paralelo: apenas {successful_segments}/{total_segments} segmentos ({success_rate * 100:.1f}%)"
+            )
             self.last_error = f"incomplete_segments:{successful_segments}/{total_segments}"
             with suppress(OSError):
                 output_path.unlink()
             return None
 
         if self.verbose:
-            print(f"✅ [PARALLEL] Síntese completa: {successful_segments}/{total_segments} segmentos ({success_rate*100:.1f}%)")
+            self._log(
+                f"✅ [PARALLEL] Síntese completa: {successful_segments}/{total_segments} segmentos ({success_rate * 100:.1f}%)"
+            )
 
         return output_path
 
@@ -695,9 +1041,7 @@ class EdgeTTSEngine:
             return [(self.voice, "")]
 
         cleaned_text = (
-            TextFormattingProcessor.clean_tts_text(text)
-            if TextFormattingProcessor
-            else text
+            TextFormattingProcessor.clean_tts_text(text) if TextFormattingProcessor else text
         )
 
         if LanguageMarkup is None:
@@ -738,11 +1082,17 @@ class EdgeTTSEngine:
 
             return prepared
 
-        except Exception as exc:
-            fallback = TextFormattingProcessor.clean_tts_text(text or "") if TextFormattingProcessor else (text or "")
+        except Exception:
+            fallback = (
+                TextFormattingProcessor.clean_tts_text(text or "")
+                if TextFormattingProcessor
+                else (text or "")
+            )
             return self._chunk_text(self.voice, fallback)
 
-    def _chunk_text(self, voice: str, text: str, chunk_size: Optional[int] = None) -> list[tuple[str, str]]:
+    def _chunk_text(
+        self, voice: str, text: str, chunk_size: Optional[int] = None
+    ) -> list[tuple[str, str]]:
         """Divide texto longo em blocos menores respeitando limites aproximados de frase e duração."""
         if not text:
             return []
@@ -752,10 +1102,12 @@ class EdgeTTSEngine:
             return []
 
         try:
-            active_chunk_limit = int(chunk_size) if chunk_size is not None else self._chunk_char_limit
+            active_chunk_limit = (
+                int(chunk_size) if chunk_size is not None else self._chunk_char_limit
+            )
         except (TypeError, ValueError):
             active_chunk_limit = self._chunk_char_limit
-        active_chunk_limit = max(4000, active_chunk_limit)
+        active_chunk_limit = max(_SAFE_CHUNK_MIN, active_chunk_limit)
 
         if len(stripped) <= active_chunk_limit:
             base_chunks: List[tuple[str, str]] = [(voice, stripped)]
@@ -841,7 +1193,7 @@ class EdgeTTSEngine:
         segments: List[str] = []
 
         for start in range(0, len(words), max_words):
-            segment_words = words[start:start + max_words]
+            segment_words = words[start : start + max_words]
             segment_text = " ".join(segment_words).strip()
             if segment_text:
                 segments.append(segment_text)
@@ -914,7 +1266,7 @@ class EdgeTTSEngine:
             chunk_words = max(min(len(words) // 4, 80), 20)
             micro_chunks = []
             for start in range(0, len(words), chunk_words):
-                segment_words = words[start:start + chunk_words]
+                segment_words = words[start : start + chunk_words]
                 if segment_words:
                     micro_chunks.append(" ".join(segment_words))
 
@@ -924,7 +1276,9 @@ class EdgeTTSEngine:
 
         return [(voice, chunk) for chunk in micro_chunks]
 
-    def _simplify_segment_text(self, text: str, *, limit_chars: Optional[int] = SIMPLIFIED_SEGMENT_MAX_CHARS) -> str:
+    def _simplify_segment_text(
+        self, text: str, *, limit_chars: Optional[int] = SIMPLIFIED_SEGMENT_MAX_CHARS
+    ) -> str:
         """Remove formatting markers and limit length to create a safer payload."""
         if not text:
             return ""
@@ -966,7 +1320,9 @@ class EdgeTTSEngine:
         italic_markers = stripped.count("_")
 
         high_markup = fmt_markers + lang_markers >= 20
-        dense_markup = (fmt_markers + lang_markers) >= 8 and len(stripped) / max(fmt_markers + lang_markers, 1) < 200
+        dense_markup = (fmt_markers + lang_markers) >= 8 and len(stripped) / max(
+            fmt_markers + lang_markers, 1
+        ) < 200
         heavy_markdown = bold_markers >= 10 or italic_markers >= 30
         very_long = len(stripped) > 12000 and (fmt_markers + lang_markers) >= 5
 
@@ -975,7 +1331,9 @@ class EdgeTTSEngine:
     def _estimate_duration(self, text: str) -> float:
         """Estimate spoken duration in seconds for the provided text."""
         try:
-            estimated = TextValidator.estimate_duration(text, words_per_minute=self._words_per_minute)
+            estimated = TextValidator.estimate_duration(
+                text, words_per_minute=self._words_per_minute
+            )
             return float(estimated or 0.0)
         except Exception:
             words = [word for word in (text or "").split() if word]
@@ -992,6 +1350,7 @@ class EdgeTTSEngine:
         slots = self._parallel_slots if self._enable_parallel else 1
         if slots <= 0:
             slots = 1
+        slots = min(slots, max(1, _edge_max_concurrency))
         return max(1, slots)
 
     def _determine_parallel_batch_size(self, total_segments: int) -> int:
@@ -1008,8 +1367,6 @@ class EdgeTTSEngine:
         *,
         append: bool,
     ) -> bool:
-        global _edge_rate_limiter
-
         # Validate inputs
         if text is None:
             self.last_error = "text_is_none"
@@ -1018,36 +1375,64 @@ class EdgeTTSEngine:
         if voice is None:
             voice = self.voice or "en-US-GuyNeural"
 
-        # Use global rate limiter to prevent resource contention
-        waiting_start = asyncio.get_event_loop().time()
-        slots_available = _edge_rate_limiter._value
+        # **RATE LIMIT CHECK**: Wait if we recently hit a 403
+        waited = await _wait_if_rate_limited()
+        if waited and self.verbose:
+            self._log("   ⏸️ Aguardou cooldown de rate limit")
 
-        if slots_available == 0:  # All slots taken
-            waiters = getattr(_edge_rate_limiter, '_waiters', [])
+        log_callback = self._log if (self.verbose or self.log_callback) else None
+
+        # Use per-instance + global rate limiter to prevent resource contention
+        loop = asyncio.get_running_loop()
+        waiting_start = loop.time()
+        if self._global_rate_limiter_loop is not loop:
+            self._global_rate_limiter = _get_global_edge_limiter(loop)
+            self._global_rate_limiter_loop = loop
+        global_limiter = self._global_rate_limiter
+        slots_available = self._rate_limiter._value
+        global_slots_available = (
+            global_limiter._value
+            if global_limiter and global_limiter is not self._rate_limiter
+            else None
+        )
+
+        if slots_available == 0 or (global_slots_available == 0):
+            waiters = getattr(self._rate_limiter, "_waiters", [])
+            if global_slots_available == 0 and global_limiter is not None:
+                waiters = getattr(global_limiter, "_waiters", waiters)
             waiters_count = len(waiters) if waiters is not None else 0
             if self.verbose:
-                print(f"   ⏳ Aguardando slot livre (fila: {waiters_count})")
+                self._log(f"   ⏳ Aguardando slot livre (fila: {waiters_count})")
 
-        async with _edge_rate_limiter:
-            wait_time = asyncio.get_event_loop().time() - waiting_start
+        async with AsyncExitStack() as stack:
+            if global_limiter and global_limiter is not self._rate_limiter:
+                await stack.enter_async_context(global_limiter)
+            await stack.enter_async_context(self._rate_limiter)
+            wait_time = loop.time() - waiting_start
             if self.verbose and wait_time > 1:
-                print(f"   🚀 Slot obtido após {wait_time:.1f}s")
+                self._log(f"   🚀 Slot obtido após {wait_time:.1f}s")
 
-            now = asyncio.get_event_loop().time()
+            now = loop.time()
             if now < self._noaudio_backoff_until:
                 remaining = int(self._noaudio_backoff_until - now)
                 self.last_error = f"service_unavailable (cooldown {remaining}s)"
                 if self.verbose:
-                    print(f"   ⏸️ Cooldown: {remaining}s restantes")
+                    self._log(f"   ⏸️ Cooldown: {remaining}s restantes")
                 return False
             try:
                 # SSL bypass já aplicado no topo do módulo via monkeypatch
                 communicator = self._edge_tts.Communicate(text, voice)
 
             except Exception as exc:  # pragma: no cover - defensive logging
-                self.last_error = f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                if _is_rate_limit_error(exc):
+                    self.last_error = f"rate_limit: {exc}" if exc else "rate_limit"
+                    await _handle_rate_limit(log_callback)
+                else:
+                    self.last_error = (
+                        f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                    )
                 if self.verbose:
-                    print(f"   ❌ Erro ao criar Communicate: {self.last_error}")
+                    self._log(f"   ❌ Erro ao criar Communicate: {self.last_error}")
                 return False
 
             mode = "ab" if append else "wb"
@@ -1057,28 +1442,44 @@ class EdgeTTSEngine:
             try:
                 stream_candidate = communicator.stream()
             except Exception as exc:  # pragma: no cover - defensive logging
-                self.last_error = f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                if _is_rate_limit_error(exc):
+                    self.last_error = f"rate_limit: {exc}" if exc else "rate_limit"
+                    await _handle_rate_limit(log_callback)
+                else:
+                    self.last_error = (
+                        f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                    )
                 if self.verbose:
-                    print(f"   ❌ Erro ao obter stream: {self.last_error}")
+                    self._log(f"   ❌ Erro ao obter stream: {self.last_error}")
                 return False
 
             try:
-                stream = await stream_candidate if inspect.isawaitable(stream_candidate) else stream_candidate
+                stream = (
+                    await stream_candidate
+                    if inspect.isawaitable(stream_candidate)
+                    else stream_candidate
+                )
             except asyncio.TimeoutError:
                 self.last_error = "timeout"
                 if self.verbose:
-                    print("   ⏱️ Timeout ao inicializar stream")
+                    self._log("   ⏱️ Timeout ao inicializar stream")
                 return False
             except Exception as exc:  # pragma: no cover - defensive logging
-                self.last_error = f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                if _is_rate_limit_error(exc):
+                    self.last_error = f"rate_limit: {exc}" if exc else "rate_limit"
+                    await _handle_rate_limit(log_callback)
+                else:
+                    self.last_error = (
+                        f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                    )
                 if self.verbose:
-                    print(f"   ❌ Erro ao inicializar stream: {self.last_error}")
+                    self._log(f"   ❌ Erro ao inicializar stream: {self.last_error}")
                 return False
 
             if not hasattr(stream, "__aiter__"):
                 self.last_error = "invalid_stream"
                 if self.verbose:
-                    print("   ❌ Stream inválido (não assíncrono)")
+                    self._log("   ❌ Stream inválido (não assíncrono)")
                 return False
             chunks_received = 0
 
@@ -1103,12 +1504,13 @@ class EdgeTTSEngine:
                     try:
                         heartbeat_task = None
                         if self.verbose:
+
                             async def _segment_heartbeat() -> None:
                                 while True:
                                     await asyncio.sleep(10)
                                     elapsed = asyncio.get_event_loop().time() - synthesis_start
                                     status = "recebendo" if received_audio else "aguardando"
-                                    print(f"   ... {status} ({elapsed:.0f}s)", flush=True)
+                                    self._log(f"   ... {status} ({elapsed:.0f}s)")
 
                             heartbeat_task = asyncio.create_task(_segment_heartbeat())
 
@@ -1123,7 +1525,9 @@ class EdgeTTSEngine:
 
                         if self.verbose and received_audio:
                             elapsed = asyncio.get_event_loop().time() - synthesis_start
-                            print(f"   ✅ Concluído em {elapsed:.1f}s ({chunks_received} chunks)")
+                            self._log(
+                                f"   ✅ Concluído em {elapsed:.1f}s ({chunks_received} chunks)"
+                            )
 
                         break  # Success - exit retry loop
 
@@ -1131,33 +1535,46 @@ class EdgeTTSEngine:
                         synthesis_time = asyncio.get_event_loop().time() - synthesis_start
                         self.last_error = "timeout"
                         if self.verbose:
-                            print(f"   ⏱️ Timeout após {synthesis_time:.1f}s (limite: {timeout}s)")
+                            self._log(
+                                f"   ⏱️ Timeout após {synthesis_time:.1f}s (limite: {timeout}s)"
+                            )
                         return False
 
                     except asyncio.CancelledError:
                         synthesis_time = asyncio.get_event_loop().time() - synthesis_start
                         self.last_error = "cancelled"
                         if self.verbose:
-                            print(f"   🚫 Cancelado após {synthesis_time:.1f}s")
+                            self._log(f"   🚫 Cancelado após {synthesis_time:.1f}s")
                         raise
 
                     except Exception as exc:
                         synthesis_time = asyncio.get_event_loop().time() - synthesis_start
 
                         if self.verbose:
-                            print(f"   ⚠️ Exceção ({exc.__class__.__name__}) após {synthesis_time:.1f}s: {exc}", flush=True)
+                            self._log(
+                                f"   ⚠️ Exceção ({exc.__class__.__name__}) após {synthesis_time:.1f}s: {exc}"
+                            )
 
-                        # Check if it's a certificate/SSL error
+                        is_rate_limit = _is_rate_limit_error(exc)
                         is_cert_error = (
-                            ClientConnectorCertificateError and isinstance(exc, ClientConnectorCertificateError)
-                        ) or (
-                            ClientConnectorError and isinstance(exc, ClientConnectorError)
-                        ) or (
-                            "certificate" in str(exc).lower() or "ssl" in str(exc).lower()
+                            (
+                                ClientConnectorCertificateError
+                                and isinstance(exc, ClientConnectorCertificateError)
+                            )
+                            or (ClientConnectorError and isinstance(exc, ClientConnectorError))
+                            or ("certificate" in str(exc).lower() or "ssl" in str(exc).lower())
                         )
 
-                        is_no_audio = "noaudio" in str(exc).lower() or exc.__class__.__name__.lower() == "noaudioreceived"
-                        is_transient = is_cert_error or is_no_audio or "timeout" in str(exc).lower() or "connection" in str(exc).lower()
+                        is_no_audio = (
+                            "noaudio" in str(exc).lower()
+                            or exc.__class__.__name__.lower() == "noaudioreceived"
+                        )
+                        is_transient = (
+                            is_cert_error
+                            or is_no_audio
+                            or "timeout" in str(exc).lower()
+                            or "connection" in str(exc).lower()
+                        )
 
                         # If *nothing* was received (0 chunks), first check if service is reachable.
                         allow_retry = True
@@ -1166,17 +1583,46 @@ class EdgeTTSEngine:
                             allow_retry = retry_count < 1  # only one retry for no-audio
                             health_ok = await self._probe_edge_health(voice)
 
+                        if is_rate_limit:
+                            self.last_error = f"rate_limit: {exc}" if exc else "rate_limit"
+                            backoff_time = await _handle_rate_limit(log_callback)
+                            self._parallel_slots = min(self._parallel_slots, _edge_max_concurrency)
+                            if retry_count < max_retries - 1:
+                                retry_count += 1
+                                await asyncio.sleep(backoff_time)
+                                try:
+                                    communicator = self._edge_tts.Communicate(text, voice)
+                                    stream_candidate = communicator.stream()
+                                    stream = (
+                                        await stream_candidate
+                                        if inspect.isawaitable(stream_candidate)
+                                        else stream_candidate
+                                    )
+                                    chunks_received = 0
+                                    received_audio = False
+                                    continue
+                                except Exception as retry_exc:
+                                    self.last_error = f"retry_failed: {retry_exc}"
+                                    if self.verbose:
+                                        self._log(f"   ❌ Falha no retry: {retry_exc}")
+                                    return False
+                            return False
+
                         if is_transient and allow_retry and retry_count < max_retries - 1:
                             retry_count += 1
-                            backoff_time = 2 ** retry_count  # 2s, 4s, 8s
+                            backoff_time = 2**retry_count  # 2s, 4s, 8s
 
                             # Detailed SSL error logging
                             if is_cert_error:
-                                print(f"   🔒 Erro SSL: {exc.__class__.__name__}")
+                                self._log(f"   🔒 Erro SSL: {exc.__class__.__name__}")
                             elif is_no_audio:
-                                print(f"   🔇 Sem áudio ({exc.__class__.__name__}); retry {retry_count}/{max_retries-1} em {backoff_time}s")
+                                self._log(
+                                    f"   🔇 Sem áudio ({exc.__class__.__name__}); retry {retry_count}/{max_retries - 1} em {backoff_time}s"
+                                )
                             else:
-                                print(f"   🔄 Erro transitório ({exc.__class__.__name__}); retry {retry_count}/{max_retries-1} em {backoff_time}s")
+                                self._log(
+                                    f"   🔄 Erro transitório ({exc.__class__.__name__}); retry {retry_count}/{max_retries - 1} em {backoff_time}s"
+                                )
 
                             await asyncio.sleep(backoff_time)
 
@@ -1185,32 +1631,45 @@ class EdgeTTSEngine:
                                 # SSL bypass já aplicado no topo do módulo via monkeypatch
                                 communicator = self._edge_tts.Communicate(text, voice)
                                 stream_candidate = communicator.stream()
-                                stream = await stream_candidate if inspect.isawaitable(stream_candidate) else stream_candidate
+                                stream = (
+                                    await stream_candidate
+                                    if inspect.isawaitable(stream_candidate)
+                                    else stream_candidate
+                                )
                                 chunks_received = 0
                                 received_audio = False
                                 continue  # Retry
                             except Exception as retry_exc:
                                 self.last_error = f"retry_failed: {retry_exc}"
                                 if self.verbose:
-                                    print(f"   ❌ Falha no retry: {retry_exc}")
+                                    self._log(f"   ❌ Falha no retry: {retry_exc}")
                                 return False
                         else:
                             # Not a cert error or max retries reached
-                            self.last_error = f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
+                            self.last_error = (
+                                f"{exc.__class__.__name__}: {exc}"
+                                if exc
+                                else exc.__class__.__name__
+                            )
                             if is_no_audio and chunks_received == 0 and not received_audio:
                                 if not health_ok:
                                     # Open cooldown to avoid hammering the service when it's not responding with audio.
-                                    self._noaudio_backoff_until = asyncio.get_event_loop().time() + max(5.0, EDGE_NOAUDIO_COOLDOWN_SECONDS)
+                                    self._noaudio_backoff_until = (
+                                        asyncio.get_event_loop().time()
+                                        + max(5.0, EDGE_NOAUDIO_COOLDOWN_SECONDS)
+                                    )
                                     self.last_error = f"service_unavailable (cooldown {int(EDGE_NOAUDIO_COOLDOWN_SECONDS)}s)"
                                     if self.verbose:
-                                        print(f"   ⛔ Serviço indisponível - cooldown {int(EDGE_NOAUDIO_COOLDOWN_SECONDS)}s")
+                                        self._log(
+                                            f"   ⛔ Serviço indisponível - cooldown {int(EDGE_NOAUDIO_COOLDOWN_SECONDS)}s"
+                                        )
                                 else:
                                     # Provável problema de payload; não abrir cooldown global
                                     self.last_error = "no_audio_payload"
                                     if self.verbose:
-                                        print("   ⚠️ Sem áudio (provável problema de conteúdo)")
+                                        self._log("   ⚠️ Sem áudio (provável problema de conteúdo)")
                             if is_cert_error:
-                                print(f"   ❌ Erro SSL persistente")
+                                self._log("   ❌ Erro SSL persistente")
                             return False
             finally:
                 with suppress(Exception):
@@ -1222,8 +1681,18 @@ class EdgeTTSEngine:
                             if asyncio.iscoroutine(result):
                                 await result
 
+            if received_audio:
+                with suppress(Exception):
+                    await _record_success()
             if not received_audio:
                 self.last_error = "no_audio"
             return received_audio
 
-__all__ = ["EdgeTTSEngine"]
+
+__all__ = [
+    "EdgeTTSEngine",
+    "get_edge_performance_stats",
+    "get_adaptive_chunk_size",
+    "get_adaptive_concurrency",
+    "reset_adaptive_settings",
+]

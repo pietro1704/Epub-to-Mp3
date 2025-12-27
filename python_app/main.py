@@ -18,8 +18,8 @@ import traceback
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import unquote
 from typing import Any, Dict, List, Optional, Set, Tuple
+from urllib.parse import unquote
 
 try:  # Optional dependency for shell tab completion
     import argcomplete  # type: ignore
@@ -29,13 +29,12 @@ except ImportError:  # pragma: no cover - argcomplete is optional
     ChoicesCompleter = None
     FilesCompleter = None
 
-# Local imports  
-from src.ebook_reader import EbookReader, Chapter, TextProcessor, FormattingSegment
-from src.text_formatting import TextFormattingProcessor
-from src.converter import AudioConverter, ConversionResult
-from src.ui.menu import MenuInterface
+# Local imports
+from src.benchmark_profile import apply_benchmark_profile
+from src.chapter_utils import deduplicate_chapters_by_content
 from src.config import AppConfig, ConversionConfig
-from src.utils import FileManager, resolve_cache_root
+from src.converter import AudioConverter, ConversionResult
+from src.ebook_reader import Chapter, EbookReader, FormattingSegment, TextProcessor
 from src.i18n import get_localization
 from src.language import (
     LanguageDetector,
@@ -43,7 +42,9 @@ from src.language import (
     LanguageProfile,
     get_language_detector,
 )
-from src.chapter_utils import deduplicate_chapters_by_content
+from src.text_formatting import TextFormattingProcessor
+from src.ui.menu import MenuInterface
+from src.utils import FileManager, resolve_cache_root
 
 
 @dataclass
@@ -91,6 +92,13 @@ class ConverterApplication:
             return default
         return bool(raw)
 
+    @staticmethod
+    def _apply_no_parallel_env(args: argparse.Namespace) -> None:
+        if getattr(args, "no_parallel", False):
+            os.environ["CHAPTER_PARALLEL_COUNT"] = "1"
+            os.environ["CHAPTER_PARALLEL_MAX"] = "1"
+            os.environ["EDGE_ENABLE_PARALLEL"] = "false"
+
     def run(self, args: argparse.Namespace) -> int:
         """Entry point that orchestrates optional batch conversion."""
         if getattr(args, "command", None) == "clear_cache":
@@ -107,6 +115,8 @@ class ConverterApplication:
                 HardwareDetector.print_profile(hardware_profile, verbose=True)
         except Exception:
             hardware_profile = None
+
+        self._apply_no_parallel_env(args)
 
         targets, batch_requested = self._resolve_batch_targets(args)
         if not targets:
@@ -254,7 +264,7 @@ class ConverterApplication:
         print(f"\n{divider}")
         print(f"📘 Livro {index}/{total}: {target.name}")
         print(f"{divider}")
-    
+
     def _run_single_conversion(
         self,
         args: argparse.Namespace,
@@ -272,6 +282,8 @@ class ConverterApplication:
                 verbose = self._resolve_verbose(args)
                 if verbose:
                     HardwareDetector.print_profile(hardware_profile, verbose=True)
+            self._apply_no_parallel_env(args)
+            self.converter.hardware_profile = hardware_profile
 
             # Validate input
             input_path = Path(getattr(args, "input_file", "")).expanduser()
@@ -283,15 +295,15 @@ class ConverterApplication:
                 friendly = suffix or "(sem extensão)"
                 print(f"❌ Formato não suportado: {friendly}. Envie um arquivo .epub ou .pdf.")
                 return 1
-            
+
             # Load ebook
             reader = EbookReader(str(input_path))
-            
+
             # Show structure only
             if args.show_structure:
                 self._show_structure(reader)
                 return 0
-            
+
             # Prepare structured chapters for conversion
             structure_items = self._generate_structure_items(reader)
 
@@ -302,18 +314,22 @@ class ConverterApplication:
                 selectors.append(str(raw))
 
             structure_items, filtered = self._filter_structure_selection(
-                structure_items,
-                selectors if selectors else None
+                structure_items, selectors if selectors else None
             )
             if filtered and not structure_items:
                 return 1
 
             # **NEW**: Use CacheManager for better cache handling
             from src.cache_manager import CacheManager
+
             cache_manager = CacheManager(cache_dir=self.cache_root)
 
             if getattr(args, "clear_cache", False):
-                input_path = Path(getattr(args, 'input_file', '')) if getattr(args, 'input_file', None) else None
+                input_path = (
+                    Path(getattr(args, "input_file", ""))
+                    if getattr(args, "input_file", None)
+                    else None
+                )
                 if input_path:
                     display_name = reader.title or input_path.stem
                     cleared = cache_manager.clear_cache(input_path, title=reader.title)
@@ -367,13 +383,15 @@ class ConverterApplication:
                 txt_files = list((temp_dir / "text").glob("*_tts_input.txt"))
                 if txt_files:
                     print(f"♻️ Cache detectado: {len(txt_files)} capítulos processados")
-                    print(f"   Capítulos já convertidos serão pulados automaticamente")
+                    print("   Capítulos já convertidos serão pulados automaticamente")
 
             self._interactive_mode = bool(getattr(args, "menu", False))
 
             # Prepare language profile AFTER displaying initial metadata
             verbose = self._resolve_verbose(args)
-            self.language_profile = self._prepare_language_profile(reader, structure_items, verbose=verbose)
+            self.language_profile = self._prepare_language_profile(
+                reader, structure_items, verbose=verbose
+            )
 
             # Update display with language detection results
             self._update_metadata_display_language()
@@ -419,7 +437,7 @@ class ConverterApplication:
             parts.append(f"{minutes:02d}m")
         parts.append(f"{secs:02d}s")
         return " ".join(parts)
-    
+
     def _generate_structure_items(self, reader: EbookReader) -> List[ChapterStructureItem]:
         """Prepare structured information for chapters shared across features"""
 
@@ -466,17 +484,12 @@ class ConverterApplication:
             if self._should_skip_chapter(chapters, i, toc_map):
                 continue
 
-            href_key = self._normalize_href(str(getattr(chapter, 'source_path', '')))
+            href_key = self._normalize_href(str(getattr(chapter, "source_path", "")))
             toc_entries = self._resolve_toc_entries(href_key, toc_map)
 
             if toc_entries:
                 generated_items = self._create_items_from_toc_entries(
-                    chapter,
-                    toc_entries,
-                    book_title,
-                    division_counters,
-                    remap_division,
-                    book_author
+                    chapter, toc_entries, book_title, division_counters, remap_division, book_author
                 )
 
                 if generated_items:
@@ -484,7 +497,7 @@ class ConverterApplication:
 
                     last_item = generated_items[-1]
                     try:
-                        division_index = int(str(last_item.index).split('.', 1)[0])
+                        division_index = int(str(last_item.index).split(".", 1)[0])
                     except (ValueError, TypeError):
                         division_index = fallback_division
 
@@ -495,20 +508,17 @@ class ConverterApplication:
 
             toc_entry = self._select_toc_entry(toc_entries)
 
-            clean_name = self._clean_chapter_name(str(getattr(chapter, 'name', "")))
+            clean_name = self._clean_chapter_name(str(getattr(chapter, "name", "")))
 
             try:
-                raw_index, main_name, sub_name, first_words = self._format_chapter_display(
-                    chapter,
-                    chapters,
-                    i,
-                    book_title,
-                    book_author
-                )
+                main_name, sub_name, first_words = self._format_chapter_display(
+                    chapter, chapters, i, book_title, book_author
+                )[1:]
             except Exception:
-                text = str(getattr(chapter, 'text', ''))
-                raw_index = self._format_index_value(chapter, i)
-                main_name = self._clean_chapter_name(str(getattr(chapter, 'name', f"Chapter {i + 1}")))
+                text = str(getattr(chapter, "text", ""))
+                main_name = self._clean_chapter_name(
+                    str(getattr(chapter, "name", f"Chapter {i + 1}"))
+                )
                 sub_name = None
                 first_words = self._extract_first_words(text, self.PREVIEW_WORD_LIMIT)
 
@@ -533,10 +543,10 @@ class ConverterApplication:
                 fallback_label = division_label
 
                 preview = self._extract_smart_first_words(
-                    str(getattr(chapter, 'text', '')),
+                    str(getattr(chapter, "text", "")),
                     clean_name,
                     division_label,
-                    max_words=self.PREVIEW_WORD_LIMIT
+                    max_words=self.PREVIEW_WORD_LIMIT,
                 )
                 if preview:
                     first_words = preview
@@ -562,11 +572,7 @@ class ConverterApplication:
                     speak_heading = False
 
             main_name, sub_name, first_words = self._sanitize_display_values(
-                main_name,
-                sub_name,
-                first_words,
-                book_title,
-                book_author
+                main_name, sub_name, first_words, book_title, book_author
             )
 
             first_words = self._remove_duplicate_prefix(first_words, main_name, sub_name)
@@ -578,7 +584,7 @@ class ConverterApplication:
                 separator = " - "
                 if idx_value == len(ordered_values) - 1 and value[:1].islower():
                     separator = " "
-                if value[:1] in {',', ';', ':', '.', '!', '?'}:
+                if value[:1] in {",", ";", ":", ".", "!", "?"}:
                     separator = " "
 
                 if separator == " ":
@@ -594,13 +600,13 @@ class ConverterApplication:
                     sub_title=sub_name,
                     preview=first_words,
                     display_name=display_name,
-                    speak_heading=speak_heading
+                    speak_heading=speak_heading,
                 )
             )
 
         # Store expected chapter count from TOC for later validation
-        if hasattr(reader, '_toc_expected_chapters'):
-            delattr(reader, '_toc_expected_chapters')
+        if hasattr(reader, "_toc_expected_chapters"):
+            delattr(reader, "_toc_expected_chapters")
         expected_count = self._count_toc_chapters(reader)
         if expected_count > 0:
             reader._toc_expected_chapters = expected_count
@@ -609,7 +615,7 @@ class ConverterApplication:
 
     def _count_toc_chapters(self, reader: EbookReader) -> int:
         """Count expected chapters from TOC (top-level divisions)"""
-        get_toc = getattr(reader, 'get_toc', None)
+        get_toc = getattr(reader, "get_toc", None)
         if not callable(get_toc):
             return 0
 
@@ -620,30 +626,28 @@ class ConverterApplication:
 
         # Count only top-level entries (divisions)
         count = 0
+
         def walk(entries, is_top_level=True):
             nonlocal count
             for entry in entries:
                 if is_top_level:
                     count += 1
                 # Recursively count children
-                if hasattr(entry, 'children') and entry.children:
+                if hasattr(entry, "children") and entry.children:
                     walk(entry.children, is_top_level=False)
 
         walk(toc_entries, is_top_level=True)
         return count
 
     def _validate_chapter_count(
-        self,
-        chapters: List[Any],
-        reader: EbookReader,
-        duplicates_removed: int = 0
+        self, chapters: List[Any], reader: EbookReader, duplicates_removed: int = 0
     ) -> Tuple[List[Any], bool]:
         """Validate chapter count against TOC and auto-correct if needed.
 
         Returns:
             Tuple of (chapters_list, was_corrected)
         """
-        expected_count = getattr(reader, '_toc_expected_chapters', 0)
+        expected_count = getattr(reader, "_toc_expected_chapters", 0)
 
         # Skip validation if no TOC info or too few chapters in TOC
         if expected_count == 0 or expected_count < 3:
@@ -664,12 +668,16 @@ class ConverterApplication:
             return chapters, False
 
         # Significant count mismatch - attempt auto-correction
-        print(f"\n⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {actual_count}")
+        print(
+            f"\n⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {actual_count}"
+        )
 
         # If we removed duplicates and that caused the mismatch, restore original
         if duplicates_removed > 0 and (actual_count + duplicates_removed) == expected_count:
-            print(f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata")
-            print(f"💡 Motivo: deduplicação causou perda de capítulos válidos")
+            print(
+                f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata"
+            )
+            print("💡 Motivo: deduplicação causou perda de capítulos válidos")
 
             # Return the chapters WITHOUT deduplication
             # Note: we need to re-generate or get the original list
@@ -679,10 +687,10 @@ class ConverterApplication:
         # If actual > expected, deduplication might help
         if actual_count > expected_count:
             print(f"💡 Detectados {actual_count - expected_count} capítulos a mais que o esperado")
-            print(f"✓ Mantendo resultado atual (possível subcapítulos no TOC)")
+            print("✓ Mantendo resultado atual (possível subcapítulos no TOC)")
         else:
             print(f"⚠️  Faltam {expected_count - actual_count} capítulos!")
-            print(f"💡 Verifique se o EPUB tem estrutura complexa ou TOC incorreto")
+            print("💡 Verifique se o EPUB tem estrutura complexa ou TOC incorreto")
 
         return chapters, False
 
@@ -693,7 +701,7 @@ class ConverterApplication:
         book_title: str,
         division_counters: Dict[int, int],
         remap_division,
-        book_author: str = ""
+        book_author: str = "",
     ) -> List[ChapterStructureItem]:
         """Expand a chapter into structure items using TOC anchors"""
 
@@ -703,8 +711,11 @@ class ConverterApplication:
         text = str(getattr(chapter, "text", ""))
 
         # Filter entries that have child_title (excluding None and 'None' string)
-        entries_with_titles = [entry for entry in toc_entries
-                               if entry[2] is not None and str(entry[2]).lower() != 'none']
+        entries_with_titles = [
+            entry
+            for entry in toc_entries
+            if entry[2] is not None and str(entry[2]).lower() != "none"
+        ]
         segments_map: Dict[str, str] = {}
 
         # If we have multiple entries for the same file but only one has content (others are None),
@@ -740,7 +751,7 @@ class ConverterApplication:
                 division_counters[normalized_division] = 0
                 index = f"{normalized_division}.0"
 
-            if child_title and not parent_title and not child_title.strip().startswith('§'):
+            if child_title and not parent_title and not child_title.strip().startswith("§"):
                 parent_title = child_title.strip()
 
             # Try to get segment from map (check both child_title and division_label)
@@ -752,26 +763,23 @@ class ConverterApplication:
             if not segment_text:
                 segment_text = text
 
-            clean_name = self._clean_chapter_name(child_title or getattr(chapter, 'name', ''))
+            clean_name = self._clean_chapter_name(child_title or getattr(chapter, "name", ""))
             main_name = division_label or clean_name
             sub_name = child_title if child_title else None
 
-            if parent_title and child_title and child_title.strip().startswith('§'):
+            if parent_title and child_title and child_title.strip().startswith("§"):
                 sub_name = f"{parent_title} - {child_title.strip()}"
 
-            preview = self._extract_smart_first_words(
-                segment_text,
-                clean_name,
-                division_label,
-                max_words=self.PREVIEW_WORD_LIMIT
-            ) if child_title else self._extract_first_words(segment_text, self.PREVIEW_WORD_LIMIT)
+            preview = (
+                self._extract_smart_first_words(
+                    segment_text, clean_name, division_label, max_words=self.PREVIEW_WORD_LIMIT
+                )
+                if child_title
+                else self._extract_first_words(segment_text, self.PREVIEW_WORD_LIMIT)
+            )
 
             main_name, sub_name, preview = self._sanitize_display_values(
-                main_name,
-                sub_name,
-                preview,
-                book_title,
-                book_author
+                main_name, sub_name, preview, book_title, book_author
             )
 
             preview = self._remove_duplicate_prefix(preview, main_name, sub_name)
@@ -782,7 +790,7 @@ class ConverterApplication:
                 separator = " - "
                 if idx_value == len(ordered_values) - 1 and value[:1].islower():
                     separator = " "
-                if value[:1] in {',', ';', ':', '.', '!', '?'}:
+                if value[:1] in {",", ";", ":", ".", "!", "?"}:
                     separator = " "
 
                 if separator == " ":
@@ -798,7 +806,7 @@ class ConverterApplication:
                     sub_title=sub_name,
                     preview=preview,
                     display_name=display_name,
-                    text_override=segment_text
+                    text_override=segment_text,
                 )
             )
 
@@ -823,12 +831,12 @@ class ConverterApplication:
 
             # Headings appear at line start - look for title after newline or at text start
             # Search in full text and find first match >= cursor to avoid ^ matching substring start
-            pattern = r'(^|\n)\s*' + re.escape(normalized) + r'\b'
+            pattern = r"(^|\n)\s*" + re.escape(normalized) + r"\b"
             idx = -1
             for match in re.finditer(pattern, lowered):
                 # Calculate actual position (skip newline if present, then skip whitespace)
-                temp_idx = match.start() + (1 if match.group(1) == '\n' else 0)
-                while temp_idx < len(lowered) and lowered[temp_idx] in ' \t':
+                temp_idx = match.start() + (1 if match.group(1) == "\n" else 0)
+                while temp_idx < len(lowered) and lowered[temp_idx] in " \t":
                     temp_idx += 1
 
                 # Use first match that comes at or after cursor
@@ -836,8 +844,8 @@ class ConverterApplication:
                     idx = temp_idx
                     break
 
-            if idx == -1 and normalized.startswith('§'):
-                section_marker = normalized.split(' ', 1)[0]
+            if idx == -1 and normalized.startswith("§"):
+                section_marker = normalized.split(" ", 1)[0]
                 idx = lowered.find(section_marker, cursor)
                 if idx == -1:
                     idx = lowered.find(section_marker)
@@ -868,9 +876,7 @@ class ConverterApplication:
         return segments
 
     def _apply_structure_to_reader(
-        self,
-        reader: EbookReader,
-        structure_items: List[ChapterStructureItem]
+        self, reader: EbookReader, structure_items: List[ChapterStructureItem]
     ) -> None:
         """Replace reader chapters with structured output for conversion"""
 
@@ -882,8 +888,8 @@ class ConverterApplication:
 
         for item in structure_items:
             chapter = item.chapter
-            formatting_segments = getattr(chapter, 'formatting_segments', None)
-            if getattr(chapter, 'footnotes', None):
+            formatting_segments = getattr(chapter, "formatting_segments", None)
+            if getattr(chapter, "footnotes", None):
                 formatting_segments = None
 
             # Determine text content and ensure headings are spoken
@@ -908,10 +914,10 @@ class ConverterApplication:
                     name=item.display_name,
                     source_path=chapter.source_path,
                     text=final_text,
-                    level=getattr(chapter, 'level', 1),
-                    raw_html=getattr(chapter, 'raw_html', None),
+                    level=getattr(chapter, "level", 1),
+                    raw_html=getattr(chapter, "raw_html", None),
                     formatting_segments=formatting_segments,
-                    footnotes=getattr(chapter, 'footnotes', None),
+                    footnotes=getattr(chapter, "footnotes", None),
                     speech_text=speech_text,
                 )
             )
@@ -954,21 +960,21 @@ class ConverterApplication:
         config: ConversionConfig,
         reader: EbookReader,
     ) -> List[ChapterStructureItem]:
-        footnote_mode = (getattr(config, 'footnote_mode', 'inline') or 'inline').lower()
+        footnote_mode = (getattr(config, "footnote_mode", "inline") or "inline").lower()
         if footnote_mode not in {"inline", "skip", "chapter_end"}:
             footnote_mode = "inline"
-        context_words = getattr(config, 'footnote_context_words', 8)
+        context_words = getattr(config, "footnote_context_words", 8)
         try:
             context_words = max(int(context_words), 0)
         except (TypeError, ValueError):
             context_words = 8
 
         processed_data: List[dict] = []
-        primary_language = getattr(config, 'primary_language', None) or self.localization.language
+        primary_language = getattr(config, "primary_language", None) or self.localization.language
         phrases = self._footnote_phrases(primary_language)
 
         def build_inline_replacements(footnotes_list: List[Dict[str, str]]) -> dict[str, str]:
-            if not footnotes_list or footnote_mode != 'inline':
+            if not footnotes_list or footnote_mode != "inline":
                 return {}
             prefix = phrases.get("prefix", "\n")
             template = phrases.get("template", "nota de rodapé {number}: {text}")
@@ -983,9 +989,13 @@ class ConverterApplication:
 
         for chapter_num, item in enumerate(items, 1):
             chapter = item.chapter
-            raw_html = getattr(chapter, 'raw_html', None)
-            chapter_footnotes = getattr(chapter, 'footnotes', None)
-            text_source = item.text_override if item.text_override is not None else getattr(chapter, 'text', '')
+            raw_html = getattr(chapter, "raw_html", None)
+            chapter_footnotes = getattr(chapter, "footnotes", None)
+            text_source = (
+                item.text_override
+                if item.text_override is not None
+                else getattr(chapter, "text", "")
+            )
             if item.text_override is not None:
                 raw_html = None
 
@@ -995,12 +1005,16 @@ class ConverterApplication:
 
             chapter_label = str(
                 item.display_name
-                or getattr(chapter, 'name', None)
+                or getattr(chapter, "name", None)
                 or (item.index if isinstance(item.index, str) else None)
                 or ""
             )
             # Mostrar número ordinal (1/179) + identificador estrutural (4.23)
-            index_display = f"{chapter_num}/{len(items)} [{item.index}]" if item.index else f"{chapter_num}/{len(items)}"
+            index_display = (
+                f"{chapter_num}/{len(items)} [{item.index}]"
+                if item.index
+                else f"{chapter_num}/{len(items)}"
+            )
             print(
                 self.localization.t(
                     "preprocess_chapter",
@@ -1016,7 +1030,9 @@ class ConverterApplication:
                     mode=footnote_mode,
                     context_words=context_words,
                 )
-                text_with_formatting, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+                text_with_formatting, formatting_segments = (
+                    TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+                )
                 updated_text = TextProcessor._render_footnotes(
                     text_with_formatting,
                     footnotes,
@@ -1026,7 +1042,7 @@ class ConverterApplication:
                 )
                 updated_text = TextProcessor.add_pause_before_dash(updated_text)
                 if footnotes:
-                    setattr(chapter, 'footnotes', list(footnotes))
+                    setattr(chapter, "footnotes", list(footnotes))
                 replacements = build_inline_replacements(footnotes or [])
                 if formatting_segments:
                     updated_segments: list[FormattingSegment] = []
@@ -1038,7 +1054,7 @@ class ConverterApplication:
                                 segment_text = segment_text.replace(marker, replacement)
                         elif markers:
                             for marker in markers:
-                                segment_text = segment_text.replace(marker, '')
+                                segment_text = segment_text.replace(marker, "")
                         updated_segments.append(
                             FormattingSegment(
                                 text=segment_text,
@@ -1051,10 +1067,12 @@ class ConverterApplication:
                     chapter.formatting_segments = None
             else:
                 footnotes = list(chapter_footnotes or [])
-                if footnote_mode == 'skip':
+                if footnote_mode == "skip":
                     updated_text = self._remove_inline_footnotes(text_source)
                 else:
-                    needs_render = '[[FOOTNOTE_' in text_source or '[[footnote_' in text_source.lower()
+                    needs_render = (
+                        "[[FOOTNOTE_" in text_source or "[[footnote_" in text_source.lower()
+                    )
                     if footnotes and needs_render:
                         updated_text = TextProcessor._render_footnotes(
                             text_source,
@@ -1065,7 +1083,7 @@ class ConverterApplication:
                         )
                     else:
                         updated_text = text_source
-                formatting_segments = getattr(chapter, 'formatting_segments', None)
+                formatting_segments = getattr(chapter, "formatting_segments", None)
                 replacements = build_inline_replacements(footnotes or [])
                 if formatting_segments:
                     updated_segments: list[FormattingSegment] = []
@@ -1077,7 +1095,7 @@ class ConverterApplication:
                                 segment_text = segment_text.replace(marker, replacement)
                         elif markers:
                             for marker in markers:
-                                segment_text = segment_text.replace(marker, '')
+                                segment_text = segment_text.replace(marker, "")
                         updated_segments.append(
                             FormattingSegment(
                                 text=segment_text,
@@ -1100,13 +1118,14 @@ class ConverterApplication:
 
             # Strip inline markdown for speech (remove *, _, etc.)
             processor = TextFormattingProcessor()
-            formatted_text = processor.apply_inline_formatting(final_text)
+            processor.apply_inline_formatting(final_text)
             speech_text = processor.strip_inline_markdown(final_text)
 
             # **NEW**: Aplicar detecção automática de idioma se habilitado
-            if getattr(config, 'use_language_detection', True):
+            if getattr(config, "use_language_detection", True):
                 try:
                     from src.language import LanguageMarkup
+
                     markup = LanguageMarkup()
                     speech_text = markup.annotate(speech_text, primary_language)
                 except (ImportError, Exception) as e:
@@ -1120,12 +1139,14 @@ class ConverterApplication:
             if not lines:
                 continue
 
-            processed_data.append({
-                "item": item,
-                "lines": lines,
-                "line_sigs": [self._text_signature(line) for line in lines],
-                "text": "\n".join(lines),
-            })
+            processed_data.append(
+                {
+                    "item": item,
+                    "lines": lines,
+                    "line_sigs": [self._text_signature(line) for line in lines],
+                    "text": "\n".join(lines),
+                }
+            )
 
         index_to_data: dict[str, dict] = {}
         for data in processed_data:
@@ -1136,9 +1157,9 @@ class ConverterApplication:
         children_map: dict[str, list[dict]] = {}
         for data in processed_data:
             index = getattr(data["item"], "index", None)
-            if not isinstance(index, str) or '.' not in index:
+            if not isinstance(index, str) or "." not in index:
                 continue
-            parent_index = index.rsplit('.', 1)[0]
+            parent_index = index.rsplit(".", 1)[0]
             parent_data = index_to_data.get(parent_index)
             if parent_data is None and parent_index:
                 parent_data = index_to_data.get(f"{parent_index}.0")
@@ -1154,12 +1175,7 @@ class ConverterApplication:
                 parent_data = index_to_data.get(f"{parent_index}.0")
             if not parent_data:
                 continue
-            child_signatures = {
-                sig
-                for child in child_list
-                for sig in child["line_sigs"]
-                if sig
-            }
+            child_signatures = {sig for child in child_list for sig in child["line_sigs"] if sig}
             parent_lines = parent_data["lines"]
             parent_sigs = parent_data["line_sigs"]
             new_lines = [
@@ -1182,7 +1198,9 @@ class ConverterApplication:
                     if False:  # Disabled to prevent content duplication
                         first_child_lines = prepended + first_child["lines"]
                         first_child["lines"] = first_child_lines
-                        first_child["line_sigs"] = [self._text_signature(line) for line in first_child_lines]
+                        first_child["line_sigs"] = [
+                            self._text_signature(line) for line in first_child_lines
+                        ]
                         first_child["text"] = "\n".join(first_child_lines)
                 # **FIXED**: Only skip parent if it has no remaining content after removing children content
                 if not new_lines:
@@ -1211,7 +1229,7 @@ class ConverterApplication:
 
             # **NEW**: Preserve chapters with .0 index (main chapters) even if small
             item = data["item"]
-            is_main_chapter = item.index.endswith('.0')
+            is_main_chapter = item.index.endswith(".0")
 
             # **NEW**: Skip length filter for main chapters to preserve all content
             if not is_main_chapter and len(text) < 20:
@@ -1226,11 +1244,10 @@ class ConverterApplication:
                 if text_signature == self._text_signature(item.display_name):
                     continue
 
-                name_parts = [part.strip() for part in item.display_name.split('-') if part.strip()]
+                name_parts = [part.strip() for part in item.display_name.split("-") if part.strip()]
                 trailing_part = name_parts[-1] if name_parts else item.display_name
-                if (
-                    len(lines) == 1
-                    and self._text_signature(lines[0]) == self._text_signature(trailing_part)
+                if len(lines) == 1 and self._text_signature(lines[0]) == self._text_signature(
+                    trailing_part
                 ):
                     continue
 
@@ -1263,17 +1280,20 @@ class ConverterApplication:
         if total_items <= max_items:
             sample_positions = list(range(total_items))
         else:
-            sample_positions = sorted({
-                round(i * (total_items - 1) / (max_items - 1))
-                for i in range(max_items)
-            })
+            sample_positions = sorted(
+                {round(i * (total_items - 1) / (max_items - 1)) for i in range(max_items)}
+            )
 
         for pos in sample_positions:
             if pos >= len(items):
                 continue
             item = items[pos]
-            source_text = item.text_override if item.text_override is not None else getattr(item.chapter, 'text', '')
-            if not source_text and getattr(item.chapter, 'raw_html', None):
+            source_text = (
+                item.text_override
+                if item.text_override is not None
+                else getattr(item.chapter, "text", "")
+            )
+            if not source_text and getattr(item.chapter, "raw_html", None):
                 source_text = TextProcessor.html_to_plain_text(item.chapter.raw_html)
             if source_text and len(source_text.strip()) > 10:  # Ignorar textos muito pequenos
                 sample_texts.append(source_text)
@@ -1285,7 +1305,9 @@ class ConverterApplication:
                     break
 
         if verbose:
-            print(f"🔍 [VERBOSE] Idioma: analisados {items_checked} capítulos, {total_chars} caracteres")
+            print(
+                f"🔍 [VERBOSE] Idioma: analisados {items_checked} capítulos, {total_chars} caracteres"
+            )
 
         ascii_ratio = self._ascii_ratio(sample_texts)
         language_votes = self._collect_language_votes(sample_texts)
@@ -1333,7 +1355,7 @@ class ConverterApplication:
     def _normalise_lang_code(code: Optional[str]) -> str:
         if not code:
             return ""
-        return code.split('-', 1)[0].lower()
+        return code.split("-", 1)[0].lower()
 
     def _rebalance_language_profile(
         self,
@@ -1347,7 +1369,8 @@ class ConverterApplication:
         top_prediction = profile.predictions[0]
         top_code = self._normalise_lang_code(top_prediction.code)
         en_prediction = next(
-            (pred for pred in profile.predictions if self._normalise_lang_code(pred.code) == "en"), None
+            (pred for pred in profile.predictions if self._normalise_lang_code(pred.code) == "en"),
+            None,
         )
 
         if (
@@ -1357,8 +1380,7 @@ class ConverterApplication:
             and (top_prediction.probability - en_prediction.probability) <= 0.22
         ):
             languages = ["en"] + [
-                lang for lang in profile.languages
-                if self._normalise_lang_code(lang) != "en"
+                lang for lang in profile.languages if self._normalise_lang_code(lang) != "en"
             ]
             return LanguageProfile(
                 primary="en",
@@ -1373,7 +1395,8 @@ class ConverterApplication:
             normalized_primary = self._normalise_lang_code(profile.primary)
             if vote_ratio >= 0.55 and best_code and normalized_primary != best_code:
                 languages = [best_code] + [
-                    lang for lang in profile.languages
+                    lang
+                    for lang in profile.languages
                     if self._normalise_lang_code(lang) != best_code
                 ]
                 return LanguageProfile(
@@ -1386,7 +1409,9 @@ class ConverterApplication:
 
     def _prompt_for_languages(self, reader: EbookReader) -> List[str]:
         default_language = self._infer_language_from_metadata(reader)
-        fallback_language = default_language or ("pt" if self.localization.language == "pt" else "en")
+        fallback_language = default_language or (
+            "pt" if self.localization.language == "pt" else "en"
+        )
 
         if not self._interactive_mode or not sys.stdin.isatty():
             return [fallback_language]
@@ -1399,7 +1424,7 @@ class ConverterApplication:
         if not raw.strip():
             return [fallback_language]
 
-        languages = [self._normalise_language_code(part) for part in raw.split(',')]
+        languages = [self._normalise_language_code(part) for part in raw.split(",")]
         languages = [lang for lang in languages if lang]
         if not languages:
             languages = [fallback_language]
@@ -1420,13 +1445,18 @@ class ConverterApplication:
         clean = raw.strip().lower()
         if not clean:
             return ""
-        return clean.split('-', 1)[0]
+        return clean.split("-", 1)[0]
 
     def _apply_language_preferences(self, config: ConversionConfig) -> None:
         profile = self.language_profile
         fallback_lang = self.localization.language or "pt"
         if profile is None:
-            profile = LanguageProfile(primary=config.primary_language, languages=[config.primary_language], predictions=[], analysed_chars=0)
+            profile = LanguageProfile(
+                primary=config.primary_language,
+                languages=[config.primary_language],
+                predictions=[],
+                analysed_chars=0,
+            )
         elif not profile.is_confident:
             profile = LanguageProfile(
                 primary=fallback_lang,
@@ -1439,18 +1469,29 @@ class ConverterApplication:
         if not languages and profile.primary and profile.primary not in {"unknown", "auto"}:
             languages = [profile.primary]
         if not languages:
-            languages = [config.primary_language] if config.primary_language and config.primary_language != "auto" else []
+            languages = (
+                [config.primary_language]
+                if config.primary_language and config.primary_language != "auto"
+                else []
+            )
 
         primary_language = profile.primary if profile.primary not in {None, "", "unknown"} else None
         if not primary_language and languages:
             primary_language = languages[0]
         if not primary_language or primary_language in {"", "unknown"}:
-            primary_language = config.primary_language if config.primary_language not in {None, "", "auto"} else "auto"
+            primary_language = (
+                config.primary_language
+                if config.primary_language not in {None, "", "auto"}
+                else "auto"
+            )
 
         config.primary_language = primary_language or "auto"
-        config.languages = languages or ([config.primary_language] if config.primary_language not in {None, "auto"} else [])
+        config.languages = languages or (
+            [config.primary_language] if config.primary_language not in {None, "auto"} else []
+        )
 
         voice_auto_raw = config.extra.get("voice_auto", False)
+
         def _to_bool(value) -> bool:
             if isinstance(value, bool):
                 return value
@@ -1462,6 +1503,7 @@ class ConverterApplication:
             if text in {"0", "false", "no", "off"}:
                 return False
             return bool(text)
+
         voice_auto = _to_bool(voice_auto_raw)
         if primary_language and (not config.voice or voice_auto):
             suggested_voice = self.config.voice_configs.get_voice(config.engine, primary_language)
@@ -1476,7 +1518,8 @@ class ConverterApplication:
 
         language_voice_map = self.config.voice_configs.build_language_voice_map(
             config.engine,
-            config.languages or ([config.primary_language] if config.primary_language not in {None, "auto"} else []),
+            config.languages
+            or ([config.primary_language] if config.primary_language not in {None, "auto"} else []),
             config.voice,
             primary_language=config.primary_language,
         )
@@ -1489,7 +1532,9 @@ class ConverterApplication:
             else:
                 fallback = fallback_lang if fallback_lang not in {"", "unknown"} else None
                 config.primary_language = fallback or "auto"
-                config.languages = [config.primary_language] if config.primary_language not in {"", "auto"} else []
+                config.languages = (
+                    [config.primary_language] if config.primary_language not in {"", "auto"} else []
+                )
             config.language_voices = {}
 
     @staticmethod
@@ -1547,7 +1592,9 @@ class ConverterApplication:
             return True
         return False
 
-    def _prepare_chapter_text(self, raw_text: str, *, display_name: str, book_title: Optional[str]) -> str:
+    def _prepare_chapter_text(
+        self, raw_text: str, *, display_name: str, book_title: Optional[str]
+    ) -> str:
         """Normalise chapter text to ensure parity between cache and audio."""
         text = raw_text or ""
         text = text.replace("\r\n", "\n").replace("\r", "\n")
@@ -1606,17 +1653,20 @@ class ConverterApplication:
         candidate_norm = ConverterApplication._normalize_lookup(candidate)
         if not value_norm or not candidate_norm:
             return False
-        return value_norm != candidate_norm and (value_norm in candidate_norm or candidate_norm in value_norm)
+        return value_norm != candidate_norm and (
+            value_norm in candidate_norm or candidate_norm in value_norm
+        )
 
     @staticmethod
     def _text_signature(text: str) -> str:
         if not text:
             return ""
         import re
+
         return re.sub(r"\s+", " ", text).strip().lower()
 
     def _footnote_phrases(self, language: Optional[str]) -> Dict[str, str]:
-        lang = (language or "").split('-', 1)[0].lower()
+        lang = (language or "").split("-", 1)[0].lower()
         if lang != "en" and lang != "pt":
             lang = "pt"
         if lang == "en":
@@ -1701,10 +1751,11 @@ class ConverterApplication:
     def _handle_clear_cache(self) -> int:
         """Handle global cache clearing command"""
         from src.cache_manager import CacheManager
+
         cache_manager = CacheManager(cache_dir=resolve_cache_root())
 
         cache_info = cache_manager.get_cache_info()
-        if cache_info['total_cached_books'] == 0:
+        if cache_info["total_cached_books"] == 0:
             print("📁 Nenhum cache encontrado.")
             return 0
 
@@ -1735,13 +1786,11 @@ class ConverterApplication:
         if not value:
             return ""
         normalised = unicodedata.normalize("NFKD", value)
-        stripped = ''.join(ch for ch in normalised if not unicodedata.combining(ch))
+        stripped = "".join(ch for ch in normalised if not unicodedata.combining(ch))
         return stripped.lower().strip()
 
     def _filter_structure_selection(
-        self,
-        items: List[ChapterStructureItem],
-        selectors: Optional[List[str]]
+        self, items: List[ChapterStructureItem], selectors: Optional[List[str]]
     ) -> Tuple[List[ChapterStructureItem], bool]:
         if not selectors:
             return items, False
@@ -1760,9 +1809,11 @@ class ConverterApplication:
         for item in items:
             index_str = str(item.index)
             index_norm = self._normalize_lookup(index_str)
-            base_index_norm = self._normalize_lookup(index_str.split('.', 1)[0]) if index_str else ""
+            base_index_norm = (
+                self._normalize_lookup(index_str.split(".", 1)[0]) if index_str else ""
+            )
             display_norm = self._normalize_lookup(item.display_name)
-            chapter_name_norm = self._normalize_lookup(getattr(item.chapter, 'name', ''))
+            chapter_name_norm = self._normalize_lookup(getattr(item.chapter, "name", ""))
 
             matched_selector = False
             for selector in normalised_selectors:
@@ -1799,7 +1850,11 @@ class ConverterApplication:
         if not matched:
             selector_preview = ", ".join(selectors)
             available = ", ".join(str(item.index) for item in items[:10])
-            print(self.localization.t("selectors_not_found", selectors=selector_preview, available=available))
+            print(
+                self.localization.t(
+                    "selectors_not_found", selectors=selector_preview, available=available
+                )
+            )
             return [], True
 
         return matched, True
@@ -1834,34 +1889,38 @@ class ConverterApplication:
 
         # If correction was needed, restore original without deduplication
         if was_corrected:
-            print(f"✅ Restaurando {duplicates_removed} capítulo(s) - usando versão sem deduplicação\n")
+            print(
+                f"✅ Restaurando {duplicates_removed} capítulo(s) - usando versão sem deduplicação\n"
+            )
             structure_items = original_items
 
         print(f"{self.localization.t('chapters_label')}: {len(structure_items)}")
 
         # **Salvar cache txt** ao mostrar estrutura
         from src.cache_manager import CacheManager
+
         cache_manager = CacheManager(cache_dir=self.cache_root)
 
         chapters_data = {
-            'title': reader.title or 'Livro',
-            'author': reader.author or 'Desconhecido',
-            'chapters': []
+            "title": reader.title or "Livro",
+            "author": reader.author or "Desconhecido",
+            "chapters": [],
         }
 
         for item in structure_items:
             cleaned_text = str(item.text_override or "")
             text_length = len(cleaned_text)
-            print(self.localization.t("structure_item_entry", name=item.display_name, chars=text_length))
+            print(
+                self.localization.t(
+                    "structure_item_entry", name=item.display_name, chars=text_length
+                )
+            )
 
             # Adicionar capítulo ao cache data
-            chapters_data['chapters'].append({
-                'title': item.display_name,
-                'text': cleaned_text
-            })
+            chapters_data["chapters"].append({"title": item.display_name, "text": cleaned_text})
 
         # Salvar no cache
-        if hasattr(reader, 'file_path') and reader.file_path:
+        if hasattr(reader, "file_path") and reader.file_path:
             success = cache_manager.save_chapters_to_cache(reader.file_path, chapters_data)
             if success:
                 # **CORRIGIDO**: Não usar override_name para evitar pastas duplicadas
@@ -1874,7 +1933,7 @@ class ConverterApplication:
         self,
         chapters: List[Chapter],
         index: int,
-        toc_map: Dict[str, List[Tuple[int, str, Optional[str]]]]
+        toc_map: Dict[str, List[Tuple[int, str, Optional[str]]]],
     ) -> bool:
         """Heuristically skip duplicate heading fragments that lack TOC links"""
 
@@ -1882,11 +1941,11 @@ class ConverterApplication:
             return True
 
         chapter = chapters[index]
-        href_key = self._normalize_href(str(getattr(chapter, 'source_path', '')))
+        href_key = self._normalize_href(str(getattr(chapter, "source_path", "")))
         if self._resolve_toc_entries(href_key, toc_map):
             return False
 
-        text = str(getattr(chapter, 'text', '')).strip()
+        text = str(getattr(chapter, "text", "")).strip()
         if not text:
             return True
 
@@ -1896,11 +1955,11 @@ class ConverterApplication:
         if len(text) <= 12:
             return True
 
-        source_path = str(getattr(chapter, 'source_path', '')).lower()
+        source_path = str(getattr(chapter, "source_path", "")).lower()
         if "_split_000" in source_path and len(text) < 400:
             return True
 
-        clean_name = self._clean_chapter_name(str(getattr(chapter, 'name', '')))
+        clean_name = self._clean_chapter_name(str(getattr(chapter, "name", "")))
 
         if len(text) <= 120:
             if self._is_heading_like(clean_name):
@@ -1908,14 +1967,16 @@ class ConverterApplication:
 
             next_chapter = chapters[index + 1] if index + 1 < len(chapters) else None
             if next_chapter:
-                next_key = self._normalize_href(str(getattr(next_chapter, 'source_path', '')))
+                next_key = self._normalize_href(str(getattr(next_chapter, "source_path", "")))
                 if self._resolve_toc_entries(next_key, toc_map):
-                    next_name = self._clean_chapter_name(str(getattr(next_chapter, 'name', '')))
+                    next_name = self._clean_chapter_name(str(getattr(next_chapter, "name", "")))
                     if next_name:
                         stem_current = self._heading_stem(clean_name)
                         stem_next = self._heading_stem(next_name)
-                        if stem_current and stem_next and (
-                            stem_current in stem_next or stem_next in stem_current
+                        if (
+                            stem_current
+                            and stem_next
+                            and (stem_current in stem_next or stem_next in stem_current)
                         ):
                             return True
 
@@ -1958,9 +2019,11 @@ class ConverterApplication:
         lowered = re.sub(r"\s+", " ", lowered)
         return lowered.strip()
 
-    def _build_toc_map(self, reader: EbookReader) -> Dict[str, List[Tuple[int, str, Optional[str]]]]:
+    def _build_toc_map(
+        self, reader: EbookReader
+    ) -> Dict[str, List[Tuple[int, str, Optional[str]]]]:
         mapping: Dict[str, List[Tuple[int, str, Optional[str]]]] = {}
-        get_toc = getattr(reader, 'get_toc', None)
+        get_toc = getattr(reader, "get_toc", None)
         if not callable(get_toc):
             return mapping
 
@@ -1975,7 +2038,7 @@ class ConverterApplication:
             nonlocal counter
             for entry in entries:
                 href = self._normalize_href(entry.href)
-                title = entry.title.strip() if entry.title else ''
+                title = entry.title.strip() if entry.title else ""
                 if parent is None:
                     counter += 1
                     division_index = counter
@@ -1985,7 +2048,9 @@ class ConverterApplication:
                         alt_key = Path(href).name
                         if alt_key and alt_key != href:
                             alt_key_lower = alt_key.lower()
-                            mapping.setdefault(alt_key_lower, []).append((division_index, division_title, None))
+                            mapping.setdefault(alt_key_lower, []).append(
+                                (division_index, division_title, None)
+                            )
                     walk(entry.children, (division_index, division_title))
                 else:
                     division_index, division_title = parent
@@ -1994,14 +2059,18 @@ class ConverterApplication:
                         alt_key = Path(href).name
                         if alt_key and alt_key != href:
                             alt_key_lower = alt_key.lower()
-                            mapping.setdefault(alt_key_lower, []).append((division_index, division_title, title))
+                            mapping.setdefault(alt_key_lower, []).append(
+                                (division_index, division_title, title)
+                            )
                     walk(entry.children, parent)
 
         walk(toc_entries)
         return mapping
 
     @staticmethod
-    def _select_toc_entry(entries: Optional[List[Tuple[int, str, Optional[str]]]]) -> Optional[Tuple[int, str, Optional[str]]]:
+    def _select_toc_entry(
+        entries: Optional[List[Tuple[int, str, Optional[str]]]],
+    ) -> Optional[Tuple[int, str, Optional[str]]]:
         if not entries:
             return None
         for entry in entries:
@@ -2013,16 +2082,14 @@ class ConverterApplication:
     def _normalize_href(href: str) -> str:
         if not href:
             return ""
-        base = href.split('#', 1)[0]
-        normalized = base.lstrip('./')
+        base = href.split("#", 1)[0]
+        normalized = base.lstrip("./")
         normalized = normalized.strip()
         normalized = unquote(normalized)
         return normalized.lower()
 
     def _resolve_toc_entries(
-        self,
-        href_key: str,
-        toc_map: Dict[str, List[Tuple[int, str, Optional[str]]]]
+        self, href_key: str, toc_map: Dict[str, List[Tuple[int, str, Optional[str]]]]
     ) -> Optional[List[Tuple[int, str, Optional[str]]]]:
         if not href_key:
             return None
@@ -2031,10 +2098,10 @@ class ConverterApplication:
         lowered = href_key.lower()
         candidates.append(lowered)
 
-        if '/' in lowered:
-            parts = lowered.split('/')
+        if "/" in lowered:
+            parts = lowered.split("/")
             for start in range(1, len(parts)):
-                candidates.append('/'.join(parts[start:]))
+                candidates.append("/".join(parts[start:]))
 
         candidates.append(Path(lowered).name)
 
@@ -2055,6 +2122,7 @@ class ConverterApplication:
             return ""
 
         import re
+
         # Remove redundant patterns like "0.7 -  - Livro primeiro - livro primeiro DUNA"
         # Split by " - " and remove empty parts and redundant parts
         parts = [part.strip() for part in name.split(" - ") if part.strip()]
@@ -2064,12 +2132,12 @@ class ConverterApplication:
 
         for part in parts:
             # Skip parts that look like indices (e.g., "0.7", "1.0")
-            if re.match(r'^\d+\.\d+$', part):
+            if re.match(r"^\d+\.\d+$", part):
                 continue
             # Skip empty or very short parts (but allow single characters for important parts)
             if len(part) == 0:
                 continue
-            if len(part) == 1 and part in ['@', '#', '*', '-']:
+            if len(part) == 1 and part in ["@", "#", "*", "-"]:
                 continue
             # Skip parts that are duplicates (case-insensitive)
             part_lower = part.lower()
@@ -2083,7 +2151,7 @@ class ConverterApplication:
         # Remove specific redundancies like "Livro primeiro - livro primeiro DUNA"
         if "Livro primeiro" in result and "livro primeiro" in result.lower():
             # Keep only the properly capitalized version
-            result = re.sub(r' - livro primeiro.*?$', '', result, flags=re.IGNORECASE)
+            result = re.sub(r" - livro primeiro.*?$", "", result, flags=re.IGNORECASE)
 
         return result
 
@@ -2093,18 +2161,19 @@ class ConverterApplication:
             return False
 
         import re
+
         name_lower = name.lower()
 
         # Look for book divisions
         division_patterns = [
-            r'livro\s+(primeiro|segundo|terceiro|quarto|quinto)',
-            r'livro\s+[ivx]+',
-            r'book\s+(first|second|third|fourth|fifth)',
-            r'book\s+[ivx]+',
-            r'parte\s+[ivx\d]+',
-            r'seção\s+[ivx\d]+',
-            r'capítulo\s+\d+',  # Capítulo 1, 2, etc.
-            r'chapter\s+\d+',   # Chapter 1, 2, etc.
+            r"livro\s+(primeiro|segundo|terceiro|quarto|quinto)",
+            r"livro\s+[ivx]+",
+            r"book\s+(first|second|third|fourth|fifth)",
+            r"book\s+[ivx]+",
+            r"parte\s+[ivx\d]+",
+            r"seção\s+[ivx\d]+",
+            r"capítulo\s+\d+",  # Capítulo 1, 2, etc.
+            r"chapter\s+\d+",  # Chapter 1, 2, etc.
         ]
 
         for pattern in division_patterns:
@@ -2119,6 +2188,7 @@ class ConverterApplication:
             return name
 
         import re
+
         # For "Livro primeiro - livro primeiro DUNA", keep just "Livro primeiro"
         parts = [part.strip() for part in name.split(" - ") if part.strip()]
 
@@ -2126,8 +2196,9 @@ class ConverterApplication:
         best_part = ""
         for part in parts:
             part_lower = part.lower()
-            if (re.search(r'livro\s+(primeiro|segundo|terceiro)', part_lower) or
-                re.search(r'capítulo\s+\d+', part_lower)):
+            if re.search(r"livro\s+(primeiro|segundo|terceiro)", part_lower) or re.search(
+                r"capítulo\s+\d+", part_lower
+            ):
                 # Prefer the capitalized version
                 if part[0].isupper():
                     best_part = part
@@ -2155,14 +2226,14 @@ class ConverterApplication:
         return " - ".join(filtered_parts) if filtered_parts else chapter_name
 
     def _is_division_candidate(self, chapter, chapters, index) -> bool:
-        text = str(getattr(chapter, 'text', '')).strip()
+        text = str(getattr(chapter, "text", "")).strip()
         if index < 3:
             return False
         if len(text) > 400:
             return False
         if index + 1 >= len(chapters):
             return False
-        next_text = str(getattr(chapters[index + 1], 'text', '')).strip()
+        next_text = str(getattr(chapters[index + 1], "text", "")).strip()
         return len(next_text) > 1500
 
     def _is_substantial_chapter(self, text: str) -> bool:
@@ -2222,23 +2293,27 @@ class ConverterApplication:
             return ""
 
         import re
-        # Remove language tags [[lang:xx]] and [[/lang]] before extracting words
-        clean_text = re.sub(r'\[\[lang:[a-zA-Z\-]+\]\]', '', text, flags=re.IGNORECASE)
-        clean_text = re.sub(r'\[\[/lang\]\]', '', clean_text, flags=re.IGNORECASE)
-        clean_text = re.sub(r'\s+', ' ', clean_text.strip())
-        words = clean_text.split()[:max_words]
-        return ' '.join(words)
 
-    def _extract_smart_first_words(self, text: str, clean_name: str, main_div_name: str, max_words: int = 15) -> str:
+        # Remove language tags [[lang:xx]] and [[/lang]] before extracting words
+        clean_text = re.sub(r"\[\[lang:[a-zA-Z\-]+\]\]", "", text, flags=re.IGNORECASE)
+        clean_text = re.sub(r"\[\[/lang\]\]", "", clean_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r"\s+", " ", clean_text.strip())
+        words = clean_text.split()[:max_words]
+        return " ".join(words)
+
+    def _extract_smart_first_words(
+        self, text: str, clean_name: str, main_div_name: str, max_words: int = 15
+    ) -> str:
         """Extract first words avoiding repetition of chapter/section titles"""
         if not text or not text.strip():
             return ""
 
         import re
+
         # Remove language tags [[lang:xx]] and [[/lang]] before extracting words
-        clean_text = re.sub(r'\[\[lang:[a-zA-Z\-]+\]\]', '', text, flags=re.IGNORECASE)
-        clean_text = re.sub(r'\[\[/lang\]\]', '', clean_text, flags=re.IGNORECASE)
-        clean_text = re.sub(r'\s+', ' ', clean_text.strip())
+        clean_text = re.sub(r"\[\[lang:[a-zA-Z\-]+\]\]", "", text, flags=re.IGNORECASE)
+        clean_text = re.sub(r"\[\[/lang\]\]", "", clean_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r"\s+", " ", clean_text.strip())
 
         # Remove common patterns that repeat the title information
         patterns_to_remove = []
@@ -2251,17 +2326,17 @@ class ConverterApplication:
             # Extract key parts of the clean name for removal
             if "§" in clean_name:
                 # For sections like "§1 Introdução", remove both "introdução" and section references
-                section_parts = clean_name.split(' ')
+                section_parts = clean_name.split(" ")
                 for part in section_parts:
                     if len(part) > 3 and part not in ["§1", "§2", "§3", "§4", "§5"]:
                         patterns_to_remove.append(re.escape(part.lower()))
 
             if "Capítulo" in clean_name:
                 # Remove "capítulo X" references
-                patterns_to_remove.append(r'capítulo\s+\d+')
+                patterns_to_remove.append(r"capítulo\s+\d+")
 
         # Always strip generic "capitulo X" patterns from previews
-        patterns_to_remove.append(r'cap[íi]tulo\s+\d+')
+        patterns_to_remove.append(r"cap[íi]tulo\s+\d+")
 
         # Add patterns based on main_div_name
         if main_div_name:
@@ -2271,10 +2346,10 @@ class ConverterApplication:
         text_lower = clean_text.lower()
         for pattern in patterns_to_remove:
             if pattern:
-                text_lower = re.sub(pattern, '', text_lower, flags=re.IGNORECASE)
+                text_lower = re.sub(pattern, "", text_lower, flags=re.IGNORECASE)
 
         # Clean up extra spaces and get the result
-        text_lower = re.sub(r'\s+', ' ', text_lower.strip())
+        text_lower = re.sub(r"\s+", " ", text_lower.strip())
 
         # If we removed too much, fall back to original approach
         if len(text_lower.strip()) < 10:
@@ -2282,7 +2357,7 @@ class ConverterApplication:
 
         # Extract words from cleaned text
         words = text_lower.split()[:max_words]
-        result = ' '.join(words)
+        result = " ".join(words)
 
         # Capitalize first letter
         if result:
@@ -2292,9 +2367,9 @@ class ConverterApplication:
 
     def _display_ebook_metadata(self, reader: EbookReader) -> None:
         """Display ebook metadata at application startup."""
-        print("="*60)
+        print("=" * 60)
         print("📚 METADADOS DO EBOOK")
-        print("="*60)
+        print("=" * 60)
 
         # Basic metadata
         print(f"📜 Título: {reader.title or 'N/A'}")
@@ -2323,10 +2398,10 @@ class ConverterApplication:
             toc_items = list(reader.get_toc())
             if toc_items:
                 print(f"🗺 Índice: {len(toc_items)} entradas")
-        except:
+        except Exception:
             pass
 
-        print("="*60)
+        print("=" * 60)
         print()
 
     def _update_metadata_display_language(self) -> None:
@@ -2336,12 +2411,16 @@ class ConverterApplication:
             print("-" * 30)
             if self.language_profile.primary:
                 confidence = "Alta" if self.language_profile.is_confident else "Baixa"
-                print(f"🌐 Idioma principal: {self.language_profile.primary} (confiança: {confidence})")
+                print(
+                    f"🌐 Idioma principal: {self.language_profile.primary} (confiança: {confidence})"
+                )
                 if len(self.language_profile.predictions) > 0:
                     best_prediction = self.language_profile.predictions[0]
                     print(f"   Probabilidade: {best_prediction.probability:.1%}")
                 if len(self.language_profile.languages) > 1:
-                    other_langs = ", ".join(self.language_profile.languages[1:3])  # Show up to 2 more
+                    other_langs = ", ".join(
+                        self.language_profile.languages[1:3]
+                    )  # Show up to 2 more
                     print(f"🌍 Idiomas secundários: {other_langs}")
             print(f"🔍 Caracteres analisados: {self.language_profile.analysed_chars:,}")
             print()
@@ -2394,12 +2473,14 @@ class ConverterApplication:
             if not phrase_clean:
                 continue
 
-            pattern = rf'^{re.escape(phrase_clean)}[\s\-–—,:;]*'
-            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+            pattern = rf"^{re.escape(phrase_clean)}[\s\-–—,:;]*"
+            cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
 
         return cleaned.strip(" -—–,:;!?\"'()[]{}")
 
-    def _sanitize_display_values(self, main_name, sub_name, first_words, book_title, book_author=None):
+    def _sanitize_display_values(
+        self, main_name, sub_name, first_words, book_title, book_author=None
+    ):
         """Clean display values to avoid repeating the book title or duplicates"""
 
         book_title_clean = (book_title or "").strip()
@@ -2481,6 +2562,7 @@ class ConverterApplication:
             return None
 
         import re
+
         cleaned = preview.strip()
         for ref in references:
             if not ref:
@@ -2491,19 +2573,19 @@ class ConverterApplication:
 
             # Remove exact matches at start
             if cleaned.lower().startswith(ref_clean.lower()):
-                cleaned = cleaned[len(ref_clean):].strip(" -–—,:;")
+                cleaned = cleaned[len(ref_clean) :].strip(" -–—,:;")
 
             # Remove partial word matches too
             ref_words = ref_clean.lower().split()
             for word in ref_words:
                 if len(word) > 3:  # Only for significant words
-                    pattern = r'\b' + re.escape(word) + r'\b'
-                    cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE).strip()
+                    pattern = r"\b" + re.escape(word) + r"\b"
+                    cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE).strip()
 
         # Clean up multiple spaces and separators
-        cleaned = re.sub(r'[-–—,:;\s]+', ' ', cleaned).strip()
+        cleaned = re.sub(r"[-–—,:;\s]+", " ", cleaned).strip()
 
-        cleaned = re.sub(r'^(?:\d+\s+){1,3}', '', cleaned).strip()
+        cleaned = re.sub(r"^(?:\d+\s+){1,3}", "", cleaned).strip()
 
         return cleaned or None
 
@@ -2513,11 +2595,13 @@ class ConverterApplication:
         except (ValueError, IndexError):
             return None
 
-    def _format_chapter_display(self, chapter, chapters, current_index, book_title, book_author=None):
+    def _format_chapter_display(
+        self, chapter, chapters, current_index, book_title, book_author=None
+    ):
         """Format chapter display generically without book-specific rules"""
 
-        text = str(getattr(chapter, 'text', ""))
-        name = str(getattr(chapter, 'name', "")).strip()
+        text = str(getattr(chapter, "text", ""))
+        name = str(getattr(chapter, "name", "")).strip()
 
         if len(text.strip()) < 5 and not name:
             return None
@@ -2527,11 +2611,7 @@ class ConverterApplication:
         preview = self._extract_first_words(text, self.PREVIEW_WORD_LIMIT)
 
         main_name, sub_name, preview = self._sanitize_display_values(
-            clean_name,
-            None,
-            preview,
-            book_title,
-            book_author
+            clean_name, None, preview, book_title, book_author
         )
 
         label = self._detect_section_label(clean_name, text, current_index)
@@ -2553,26 +2633,39 @@ class ConverterApplication:
         lower_text = (text or "").lower()
 
         if position <= 5:
-            if any(keyword in lower_name or keyword in lower_text for keyword in ('sumário', 'sumario')):
+            if any(
+                keyword in lower_name or keyword in lower_text for keyword in ("sumário", "sumario")
+            ):
                 labels = []
-                if 'sumário' in lower_name or 'sumario' in lower_name or 'sumário' in lower_text or 'sumario' in lower_text:
-                    labels.append('Sumário')
-                if 'capa' in lower_name or 'capa' in lower_text:
-                    labels.append('Capa')
-                if 'folha de rosto' in lower_name or 'folha de rosto' in lower_text:
-                    labels.append('Folha de rosto')
-                return '/'.join(labels) if labels else 'Sumário'
-            if any(keyword in lower_name for keyword in ('introdu', 'prefácio')) or \
-               any(keyword in lower_text for keyword in ('introdu', 'prefácio')) or \
-               (len(lower_text) > 800 and 'capítulo' not in lower_text and 'dedic' not in lower_text):
-                return 'Introdução'
-            if 'dedic' in lower_name or 'dedic' in lower_text:
-                return 'Dedicatória'
+                if (
+                    "sumário" in lower_name
+                    or "sumario" in lower_name
+                    or "sumário" in lower_text
+                    or "sumario" in lower_text
+                ):
+                    labels.append("Sumário")
+                if "capa" in lower_name or "capa" in lower_text:
+                    labels.append("Capa")
+                if "folha de rosto" in lower_name or "folha de rosto" in lower_text:
+                    labels.append("Folha de rosto")
+                return "/".join(labels) if labels else "Sumário"
+            if (
+                any(keyword in lower_name for keyword in ("introdu", "prefácio"))
+                or any(keyword in lower_text for keyword in ("introdu", "prefácio"))
+                or (
+                    len(lower_text) > 800
+                    and "capítulo" not in lower_text
+                    and "dedic" not in lower_text
+                )
+            ):
+                return "Introdução"
+            if "dedic" in lower_name or "dedic" in lower_text:
+                return "Dedicatória"
 
         return None
 
     def _format_index_value(self, chapter, position):
-        raw_index = getattr(chapter, 'index', None)
+        raw_index = getattr(chapter, "index", None)
         if isinstance(raw_index, str) and raw_index.strip():
             return raw_index.strip()
         if isinstance(raw_index, (int, float)):
@@ -2598,14 +2691,24 @@ class ConverterApplication:
                 config.footnote_mode = self._resolve_footnote_mode(args)
                 config.footnote_context_words = self.FOOTNOTE_CONTEXT_WORDS
                 self._apply_language_preferences(config)
-                cues_enabled = formatting_cues_pref if formatting_cues_pref is not None else getattr(config, "speak_formatting_cues", True)
+                cues_enabled = (
+                    formatting_cues_pref
+                    if formatting_cues_pref is not None
+                    else getattr(config, "speak_formatting_cues", True)
+                )
                 config.speak_formatting_cues = bool(cues_enabled)
                 config.formatting_locale = self.localization.language
+                apply_benchmark_profile(config.engine, config=config)
+                if getattr(args, "no_parallel", False):
+                    config.edge_enable_parallel = False
             return config
         config = self._create_config_from_args(args, reader)
         self._apply_language_preferences(config)
+        apply_benchmark_profile(config.engine, config=config)
+        if getattr(args, "no_parallel", False):
+            config.edge_enable_parallel = False
         return config
-    
+
     def _create_config_from_args(self, args: argparse.Namespace, reader: EbookReader):
         """Create config from command line arguments"""
         verbose = self._resolve_verbose(args)
@@ -2617,15 +2720,15 @@ class ConverterApplication:
             model=args.model,
             output_dir=args.output_dir or str(Path.cwd() / "output"),
             book_title=reader.title,
-            preserve_all_chapters=not getattr(args, 'filter_chapters', False),
+            preserve_all_chapters=not getattr(args, "filter_chapters", False),
             use_simple_converter=False,
-            listen=getattr(args, 'listen', False),
-            cache_dir=getattr(args, 'cache_dir', None),
-            clear_cache=getattr(args, 'clear_cache', False),
+            listen=getattr(args, "listen", False),
+            cache_dir=getattr(args, "cache_dir", None),
+            clear_cache=getattr(args, "clear_cache", False),
             footnote_mode=self._resolve_footnote_mode(args),
             footnote_context_words=self.FOOTNOTE_CONTEXT_WORDS,
             verbose=verbose,
-            priority_selectors=getattr(args, 'priority', []) or [],
+            priority_selectors=getattr(args, "priority", []) or [],
             speak_formatting_cues=cues_enabled,
             formatting_locale=self.localization.language,
         )
@@ -2703,6 +2806,12 @@ def _add_conversion_arguments(
         help="Play each chapter immediately after conversion",
     )
     parser.add_argument(
+        "--no-parallel",
+        dest="no_parallel",
+        action="store_true",
+        help="Disable chapter/segment parallelism (1 chapter at a time)",
+    )
+    parser.add_argument(
         "--no-footnote",
         action="store_true",
         help="Skip footnotes entirely",
@@ -2765,17 +2874,12 @@ def _add_conversion_arguments(
             help="Use interactive menu instead of CLI defaults",
         )
 
-    # Remover configuração de `completer` para evitar erros
-    # Comentado pois `completer` não é reconhecido na classe `Action`
-    # if FilesCompleter is not None:
-    #     input_arg.completer = FilesCompleter()
-    # else:
-    #     print("⚠️ 'FilesCompleter' não está disponível. Certifique-se de que o módulo 'argcomplete' está instalado.")
+    # Configure tab completion (argcomplete adds 'completer' attribute dynamically)
+    if FilesCompleter is not None:
+        input_arg.completer = FilesCompleter(allowednames=(".epub", ".pdf"))  # type: ignore
 
-    # if ChoicesCompleter is not None:
-    #     engine_arg.completer = ChoicesCompleter(engine_arg.choices)
-    # else:
-    #     print("⚠️ 'ChoicesCompleter' não está disponível. Certifique-se de que o módulo 'argcomplete' está instalado.")
+    if ChoicesCompleter is not None:
+        engine_arg.completer = ChoicesCompleter(engine_arg.choices)  # type: ignore
 
     def _parse_leading_number(raw_index: str) -> Optional[int]:
         try:
@@ -2829,7 +2933,7 @@ def main() -> int:
     parser = create_argument_parser()
 
     if argcomplete is not None:
-        argcomplete.autocomplete(parser)  # Enables shell tab completion when available 
+        argcomplete.autocomplete(parser)  # Enables shell tab completion when available
 
     argv = sys.argv[1:]
     if not argv:

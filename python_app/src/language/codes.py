@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-
 LANGUAGE_TO_BCP47 = {
     "pt": "pt-BR",
     "en": "en-US",
@@ -33,4 +32,3 @@ def ensure_bcp47(language: str | None) -> str:
 
 
 __all__ = ["ensure_bcp47"]
-

@@ -4,13 +4,14 @@ Sistema de detecção e marcação de formatação de texto para diferenciação
 """
 
 import re
-from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
+from typing import List, Optional, Sequence
 
 
 @dataclass
 class FormattingSegment:
     """Segmento de texto com formatação específica"""
+
     text: str
     formatting: str  # 'normal', 'italic', 'bold', 'emphasis', 'strong', etc.
     language: Optional[str] = None
@@ -22,80 +23,85 @@ class TextFormattingProcessor:
     FORMAT_MARKER_RE = re.compile(r"\[\[fmt:[^\]]+\]\]|\[\[/fmt\]\]", re.IGNORECASE)
 
     # Regexes pré-compiladas para strip_inline_markdown (otimização de performance)
-    _BOLD_ASTERISK_RE = re.compile(r'\*\*\s*(.+?)\s*\*\*', re.DOTALL)
-    _BOLD_UNDERSCORE_RE = re.compile(r'__\s*(.+?)\s*__', re.DOTALL)
-    _ITALIC_UNDERSCORE_RE = re.compile(r'_\s*([^_]+?)\s*_')
-    _CODE_RE = re.compile(r'`([^`]+?)`')
-    _LOOSE_ASTERISKS_RE = re.compile(r'\*+')
-    _LOOSE_UNDERSCORES_RE = re.compile(r'_+')
-    _MULTI_SPACES_RE = re.compile(r'[ \t]{2,}')
-    _MULTI_NEWLINES_RE = re.compile(r'\n{3,}')
+    _BOLD_ASTERISK_RE = re.compile(r"\*\*\s*(.+?)\s*\*\*", re.DOTALL)
+    _BOLD_UNDERSCORE_RE = re.compile(r"__\s*(.+?)\s*__", re.DOTALL)
+    _ITALIC_UNDERSCORE_RE = re.compile(r"_\s*([^_]+?)\s*_")
+    _CODE_RE = re.compile(r"`([^`]+?)`")
+    _LOOSE_ASTERISKS_RE = re.compile(r"\*+")
+    _LOOSE_UNDERSCORES_RE = re.compile(r"_+")
+    _MULTI_SPACES_RE = re.compile(r"[ \t]{2,}")
+    _MULTI_NEWLINES_RE = re.compile(r"\n{3,}")
+
     def process_markup_tags(self, text: str) -> str:
         """Process markup tags from LanguageMarkup into formatting markers"""
         if not text:
             return text
 
         # Convert emphasis tags to formatting markers
-        text = re.sub(r'\[\[emphasis:mild\]\](.*?)\[\[/emphasis\]\]', r'[[fmt:italic]]\1[[/fmt]]', text)
-        text = re.sub(r'\[\[emphasis:strong\]\](.*?)\[\[/emphasis\]\]', r'[[fmt:bold]]\1[[/fmt]]', text)
+        text = re.sub(
+            r"\[\[emphasis:mild\]\](.*?)\[\[/emphasis\]\]", r"[[fmt:italic]]\1[[/fmt]]", text
+        )
+        text = re.sub(
+            r"\[\[emphasis:strong\]\](.*?)\[\[/emphasis\]\]", r"[[fmt:bold]]\1[[/fmt]]", text
+        )
 
         # Convert pause tags to SSML pauses (keep as-is for now)
-        text = re.sub(r'\[\[pause:short\]\]', '<break time="300ms"/>', text)
-        text = re.sub(r'\[\[pause:medium\]\]', '<break time="600ms"/>', text)
-        text = re.sub(r'\[\[pause:long\]\]', '<break time="1s"/>', text)
+        text = re.sub(r"\[\[pause:short\]\]", '<break time="300ms"/>', text)
+        text = re.sub(r"\[\[pause:medium\]\]", '<break time="600ms"/>', text)
+        text = re.sub(r"\[\[pause:long\]\]", '<break time="1s"/>', text)
 
         # Convert tone tags to prosody
-        text = re.sub(r'\[\[tone:lower\]\](.*?)\[\[/tone\]\]', r'[[fmt:lower]]\1[[/fmt]]', text)
+        text = re.sub(r"\[\[tone:lower\]\](.*?)\[\[/tone\]\]", r"[[fmt:lower]]\1[[/fmt]]", text)
 
         return text
 
     # Padrões HTML/EPUB comuns para formatação
     FORMATTING_PATTERNS = {
-        'italic': [
-            r'<i\b[^>]*>(.*?)</i>',
-            r'<em\b[^>]*>(.*?)</em>',
-            r'<cite\b[^>]*>(.*?)</cite>',
+        "italic": [
+            r"<i\b[^>]*>(.*?)</i>",
+            r"<em\b[^>]*>(.*?)</em>",
+            r"<cite\b[^>]*>(.*?)</cite>",
         ],
-        'bold': [
-            r'<b\b[^>]*>(.*?)</b>',
-            r'<strong\b[^>]*>(.*?)</strong>',
+        "bold": [
+            r"<b\b[^>]*>(.*?)</b>",
+            r"<strong\b[^>]*>(.*?)</strong>",
         ],
-        'emphasis': [
-            r'<emphasis\b[^>]*>(.*?)</emphasis>',
+        "emphasis": [
+            r"<emphasis\b[^>]*>(.*?)</emphasis>",
         ],
-        'code': [
-            r'<code\b[^>]*>(.*?)</code>',
-            r'<tt\b[^>]*>(.*?)</tt>',
+        "code": [
+            r"<code\b[^>]*>(.*?)</code>",
+            r"<tt\b[^>]*>(.*?)</tt>",
         ],
-        'quote': [
-            r'<blockquote\b[^>]*>(.*?)</blockquote>',
-            r'<q\b[^>]*>(.*?)</q>',
+        "quote": [
+            r"<blockquote\b[^>]*>(.*?)</blockquote>",
+            r"<q\b[^>]*>(.*?)</q>",
         ],
-        'small': [
-            r'<small\b[^>]*>(.*?)</small>',
-            r'<sub\b[^>]*>(.*?)</sub>',
-            r'<sup\b[^>]*>(.*?)</sup>',
-        ]
+        "small": [
+            r"<small\b[^>]*>(.*?)</small>",
+            r"<sub\b[^>]*>(.*?)</sub>",
+            r"<sup\b[^>]*>(.*?)</sup>",
+        ],
     }
 
     # Marcadores internos para preservar formatação
     INTERNAL_MARKERS = {
-        'italic': '[[fmt:italic]]{}[[/fmt]]',
-        'bold': '[[fmt:bold]]{}[[/fmt]]',
-        'emphasis': '[[fmt:emphasis]]{}[[/fmt]]',
-        'code': '[[fmt:code]]{}[[/fmt]]',
-        'quote': '[[fmt:quote]]{}[[/fmt]]',
-        'small': '[[fmt:small]]{}[[/fmt]]',
+        "italic": "[[fmt:italic]]{}[[/fmt]]",
+        "bold": "[[fmt:bold]]{}[[/fmt]]",
+        "emphasis": "[[fmt:emphasis]]{}[[/fmt]]",
+        "code": "[[fmt:code]]{}[[/fmt]]",
+        "quote": "[[fmt:quote]]{}[[/fmt]]",
+        "small": "[[fmt:small]]{}[[/fmt]]",
     }
 
     INLINE_RENDERERS = {
-        'italic': lambda value: f"_{value}_",
-        'bold': lambda value: f"**{value}**",
-        'emphasis': lambda value: f"_{value}_",
-        'code': lambda value: f"`{value}`",
-        'quote': lambda value: f'“{value}”',
-        'small': lambda value: value,
-        'lower': lambda value: value,
+        "italic": lambda value: f"_{value}_",
+        "bold": lambda value: f"**{value}**",
+        "emphasis": lambda value: f"_{value}_",
+        "code": lambda value: f"`{value}`",
+        "quote": lambda value: f"“{value}”",
+        "small": lambda value: value,
+        "lower": lambda value: value,
     }
 
     DEFAULT_CUE_LOCALE = "pt"
@@ -118,6 +124,13 @@ class TextFormattingProcessor:
             "small": ("small text", "end small text"),
         },
     }
+
+    FOOTNOTE_END_PHRASES = (
+        "fim da nota de rodapé",
+        "fim da nota de rodape",
+        "end of footnote",
+        "end footnote",
+    )
 
     def __init__(self, *, cues_enabled: bool = True, cue_locale: str = DEFAULT_CUE_LOCALE):
         self.compiled_patterns = {}
@@ -147,10 +160,11 @@ class TextFormattingProcessor:
             marker_template = self.INTERNAL_MARKERS[fmt_type]
 
             for pattern in patterns:
+
                 def replace_with_marker(match):
                     content = match.group(1)
                     # Remover tags HTML internas mas preservar conteúdo
-                    clean_content = re.sub(r'<[^>]+>', '', content)
+                    clean_content = re.sub(r"<[^>]+>", "", content)
                     return marker_template.format(clean_content)
 
                 text = pattern.sub(replace_with_marker, text)
@@ -168,7 +182,7 @@ class TextFormattingProcessor:
         segments = []
 
         # Padrão para encontrar marcadores internos
-        marker_pattern = re.compile(r'\[\[fmt:(\w+)\]\](.*?)\[\[/fmt\]\]', re.DOTALL)
+        marker_pattern = re.compile(r"\[\[fmt:(\w+)\]\](.*?)\[\[/fmt\]\]", re.DOTALL)
 
         last_end = 0
 
@@ -179,7 +193,7 @@ class TextFormattingProcessor:
             if start > last_end:
                 normal_text = text[last_end:start].strip()
                 if normal_text:
-                    segments.append(FormattingSegment(normal_text, 'normal'))
+                    segments.append(FormattingSegment(normal_text, "normal"))
 
             # Adicionar texto formatado
             fmt_type = match.group(1)
@@ -193,15 +207,17 @@ class TextFormattingProcessor:
         if last_end < len(text):
             remaining_text = text[last_end:].strip()
             if remaining_text:
-                segments.append(FormattingSegment(remaining_text, 'normal'))
+                segments.append(FormattingSegment(remaining_text, "normal"))
 
         # Se não há formatação, retornar texto completo como normal
         if not segments and text.strip():
-            segments.append(FormattingSegment(text.strip(), 'normal'))
+            segments.append(FormattingSegment(text.strip(), "normal"))
 
         return segments
 
-    def to_edge_ssml(self, segments: List[FormattingSegment], voice: str = "pt-BR-ThalitaMultilingualNeural") -> str:
+    def to_edge_ssml(
+        self, segments: List[FormattingSegment], voice: str = "pt-BR-ThalitaMultilingualNeural"
+    ) -> str:
         """Converte segmentos formatados para SSML do Edge TTS"""
         if not segments:
             return ""
@@ -214,66 +230,66 @@ class TextFormattingProcessor:
         for segment in segments:
             text = self._escape_ssml(segment.text)
 
-            if segment.formatting == 'italic':
+            if segment.formatting == "italic":
                 # Itálico: tom mais alto, mais lento e volume reduzido para destacar
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<prosody rate="-20%" pitch="+15%" volume="-5%">{text}</prosody>'
-                    f'</voice>'
+                    f"</voice>"
                 )
-            elif segment.formatting == 'bold':
+            elif segment.formatting == "bold":
                 # Negrito: mais forte e um pouco mais lento
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<prosody volume="+20%" rate="-5%">{text}</prosody>'
-                    f'</voice>'
+                    f"</voice>"
                 )
-            elif segment.formatting == 'emphasis':
+            elif segment.formatting == "emphasis":
                 # Ênfase: pausa antes e depois, tom diferente
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<break time="200ms"/>'
                     f'<prosody rate="-15%" pitch="+10%">{text}</prosody>'
                     f'<break time="200ms"/>'
-                    f'</voice>'
+                    f"</voice>"
                 )
-            elif segment.formatting == 'code':
+            elif segment.formatting == "code":
                 # Código: mais monótono e pausado
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<break time="100ms"/>'
                     f'<prosody rate="-30%" pitch="-5%">{text}</prosody>'
                     f'<break time="100ms"/>'
-                    f'</voice>'
+                    f"</voice>"
                 )
-            elif segment.formatting == 'quote':
+            elif segment.formatting == "quote":
                 # Citação: pausa e tom diferente
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<break time="300ms"/>'
                     f'<prosody rate="-10%" pitch="-10%">{text}</prosody>'
                     f'<break time="300ms"/>'
-                    f'</voice>'
+                    f"</voice>"
                 )
-            elif segment.formatting == 'small':
+            elif segment.formatting == "small":
                 # Texto pequeno: mais rápido e baixo
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<prosody rate="+10%" volume="-10%">{text}</prosody>'
-                    f'</voice>'
+                    f"</voice>"
                 )
-            elif segment.formatting == 'lower':
+            elif segment.formatting == "lower":
                 # Tom mais baixo (para parênteses)
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<prosody pitch="-15%" volume="-5%">{text}</prosody>'
-                    f'</voice>'
+                    f"</voice>"
                 )
             else:  # normal
                 ssml_parts.append(f'<voice name="{voice}">{text}</voice>')
 
-        ssml_parts.append('</speak>')
-        return ''.join(ssml_parts)
+        ssml_parts.append("</speak>")
+        return "".join(ssml_parts)
 
     def _get_cue_phrases(self, fmt_type: str) -> tuple[str, str]:
         locale_map = self.CUE_LABELS.get(self.cue_locale) or self.CUE_LABELS["en"]
@@ -288,7 +304,7 @@ class TextFormattingProcessor:
         parts.append(text.strip())
         if end:
             parts.append(end.strip())
-        return ' '.join(part for part in parts if part)
+        return " ".join(part for part in parts if part)
 
     def to_plain_text_with_cues(self, segments: List[FormattingSegment]) -> str:
         """Converte para texto simples com indicações verbais de formatação"""
@@ -296,21 +312,21 @@ class TextFormattingProcessor:
             return ""
 
         if not self.cues_enabled:
-            return ' '.join(segment.text for segment in segments if segment.text)
+            return " ".join(segment.text for segment in segments if segment.text)
 
         parts = []
 
         for segment in segments:
             text = segment.text
 
-            if segment.formatting in {'italic', 'bold', 'emphasis', 'code', 'quote', 'small'}:
+            if segment.formatting in {"italic", "bold", "emphasis", "code", "quote", "small"}:
                 start, end = self._get_cue_phrases(segment.formatting)
                 formatted = self._render_with_cues(start, text, end)
                 parts.append(formatted)
             else:  # normal
                 parts.append(text)
 
-        return ' '.join(parts)
+        return " ".join(parts)
 
     def to_plain_text_with_pauses(self, segments: List[FormattingSegment]) -> str:
         """Converte para texto simples com pausas para indicar formatação"""
@@ -322,16 +338,16 @@ class TextFormattingProcessor:
         for segment in segments:
             text = segment.text
 
-            if segment.formatting in ['italic', 'emphasis']:
+            if segment.formatting in ["italic", "emphasis"]:
                 parts.append(f"... {text} ...")
-            elif segment.formatting == 'bold':
+            elif segment.formatting == "bold":
                 parts.append(f"-- {text} --")
-            elif segment.formatting == 'quote':
+            elif segment.formatting == "quote":
                 parts.append(f'"" {text} ""')
             else:  # normal, code, small
                 parts.append(text)
 
-        return ' '.join(parts)
+        return " ".join(parts)
 
     def apply_inline_formatting(self, text: str) -> str:
         """Substitui marcadores internos por tokens de ênfase inline."""
@@ -374,18 +390,18 @@ class TextFormattingProcessor:
         cleaned = cls.remove_formatting_markers(text)
 
         # Remove Markdown usando regexes pré-compiladas
-        cleaned = cls._BOLD_ASTERISK_RE.sub(r'\1', cleaned)     # **texto**
-        cleaned = cls._BOLD_UNDERSCORE_RE.sub(r'\1', cleaned)   # __texto__
-        cleaned = cls._ITALIC_UNDERSCORE_RE.sub(r'\1', cleaned) # _texto_
-        cleaned = cls._CODE_RE.sub(r'\1', cleaned)               # `código`
+        cleaned = cls._BOLD_ASTERISK_RE.sub(r"\1", cleaned)  # **texto**
+        cleaned = cls._BOLD_UNDERSCORE_RE.sub(r"\1", cleaned)  # __texto__
+        cleaned = cls._ITALIC_UNDERSCORE_RE.sub(r"\1", cleaned)  # _texto_
+        cleaned = cls._CODE_RE.sub(r"\1", cleaned)  # `código`
 
         # Limpar asteriscos e underscores soltos
-        cleaned = cls._LOOSE_ASTERISKS_RE.sub('', cleaned)
-        cleaned = cls._LOOSE_UNDERSCORES_RE.sub('', cleaned)
+        cleaned = cls._LOOSE_ASTERISKS_RE.sub("", cleaned)
+        cleaned = cls._LOOSE_UNDERSCORES_RE.sub("", cleaned)
 
         # Normalizar espaços
-        cleaned = cls._MULTI_SPACES_RE.sub(' ', cleaned)
-        cleaned = cls._MULTI_NEWLINES_RE.sub('\n\n', cleaned)
+        cleaned = cls._MULTI_SPACES_RE.sub(" ", cleaned)
+        cleaned = cls._MULTI_NEWLINES_RE.sub("\n\n", cleaned)
 
         return cleaned.strip()
 
@@ -416,7 +432,57 @@ class TextFormattingProcessor:
             return self.clean_tts_text(text)
 
         audible = self.to_plain_text_with_cues(segments)
+        audible = self._inject_pause_markers(audible)
         return self.clean_tts_text(audible)
+
+    def _inject_pause_markers(self, text: str) -> str:
+        if not text:
+            return ""
+
+        end_cues = self._collect_end_cues()
+        text = self._append_pause_after_phrases(text, end_cues, pause_token=".")
+        text = self._append_pause_after_phrases(text, self.FOOTNOTE_END_PHRASES, pause_token="...")
+        text = self._append_pause_after_line_breaks(text)
+        return text
+
+    def _collect_end_cues(self) -> List[str]:
+        cues: set[str] = set()
+        locale_map = self.CUE_LABELS.get(self.cue_locale) or self.CUE_LABELS["en"]
+        fallback_map = self.CUE_LABELS["en"]
+        for _, end in locale_map.values():
+            if end:
+                cues.add(end)
+        for _, end in fallback_map.values():
+            if end:
+                cues.add(end)
+        return sorted(cues)
+
+    @staticmethod
+    def _append_pause_after_phrases(text: str, phrases: Sequence[str], *, pause_token: str) -> str:
+        if not text or not phrases:
+            return text
+
+        escaped = [re.escape(phrase) for phrase in phrases if phrase]
+        if not escaped:
+            return text
+
+        pattern = re.compile(r"(?i)\b(" + "|".join(escaped) + r")\b(?!\s*[.!?,;:\)\]\}])")
+        return pattern.sub(rf"\1{pause_token} ", text)
+
+    @staticmethod
+    def _append_pause_after_line_breaks(text: str) -> str:
+        if not text:
+            return ""
+
+        def replace(match: re.Match) -> str:
+            last_char = match.group(1)
+            breaks = match.group(2)
+            if last_char in ".!?;:":
+                return f"{last_char}{breaks}"
+            pause = "..." if breaks.count("\n") > 1 else "."
+            return f"{last_char}{pause}{breaks}"
+
+        return re.sub(r"([^\s\n])([ \t]*\n+)", replace, text)
 
     def _add_inline_emphasis_markers(self, text: str) -> str:
         """
@@ -436,23 +502,23 @@ class TextFormattingProcessor:
         def add_quote_marker(match):
             content = match.group(1)
             # Não marcar se já tem marcador interno
-            if '[[fmt:' in content:
+            if "[[fmt:" in content:
                 return match.group(0)
-            return f'[[fmt:quote]]{content}[[/fmt]]'
+            return f"[[fmt:quote]]{content}[[/fmt]]"
 
         text = quote_pattern.sub(add_quote_marker, text)
 
         # Detectar travessão de diálogo (— ou --) no início de parágrafo/linha
         # Adiciona ênfase para diferenciar narração de diálogo
-        dash_pattern = re.compile(r'^(—|--)\s*(.+?)$', re.MULTILINE)
+        dash_pattern = re.compile(r"^(—|--)\s*(.+?)$", re.MULTILINE)
 
         def add_dash_emphasis(match):
             dash = match.group(1)
             content = match.group(2)
             # Não marcar se já tem marcador
-            if '[[fmt:' in content:
+            if "[[fmt:" in content:
                 return match.group(0)
-            return f'{dash} [[fmt:emphasis]]{content}[[/fmt]]'
+            return f"{dash} [[fmt:emphasis]]{content}[[/fmt]]"
 
         text = dash_pattern.sub(add_dash_emphasis, text)
 
@@ -464,11 +530,11 @@ class TextFormattingProcessor:
             return ""
 
         # Escapar caracteres XML/SSML
-        text = text.replace('&', '&amp;')
-        text = text.replace('<', '&lt;')
-        text = text.replace('>', '&gt;')
-        text = text.replace('"', '&quot;')
-        text = text.replace("'", '&apos;')
+        text = text.replace("&", "&amp;")
+        text = text.replace("<", "&lt;")
+        text = text.replace(">", "&gt;")
+        text = text.replace('"', "&quot;")
+        text = text.replace("'", "&apos;")
 
         return text
 
@@ -485,7 +551,17 @@ class TextFormattingProcessor:
             return html_text
 
         # Tags estruturais que devem ser ignoradas (não adicionar [[lang:]])
-        structural_tags = {'html', 'body', 'head', 'article', 'section', 'header', 'footer', 'main', 'nav'}
+        structural_tags = {
+            "html",
+            "body",
+            "head",
+            "article",
+            "section",
+            "header",
+            "footer",
+            "main",
+            "nav",
+        }
 
         # Processar múltiplas vezes para capturar tags aninhadas
         # Começar das mais internas (menor distância entre abertura e fechamento)
@@ -495,7 +571,7 @@ class TextFormattingProcessor:
             # Captura: <tag lang="xx" ...> conteúdo </tag>
             lang_pattern = re.compile(
                 r'<(\w+)\s+([^>]*?)(?:lang|xml:lang)=["\']([a-zA-Z\-]+)["\']([^>]*?)>(.*?)</\1>',
-                re.IGNORECASE | re.DOTALL
+                re.IGNORECASE | re.DOTALL,
             )
 
             match = lang_pattern.search(html_text)
@@ -513,26 +589,26 @@ class TextFormattingProcessor:
                 # Remover apenas o atributo lang, mas não adicionar [[lang:]]
                 attrs = (attrs_before + attrs_after).strip()
                 if attrs:
-                    new_tag = f'<{tag_name} {attrs}>'
+                    new_tag = f"<{tag_name} {attrs}>"
                 else:
-                    new_tag = f'<{tag_name}>'
+                    new_tag = f"<{tag_name}>"
 
-                replacement = f'{new_tag}{content}</{tag_name}>'
-                html_text = html_text[:match.start()] + replacement + html_text[match.end():]
+                replacement = f"{new_tag}{content}</{tag_name}>"
+                html_text = html_text[: match.start()] + replacement + html_text[match.end() :]
                 continue
 
             # Remover atributo lang e reconstruir tag sem ele
             attrs = (attrs_before + attrs_after).strip()
             if attrs:
-                new_tag = f'<{tag_name} {attrs}>'
+                new_tag = f"<{tag_name} {attrs}>"
             else:
-                new_tag = f'<{tag_name}>'
+                new_tag = f"<{tag_name}>"
 
             # Adicionar marcadores de idioma em torno do conteúdo
-            replacement = f'{new_tag}[[lang:{lang_code}]]{content}[[/lang]]</{tag_name}>'
+            replacement = f"{new_tag}[[lang:{lang_code}]]{content}[[/lang]]</{tag_name}>"
 
             # Substituir apenas a primeira ocorrência (mais interna)
-            html_text = html_text[:match.start()] + replacement + html_text[match.end():]
+            html_text = html_text[: match.start()] + replacement + html_text[match.end() :]
 
         return html_text
 
@@ -545,10 +621,10 @@ class TextFormattingProcessor:
         text_with_markers = self.extract_formatting(text)
 
         # Remover tags HTML restantes
-        clean_text = re.sub(r'<[^>]+>', '', text_with_markers)
+        clean_text = re.sub(r"<[^>]+>", "", text_with_markers)
 
         # Limpar espaços múltiplos
-        clean_text = re.sub(r'\s+', ' ', clean_text)
+        clean_text = re.sub(r"\s+", " ", clean_text)
 
         return clean_text.strip()
 

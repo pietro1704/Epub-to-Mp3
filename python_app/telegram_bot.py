@@ -5,40 +5,36 @@ Bot de Telegram para conversão de EPUB/PDF para Audiobook MP3.
 Interface intuitiva para usuários não-técnicos com todas as funcionalidades do CLI.
 """
 
-import asyncio
 import logging
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
 
 from telegram import (
-    Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    ReplyKeyboardMarkup,
     ReplyKeyboardRemove,
+    Update,
 )
 from telegram.ext import (
     Application,
-    CommandHandler,
-    MessageHandler,
     CallbackQueryHandler,
-    ConversationHandler,
+    CommandHandler,
     ContextTypes,
+    ConversationHandler,
+    MessageHandler,
     filters,
 )
 
 # Importar módulos do conversor
 sys.path.insert(0, str(Path(__file__).parent))
 from src.config import ConversionConfig, VoiceConfigProvider
-from src.ebook_reader import EbookReader
 from src.converter import AudioConverter
+from src.ebook_reader import EbookReader
 
 # Configurar logging
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
@@ -53,12 +49,12 @@ logger = logging.getLogger(__name__)
 ) = range(6)
 
 # User data keys
-USER_FILE = 'file_path'
-USER_ENGINE = 'engine'
-USER_VOICE = 'voice'
-USER_MODEL = 'model'
-USER_OPTIONS = 'options'
-USER_CHAPTERS = 'chapters'
+USER_FILE = "file_path"
+USER_ENGINE = "engine"
+USER_VOICE = "voice"
+USER_MODEL = "model"
+USER_OPTIONS = "options"
+USER_CHAPTERS = "chapters"
 
 
 class TelegramBot:
@@ -88,10 +84,7 @@ class TelegramBot:
             "/help - Ajuda detalhada\n\n"
             "📎 *Envie seu arquivo para começar!*"
         )
-        await update.message.reply_text(
-            welcome_text,
-            parse_mode='Markdown'
-        )
+        await update.message.reply_text(welcome_text, parse_mode="Markdown")
         return WAITING_FILE
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -115,7 +108,7 @@ class TelegramBot:
             "• PDF (.pdf)\n\n"
             "Envie /start para começar!"
         )
-        await update.message.reply_text(help_text, parse_mode='Markdown')
+        await update.message.reply_text(help_text, parse_mode="Markdown")
 
     async def cancel_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Handler para /cancel - cancelar operação."""
@@ -129,7 +122,7 @@ class TelegramBot:
 
         await update.message.reply_text(
             "❌ Operação cancelada. Envie /start para começar novamente.",
-            reply_markup=ReplyKeyboardRemove()
+            reply_markup=ReplyKeyboardRemove(),
         )
         return ConversationHandler.END
 
@@ -143,7 +136,7 @@ class TelegramBot:
 
         # Verificar extensão
         file_name = document.file_name.lower()
-        if not (file_name.endswith('.epub') or file_name.endswith('.pdf')):
+        if not (file_name.endswith(".epub") or file_name.endswith(".pdf")):
             await update.message.reply_text(
                 "❌ Formato não suportado. Envie arquivos .epub ou .pdf"
             )
@@ -160,15 +153,14 @@ class TelegramBot:
 
             context.user_data[USER_FILE] = str(file_path)
             context.user_data[USER_OPTIONS] = {
-                'footnote_mode': 'inline',
-                'chapters': 'all',
-                'parallel': 1
+                "footnote_mode": "inline",
+                "chapters": "all",
+                "parallel": 1,
             }
 
             await update.message.reply_text(
-                f"✅ Arquivo recebido: *{document.file_name}*\n\n"
-                "Escolha o motor de voz:",
-                parse_mode='Markdown'
+                f"✅ Arquivo recebido: *{document.file_name}*\n\nEscolha o motor de voz:",
+                parse_mode="Markdown",
             )
 
             return await self.show_engine_selection(update, context)
@@ -176,12 +168,13 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Erro ao baixar arquivo: {e}")
             await update.message.reply_text(
-                f"❌ Erro ao processar arquivo: {str(e)}\n"
-                "Tente novamente."
+                f"❌ Erro ao processar arquivo: {str(e)}\nTente novamente."
             )
             return WAITING_FILE
 
-    async def show_engine_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def show_engine_selection(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
         """Mostrar seleção de engine TTS."""
         keyboard = [
             [InlineKeyboardButton("🌐 Edge-TTS (Online, Rápido)", callback_data="engine_edge")],
@@ -197,18 +190,18 @@ class TelegramBot:
                 "• *Coqui*: Alta qualidade, local\n"
                 "• *Piper*: Rápido e leve",
                 reply_markup=reply_markup,
-                parse_mode='Markdown'
+                parse_mode="Markdown",
             )
         else:
             await update.message.reply_text(
-                "🎙️ *Escolha o Motor de Voz:*",
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                "🎙️ *Escolha o Motor de Voz:*", reply_markup=reply_markup, parse_mode="Markdown"
             )
 
         return SELECT_ENGINE
 
-    async def handle_engine_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def handle_engine_selection(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
         """Handler para seleção de engine."""
         query = update.callback_query
         await query.answer()
@@ -220,43 +213,50 @@ class TelegramBot:
 
     async def show_voice_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Mostrar seleção de voz baseada no engine."""
-        engine = context.user_data.get(USER_ENGINE, 'edge')
+        engine = context.user_data.get(USER_ENGINE, "edge")
 
         keyboard = []
 
-        if engine == 'edge':
-            voices = self.voice_provider.edge_voices
-            keyboard.append([InlineKeyboardButton(
-                "🎤 Thalita (Recomendada)",
-                callback_data="voice_pt-BR-ThalitaMultilingualNeural"
-            )])
-            keyboard.append([InlineKeyboardButton(
-                "👨 Antonio",
-                callback_data="voice_pt-BR-AntonioNeural"
-            )])
-            keyboard.append([InlineKeyboardButton(
-                "🌍 Guy (English)",
-                callback_data="voice_en-US-GuyNeural"
-            )])
+        if engine == "edge":
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        "🎤 Thalita (Recomendada)",
+                        callback_data="voice_pt-BR-ThalitaMultilingualNeural",
+                    )
+                ]
+            )
+            keyboard.append(
+                [InlineKeyboardButton("👨 Antonio", callback_data="voice_pt-BR-AntonioNeural")]
+            )
+            keyboard.append(
+                [InlineKeyboardButton("🌍 Guy (English)", callback_data="voice_en-US-GuyNeural")]
+            )
 
-        elif engine == 'coqui':
-            keyboard.append([InlineKeyboardButton(
-                "🌟 XTTS v2 (Melhor qualidade)",
-                callback_data="model_tts_models/multilingual/multi-dataset/xtts_v2"
-            )])
-            keyboard.append([InlineKeyboardButton(
-                "⚡ VITS PT-BR (Rápido)",
-                callback_data="model_tts_models/pt/cv/vits"
-            )])
+        elif engine == "coqui":
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        "🌟 XTTS v2 (Melhor qualidade)",
+                        callback_data="model_tts_models/multilingual/multi-dataset/xtts_v2",
+                    )
+                ]
+            )
+            keyboard.append(
+                [
+                    InlineKeyboardButton(
+                        "⚡ VITS PT-BR (Rápido)", callback_data="model_tts_models/pt/cv/vits"
+                    )
+                ]
+            )
 
-        elif engine == 'piper':
+        elif engine == "piper":
             models = self.voice_provider.get_piper_models()
             if models:
                 for name, info in list(models.items())[:3]:
-                    keyboard.append([InlineKeyboardButton(
-                        f"🎵 {name}",
-                        callback_data=f"piper_{info['path']}"
-                    )])
+                    keyboard.append(
+                        [InlineKeyboardButton(f"🎵 {name}", callback_data=f"piper_{info['path']}")]
+                    )
             else:
                 await update.callback_query.edit_message_text(
                     "❌ Nenhum modelo Piper encontrado.\n"
@@ -272,20 +272,20 @@ class TelegramBot:
         await update.callback_query.edit_message_text(
             f"🗣️ *Escolha a Voz ({engine.upper()}):*",
             reply_markup=reply_markup,
-            parse_mode='Markdown'
+            parse_mode="Markdown",
         )
 
         return SELECT_VOICE
 
-    async def handle_voice_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def handle_voice_selection(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
         """Handler para seleção de voz."""
         query = update.callback_query
         await query.answer()
 
         if query.data == "back_to_engine":
             return await self.show_engine_selection(update, context)
-
-        engine = context.user_data.get(USER_ENGINE)
 
         if query.data.startswith("voice_"):
             context.user_data[USER_VOICE] = query.data.replace("voice_", "")
@@ -301,39 +301,27 @@ class TelegramBot:
         options = context.user_data.get(USER_OPTIONS, {})
 
         footnote_text = {
-            'inline': 'Durante o texto',
-            'chapter_end': 'Fim do capítulo',
-            'skip': 'Ignorar'
-        }.get(options.get('footnote_mode', 'inline'))
+            "inline": "Durante o texto",
+            "chapter_end": "Fim do capítulo",
+            "skip": "Ignorar",
+        }.get(options.get("footnote_mode", "inline"))
 
-        chapters_text = options.get('chapters', 'all')
-        if chapters_text == 'all':
-            chapters_text = 'Todos'
+        chapters_text = options.get("chapters", "all")
+        if chapters_text == "all":
+            chapters_text = "Todos"
 
         keyboard = [
-            [InlineKeyboardButton(
-                f"📝 Notas: {footnote_text}",
-                callback_data="opt_footnotes"
-            )],
-            [InlineKeyboardButton(
-                f"📖 Capítulos: {chapters_text}",
-                callback_data="opt_chapters"
-            )],
-            [InlineKeyboardButton(
-                "🔄 Limpar cache",
-                callback_data="opt_clear_cache"
-            )],
-            [InlineKeyboardButton(
-                "✅ Iniciar Conversão",
-                callback_data="start_conversion"
-            )],
+            [InlineKeyboardButton(f"📝 Notas: {footnote_text}", callback_data="opt_footnotes")],
+            [InlineKeyboardButton(f"📖 Capítulos: {chapters_text}", callback_data="opt_chapters")],
+            [InlineKeyboardButton("🔄 Limpar cache", callback_data="opt_clear_cache")],
+            [InlineKeyboardButton("✅ Iniciar Conversão", callback_data="start_conversion")],
             [InlineKeyboardButton("⬅️ Voltar", callback_data="back_to_voice")],
         ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        engine = context.user_data.get(USER_ENGINE, 'edge')
-        voice = context.user_data.get(USER_VOICE) or context.user_data.get(USER_MODEL, 'padrão')
+        engine = context.user_data.get(USER_ENGINE, "edge")
+        voice = context.user_data.get(USER_VOICE) or context.user_data.get(USER_MODEL, "padrão")
 
         message_text = (
             f"⚙️ *Configurações:*\n\n"
@@ -347,15 +335,11 @@ class TelegramBot:
         # Check if this is from a callback query or regular message
         if update.callback_query:
             await update.callback_query.edit_message_text(
-                message_text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                message_text, reply_markup=reply_markup, parse_mode="Markdown"
             )
         else:
             await update.message.reply_text(
-                message_text,
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                message_text, reply_markup=reply_markup, parse_mode="Markdown"
             )
 
         return SELECT_OPTIONS
@@ -382,20 +366,20 @@ class TelegramBot:
             await query.edit_message_text(
                 "📝 *Como tratar notas de rodapé?*",
                 reply_markup=reply_markup,
-                parse_mode='Markdown'
+                parse_mode="Markdown",
             )
             return SELECT_OPTIONS
 
         if query.data.startswith("footnote_"):
             mode = query.data.replace("footnote_", "")
-            context.user_data[USER_OPTIONS]['footnote_mode'] = mode
+            context.user_data[USER_OPTIONS]["footnote_mode"] = mode
             return await self.show_options_menu(update, context)
 
         if query.data == "back_to_options":
             return await self.show_options_menu(update, context)
 
         if query.data == "opt_clear_cache":
-            context.user_data[USER_OPTIONS]['clear_cache'] = True
+            context.user_data[USER_OPTIONS]["clear_cache"] = True
             await query.answer("✅ Cache será limpo antes da conversão")
             return await self.show_options_menu(update, context)
 
@@ -407,17 +391,19 @@ class TelegramBot:
                 "• `1,3,5` - Capítulos específicos\n"
                 "• `1-5` - Intervalo\n"
                 "• /skip - Pular (converter todos)",
-                parse_mode='Markdown'
+                parse_mode="Markdown",
             )
             return SELECT_CHAPTERS
 
         return SELECT_OPTIONS
 
-    async def handle_chapter_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    async def handle_chapter_selection(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> int:
         """Handler para seleção de capítulos."""
         text = update.message.text.strip().lower()
 
-        context.user_data[USER_OPTIONS]['chapters'] = text
+        context.user_data[USER_OPTIONS]["chapters"] = text
 
         await update.message.reply_text("✅ Capítulos configurados!")
         return await self.show_options_menu(update, context)
@@ -428,9 +414,7 @@ class TelegramBot:
         await query.answer()
 
         await query.edit_message_text(
-            "🔄 *Iniciando conversão...*\n"
-            "Isso pode levar alguns minutos.",
-            parse_mode='Markdown'
+            "🔄 *Iniciando conversão...*\nIsso pode levar alguns minutos.", parse_mode="Markdown"
         )
 
         # Obter configurações
@@ -447,12 +431,12 @@ class TelegramBot:
                 voice=voice,
                 model_path=Path(model) if model else None,
                 output_dir="output_telegram",
-                footnote_mode=options.get('footnote_mode', 'inline'),
-                clear_cache=options.get('clear_cache', False),
+                footnote_mode=options.get("footnote_mode", "inline"),
+                clear_cache=options.get("clear_cache", False),
                 # Compressão máxima para reduzir tamanho (limite Telegram 50MB)
-                bitrate="8k",      # 8 kbps - boa qualidade para voz, ~3.6 MB/hora
+                bitrate="8k",  # 8 kbps - boa qualidade para voz, ~3.6 MB/hora
                 sample_rate=16_000,  # 16 kHz - suficiente para voz
-                channels=1,         # Mono - audiobooks não precisam de stereo
+                channels=1,  # Mono - audiobooks não precisam de stereo
             )
 
             # Ler ebook para obter metadados
@@ -496,27 +480,28 @@ class TelegramBot:
                         if file_size > TELEGRAM_MAX_SIZE:
                             # File too large for Telegram
                             skipped_count += 1
-                            too_large_files.append({
-                                'name': audio_file.name,
-                                'size_mb': file_size / (1024 * 1024)
-                            })
-                            logger.warning(f"Arquivo muito grande para Telegram: {audio_file.name} ({file_size / 1024 / 1024:.1f} MB)")
+                            too_large_files.append(
+                                {"name": audio_file.name, "size_mb": file_size / (1024 * 1024)}
+                            )
+                            logger.warning(
+                                f"Arquivo muito grande para Telegram: {audio_file.name} ({file_size / 1024 / 1024:.1f} MB)"
+                            )
                             continue
 
                         # Send file
-                        with open(audio_file, 'rb') as f:
+                        with open(audio_file, "rb") as f:
                             # Update progress every 5 files
                             if i % 5 == 0:
                                 await context.bot.send_message(
                                     chat_id=update.effective_chat.id,
-                                    text=f"📤 Enviando... {i}/{len(output_files)}"
+                                    text=f"📤 Enviando... {i}/{len(output_files)}",
                                 )
 
                             await context.bot.send_audio(
                                 chat_id=update.effective_chat.id,
                                 audio=f,
                                 title=audio_file.stem,
-                                caption=f"🎧 {audio_file.name}\n📊 {file_size / (1024 * 1024):.1f} MB"
+                                caption=f"🎧 {audio_file.name}\n📊 {file_size / (1024 * 1024):.1f} MB",
                             )
                             sent_count += 1
 
@@ -525,7 +510,7 @@ class TelegramBot:
                         skipped_count += 1
 
                 # Summary message
-                summary = f"✅ Envio concluído!\n\n"
+                summary = "✅ Envio concluído!\n\n"
                 summary += f"📨 Enviados: {sent_count} arquivos\n"
 
                 if too_large_files:
@@ -534,16 +519,13 @@ class TelegramBot:
                         summary += f"  • {file_info['name']} ({file_info['size_mb']:.1f} MB)\n"
                     if len(too_large_files) > 5:
                         summary += f"  ... e mais {len(too_large_files) - 5}\n"
-                    summary += f"\n💡 Dica: Arquivos muito grandes ficam salvos no servidor.\n"
-                    summary += f"Em breve: download via link web! 🚀"
+                    summary += "\n💡 Dica: Arquivos muito grandes ficam salvos no servidor.\n"
+                    summary += "Em breve: download via link web! 🚀"
 
                 if skipped_count > len(too_large_files):
                     summary += f"\n❌ Erros: {skipped_count - len(too_large_files)} arquivo(s)"
 
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=summary
-                )
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=summary)
             else:
                 await query.edit_message_text("❌ Nenhum arquivo gerado.")
 
@@ -553,8 +535,7 @@ class TelegramBot:
 
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text="✅ Processo concluído!\n"
-                "Envie /start para converter outro livro."
+                text="✅ Processo concluído!\nEnvie /start para converter outro livro.",
             )
 
             context.user_data.clear()
@@ -564,8 +545,7 @@ class TelegramBot:
             logger.error(f"Erro na conversão: {e}", exc_info=True)
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"❌ Erro durante conversão:\n{str(e)}\n\n"
-                "Envie /start para tentar novamente."
+                text=f"❌ Erro durante conversão:\n{str(e)}\n\nEnvie /start para tentar novamente.",
             )
             return ConversationHandler.END
 
@@ -589,33 +569,27 @@ class TelegramBot:
 
         # Conversation handler
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('start', self.start_command)],
+            entry_points=[CommandHandler("start", self.start_command)],
             states={
-                WAITING_FILE: [
-                    MessageHandler(filters.Document.ALL, self.handle_file)
-                ],
+                WAITING_FILE: [MessageHandler(filters.Document.ALL, self.handle_file)],
                 SELECT_ENGINE: [
                     CallbackQueryHandler(self.handle_engine_selection, pattern="^engine_")
                 ],
-                SELECT_VOICE: [
-                    CallbackQueryHandler(self.handle_voice_selection)
-                ],
-                SELECT_OPTIONS: [
-                    CallbackQueryHandler(self.handle_options)
-                ],
+                SELECT_VOICE: [CallbackQueryHandler(self.handle_voice_selection)],
+                SELECT_OPTIONS: [CallbackQueryHandler(self.handle_options)],
                 SELECT_CHAPTERS: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_chapter_selection),
-                    CommandHandler('skip', self.show_options_menu)
+                    CommandHandler("skip", self.show_options_menu),
                 ],
             },
             fallbacks=[
-                CommandHandler('cancel', self.cancel_command),
-                CommandHandler('help', self.help_command)
+                CommandHandler("cancel", self.cancel_command),
+                CommandHandler("help", self.help_command),
             ],
         )
 
         application.add_handler(conv_handler)
-        application.add_handler(CommandHandler('help', self.help_command))
+        application.add_handler(CommandHandler("help", self.help_command))
 
         # Iniciar bot
         logger.info("Bot iniciado!")

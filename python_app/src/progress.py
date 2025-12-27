@@ -27,11 +27,24 @@ class ProgressTracker:
         self._last_status: str = ""
         self._last_render_len: int = 0
         self._last_render: str = ""
-        force_static = os.getenv("FORCE_STATIC_PROGRESS", "1").strip().lower() not in {"0", "false", "no"}
-        self._supports_overwrite = force_static or sys.stdout.isatty()
+        force_static = os.getenv("FORCE_STATIC_PROGRESS", "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self._supports_overwrite = (not force_static) and sys.stdout.isatty()
         self._last_print_time: float = 0.0
         self._spinner_frames: tuple[str, ...] = ("-", "\\", "|", "/")
         self._spinner_index: int = 0
+        self._last_progress_pct: float = -1.0
+        self._last_activity_time: float = time.time()
+
+        # **NOVO**: Tracking de caracteres/frases para mostrar progresso granular
+        self.total_chars: int = 0
+        self.processed_chars: int = 0
+        self.current_sentence: str = ""
+        self.sentences_processed: int = 0
 
     def start(self, total_chapters: int, description: Optional[str] = None) -> None:
         """Reset tracker for a new run."""
@@ -48,9 +61,16 @@ class ProgressTracker:
         self._last_render_len = 0
         self._last_render = ""
         self._last_print_time = 0.0
-        force_static = os.getenv("FORCE_STATIC_PROGRESS", "1").strip().lower() not in {"0", "false", "no"}
-        self._supports_overwrite = force_static or sys.stdout.isatty()
+        force_static = os.getenv("FORCE_STATIC_PROGRESS", "1").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self._supports_overwrite = (not force_static) and sys.stdout.isatty()
         self._spinner_index = 0
+        self._last_progress_pct = -1.0
+        self._last_activity_time = time.time()
         if self.total_chapters == 0:
             self._render("Nenhum capítulo disponível", force=True)
 
@@ -60,6 +80,13 @@ class ProgressTracker:
         self.current_index = index
         self._chapter_start_time = time.time()
         self._phase_start_time = self._chapter_start_time
+
+        # **NOVO**: Resetar contadores de caracteres para novo capítulo
+        self.processed_chars = 0
+        self.total_chars = 0
+        self.current_sentence = ""
+        self.sentences_processed = 0
+
         print(f"\n🎧 [{index}/{max(self.total_chapters, 1)}] {chapter_name}")
 
     def complete_chapter(self, status: str = "") -> None:
@@ -70,8 +97,51 @@ class ProgressTracker:
             self.completed_chapters += 1
         self._render(status)
 
+    def update_chars_progress(self, text: str, total_chars: int = 0) -> None:
+        """
+        **NOVO**: Atualiza progresso baseado em caracteres/frases sendo processados.
+        Mostra que o sistema não está travado.
+
+        Args:
+            text: Texto/frase atual sendo processado
+            total_chars: Total de caracteres no capítulo (opcional)
+        """
+        if total_chars > 0:
+            self.total_chars = total_chars
+
+        if self.total_chapters and self.completed_chapters >= self.total_chapters:
+            return
+
+        if self.total_chars > 0:
+            self.processed_chars = min(self.processed_chars + len(text), self.total_chars)
+        else:
+            self.processed_chars += len(text)
+        self.sentences_processed += 1
+
+        # **THROTTLE**: Só atualizar a cada 0.5s para evitar overhead
+        now = time.time()
+        if now - self._last_print_time < 0.5:
+            return
+        self._last_print_time = now
+
+        # Truncar frase para exibição
+        self.current_sentence = text[:60] + "..." if len(text) > 60 else text
+
+        # Calcular progresso do capítulo atual
+        chapter_progress = ""
+        if self.total_chars > 0:
+            char_percent = (self.processed_chars / self.total_chars) * 100
+            chapter_progress = f" [{char_percent:.1f}% do cap]"
+
+        # Atualizar status
+        status = f'🔊 Processando: "{self.current_sentence}"{chapter_progress}'
+        self._render(status)
+
     def tick(self, status: str = "") -> None:
         """Refresh the progress bar without changing counters."""
+        # Don't show heartbeat ticks after all chapters completed (race condition fix)
+        if self.total_chapters and self.completed_chapters >= self.total_chapters:
+            return
         self._render(status or self._last_status, force=True)
 
     def finish(self) -> None:
@@ -99,11 +169,7 @@ class ProgressTracker:
             self._phase_start_time = now
 
         progress_pct = self._progress_percentage()
-        if (
-            self.total_chapters > 0
-            and self.completed_chapters == 0
-            and progress_pct <= 0.0
-        ):
+        if self.total_chapters > 0 and self.completed_chapters == 0 and progress_pct <= 0.0:
             progress_pct = 0.01
         elapsed = now - self.start_time
         eta_seconds = self._eta_seconds(elapsed)
@@ -118,7 +184,9 @@ class ProgressTracker:
             self._spinner_index = (self._spinner_index + 1) % len(self._spinner_frames)
         display_status = f"{status}{spinner}" if status else ""
 
-        total_display = self.total_chapters if self.total_chapters else max(self.completed_chapters, 1)
+        total_display = (
+            self.total_chapters if self.total_chapters else max(self.completed_chapters, 1)
+        )
         message = (
             f"{self.description}: [{bar}] {progress_pct:.2f}% "
             f"({self.completed_chapters}/{total_display}) "
@@ -131,26 +199,55 @@ class ProgressTracker:
                 wait_elapsed = TimeFormatter.format_time(now - self._chapter_start_time)
                 message += f" | {display_status} (espera: {wait_elapsed})"
             else:
-                message += f" | {display_status} (fase: {phase_elapsed} | capítulo: {chapter_elapsed})"
+                message += (
+                    f" | {display_status} (fase: {phase_elapsed} | capítulo: {chapter_elapsed})"
+                )
         self._last_status = status
+        self._last_activity_time = now
 
         rendered = message
-        if self._last_render_len > len(message):
-            rendered += " " * (self._last_render_len - len(message))
-
-        if not force and rendered == self._last_render:
-            return
-
-        print(f"\r{rendered}", end="", flush=True)
-        self._last_render_len = len(rendered)
-        self._last_render = rendered
-        if force:
-            print("", end="", flush=True)
+        if self._supports_overwrite:
+            if self._last_render_len > len(message):
+                rendered += " " * (self._last_render_len - len(message))
+            if not force and rendered == self._last_render:
+                return
+            print(f"\r{rendered}", end="", flush=True)
+            self._last_render_len = len(rendered)
+            self._last_render = rendered
+            if force:
+                print("", end="", flush=True)
+        else:
+            progress_delta = progress_pct - (
+                self._last_progress_pct if self._last_progress_pct >= 0 else progress_pct
+            )
+            if not force:
+                if rendered == self._last_render:
+                    return
+                if status == previous_status and progress_delta < 1.0:
+                    return
+            print(rendered, flush=True)
+            self._last_render_len = len(rendered)
+            self._last_render = rendered
+            self._last_progress_pct = progress_pct
 
     def _progress_percentage(self) -> float:
         if self.total_chapters <= 0:
             return 100.0 if self.completed_chapters else 0.0
-        return (self.completed_chapters / self.total_chapters) * 100
+        base = float(self.completed_chapters)
+        partial = 0.0
+        if (
+            self.completed_chapters < self.total_chapters
+            and self.total_chars > 0
+            and self.current_index is not None
+        ):
+            partial = min(0.99, max(0.0, self.processed_chars / self.total_chars))
+        progress = ((base + partial) / self.total_chapters) * 100
+        if self.completed_chapters < self.total_chapters:
+            return min(99.99, max(0.0, progress))
+        return min(100.0, max(0.0, progress))
+
+    def seconds_since_activity(self) -> float:
+        return max(0.0, time.time() - self._last_activity_time)
 
     def _eta_seconds(self, elapsed: float) -> float:
         if self.total_chapters <= 0 or self.completed_chapters == 0:

@@ -1,21 +1,40 @@
-import { DragEvent, FormEvent, useEffect, useMemo, useRef, useState } from 'react';
-import { useI18n, useTranslations } from '../i18n/I18nProvider';
-import { ConversionFormValues, ConversionState, EngineOption, FootnoteMode, SubmitBatchOptions } from '../types/conversion';
-import { API_BASE_URL, MAX_UPLOAD_BYTES, MAX_UPLOAD_MB } from '../config';
-import type { UploadResponse } from '../services/ConversionService';
+import {
+  DragEvent,
+  FormEvent,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { useI18n, useTranslations } from "../i18n/I18nProvider";
+import {
+  ConversionFormValues,
+  ConversionState,
+  EngineOption,
+  FootnoteMode,
+  SubmitBatchOptions,
+} from "../types/conversion";
+import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, resolveApiUrl } from "../config";
+import type { UploadResponse } from "../services/ConversionService";
 
 interface ConversionFormProps {
   isSubmitting: boolean;
-  onSubmit: (values: ConversionFormValues, options?: SubmitBatchOptions) => Promise<void> | void;
+  onSubmit: (
+    values: ConversionFormValues,
+    options?: SubmitBatchOptions,
+  ) => Promise<void> | void;
   onUploadFile: (file: File) => Promise<UploadResponse>;
+  onSubmitIntent?: () => void;
+  onUploadStateChange?: (pendingUploads: number) => void;
   currentJob?: {
     jobId?: string;
-    phase: ConversionState['phase'];
+    phase: ConversionState["phase"];
     bookTitle?: string | null;
     engine?: string;
     voice?: string;
     language?: string;
     formattingCues?: boolean;
+    noParallel?: boolean;
   };
 }
 
@@ -27,26 +46,33 @@ interface VoiceInfo {
 
 const DEFAULT_VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
   edge: [
-    { name: 'pt-BR-ThalitaMultilingualNeural', multilingual: true, label: 'Thalita – pt-BR (multilingual)' },
-    { name: 'pt-BR-FranciscaNeural', multilingual: false },
-    { name: 'en-US-JennyNeural', multilingual: false },
-    { name: 'es-ES-ElviraNeural', multilingual: false },
+    {
+      name: "pt-BR-ThalitaMultilingualNeural",
+      multilingual: true,
+      label: "Thalita – pt-BR (multilingual)",
+    },
+    { name: "pt-BR-FranciscaNeural", multilingual: false },
+    { name: "en-US-JennyNeural", multilingual: false },
+    { name: "es-ES-ElviraNeural", multilingual: false },
   ],
   piper: [
-    { name: 'pt_BR-faber-medium.onnx', multilingual: false },
-    { name: 'en_US-lessac-medium.onnx', multilingual: false },
+    { name: "pt_BR-faber-medium.onnx", multilingual: false },
+    { name: "en_US-lessac-medium.onnx", multilingual: false },
   ],
   coqui: [
-    { name: 'tts_models/pt/cv/vits', multilingual: false },
-    { name: 'tts_models/multilingual/multi-dataset/xtts_v2', multilingual: true },
+    { name: "tts_models/pt/cv/vits", multilingual: false },
+    {
+      name: "tts_models/multilingual/multi-dataset/xtts_v2",
+      multilingual: true,
+    },
   ],
   auto: [
-    { name: 'tts_models/pt/cv/vits', multilingual: false },
-    { name: 'pt-BR-ThalitaMultilingualNeural', multilingual: true },
+    { name: "tts_models/pt/cv/vits", multilingual: false },
+    { name: "pt-BR-ThalitaMultilingualNeural", multilingual: true },
   ],
 };
 
-type KnownEngine = 'edge' | 'piper' | 'coqui' | 'auto';
+type KnownEngine = "edge" | "piper" | "coqui" | "auto";
 
 interface EngineInsights {
   defaultVoice: string;
@@ -57,36 +83,36 @@ interface EngineInsights {
 
 const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
   edge: {
-    defaultVoice: 'pt-BR-ThalitaMultilingualNeural',
+    defaultVoice: "pt-BR-ThalitaMultilingualNeural",
     multiLingual: true,
     autoLanguage: true,
-    languages: ['auto'],
+    languages: ["auto"],
   },
   piper: {
-    defaultVoice: 'pt_BR-faber-medium.onnx',
+    defaultVoice: "pt_BR-faber-medium.onnx",
     multiLingual: false,
     autoLanguage: false,
-    languages: ['pt', 'en'],
+    languages: ["pt", "en"],
   },
   coqui: {
-    defaultVoice: 'tts_models/pt/cv/vits',
+    defaultVoice: "tts_models/pt/cv/vits",
     multiLingual: true,
     autoLanguage: false,
-    languages: ['pt', 'en', 'es', 'fr', 'de'],
+    languages: ["pt", "en", "es", "fr", "de"],
   },
   auto: {
-    defaultVoice: '',
+    defaultVoice: "",
     multiLingual: true,
     autoLanguage: true,
-    languages: ['auto'],
+    languages: ["auto"],
   },
 };
 
 const FALLBACK_ENGINE_META: EngineInsights = {
-  defaultVoice: '',
+  defaultVoice: "",
   multiLingual: true,
   autoLanguage: true,
-  languages: ['auto'],
+  languages: ["auto"],
 };
 
 interface QueuedFileEntry {
@@ -95,10 +121,15 @@ interface QueuedFileEntry {
   name: string;
   size: number;
   uploadId?: string;
-  status: 'uploading' | 'ready' | 'error';
+  status: "uploading" | "ready" | "error";
   error?: string;
   attemptId?: number;
+  bookTitle?: string;
+  bookAuthor?: string;
+  detectedLanguage?: string;
 }
+
+const SUPPORTED_BOOK_EXTENSIONS = new Set([".epub", ".pdf"]);
 
 function getEngineMeta(engine: EngineOption): EngineInsights {
   if ((ENGINE_INFO as Record<string, EngineInsights>)[engine]) {
@@ -107,27 +138,93 @@ function getEngineMeta(engine: EngineOption): EngineInsights {
   return FALLBACK_ENGINE_META;
 }
 
-export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, currentJob }: ConversionFormProps): JSX.Element {
+export default function ConversionForm({
+  isSubmitting,
+  onSubmit,
+  onUploadFile,
+  onSubmitIntent,
+  onUploadStateChange,
+  currentJob,
+}: ConversionFormProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
-  const initialEngine: EngineOption = 'auto';
+  const initialEngine: EngineOption = "edge";
   const initialMeta = getEngineMeta(initialEngine);
   const [fileQueue, setFileQueue] = useState<QueuedFileEntry[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
   const [engine, setEngine] = useState<EngineOption>(initialEngine);
   const [voice, setVoice] = useState(initialMeta.defaultVoice);
-  const [chapters, setChapters] = useState('');
-  const [priority, setPriority] = useState('');
-  const [footnoteMode, setFootnoteMode] = useState<FootnoteMode>('inline');
-  const [language, setLanguage] = useState<string>(initialMeta.autoLanguage ? 'auto' : initialMeta.languages[0] ?? '');
+  const [model, setModel] = useState("");
+  const [chapters, setChapters] = useState("");
+  const [sections, setSections] = useState("");
+  const [priority, setPriority] = useState("");
+  const [footnoteMode, setFootnoteMode] = useState<FootnoteMode>("inline");
+  const [language, setLanguage] = useState<string>(
+    initialMeta.autoLanguage ? "auto" : (initialMeta.languages[0] ?? ""),
+  );
   const [formattingCues, setFormattingCues] = useState(true);
+  const [noParallel, setNoParallel] = useState(false);
+  const [maxPerformance, setMaxPerformance] = useState(true);
+  const [parallelSlots, setParallelSlots] = useState("");
+  const [edgeChunkChars, setEdgeChunkChars] = useState("");
+  const [edgeMaxSegmentSeconds, setEdgeMaxSegmentSeconds] = useState("");
+  const [edgeEnableParallel, setEdgeEnableParallel] = useState(true);
+  const [edgeAutoTune, setEdgeAutoTune] = useState(true);
+  const [coquiChunkChars, setCoquiChunkChars] = useState("");
+  const [coquiMaxWorkers, setCoquiMaxWorkers] = useState("");
+  const [coquiSafeMode, setCoquiSafeMode] = useState(true);
+  const [piperMaxProcs, setPiperMaxProcs] = useState("");
+  const [bitrate, setBitrate] = useState("8k");
+  const [sampleRate, setSampleRate] = useState("16000");
+  const [channels, setChannels] = useState("1");
+  const [clearCache, setClearCache] = useState(false);
+  const [forceReprocess, setForceReprocess] = useState(false);
+  const [filterChapters, setFilterChapters] = useState(false);
+  const [verbose, setVerbose] = useState(true);
+  const [useLanguageDetection, setUseLanguageDetection] = useState(true);
+  const [prioritizePrimaryLanguage, setPrioritizePrimaryLanguage] =
+    useState(true);
+  const [healthCheckIntervalSeconds, setHealthCheckIntervalSeconds] =
+    useState("");
+  const [healthCheckSlowEdgeCps, setHealthCheckSlowEdgeCps] = useState("");
+  const [healthCheckSlowCps, setHealthCheckSlowCps] = useState("");
+  const [healthCheckHighCpu, setHealthCheckHighCpu] = useState("");
+  const [healthCheckHighMem, setHealthCheckHighMem] = useState("");
+  const [healthCheckOkCpu, setHealthCheckOkCpu] = useState("");
+  const [healthCheckOkMem, setHealthCheckOkMem] = useState("");
+  const [healthCheckSlowStreak, setHealthCheckSlowStreak] = useState("");
   const [showMissingFileError, setShowMissingFileError] = useState(false);
-  const [voiceCatalog, setVoiceCatalog] = useState<Record<string, VoiceInfo[]> | null>(null);
+  const [voiceCatalog, setVoiceCatalog] = useState<Record<
+    string,
+    VoiceInfo[]
+  > | null>(null);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLoadFailed, setVoiceLoadFailed] = useState(false);
   const uploadAttemptRef = useRef(0);
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverInfo, setDragOverInfo] = useState<{ id: string; position: 'before' | 'after' } | null>(null);
+  const [dragOverInfo, setDragOverInfo] = useState<{
+    id: string;
+    position: "before" | "after";
+  } | null>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploadPromisesRef = useRef<Record<string, Promise<void>>>({});
+
+  useEffect(() => {
+    const input = folderInputRef.current;
+    if (!input) {
+      return;
+    }
+    input.setAttribute("webkitdirectory", "");
+    input.setAttribute("directory", "");
+    input.setAttribute("mozdirectory", "");
+  }, []);
+
+  useEffect(() => {
+    const pending = fileQueue.filter(
+      (entry) => entry.status === "uploading",
+    ).length;
+    onUploadStateChange?.(pending);
+  }, [fileQueue, onUploadStateChange]);
 
   useEffect(() => {
     let isMounted = true;
@@ -136,31 +233,34 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
       setVoiceLoading(true);
       setVoiceLoadFailed(false);
       try {
-        const base = (API_BASE_URL || '/api').replace(/\/$/, '');
-        const response = await fetch(`${base}/voices`);
+        const response = await fetch(resolveApiUrl("/api/voices"));
         if (!response.ok) {
           throw new Error(`Failed to load voices: ${response.status}`);
         }
         const payload = await response.json();
-        const voiceEntries = payload?.voices as Record<string, Array<Record<string, unknown>>> | undefined;
+        const voiceEntries = payload?.voices as
+          | Record<string, Array<Record<string, unknown>>>
+          | undefined;
         if (!voiceEntries || !isMounted) {
           return;
         }
         const normalized: Record<string, VoiceInfo[]> = {};
         Object.entries(voiceEntries).forEach(([engineKey, entries]) => {
-          normalized[engineKey] = (entries || []).map((entry) => {
-            const id = String(entry?.id ?? entry?.name ?? '');
-            return {
-              name: id,
-              label: typeof entry?.label === 'string' ? entry.label : id,
-              multilingual: Boolean(entry?.multilingual),
-            };
-          }).filter((entry) => !!entry.name);
+          normalized[engineKey] = (entries || [])
+            .map((entry) => {
+              const id = String(entry?.id ?? entry?.name ?? "");
+              return {
+                name: id,
+                label: typeof entry?.label === "string" ? entry.label : id,
+                multilingual: Boolean(entry?.multilingual),
+              };
+            })
+            .filter((entry) => !!entry.name);
         });
         if (Object.keys(normalized).length > 0) {
           setVoiceCatalog(normalized);
         }
-      } catch (error) {
+      } catch {
         if (isMounted) {
           setVoiceLoadFailed(true);
         }
@@ -178,9 +278,14 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
     };
   }, []);
 
-  const engineMeta = useMemo<EngineInsights>(() => getEngineMeta(engine), [engine]);
+  const engineMeta = useMemo<EngineInsights>(
+    () => getEngineMeta(engine),
+    [engine],
+  );
   const languageOptionsList = useMemo(() => {
-    const entries = Array.isArray(engineMeta.languages) ? engineMeta.languages.filter(Boolean) : [];
+    const entries = Array.isArray(engineMeta.languages)
+      ? engineMeta.languages.filter(Boolean)
+      : [];
     const seen = new Set<string>();
     const normalized: string[] = [];
     entries.forEach((code) => {
@@ -189,11 +294,11 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
         normalized.push(code);
       }
     });
-    if (engineMeta.autoLanguage && !seen.has('auto')) {
-      normalized.unshift('auto');
+    if (engineMeta.autoLanguage && !seen.has("auto")) {
+      normalized.unshift("auto");
     }
     if (normalized.length === 0) {
-      return engineMeta.autoLanguage ? ['auto'] : [];
+      return engineMeta.autoLanguage ? ["auto"] : [];
     }
     return normalized;
   }, [engineMeta]);
@@ -204,8 +309,16 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
     const seenNames = new Set<string>();
 
     if (engineMeta.defaultVoice && !seenNames.has(engineMeta.defaultVoice)) {
-      const defaultInfo = (voiceSource[engine] ?? []).find((v) => v.name === engineMeta.defaultVoice);
-      voices.push(defaultInfo ?? { name: engineMeta.defaultVoice, multilingual: false, label: engineMeta.defaultVoice });
+      const defaultInfo = (voiceSource[engine] ?? []).find(
+        (v) => v.name === engineMeta.defaultVoice,
+      );
+      voices.push(
+        defaultInfo ?? {
+          name: engineMeta.defaultVoice,
+          multilingual: false,
+          label: engineMeta.defaultVoice,
+        },
+      );
       seenNames.add(engineMeta.defaultVoice);
     }
 
@@ -220,15 +333,40 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
   }, [engine, engineMeta.defaultVoice, voiceCatalog]);
 
   const currentVoiceMultilingual = useMemo(() => {
-    return voiceSuggestions.find(v => v.name === voice)?.multilingual ?? false;
+    return (
+      voiceSuggestions.find((v) => v.name === voice)?.multilingual ?? false
+    );
   }, [voiceSuggestions, voice]);
 
-  const uploadsInProgress = useMemo(() => fileQueue.some(entry => entry.status === 'uploading'), [fileQueue]);
-  const usableEntries = useMemo(() => fileQueue.filter(entry => entry.status !== 'error'), [fileQueue]);
-  const disableSubmit = isSubmitting || uploadsInProgress || usableEntries.length === 0;
-  const END_DROP_ID = '__queue_end__';
+  const usableEntries = useMemo(
+    () => fileQueue.filter((entry) => entry.status !== "error"),
+    [fileQueue],
+  );
+  const disableSubmit = usableEntries.length === 0;
+  const END_DROP_ID = "__queue_end__";
 
-  const handleDragStart = (event: DragEvent<HTMLLIElement>, entryId: string) => {
+  const parseOptionalInt = (value: string): number | undefined => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const parsed = Number.parseInt(trimmed, 10);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  };
+
+  const parseOptionalNumber = (value: string): number | undefined => {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return undefined;
+    }
+    const parsed = Number.parseFloat(trimmed);
+    return Number.isNaN(parsed) ? undefined : parsed;
+  };
+
+  const handleDragStart = (
+    event: DragEvent<HTMLLIElement>,
+    entryId: string,
+  ) => {
     if (fileQueue.length <= 1 || isSubmitting) {
       event.preventDefault();
       return;
@@ -236,33 +374,44 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
     setDraggingId(entryId);
     setDragOverInfo(null);
     if (event.dataTransfer) {
-      event.dataTransfer.setData('text/plain', entryId);
-      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData("text/plain", entryId);
+      event.dataTransfer.effectAllowed = "move";
     }
   };
 
-  const handleDragOverItem = (event: DragEvent<HTMLLIElement>, entryId: string) => {
+  const handleDragOverItem = (
+    event: DragEvent<HTMLLIElement>,
+    entryId: string,
+  ) => {
     if (!draggingId || entryId === draggingId) {
       return;
     }
     event.preventDefault();
     const rect = event.currentTarget.getBoundingClientRect();
     const offset = event.clientY - rect.top;
-    const position: 'before' | 'after' = offset > rect.height / 2 ? 'after' : 'before';
+    const position: "before" | "after" =
+      offset > rect.height / 2 ? "after" : "before";
     setDragOverInfo({ id: entryId, position });
   };
 
-  const handleDropOnItem = (event: DragEvent<HTMLLIElement>, entryId: string) => {
+  const handleDropOnItem = (
+    event: DragEvent<HTMLLIElement>,
+    entryId: string,
+  ) => {
     if (!draggingId) {
       return;
     }
     event.preventDefault();
-    const info = dragOverInfo && dragOverInfo.id === entryId ? dragOverInfo : { id: entryId, position: 'before' as const };
+    const info =
+      dragOverInfo && dragOverInfo.id === entryId
+        ? dragOverInfo
+        : { id: entryId, position: "before" as const };
     const targetIndex = fileQueue.findIndex((entry) => entry.id === entryId);
     if (targetIndex === -1) {
       return;
     }
-    const insertIndex = info.position === 'after' ? targetIndex + 1 : targetIndex;
+    const insertIndex =
+      info.position === "after" ? targetIndex + 1 : targetIndex;
     moveEntryToIndex(draggingId, insertIndex);
     setDragOverInfo(null);
   };
@@ -297,41 +446,58 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
   const startUploadForEntry = (entryId: string, file: File) => {
     const attemptId = uploadAttemptRef.current + 1;
     uploadAttemptRef.current = attemptId;
-    setFileQueue((prev) => prev.map((entry) => (
-      entry.id === entryId
-        ? { ...entry, status: 'uploading', error: undefined, attemptId }
-        : entry
-    )));
-    (async () => {
+    setFileQueue((prev) =>
+      prev.map((entry) =>
+        entry.id === entryId
+          ? { ...entry, status: "uploading", error: undefined, attemptId }
+          : entry,
+      ),
+    );
+    const uploadPromise = (async () => {
       try {
         const response = await onUploadFile(file);
-        setFileQueue((prev) => prev.map((entry) => {
-          if (entry.id !== entryId || entry.attemptId !== attemptId) {
-            return entry;
-          }
-          return {
-            ...entry,
-            status: 'ready',
-            uploadId: response.uploadId,
-            name: response.fileName || entry.name,
-            attemptId: undefined,
-          };
-        }));
+        setFileQueue((prev) =>
+          prev.map((entry) => {
+            if (entry.id !== entryId || entry.attemptId !== attemptId) {
+              return entry;
+            }
+            return {
+              ...entry,
+              status: "ready",
+              uploadId: response.uploadId,
+              name: response.fileName || entry.name,
+              bookTitle: response.bookTitle,
+              bookAuthor: response.bookAuthor,
+              attemptId: undefined,
+            };
+          }),
+        );
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Falha ao enviar arquivo';
-        setFileQueue((prev) => prev.map((entry) => {
-          if (entry.id !== entryId || entry.attemptId !== attemptId) {
-            return entry;
-          }
-          return {
-            ...entry,
-            status: 'error',
-            error: message,
-            attemptId: undefined,
-          };
-        }));
+        const message =
+          error instanceof Error ? error.message : "Falha ao enviar arquivo";
+        setFileQueue((prev) =>
+          prev.map((entry) => {
+            if (entry.id !== entryId || entry.attemptId !== attemptId) {
+              return entry;
+            }
+            return {
+              ...entry,
+              status: "error",
+              error: message,
+              attemptId: undefined,
+            };
+          }),
+        );
       }
     })();
+    uploadPromisesRef.current[entryId] = uploadPromise;
+    uploadPromise
+      .finally(() => {
+        delete uploadPromisesRef.current[entryId];
+      })
+      .catch(() => {
+        delete uploadPromisesRef.current[entryId];
+      });
   };
 
   const addFilesToQueue = (files: FileList | File[]) => {
@@ -339,18 +505,26 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
     Array.from(files).forEach((file) => {
       if (!file) return;
       if (file.size > MAX_UPLOAD_BYTES) {
-        setFileError(`${t.form.errorFileTooLarge(maxUploadMbDisplay)} (${file.name})`);
+        setFileError(
+          `${t.form.errorFileTooLarge(maxUploadMbDisplay)} (${file.name})`,
+        );
         return;
       }
-      const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : `queued-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      const ext = file.name?.split(".").pop()?.toLowerCase() ?? "";
+      const normalizedExt = ext ? `.${ext}` : "";
+      if (!SUPPORTED_BOOK_EXTENSIONS.has(normalizedExt)) {
+        return;
+      }
+      const id =
+        typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+          ? crypto.randomUUID()
+          : `queued-${Date.now()}-${Math.random().toString(16).slice(2)}`;
       additions.push({
         id,
         file,
         name: file.name,
         size: file.size,
-        status: 'uploading',
+        status: "uploading",
       });
     });
     if (additions.length === 0) {
@@ -395,7 +569,8 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
       }
       const next = [...prev];
       const [item] = next.splice(currentIndex, 1);
-      const insertIndex = constrained > currentIndex ? constrained - 1 : constrained;
+      const insertIndex =
+        constrained > currentIndex ? constrained - 1 : constrained;
       next.splice(insertIndex, 0, item);
       return next;
     });
@@ -407,19 +582,55 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
       setShowMissingFileError(true);
       return;
     }
-    if (uploadsInProgress) {
-      return;
-    }
-
     setShowMissingFileError(false);
+    onSubmitIntent?.();
+    const pendingUploads = Object.values(uploadPromisesRef.current);
+    if (pendingUploads.length > 0) {
+      await Promise.allSettled(pendingUploads);
+    }
     const sharedConfig = {
       engine,
       voice: voice || undefined,
+      model: model || undefined,
       chapters: chapters || undefined,
+      sections: sections || undefined,
       priority: priority || undefined,
       footnoteMode,
-      language: engineMeta.autoLanguage || !language || language === 'auto' ? undefined : language,
+      language:
+        engineMeta.autoLanguage || !language || language === "auto"
+          ? undefined
+          : language,
       formattingCues,
+      noParallel,
+      maxPerformance,
+      parallelSlots: parseOptionalInt(parallelSlots),
+      edgeChunkChars: parseOptionalInt(edgeChunkChars),
+      edgeMaxSegmentSeconds: parseOptionalInt(edgeMaxSegmentSeconds),
+      edgeEnableParallel,
+      edgeAutoTune,
+      coquiChunkChars: parseOptionalInt(coquiChunkChars),
+      coquiMaxWorkers: parseOptionalInt(coquiMaxWorkers),
+      coquiSafeMode,
+      piperMaxProcs: parseOptionalInt(piperMaxProcs),
+      bitrate: bitrate || undefined,
+      sampleRate: parseOptionalInt(sampleRate),
+      channels: parseOptionalInt(channels),
+      clearCache,
+      forceReprocess,
+      filterChapters,
+      verbose,
+      useLanguageDetection,
+      prioritizePrimaryLanguage,
+      healthCheckIntervalSeconds: parseOptionalNumber(
+        healthCheckIntervalSeconds,
+      ),
+      healthCheckSlowEdgeCps: parseOptionalNumber(healthCheckSlowEdgeCps),
+      healthCheckSlowCps: parseOptionalNumber(healthCheckSlowCps),
+      healthCheckHighCpu: parseOptionalNumber(healthCheckHighCpu),
+      healthCheckHighMem: parseOptionalNumber(healthCheckHighMem),
+      healthCheckOkCpu: parseOptionalNumber(healthCheckOkCpu),
+      healthCheckOkMem: parseOptionalNumber(healthCheckOkMem),
+      healthCheckSlowStreak: parseOptionalInt(healthCheckSlowStreak),
       uiLanguage: locale,
     };
     const payloads = usableEntries.map((entry) => ({
@@ -440,8 +651,14 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
   const handleEngineChange = (nextEngine: EngineOption) => {
     setEngine(nextEngine);
     const meta = getEngineMeta(nextEngine);
-    setVoice(meta.defaultVoice);
-    setLanguage(meta.autoLanguage ? 'auto' : meta.languages[0] ?? '');
+    // In auto mode, don't set a voice (will be selected automatically)
+    if (nextEngine === "auto") {
+      setVoice("");
+      setLanguage("auto");
+    } else {
+      setVoice(meta.defaultVoice);
+      setLanguage(meta.autoLanguage ? "auto" : (meta.languages[0] ?? ""));
+    }
   };
 
   useEffect(() => {
@@ -449,33 +666,53 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
       return;
     }
     if (!languageOptionsList.includes(language)) {
-      setLanguage(languageOptionsList[0] ?? '');
+      setLanguage(languageOptionsList[0] ?? "");
     }
   }, [languageOptionsList, language]);
 
   useEffect(() => {
-    if (typeof currentJob?.formattingCues === 'boolean') {
+    if (typeof currentJob?.formattingCues === "boolean") {
       setFormattingCues(currentJob.formattingCues);
     }
   }, [currentJob?.formattingCues]);
+  useEffect(() => {
+    if (typeof currentJob?.noParallel === "boolean") {
+      setNoParallel(currentJob.noParallel);
+    }
+  }, [currentJob?.noParallel]);
 
   const handleUseSample = async () => {
     try {
-      const basePath = import.meta.env.BASE_URL || '/';
-      const normalizedBase = basePath.endsWith('/') ? basePath : `${basePath}/`;
+      const basePath = import.meta.env.BASE_URL || "/";
+      const normalizedBase = basePath.endsWith("/") ? basePath : `${basePath}/`;
       const response = await fetch(`${normalizedBase}sample.epub`);
       const blob = await response.blob();
-      const file = new File([blob], 'sample.epub', { type: 'application/epub+zip' });
+      const file = new File([blob], "sample.epub", {
+        type: "application/epub+zip",
+      });
       setShowMissingFileError(false);
       setFileError(null);
       addFilesToQueue([file]);
     } catch (error) {
-      console.error('Failed to load sample book:', error);
+      console.error("Failed to load sample book:", error);
     }
   };
 
   return (
     <form className="conversion-form" onSubmit={handleSubmit}>
+      <input
+        ref={folderInputRef}
+        type="file"
+        multiple
+        style={{ display: "none" }}
+        onChange={(event) => {
+          const files = event.target.files;
+          if (files && files.length > 0) {
+            addFilesToQueue(files);
+            event.target.value = "";
+          }
+        }}
+      />
       <fieldset className="form-field">
         <label htmlFor="file">{t.form.fileLabel}</label>
         <div className="file-input-row">
@@ -490,7 +727,7 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               const files = event.target.files;
               if (files && files.length > 0) {
                 addFilesToQueue(files);
-                event.target.value = '';
+                event.target.value = "";
               }
             }}
             className="file-input-row__input"
@@ -503,6 +740,15 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
           >
             {t.form.useSampleButton}
           </button>
+          <button
+            type="button"
+            onClick={() => folderInputRef.current?.click()}
+            disabled={isSubmitting}
+            className="button-secondary file-input-row__sample"
+            style={{ marginLeft: "0.5rem" }}
+          >
+            {t.form.addFolderButton}
+          </button>
         </div>
         {fileError && (
           <p role="alert" className="form-error">
@@ -513,7 +759,9 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
           <div className="file-queue__header">
             <span className="file-queue__title">{t.form.fileQueueLabel}</span>
             {fileQueue.length > 0 && (
-              <span className="file-queue__count">{t.form.fileQueueCount(fileQueue.length)}</span>
+              <span className="file-queue__count">
+                {t.form.fileQueueCount(fileQueue.length)}
+              </span>
             )}
           </div>
           {fileQueue.length === 0 ? (
@@ -527,9 +775,10 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               <ul
                 className="file-queue__list"
                 onDragOver={(event) => {
-                  if (!draggingId || event.target !== event.currentTarget) return;
+                  if (!draggingId || event.target !== event.currentTarget)
+                    return;
                   event.preventDefault();
-                  setDragOverInfo({ id: END_DROP_ID, position: 'after' });
+                  setDragOverInfo({ id: END_DROP_ID, position: "after" });
                 }}
                 onDrop={(event) => {
                   if (event.target === event.currentTarget) {
@@ -541,21 +790,29 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
                   const canMoveUp = index > 0;
                   const canMoveDown = index < fileQueue.length - 1;
                   const isDragging = entry.id === draggingId;
-                  const dropBefore = dragOverInfo?.id === entry.id && dragOverInfo.position === 'before';
-                  const dropAfter = dragOverInfo?.id === entry.id && dragOverInfo.position === 'after';
+                  const dropBefore =
+                    dragOverInfo?.id === entry.id &&
+                    dragOverInfo.position === "before";
+                  const dropAfter =
+                    dragOverInfo?.id === entry.id &&
+                    dragOverInfo.position === "after";
                   const itemClasses = [
-                    'file-queue__item',
-                    isDragging ? 'file-queue__item--dragging' : '',
-                    dropBefore ? 'file-queue__item--drop-before' : '',
-                    dropAfter ? 'file-queue__item--drop-after' : '',
-                  ].filter(Boolean).join(' ');
+                    "file-queue__item",
+                    isDragging ? "file-queue__item--dragging" : "",
+                    dropBefore ? "file-queue__item--drop-before" : "",
+                    dropAfter ? "file-queue__item--drop-after" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
                   return (
                     <li
                       key={entry.id}
                       className={itemClasses}
                       draggable={fileQueue.length > 1 && !isSubmitting}
                       onDragStart={(event) => handleDragStart(event, entry.id)}
-                      onDragOver={(event) => handleDragOverItem(event, entry.id)}
+                      onDragOver={(event) =>
+                        handleDragOverItem(event, entry.id)
+                      }
                       onDrop={(event) => handleDropOnItem(event, entry.id)}
                       onDragEnd={handleDragEnd}
                     >
@@ -563,15 +820,23 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
                         <span className="file-queue__name" title={entry.name}>
                           {index + 1}. {entry.name}
                         </span>
+                        {entry.bookTitle && (
+                          <span className="file-queue__book-info">
+                            <strong>{entry.bookTitle}</strong>
+                            {entry.bookAuthor && (
+                              <span> — {entry.bookAuthor}</span>
+                            )}
+                          </span>
+                        )}
                         <span className="file-queue__details">
-                          {formatFileSize(entry.size)} •{' '}
-                          {entry.status === 'ready' && (
+                          {formatFileSize(entry.size)} •{" "}
+                          {entry.status === "ready" && (
                             <span>✅ {t.form.autoUploadReady}</span>
                           )}
-                          {entry.status === 'uploading' && (
+                          {entry.status === "uploading" && (
                             <span>📤 {t.form.uploadingFile}</span>
                           )}
-                          {entry.status === 'error' && (
+                          {entry.status === "error" && (
                             <span>⚠️ {entry.error}</span>
                           )}
                         </span>
@@ -613,11 +878,11 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               {fileQueue.length > 1 && (
                 <>
                   <div
-                    className={`file-queue__dropzone ${dragOverInfo?.id === END_DROP_ID ? 'file-queue__dropzone--active' : ''}`}
+                    className={`file-queue__dropzone ${dragOverInfo?.id === END_DROP_ID ? "file-queue__dropzone--active" : ""}`}
                     onDragOver={(event) => {
                       if (!draggingId) return;
                       event.preventDefault();
-                      setDragOverInfo({ id: END_DROP_ID, position: 'after' });
+                      setDragOverInfo({ id: END_DROP_ID, position: "after" });
                     }}
                     onDrop={handleDropAtEnd}
                     onDragLeave={() => {
@@ -647,7 +912,9 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               name="engine"
               value={engine}
               disabled={isSubmitting}
-              onChange={(event) => handleEngineChange(event.target.value as EngineOption)}
+              onChange={(event) =>
+                handleEngineChange(event.target.value as EngineOption)
+              }
             >
               {t.form.engineOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -655,24 +922,43 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
                 </option>
               ))}
             </select>
-            <p className="form-hint">{t.form.engineOptions.find((option) => option.value === engine)?.help}</p>
+            <p className="form-hint">
+              {
+                t.form.engineOptions.find((option) => option.value === engine)
+                  ?.help
+              }
+            </p>
             <div className="engine-insight">
               <div className="engine-insight__item">
-                <span className="engine-insight__label">{t.form.defaultVoiceLabel}</span>
-                <code className="engine-insight__value">{engineMeta.defaultVoice}</code>
+                <span className="engine-insight__label">
+                  {t.form.defaultVoiceLabel}
+                </span>
+                <code className="engine-insight__value">
+                  {engineMeta.defaultVoice}
+                </code>
               </div>
               <div className="engine-insight__item">
-                <span className="engine-insight__label">{t.form.multilingualSupportLabel}</span>
+                <span className="engine-insight__label">
+                  {t.form.multilingualSupportLabel}
+                </span>
                 <span className="engine-insight__value">
-                  {engineMeta.multiLingual ? t.form.multilingualYes : t.form.multilingualNo}
+                  {engineMeta.multiLingual
+                    ? t.form.multilingualYes
+                    : t.form.multilingualNo}
                 </span>
               </div>
               <div className="engine-insight__item">
-                <span className="engine-insight__label">{engineMeta.autoLanguage ? t.form.autoLanguageLabel : t.form.manualLanguageLabel}</span>
+                <span className="engine-insight__label">
+                  {engineMeta.autoLanguage
+                    ? t.form.autoLanguageLabel
+                    : t.form.manualLanguageLabel}
+                </span>
               </div>
               {!engineMeta.autoLanguage && engineMeta.languages.length > 0 && (
                 <div className="engine-insight__languages">
-                  <span className="engine-insight__label">{t.form.availableLanguagesLabel}:</span>
+                  <span className="engine-insight__label">
+                    {t.form.availableLanguagesLabel}:
+                  </span>
                   <ul>
                     {engineMeta.languages.map((code) => (
                       <li key={code}>{translateLanguage(code)}</li>
@@ -689,7 +975,11 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               id="language"
               name="language"
               value={language}
-              disabled={isSubmitting || languageOptionsList.length === 0}
+              disabled={
+                isSubmitting ||
+                languageOptionsList.length === 0 ||
+                engine === "auto"
+              }
               onChange={(event) => setLanguage(event.target.value)}
             >
               {languageOptionsList.map((code) => (
@@ -699,7 +989,13 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               ))}
             </select>
             <p className="form-hint">
-              {engineMeta.autoLanguage ? t.form.languageNotRequired : t.form.languageHint}
+              {engine === "auto"
+                ? locale === "pt"
+                  ? "Idioma será detectado automaticamente do livro"
+                  : "Language will be automatically detected from the book"
+                : engineMeta.autoLanguage
+                  ? t.form.languageNotRequired
+                  : t.form.languageHint}
             </p>
           </fieldset>
 
@@ -709,33 +1005,50 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               id="voice"
               name="voice"
               value={voice}
-              disabled={isSubmitting}
+              disabled={isSubmitting || engine === "auto"}
               onChange={(event) => setVoice(event.target.value)}
             >
-              {voiceSuggestions.map((voiceInfo) => {
-                const label = voiceInfo.label && voiceInfo.label !== voiceInfo.name
-                  ? `${voiceInfo.label} • ${voiceInfo.name}`
-                  : voiceInfo.label ?? voiceInfo.name;
-                return (
-                  <option key={voiceInfo.name} value={voiceInfo.name}>
-                    {label} {voiceInfo.multilingual ? '🌐' : ''}
-                  </option>
-                );
-              })}
+              {engine === "auto" && (
+                <option value="">
+                  {locale === "pt"
+                    ? "Seleção automática baseada no idioma"
+                    : "Automatic selection based on language"}
+                </option>
+              )}
+              {engine !== "auto" &&
+                voiceSuggestions.map((voiceInfo) => {
+                  const label =
+                    voiceInfo.label && voiceInfo.label !== voiceInfo.name
+                      ? `${voiceInfo.label} • ${voiceInfo.name}`
+                      : (voiceInfo.label ?? voiceInfo.name);
+                  return (
+                    <option key={voiceInfo.name} value={voiceInfo.name}>
+                      {label} {voiceInfo.multilingual ? "🌐" : ""}
+                    </option>
+                  );
+                })}
             </select>
             <p className="form-hint">
-              {currentVoiceMultilingual && '🌐 '}
-              {t.form.voiceHint}
-              {currentVoiceMultilingual && ` ${t.form.voiceMultilingualHint}`}
+              {engine === "auto"
+                ? locale === "pt"
+                  ? "Voz será escolhida automaticamente baseada no idioma detectado"
+                  : "Voice will be automatically selected based on detected language"
+                : currentVoiceMultilingual
+                  ? `🌐 ${t.form.voiceHint} ${t.form.voiceMultilingualHint}`
+                  : t.form.voiceHint}
             </p>
             {voiceLoading && <p className="form-hint">{t.form.voiceLoading}</p>}
             {voiceLoadFailed && (
-              <p className="form-hint form-hint--warning">{t.form.voiceLoadFailed}</p>
+              <p className="form-hint form-hint--warning">
+                {t.form.voiceLoadFailed}
+              </p>
             )}
           </fieldset>
 
           <fieldset className="form-row">
-            <label htmlFor="formattingCuesToggle">{t.form.formattingCuesLabel}</label>
+            <label htmlFor="formattingCuesToggle">
+              {t.form.formattingCuesLabel}
+            </label>
             <label className="form-toggle" htmlFor="formattingCuesToggle">
               <input
                 id="formattingCuesToggle"
@@ -744,9 +1057,551 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
                 disabled={isSubmitting}
                 onChange={(event) => setFormattingCues(event.target.checked)}
               />
-              <span>{formattingCues ? t.form.formattingCuesOn : t.form.formattingCuesOff}</span>
+              <span>
+                {formattingCues
+                  ? t.form.formattingCuesOn
+                  : t.form.formattingCuesOff}
+              </span>
             </label>
             <p className="form-hint">{t.form.formattingCuesDescription}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="noParallelToggle">{t.form.noParallelLabel}</label>
+            <label className="form-toggle" htmlFor="noParallelToggle">
+              <input
+                id="noParallelToggle"
+                type="checkbox"
+                checked={noParallel}
+                disabled={isSubmitting}
+                onChange={(event) => setNoParallel(event.target.checked)}
+              />
+              <span>
+                {noParallel ? t.form.noParallelOn : t.form.noParallelOff}
+              </span>
+            </label>
+            <p className="form-hint">{t.form.noParallelDescription}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="maxPerformanceToggle">
+              {t.form.maxPerformanceLabel}
+            </label>
+            <label className="form-toggle" htmlFor="maxPerformanceToggle">
+              <input
+                id="maxPerformanceToggle"
+                type="checkbox"
+                checked={maxPerformance}
+                disabled={isSubmitting}
+                onChange={(event) => setMaxPerformance(event.target.checked)}
+              />
+              <span>
+                {maxPerformance
+                  ? t.form.maxPerformanceOn
+                  : t.form.maxPerformanceOff}
+              </span>
+            </label>
+            <p className="form-hint">{t.form.maxPerformanceDescription}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="parallelSlots">{t.form.parallelSlotsLabel}</label>
+            <input
+              id="parallelSlots"
+              name="parallelSlots"
+              type="number"
+              min={1}
+              placeholder={t.form.parallelSlotsPlaceholder}
+              value={parallelSlots}
+              disabled={isSubmitting || noParallel}
+              onChange={(event) => setParallelSlots(event.target.value)}
+            />
+            <p className="form-hint">{t.form.parallelSlotsHint}</p>
+          </fieldset>
+
+          <fieldset className="form-field">
+            <legend className="form-legend">{t.form.engineTuningLegend}</legend>
+            <div className="form-row">
+              <label htmlFor="model">{t.form.modelLabel}</label>
+              <input
+                id="model"
+                name="model"
+                placeholder={t.form.modelPlaceholder}
+                value={model}
+                disabled={isSubmitting}
+                onChange={(event) => setModel(event.target.value)}
+              />
+              <p className="form-hint">{t.form.modelHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="edgeChunkChars">
+                {t.form.edgeChunkCharsLabel}
+              </label>
+              <input
+                id="edgeChunkChars"
+                name="edgeChunkChars"
+                type="number"
+                min={4000}
+                placeholder={t.form.edgeChunkCharsPlaceholder}
+                value={edgeChunkChars}
+                disabled={isSubmitting}
+                onChange={(event) => setEdgeChunkChars(event.target.value)}
+              />
+              <p className="form-hint">{t.form.edgeChunkCharsHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="edgeMaxSegmentSeconds">
+                {t.form.edgeMaxSegmentSecondsLabel}
+              </label>
+              <input
+                id="edgeMaxSegmentSeconds"
+                name="edgeMaxSegmentSeconds"
+                type="number"
+                min={30}
+                placeholder={t.form.edgeMaxSegmentSecondsPlaceholder}
+                value={edgeMaxSegmentSeconds}
+                disabled={isSubmitting}
+                onChange={(event) =>
+                  setEdgeMaxSegmentSeconds(event.target.value)
+                }
+              />
+              <p className="form-hint">{t.form.edgeMaxSegmentSecondsHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="edgeEnableParallelToggle">
+                {t.form.edgeEnableParallelLabel}
+              </label>
+              <label className="form-toggle" htmlFor="edgeEnableParallelToggle">
+                <input
+                  id="edgeEnableParallelToggle"
+                  type="checkbox"
+                  checked={edgeEnableParallel}
+                  disabled={isSubmitting || noParallel}
+                  onChange={(event) =>
+                    setEdgeEnableParallel(event.target.checked)
+                  }
+                />
+                <span>
+                  {edgeEnableParallel
+                    ? t.form.edgeEnableParallelOn
+                    : t.form.edgeEnableParallelOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.edgeEnableParallelHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="edgeAutoTuneToggle">
+                {t.form.edgeAutoTuneLabel}
+              </label>
+              <label className="form-toggle" htmlFor="edgeAutoTuneToggle">
+                <input
+                  id="edgeAutoTuneToggle"
+                  type="checkbox"
+                  checked={edgeAutoTune}
+                  disabled={isSubmitting}
+                  onChange={(event) => setEdgeAutoTune(event.target.checked)}
+                />
+                <span>
+                  {edgeAutoTune
+                    ? t.form.edgeAutoTuneOn
+                    : t.form.edgeAutoTuneOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.edgeAutoTuneHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="coquiChunkChars">
+                {t.form.coquiChunkCharsLabel}
+              </label>
+              <input
+                id="coquiChunkChars"
+                name="coquiChunkChars"
+                type="number"
+                min={800}
+                placeholder={t.form.coquiChunkCharsPlaceholder}
+                value={coquiChunkChars}
+                disabled={isSubmitting}
+                onChange={(event) => setCoquiChunkChars(event.target.value)}
+              />
+              <p className="form-hint">{t.form.coquiChunkCharsHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="coquiMaxWorkers">
+                {t.form.coquiMaxWorkersLabel}
+              </label>
+              <input
+                id="coquiMaxWorkers"
+                name="coquiMaxWorkers"
+                type="number"
+                min={1}
+                placeholder={t.form.coquiMaxWorkersPlaceholder}
+                value={coquiMaxWorkers}
+                disabled={isSubmitting}
+                onChange={(event) => setCoquiMaxWorkers(event.target.value)}
+              />
+              <p className="form-hint">{t.form.coquiMaxWorkersHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="coquiSafeModeToggle">
+                {t.form.coquiSafeModeLabel}
+              </label>
+              <label className="form-toggle" htmlFor="coquiSafeModeToggle">
+                <input
+                  id="coquiSafeModeToggle"
+                  type="checkbox"
+                  checked={coquiSafeMode}
+                  disabled={isSubmitting}
+                  onChange={(event) => setCoquiSafeMode(event.target.checked)}
+                />
+                <span>
+                  {coquiSafeMode
+                    ? t.form.coquiSafeModeOn
+                    : t.form.coquiSafeModeOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.coquiSafeModeHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="piperMaxProcs">{t.form.piperMaxProcsLabel}</label>
+              <input
+                id="piperMaxProcs"
+                name="piperMaxProcs"
+                type="number"
+                min={1}
+                placeholder={t.form.piperMaxProcsPlaceholder}
+                value={piperMaxProcs}
+                disabled={isSubmitting}
+                onChange={(event) => setPiperMaxProcs(event.target.value)}
+              />
+              <p className="form-hint">{t.form.piperMaxProcsHint}</p>
+            </div>
+          </fieldset>
+
+          <fieldset className="form-field">
+            <legend className="form-legend">{t.form.audioLegend}</legend>
+            <div className="form-row">
+              <label htmlFor="bitrate">{t.form.bitrateLabel}</label>
+              <input
+                id="bitrate"
+                name="bitrate"
+                placeholder={t.form.bitratePlaceholder}
+                value={bitrate}
+                disabled={isSubmitting}
+                onChange={(event) => setBitrate(event.target.value)}
+              />
+              <p className="form-hint">{t.form.bitrateHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="sampleRate">{t.form.sampleRateLabel}</label>
+              <input
+                id="sampleRate"
+                name="sampleRate"
+                type="number"
+                min={8000}
+                placeholder={t.form.sampleRatePlaceholder}
+                value={sampleRate}
+                disabled={isSubmitting}
+                onChange={(event) => setSampleRate(event.target.value)}
+              />
+              <p className="form-hint">{t.form.sampleRateHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="channels">{t.form.channelsLabel}</label>
+              <select
+                id="channels"
+                name="channels"
+                value={channels}
+                disabled={isSubmitting}
+                onChange={(event) => setChannels(event.target.value)}
+              >
+                <option value="1">{t.form.channelsMono}</option>
+                <option value="2">{t.form.channelsStereo}</option>
+              </select>
+              <p className="form-hint">{t.form.channelsHint}</p>
+            </div>
+          </fieldset>
+
+          <fieldset className="form-field">
+            <legend className="form-legend">{t.form.processingLegend}</legend>
+            <div className="form-row">
+              <label htmlFor="verboseToggle">{t.form.verboseLabel}</label>
+              <label className="form-toggle" htmlFor="verboseToggle">
+                <input
+                  id="verboseToggle"
+                  type="checkbox"
+                  checked={verbose}
+                  disabled={isSubmitting}
+                  onChange={(event) => setVerbose(event.target.checked)}
+                />
+                <span>{verbose ? t.form.verboseOn : t.form.verboseOff}</span>
+              </label>
+              <p className="form-hint">{t.form.verboseDescription}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="clearCacheToggle">{t.form.clearCacheLabel}</label>
+              <label className="form-toggle" htmlFor="clearCacheToggle">
+                <input
+                  id="clearCacheToggle"
+                  type="checkbox"
+                  checked={clearCache}
+                  disabled={isSubmitting}
+                  onChange={(event) => setClearCache(event.target.checked)}
+                />
+                <span>
+                  {clearCache ? t.form.clearCacheOn : t.form.clearCacheOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.clearCacheDescription}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="forceReprocessToggle">
+                {t.form.forceReprocessLabel}
+              </label>
+              <label className="form-toggle" htmlFor="forceReprocessToggle">
+                <input
+                  id="forceReprocessToggle"
+                  type="checkbox"
+                  checked={forceReprocess}
+                  disabled={isSubmitting}
+                  onChange={(event) => setForceReprocess(event.target.checked)}
+                />
+                <span>
+                  {forceReprocess
+                    ? t.form.forceReprocessOn
+                    : t.form.forceReprocessOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.forceReprocessDescription}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="filterChaptersToggle">
+                {t.form.filterChaptersLabel}
+              </label>
+              <label className="form-toggle" htmlFor="filterChaptersToggle">
+                <input
+                  id="filterChaptersToggle"
+                  type="checkbox"
+                  checked={filterChapters}
+                  disabled={isSubmitting}
+                  onChange={(event) => setFilterChapters(event.target.checked)}
+                />
+                <span>
+                  {filterChapters
+                    ? t.form.filterChaptersOn
+                    : t.form.filterChaptersOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.filterChaptersDescription}</p>
+            </div>
+          </fieldset>
+
+          <fieldset className="form-field">
+            <legend className="form-legend">
+              {t.form.languageDetectionLegend}
+            </legend>
+            <div className="form-row">
+              <label htmlFor="useLanguageDetectionToggle">
+                {t.form.languageDetectionLabel}
+              </label>
+              <label
+                className="form-toggle"
+                htmlFor="useLanguageDetectionToggle"
+              >
+                <input
+                  id="useLanguageDetectionToggle"
+                  type="checkbox"
+                  checked={useLanguageDetection}
+                  disabled={isSubmitting}
+                  onChange={(event) =>
+                    setUseLanguageDetection(event.target.checked)
+                  }
+                />
+                <span>
+                  {useLanguageDetection
+                    ? t.form.languageDetectionOn
+                    : t.form.languageDetectionOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.languageDetectionDescription}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="prioritizePrimaryLanguageToggle">
+                {t.form.prioritizePrimaryLanguageLabel}
+              </label>
+              <label
+                className="form-toggle"
+                htmlFor="prioritizePrimaryLanguageToggle"
+              >
+                <input
+                  id="prioritizePrimaryLanguageToggle"
+                  type="checkbox"
+                  checked={prioritizePrimaryLanguage}
+                  disabled={isSubmitting}
+                  onChange={(event) =>
+                    setPrioritizePrimaryLanguage(event.target.checked)
+                  }
+                />
+                <span>
+                  {prioritizePrimaryLanguage
+                    ? t.form.prioritizePrimaryLanguageOn
+                    : t.form.prioritizePrimaryLanguageOff}
+                </span>
+              </label>
+              <p className="form-hint">
+                {t.form.prioritizePrimaryLanguageDescription}
+              </p>
+            </div>
+          </fieldset>
+
+          <fieldset className="form-field">
+            <legend className="form-legend">{t.form.healthCheckLegend}</legend>
+            <div className="form-row">
+              <label htmlFor="healthCheckIntervalSeconds">
+                {t.form.healthCheckIntervalLabel}
+              </label>
+              <input
+                id="healthCheckIntervalSeconds"
+                name="healthCheckIntervalSeconds"
+                type="number"
+                min={10}
+                step={1}
+                placeholder={t.form.healthCheckIntervalPlaceholder}
+                value={healthCheckIntervalSeconds}
+                disabled={isSubmitting}
+                onChange={(event) =>
+                  setHealthCheckIntervalSeconds(event.target.value)
+                }
+              />
+              <p className="form-hint">{t.form.healthCheckIntervalHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="healthCheckSlowEdgeCps">
+                {t.form.healthCheckSlowEdgeCpsLabel}
+              </label>
+              <input
+                id="healthCheckSlowEdgeCps"
+                name="healthCheckSlowEdgeCps"
+                type="number"
+                min={10}
+                step={1}
+                placeholder={t.form.healthCheckSlowEdgeCpsPlaceholder}
+                value={healthCheckSlowEdgeCps}
+                disabled={isSubmitting}
+                onChange={(event) =>
+                  setHealthCheckSlowEdgeCps(event.target.value)
+                }
+              />
+              <p className="form-hint">{t.form.healthCheckSlowEdgeCpsHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="healthCheckSlowCps">
+                {t.form.healthCheckSlowCpsLabel}
+              </label>
+              <input
+                id="healthCheckSlowCps"
+                name="healthCheckSlowCps"
+                type="number"
+                min={10}
+                step={1}
+                placeholder={t.form.healthCheckSlowCpsPlaceholder}
+                value={healthCheckSlowCps}
+                disabled={isSubmitting}
+                onChange={(event) => setHealthCheckSlowCps(event.target.value)}
+              />
+              <p className="form-hint">{t.form.healthCheckSlowCpsHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="healthCheckHighCpu">
+                {t.form.healthCheckHighCpuLabel}
+              </label>
+              <input
+                id="healthCheckHighCpu"
+                name="healthCheckHighCpu"
+                type="number"
+                min={30}
+                max={100}
+                step={1}
+                placeholder={t.form.healthCheckHighCpuPlaceholder}
+                value={healthCheckHighCpu}
+                disabled={isSubmitting}
+                onChange={(event) => setHealthCheckHighCpu(event.target.value)}
+              />
+              <p className="form-hint">{t.form.healthCheckHighCpuHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="healthCheckHighMem">
+                {t.form.healthCheckHighMemLabel}
+              </label>
+              <input
+                id="healthCheckHighMem"
+                name="healthCheckHighMem"
+                type="number"
+                min={30}
+                max={100}
+                step={1}
+                placeholder={t.form.healthCheckHighMemPlaceholder}
+                value={healthCheckHighMem}
+                disabled={isSubmitting}
+                onChange={(event) => setHealthCheckHighMem(event.target.value)}
+              />
+              <p className="form-hint">{t.form.healthCheckHighMemHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="healthCheckOkCpu">
+                {t.form.healthCheckOkCpuLabel}
+              </label>
+              <input
+                id="healthCheckOkCpu"
+                name="healthCheckOkCpu"
+                type="number"
+                min={10}
+                max={100}
+                step={1}
+                placeholder={t.form.healthCheckOkCpuPlaceholder}
+                value={healthCheckOkCpu}
+                disabled={isSubmitting}
+                onChange={(event) => setHealthCheckOkCpu(event.target.value)}
+              />
+              <p className="form-hint">{t.form.healthCheckOkCpuHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="healthCheckOkMem">
+                {t.form.healthCheckOkMemLabel}
+              </label>
+              <input
+                id="healthCheckOkMem"
+                name="healthCheckOkMem"
+                type="number"
+                min={10}
+                max={100}
+                step={1}
+                placeholder={t.form.healthCheckOkMemPlaceholder}
+                value={healthCheckOkMem}
+                disabled={isSubmitting}
+                onChange={(event) => setHealthCheckOkMem(event.target.value)}
+              />
+              <p className="form-hint">{t.form.healthCheckOkMemHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="healthCheckSlowStreak">
+                {t.form.healthCheckSlowStreakLabel}
+              </label>
+              <input
+                id="healthCheckSlowStreak"
+                name="healthCheckSlowStreak"
+                type="number"
+                min={1}
+                max={6}
+                step={1}
+                placeholder={t.form.healthCheckSlowStreakPlaceholder}
+                value={healthCheckSlowStreak}
+                disabled={isSubmitting}
+                onChange={(event) =>
+                  setHealthCheckSlowStreak(event.target.value)
+                }
+              />
+              <p className="form-hint">{t.form.healthCheckSlowStreakHint}</p>
+            </div>
           </fieldset>
 
           <fieldset className="form-row">
@@ -760,6 +1615,19 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               onChange={(event) => setChapters(event.target.value)}
             />
             <p className="form-hint">{t.form.chaptersHint}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="sections">{t.form.sectionsLabel}</label>
+            <input
+              id="sections"
+              name="sections"
+              placeholder={t.form.sectionsPlaceholder}
+              value={sections}
+              disabled={isSubmitting}
+              onChange={(event) => setSections(event.target.value)}
+            />
+            <p className="form-hint">{t.form.sectionsHint}</p>
           </fieldset>
 
           <fieldset className="form-row">
@@ -781,7 +1649,11 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
               {t.form.footnoteOptions.map((option) => {
                 const inputId = `footnote-${option.value}`;
                 return (
-                  <label key={option.value} className="segmented-list__item" htmlFor={inputId}>
+                  <label
+                    key={option.value}
+                    className="segmented-list__item"
+                    htmlFor={inputId}
+                  >
                     <input
                       type="radio"
                       id={inputId}
@@ -792,8 +1664,12 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
                       onChange={() => setFootnoteMode(option.value)}
                     />
                     <span className="segmented-list__content">
-                      <span className="segmented-list__title">{option.title}</span>
-                      <span className="segmented-list__description">{option.description}</span>
+                      <span className="segmented-list__title">
+                        {option.title}
+                      </span>
+                      <span className="segmented-list__description">
+                        {option.description}
+                      </span>
                     </span>
                   </label>
                 );
@@ -809,12 +1685,8 @@ export default function ConversionForm({ isSubmitting, onSubmit, onUploadFile, c
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={disableSubmit}
-        className="form-submit"
-      >
-        {isSubmitting
+      <button type="submit" disabled={disableSubmit} className="form-submit">
+        {isSubmitting || Object.keys(uploadPromisesRef.current).length > 0
           ? t.form.submitBusy
           : t.form.submitIdle}
       </button>

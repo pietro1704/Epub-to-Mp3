@@ -6,10 +6,10 @@ Gerenciador de cache para ebooks processados
 import hashlib
 import json
 import shutil
-from pathlib import Path
-from typing import Dict, Any, Optional, List
-from datetime import datetime
 from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from .paths import CACHE_DIR
 
@@ -17,6 +17,7 @@ from .paths import CACHE_DIR
 @dataclass
 class ConversionCheckpoint:
     """Estado de checkpoint de uma conversão"""
+
     book_path: str
     book_title: str
     output_dir: str
@@ -42,14 +43,14 @@ class CacheManager:
             print(f"💡 Dica: verifique as permissões do diretório {CACHE_DIR}")
             # Fallback para None - operações de cache serão no-ops
             self.cache_dir = None
-    
+
     def _get_ebook_hash(self, ebook_path: Path) -> str:
         """Gera hash único para o ebook"""
         # Usa stat do arquivo + nome para gerar hash único
         stat = ebook_path.stat()
         hash_input = f"{ebook_path.name}_{stat.st_size}_{stat.st_mtime}"
         return hashlib.md5(hash_input.encode()).hexdigest()[:12]
-    
+
     def _get_cache_path(self, ebook_path: Path, *, override_name: Optional[str] = None) -> Path:
         """Retorna caminho do cache usando apenas o nome do livro
 
@@ -59,6 +60,7 @@ class CacheManager:
         if self.cache_dir is None:
             # Fallback para diretório temporário
             import tempfile
+
             return Path(tempfile.gettempdir()) / "epub_to_mp3_fallback"
         # **CORRIGIDO**: Sempre usar ebook_path.stem, ignorar override_name
         # para evitar criar múltiplas pastas para o mesmo livro
@@ -67,7 +69,7 @@ class CacheManager:
         if not safe_name:
             safe_name = "livro"
         return self.cache_dir / safe_name
-    
+
     def get_cached_chapters(self, ebook_path: Path) -> Optional[Dict[str, Any]]:
         """Retorna capítulos cacheados se existirem"""
         if self.cache_dir is None:
@@ -78,11 +80,11 @@ class CacheManager:
 
         if not metadata_file.exists():
             return None
-        
+
         try:
-            with open(metadata_file, 'r', encoding='utf-8') as f:
+            with open(metadata_file, "r", encoding="utf-8") as f:
                 metadata = json.load(f)
-            
+
             # Valida se cache ainda é válido
             if self._is_cache_valid(metadata, ebook_path):
                 return metadata
@@ -90,10 +92,10 @@ class CacheManager:
                 # Remove cache inválido
                 self._cleanup_cache(cache_path)
                 return None
-                
+
         except Exception:
             return None
-    
+
     def save_chapters_to_cache(self, ebook_path: Path, chapters_data: Dict[str, Any]) -> bool:
         """Salva capítulos processados no cache"""
         if self.cache_dir is None:
@@ -110,7 +112,7 @@ class CacheManager:
             print("⚠️  Dados de capítulos inesperados ao salvar cache.")
             return False
 
-        chapters = chapters_data.get('chapters')
+        chapters = chapters_data.get("chapters")
         if chapters is None:
             # Nenhum capítulo para salvar é uma condição aceitável
             chapters = []
@@ -135,27 +137,29 @@ class CacheManager:
                     print("⚠️  Capítulo inesperado no cache, ignorando entrada inválida.")
                     continue
 
-                chapter_title = chapter.get('title', 'Chapter')
-                chapter_text = chapter.get('text', '') or ''
+                chapter_title = chapter.get("title", "Chapter")
+                chapter_text = chapter.get("text", "") or ""
 
-                chapter_file = txt_dir / f"{index:03d}_{self._sanitize_filename(str(chapter_title))}.txt"
-                with open(chapter_file, 'w', encoding='utf-8') as handle:
+                chapter_file = (
+                    txt_dir / f"{index:03d}_{self._sanitize_filename(str(chapter_title))}.txt"
+                )
+                with open(chapter_file, "w", encoding="utf-8") as handle:
                     handle.write(chapter_text)
 
             # **FIX**: Salvar metadata.json para que get_cached_chapters funcione
             stat = ebook_path.stat()
             metadata = {
-                'title': chapters_data.get('title', 'Unknown'),
-                'author': chapters_data.get('author', 'Unknown'),
-                'chapters': chapters_data.get('chapters', []),
-                'chapters_count': len(chapters),
-                'cached_at': datetime.now().isoformat(),
-                'size': stat.st_size,
-                'mtime': stat.st_mtime
+                "title": chapters_data.get("title", "Unknown"),
+                "author": chapters_data.get("author", "Unknown"),
+                "chapters": chapters_data.get("chapters", []),
+                "chapters_count": len(chapters),
+                "cached_at": datetime.now().isoformat(),
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
             }
 
             metadata_file = cache_path / "metadata.json"
-            with open(metadata_file, 'w', encoding='utf-8') as f:
+            with open(metadata_file, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
 
             return True
@@ -163,7 +167,7 @@ class CacheManager:
         except Exception as exc:
             print(f"⚠️  Erro ao salvar cache: {exc}")
             return False
-    
+
     def _is_cache_valid(self, metadata: Dict[str, Any], ebook_path: Path) -> bool:
         """Valida se o cache ainda é válido"""
         try:
@@ -171,7 +175,7 @@ class CacheManager:
             return metadata.get("size") == stat.st_size and metadata.get("mtime") == stat.st_mtime
         except FileNotFoundError:
             return False
-    
+
     def _cleanup_cache(self, cache_path: Path):
         """Remove cache inválido"""
         for item in cache_path.rglob("*"):
@@ -181,8 +185,10 @@ class CacheManager:
             if item.is_dir():
                 item.rmdir()
         cache_path.rmdir()
-    
-    def clear_cache(self, ebook_path: Optional[Path] = None, *, title: Optional[str] = None) -> bool:
+
+    def clear_cache(
+        self, ebook_path: Optional[Path] = None, *, title: Optional[str] = None
+    ) -> bool:
         """Limpa o cache para um ebook específico ou todo o cache."""
         if self.cache_dir is None:
             return False
@@ -217,54 +223,59 @@ class CacheManager:
                 removed_any = True
 
         return removed_any
-    
+
     def get_cache_info(self) -> Dict[str, Any]:
         """Retorna informações sobre o cache"""
         if self.cache_dir is None:
-            return {'total_cached_books': 0, 'cache_size_mb': 0}
+            return {"total_cached_books": 0, "cache_size_mb": 0}
 
         try:
             if not self.cache_dir.exists():
-                return {'total_cached_books': 0, 'cache_size_mb': 0}
-            
+                return {"total_cached_books": 0, "cache_size_mb": 0}
+
             cached_books = []
             total_size = 0
-            
+
             for cache_folder in self.cache_dir.iterdir():
                 if cache_folder.is_dir():
                     metadata_file = cache_folder / "metadata.json"
                     if metadata_file.exists():
                         try:
-                            with open(metadata_file, 'r', encoding='utf-8') as f:
+                            with open(metadata_file, "r", encoding="utf-8") as f:
                                 metadata = json.load(f)
-                            
-                            folder_size = sum(f.stat().st_size for f in cache_folder.rglob('*') if f.is_file())
+
+                            folder_size = sum(
+                                f.stat().st_size for f in cache_folder.rglob("*") if f.is_file()
+                            )
                             total_size += folder_size
-                            
-                            cached_books.append({
-                                'title': metadata.get('title', 'Unknown'),
-                                'cached_at': metadata.get('cached_at', ''),
-                                'chapters_count': metadata.get('chapters_count', 0),
-                                'size_mb': folder_size / 1024 / 1024
-                            })
-                            
+
+                            cached_books.append(
+                                {
+                                    "title": metadata.get("title", "Unknown"),
+                                    "cached_at": metadata.get("cached_at", ""),
+                                    "chapters_count": metadata.get("chapters_count", 0),
+                                    "size_mb": folder_size / 1024 / 1024,
+                                }
+                            )
+
                         except Exception:
                             continue
-            
+
             return {
-                'total_cached_books': len(cached_books),
-                'cache_size_mb': total_size / 1024 / 1024,
-                'cached_books': cached_books
+                "total_cached_books": len(cached_books),
+                "cache_size_mb": total_size / 1024 / 1024,
+                "cached_books": cached_books,
             }
-            
+
         except Exception:
-            return {'total_cached_books': 0, 'cache_size_mb': 0}
-    
+            return {"total_cached_books": 0, "cache_size_mb": 0}
+
     def _get_checkpoint_path(self, book_path: Path) -> Path:
         """Gera caminho do checkpoint para o livro"""
         if self.cache_dir is None:
             # Fallback para diretório temporário
             import tempfile
+
             temp_cache = Path(tempfile.gettempdir()) / "epub_to_mp3_fallback"
             book_hash = hashlib.md5(str(book_path.absolute()).encode()).hexdigest()[:12]
             safe_name = self._sanitize_filename(book_path.stem)
@@ -274,15 +285,17 @@ class CacheManager:
         safe_name = self._sanitize_filename(book_path.stem)
         return self.cache_dir / f"{safe_name}_{book_hash}.json"
 
-    def save_checkpoint(self,
-                       book_path: Path,
-                       book_title: str,
-                       output_dir: Path,
-                       temp_dir: Path,
-                       total_chapters: int,
-                       completed_chapters: List[int],
-                       current_chapter: Optional[int],
-                       conversion_config: Dict[str, Any]) -> bool:
+    def save_checkpoint(
+        self,
+        book_path: Path,
+        book_title: str,
+        output_dir: Path,
+        temp_dir: Path,
+        total_chapters: int,
+        completed_chapters: List[int],
+        current_chapter: Optional[int],
+        conversion_config: Dict[str, Any],
+    ) -> bool:
         """Salva checkpoint da conversão"""
         try:
             checkpoint = ConversionCheckpoint(
@@ -294,12 +307,12 @@ class CacheManager:
                 completed_chapters=completed_chapters.copy(),
                 current_chapter=current_chapter,
                 conversion_config=conversion_config,
-                started_at=getattr(self, '_conversion_start_time', datetime.now().isoformat()),
-                last_updated=datetime.now().isoformat()
+                started_at=getattr(self, "_conversion_start_time", datetime.now().isoformat()),
+                last_updated=datetime.now().isoformat(),
             )
 
             checkpoint_path = self._get_checkpoint_path(book_path)
-            with open(checkpoint_path, 'w', encoding='utf-8') as f:
+            with open(checkpoint_path, "w", encoding="utf-8") as f:
                 json.dump(checkpoint.__dict__, f, ensure_ascii=False, indent=2)
 
             return True
@@ -315,7 +328,7 @@ class CacheManager:
             if not checkpoint_path.exists():
                 return None
 
-            with open(checkpoint_path, 'r', encoding='utf-8') as f:
+            with open(checkpoint_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             return ConversionCheckpoint(**data)
@@ -342,9 +355,12 @@ class CacheManager:
         checkpoint_path = self._get_checkpoint_path(book_path)
         return checkpoint_path.exists()
 
-    def validate_checkpoint(self, checkpoint: ConversionCheckpoint,
-                          current_temp_dir: Path,
-                          current_config: Dict[str, Any]) -> bool:
+    def validate_checkpoint(
+        self,
+        checkpoint: ConversionCheckpoint,
+        current_temp_dir: Path,
+        current_config: Dict[str, Any],
+    ) -> bool:
         """Valida se checkpoint é compatível com conversão atual"""
         try:
             temp_dir = Path(checkpoint.temp_dir)
@@ -358,7 +374,7 @@ class CacheManager:
                     print(f"⚠️ Arquivo do capítulo {chapter_idx} não encontrado")
                     return False
 
-            if checkpoint.conversion_config.get('engine') != current_config.get('engine'):
+            if checkpoint.conversion_config.get("engine") != current_config.get("engine"):
                 print("⚠️ Engine TTS diferente - checkpoint incompatível")
                 return False
 
@@ -378,17 +394,17 @@ class CacheManager:
             started = datetime.fromisoformat(checkpoint.started_at)
             last_updated = datetime.fromisoformat(checkpoint.last_updated)
             elapsed = last_updated - started
-            elapsed_time = str(elapsed).split('.')[0]
-        except:
+            elapsed_time = str(elapsed).split(".")[0]
+        except Exception:
             pass
 
         return {
-            'completed_chapters': completed_count,
-            'remaining_chapters': remaining_count,
-            'progress_percentage': (completed_count / checkpoint.total_chapters) * 100,
-            'elapsed_time': elapsed_time,
-            'last_updated': checkpoint.last_updated,
-            'temp_dir': checkpoint.temp_dir
+            "completed_chapters": completed_count,
+            "remaining_chapters": remaining_count,
+            "progress_percentage": (completed_count / checkpoint.total_chapters) * 100,
+            "elapsed_time": elapsed_time,
+            "last_updated": checkpoint.last_updated,
+            "temp_dir": checkpoint.temp_dir,
         }
 
     def mark_conversion_start(self):
@@ -404,20 +420,22 @@ class CacheManager:
 
         for checkpoint_file in self.cache_dir.glob("*.json"):
             try:
-                with open(checkpoint_file, 'r', encoding='utf-8') as f:
+                with open(checkpoint_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
 
                 checkpoint = ConversionCheckpoint(**data)
                 info = self.get_resume_info(checkpoint)
 
-                checkpoints.append({
-                    'book_title': checkpoint.book_title,
-                    'book_path': checkpoint.book_path,
-                    'progress': f"{info['completed_chapters']}/{checkpoint.total_chapters}",
-                    'percentage': f"{info['progress_percentage']:.1f}%",
-                    'last_updated': checkpoint.last_updated,
-                    'elapsed_time': info['elapsed_time']
-                })
+                checkpoints.append(
+                    {
+                        "book_title": checkpoint.book_title,
+                        "book_path": checkpoint.book_path,
+                        "progress": f"{info['completed_chapters']}/{checkpoint.total_chapters}",
+                        "percentage": f"{info['progress_percentage']:.1f}%",
+                        "last_updated": checkpoint.last_updated,
+                        "elapsed_time": info["elapsed_time"],
+                    }
+                )
 
             except Exception:
                 continue
@@ -427,9 +445,10 @@ class CacheManager:
     def _sanitize_filename(self, filename: str) -> str:
         """Sanitiza nome de arquivo"""
         import re
-        safe = re.sub(r'[<>:"/\\|?*]', '', filename)
-        safe = re.sub(r'\s+', '_', safe)
-        safe = safe.strip('_')
+
+        safe = re.sub(r'[<>:"/\\|?*]', "", filename)
+        safe = re.sub(r"\s+", "_", safe)
+        safe = safe.strip("_")
         if not safe:
             return "livro"
         return safe[:80]

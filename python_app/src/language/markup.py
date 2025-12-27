@@ -9,8 +9,7 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional
 
 from .codes import ensure_bcp47
-from .detector import LanguageDetector, LanguageSegment
-
+from .detector import LanguageDetector
 
 LANG_START_RE = re.compile(r"\[\[lang:([a-zA-Z\-]{2,15})\]\]", re.IGNORECASE)
 LANG_END_RE = re.compile(r"\[\[/lang\]\]", re.IGNORECASE)
@@ -18,23 +17,25 @@ LANG_END_RE = re.compile(r"\[\[/lang\]\]", re.IGNORECASE)
 # Text formatting patterns for TTS guidance (not spoken)
 FORMATTING_PATTERNS = [
     # Italic text - add slight emphasis
-    (re.compile(r'<i>(.*?)</i>', re.IGNORECASE | re.DOTALL), r'[[emphasis:mild]]\1[[/emphasis]]'),
-    (re.compile(r'<em>(.*?)</em>', re.IGNORECASE | re.DOTALL), r'[[emphasis:mild]]\1[[/emphasis]]'),
-
+    (re.compile(r"<i>(.*?)</i>", re.IGNORECASE | re.DOTALL), r"[[emphasis:mild]]\1[[/emphasis]]"),
+    (re.compile(r"<em>(.*?)</em>", re.IGNORECASE | re.DOTALL), r"[[emphasis:mild]]\1[[/emphasis]]"),
     # Bold text - add strong emphasis
-    (re.compile(r'<b>(.*?)</b>', re.IGNORECASE | re.DOTALL), r'[[emphasis:strong]]\1[[/emphasis]]'),
-    (re.compile(r'<strong>(.*?)</strong>', re.IGNORECASE | re.DOTALL), r'[[emphasis:strong]]\1[[/emphasis]]'),
-
+    (re.compile(r"<b>(.*?)</b>", re.IGNORECASE | re.DOTALL), r"[[emphasis:strong]]\1[[/emphasis]]"),
+    (
+        re.compile(r"<strong>(.*?)</strong>", re.IGNORECASE | re.DOTALL),
+        r"[[emphasis:strong]]\1[[/emphasis]]",
+    ),
     # Quotations - add pause before and after
     (re.compile(r'"([^"]*)"'), r'[[pause:short]]"\1"[[pause:short]]'),
     (re.compile(r'"([^"]*)"'), r'[[pause:short]]"\1"[[pause:short]]'),
-
     # Parentheses - slight pause and lower tone
-    (re.compile(r'\(([^)]*)\)'), r'[[pause:short]][[tone:lower]](\1)[[/tone]][[pause:short]]'),
-
+    (re.compile(r"\(([^)]*)\)"), r"[[pause:short]][[tone:lower]](\1)[[/tone]][[pause:short]]"),
     # Titles and paragraph breaks - add natural pauses
-    (re.compile(r'\n\n+'), r'\n\n[[pause:long]]'),
-    (re.compile(r'^([A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][A-ZÁÀÂÃÉÊÍÓÔÕÚÇ\s]+)$', re.MULTILINE), r'[[pause:medium]]\1[[pause:long]]'),
+    (re.compile(r"\n\n+"), r"\n\n[[pause:long]]"),
+    (
+        re.compile(r"^([A-ZÁÀÂÃÉÊÍÓÔÕÚÇ][A-ZÁÀÂÃÉÊÍÓÔÕÚÇ\s]+)$", re.MULTILINE),
+        r"[[pause:medium]]\1[[pause:long]]",
+    ),
 ]
 
 
@@ -46,6 +47,9 @@ class MarkedSegment:
 
 class LanguageMarkup:
     """Apply and interpret language markup in chapter text."""
+
+    _MIXED_LANGUAGE_SHORT_TEXT_MAX_CHARS = 400
+    _MIXED_LANGUAGE_SHORT_SEGMENT_MAX_CHARS = 120
 
     def __init__(self, detector: Optional[LanguageDetector] = None) -> None:
         self.detector = detector or LanguageDetector()
@@ -76,12 +80,15 @@ class LanguageMarkup:
         try:
             # **TIMEOUT**: Aplicar timeout na detecção de perfil
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 future = executor.submit(self.detector.detect_profile, [text], max_chars=4000)
                 try:
                     profile = future.result(timeout=3.0)  # 3 segundos max
                 except concurrent.futures.TimeoutError:
-                    print(f"⚠️ Timeout na detecção de perfil de idioma - usando idioma padrão: {default_short}")
+                    print(
+                        f"⚠️ Timeout na detecção de perfil de idioma - usando idioma padrão: {default_short}"
+                    )
                     return text
         except Exception as e:
             print(f"⚠️ Erro na detecção de perfil: {e} - usando idioma padrão: {default_short}")
@@ -90,17 +97,19 @@ class LanguageMarkup:
         def _short(code: Optional[str]) -> str:
             if not code:
                 return ""
-            return code.split('-', 1)[0].lower()
+            return code.split("-", 1)[0].lower()
 
         profile_languages = {
-            _short(lang)
-            for lang in profile.languages
-            if lang and lang != "unknown"
+            _short(lang) for lang in profile.languages if lang and lang != "unknown"
         }
 
         predictions = list(getattr(profile, "predictions", []) or [])
-        primary_prediction = next((pred for pred in predictions if _short(pred.code) == default_short), None)
-        best_alternative = next((pred for pred in predictions if _short(pred.code) != default_short), None)
+        primary_prediction = next(
+            (pred for pred in predictions if _short(pred.code) == default_short), None
+        )
+        best_alternative = next(
+            (pred for pred in predictions if _short(pred.code) != default_short), None
+        )
 
         if default_short and default_short not in {"", "unknown", "auto"}:
             allow_mixed = best_alternative is not None
@@ -127,12 +136,14 @@ class LanguageMarkup:
                     text,
                     timeout_seconds=1.5,  # Timeout mais agressivo para segmentos
                     fallback_language=default_short,
-                    primary_language=default_short  # **NEW**: Priorizar idioma primário em ambiguidades
+                    primary_language=default_short,  # **NEW**: Priorizar idioma primário em ambiguidades
                 )
                 try:
                     segments = future.result(timeout=5.0)  # 5 segundos max total
                 except concurrent.futures.TimeoutError:
-                    print(f"⚠️ Timeout na segmentação de idioma - usando idioma padrão: {default_short}")
+                    print(
+                        f"⚠️ Timeout na segmentação de idioma - usando idioma padrão: {default_short}"
+                    )
                     return text
         except Exception as e:
             print(f"⚠️ Erro na segmentação: {e} - usando idioma padrão: {default_short}")
@@ -174,11 +185,12 @@ class LanguageMarkup:
                     # **TIMEOUT**: Confirmar com timeout para evitar travamento
                     try:
                         import concurrent.futures
+
                         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                             future = executor.submit(
                                 self.detector._detect_language_simple,
                                 segment.text,
-                                min_probability=0.8
+                                min_probability=0.8,
                             )
                             try:
                                 confirmed = future.result(timeout=1.0)  # 1 segundo max
@@ -202,6 +214,7 @@ class LanguageMarkup:
             return []
 
         default_language = (default_language or "unknown").lower()
+        default_short = default_language.split("-", 1)[0] if default_language else "unknown"
         segments: List[MarkedSegment] = []
         cursor = 0
         current_language = default_language
@@ -212,14 +225,14 @@ class LanguageMarkup:
 
             if start_match and (not end_match or start_match.start() < end_match.start()):
                 if start_match.start() > cursor:
-                    raw = text[cursor:start_match.start()]
+                    raw = text[cursor : start_match.start()]
                     segments.append(MarkedSegment(language=current_language, text=raw))
                 current_language = start_match.group(1).lower()
                 cursor = start_match.end()
                 continue
 
             if end_match:
-                raw = text[cursor:end_match.start()]
+                raw = text[cursor : end_match.start()]
                 segments.append(MarkedSegment(language=current_language, text=raw))
                 current_language = default_language
                 cursor = end_match.end()
@@ -229,7 +242,39 @@ class LanguageMarkup:
             segments.append(MarkedSegment(language=current_language, text=raw))
             break
 
-        return LanguageMarkup._merge_segments(segments)
+        merged = LanguageMarkup._merge_segments(segments)
+        if not merged or default_short in {"", "unknown"}:
+            return merged
+
+        languages = {
+            (segment.language or "").split("-", 1)[0].lower()
+            for segment in merged
+            if segment.language and segment.language != "unknown"
+        }
+        if len(languages) <= 1:
+            return merged
+
+        total_chars = sum(len(segment.text or "") for segment in merged)
+        if total_chars <= LanguageMarkup._MIXED_LANGUAGE_SHORT_TEXT_MAX_CHARS:
+            return [
+                MarkedSegment(language=default_language, text=segment.text) for segment in merged
+            ]
+        if default_short not in languages:
+            return merged
+
+        normalized: List[MarkedSegment] = []
+        for segment in merged:
+            segment_text = segment.text or ""
+            segment_lang = (segment.language or "unknown").split("-", 1)[0].lower()
+            if segment_lang in {"unknown", default_short}:
+                normalized.append(MarkedSegment(language=default_language, text=segment_text))
+                continue
+            if len(segment_text.strip()) <= LanguageMarkup._MIXED_LANGUAGE_SHORT_SEGMENT_MAX_CHARS:
+                normalized.append(MarkedSegment(language=default_language, text=segment_text))
+            else:
+                normalized.append(MarkedSegment(language=segment.language, text=segment_text))
+
+        return LanguageMarkup._merge_segments(normalized)
 
     @staticmethod
     def strip(text: str) -> str:
@@ -253,21 +298,25 @@ class LanguageMarkup:
         language_voices = language_voices or {}
         default_language = (default_language or "unknown").lower()
 
-        ssml_parts: List[str] = ["<speak version=\"1.0\" xmlns=\"http://www.w3.org/2001/10/synthesis\" xmlns:mstts=\"http://www.w3.org/2001/mstts\">"]
+        ssml_parts: List[str] = [
+            '<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="http://www.w3.org/2001/mstts">'
+        ]
 
         for segment in segments:
             text = segment.text
             if not text.strip():
                 continue
             voice = language_voices.get(segment.language, default_voice)
-            lang_code = ensure_bcp47(segment.language if segment.language != "unknown" else default_language)
+            lang_code = ensure_bcp47(
+                segment.language if segment.language != "unknown" else default_language
+            )
             safe_text = html.escape(text)
             if lang_code:
                 ssml_parts.append(
-                    f"<voice name=\"{voice}\"><lang xml:lang=\"{lang_code}\">{safe_text}</lang></voice>"
+                    f'<voice name="{voice}"><lang xml:lang="{lang_code}">{safe_text}</lang></voice>'
                 )
             else:
-                ssml_parts.append(f"<voice name=\"{voice}\">{safe_text}</voice>")
+                ssml_parts.append(f'<voice name="{voice}">{safe_text}</voice>')
 
         ssml_parts.append("</speak>")
         return "".join(ssml_parts)

@@ -5,9 +5,9 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
-from typing import Dict, Optional, List
 from datetime import datetime, timedelta
+from pathlib import Path
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ class JobManager:
                 "_saved_at": datetime.utcnow().isoformat(),
             }
 
-            with open(job_file, 'w', encoding='utf-8') as f:
+            with open(job_file, "w", encoding="utf-8") as f:
                 json.dump(job_data_with_meta, f, ensure_ascii=False, indent=2)
 
             # Update memory cache
@@ -81,7 +81,7 @@ class JobManager:
             if not job_file.exists():
                 return None
 
-            with open(job_file, 'r', encoding='utf-8') as f:
+            with open(job_file, "r", encoding="utf-8") as f:
                 job_data = json.load(f)
 
             # Remove metadata
@@ -196,7 +196,7 @@ class JobManager:
                 continue
 
             try:
-                with open(job_file, 'r', encoding='utf-8') as handle:
+                with open(job_file, "r", encoding="utf-8") as handle:
                     raw_data = json.load(handle)
             except Exception:
                 continue
@@ -213,20 +213,24 @@ class JobManager:
 
             # Only include jobs that are still in progress
             if state in ("queued", "running"):
-                resumable_jobs.append({
-                    "jobId": job_id,
-                    "state": state,
-                    "bookTitle": job_data.get("bookTitle", "Livro Desconhecido"),
-                    "fileName": Path(job_data.get("file_path", "")).name if job_data.get("file_path") else "unknown",
-                    "savedAt": saved_at,
-                    "chaptersCompleted": job_data.get("chaptersCompleted", 0),
-                    "chaptersTotal": job_data.get("chaptersTotal"),
-                    "engine": job_data.get("engine"),
-                    "voice": job_data.get("voice"),
-                    "language": job_data.get("detectedLanguage") or job_data.get("language"),
-                    "formattingCues": job_data.get("formattingCues"),
-                    "uiLanguage": job_data.get("uiLanguage"),
-                })
+                resumable_jobs.append(
+                    {
+                        "jobId": job_id,
+                        "state": state,
+                        "bookTitle": job_data.get("bookTitle", "Livro Desconhecido"),
+                        "fileName": Path(job_data.get("file_path", "")).name
+                        if job_data.get("file_path")
+                        else "unknown",
+                        "savedAt": saved_at,
+                        "chaptersCompleted": job_data.get("chaptersCompleted", 0),
+                        "chaptersTotal": job_data.get("chaptersTotal"),
+                        "engine": job_data.get("engine"),
+                        "voice": job_data.get("voice"),
+                        "language": job_data.get("detectedLanguage") or job_data.get("language"),
+                        "formattingCues": job_data.get("formattingCues"),
+                        "uiLanguage": job_data.get("uiLanguage"),
+                    }
+                )
 
         # Sort by saved timestamp (newest first)
         resumable_jobs.sort(key=lambda x: x.get("savedAt", ""), reverse=True)

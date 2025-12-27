@@ -6,7 +6,6 @@ Test-Driven Development - Estes testes definem o comportamento esperado
 """
 
 import sys
-import tempfile
 from pathlib import Path
 from typing import List, Set
 
@@ -14,8 +13,6 @@ from typing import List, Set
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.ebook_reader import EbookReader
-from src.config import ConversionConfig
-from src.converter import AudioConverter
 
 
 def test_no_duplicate_chapters_in_structure():
@@ -37,16 +34,16 @@ def test_no_duplicate_chapters_in_structure():
 
     # Verificar que os nomes são únicos
     chapter_names = [ch.name for ch in chapters]
-    assert len(chapter_names) == len(set(chapter_names)), \
-        f"Nomes de capítulos duplicados: {chapter_names}"
+    assert len(chapter_names) == len(
+        set(chapter_names)
+    ), f"Nomes de capítulos duplicados: {chapter_names}"
 
     # Verificar que os textos NÃO são idênticos
     chapter_texts = [ch.text for ch in chapters]
     for i, text1 in enumerate(chapter_texts):
         for j, text2 in enumerate(chapter_texts):
             if i != j:
-                assert text1 != text2, \
-                    f"Capítulos {i} e {j} têm texto idêntico (duplicação!)"
+                assert text1 != text2, f"Capítulos {i} e {j} têm texto idêntico (duplicação!)"
 
 
 def test_no_duplicate_content_within_chapter():
@@ -65,7 +62,7 @@ def test_no_duplicate_content_within_chapter():
         text = chapter.text
 
         # Dividir em sentenças (aproximação simples)
-        sentences = [s.strip() for s in text.split('.') if len(s.strip()) > 20]
+        sentences = [s.strip() for s in text.split(".") if len(s.strip()) > 20]
 
         # Verificar duplicatas
         seen: Set[str] = set()
@@ -73,16 +70,17 @@ def test_no_duplicate_content_within_chapter():
 
         for sentence in sentences:
             # Normalizar (remover espaços extras, lowcase)
-            normalized = ' '.join(sentence.lower().split())
+            normalized = " ".join(sentence.lower().split())
 
             if normalized in seen:
                 duplicates.append(sentence[:80])
             seen.add(normalized)
 
         # Permitir NO MÁXIMO 1 duplicata (contexto de nota de rodapé)
-        assert len(duplicates) <= 1, \
-            f"Capítulo {idx} ({chapter.name}) tem {len(duplicates)} sentenças duplicadas:\n" + \
-            '\n'.join(f"  - {d}" for d in duplicates[:3])
+        assert len(duplicates) <= 1, (
+            f"Capítulo {idx} ({chapter.name}) tem {len(duplicates)} sentenças duplicadas:\n"
+            + "\n".join(f"  - {d}" for d in duplicates[:3])
+        )
 
 
 def test_chapter_text_length_reasonable():
@@ -111,10 +109,11 @@ def test_chapter_text_length_reasonable():
         chapter = chapters[idx]
         actual_len = len(chapter.text)
 
-        assert min_len <= actual_len <= max_len, \
-            f"Capítulo {idx} ({chapter.name}) tem {actual_len} chars, " + \
-            f"esperado entre {min_len}-{max_len}. " + \
-            f"Pode haver duplicação se muito maior, ou conteúdo faltando se muito menor!"
+        assert min_len <= actual_len <= max_len, (
+            f"Capítulo {idx} ({chapter.name}) tem {actual_len} chars, "
+            + f"esperado entre {min_len}-{max_len}. "
+            + "Pode haver duplicação se muito maior, ou conteúdo faltando se muito menor!"
+        )
 
 
 def test_footnote_markers_not_duplicated():
@@ -135,7 +134,7 @@ def test_footnote_markers_not_duplicated():
         text = chapter.text
 
         # Encontrar todos os marcadores de nota [N]
-        markers = re.findall(r'\[(\d+)\]', text)
+        markers = re.findall(r"\[(\d+)\]", text)
 
         if not markers:
             continue  # Capítulo sem notas
@@ -147,9 +146,10 @@ def test_footnote_markers_not_duplicated():
 
         duplicates = {m: count for m, count in marker_counts.items() if count > 1}
 
-        assert not duplicates, \
-            f"Capítulo {idx} ({chapter.name}) tem marcadores de nota duplicados: {duplicates}\n" + \
-            f"Isso indica que as notas podem estar sendo processadas múltiplas vezes!"
+        assert not duplicates, (
+            f"Capítulo {idx} ({chapter.name}) tem marcadores de nota duplicados: {duplicates}\n"
+            + "Isso indica que as notas podem estar sendo processadas múltiplas vezes!"
+        )
 
 
 def test_no_double_chapter_titles():
@@ -173,10 +173,11 @@ def test_no_double_chapter_titles():
 
         # Título deve aparecer NO MÁXIMO 1 vez (no início)
         # Se aparecer 2x ou mais, há duplicação!
-        assert title_count <= 1, \
-            f"Capítulo {idx}: título '{title}' aparece {title_count} vezes no texto!\n" + \
-            f"Isso indica duplicação de conteúdo.\n" + \
-            f"Texto: {text[:200]}..."
+        assert title_count <= 1, (
+            f"Capítulo {idx}: título '{title}' aparece {title_count} vezes no texto!\n"
+            + "Isso indica duplicação de conteúdo.\n"
+            + f"Texto: {text[:200]}..."
+        )
 
 
 if __name__ == "__main__":

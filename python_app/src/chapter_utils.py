@@ -47,15 +47,17 @@ def deduplicate_chapters_by_content(
 ) -> Tuple[List[Any], int]:
     """Remove chapters with identical long-form text content."""
     chapters_list = list(chapters)
-    total_chapters = len(chapters_list)
     deduplicated: List[Any] = []
     seen_hashes: set[str] = set()
-    seen_prefixes: dict[str, int] = {}
     removed = 0
     removed_details: List[Tuple[str, str]] = []  # (chapter_name, reason)
 
     for idx, chapter in enumerate(chapters_list, 1):
-        chapter_name = getattr(chapter, "name", None) or getattr(chapter, "display_name", None) or f"Chapter {idx}"
+        chapter_name = (
+            getattr(chapter, "name", None)
+            or getattr(chapter, "display_name", None)
+            or f"Chapter {idx}"
+        )
         payload = _extract_text_payload(chapter)
         normalized_len = len(payload)
 
