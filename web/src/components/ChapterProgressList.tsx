@@ -52,9 +52,29 @@ export default function ChapterProgressList({ entries }: ChapterProgressListProp
     }
   }, [entries]);
 
+  // Handle audio playback - pause other audios when one starts playing
   useEffect(() => {
-    scrollToCurrent('auto');
-  }, [scrollToCurrent]);
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handlePlay = (event: Event) => {
+      const playingAudio = event.target as HTMLAudioElement;
+      // Pause all other audio elements
+      const allAudios = container.querySelectorAll('audio');
+      allAudios.forEach((audio) => {
+        if (audio !== playingAudio && !audio.paused) {
+          audio.pause();
+        }
+      });
+    };
+
+    // Add event listener to container (event delegation)
+    container.addEventListener('play', handlePlay, true);
+
+    return () => {
+      container.removeEventListener('play', handlePlay, true);
+    };
+  }, []);
 
   return (
     <div className="chapter-progress" aria-live="polite" ref={containerRef}>
