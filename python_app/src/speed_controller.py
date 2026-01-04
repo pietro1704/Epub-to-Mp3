@@ -200,41 +200,47 @@ class AdaptiveSpeedController:
         config,
     ) -> tuple[Dict[str, float], Optional[str]]:
         history = self._history["edge"]
-        chunk_limit = int(getattr(config, "edge_chunk_chars", 14000) or 14000)
-        max_seconds = float(getattr(config, "edge_max_segment_seconds", 75) or 75)
+        # OPTIMIZED: Start from aggressive defaults but cap for reliability
+        chunk_limit = int(getattr(config, "edge_chunk_chars", 4000) or 4000)
+        max_seconds = float(getattr(config, "edge_max_segment_seconds", 45) or 45)
 
         profile = getattr(tts_engine, "speed_profile", None)
-        words_per_minute = profile.get("words_per_minute") if isinstance(profile, dict) else 150
+        words_per_minute = profile.get("words_per_minute") if isinstance(profile, dict) else 170
 
         adjustments: Dict[str, float] = {}
         chars = max(chapter_chars, 0)
 
+        # Keep chunks moderate; avoid very large segments that often truncate.
         if chars > 32000:
-            chunk_limit = max(chunk_limit, 20000)
-            max_seconds = max(max_seconds, 90.0)
+            chunk_limit = max(chunk_limit, 6000)
+            max_seconds = max(max_seconds, 65.0)
         elif chars > 18000:
-            chunk_limit = max(chunk_limit, 17000)
-        elif chars < 8000:
-            chunk_limit = min(chunk_limit, 12000)
+            chunk_limit = max(chunk_limit, 6000)
+            max_seconds = max(max_seconds, 55.0)
+        elif chars > 10000:
+            chunk_limit = max(chunk_limit, 4000)
 
         recent_failures = sum(1 for entry in history if not entry.success)
-        slow_runs = sum(1 for entry in history if entry.elapsed > 130 and entry.success)
+        slow_runs = sum(
+            1 for entry in history if entry.elapsed > 100 and entry.success
+        )  # Reduced from 130
 
         if recent_failures or self._edge_failure_streak:
-            penalty = 1500 * max(recent_failures, self._edge_failure_streak)
-            chunk_limit = max(9000, chunk_limit - penalty)
-            max_seconds = max(55.0, min(max_seconds, 75.0))
-            words_per_minute = min(words_per_minute, 165)
+            penalty = 1000 * max(recent_failures, self._edge_failure_streak)
+            chunk_limit = max(4000, chunk_limit - penalty)
+            max_seconds = max(45.0, min(max_seconds, 65.0))
+            words_per_minute = min(words_per_minute, 175)
         elif slow_runs:
-            chunk_limit = min(22000, chunk_limit + 2000)
-            max_seconds = min(95.0, max_seconds + 5.0)
-            words_per_minute = max(words_per_minute, 180)
+            chunk_limit = min(10000, chunk_limit + 2000)
+            max_seconds = min(75.0, max_seconds + 6.0)
+            words_per_minute = max(words_per_minute, 190)
         else:
-            words_per_minute = max(words_per_minute, 170)
+            words_per_minute = max(words_per_minute, 180)
 
-        chunk_limit = int(max(8000, min(chunk_limit, 23000)))
-        max_seconds = float(max(45.0, min(max_seconds, 95.0)))
-        words_per_minute = int(max(150, min(words_per_minute, 220)))
+        # Keep chunk sizes within reliable bounds.
+        chunk_limit = int(max(4000, min(chunk_limit, 12000)))
+        max_seconds = float(max(45.0, min(max_seconds, 85.0)))
+        words_per_minute = int(max(160, min(words_per_minute, 230)))
 
         changed = False
         for key, value in (

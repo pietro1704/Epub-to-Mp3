@@ -63,33 +63,34 @@ class HardwareProfile:
 class HardwareDetector:
     """Detect hardware capabilities and recommend optimal settings."""
 
+    # OPTIMIZED: More aggressive network profiles for faster conversion
     _EDGE_NETWORK_PROFILES = {
         "slow": {
-            "chunk_chars": 6000,
-            "max_segment_seconds": 45,
-            "concurrency_scale": 0.5,
-            "concurrency_cap": 2,
-            "edge_parallel": False,
+            "chunk_chars": 8000,  # Increased from 6k
+            "max_segment_seconds": 55,  # Increased from 45
+            "concurrency_scale": 0.6,  # Increased from 0.5
+            "concurrency_cap": 3,  # Increased from 2
+            "edge_parallel": True,  # Changed to True
         },
         "medium": {
-            "chunk_chars": 8000,
-            "max_segment_seconds": 55,
-            "concurrency_scale": 0.7,
-            "concurrency_cap": 3,
+            "chunk_chars": 10000,  # Increased from 8k
+            "max_segment_seconds": 65,  # Increased from 55
+            "concurrency_scale": 0.8,  # Increased from 0.7
+            "concurrency_cap": 4,  # Increased from 3
             "edge_parallel": True,
         },
         "fast": {
-            "chunk_chars": 10000,
-            "max_segment_seconds": 65,
-            "concurrency_scale": 0.85,
-            "concurrency_cap": 4,
+            "chunk_chars": 12000,  # Increased from 10k
+            "max_segment_seconds": 75,  # Increased from 65
+            "concurrency_scale": 0.9,  # Increased from 0.85
+            "concurrency_cap": 6,  # Increased from 4
             "edge_parallel": True,
         },
         "ultra": {
-            "chunk_chars": 12000,
-            "max_segment_seconds": 75,
+            "chunk_chars": 15000,  # Increased from 12k
+            "max_segment_seconds": 85,  # Increased from 75
             "concurrency_scale": 1.0,
-            "concurrency_cap": 4,
+            "concurrency_cap": 8,  # Increased from 4
             "edge_parallel": True,
         },
     }
@@ -584,8 +585,8 @@ class HardwareDetector:
             )
         )
         turbo_min_concurrency = _env_int("EDGE_TURBO_MIN_CONCURRENCY", 8)
-        turbo_chunk_chars = _env_int("EDGE_TURBO_CHUNK_CHARS", 24000)
-        turbo_segment_seconds = _env_int("EDGE_TURBO_MAX_SEGMENT_SECONDS", 95)
+        turbo_chunk_chars = _env_int("EDGE_TURBO_CHUNK_CHARS", 4000)
+        turbo_segment_seconds = _env_int("EDGE_TURBO_MAX_SEGMENT_SECONDS", 45)
         turbo_ignore_caps = _env_truthy("EDGE_TURBO_IGNORE_NETWORK_CAPS", True)
 
         if turbo_mode:

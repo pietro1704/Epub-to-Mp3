@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple
 from unittest.mock import Mock
 
+from ..speed_monitor import AdaptiveEdgeTuner, get_edge_tuner
 from ..utils import TextValidator
 
 # Salvar função original
@@ -93,14 +94,14 @@ except ImportError:
 #   - learn.microsoft.com/azure/ai-services/speech-service (Azure limits)
 # ==============================================================================
 
-# Defaults based on research - OPTIMIZED FOR MAXIMUM SPEED
-# Note: Library internally chunks at ~4096 bytes, but our chunks control text batching
-_DEFAULT_CHUNK_SIZE = 8000  # Safe upper limit (research: 3k-8k safe, >15k = incomplete)
-_DEFAULT_CONCURRENCY = 4  # Balanced speed (research: 2-4 safe, >8 = 403)
-_SAFE_CHUNK_MIN = 3000  # Minimum for efficiency
-_SAFE_CHUNK_MAX = 10000  # Maximum safe limit (library handles internal chunking)
-_SAFE_CONCURRENCY_MIN = 1  # Minimum when rate limited
-_SAFE_CONCURRENCY_MAX = 6  # Maximum safe (research: 8 causes 403)
+# Defaults based on research + aggressive throughput target (Jan 2026)
+# Target: 200+ chars/s with higher concurrency/segment sizes.
+_DEFAULT_CHUNK_SIZE = 4000  # Best overall from exhaustive merged
+_DEFAULT_CONCURRENCY = 8
+_SAFE_CHUNK_MIN = 4000  # Minimum safe chunk size
+_SAFE_CHUNK_MAX = 15000  # Upper bound for throughput testing
+_SAFE_CONCURRENCY_MIN = 2  # Always use some parallelism
+_SAFE_CONCURRENCY_MAX = 8  # Hard cap to avoid rate limiting
 
 # Inter-batch delay for HF/web deployments (helps avoid rate limits)
 try:
@@ -283,6 +284,11 @@ def reset_adaptive_settings() -> None:
     for loop_id in list(_edge_rate_limiters.keys()):
         _edge_rate_limiters[loop_id] = asyncio.Semaphore(_edge_max_concurrency)
 
+    # Reset the global tuner
+    from ..speed_monitor import reset_edge_tuner
+
+    reset_edge_tuner()
+
 
 async def _wait_if_rate_limited() -> bool:
     """Wait if currently in rate limit cooldown. Returns True if waited."""
@@ -404,6 +410,11 @@ class EdgeTTSEngine:
         # Stable view of how many tasks we *intend* to run in parallel regardless of current semaphore value
         self._parallel_slots = _edge_max_concurrency if self._enable_parallel else 1
 
+        # Initialize adaptive tuner for real-time speed monitoring
+        self._tuner: Optional[AdaptiveEdgeTuner] = None
+        self._auto_tune_enabled = True
+        self._segment_timings: List[Tuple[int, float]] = []  # (chars, duration)
+
         if self.verbose:
             parallel_mode = "ativado" if self._enable_parallel else "desativado"
             max_concurrent = self._parallel_slots if self._enable_parallel else 1
@@ -419,6 +430,62 @@ class EdgeTTSEngine:
             self.log_callback(message)
         else:
             print(message)
+
+    def _get_tuner(self) -> AdaptiveEdgeTuner:
+        """Get or create the adaptive tuner for this engine."""
+        if self._tuner is None:
+            self._tuner = get_edge_tuner(
+                log_callback=self._log if self.verbose else None,
+                aggressive=True,  # Use aggressive mode for faster conversion
+            )
+        return self._tuner
+
+    def _record_segment_timing(self, chars: int, duration: float, success: bool) -> None:
+        """Record segment timing and check for auto-tuning."""
+        if not self._auto_tune_enabled or duration <= 0 or chars <= 0:
+            return
+
+        self._segment_timings.append((chars, duration))
+
+        # Use tuner to track and potentially adjust settings
+        tuner = self._get_tuner()
+        new_config = tuner.record_segment(chars, duration, success=success)
+
+        if new_config:
+            # Apply new configuration
+            self._apply_tuning(new_config)
+
+    def _apply_tuning(self, config: Dict[str, int]) -> None:
+        """Apply tuning configuration from the adaptive tuner."""
+        global _edge_max_concurrency, _edge_current_chunk_size
+
+        changed = []
+
+        new_chunk = config.get("chunk_size")
+        if new_chunk and new_chunk != self._chunk_char_limit:
+            old_chunk = self._chunk_char_limit
+            self._chunk_char_limit = max(_SAFE_CHUNK_MIN, min(new_chunk, _SAFE_CHUNK_MAX))
+            _edge_current_chunk_size = self._chunk_char_limit
+            changed.append(f"chunk: {old_chunk} -> {self._chunk_char_limit}")
+
+        new_conc = config.get("concurrency")
+        if new_conc and new_conc != _edge_max_concurrency:
+            old_conc = _edge_max_concurrency
+            _edge_max_concurrency = max(_SAFE_CONCURRENCY_MIN, min(new_conc, _SAFE_CONCURRENCY_MAX))
+            self._parallel_slots = _edge_max_concurrency
+            # Update rate limiters
+            for loop_id in list(_edge_rate_limiters.keys()):
+                _edge_rate_limiters[loop_id] = asyncio.Semaphore(_edge_max_concurrency)
+            changed.append(f"concurrency: {old_conc} -> {_edge_max_concurrency}")
+
+        new_seg = config.get("max_segment_seconds")
+        if new_seg and new_seg != self._max_segment_seconds:
+            old_seg = self._max_segment_seconds
+            self._max_segment_seconds = max(30.0, min(float(new_seg), 95.0))
+            changed.append(f"segment: {old_seg:.0f}s -> {self._max_segment_seconds:.0f}s")
+
+        if changed and self.verbose:
+            self._log(f"🔧 AUTO-TUNE: {', '.join(changed)}")
 
     def supports_multilingual(self) -> bool:
         """Edge TTS suporta multiidioma via voice switching e [[lang:]] tags"""
@@ -1101,6 +1168,11 @@ class EdgeTTSEngine:
         if not stripped:
             return []
 
+        # If converter injected a precomputed plan, reuse it
+        pre_segments = getattr(self, "_precomputed_segments", None)
+        if pre_segments and isinstance(pre_segments, list):
+            return [(voice, seg) for seg in pre_segments if isinstance(seg, str) and seg.strip()]
+
         try:
             active_chunk_limit = (
                 int(chunk_size) if chunk_size is not None else self._chunk_char_limit
@@ -1496,6 +1568,7 @@ class EdgeTTSEngine:
                         await stream.aclose()
 
             synthesis_start = asyncio.get_event_loop().time()
+            SEGMENT_HARD_TIMEOUT = 60.0
             max_retries = 3
             retry_count = 0
 
@@ -1516,7 +1589,10 @@ class EdgeTTSEngine:
 
                         try:
                             with output_path.open(mode) as out_file:
-                                await asyncio.wait_for(_consume_stream(out_file), timeout=timeout)
+                                await asyncio.wait_for(
+                                    _consume_stream(out_file),
+                                    timeout=min(timeout, SEGMENT_HARD_TIMEOUT),
+                                )
                         finally:
                             if heartbeat_task is not None:
                                 heartbeat_task.cancel()
@@ -1681,11 +1757,21 @@ class EdgeTTSEngine:
                             if asyncio.iscoroutine(result):
                                 await result
 
+            # Record timing for adaptive tuning
+            synthesis_end = asyncio.get_event_loop().time()
+            segment_duration = synthesis_end - synthesis_start
+            text_chars = len(text) if text else 0
+
             if received_audio:
                 with suppress(Exception):
                     await _record_success()
-            if not received_audio:
+                # Record successful segment timing for auto-tuning
+                self._record_segment_timing(text_chars, segment_duration, success=True)
+            else:
                 self.last_error = "no_audio"
+                # Record failed segment timing
+                self._record_segment_timing(text_chars, segment_duration, success=False)
+
             return received_audio
 
 

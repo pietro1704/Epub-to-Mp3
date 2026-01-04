@@ -250,13 +250,23 @@ class ProgressTracker:
         return max(0.0, time.time() - self._last_activity_time)
 
     def _eta_seconds(self, elapsed: float) -> float:
-        if self.total_chapters <= 0 or self.completed_chapters == 0:
+        if self.total_chapters <= 0:
             return 0.0
-        remaining = self.total_chapters - self.completed_chapters
-        if remaining <= 0:
-            return 0.0
-        avg_per_chapter = elapsed / self.completed_chapters
-        return max(avg_per_chapter * remaining, 0.0)
+
+        # Use fractional progress (including current chapter) to avoid ETA explosion early on.
+        partial = 0.0
+        if (
+            self.completed_chapters < self.total_chapters
+            and self.total_chars > 0
+            and self.current_index is not None
+        ):
+            partial = min(0.99, max(0.0, self.processed_chars / self.total_chars))
+
+        progress_fraction = (self.completed_chapters + partial) / max(self.total_chapters, 1)
+        progress_fraction = min(max(progress_fraction, 0.001), 0.999)
+
+        remaining_fraction = 1.0 - progress_fraction
+        return max(elapsed * (remaining_fraction / progress_fraction), 0.0)
 
     def _generate_progress_bar(self, progress_pct: float, bar_width: int = 30) -> str:
         filled = int(bar_width * progress_pct / 100)

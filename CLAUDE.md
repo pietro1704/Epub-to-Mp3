@@ -1,75 +1,124 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code when working with this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-EPUB/PDF to MP3 audiobook converter using TTS engines (Edge-TTS, Coqui, Piper). Includes FastAPI server for Hugging Face Space deployment.
+Full-stack EPUB/PDF to MP3 audiobook converter. Python backend with FastAPI server and React/TypeScript frontend. Deployed as Docker container on Hugging Face Spaces.
+
+**TTS Engines**: Edge-TTS (Microsoft cloud), Coqui TTS (local neural), Piper (local ONNX)
 
 ## Commands
 
-### Setup
+### Python Setup
 ```bash
-# Requires Python 3.11 (for Coqui TTS compatibility)
-# Use mise to install Python 3.11 and create venv automatically
-mise install
-source .venv/bin/activate
+# Requires Python 3.11 (Coqui TTS compatibility)
 pip install -r requirements.txt
 # FFmpeg required: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)
 ```
 
 ### CLI Usage
 ```bash
-python -m python_app.main book.epub                    # Basic
-python -m python_app.main book.epub --menu             # Interactive
-python -m python_app.main book.epub --engine edge      # Edge-TTS
+python -m python_app.main book.epub                    # Basic conversion
+python -m python_app.main book.epub --menu             # Interactive engine/voice selection
+python -m python_app.main book.epub --engine edge      # Force Edge-TTS
 python -m python_app.main book.epub --chapter 3        # Single chapter
-python -m python_app.main book.epub --show-structure   # Preview
+python -m python_app.main book.epub --show-structure   # Preview chapters
+python -m python_app.main book.epub --clear-cache      # Reprocess from scratch
+# Batch conversion
+python -m python_app.main convert book1.epub book2.pdf --batch ~/folder/
 ```
 
 ### API Server
 ```bash
-python app.py                                          # HF Space entry
+python hf_app.py                                       # HF Spaces entry (port 7860)
 uvicorn python_app.server:app --port 8000              # Direct server
+```
+
+### Web Frontend
+```bash
+cd web
+npm install
+npm run dev          # Development server (Vite)
+npm run build        # Production build (tsc + vite)
+npm run lint         # ESLint
+npm run test         # Vitest
 ```
 
 ### Testing
 ```bash
+# Python tests
 pytest -v --tb=short
+pytest python_app/tests/test_ebook_reader.py -v       # Single file
+pytest -k "test_chapter_extraction"                    # Single test by name
+
+# Web tests
+cd web && npm run test
 ```
 
 ## Architecture
 
+### Backend (`python_app/`)
 ```
-python_app/
-├── main.py           # CLI entry point
-├── server.py         # FastAPI server
-├── models/           # Piper ONNX models
-└── src/
-    ├── config.py           # Dataclass configuration
-    ├── converter.py        # Conversion logic
-    ├── ebook_reader.py     # EPUB/PDF parsing
-    ├── cache_manager.py    # Smart caching
-    └── tts/
-        ├── factory.py      # TTS engine factory
-        ├── edge_engine.py  # Microsoft Edge-TTS
-        ├── coqui_engine.py # Coqui TTS (local)
-        └── piper_engine.py # Piper (local ONNX)
+main.py                # CLI entry point
+server.py              # FastAPI server with job queue
+src/
+├── config.py          # ConversionConfig dataclass
+├── converter.py       # Core conversion orchestration
+├── ebook_reader.py    # EPUB/PDF parsing
+├── cache_manager.py   # Chapter-level caching in .cache/Book_Title/
+├── job_manager.py     # Async job queue for API
+├── engine_pool.py     # TTS engine resource pooling
+├── telemetry.py       # Engine performance tracking
+└── tts/
+    ├── factory.py     # TTSFactory (factory pattern)
+    ├── base.py        # TTSEngine abstract base
+    ├── edge_engine.py # Edge-TTS (8000 char chunks, 4 concurrent)
+    ├── coqui_engine.py# Coqui neural TTS (1500 char chunks)
+    └── piper_engine.py# Piper ONNX (1500 char chunks)
 ```
 
-### Design Patterns
-- **Factory Pattern**: TTSFactory creates engine instances
-- **Dataclass Config**: Centralized settings in ConversionConfig
-- **Intelligent Caching**: `.cache/Book_Title/` for parsed text
+### Frontend (`web/`)
+React 18 + TypeScript + Vite. Key files:
+- `src/App.tsx` - Main app with lazy-loaded panels
+- `src/hooks/useConversionFlow.ts` - Conversion state machine
+- `src/services/ConversionService.ts` - API client with SSE/polling
 
-### Key Limits
-- Edge-TTS: 8000 chars/chunk
-- Coqui/Piper: 1500 chars/chunk
-- Audio: 22050Hz, 32k bitrate, mono
+### Deployment
+- `Dockerfile` - Multi-stage: Node build → Python runtime
+- `hf_app.py` - Hugging Face Spaces entry point (serves React + API)
+- `.github/workflows/sync-hf.yml` - Auto-deploy to HF on push
+
+## Key API Endpoints
+- `POST /api/convert` - Upload EPUB, start job
+- `GET /api/jobs/{id}` - Job status with chapter progress
+- `GET /api/jobs/{id}/stream` - SSE real-time updates
+- `GET /api/outputs/{id}/{file}` - Download MP3
+- `GET /api/voices` - Available voices by engine
+- `GET /api/telemetry` - Engine performance stats
+
+## Environment Variables
+
+### Edge-TTS Tuning
+```bash
+EDGE_CHUNK_CHARS=8000           # Chars per request (3k-8k safe, >15k fails)
+EDGE_MAX_CONCURRENCY=4          # Parallel requests
+EDGE_SAFE_CHAPTER_PARALLEL=8    # Parallel chapters
+```
+
+### R2 Storage (optional, for persistent outputs)
+```bash
+R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
+R2_BUCKET_NAME, R2_PUBLIC_URL
+```
+
+## Design Patterns
+- **Factory**: TTSFactory creates engine instances by name
+- **Job Queue**: JobManager handles async conversion with progress callbacks
+- **Caching**: CacheManager stores parsed text per chapter for resume
 
 ## Guidelines
 - Follow existing factory pattern for new TTS engines
-- Preserve chapter structure from EPUB navigation
-- Validate dependencies before engine use
+- Preserve chapter structure from EPUB navigation (NCX/nav)
+- Validate engine dependencies before use (ffmpeg, model files)
 - Keep changes minimal and focused
-- Confirm changes before implementation

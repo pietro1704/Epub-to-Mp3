@@ -6,8 +6,9 @@ export const API_BASE_URL: string =
 export const POLL_INTERVAL_MS: number = Number(
   import.meta.env.VITE_POLL_INTERVAL_MS || 3000,
 );
+// Default to SSE enabled; allow explicit disable via env (false/0/no)
 const ENABLE_SSE_RAW = String(
-  import.meta.env.VITE_ENABLE_SSE || "",
+  import.meta.env.VITE_ENABLE_SSE ?? "true",
 ).toLowerCase();
 export const ENABLE_SSE =
   ENABLE_SSE_RAW === "true" ||

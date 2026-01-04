@@ -34,7 +34,7 @@ class EdgeTTSPerformanceProfile:
     # Chunk settings (research: 3000 safe, 15000 max)
     chunk_char_limit: int = 8000
     chunk_char_min: int = 4000
-    chunk_char_max: int = 12000
+    chunk_char_max: int = 15000
 
     # Segment duration (research: 10 min max per request)
     max_segment_seconds: float = 60.0
@@ -44,7 +44,7 @@ class EdgeTTSPerformanceProfile:
     # Parallelism (research: 2-4 safe, >8 triggers rate limits)
     parallel_slots: int = 4
     parallel_min: int = 1
-    parallel_max: int = 6
+    parallel_max: int = 8
 
     # Rate limit tracking
     rate_limit_count: int = 0
@@ -92,9 +92,9 @@ class EdgeTTSAutoTuner:
             name="balanced",
         ),
         "aggressive": EdgeTTSPerformanceProfile(
-            chunk_char_limit=10000,
-            max_segment_seconds=70.0,
-            parallel_slots=6,
+            chunk_char_limit=4000,
+            max_segment_seconds=45.0,
+            parallel_slots=8,
             name="aggressive",
         ),
     }

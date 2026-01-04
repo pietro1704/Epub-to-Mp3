@@ -46,10 +46,13 @@ class ConversionConfig:
     log_callback: Optional[Callable[[str], None]] = None  # Callback for verbose logging
     edge_auto_offline_seconds: int = 0  # disabled: Edge handles large chapters via chunking
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
-    edge_chunk_chars: int = 8000  # Research-based: 8k safe (3k-8k recommended, >15k = incomplete)
-    edge_max_segment_seconds: int = 75  # hard limit for each Edge chunk duration (optimized: 75s)
+    # Performance-optimized settings (Jan 2026):
+    # Aggressive throughput target: 200+ chars/s with higher concurrency/segment sizes.
+    edge_chunk_chars: int = 10000  # Aggressive default tuned for throughput
+    edge_max_segment_seconds: int = 75
     edge_aggressive_mode: bool = False
-    edge_enable_parallel: bool = True  # enable parallel segment processing (5-6x faster)
+    edge_enable_parallel: bool = True
+    edge_max_concurrency: int = 6
     coqui_chunk_chars: Optional[int] = None  # override Coqui chunk size when auto-tuning
     coqui_max_workers: Optional[int] = None  # override Coqui worker pool size
     coqui_safe_mode: Optional[bool] = None  # force safe mode for Coqui (limits parallelism)
@@ -85,6 +88,7 @@ class ConversionConfig:
             "edge_chunk_chars": self.edge_chunk_chars,
             "edge_max_segment_seconds": self.edge_max_segment_seconds,
             "edge_enable_parallel": self.edge_enable_parallel,
+            "edge_max_concurrency": self.edge_max_concurrency,
             "coqui_chunk_chars": self.coqui_chunk_chars,
             "coqui_max_workers": self.coqui_max_workers,
             "coqui_safe_mode": self.coqui_safe_mode,
@@ -580,6 +584,10 @@ class AppConfig:
             "edge_enable_parallel",
             os.getenv("EDGE_ENABLE_PARALLEL", "true").lower() in ("true", "1", "yes"),
         )
+        edge_max_concurrency = kwargs.pop(
+            "edge_max_concurrency",
+            _safe_int(os.getenv("EDGE_MAX_CONCURRENCY"), ConversionConfig.edge_max_concurrency),
+        )
         coqui_chunk_chars = kwargs.pop("coqui_chunk_chars", None)
         coqui_max_workers = kwargs.pop("coqui_max_workers", None)
         coqui_safe_mode = kwargs.pop("coqui_safe_mode", None)
@@ -613,6 +621,7 @@ class AppConfig:
             edge_chunk_chars=edge_chunk_chars,
             edge_max_segment_seconds=edge_max_segment_seconds,
             edge_enable_parallel=edge_enable_parallel,
+            edge_max_concurrency=edge_max_concurrency,
             coqui_chunk_chars=coqui_chunk_chars,
             coqui_max_workers=coqui_max_workers,
             coqui_safe_mode=coqui_safe_mode,
