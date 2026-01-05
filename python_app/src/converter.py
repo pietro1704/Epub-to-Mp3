@@ -1778,17 +1778,8 @@ class AudioConverter:
         return temp_dir
 
     def _build_engine_signature(self, config: ConversionConfig) -> str:
-        voice = getattr(config, "voice", None)
-        model_path = getattr(config, "model_path", None)
-        fallback_voice = None
-        if not voice and config.language_voices:
-            fallback_voice = next(iter(config.language_voices.values()), None)
-        return self.file_manager.build_engine_voice_suffix(
-            engine=getattr(config, "engine", None),
-            voice=voice,
-            model_path=model_path,
-            fallback_voice=fallback_voice,
-        )
+        engine = getattr(config, "engine", None) or "unknown"
+        return self.file_manager.sanitize_filename(engine.lower(), max_length=96).replace(" ", "_")
 
     async def _convert_chapters_parallel(
         self,

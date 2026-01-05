@@ -1,20 +1,32 @@
 name: Sync to Hugging Face Space
 
 on:
-  push:
-    branches:
-      - master
+  # Manual trigger still allowed
   workflow_dispatch:
+  # Auto-sync only after CI succeeds on master
+  workflow_run:
+    workflows: ["CI"]
+    branches: [master]
+    types:
+      - completed
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_branch == 'master'
+      )
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           lfs: true
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
       - name: Push to Hugging Face
         env:

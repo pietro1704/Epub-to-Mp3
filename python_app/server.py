@@ -41,7 +41,7 @@ from pydantic import BaseModel
 from src.benchmark_profile import recommend_parallel_slots
 from src.cache_manager import CacheManager
 from src.chapter_utils import deduplicate_chapters_by_content
-from src.config import ConversionConfig
+from src.config import CACHE_DIR, ConversionConfig
 from src.ebook_reader import EbookReader
 from src.engine_pool import JobEnginePool, ResourceSnapshot
 from src.hardware_detector import HardwareDetector, HardwareProfile
@@ -222,6 +222,7 @@ else:
     output_dir = OUTPUT_DIR
 
 output_dir.mkdir(exist_ok=True, parents=True)
+CACHE_DIR.mkdir(exist_ok=True, parents=True)
 
 # Dados persistentes (jobs/inputs) precisam sobreviver a reinícios em HF Spaces
 if os.getenv("SPACE_ID"):
@@ -237,6 +238,52 @@ job_inputs_dir.mkdir(exist_ok=True, parents=True)
 cover_cache_dir = output_dir / ".cover_cache"
 cover_cache_dir.mkdir(exist_ok=True, parents=True)
 cover_index_path = cover_cache_dir / "index.json"
+
+
+# Helpers to resolve per-book/per-engine paths (supports legacy job-id layout)
+def _book_slug(title: Optional[str], fallback: Optional[str] = None) -> str:
+    base = title or fallback or "livro"
+    try:
+        stem = Path(base).stem if base and "." in base else base
+    except Exception:
+        stem = base
+    return FileManager.sanitize_filename(stem)
+
+
+def _engine_slug(engine: Optional[str]) -> str:
+    return FileManager.sanitize_filename((engine or "edge").lower())
+
+
+def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = False) -> Path:
+    legacy_dir = output_dir / job_id
+    job_data = job or jobs.get(job_id) or job_manager.load_job(job_id)
+
+    if job_data:
+        stored = job_data.get("outputDir")
+        if stored:
+            path = Path(stored)
+            if ensure:
+                path.mkdir(parents=True, exist_ok=True)
+            return path
+
+        book_title = job_data.get("bookTitle") or job_data.get("fileName") or ""
+        file_name = job_data.get("file_path") or ""
+        book_slug = _book_slug(book_title, file_name)
+        engine_slug = _engine_slug(job_data.get("engine"))
+        target = output_dir / book_slug / engine_slug
+
+        # If legacy dir already exists with data, prefer it to avoid breaking older jobs
+        if legacy_dir.exists() and any(legacy_dir.iterdir()):
+            target = legacy_dir
+        if ensure:
+            target.mkdir(parents=True, exist_ok=True)
+        job_data["outputDir"] = str(target)
+        jobs[job_id] = job_data
+        return target
+
+    if ensure:
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+    return legacy_dir
 
 
 def _load_cover_cache() -> Dict[str, dict]:
@@ -1805,6 +1852,8 @@ async def convert_ebook(
     )
     reuse_upload = None
     job_input_dir = None
+    book_title: Optional[str] = None
+    book_author: Optional[str] = None
     if upload_id:
         with _pending_lock:
             reuse_upload = _pending_uploads.pop(upload_id, None)
@@ -1813,8 +1862,6 @@ async def convert_ebook(
             if not reuse_upload:
                 raise HTTPException(status_code=404, detail="Upload não encontrado ou expirado")
         job_id = str(uuid.uuid4())
-        job_dir = output_dir / job_id
-        job_dir.mkdir(parents=True, exist_ok=True)
         job_input_dir = job_inputs_dir / job_id
         job_input_dir.mkdir(parents=True, exist_ok=True)
         source_file = Path(reuse_upload["file_path"])
@@ -1825,10 +1872,13 @@ async def convert_ebook(
         original_name = reuse_upload.get("file_name") or source_file.name
         temp_file = job_input_dir / original_name
         shutil.move(str(source_file), temp_file)
+        book_title = reuse_upload.get("book_title")
+        book_author = reuse_upload.get("book_author")
         if cover_name:
             cover_source = Path(reuse_upload.get("cover_path") or "")
             if cover_source.exists():
-                dest_cover = job_dir / cover_name
+                temp_job = {"bookTitle": book_title, "engine": engine}
+                dest_cover = _job_output_dir(job_id, temp_job, ensure=True) / cover_name
                 shutil.move(str(cover_source), dest_cover)
                 cover_url = f"/api/outputs/{job_id}/{cover_name}"
         upload_folder = source_file.parent
@@ -1858,6 +1908,10 @@ async def convert_ebook(
         try:
             reader_for_cover = EbookReader(str(temp_file))
             cover_blob = reader_for_cover.extract_cover_image()
+            if not book_title:
+                book_title = reader_for_cover.title
+            if not book_author:
+                book_author = reader_for_cover.author
             if cover_blob:
                 cover_slug = (
                     FileManager.sanitize_filename(
@@ -1866,8 +1920,11 @@ async def convert_ebook(
                     or "capa"
                 )
                 filename = f"{cover_slug}_cover{cover_blob.extension}"
-                cover_path = output_dir / job_id
-                cover_path.mkdir(parents=True, exist_ok=True)
+                temp_job = {
+                    "bookTitle": book_title or reader_for_cover.title or Path(file.filename).stem,
+                    "engine": engine,
+                }
+                cover_path = _job_output_dir(job_id, temp_job, ensure=True)
                 target = cover_path / filename
                 target.write_bytes(cover_blob.data)
                 cover_name = filename
@@ -1875,6 +1932,19 @@ async def convert_ebook(
                 cover_mime = cover_blob.media_type
         except Exception:
             pass
+
+    book_title = book_title or (reuse_upload.get("book_title") if reuse_upload else None)
+    if not book_title:
+        book_title = Path(temp_file.name).stem
+    book_author = book_author or (reuse_upload.get("book_author") if reuse_upload else None)
+    engine_slug = _engine_slug(engine)
+    book_slug = _book_slug(book_title, temp_file.name)
+    output_base = output_dir / book_slug
+    output_engine_dir = output_base / engine_slug
+    output_engine_dir.mkdir(parents=True, exist_ok=True)
+    cache_base = CACHE_DIR / book_slug
+    cache_engine_dir = cache_base / engine_slug
+    cache_engine_dir.mkdir(parents=True, exist_ok=True)
 
     parallel_slots_value = parallel_slots_override
     if not disable_parallel and max_performance_enabled and parallel_slots_value is None:
@@ -1901,8 +1971,10 @@ async def convert_ebook(
         "formattingCues": speak_cues,
         "uiLanguage": ui_lang,
         "outputs": [],
-        "bookTitle": reuse_upload.get("book_title") if reuse_upload else None,
-        "bookAuthor": reuse_upload.get("book_author") if reuse_upload else None,
+        "bookTitle": book_title,
+        "bookAuthor": book_author,
+        "outputDir": str(output_engine_dir),
+        "cacheDir": str(cache_engine_dir),
         "cover": {"name": cover_name, "url": cover_url, "mimeType": cover_mime}
         if cover_name
         else None,
@@ -2040,7 +2112,16 @@ async def delete_job(job_id: str) -> dict:
 
 @app.get("/api/outputs/{job_id}/{filename}")
 async def download_output(job_id: str, filename: str) -> FileResponse:
-    file_path = output_dir / job_id / filename
+    job_data = jobs.get(job_id) or job_manager.load_job(job_id)
+    base_dir = _job_output_dir(job_id, job_data)
+    file_path = base_dir / filename
+    if not file_path.exists():
+        # Legacy fallback
+        legacy_path = output_dir / job_id / filename
+        if legacy_path.exists():
+            file_path = legacy_path
+        else:
+            raise HTTPException(status_code=404, detail="File not found")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(path=file_path, media_type=_guess_media_type(filename), filename=filename)
@@ -2527,7 +2608,7 @@ def _persist_job(job_id: str, force: bool = True) -> None:
 
 def _cleanup_job_output(job_id: str) -> None:
     """Remove the job output directory."""
-    job_dir = output_dir / job_id
+    job_dir = _job_output_dir(job_id)
     if job_dir.exists():
         shutil.rmtree(job_dir, ignore_errors=True)
 
@@ -2736,7 +2817,7 @@ def _store_cover_in_cache(file_hash: Optional[str], cover_blob) -> Optional[Path
 
 
 def _persist_job_log(job_id: str, job: dict) -> Optional[Path]:
-    job_dir = output_dir / job_id
+    job_dir = _job_output_dir(job_id, job, ensure=True)
     if not job_dir.exists():
         return None
     log_path = job_dir / "conversion.log"
@@ -2861,9 +2942,10 @@ async def process_conversion(job_id: str) -> None:
         _update_job_activity(job, stage="chapter_extraction")
         selector_parts = [job.get("chapters"), job.get("sections")]
         selector_text = " ".join(part for part in selector_parts if part)
+        temp_output_base = output_dir / _book_slug(job.get("bookTitle"), job.get("file_path"))
         temp_config = ConversionConfig(
             engine="edge",  # Temporary, just for chapter parsing
-            output_dir=str(output_dir / job_id),
+            output_dir=str(temp_output_base),
             preserve_all_chapters=not filter_chapters_flag,
         )
         chapters = _prepare_chapters(reader, temp_config, selector_text)
@@ -2943,6 +3025,12 @@ async def process_conversion(job_id: str) -> None:
             ):
                 job["statusHint"] = message
 
+        # Resolve per-book/per-engine roots
+        book_slug = _book_slug(job.get("bookTitle"), job.get("file_path"))
+        engine_slug = _engine_slug(job.get("engine"))
+        output_root = Path(job.get("outputDir") or (output_dir / book_slug / engine_slug))
+        cache_root = Path(job.get("cacheDir") or (CACHE_DIR / book_slug / engine_slug))
+
         # Create TTS engine using factory with optimized compression
         verbose_enabled = True if verbose_flag is None else bool(verbose_flag)
         model_path = Path(job.get("model")) if job.get("model") else None
@@ -2951,7 +3039,8 @@ async def process_conversion(job_id: str) -> None:
             voice=job.get("voice"),
             model_path=model_path,
             primary_language=detected_lang,
-            output_dir=str(output_dir / job_id),
+            output_dir=str(output_root),
+            cache_dir=str(cache_root),
             preserve_all_chapters=not filter_chapters_flag,
             # Optimized compression for web delivery (reduce file size & bandwidth)
             bitrate=job.get("bitrate") or "8k",  # 8 kbps - good quality for voice, ~3.6 MB/hour
@@ -3398,7 +3487,7 @@ async def process_conversion(job_id: str) -> None:
                 engine_pool.register_engine(name, candidate, engine_seeds.get(name))
                 registered_engines.add(name)
 
-        job_output_dir = output_dir / job_id
+        job_output_dir = _job_output_dir(job_id, job, ensure=True)
         resume_mode = (
             bool(job.get("resumeRequested"))
             and job_output_dir.exists()
@@ -3411,7 +3500,7 @@ async def process_conversion(job_id: str) -> None:
             source_path = Path(source_path_str)
             try:
                 if source_path.exists() and source_path.is_relative_to(job_output_dir):
-                    safe_source = output_dir / f"{job_id}_{source_path.name}"
+                    safe_source = job_output_dir / f"{job_id}_{source_path.name}"
                     safe_source.parent.mkdir(parents=True, exist_ok=True)
                     shutil.move(str(source_path), str(safe_source))
                     job["file_path"] = str(safe_source)
@@ -3428,7 +3517,7 @@ async def process_conversion(job_id: str) -> None:
             if cover_name:
                 cover_path = job_output_dir / cover_name
                 if cover_path.exists():
-                    temp_cover = output_dir / f"{job_id}_{cover_name}"
+                    temp_cover = job_output_dir / f"{job_id}_{cover_name}.tmp"
                     try:
                         shutil.move(str(cover_path), str(temp_cover))
                         cover_restore = (temp_cover, cover_path)
@@ -3437,7 +3526,7 @@ async def process_conversion(job_id: str) -> None:
 
             if job_output_dir.exists():
                 shutil.rmtree(job_output_dir, ignore_errors=True)
-            job_output_dir.mkdir(exist_ok=True)
+            job_output_dir.mkdir(parents=True, exist_ok=True)
 
             if cover_restore:
                 temp_cover, target_cover = cover_restore
@@ -3447,7 +3536,7 @@ async def process_conversion(job_id: str) -> None:
                     with contextlib.suppress(FileNotFoundError):
                         temp_cover.unlink(missing_ok=True)
         else:
-            job_output_dir.mkdir(exist_ok=True)
+            job_output_dir.mkdir(parents=True, exist_ok=True)
         if resume_mode:
             _append_event(job, "♻️ Retomando conversão anterior - mantendo capítulos já gerados")
 
