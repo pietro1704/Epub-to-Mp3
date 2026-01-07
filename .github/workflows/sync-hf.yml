@@ -55,5 +55,5 @@ jobs:
 
           git remote add hf "$REMOTE_URL" || true
           git push --force hf "HEAD:refs/heads/${TARGET_BRANCH}"
-          # Clean up old default branch on HF Space if it exists
-          git push hf --delete main || true
+          # Também atualiza main para manter compatibilidade enquanto a branch default não for trocada
+          git push --force hf "HEAD:refs/heads/main"
