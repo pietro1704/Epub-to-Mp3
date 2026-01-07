@@ -1261,9 +1261,10 @@ export function useConversionFlow(
       const startedAtIso = new Date().toISOString();
       const originalFileName = values.file?.name ?? values.fileName ?? "";
       fileNameRef.current = originalFileName;
-      const requestValues = values.uploadId
-        ? { ...values, file: null }
-        : values;
+      const requestValues =
+        values.uploadId && values.uploadId.trim().length > 0
+          ? { ...values, file: null }
+          : values;
       const startMessage = values.uploadId
         ? t.flow.startReuse
         : t.flow.startUpload;

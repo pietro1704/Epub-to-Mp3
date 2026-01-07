@@ -60,10 +60,13 @@ export interface UploadResponse {
 
 function buildFormData(values: ConversionFormValues): FormData {
   const formData = new FormData();
-  if (values.uploadId) {
+  const hasUploadId =
+    typeof values.uploadId === "string" && values.uploadId.trim().length > 0;
+  if (hasUploadId) {
     formData.append("upload_id", values.uploadId);
   }
-  if (values.file && !values.uploadId) {
+  // Nunca reenvie o arquivo se já houver uploadId
+  if (values.file && !hasUploadId) {
     formData.append("file", values.file);
   }
   formData.append("engine", values.engine);
@@ -246,6 +249,8 @@ function buildFormData(values: ConversionFormValues): FormData {
   }
   return formData;
 }
+// Exposed for tests
+export const __buildFormData = buildFormData;
 
 export function normalizeErrorMessage(
   status: number,

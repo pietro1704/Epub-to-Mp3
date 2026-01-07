@@ -698,7 +698,7 @@ export const translations: Record<Locale, Translations> = {
       errorFileTooLarge: (limit: number) =>
         `Arquivo maior que ${limit} MB. Envie um EPUB/PDF menor para evitar falhas.`,
       submitIdle: "Converter agora",
-      submitBusy: "Continuar",
+      submitBusy: "Converter agora",
       formattingCuesLabel: "Narrar formatação (aspas, itálico, negrito)",
       formattingCuesDescription:
         "Fala “entre aspas” e “fim das aspas”, “em negrito”, etc., usando o idioma do site.",
@@ -1272,7 +1272,7 @@ export const translations: Record<Locale, Translations> = {
       errorFileTooLarge: (limit: number) =>
         `File exceeds the ${limit} MB limit. Please upload a smaller EPUB/PDF.`,
       submitIdle: "Convert now",
-      submitBusy: "Continue",
+      submitBusy: "Convert now",
       formattingCuesLabel: "Narrate formatting (quotes, italics, bold)",
       formattingCuesDescription:
         "Says “quote”, “end quote”, and other cues using the site language.",
