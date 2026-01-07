@@ -242,6 +242,51 @@ def _patch_transformers_beam_search(force: bool = False) -> None:
 _patch_transformers_beam_search()
 
 
+def _allow_xtts_unpickle(verbose: bool = False) -> bool:
+    """
+    Allow torch to unpickle XTTS configs when weights_only=True is enforced (PyTorch 2.6+).
+    """
+    try:
+        import torch
+
+        add_safe_globals = getattr(torch.serialization, "add_safe_globals", None)
+        if not callable(add_safe_globals):
+            return False
+        xtts_module = importlib.import_module("TTS.tts.configs.xtts_config")
+        xtts_config = getattr(xtts_module, "XttsConfig", None)
+        if xtts_config is None:
+            return False
+        add_safe_globals([xtts_config])
+        if verbose:
+            print("🔒 [VERBOSE] Torch allowlist atualizado para XttsConfig")
+        return True
+    except Exception:
+        return False
+
+
+@contextlib.contextmanager
+def _torch_load_weights_disabled(torch_module, verbose: bool = False):
+    """
+    Temporarily patch torch.load to default weights_only=False for legacy pickles.
+    """
+    real_load = getattr(torch_module, "load", None)
+    if not callable(real_load):
+        yield
+        return
+    try:
+        def _patched_load(*args, **kwargs):
+            kwargs = dict(kwargs)
+            kwargs.setdefault("weights_only", False)
+            return real_load(*args, **kwargs)
+
+        torch_module.load = _patched_load
+        if verbose:
+            print("🔒 [VERBOSE] Torch.load patched com weights_only=False (temporário)")
+        yield
+    finally:
+        torch_module.load = real_load
+
+
 def _get_coqui_executor():
     global _coqui_executor, _memory_semaphore
     if _coqui_executor is None:
@@ -535,10 +580,13 @@ class CoquiTTSEngine:
                     print("⚠️ [CPU] GPU não disponível, usando CPU")
                 self._emit_status("Usando CPU (GPU não disponível)")
 
+            _xtts_allowlisted = _allow_xtts_unpickle(verbose=self.verbose)
+
             try:
                 self._emit_status(f"Baixando/verificando modelo {model_short}...")
                 # Initialize with GPU support
-                self.tts = self._tts_class(model_name=self.model_name, gpu=gpu_available)
+                with _torch_load_weights_disabled(torch, verbose=self.verbose):
+                    self.tts = self._tts_class(model_name=self.model_name, gpu=gpu_available)
 
                 # Move model to GPU if available
                 if (

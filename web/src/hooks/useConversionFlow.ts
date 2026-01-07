@@ -420,8 +420,8 @@ function reducer(state: ConversionState, action: Action): ConversionState {
       };
     case "cancelled":
       return {
-        ...state,
-        phase: "cancelled",
+        ...initialState,
+        phase: "idle",
         error: action.error,
         log: [...state.log, action.entry],
       };

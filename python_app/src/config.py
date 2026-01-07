@@ -259,10 +259,15 @@ class VoiceConfigProvider:
             "de": "de-DE-ConradNeural",
             "it": "it-IT-IsabellaNeural",
         }
-        self._coqui_language_map = {
-            "pt": "tts_models/pt/cv/vits",
-        }
         self._coqui_default_voice = "tts_models/multilingual/multi-dataset/xtts_v2"
+        self._coqui_language_map = {
+            "pt": self._coqui_default_voice,
+            "en": self._coqui_default_voice,
+            "es": self._coqui_default_voice,
+            "fr": self._coqui_default_voice,
+            "de": self._coqui_default_voice,
+            "it": self._coqui_default_voice,
+        }
         self._piper_language_map = {
             "pt": "pt_BR",
             "en": "en_US",

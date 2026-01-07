@@ -1128,6 +1128,99 @@ class AudioConverter:
             )
         return announce
 
+    @staticmethod
+    def _should_force_edge_rescue(
+        failures: Dict[str, str],
+        *,
+        edge_available: bool,
+    ) -> bool:
+        """Detect whether we should reprocess failed chapters with safer Edge settings."""
+        if not edge_available or not failures:
+            return False
+        for message in failures.values():
+            if not message:
+                return True
+            lower = message.lower()
+            if any(
+                keyword in lower
+                for keyword in (
+                    "timeout",
+                    "time-out",
+                    "sem áudio",
+                    "sem audio",
+                    "noaudio",
+                    "sem progresso",
+                    "truncado",
+                    "truncation",
+                    "arquivo ausente",
+                    "arquivo inválido",
+                    "arquivo invalido",
+                    "falha na síntese",
+                    "falha na sintese",
+                    "edge",
+                )
+            ):
+                return True
+        return False
+
+    def _apply_edge_rescue_profile(
+        self,
+        *,
+        engine_pool: JobEnginePool,
+        edge_configs: List[ConversionConfig],
+        reason: str,
+        aggressive: bool = False,
+    ) -> Dict[str, float]:
+        """
+        Clamp Edge settings aggressively for retries to avoid stalls.
+
+        Returns a profile dict so the caller can mirror values into ad-hoc configs.
+        """
+        chunk_chars = 3200 if not aggressive else 2400
+        max_segment = 42.0 if not aggressive else 36.0
+        offline_chars = 8000 if not aggressive else 6000
+        offline_seconds = 300.0 if not aggressive else 220.0
+
+        for cfg in edge_configs or []:
+            if (cfg.engine or "").lower() != "edge":
+                continue
+            cfg.edge_chunk_chars = min(cfg.edge_chunk_chars or chunk_chars, chunk_chars)
+            cfg.edge_max_segment_seconds = min(
+                float(getattr(cfg, "edge_max_segment_seconds", 0) or max_segment),
+                max_segment,
+            )
+            cfg.edge_enable_parallel = False
+            cfg.edge_max_concurrency = 1
+            cfg.edge_auto_offline_chars = min(
+                getattr(cfg, "edge_auto_offline_chars", 0) or offline_chars,
+                offline_chars,
+            )
+            cfg.edge_auto_offline_seconds = min(
+                getattr(cfg, "edge_auto_offline_seconds", 0) or offline_seconds,
+                offline_seconds,
+            )
+
+        state = self._parallel_state or {}
+        state["current"] = 1
+        state["ceiling"] = max(1, min(int(state.get("ceiling") or 1), 1))
+        self._parallel_state = state
+        engine_pool.update_parallel_slots(1)
+        edge_state = self._edge_auto_state or {}
+        edge_state["slow_mode"] = True
+        self._edge_auto_state = edge_state
+
+        profile_label = "modo seguro" if not aggressive else "modo seguro agressivo"
+        print(
+            f"🛟 Edge retry ({profile_label}): {reason} → "
+            f"chunk={chunk_chars} seg={int(max_segment)}s offline>={offline_chars} chars"
+        )
+        return {
+            "chunk_chars": chunk_chars,
+            "max_segment": max_segment,
+            "offline_chars": offline_chars,
+            "offline_seconds": offline_seconds,
+        }
+
     def _start_health_watchdog(self, total_chapters: int) -> None:
         """Launch watchdog to observe stalled conversions."""
         if total_chapters <= 0:
@@ -1497,14 +1590,6 @@ class AudioConverter:
         else:
             engine_name = (config.engine or "").lower()
             engine_pool.register_engine(engine_name, config, engine_seeds.get(engine_name))
-            for fallback_name in ("coqui", "piper"):
-                if fallback_name == engine_name:
-                    continue
-                try:
-                    fallback_config = self._clone_engine_config(config, fallback_name)
-                except Exception:
-                    continue
-                engine_pool.register_engine(fallback_name, fallback_config)
 
         # Choose parallel or sequential based on hardware detection
         if chapter_parallel_count > 1:
@@ -1577,6 +1662,11 @@ class AudioConverter:
             if self.verbose:
                 print(f"   → {failed_labels}")
 
+        edge_available = engine_pool.has_engine("edge")
+        edge_rescue_applied = False
+        edge_rescue_aggressive = False
+        forced_offline_once = False
+
         retry_round = 1
         while pending_failures and retry_round <= max_retry_rounds:
             failed_names = list(pending_failures.keys())
@@ -1600,6 +1690,27 @@ class AudioConverter:
             if not chapters_to_retry_info:
                 break
 
+            rescue_profile: Optional[Dict[str, float]] = None
+            if self._should_force_edge_rescue(
+                pending_failures,
+                edge_available=edge_available,
+            ):
+                if not edge_rescue_applied:
+                    rescue_profile = self._apply_edge_rescue_profile(
+                        engine_pool=engine_pool,
+                        edge_configs=edge_configs,
+                        reason="falhas detectadas em capítulos longos",
+                    )
+                    edge_rescue_applied = True
+                elif not edge_rescue_aggressive:
+                    rescue_profile = self._apply_edge_rescue_profile(
+                        engine_pool=engine_pool,
+                        edge_configs=edge_configs,
+                        reason="falhas persistentes mesmo após ajuste seguro",
+                        aggressive=True,
+                    )
+                    edge_rescue_aggressive = True
+
             for chapter_obj, _original_idx, canonical_label in chapters_to_retry_info:
                 failure_message = pending_failures.get(canonical_label, "")
                 if "Áudio possivelmente truncado" in (failure_message or ""):
@@ -1619,13 +1730,38 @@ class AudioConverter:
                 "Áudio possivelmente truncado" in (pending_failures.get(label) or "")
                 for label in pending_failures
             )
-            if has_truncation and (config.engine or "").lower() == "edge":
+            if rescue_profile:
+                retry_config = replace(
+                    retry_config,
+                    edge_chunk_chars=int(rescue_profile["chunk_chars"]),
+                    edge_max_segment_seconds=int(rescue_profile["max_segment"]),
+                    edge_auto_offline_chars=int(rescue_profile["offline_chars"]),
+                    edge_auto_offline_seconds=int(rescue_profile["offline_seconds"]),
+                    edge_enable_parallel=False,
+                    edge_max_concurrency=1,
+                )
+            elif has_truncation and (config.engine or "").lower() == "edge":
                 retry_config = replace(
                     retry_config,
                     edge_chunk_chars=4000,
                     edge_max_segment_seconds=45,
                     edge_enable_parallel=False,
                     edge_max_concurrency=1,
+                )
+            force_offline_engine: Optional[str] = None
+            if (
+                is_auto_engine
+                and edge_rescue_applied
+                and not forced_offline_once
+                and retry_round >= 2
+            ):
+                if engine_pool.has_engine("coqui"):
+                    force_offline_engine = "coqui"
+            if force_offline_engine:
+                forced_offline_once = True
+                retry_config = replace(retry_config, engine=force_offline_engine, voice=None)
+                print(
+                    f"🛟 Edge instável → forçando retry com {force_offline_engine.upper()} (offline)"
                 )
             retry_result = await self._convert_chapters_sequential(
                 chapters_to_retry,
@@ -2029,6 +2165,30 @@ class AudioConverter:
             if edge_auto_enabled:
                 self._apply_edge_slow_mode(reason, engine_pool=engine_pool, engine_obj=engine_obj)
 
+        def _maybe_apply_coqui_recovery(reason: str, engine_obj: Optional[object] = None) -> None:
+            if engine_obj is None:
+                return
+            adjusted = False
+            try:
+                if hasattr(engine_obj, "_safe_mode") and not getattr(engine_obj, "_safe_mode"):
+                    engine_obj._safe_mode = True
+                    adjusted = True
+                if hasattr(engine_obj, "_max_workers"):
+                    current_workers = getattr(engine_obj, "_max_workers", None)
+                    if current_workers is None or current_workers > 1:
+                        engine_obj._max_workers = 1
+                        adjusted = True
+                if hasattr(engine_obj, "_chunk_char_limit"):
+                    current_limit = getattr(engine_obj, "_chunk_char_limit", None) or 0
+                    target_limit = 1600
+                    if current_limit == 0 or current_limit > target_limit:
+                        engine_obj._chunk_char_limit = target_limit
+                        adjusted = True
+                if adjusted and self.verbose:
+                    print(f"   🛠️ Coqui em modo seguro ({reason}): chunks=1600, workers=1")
+            except Exception:
+                pass
+
         def available_auto_pool() -> Dict[str, tuple[ConversionConfig, object]]:
             if not auto_engine_pool:
                 return {}
@@ -2047,35 +2207,6 @@ class AudioConverter:
             tracker: Optional[dict] = None,
             engine_ref: Optional[dict] = None,
         ) -> bool:
-            if is_auto_engine:
-                return False
-
-            nonlocal config
-            if (config.engine or "").lower() != "edge":
-                return False
-            for engine_name in ("coqui", "piper"):
-                if engine_name == "piper" and not can_use_piper():
-                    continue
-                try:
-                    next_config = self._clone_engine_config(config, engine_name)
-                except Exception as exc:
-                    if self.verbose:
-                        print(f"   ⚠️ Fallback para {engine_name} falhou: {exc}")
-                    continue
-                engine_pool.register_engine(engine_name, next_config)
-                config = next_config
-                if tracker is not None:
-                    tracker["label"] = engine_name
-                if engine_ref is not None:
-                    engine_ref["object"] = None
-                if reason:
-                    print(f"⚡ {reason} → migrando para {engine_name.upper()} (offline)")
-                else:
-                    print(
-                        f"🔁 Fallback automático: Edge indisponível → {engine_name.upper()} (offline)"
-                    )
-                return True
-
             return False
 
         if (config.engine or "").lower() == "edge" and not is_auto_engine:
@@ -2085,13 +2216,8 @@ class AudioConverter:
                 if edge_engine and hasattr(edge_engine, "_probe_edge_health"):
                     voice = getattr(edge_engine, "voice", None)
                     healthy = await edge_engine._probe_edge_health(voice)  # type: ignore[attr-defined]
-                    if not healthy and build_best_offline_engine(
-                        "Edge indisponível no health-check"
-                    ):
-                        if self.verbose:
-                            print(
-                                "   ⚠️ Edge pré-check falhou; usando engine offline antes de iniciar capítulos"
-                            )
+                    if not healthy and self.verbose:
+                        print("   ⚠️ Edge pré-check falhou; mantendo engine selecionada")
             except Exception:
                 pass
             finally:
@@ -2114,9 +2240,8 @@ class AudioConverter:
                 engine_ref: Optional[dict] = None,
             ) -> bool:
                 """
-                Handle Edge outages aggressively:
-                  - On `NoAudioReceived` or `service_unavailable`, switch to offline (XTTS → Piper) immediately.
-                  - If offline engine cannot be created, wait a short cooldown before retrying Edge.
+                Handle Edge outages without mudar de engine (modo manual).
+                Aguarda cooldown curto antes de tentar novamente.
                 """
                 if (config.engine or "").lower() != "edge":
                     return False
@@ -2142,13 +2267,6 @@ class AudioConverter:
                 nonlocal edge_unavailable_hits
                 edge_unavailable_hits += 1
                 _maybe_apply_edge_slow_mode(f"Edge indisponível ({context})", engine_obj=engine_obj)
-
-                if build_best_offline_engine(
-                    f"Edge indisponível ({context})",
-                    tracker=tracker,
-                    engine_ref=engine_ref,
-                ):
-                    return True
 
                 max_wait = min(seconds, 90)
                 if self.verbose:
@@ -2276,33 +2394,13 @@ class AudioConverter:
                         edge_reason = f"Capítulo muito grande ({chapter_chars} caracteres)"
                     elif threshold_seconds and estimated_seconds >= threshold_seconds:
                         edge_reason = f"Capítulo estimado em {int(estimated_seconds)}s"
-                    if edge_reason and build_best_offline_engine(
-                        edge_reason,
-                        tracker=engine_tracker,
-                        engine_ref=engine_instance,
-                    ):
-                        switched_for_size = True
-                        current_engine_label = (
-                            engine_tracker.get("label") or (config.engine or "").lower()
-                        )
-                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
-                            output_path, current_engine_label
-                        )
+                    if edge_reason and self.verbose:
+                        print(f"   ℹ️ Edge mantém engine mesmo em capítulo grande: {edge_reason}")
                     elif edge_force_offline:
-                        if build_best_offline_engine(
-                            "Edge gerou áudio truncado recentemente",
-                            tracker=engine_tracker,
-                            engine_ref=engine_instance,
-                        ):
-                            switched_for_size = True
-                            edge_force_offline = False
-                            edge_state["force_offline_after_trunc"] = False
-                            current_engine_label = (
-                                engine_tracker.get("label") or current_engine_label
-                            )
-                            tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
-                                output_path, current_engine_label
-                            )
+                        if self.verbose:
+                            print("   ℹ️ Edge marcado como instável, mantendo engine (sem fallback)")
+                        edge_force_offline = False
+                        edge_state["force_offline_after_trunc"] = False
 
                 while True:
                     try:
@@ -2324,15 +2422,6 @@ class AudioConverter:
                                 engine_tracker["label"] = next_engine
                                 current_engine_label = next_engine
                                 continue
-                        if not is_auto_engine and build_best_offline_engine(
-                            f"Engine {current_engine_label} indisponível",
-                            tracker=engine_tracker,
-                            engine_ref=engine_instance,
-                        ):
-                            current_engine_label = (
-                                engine_tracker.get("label") or current_engine_label
-                            )
-                            continue
                         chapter_error = f"Engine {current_engine_label} indisponível: {exc}"
                         errors.append(f"{chapter.name}: {chapter_error}")
                         self.progress.complete_chapter(f"❌ {chapter_error}")
@@ -2528,6 +2617,10 @@ class AudioConverter:
                     )
                     if current_engine_label == "edge":
                         _maybe_apply_edge_slow_mode(
+                            f"timeout após {elapsed}s", engine_obj=tts_engine
+                        )
+                    elif current_engine_label == "coqui":
+                        _maybe_apply_coqui_recovery(
                             f"timeout após {elapsed}s", engine_obj=tts_engine
                         )
 
@@ -2963,7 +3056,7 @@ class AudioConverter:
         self, base_config: ConversionConfig
     ) -> Dict[str, tuple[ConversionConfig, object]]:
         pool: Dict[str, tuple[ConversionConfig, object]] = {}
-        for name in ("edge", "coqui", "piper"):
+        for name in ("edge", "coqui"):
             try:
                 cloned = self._clone_engine_config(base_config, name)
                 engine_instance = self.tts_factory.create_engine(cloned)
