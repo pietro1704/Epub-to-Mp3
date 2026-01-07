@@ -14,7 +14,12 @@ from ..config import ConversionConfig, VoiceConfigProvider
 
 class TTSEngine(Protocol):
     async def synthesize_async(
-        self, text: str, output_path: Path
+        self,
+        text: str,
+        output_path: Path,
+        formatting_segments=None,
+        progress_callback=None,
+        chunk_callback=None,
     ):  # pragma: no cover - protocol stub
         ...
 

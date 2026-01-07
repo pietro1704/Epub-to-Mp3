@@ -34,9 +34,9 @@ def test_no_duplicate_chapters_in_structure():
 
     # Verificar que os nomes são únicos
     chapter_names = [ch.name for ch in chapters]
-    assert len(chapter_names) == len(set(chapter_names)), (
-        f"Nomes de capítulos duplicados: {chapter_names}"
-    )
+    assert len(chapter_names) == len(
+        set(chapter_names)
+    ), f"Nomes de capítulos duplicados: {chapter_names}"
 
     # Verificar que os textos NÃO são idênticos
     chapter_texts = [ch.text for ch in chapters]

@@ -7,6 +7,7 @@ Detecta deadlocks, starvation, travamentos e corrige automaticamente
 
 import asyncio
 import gc
+import os
 import sys
 import threading
 import time
@@ -71,6 +72,10 @@ class AutoRecoverySystem:
         self._starvation_streak = 0
         self._last_starvation_log = 0.0
         self._activity_provider: Optional[Callable[[], bool]] = None
+        ignored_env = os.getenv("AUTO_RECOVERY_IGNORE_PREFIXES", "fsspec")
+        self._ignored_prefixes = [
+            prefix.strip().lower() for prefix in ignored_env.split(",") if prefix.strip()
+        ]
 
         # Thresholds para detecção
         self.thresholds = {
@@ -198,6 +203,11 @@ class AutoRecoverySystem:
         for thread in current_threads:
             if not thread.is_alive():
                 continue
+
+            if self._ignored_prefixes:
+                name_lower = thread.name.lower()
+                if any(name_lower.startswith(prefix) for prefix in self._ignored_prefixes):
+                    continue
 
             thread_id = thread.ident
             if thread_id is None:

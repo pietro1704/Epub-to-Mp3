@@ -86,19 +86,12 @@ class MenuInterface:
         }
         default_key = "1"
         while True:
-            print(self.loc.t("formatting_cues_title"))
-            for key, (_, label) in options.items():
-                entry = f"{key}. {label}"
-                if key == default_key:
-                    entry = self.loc.highlight_default(entry + self.loc.t("default_suffix"))
-                print(entry)
+            choices = [(key, label) for key, (_, label) in options.items()]
             try:
-                choice = self.prompt.ask(
-                    self.loc.t("select_formatting_cues_prompt"),
-                    valid=options.keys(),
-                    allow_blank_default=True,
-                    default=default_key,
-                    digits_only=True,
+                choice = self.prompt.select(
+                    self.loc.t("formatting_cues_title"),
+                    choices,
+                    default_index=list(options.keys()).index(default_key),
                 )
             except EOFError:
                 return None
@@ -117,25 +110,16 @@ class MenuInterface:
         default_key = "1"
 
         while True:
-            print(self.loc.t("choose_engine_title"))
-            for key, (_, description) in engines.items():
-                label = f"{key}. {description}"
-                if key == default_key:
-                    label = self.loc.highlight_default(label + self.loc.t("default_suffix"))
-                print(label)
-
+            choices = [(key, desc) for key, (_, desc) in engines.items()]
             try:
-                choice = self.prompt.ask(
-                    self.loc.t("select_engine_prompt"),
-                    valid=engines.keys(),
-                    allow_blank_default=True,
-                    default=default_key,
-                    digits_only=True,
+                choice = self.prompt.select(
+                    self.loc.t("choose_engine_title"),
+                    choices,
+                    default_index=list(engines.keys()).index(default_key),
                 )
             except EOFError:
                 return None
-
-            if choice is None:
+            if not choice:
                 print(self.loc.t("invalid_option"))
                 continue
 
@@ -163,26 +147,17 @@ class MenuInterface:
         )
 
         while True:
-            print(self.loc.t("voice_title"))
-            for key, (_, description) in voices.items():
-                label = f"{key}. {description}"
-                if key == default_key:
-                    label = self.loc.highlight_default(label + self.loc.t("default_suffix"))
-                print(label)
-            print(self.loc.highlight_default(self.loc.t("press_enter_keep_default")))
-
+            choices = [(key, description) for key, (_, description) in voices.items()]
+            default_index = list(voices.keys()).index(default_key) if default_key in voices else 0
             try:
-                choice = self.prompt.ask(
-                    self.loc.t("select_voice_prompt"),
-                    valid=voices.keys(),
-                    allow_blank_default=True,
-                    default=default_key,
-                    digits_only=True,
+                choice = self.prompt.select(
+                    self.loc.t("voice_title"),
+                    choices,
+                    default_index=default_index,
                 )
             except EOFError:
                 return None
-
-            if choice is None:
+            if not choice:
                 print(self.loc.t("invalid_option"))
                 continue
 
@@ -194,26 +169,17 @@ class MenuInterface:
         default_key = next(iter(models.keys()), None)
 
         while True:
-            print(self.loc.t("model_title"))
-            for key, (_, name, desc, _) in models.items():
-                label = f"{key}. {name} - {desc}"
-                if key == default_key:
-                    label = self.loc.highlight_default(label + self.loc.t("default_suffix"))
-                print(label)
-            print(self.loc.highlight_default(self.loc.t("press_enter_keep_default")))
-
+            choices = [(key, f"{name} - {desc}") for key, (_, name, desc, _) in models.items()]
+            default_index = list(models.keys()).index(default_key) if default_key in models else 0
             try:
-                choice = self.prompt.ask(
-                    self.loc.t("select_model_prompt"),
-                    valid=models.keys(),
-                    allow_blank_default=True,
-                    default=default_key,
-                    digits_only=True,
+                choice = self.prompt.select(
+                    self.loc.t("model_title"),
+                    choices,
+                    default_index=default_index,
                 )
             except EOFError:
                 return None
-
-            if choice is None:
+            if not choice:
                 print(self.loc.t("invalid_option"))
                 continue
 
@@ -246,25 +212,16 @@ class MenuInterface:
         }
 
         while True:
-            print(self.loc.t("footnote_title"))
-            for key in ["1", "2", "3", "0"]:
-                label = f"{key}. {label_map[key]}"
-                if key == "1":
-                    label = self.loc.highlight_default(label + self.loc.t("default_suffix"))
-                print(label)
-
+            choices = [(key, label_map[key]) for key in ["1", "2", "3", "0"]]
             try:
-                choice = self.prompt.ask(
-                    self.loc.t("select_footnote_prompt"),
-                    valid=options.keys(),
-                    allow_blank_default=True,
-                    default="1",
-                    digits_only=True,
+                choice = self.prompt.select(
+                    self.loc.t("footnote_title"),
+                    choices,
+                    default_index=0,
                 )
             except EOFError:
                 return None
-
-            if choice is None:
+            if not choice:
                 print(self.loc.t("invalid_option"))
                 continue
 

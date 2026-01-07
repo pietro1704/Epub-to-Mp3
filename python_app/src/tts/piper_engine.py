@@ -111,10 +111,23 @@ class PiperTTSEngine:
         return True
 
     async def synthesize_async(
-        self, text: str, output_path: Path, formatting_segments=None
+        self,
+        text: str,
+        output_path: Path,
+        formatting_segments=None,
+        progress_callback=None,
+        chunk_callback=None,
     ) -> Optional[Path]:
         if not text:
             return None
+
+        def _notify_progress(segment_text: str) -> None:
+            if not progress_callback:
+                return
+            try:
+                progress_callback(segment_text, len(text))
+            except Exception:
+                pass
 
         if TextFormattingProcessor:
             formatter = TextFormattingProcessor(
@@ -197,6 +210,12 @@ class PiperTTSEngine:
                 result = await self._synthesize_single(segment_text, temp_path, model)
                 if result is None:
                     return None
+                _notify_progress(segment_text)
+                if chunk_callback:
+                    try:
+                        chunk_callback(idx, temp_path)
+                    except Exception:
+                        pass
 
             if not temp_files:
                 return None

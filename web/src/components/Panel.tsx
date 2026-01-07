@@ -1,5 +1,5 @@
-import { PropsWithChildren, ReactNode } from 'react';
-import clsx from 'clsx';
+import { PropsWithChildren, ReactNode } from "react";
+import clsx from "clsx";
 
 interface PanelProps extends PropsWithChildren {
   title?: string;
@@ -16,7 +16,7 @@ export default function Panel({
   children,
 }: PanelProps): JSX.Element {
   return (
-    <section className={clsx('panel', className)}>
+    <section className={clsx("panel", className)}>
       {title && <h2 className="panel__title">{title}</h2>}
       {description && <p className="panel__description">{description}</p>}
       <div className="panel__body">{children}</div>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef } from "react";
 
 interface ConfirmDialogProps {
   open: boolean;
@@ -9,7 +9,7 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   onClose?: () => void;
-  variant?: 'default' | 'danger';
+  variant?: "default" | "danger";
   showCloseButton?: boolean;
 }
 
@@ -22,7 +22,7 @@ export default function ConfirmDialog({
   onConfirm,
   onCancel,
   onClose,
-  variant = 'default',
+  variant = "default",
   showCloseButton = false,
 }: ConfirmDialogProps): JSX.Element | null {
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -55,8 +55,8 @@ export default function ConfirmDialog({
       handleClose();
     };
 
-    dialog.addEventListener('cancel', handleEsc);
-    return () => dialog.removeEventListener('cancel', handleEsc);
+    dialog.addEventListener("cancel", handleEsc);
+    return () => dialog.removeEventListener("cancel", handleEsc);
   }, [handleClose]);
 
   if (!open) return null;
@@ -89,7 +89,7 @@ export default function ConfirmDialog({
           <button
             ref={confirmBtnRef}
             type="button"
-            className={`confirm-dialog__btn confirm-dialog__btn--confirm ${variant === 'danger' ? 'confirm-dialog__btn--danger' : ''}`}
+            className={`confirm-dialog__btn confirm-dialog__btn--confirm ${variant === "danger" ? "confirm-dialog__btn--danger" : ""}`}
             onClick={onConfirm}
           >
             {confirmLabel}

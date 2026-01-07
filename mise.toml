@@ -35,9 +35,19 @@ rm -rf python_app/.pytest_cache 2>/dev/null || true
 echo "  → Removendo arquivos de output..."
 rm -rf output/* 2>/dev/null || true
 
-# Remove TTS cache
-echo "  → Removendo cache do TTS..."
-rm -rf .cache 2>/dev/null || true
+# Remove cached books but keep downloaded models
+echo "  → Limpando cache de livros (preservando modelos)..."
+PYTHONPATH=python_app python - <<'PY'
+from src.cache_manager import CacheManager
+
+try:
+    manager = CacheManager()
+    removed = manager.clear_cache()
+    msg = "    Livros removidos do cache." if removed else "    Nenhum cache de livro encontrado."
+    print(msg)
+except Exception as exc:
+    print(f"    ⚠️ Falha ao limpar cache: {exc}")
+PY
 
 # Remove mise cache
 echo "  → Removendo .mise-cache..."
@@ -50,7 +60,7 @@ echo "  - __pycache__"
 echo "  - .pyc files"
 echo "  - .pytest_cache"
 echo "  - output/*"
-echo "  - .cache (TTS models cache)"
+echo "  - cache de livros (.cache/<livro>), modelos preservados"
 echo "  - .mise-cache"
 """
 

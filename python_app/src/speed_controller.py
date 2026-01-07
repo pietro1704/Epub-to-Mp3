@@ -181,6 +181,13 @@ class AdaptiveSpeedController:
         elif chapter_chars >= 24000:
             scale = 1.15
 
+        # Coqui é mais lento em CPU: nunca reduzir e aumente para capítulos curtos
+        if engine == "coqui":
+            if chapter_chars <= 8000:
+                scale = max(scale, 1.6)
+            else:
+                scale = max(scale, 1.2)
+
         recent = self._history.get(engine or "", deque())
         slow_recent = any(item.elapsed > 150 and item.success for item in recent)
         if slow_recent:

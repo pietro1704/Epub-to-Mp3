@@ -70,13 +70,29 @@ export interface DownloadAsset {
   sizeBytes?: number;
 }
 
+export interface AudioChunkEntry {
+  index: number;
+  file: string;
+  url: string;
+  durationSeconds?: number;
+}
+
+export interface ChapterStreamManifest {
+  jobId: string;
+  chapterIndex: number;
+  baseUrl: string;
+  chunks: AudioChunkEntry[];
+  updatedAt?: number;
+}
+
 export type ChapterProgressStatus =
   | "pending"
   | "processing"
   | "completed"
   | "skipped"
   | "failed"
-  | "cancelled";
+  | "cancelled"
+  | "retrying";
 
 export interface ChapterProgressEntry {
   index: number;
@@ -85,6 +101,26 @@ export interface ChapterProgressEntry {
   elapsedSeconds?: number;
   charsPerSecond?: number;
   downloadUrl?: string;
+  // Retry information
+  retryCount?: number;
+  maxRetries?: number;
+  retryReason?: string;
+  paramAdjustment?: string;
+}
+
+// Engine status for model loading/initialization
+export type EngineLoadingStatus =
+  | "idle"
+  | "downloading"
+  | "loading"
+  | "ready"
+  | "error";
+
+export interface EngineStatus {
+  engine: string;
+  status: EngineLoadingStatus;
+  message?: string;
+  progress?: number; // 0-100 for download progress
 }
 
 export interface JobSnapshot {
@@ -122,6 +158,7 @@ export interface JobSnapshot {
   uiLanguage?: string;
   lastActivityAt?: number;
   noParallel?: boolean;
+  engineStatus?: EngineStatus;
 }
 
 export interface StatusEntry {
@@ -140,6 +177,7 @@ export interface ConversionSummary {
   parallelSlots?: number;
   parallelActive?: number;
   statusHint?: string;
+  engineStatus?: EngineStatus;
 }
 
 export interface ConversionState {

@@ -33,6 +33,18 @@ class ConversionCheckpoint:
 class CacheManager:
     """Gerenciador de cache inteligente para ebooks"""
 
+    # Diretórios que não devem ser apagados por uma limpeza global (modelos, telemetria, etc.)
+    _PROTECTED_DIRS = {
+        "telemetry",
+        "coqui_models",
+        "piper_models",
+        "models",
+        "hf_models",
+        "huggingface",
+        "hf_cache",
+        "transformers",
+    }
+
     def __init__(self, cache_dir: Optional[Path] = None):
         try:
             # Sempre usa CACHE_DIR da raiz do projeto, a menos que seja explicitamente fornecido
@@ -189,7 +201,11 @@ class CacheManager:
     def clear_cache(
         self, ebook_path: Optional[Path] = None, *, title: Optional[str] = None
     ) -> bool:
-        """Limpa o cache para um ebook específico ou todo o cache."""
+        """Limpa o cache para um ebook específico ou, globalmente, apenas os livros.
+
+        Observação: diretórios de modelos/telemetria são preservados para evitar
+        downloads repetidos e caros.
+        """
         if self.cache_dir is None:
             return False
 
@@ -215,6 +231,8 @@ class CacheManager:
             return removed_any
 
         for item in self.cache_dir.iterdir():
+            if item.name in self._PROTECTED_DIRS:
+                continue
             if item.is_dir():
                 self._cleanup_cache(item)
                 removed_any = True

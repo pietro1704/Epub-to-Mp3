@@ -1151,6 +1151,9 @@ export default function App(props?: AppProps): JSX.Element {
                 canCancel={canCancelJob}
                 canSkip={canSkipJob}
                 cancelDisabled={cancelDisabled}
+                bookTitle={state.bookTitle}
+                bookAuthor={state.bookAuthor}
+                coverUrl={state.coverUrl}
               />
             </Suspense>
             {canShowQueueAdder && repeatConfig && (

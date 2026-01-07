@@ -756,6 +756,8 @@ export function useConversionFlow(
         summaryUpdate.parallelSlots = snapshot.parallelSlots;
       if (typeof snapshot.parallelActive === "number")
         summaryUpdate.parallelActive = snapshot.parallelActive;
+      if (snapshot.engineStatus)
+        summaryUpdate.engineStatus = snapshot.engineStatus;
       const percentFromSnapshot =
         typeof snapshot.progressPercent === "number"
           ? snapshot.progressPercent

@@ -56,10 +56,18 @@ class R2StorageManager:
 
     def _check_enabled(self) -> bool:
         """Check if R2 is properly configured."""
+        optional = os.getenv("R2_OPTIONAL", "true").strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
         if not all([self.account_id, self.access_key_id, self.secret_access_key]):
-            logger.warning(
-                "R2 not configured - missing credentials. Files will be stored locally only."
-            )
+            message = "R2 not configured - missing credentials. Files will be stored locally only."
+            if optional:
+                logger.info(message)
+            else:
+                logger.warning(message)
             return False
         return True
 

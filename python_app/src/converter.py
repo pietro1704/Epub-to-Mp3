@@ -1146,6 +1146,10 @@ class AudioConverter:
                 for keyword in (
                     "timeout",
                     "time-out",
+                    "rate limit",
+                    "rate_limit",
+                    "too many requests",
+                    "403",
                     "sem áudio",
                     "sem audio",
                     "noaudio",
@@ -1365,6 +1369,14 @@ class AudioConverter:
         self.verbose = getattr(config, "verbose", False)
         # Show TTS output only in verbose mode
         self.show_tts_output = self.verbose
+        if not getattr(config, "log_callback", None):
+            # Roteia logs internos para a barra de progresso/CLI automaticamente
+            def _log_to_progress(message: str) -> None:
+                self.progress.tick(message)
+                if not self.progress._supports_overwrite:
+                    print(message)
+
+            config.log_callback = _log_to_progress
 
         if self.verbose:
             print("🔍 [VERBOSE] AudioConverter.convert() iniciado")
@@ -1722,6 +1734,10 @@ class AudioConverter:
             chapters_to_retry_info.sort(key=lambda item: item[1])
             chapters_to_retry = [item[0] for item in chapters_to_retry_info]
 
+            if hasattr(self, "progress"):
+                self.progress.tick(
+                    f"🔁 Retry automático ({retry_round}/{max_retry_rounds}) para {len(chapters_to_retry)} capítulo(s)"
+                )
             print(
                 f"\n🔁 Reprocessando {len(chapters_to_retry)} capítulo(s) com falha (tentativa {retry_round}/{max_retry_rounds})"
             )
@@ -1797,6 +1813,8 @@ class AudioConverter:
 
         if pending_failures:
             print(f"\n⚠️ Alguns capítulos ainda falharam após {max_retry_rounds} tentativa(s).")
+            if hasattr(self, "progress"):
+                self.progress.tick("❌ Conversão incompleta - capítulos pendentes após retries")
         elif attempts_used and any(attempts > 1 for attempts in attempts_used.values()):
             print("\n✅ Todos os capítulos foram convertidos após tentativas adicionais.")
 
@@ -2487,6 +2505,9 @@ class AudioConverter:
                 if decision.timeout_scale:
                     timeout_seconds = timeout_seconds * decision.timeout_scale
                 timeout_seconds = int(timeout_seconds)
+                if current_engine_label == "coqui":
+                    coqui_min_timeout = int(os.getenv("COQUI_TIMEOUT_MIN", "180") or "180")
+                    timeout_seconds = max(timeout_seconds, coqui_min_timeout)
                 if (
                     edge_auto_enabled
                     and edge_state.get("slow_mode")
@@ -2553,6 +2574,84 @@ class AudioConverter:
                             self.progress.update_chars_progress(text, total_chars)
                             self._mark_health_activity(chapter_num, "segment")
 
+                        chunk_callback = None
+                        chunk_root: Optional[Path] = None
+                        if getattr(config, "job_id", None):
+                            chunk_root = (
+                                Path(config.output_dir)
+                                / "streams"
+                                / str(config.job_id)
+                                / f"chapter_{chapter_num:04d}"
+                            )
+                            try:
+                                if chunk_root.exists():
+                                    shutil.rmtree(chunk_root, ignore_errors=True)
+                                chunk_root.mkdir(parents=True, exist_ok=True)
+                            except Exception:
+                                chunk_root = None
+
+                        def on_chunk_ready(segment_index: int, temp_path: Path) -> None:
+                            # Atualiza barra com chunks concluídos
+                            if hasattr(self, "progress"):
+                                try:
+                                    self.progress.update_chunk_progress(segment_index)
+                                except Exception:
+                                    pass
+
+                            if chunk_root is None:
+                                return
+                            try:
+                                target = chunk_root / f"chunk_{segment_index:04d}{temp_path.suffix}"
+                                shutil.copy2(temp_path, target)
+                                manifest_path = chunk_root / "manifest.json"
+                                manifest = {
+                                    "jobId": config.job_id,
+                                    "chapterIndex": chapter_num,
+                                    "chunks": [],
+                                }
+                                if manifest_path.exists():
+                                    try:
+                                        manifest = json.loads(
+                                            manifest_path.read_text(encoding="utf-8")
+                                        )
+                                    except Exception:
+                                        manifest = {
+                                            "jobId": config.job_id,
+                                            "chapterIndex": chapter_num,
+                                            "chunks": [],
+                                        }
+                                existing = manifest.get("chunks") or []
+                                existing = [entry for entry in existing if isinstance(entry, dict)]
+                                existing = [
+                                    entry
+                                    for entry in existing
+                                    if entry.get("index") != segment_index
+                                ]
+                                existing.append(
+                                    {
+                                        "index": segment_index,
+                                        "file": target.name,
+                                        "url": f"/api/streams/{config.job_id}/chapters/{chapter_num}/chunks/{segment_index}",
+                                    }
+                                )
+                                manifest["chunks"] = sorted(
+                                    existing, key=lambda item: item.get("index", 0)
+                                )
+                                manifest["updatedAt"] = time.time()
+                                manifest["baseUrl"] = (
+                                    f"/api/streams/{config.job_id}/chapters/{chapter_num}"
+                                )
+                                manifest_path.write_text(
+                                    json.dumps(manifest, ensure_ascii=False, indent=2),
+                                    encoding="utf-8",
+                                )
+                            except Exception as exc:
+                                if self.verbose:
+                                    print(f"   ⚠️ Falha ao salvar chunk {segment_index}: {exc}")
+
+                        # Sempre definir callback para refletir progresso mesmo sem streaming
+                        chunk_callback = on_chunk_ready
+
                         stall_event = asyncio.Event()
                         synthesis_task = asyncio.create_task(
                             tts_engine.synthesize_async(
@@ -2560,6 +2659,7 @@ class AudioConverter:
                                 tts_output_path,
                                 formatting_segments=getattr(chapter, "formatting_segments", None),
                                 progress_callback=on_segment_complete,
+                                chunk_callback=chunk_callback,
                             )
                         )
                         stall_task = asyncio.create_task(
@@ -2676,7 +2776,10 @@ class AudioConverter:
                             )
                             synthesis_result = await asyncio.wait_for(
                                 tts_engine.synthesize_async(
-                                    clean_text, tts_output_path, formatting_segments=None
+                                    clean_text,
+                                    tts_output_path,
+                                    formatting_segments=None,
+                                    chunk_callback=chunk_callback,
                                 ),
                                 timeout=fallback_timeout,
                             )
@@ -2729,7 +2832,10 @@ class AudioConverter:
                                 )
                                 synthesis_result = await asyncio.wait_for(
                                     tts_engine.synthesize_async(
-                                        emergency_text, tts_output_path, formatting_segments=None
+                                        emergency_text,
+                                        tts_output_path,
+                                        formatting_segments=None,
+                                        chunk_callback=chunk_callback,
                                     ),
                                     timeout=emergency_timeout,
                                 )
@@ -2914,7 +3020,10 @@ class AudioConverter:
                             for attempt in range(2):
                                 synthesis_result = await asyncio.wait_for(
                                     tts_engine.synthesize_async(
-                                        simple_text, output_path, formatting_segments=None
+                                        simple_text,
+                                        output_path,
+                                        formatting_segments=None,
+                                        chunk_callback=chunk_callback,
                                     ),
                                     timeout=retry_timeout,
                                 )
@@ -3002,6 +3111,24 @@ class AudioConverter:
                     except Exception as retry_e:
                         if self.verbose:
                             print(f"   ❌ RETRY falhou: {retry_e}")
+
+                    if current_engine_label == "edge":
+                        last_err = ""
+                        try:
+                            last_err = str(getattr(tts_engine, "last_error", "") or "")
+                        except Exception:
+                            last_err = ""
+                        if (
+                            "rate_limit" in last_err.lower()
+                            or "too many requests" in last_err.lower()
+                        ):
+                            _maybe_apply_edge_slow_mode(
+                                "Rate limit detectado", engine_obj=tts_engine
+                            )
+                            if hasattr(self, "progress"):
+                                self.progress.tick(
+                                    "⏳ Edge limitado; aplicando modo seguro e tentando novamente"
+                                )
 
                     # If all retries failed
                     error_msg = "Falha na síntese"
@@ -3599,6 +3726,10 @@ class AudioConverter:
             print(self.loc.t("conversion_results_errors", errors=len(result.errors)))
             for error in result.errors[:3]:
                 print(f"    • {error}")
+        if not result.success:
+            print(
+                "❌ Conversão incompleta: um ou mais capítulos falharam (reexecute para recuperar)."
+            )
 
     def _cleanup_temp_audio(self, temp_dir: Path) -> None:
         temp_dir = Path(temp_dir)

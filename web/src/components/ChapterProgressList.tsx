@@ -13,6 +13,7 @@ const STATUS_ICONS: Record<ChapterProgressEntry["status"], string> = {
   skipped: "↷",
   failed: "⚠️",
   cancelled: "⛔",
+  retrying: "🔄",
 };
 
 export default function ChapterProgressList({
@@ -35,9 +36,9 @@ export default function ChapterProgressList({
       const list = listRef.current;
       if (!container || !list) return;
 
-      // Find first processing item, or last completed item
+      // Find first processing/retrying item, or last completed item
       const processingIndex = entries.findIndex(
-        (entry) => entry.status === "processing",
+        (entry) => entry.status === "processing" || entry.status === "retrying",
       );
       const targetIndex =
         processingIndex >= 0
@@ -139,13 +140,47 @@ export default function ChapterProgressList({
                 aria-label={statusLabel}
               >
                 {statusLabel}
+                {/* Retry information */}
+                {entry.status === "retrying" && (
+                  <span className="chapter-progress__retry">
+                    {entry.retryCount !== undefined &&
+                      entry.maxRetries !== undefined && (
+                        <span className="chapter-progress__retry-count">
+                          ({entry.retryCount}/{entry.maxRetries})
+                        </span>
+                      )}
+                    {entry.paramAdjustment && (
+                      <span
+                        className="chapter-progress__param-adj"
+                        title={entry.retryReason}
+                      >
+                        {entry.paramAdjustment}
+                      </span>
+                    )}
+                  </span>
+                )}
                 {entry.status === "completed" && (
                   <>
                     <span className="chapter-progress__time">
-                      {formatChapterDuration(entry.elapsedSeconds) ?? "--"}
+                      {formatChapterDuration(entry.elapsedSeconds, locale) ??
+                        "--"}
                       {typeof entry.charsPerSecond === "number"
                         ? ` • ~${entry.charsPerSecond} chars/s`
                         : ""}
+                      {/* Show if retry was needed */}
+                      {entry.retryCount !== undefined &&
+                        entry.retryCount > 0 && (
+                          <span
+                            className="chapter-progress__retry-badge"
+                            title={
+                              locale === "pt"
+                                ? `Sucesso após ${entry.retryCount} tentativa(s)`
+                                : `Success after ${entry.retryCount} retry(s)`
+                            }
+                          >
+                            🔄{entry.retryCount}
+                          </span>
+                        )}
                     </span>
                     {entry.downloadUrl && (
                       <audio
@@ -171,7 +206,7 @@ export default function ChapterProgressList({
   );
 }
 
-function formatChapterDuration(value?: number): string | null {
+function formatChapterDuration(value?: number, locale?: string): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
@@ -187,5 +222,6 @@ function formatChapterDuration(value?: number): string | null {
     parts.push(`${minutes.toString().padStart(2, "0")}m`);
   }
   parts.push(`${seconds.toString().padStart(2, "0")}s`);
-  return `Concluído em ${parts.join(" ")}`;
+  const prefix = locale === "pt" ? "Concluído em" : "Completed in";
+  return `${prefix} ${parts.join(" ")}`;
 }

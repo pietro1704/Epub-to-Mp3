@@ -11,13 +11,13 @@ repos:
     rev: v4.0.0-alpha.8
     hooks:
       - id: prettier
-        args: ["--config", "web/.prettierrc.json"]
+        args: ["--write", "--config", "web/.prettierrc.json"]
         files: "^web/.*\\.(ts|tsx|js|jsx|json|css|md|html)$"
   - repo: https://github.com/pre-commit/mirrors-eslint
     rev: v9.17.0
     hooks:
       - id: eslint
-        args: ["--config", "web/.eslintrc.cjs", "--ext", ".ts,.tsx", "--max-warnings=0", "web/src"]
+        args: ["--fix", "--config", "web/.eslintrc.cjs", "--ext", ".ts,.tsx", "--max-warnings=0", "web/src"]
         additional_dependencies:
           - "eslint@8.57.0"
           - "@typescript-eslint/parser@8.15.0"

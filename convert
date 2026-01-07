@@ -47,12 +47,24 @@ echo "║  🚀 EPUB/PDF TO MP3 CONVERTER - TURBO MODE               ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-# Run conversion with optimal settings
-# - convert: Use convert command
-# - --verbose: Show detailed progress and hardware info
-# - --engine auto: Smart engine selection based on performance
-# - Hardware auto-detection: Automatically applied by main.py
-python -m python_app.main convert "$@" --verbose --engine auto
+# If the user did not pass --engine, default to auto (do NOT override explicit engines)
+ENGINE_PRESENT=0
+for arg in "$@"; do
+    case "$arg" in
+        --engine|--engine=*)
+            ENGINE_PRESENT=1
+            break
+            ;;
+    esac
+done
+
+EXTRA_ARGS=()
+if [ "$ENGINE_PRESENT" -eq 0 ]; then
+    EXTRA_ARGS+=(--engine auto)
+fi
+
+# Run conversion with optimal settings; append default engine only when absent
+python -m python_app.main convert "$@" --verbose "${EXTRA_ARGS[@]}"
 
 # Print completion
 echo ""

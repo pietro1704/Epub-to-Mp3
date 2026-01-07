@@ -238,6 +238,24 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("<speak", payload.lower())
                 self.assertNotIn("[[fmt:", payload)
 
+    def test_edge_chunk_guard_on_rate_limit(self):
+        """Ensure Edge shrinks chunk size when rate limits or long texts are detected."""
+        with patch("src.tts.edge_engine.edge_tts"):
+            import src.tts.edge_engine as edge_mod
+            from src.tts.edge_engine import EdgeTTSEngine
+
+            previous = edge_mod._edge_rate_limit_count
+            edge_mod._edge_rate_limit_count = 1  # Simulate prior rate limit
+
+            try:
+                engine = EdgeTTSEngine("pt-BR-FranciscaNeural", chunk_char_limit=10000)
+                long_text = "palavra " * 3000  # ~24k chars
+                chunks = engine._chunk_text("pt-BR-FranciscaNeural", long_text)
+                max_chunk = max(len(text) for _voice, text in chunks)
+                self.assertLessEqual(max_chunk, 4000)
+            finally:
+                edge_mod._edge_rate_limit_count = previous
+
     async def test_synthesize_async_adds_audible_cues_for_formatting(self):
         """Edge engine should convert formatting markers into audible cues."""
         with patch("src.tts.edge_engine.edge_tts") as mock_edge_tts:
@@ -479,6 +497,18 @@ class TestCoquiTTSEngine(unittest.IsolatedAsyncioTestCase):
             result = await engine.synthesize_async("", output_path)
 
             self.assertIsNone(result)
+
+    def test_coqui_phonemizer_limit_chunks_segments(self):
+        """Ensure Coqui splits long PT text to avoid phonemizer truncation."""
+        from src.tts import coqui_engine
+
+        segments = [("pt", " ".join(["teste"] * 60))]  # ~360 chars
+        expanded = coqui_engine._expand_segments_with_limits(
+            segments, max_chars=500, verbose=False, phonemizer_limit_fn=lambda lang: 200
+        )
+
+        self.assertGreater(len(expanded), 1)
+        self.assertTrue(all(len(text) <= 200 for _, text in expanded))
 
     async def test_synthesize_async_exception(self):
         """Test synthesis with exception"""

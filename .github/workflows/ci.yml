@@ -54,3 +54,13 @@ jobs:
 
       - name: Run Python tests
         run: pytest -v --tb=short
+
+      - name: Run sample conversion smoke
+        env:
+          R2_OPTIONAL: "true"
+          EDGE_CHUNK_CHARS: "4000"
+          EDGE_MAX_CONCURRENCY: "1"
+          EDGE_ENABLE_PARALLEL: "false"
+          EDGE_AUTO_TUNE: "false"
+        run: |
+          python -m python_app.main convert web/public/sample.epub --engine edge --chapters 1 --no-parallel --verbose

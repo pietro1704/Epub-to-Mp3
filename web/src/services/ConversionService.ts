@@ -3,6 +3,7 @@ import {
   ConversionFormValues,
   JobSnapshot,
   RecentJobEntry,
+  ChapterStreamManifest,
 } from "../types/conversion";
 
 export interface PollOptions {
@@ -37,6 +38,10 @@ export interface ConversionClient {
   poll(jobId: string, options?: PollOptions): Promise<JobSnapshot>;
   getResumableJobs?(): Promise<ResumableJob[] | null>;
   getRecentJobs?(): Promise<RecentJobEntry[] | null>;
+  getChapterManifest?(
+    jobId: string,
+    chapterIndex: number,
+  ): Promise<ChapterStreamManifest | null>;
   cancel?(jobId: string): Promise<{ status: string }>;
   resume?(jobId: string): Promise<{ status: string }>;
   removeJob?(jobId: string): Promise<{ status: string }>;
@@ -585,6 +590,32 @@ export class HttpConversionClient implements ConversionClient {
     return payload.jobs as RecentJobEntry[];
   }
 
+  async getChapterManifest(
+    jobId: string,
+    chapterIndex: number,
+  ): Promise<ChapterStreamManifest | null> {
+    const url = this.resolve(
+      `/api/streams/${encodeURIComponent(jobId)}/chapters/${encodeURIComponent(chapterIndex)}`,
+    );
+    try {
+      const response = await fetch(url, { method: "GET" });
+      if (!response.ok) {
+        return null;
+      }
+      const payload = (await response.json()) as ChapterStreamManifest;
+      if (!payload || !Array.isArray(payload.chunks)) {
+        return null;
+      }
+      return payload;
+    } catch (error) {
+      console.warn(
+        "[ConversionClient] Failed to fetch stream manifest:",
+        error,
+      );
+      return null;
+    }
+  }
+
   private async pollWithHttp(
     jobId: string,
     options: PollOptions,
@@ -845,6 +876,13 @@ export class MockConversionClient implements ConversionClient {
 
   async getResumableJobs(): Promise<ResumableJob[] | null> {
     return [];
+  }
+
+  async getChapterManifest(
+    _jobId: string,
+    _chapterIndex: number,
+  ): Promise<ChapterStreamManifest | null> {
+    return null;
   }
 
   private createMockZip(bookTitle: string): string {

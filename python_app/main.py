@@ -368,7 +368,18 @@ class ConverterApplication:
             # Cache automático: conversão retoma automaticamente se arquivos .txt existirem
             # Não precisa mais perguntar ao usuário - sistema detecta automaticamente
 
-            # Inicializar `config` antes de configurar o diretório temporário
+            self._interactive_mode = bool(getattr(args, "menu", False))
+
+            # Prepare language profile AFTER displaying initial metadata
+            verbose = self._resolve_verbose(args)
+            self.language_profile = self._prepare_language_profile(
+                reader, structure_items, verbose=verbose
+            )
+
+            # Update display with language detection results
+            self._update_metadata_display_language()
+
+            # Configure conversion (only once)
             config = self._get_conversion_config(args, reader)
             if not config:
                 return 1
@@ -384,24 +395,6 @@ class ConverterApplication:
                 if txt_files:
                     print(f"♻️ Cache detectado: {len(txt_files)} capítulos processados")
                     print("   Capítulos já convertidos serão pulados automaticamente")
-
-            self._interactive_mode = bool(getattr(args, "menu", False))
-
-            # Prepare language profile AFTER displaying initial metadata
-            verbose = self._resolve_verbose(args)
-            self.language_profile = self._prepare_language_profile(
-                reader, structure_items, verbose=verbose
-            )
-
-            # Update display with language detection results
-            self._update_metadata_display_language()
-
-            # Configure conversion
-            config = self._get_conversion_config(args, reader)
-            if not config:
-                return 1
-            config.verbose = self._resolve_verbose(args)
-            self._announce_footnote_mode(config)
 
             structure_items = self._apply_text_transforms(structure_items, config, reader)
             self._apply_structure_to_reader(reader, structure_items)
@@ -1764,7 +1757,7 @@ class ConverterApplication:
 
         success = cache_manager.clear_cache()
         if success:
-            print("✅ Todo o cache foi removido com sucesso!")
+            print("✅ Cache de livros removido com sucesso (modelos preservados).")
         else:
             print("❌ Erro ao remover cache.")
             return 1
@@ -1773,11 +1766,6 @@ class ConverterApplication:
         if output_dir.exists():
             shutil.rmtree(output_dir, ignore_errors=True)
             print(f"🧹 Diretório de saída limpo: {output_dir}")
-
-        cache_root = resolve_cache_root()
-        if cache_root.exists():
-            shutil.rmtree(cache_root, ignore_errors=True)
-            print(f"🧹 Diretório .cache limpo: {cache_root}")
 
         return 0
 

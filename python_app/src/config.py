@@ -19,6 +19,7 @@ class ConversionConfig:
     """Runtime configuration for an audio conversion session."""
 
     engine: str
+    job_id: Optional[str] = None
     voice: Optional[str] = None
     model_path: Optional[Path] = None
     output_dir: Path = OUTPUT_DIR  # Sempre usa a raiz do projeto
@@ -64,6 +65,7 @@ class ConversionConfig:
         """Return a serialisable representation useful for debugging."""
         data: Dict[str, object] = {
             "engine": self.engine,
+            "job_id": self.job_id,
             "voice": self.voice,
             "model_path": str(self.model_path) if self.model_path else None,
             "output_dir": self.output_dir,
@@ -393,17 +395,48 @@ class VoiceConfigProvider:
         engine = (engine or "").lower()
         language = (primary_language or "").split("-", 1)[0].lower() or None
 
+        def _pick_multilingual(
+            entries: Iterable[Dict[str, object]], lang_code: Optional[str]
+        ) -> Optional[str]:
+            lang_code = (lang_code or "").lower()
+            multilingual = [
+                e
+                for e in entries
+                if e.get("multilingual")
+                and (
+                    not lang_code
+                    or str(e.get("language", "")).split("-", 1)[0].lower() == lang_code
+                )
+            ]
+            if multilingual:
+                return str(multilingual[0].get("id"))
+            # fallback: first matching language
+            for entry in entries:
+                if (
+                    lang_code
+                    and str(entry.get("language", "")).split("-", 1)[0].lower() == lang_code
+                ):
+                    return str(entry.get("id"))
+            # fallback: first entry
+            return str(entries[0].get("id")) if entries else None
+
         if engine == "edge":
-            return self._edge_voices.get("1", (None,))[0]
+            entries = list(self._edge_voice_catalog)
+            # Prefer multilingual voices for requested language; fallback to catalog first
+            pick = _pick_multilingual(entries, language)
+            return pick or self._edge_voices.get("1", (None,))[0]
         if engine == "coqui":
             code = (primary_language or "").split("-", 1)[0].lower()
             if code == "pt":
                 return self._coqui_language_map.get("pt", self._coqui_default_voice)
             return self._coqui_default_voice
         if engine == "auto":
+            # Prefer multilingual Coqui first, then multilingual Edge
             if language == "pt":
                 return self._coqui_language_map.get("pt", self._edge_voices.get("1", (None,))[0])
-            return self._edge_voices.get("1", (None,))[0]
+            coqui_pick = self._coqui_default_voice
+            edge_pick = _pick_multilingual(self._edge_voice_catalog, language)
+            return coqui_pick or edge_pick or self._edge_voices.get("1", (None,))[0]
         if engine == "piper":
             code = (primary_language or "").split("-", 1)[0].lower()
             return self._resolve_piper_model(code)

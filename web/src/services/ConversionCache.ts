@@ -1,6 +1,6 @@
-import type { ConversionState } from '../types/conversion';
+import type { ConversionState } from "../types/conversion";
 
-const CACHE_KEY_PREFIX = 'ebook-tts-cache';
+const CACHE_KEY_PREFIX = "ebook-tts-cache";
 const CACHE_VERSION = 1;
 
 export interface CachedConversion {
@@ -38,7 +38,7 @@ export class ConversionCache {
       };
       localStorage.setItem(this.getKey(jobId), JSON.stringify(cached));
     } catch (error) {
-      console.warn('[ConversionCache] Failed to save:', error);
+      console.warn("[ConversionCache] Failed to save:", error);
     }
   }
 
@@ -50,7 +50,7 @@ export class ConversionCache {
       if (cached.version !== CACHE_VERSION) return null;
       return cached;
     } catch (error) {
-      console.warn('[ConversionCache] Failed to load:', error);
+      console.warn("[ConversionCache] Failed to load:", error);
       return null;
     }
   }
@@ -59,7 +59,7 @@ export class ConversionCache {
     try {
       localStorage.removeItem(this.getKey(jobId));
     } catch (error) {
-      console.warn('[ConversionCache] Failed to remove:', error);
+      console.warn("[ConversionCache] Failed to remove:", error);
     }
   }
 
@@ -76,7 +76,7 @@ export class ConversionCache {
           conversions.push(cached);
         }
       } catch (error) {
-        console.warn('[ConversionCache] Failed to parse cached item:', error);
+        console.warn("[ConversionCache] Failed to parse cached item:", error);
       }
     }
 

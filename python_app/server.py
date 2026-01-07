@@ -286,6 +286,14 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
     return legacy_dir
 
 
+def _chapter_chunk_dir(job_id: str, chapter_index: int, ensure: bool = False) -> Path:
+    base = _job_output_dir(job_id, ensure=ensure)
+    target = Path(base) / "streams" / job_id / f"chapter_{int(chapter_index):04d}"
+    if ensure:
+        target.mkdir(parents=True, exist_ok=True)
+    return target
+
+
 def _load_cover_cache() -> Dict[str, dict]:
     try:
         return json.loads(cover_index_path.read_text())
@@ -2127,6 +2135,79 @@ async def download_output(job_id: str, filename: str) -> FileResponse:
     return FileResponse(path=file_path, media_type=_guess_media_type(filename), filename=filename)
 
 
+@app.get("/api/streams/{job_id}/chapters/{chapter_index}")
+async def stream_manifest(job_id: str, chapter_index: int) -> dict:
+    """Return available chunk list for a chapter."""
+    chapter_dir = _chapter_chunk_dir(job_id, chapter_index, ensure=False)
+    manifest_path = chapter_dir / "manifest.json"
+    chunks: list[dict] = []
+
+    if manifest_path.exists():
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            chunks = payload.get("chunks") or []
+        except Exception:
+            chunks = []
+    else:
+        # Build manifest from files if no manifest exists
+        if chapter_dir.exists():
+            for path in sorted(chapter_dir.glob("chunk_*")):
+                if path.is_file():
+                    name = path.name
+                    try:
+                        idx_text = name.split("_", 1)[1].split(".")[0]
+                        idx_val = int(idx_text)
+                    except Exception:
+                        idx_val = None
+                    chunks.append(
+                        {
+                            "index": idx_val if idx_val is not None else name,
+                            "file": name,
+                            "url": f"/api/streams/{job_id}/chapters/{chapter_index}/chunks/{idx_val if idx_val is not None else name}",
+                        }
+                    )
+
+    base_url = f"/api/streams/{job_id}/chapters/{chapter_index}"
+
+    def _sort_key(item: dict) -> int:
+        try:
+            return int(item.get("index"))
+        except Exception:
+            return 0
+
+    return {
+        "jobId": job_id,
+        "chapterIndex": int(chapter_index),
+        "baseUrl": base_url,
+        "chunks": sorted(chunks, key=_sort_key),
+        "updatedAt": time.time(),
+    }
+
+
+@app.get("/api/streams/{job_id}/chapters/{chapter_index}/chunks/{chunk_id}")
+async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
+    """Serve an individual synthesized chunk for progressive playback."""
+    chapter_dir = _chapter_chunk_dir(job_id, chapter_index, ensure=False)
+    if not chapter_dir.exists():
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    candidates = []
+    try:
+        numeric = int(chunk_id)
+        candidates.append(chapter_dir / f"chunk_{numeric:04d}.mp3")
+        candidates.append(chapter_dir / f"chunk_{numeric:04d}.wav")
+    except Exception:
+        pass
+    candidates.append(chapter_dir / f"{chunk_id}.mp3")
+    candidates.append(chapter_dir / f"{chunk_id}")
+
+    file_path = next((path for path in candidates if path.exists()), None)
+    if file_path is None or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    return FileResponse(path=file_path, media_type=_guess_media_type(file_path.name))
+
+
 @app.post("/api/cleanup")
 async def cleanup_old_files(max_age_hours: int = 48) -> dict:
     """
@@ -3036,6 +3117,7 @@ async def process_conversion(job_id: str) -> None:
         model_path = Path(job.get("model")) if job.get("model") else None
         config = ConversionConfig(
             engine=job.get("engine", "edge"),
+            job_id=job_id,
             voice=job.get("voice"),
             model_path=model_path,
             primary_language=detected_lang,
@@ -3317,17 +3399,21 @@ async def process_conversion(job_id: str) -> None:
             _append_event(job, f"🔧 Inicializando engine de TTS ({config.engine})...")
             while engine_index < len(engine_chain):
                 candidate = engine_chain[engine_index]
+                engine_name = (candidate.engine or "").lower()
+                _set_engine_status(job, engine_name, "loading", "Carregando modelo...")
                 try:
                     engine_obj = tts_factory.create_engine(candidate)
                     active_config = candidate
-                    engine_name = (candidate.engine or "").lower()
                     if engine_name:
                         engine_seeds[engine_name] = engine_obj
+                    _set_engine_status(job, engine_name, "ready", "Pronto")
                     _append_event(job, f"✅ Engine {candidate.engine} pronto")
                     break
                 except ImportError as exc:
+                    _set_engine_status(job, engine_name, "error", str(exc))
                     _append_event(job, f"⚠️ Engine '{candidate.engine}' indisponível: {exc}")
                 except Exception as exc:
+                    _set_engine_status(job, engine_name, "error", str(exc))
                     _append_event(job, f"⚠️ Falha ao iniciar engine '{candidate.engine}': {exc}")
                 engine_index += 1
 
@@ -3828,7 +3914,18 @@ async def process_conversion(job_id: str) -> None:
                         job,
                         f"🔁 Reprocessando capítulo {idx}/{len(chapters)} (tentativa {attempt}/{max_chapter_attempts_label})",
                     )
-                _set_chapter_status(job, idx, "processing")
+                    # Set retrying status with info
+                    _set_chapter_status(
+                        job,
+                        idx,
+                        "retrying",
+                        retry_count=attempt - 1,
+                        max_retries=max_chapter_attempts,
+                        retry_reason="Falha anterior",
+                        param_adjustment="Parâmetros reduzidos",
+                    )
+                else:
+                    _set_chapter_status(job, idx, "processing")
                 _append_event(job, "")
                 _append_event(job, f"🎯 Convertendo capítulo {idx}/{len(chapters)}: {chapter_name}")
 
@@ -4279,7 +4376,15 @@ async def process_conversion(job_id: str) -> None:
                     "durationSeconds": round(duration_seconds, 2),
                     "sizeBytes": output_file.stat().st_size,
                 }
-                _set_chapter_status(job, idx, "completed", download_url=chapter_output["url"])
+                # Include retry count if chapter required retries
+                retry_count = attempt - 1 if attempt > 1 else None
+                _set_chapter_status(
+                    job,
+                    idx,
+                    "completed",
+                    download_url=chapter_output["url"],
+                    retry_count=retry_count,
+                )
                 _refresh_chapter_completion()
                 _complete_chapter_progress(idx)
                 _update_job_activity(job, stage=f"chapter_{idx}_completed")
@@ -4825,7 +4930,15 @@ async def _get_audio_duration(file_path: Path) -> float:
 
 
 def _set_chapter_status(
-    job: dict, chapter_index: Optional[int], status: str, download_url: Optional[str] = None
+    job: dict,
+    chapter_index: Optional[int],
+    status: str,
+    download_url: Optional[str] = None,
+    *,
+    retry_count: Optional[int] = None,
+    max_retries: Optional[int] = None,
+    retry_reason: Optional[str] = None,
+    param_adjustment: Optional[str] = None,
 ) -> None:
     entries = job.get("chapterProgress")
     if not entries or chapter_index is None:
@@ -4838,13 +4951,43 @@ def _set_chapter_status(
                 entry["status"] = status
                 if download_url:
                     entry["downloadUrl"] = download_url
+                # Retry information
+                if retry_count is not None:
+                    entry["retryCount"] = retry_count
+                if max_retries is not None:
+                    entry["maxRetries"] = max_retries
+                if retry_reason is not None:
+                    entry["retryReason"] = retry_reason
+                if param_adjustment is not None:
+                    entry["paramAdjustment"] = param_adjustment
+                # Clear retry info when completed
+                if status == "completed":
+                    entry.pop("retryReason", None)
+                    entry.pop("paramAdjustment", None)
     if isinstance(entries, list):
         processing = sum(
             1
             for entry in entries
-            if isinstance(entry, dict) and entry.get("status") == "processing"
+            if isinstance(entry, dict) and entry.get("status") in ("processing", "retrying")
         )
         job["parallelActive"] = processing
+
+
+def _set_engine_status(
+    job: dict,
+    engine: str,
+    status: str,
+    message: Optional[str] = None,
+    progress: Optional[float] = None,
+) -> None:
+    """Update engine loading/initialization status in job."""
+    job["engineStatus"] = {
+        "engine": engine,
+        "status": status,
+        "message": message,
+        "progress": progress,
+    }
+    _schedule_job_broadcast(job.get("jobId"), job)
 
 
 async def _preload_existing_outputs(

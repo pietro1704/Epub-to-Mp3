@@ -3,10 +3,12 @@ import {
   ConversionState,
   StatusEntry,
   ConversionSummary,
+  EngineStatus,
 } from "../types/conversion";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
 import type { Locale, Translations } from "../i18n/translations";
 import ChapterProgressList from "./ChapterProgressList";
+import StreamingAudioPlayer from "./StreamingAudioPlayer";
 
 interface StatusPanelProps {
   entries: StatusEntry[];
@@ -25,6 +27,9 @@ interface StatusPanelProps {
   canCancel?: boolean;
   canSkip?: boolean;
   cancelDisabled?: boolean;
+  bookTitle?: string;
+  bookAuthor?: string;
+  coverUrl?: string;
 }
 
 export default function StatusPanel({
@@ -44,6 +49,9 @@ export default function StatusPanel({
   canCancel,
   canSkip,
   cancelDisabled,
+  bookTitle,
+  bookAuthor,
+  coverUrl,
 }: StatusPanelProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
@@ -182,6 +190,17 @@ export default function StatusPanel({
                 <dd>{summary.statusHint}</dd>
               </div>
             )}
+            {summary.engineStatus && (
+              <div className="status-summary__row status-summary__row--engine">
+                <dt>{locale === "pt" ? "Motor TTS" : "TTS Engine"}</dt>
+                <dd>
+                  <EngineStatusDisplay
+                    status={summary.engineStatus}
+                    locale={locale}
+                  />
+                </dd>
+              </div>
+            )}
             <div className="status-summary__row">
               <dt>{t.status.summaryProgress}</dt>
               <dd>
@@ -224,6 +243,13 @@ export default function StatusPanel({
           </div>
         </div>
       )}
+      <StreamingAudioPlayer
+        jobId={jobId}
+        chapters={chapterProgress}
+        bookTitle={bookTitle}
+        bookAuthor={bookAuthor}
+        coverUrl={coverUrl}
+      />
       {chapterProgress && chapterProgress.length > 0 && (
         <ChapterProgressList entries={chapterProgress} />
       )}
@@ -353,4 +379,57 @@ export function formatEta(
   }
   const humanEta = parts.join(" ");
   return locale === "pt" ? `≈ ${humanEta}` : `≈ ${humanEta}`;
+}
+
+interface EngineStatusDisplayProps {
+  status: EngineStatus;
+  locale: Locale;
+}
+
+const ENGINE_STATUS_ICONS: Record<EngineStatus["status"], string> = {
+  idle: "⏸️",
+  downloading: "⬇️",
+  loading: "🔄",
+  ready: "✅",
+  error: "❌",
+};
+
+function EngineStatusDisplay({
+  status,
+  locale,
+}: EngineStatusDisplayProps): JSX.Element {
+  const statusLabels: Record<
+    EngineStatus["status"],
+    { pt: string; en: string }
+  > = {
+    idle: { pt: "Aguardando", en: "Idle" },
+    downloading: { pt: "Baixando modelo", en: "Downloading model" },
+    loading: { pt: "Carregando modelo", en: "Loading model" },
+    ready: { pt: "Pronto", en: "Ready" },
+    error: { pt: "Erro", en: "Error" },
+  };
+
+  const label = statusLabels[status.status]?.[locale] ?? status.status;
+  const icon = ENGINE_STATUS_ICONS[status.status] ?? "•";
+
+  return (
+    <div className="engine-status">
+      <span className="engine-status__icon" aria-hidden="true">
+        {icon}
+      </span>
+      <span className="engine-status__engine">
+        {status.engine.toUpperCase()}
+      </span>
+      <span className="engine-status__label">{label}</span>
+      {status.message && (
+        <span className="engine-status__message">{status.message}</span>
+      )}
+      {status.status === "downloading" &&
+        typeof status.progress === "number" && (
+          <span className="engine-status__progress">
+            ({Math.round(status.progress)}%)
+          </span>
+        )}
+    </div>
+  );
 }

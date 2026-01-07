@@ -98,7 +98,7 @@ except ImportError:
 # Target: 200+ chars/s with higher concurrency/segment sizes.
 _DEFAULT_CHUNK_SIZE = 4000  # Best overall from exhaustive merged
 _DEFAULT_CONCURRENCY = 8
-_SAFE_CHUNK_MIN = 4000  # Minimum safe chunk size
+_SAFE_CHUNK_MIN = 2000  # Minimum safe chunk size (reduced for rate-limit recovery)
 _SAFE_CHUNK_MAX = 15000  # Upper bound for throughput testing
 _SAFE_CONCURRENCY_MIN = 2  # Always use some parallelism
 _SAFE_CONCURRENCY_MAX = 8  # Hard cap to avoid rate limiting
@@ -138,6 +138,9 @@ _edge_consecutive_successes: int = 0
 # Adaptive chunk size tracking
 _edge_current_chunk_size: int = _DEFAULT_CHUNK_SIZE
 _edge_chunk_failure_count: int = 0
+_EDGE_RATE_LIMIT_TRIGGER_CHARS: int = int(
+    os.getenv("EDGE_RATE_LIMIT_TRIGGER_CHARS", "20000") or 20000
+)
 
 
 def _get_global_edge_limiter(loop: asyncio.AbstractEventLoop) -> asyncio.Semaphore:
@@ -202,6 +205,9 @@ async def _handle_rate_limit(log_callback: Optional[Callable] = None) -> float:
             log_callback(
                 f"🔻 Rate limit (403), reduzindo paralelismo: {old_concurrency} → {_edge_max_concurrency}"
             )
+
+    # Also reduce chunk size while throttled to keep requests small
+    _reduce_chunk_size(log_callback)
 
     if log_callback:
         log_callback(
@@ -596,7 +602,12 @@ class EdgeTTSEngine:
         return cleaned
 
     async def synthesize_async(
-        self, text: str, output_path: Path, formatting_segments=None, progress_callback=None
+        self,
+        text: str,
+        output_path: Path,
+        formatting_segments=None,
+        progress_callback=None,
+        chunk_callback=None,
     ) -> Optional[Path]:
         if not text:
             return None
@@ -672,6 +683,7 @@ class EdgeTTSEngine:
                 segments_to_process,
                 force_plain_segments,
                 progress_callback=progress_callback,
+                chunk_callback=chunk_callback,
             )
 
         # **SEQUENTIAL MODE**: Original logic for compatibility
@@ -867,6 +879,7 @@ class EdgeTTSEngine:
         segments_to_process: List[Tuple[str, str]],
         force_plain_segments: bool,
         progress_callback=None,
+        chunk_callback=None,
     ) -> Optional[Path]:
         """Process segments in parallel batches for faster synthesis."""
         import tempfile
@@ -941,6 +954,13 @@ class EdgeTTSEngine:
                         successful_segments += 1
                         segment_files[segment_idx] = temp_file
 
+                        if chunk_callback:
+                            try:
+                                chunk_callback(segment_idx, temp_file)
+                            except Exception as e:
+                                if self.verbose:
+                                    self._log(f"⚠️ Chunk callback error: {e}")
+
                         # **NOVO**: Report progress to callback
                         if progress_callback:
                             try:
@@ -1007,6 +1027,12 @@ class EdgeTTSEngine:
                     if success and retry_path.exists():
                         successful_segments += 1
                         segment_files[fail_idx] = retry_path
+                        if chunk_callback:
+                            try:
+                                chunk_callback(fail_idx, retry_path)
+                            except Exception as e:
+                                if self.verbose:
+                                    self._log(f"⚠️ Chunk callback error (retry): {e}")
                         if self.verbose:
                             self._log(f"✅ [PARALLEL] Segmento {fail_idx + 1} recuperado no retry")
                     else:
@@ -1180,6 +1206,26 @@ class EdgeTTSEngine:
         except (TypeError, ValueError):
             active_chunk_limit = self._chunk_char_limit
         active_chunk_limit = max(_SAFE_CHUNK_MIN, active_chunk_limit)
+
+        # Guardrail: shrink chunk size after rate limits or for very long payloads
+        safe_limit_env = os.getenv("EDGE_SAFE_SEGMENT_CHARS")
+        safe_limit = None
+        if safe_limit_env:
+            try:
+                safe_limit = int(safe_limit_env)
+            except ValueError:
+                safe_limit = None
+        if safe_limit is None:
+            safe_limit = 3600
+        safe_limit = max(_SAFE_CHUNK_MIN, min(safe_limit, _SAFE_CHUNK_MAX))
+
+        if _edge_rate_limit_count > 0 or len(stripped) >= _EDGE_RATE_LIMIT_TRIGGER_CHARS:
+            adjusted = min(active_chunk_limit, safe_limit)
+            if adjusted != active_chunk_limit and self.verbose:
+                self._log(
+                    f"🔍 Edge: chunk reduzido para {adjusted} chars (rate limit / capítulo longo)"
+                )
+            active_chunk_limit = adjusted
 
         if len(stripped) <= active_chunk_limit:
             base_chunks: List[tuple[str, str]] = [(voice, stripped)]

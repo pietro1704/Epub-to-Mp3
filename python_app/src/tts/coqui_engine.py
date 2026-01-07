@@ -242,6 +242,29 @@ def _patch_transformers_beam_search(force: bool = False) -> None:
 _patch_transformers_beam_search()
 
 
+def _patch_xtts_generation() -> None:
+    """Restaurar métodos de geração removidos do transformers 4.50+ para XTTS."""
+    try:
+        from transformers import PreTrainedModel  # type: ignore
+        from transformers.generation.utils import GenerationMixin  # type: ignore
+        from TTS.tts.layers.xtts import gpt_inference  # type: ignore
+    except Exception:
+        return
+
+    GPT2InferenceModel = getattr(gpt_inference, "GPT2InferenceModel", None)
+    try:
+        if GPT2InferenceModel and GenerationMixin not in GPT2InferenceModel.__mro__:
+            GPT2InferenceModel.__bases__ = (GenerationMixin,) + GPT2InferenceModel.__bases__
+    except Exception:
+        pass
+
+    try:
+        if not hasattr(PreTrainedModel, "generate"):
+            PreTrainedModel.generate = GenerationMixin.generate  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
+
 def _allow_xtts_unpickle(verbose: bool = False) -> bool:
     """
     Allow torch to unpickle XTTS configs when weights_only=True is enforced (PyTorch 2.6+).
@@ -300,7 +323,8 @@ def _get_coqui_executor():
             max_workers = 0
         if max_workers <= 0:
             cpu_count = os.cpu_count() or 1
-            max_workers = max(1, min(4, cpu_count))
+            # Prefer to use available CPUs but cap to 8 to limit memory use
+            max_workers = max(2, min(8, cpu_count))
 
         # **HEAP CORRUPTION FIX**: Limit concurrent memory-intensive operations
         import asyncio
@@ -315,10 +339,63 @@ def _get_coqui_executor():
 def _get_coqui_chunk_limit() -> int:
     """Max chars per Coqui segment to avoid very long synthesis calls."""
     try:
-        limit = int(os.environ.get("COQUI_CHUNK_CHARS", "").strip() or "2500")
+        limit = int(os.environ.get("COQUI_CHUNK_CHARS", "").strip() or "3200")
     except ValueError:
-        limit = 2500
-    return max(800, min(limit, 8000))
+        limit = 3200
+    return max(800, min(limit, 9000))
+
+
+def _coqui_phonemizer_limit(language: Optional[str]) -> Optional[int]:
+    """
+    Some phonemizers (ex: eSpeak via piper-phonemize) truncate very long inputs.
+    Keep Portuguese segments under ~200 chars to avoid the 203-char warning.
+    """
+    env_limit = os.getenv("COQUI_PHONEMIZER_LIMIT")
+    if env_limit:
+        try:
+            parsed = int(env_limit)
+            return max(80, min(parsed, 600))
+        except ValueError:
+            pass
+
+    lang = (language or "").split("-", 1)[0].lower()
+    if lang in {"pt", "pt_br", "pt-pt"}:
+        return 200
+    return None
+
+
+def _expand_segments_with_limits(
+    segments: List[Tuple[str, str]],
+    *,
+    max_chars: int,
+    verbose: bool = False,
+    phonemizer_limit_fn=_coqui_phonemizer_limit,
+) -> List[Tuple[str, str]]:
+    """Split segments by chunk and phonemizer limits."""
+    if not segments:
+        return []
+
+    safe_segments: List[Tuple[str, str]] = []
+    logged_limit = False
+
+    for language, segment_text in segments:
+        primary_chunks = _split_text_chunks(segment_text, max_chars)
+        for chunk in primary_chunks:
+            limit = phonemizer_limit_fn(language) if phonemizer_limit_fn else None
+            if limit and len(chunk) > limit:
+                smaller_chunks = _split_text_chunks(chunk, limit)
+                if verbose and not logged_limit and len(smaller_chunks) > 1:
+                    lang_label = language or "desconhecido"
+                    print(
+                        f"🔍 [VERBOSE] Coqui limitando segmentos para {limit} chars (idioma: {lang_label})"
+                    )
+                    logged_limit = True
+                for sub_chunk in smaller_chunks:
+                    safe_segments.append((language, sub_chunk))
+            else:
+                safe_segments.append((language, chunk))
+
+    return safe_segments
 
 
 def _split_text_chunks(text: str, max_chars: int) -> List[str]:
@@ -551,6 +628,7 @@ class CoquiTTSEngine:
             if self.verbose:
                 print(f"🔍 [VERBOSE] Coqui inicializando modelo: {self.model_name}")
             _patch_transformers_beam_search()
+            _patch_xtts_generation()
 
             # Emit loading status
             model_short = (
@@ -628,10 +706,24 @@ class CoquiTTSEngine:
                 raise
 
     async def synthesize_async(
-        self, text: str, output_path: Path, formatting_segments=None
+        self,
+        text: str,
+        output_path: Path,
+        formatting_segments=None,
+        progress_callback=None,
+        chunk_callback=None,
     ) -> Optional[Path]:
         if not text:
             return None
+
+        def _notify_progress(segment_text: str) -> None:
+            if not progress_callback:
+                return
+            try:
+                progress_callback(segment_text, len(segment_text))
+            except Exception:
+                # Progress updates are best-effort; ignore failures
+                pass
 
         # Preparar texto com pistas audíveis quando possível
         if TextFormattingProcessor:
@@ -694,17 +786,12 @@ class CoquiTTSEngine:
         max_chars = _get_coqui_chunk_limit()
         if self._chunk_char_limit:
             max_chars = self._chunk_char_limit
-        expanded_segments: List[Tuple[str, str]] = []
-        for language, segment_text in segments:
-            chunked = _split_text_chunks(segment_text, max_chars)
-            for chunk in chunked:
-                expanded_segments.append((language, chunk))
-        if expanded_segments:
-            if self.verbose and len(expanded_segments) > len(segments):
-                print(
-                    f"🔍 [VERBOSE] Coqui dividindo em {len(expanded_segments)} segmentos (limite {max_chars} chars)"
-                )
-            segments = expanded_segments
+        base_segments = len(segments)
+        segments = _expand_segments_with_limits(segments, max_chars=max_chars, verbose=self.verbose)
+        if self.verbose and len(segments) > base_segments:
+            print(
+                f"🔍 [VERBOSE] Coqui dividindo em {len(segments)} segmentos (limite {max_chars} chars + segurança)"
+            )
 
         self._initialize_model()
         loop = asyncio.get_event_loop()
@@ -723,6 +810,12 @@ class CoquiTTSEngine:
                 await loop.run_in_executor(
                     executor, self._synthesize_blocking, segment_text, output_path, language
                 )
+                _notify_progress(segment_text)
+                if chunk_callback:
+                    try:
+                        chunk_callback(0, output_path)
+                    except Exception:
+                        pass
                 if self.verbose:
                     print(f"🔍 [VERBOSE] Coqui síntese completa: {output_path}")
             except Exception as e:
@@ -755,6 +848,7 @@ class CoquiTTSEngine:
                     await loop.run_in_executor(
                         executor, self._synthesize_blocking, segment_text, temp_path, language
                     )
+                    _notify_progress(segment_text)
                 if not temp_files:
                     return None
                 if not _concat_wav_files(temp_files, output_path):
@@ -785,10 +879,19 @@ class CoquiTTSEngine:
                 temp_file.close()
                 temp_path = Path(temp_file.name)
                 temp_files.append(temp_path)
-                task = loop.run_in_executor(
-                    executor, self._synthesize_blocking, segment_text, temp_path, language
-                )
-                tasks.append(task)
+
+                async def _run_and_track(text_value: str, lang_value: str, target_path: Path):
+                    await loop.run_in_executor(
+                        executor, self._synthesize_blocking, text_value, target_path, lang_value
+                    )
+                    _notify_progress(text_value)
+                    if chunk_callback:
+                        try:
+                            chunk_callback(idx, target_path)
+                        except Exception:
+                            pass
+
+                tasks.append(_run_and_track(segment_text, language, temp_path))
 
             # Execute all synthesis tasks in parallel
             if tasks:
@@ -896,13 +999,15 @@ class CoquiTTSEngine:
 
         # Only pre-add speaker for known multi-speaker models
         if "xtts" in self.model_name.lower():
-            # XTTS always needs speaker or speaker_wav
-            if hasattr(self.tts, "speakers") and self.tts.speakers:
-                kwargs["speaker"] = self.tts.speakers[0]
+            speaker = self._resolve_xtts_speaker()
+            if speaker:
+                kwargs["speaker"] = speaker
+                kwargs.pop("speaker_wav", None)
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] Coqui XTTS usando speaker: {kwargs['speaker']}")
+                    print(f"🔍 [VERBOSE] Coqui XTTS usando speaker: {speaker}")
             else:
                 kwargs["speaker_wav"] = None  # Use default voice
+                kwargs.pop("speaker", None)
                 if self.verbose:
                     print("🔍 [VERBOSE] Coqui XTTS usando speaker_wav default")
 
@@ -917,11 +1022,12 @@ class CoquiTTSEngine:
 
         # XTTS: não usar "0" – preferir speaker conhecido ou nenhum
         if "xtts" in model_lower or "multilingual" in model_lower:
-            # Se o modelo expõe speakers, tente o primeiro; caso contrário remova speaker
-            if getattr(self.tts, "speakers", None):
-                kwargs["speaker"] = self.tts.speakers[0]
+            speaker = self._resolve_xtts_speaker()
+            if speaker:
+                kwargs["speaker"] = speaker
+                kwargs.pop("speaker_wav", None)
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] Coqui XTTS fallback usando speaker: {kwargs['speaker']}")
+                    print(f"🔍 [VERBOSE] Coqui XTTS fallback usando speaker: {speaker}")
             else:
                 kwargs.pop("speaker", None)
                 kwargs["speaker_wav"] = None
@@ -954,6 +1060,53 @@ class CoquiTTSEngine:
         indices = np.round(np.arange(0, len(data), 1 / ratio)).astype(int)
         indices = indices[indices < len(data)]
         return data[indices]
+
+    def _resolve_xtts_speaker(self) -> Optional[str]:
+        """Resolve um speaker válido para XTTS a partir do modelo ou cache."""
+        candidates: List[str] = []
+
+        # Tentativa 1: atributo speakers direto do TTS
+        speakers_attr = getattr(self.tts, "speakers", None)
+        if isinstance(speakers_attr, dict):
+            candidates.extend([str(k) for k in speakers_attr.keys()])
+        elif isinstance(speakers_attr, (list, tuple)) and speakers_attr:
+            candidates.extend([str(speakers_attr[0])])
+
+        # Tentativa 2: speaker_manager
+        speaker_manager = getattr(self.tts, "speaker_manager", None)
+        if speaker_manager:
+            sm_speakers = getattr(speaker_manager, "speakers", None)
+            if isinstance(sm_speakers, dict):
+                candidates.extend([str(k) for k in sm_speakers.keys()])
+            sm_ids = getattr(speaker_manager, "speaker_ids", None)
+            if sm_ids:
+                candidates.extend([str(sm_ids[0])])
+
+        for candidate in candidates:
+            if candidate:
+                return candidate
+
+        # Tentativa 3: ler speakers_xtts.pth do cache local
+        try:
+            import torch
+        except Exception:
+            return None
+
+        cache_root = Path(os.getenv("COQUI_TTS_CACHE_DIR", "") or Path.home() / ".local/share/tts")
+        model_slug = self.model_name.replace("/", "--")
+        for candidate_path in [
+            cache_root / "tts" / model_slug / "speakers_xtts.pth",
+            cache_root / model_slug / "speakers_xtts.pth",
+        ]:
+            if candidate_path.exists():
+                try:
+                    state = torch.load(candidate_path, map_location="cpu")
+                    if isinstance(state, dict) and state:
+                        return str(next(iter(state.keys())))
+                except Exception:
+                    continue
+
+        return None
 
 
 __all__ = ["CoquiTTSEngine"]

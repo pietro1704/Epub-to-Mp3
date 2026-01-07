@@ -45,6 +45,10 @@ class ProgressTracker:
         self.processed_chars: int = 0
         self.current_sentence: str = ""
         self.sentences_processed: int = 0
+        # **NOVO**: Track chunk-level progress (útil para streaming)
+        self.total_chunks: int = 0
+        self.processed_chunks: int = 0
+        self._chunks_confident: bool = False
 
     def start(self, total_chapters: int, description: Optional[str] = None) -> None:
         """Reset tracker for a new run."""
@@ -86,6 +90,9 @@ class ProgressTracker:
         self.total_chars = 0
         self.current_sentence = ""
         self.sentences_processed = 0
+        self.total_chunks = 0
+        self.processed_chunks = 0
+        self._chunks_confident = False
 
         print(f"\n🎧 [{index}/{max(self.total_chapters, 1)}] {chapter_name}")
 
@@ -136,6 +143,32 @@ class ProgressTracker:
         # Atualizar status
         status = f'🔊 Processando: "{self.current_sentence}"{chapter_progress}'
         self._render(status)
+
+    def set_total_chunks(self, total: int) -> None:
+        """Define a contagem esperada de chunks quando conhecida pelo engine."""
+        if total > 0:
+            self.total_chunks = total
+            self._chunks_confident = True
+
+    def update_chunk_progress(self, chunk_index: int) -> None:
+        """
+        Atualiza progresso baseado em chunks de áudio finalizados.
+        Usa a contagem de chunks como sinal mais preciso que o texto foi sintetizado.
+        """
+        # chunk_index é zero-based
+        self.processed_chunks = max(self.processed_chunks, chunk_index + 1)
+        self.total_chunks = max(self.total_chunks, chunk_index + 1)
+        if self.total_chars > 0:
+            # Estimar fração com amortização para não cravar 100% cedo demais
+            denom = max(self.total_chunks + 2, 1)
+            estimated_fraction = min(0.95, self.processed_chunks / denom)
+            self.processed_chars = max(
+                self.processed_chars, int(self.total_chars * estimated_fraction)
+            )
+
+        # Render imediatamente para refletir conclusão do chunk
+        status = f"🎧 Chunk {self.processed_chunks}/{self.total_chunks} pronto"
+        self._render(status, force=True)
 
     def tick(self, status: str = "") -> None:
         """Refresh the progress bar without changing counters."""
@@ -235,12 +268,14 @@ class ProgressTracker:
             return 100.0 if self.completed_chapters else 0.0
         base = float(self.completed_chapters)
         partial = 0.0
-        if (
-            self.completed_chapters < self.total_chapters
-            and self.total_chars > 0
-            and self.current_index is not None
-        ):
-            partial = min(0.99, max(0.0, self.processed_chars / self.total_chars))
+        # Prioriza chunks completos (mais fiel ao áudio gerado), depois fallback para caracteres
+        if self.completed_chapters < self.total_chapters and self.current_index is not None:
+            if self.total_chunks > 0 and (
+                self._chunks_confident or self.processed_chunks < self.total_chunks
+            ):
+                partial = min(0.99, max(0.0, self.processed_chunks / self.total_chunks))
+            elif self.total_chars > 0:
+                partial = min(0.99, max(0.0, self.processed_chars / self.total_chars))
         progress = ((base + partial) / self.total_chapters) * 100
         if self.completed_chapters < self.total_chapters:
             return min(99.99, max(0.0, progress))
@@ -255,12 +290,13 @@ class ProgressTracker:
 
         # Use fractional progress (including current chapter) to avoid ETA explosion early on.
         partial = 0.0
-        if (
-            self.completed_chapters < self.total_chapters
-            and self.total_chars > 0
-            and self.current_index is not None
-        ):
-            partial = min(0.99, max(0.0, self.processed_chars / self.total_chars))
+        if self.completed_chapters < self.total_chapters and self.current_index is not None:
+            if self.total_chunks > 0 and (
+                self._chunks_confident or self.processed_chunks < self.total_chunks
+            ):
+                partial = min(0.99, max(0.0, self.processed_chunks / self.total_chunks))
+            elif self.total_chars > 0:
+                partial = min(0.99, max(0.0, self.processed_chars / self.total_chars))
 
         progress_fraction = (self.completed_chapters + partial) / max(self.total_chapters, 1)
         progress_fraction = min(max(progress_fraction, 0.001), 0.999)
