@@ -274,6 +274,7 @@ def _torch_load_weights_disabled(torch_module, verbose: bool = False):
         yield
         return
     try:
+
         def _patched_load(*args, **kwargs):
             kwargs = dict(kwargs)
             kwargs.setdefault("weights_only", False)

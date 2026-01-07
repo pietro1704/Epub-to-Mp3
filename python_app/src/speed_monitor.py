@@ -486,7 +486,7 @@ class SpeedMonitor:
             self._best_config = config
             self._log(
                 f"NEW_BEST_CONFIG: score={score:.1f} "
-                f"(speed={avg_speed:.0f}, success={success_rate*100:.0f}%)"
+                f"(speed={avg_speed:.0f}, success={success_rate * 100:.0f}%)"
             )
 
     def get_best_config(self) -> Optional[TuningConfig]:

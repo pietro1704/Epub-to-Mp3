@@ -104,9 +104,9 @@ def test_cache_does_not_duplicate_chapters():
         cached_chapters = cached["chapters"]
 
         # Verificar que NÃO há duplicação
-        assert (
-            len(cached_chapters) == 2
-        ), f"Cache deve ter 2 capítulos, tem {len(cached_chapters)}. Há duplicação!"
+        assert len(cached_chapters) == 2, (
+            f"Cache deve ter 2 capítulos, tem {len(cached_chapters)}. Há duplicação!"
+        )
 
         # Verificar que os títulos são únicos
         titles = [ch["title"] for ch in cached_chapters]
@@ -140,9 +140,9 @@ def test_text_chunks_no_overlap():
     all_text = "".join(chunks)
 
     # Texto reconstruído deve ser EXATAMENTE igual ao original
-    assert (
-        all_text == long_text
-    ), "Chunks têm overlap ou lacunas! Texto reconstruído diferente do original"
+    assert all_text == long_text, (
+        "Chunks têm overlap ou lacunas! Texto reconstruído diferente do original"
+    )
 
     # Verificar que cada parte aparece apenas 1x
     # Contar 'A', 'B', 'C'
@@ -214,14 +214,14 @@ def test_chapter_structure_stability():
     names3 = [ch.name for ch in chapters3]
 
     # Todas devem ter 2 capítulos
-    assert (
-        count1 == count2 == count3 == 2
-    ), f"Contagens diferem: {count1}, {count2}, {count3}. Há instabilidade!"
+    assert count1 == count2 == count3 == 2, (
+        f"Contagens diferem: {count1}, {count2}, {count3}. Há instabilidade!"
+    )
 
     # Todos devem ter os mesmos nomes
-    assert (
-        names1 == names2 == names3
-    ), f"Nomes diferem entre leituras:\n  1: {names1}\n  2: {names2}\n  3: {names3}"
+    assert names1 == names2 == names3, (
+        f"Nomes diferem entre leituras:\n  1: {names1}\n  2: {names2}\n  3: {names3}"
+    )
 
 
 if __name__ == "__main__":
