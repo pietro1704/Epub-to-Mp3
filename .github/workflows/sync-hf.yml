@@ -33,4 +33,4 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git remote add hf https://huggingface.co/spaces/pi1704/epub-to-mp3 || true
-          git push --force https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 master:main
+          git push --force https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 master:master
