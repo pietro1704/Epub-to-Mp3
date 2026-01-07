@@ -180,13 +180,16 @@ def _preprocess_text_for_coqui(text: str, verbose: bool = False) -> str:
 _coqui_executor = None
 _memory_semaphore = None  # Global memory limiter
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+_COQUI_GPU_AVAILABLE = False
 
 
 def _segment_timeout_seconds(text: str) -> int:
     """Estimate a timeout based on the text size to avoid infinite hangs."""
     word_count = max(len(text.split()), 1)
-    estimated = word_count * 0.35  # ~3 words/s + buffer
-    return int(max(45, min(estimated, 240)))
+    estimated = word_count * 0.45  # Slightly slower baseline (CPU-friendly)
+    min_timeout = 90 if not _COQUI_GPU_AVAILABLE else 45
+    max_timeout = 360 if not _COQUI_GPU_AVAILABLE else 240
+    return int(max(min_timeout, min(estimated, max_timeout)))
 
 
 def _parse_bool_env(value: Optional[str], default: bool = False) -> bool:
@@ -661,6 +664,8 @@ class CoquiTTSEngine:
                     print(f"🚀 [GPU] CUDA disponível: {gpu_name} ({gpu_memory:.1f} GB)")
                     print("🚀 [GPU] Habilitando aceleração por GPU para TTS")
                 self._emit_status(f"Usando GPU: {gpu_name}")
+                global _COQUI_GPU_AVAILABLE
+                _COQUI_GPU_AVAILABLE = True
             else:
                 if self.verbose:
                     print("⚠️ [CPU] GPU não disponível, usando CPU")
@@ -924,6 +929,8 @@ class CoquiTTSEngine:
             # **PARALLEL OPTIMIZATION**: Process segments in parallel
             executor = self._get_executor()
             tasks = []
+            # Track if parallel timed out to allow sequential fallback
+            parallel_failed = False
             for idx, (language, segment_text) in enumerate(segments):
                 segment_text = segment_text.strip()
                 if not segment_text:
@@ -976,9 +983,58 @@ class CoquiTTSEngine:
                 try:
                     await asyncio.gather(*tasks)
                 except asyncio.TimeoutError:
+                    parallel_failed = True
                     if self.verbose:
-                        print("⏱️ [VERBOSE] Coqui timeout durante a síntese paralela")
-                    return None
+                        print(
+                            "⏱️ [VERBOSE] Coqui timeout durante a síntese paralela; refazendo em modo sequencial"
+                        )
+
+            if parallel_failed:
+                # Limpar arquivos temporários parcialmente escritos e refazer sequencialmente
+                for temp_path in temp_files:
+                    with contextlib.suppress(OSError):
+                        temp_path.unlink()
+                temp_files = []
+                for idx, (language, segment_text) in enumerate(segments):
+                    segment_text = segment_text.strip()
+                    if not segment_text:
+                        continue
+                    import tempfile
+
+                    temp_file = tempfile.NamedTemporaryFile(
+                        delete=False,
+                        suffix=".wav",
+                        dir=output_path.parent,
+                        prefix=f"coqui_seq{idx}_",
+                    )
+                    temp_file.close()
+                    temp_path = Path(temp_file.name)
+                    temp_files.append(temp_path)
+                    timeout = max(_segment_timeout_seconds(segment_text) * 2, 180)
+                    try:
+                        await asyncio.wait_for(
+                            loop.run_in_executor(
+                                executor,
+                                self._synthesize_blocking,
+                                segment_text,
+                                temp_path,
+                                language,
+                            ),
+                            timeout=timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        self.last_error = f"synthesis_timeout_segment_{idx}_seq"
+                        if self.verbose:
+                            print(
+                                f"⏱️ [VERBOSE] Coqui timeout após {timeout}s no segmento {idx} (sequencial)"
+                            )
+                        return None
+                    _notify_progress(segment_text)
+                    if chunk_callback:
+                        try:
+                            chunk_callback(idx, temp_path)
+                        except Exception:
+                            pass
 
             if not temp_files:
                 return None
