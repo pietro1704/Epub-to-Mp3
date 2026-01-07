@@ -44,6 +44,14 @@ class TTSFactory:
     def __init__(self) -> None:
         self.voice_provider = VoiceConfigProvider()
 
+    def _resolve_project_root(self) -> Path:
+        """Return repository root robustly, even in shallow temp dirs."""
+        resolved = Path(__file__).resolve()
+        for candidate in resolved.parents:
+            if (candidate / "python_app").exists() or (candidate / ".git").exists():
+                return candidate
+        return resolved.parent
+
     def create_engine(self, config: ConversionConfig) -> TTSEngine:
         engine = (config.engine or "").lower()
 
@@ -135,7 +143,7 @@ class TTSFactory:
                 candidate_dirs.append(mocked_directory)
 
         # Prioridade: root/models, root/models/piper, python_app/models
-        project_root = Path(__file__).resolve().parents[3]  # Epub-to-Mp3/
+        project_root = self._resolve_project_root()
         candidate_dirs.append(project_root / "models")
         candidate_dirs.append(project_root / "models" / "piper")
         candidate_dirs.append(Path("models"))
@@ -164,7 +172,7 @@ class TTSFactory:
             return None
 
         # Prioridade: PIPER_MODEL_DIR env, depois root/models
-        project_root = Path(__file__).resolve().parents[3]  # Epub-to-Mp3/
+        project_root = self._resolve_project_root()
         target_dir = Path(os.getenv("PIPER_MODEL_DIR") or project_root / "models")
         target_dir.mkdir(parents=True, exist_ok=True)
 
