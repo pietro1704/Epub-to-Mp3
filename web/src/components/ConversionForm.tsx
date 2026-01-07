@@ -201,6 +201,21 @@ export default function ConversionForm({
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLoadFailed, setVoiceLoadFailed] = useState(false);
   const uploadAttemptRef = useRef(0);
+  const fileQueueRef = useRef<QueuedFileEntry[]>([]);
+  const setFileQueueSafe = (
+    updater:
+      | QueuedFileEntry[]
+      | ((prev: QueuedFileEntry[]) => QueuedFileEntry[]),
+  ) => {
+    setFileQueue((prev) => {
+      const next =
+        typeof updater === "function"
+          ? (updater as (value: QueuedFileEntry[]) => QueuedFileEntry[])(prev)
+          : updater;
+      fileQueueRef.current = next;
+      return next;
+    });
+  };
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverInfo, setDragOverInfo] = useState<{
     id: string;
@@ -220,6 +235,7 @@ export default function ConversionForm({
   }, []);
 
   useEffect(() => {
+    fileQueueRef.current = fileQueue;
     const pending = fileQueue.filter(
       (entry) => entry.status === "uploading",
     ).length;
@@ -446,7 +462,7 @@ export default function ConversionForm({
   const startUploadForEntry = (entryId: string, file: File) => {
     const attemptId = uploadAttemptRef.current + 1;
     uploadAttemptRef.current = attemptId;
-    setFileQueue((prev) =>
+    setFileQueueSafe((prev) =>
       prev.map((entry) =>
         entry.id === entryId
           ? { ...entry, status: "uploading", error: undefined, attemptId }
@@ -456,7 +472,7 @@ export default function ConversionForm({
     const uploadPromise = (async () => {
       try {
         const response = await onUploadFile(file);
-        setFileQueue((prev) =>
+        setFileQueueSafe((prev) =>
           prev.map((entry) => {
             if (entry.id !== entryId || entry.attemptId !== attemptId) {
               return entry;
@@ -475,7 +491,7 @@ export default function ConversionForm({
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Falha ao enviar arquivo";
-        setFileQueue((prev) =>
+        setFileQueueSafe((prev) =>
           prev.map((entry) => {
             if (entry.id !== entryId || entry.attemptId !== attemptId) {
               return entry;
@@ -532,16 +548,16 @@ export default function ConversionForm({
     }
     setFileError(null);
     setShowMissingFileError(false);
-    setFileQueue((prev) => [...prev, ...additions]);
+    setFileQueueSafe((prev) => [...prev, ...additions]);
     additions.forEach((entry) => startUploadForEntry(entry.id, entry.file));
   };
 
   const removeFromQueue = (entryId: string) => {
-    setFileQueue((prev) => prev.filter((entry) => entry.id !== entryId));
+    setFileQueueSafe((prev) => prev.filter((entry) => entry.id !== entryId));
   };
 
   const moveEntry = (entryId: string, delta: number) => {
-    setFileQueue((prev) => {
+    setFileQueueSafe((prev) => {
       const index = prev.findIndex((entry) => entry.id === entryId);
       if (index === -1) {
         return prev;
@@ -558,7 +574,7 @@ export default function ConversionForm({
   };
 
   const moveEntryToIndex = (entryId: string, targetIndex: number) => {
-    setFileQueue((prev) => {
+    setFileQueueSafe((prev) => {
       const currentIndex = prev.findIndex((entry) => entry.id === entryId);
       if (currentIndex === -1) {
         return prev;
@@ -578,7 +594,10 @@ export default function ConversionForm({
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (usableEntries.length === 0) {
+    const initialEntries = fileQueueRef.current.filter(
+      (entry) => entry.status !== "error",
+    );
+    if (initialEntries.length === 0) {
       setShowMissingFileError(true);
       return;
     }
@@ -633,7 +652,14 @@ export default function ConversionForm({
       healthCheckSlowStreak: parseOptionalInt(healthCheckSlowStreak),
       uiLanguage: locale,
     };
-    const payloads = usableEntries.map((entry) => ({
+    const readyEntries = fileQueueRef.current.filter(
+      (entry) => entry.status === "ready",
+    );
+    if (readyEntries.length === 0) {
+      setShowMissingFileError(true);
+      return;
+    }
+    const payloads = readyEntries.map((entry) => ({
       ...sharedConfig,
       file: entry.uploadId ? null : entry.file,
       fileName: entry.file?.name ?? entry.name,
@@ -641,7 +667,7 @@ export default function ConversionForm({
     }));
     const [first, ...rest] = payloads;
     await onSubmit(first, { batchQueue: rest });
-    setFileQueue([]);
+    setFileQueueSafe([]);
   };
 
   const translateLanguage = (code: string): string => {

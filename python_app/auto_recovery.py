@@ -8,6 +8,7 @@ Detecta deadlocks, starvation, travamentos e corrige automaticamente
 import asyncio
 import gc
 import os
+import signal
 import sys
 import threading
 import time
@@ -32,6 +33,7 @@ class ThreadActivity:
     last_check_time: float
     stack_frames: List[str]
     stuck_count: int = 0
+    recoveries: int = 0
 
 
 @dataclass
@@ -87,6 +89,7 @@ class AutoRecoverySystem:
             "thread_starvation_cycles": 3,
             "thread_starvation_log_cooldown": 60.0,
             "thread_starvation_threads_min": max(32, self._cpu_count * 4),
+            "thread_hard_restart_cycles": 2,  # Após quantas recuperações insistir em restart
         }
 
         # Estado do sistema
@@ -271,6 +274,7 @@ class AutoRecoverySystem:
         # Ações de recovery
         action_taken = "none"
         success = False
+        interrupted = False
 
         # 1. Tentar forçar GC (pode liberar locks)
         print("   → Tentando GC forçado...")
@@ -278,10 +282,32 @@ class AutoRecoverySystem:
         action_taken = "gc_collect"
         success = True
 
+        # 2. Boost de prioridade do processo para evitar starvation de CPU
+        self._boost_process_priority()
+
+        # 3. Injetar exceção na thread para destravar bloqueios
+        interrupted = self._interrupt_thread(activity.thread_id)
+        if interrupted:
+            action_taken = "interrupt_thread"
+            success = True
+            print(f"   ✅ Interrupção solicitada para thread {thread.name}")
+        else:
+            print(f"   ⚠️ Não foi possível interromper thread {thread.name}")
+
         # 2. Se thread não é daemon e está travada, alertar
         if not thread.daemon:
+            activity.recoveries += 1
             print(f"   ⚠️ Thread não-daemon travada: {thread.name}")
-            print("   → Considere reiniciar o processo manualmente")
+            threshold = self.thresholds.get("thread_hard_restart_cycles", 2)
+            if activity.recoveries >= threshold:
+                print("   ⏱️ Recuperação falhou mais de uma vez – solicitando restart suave")
+                self._request_process_restart(
+                    reason="thread_deadlock",
+                    thread_name=thread.name,
+                    thread_id=activity.thread_id,
+                )
+            else:
+                print("   → Nova tentativa automática em breve")
 
         # Registrar ação
         self._log_recovery_action(
@@ -293,6 +319,8 @@ class AutoRecoverySystem:
                 "thread_id": activity.thread_id,
                 "stuck_cycles": activity.stuck_count,
                 "stack_sample": activity.stack_frames[-1] if activity.stack_frames else None,
+                "recoveries": activity.recoveries,
+                "interrupted": interrupted,
             },
         )
 
@@ -338,6 +366,69 @@ class AutoRecoverySystem:
                     success=True,
                     details={"thread_count": thread_count, "cpu_percent": cpu_percent},
                 )
+        except Exception:
+            # Best-effort only
+            pass
+
+    def _boost_process_priority(self) -> None:
+        """Tenta aumentar prioridade do processo para liberar CPU."""
+        try:
+            proc = self._process
+            if sys.platform.startswith("win"):
+                try:
+                    proc.nice(psutil.HIGH_PRIORITY_CLASS)  # type: ignore[attr-defined]
+                    return
+                except Exception:
+                    pass
+            try:
+                current = proc.nice()
+                # Valores menores = mais prioridade em Unix
+                target = max(-5, current - 5) if isinstance(current, int) else current
+                if target != current:
+                    proc.nice(target)
+            except Exception:
+                # Fallback para nice global
+                try:
+                    os.nice(-1)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    def _interrupt_thread(self, thread_id: int) -> bool:
+        """Injeta KeyboardInterrupt em uma thread para tentar destravar."""
+        try:
+            import ctypes
+
+            res = ctypes.pythonapi.PyThreadState_SetAsyncExc(
+                ctypes.c_long(thread_id), ctypes.py_object(KeyboardInterrupt)
+            )
+            if res == 0:
+                return False
+            if res > 1:
+                # Reverter se mais de uma thread foi sinalizada
+                ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_long(thread_id), None)
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _request_process_restart(self, reason: str, thread_name: str, thread_id: int) -> None:
+        """Solicita reinício suave do processo para recuperar de deadlock."""
+        print(f"   🔁 Reinício solicitado ({reason}) para thread {thread_name} ({thread_id})")
+        self._log_recovery_action(
+            problem=reason,
+            action="process_restart_requested",
+            success=True,
+            details={"thread": thread_name, "thread_id": thread_id},
+        )
+        try:
+            os.kill(os.getpid(), signal.SIGTERM)
+        except Exception:
+            try:
+                self._process.terminate()
+            except Exception:
+                pass
                 self._starvation_streak = 0
 
         except Exception:

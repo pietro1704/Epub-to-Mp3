@@ -182,6 +182,13 @@ _memory_semaphore = None  # Global memory limiter
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 
+def _segment_timeout_seconds(text: str) -> int:
+    """Estimate a timeout based on the text size to avoid infinite hangs."""
+    word_count = max(len(text.split()), 1)
+    estimated = word_count * 0.35  # ~3 words/s + buffer
+    return int(max(45, min(estimated, 240)))
+
+
 def _parse_bool_env(value: Optional[str], default: bool = False) -> bool:
     if value is None:
         return default
@@ -807,8 +814,12 @@ class CoquiTTSEngine:
                     )
                 # **FIXED**: Usar executor limitado em vez de None (thread pool padrão)
                 executor = self._get_executor()
-                await loop.run_in_executor(
-                    executor, self._synthesize_blocking, segment_text, output_path, language
+                timeout = _segment_timeout_seconds(segment_text)
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        executor, self._synthesize_blocking, segment_text, output_path, language
+                    ),
+                    timeout=timeout,
                 )
                 _notify_progress(segment_text)
                 if chunk_callback:
@@ -818,6 +829,13 @@ class CoquiTTSEngine:
                         pass
                 if self.verbose:
                     print(f"🔍 [VERBOSE] Coqui síntese completa: {output_path}")
+            except asyncio.TimeoutError:
+                self.last_error = "synthesis_timeout"
+                if self.verbose:
+                    print(
+                        f"⏱️ [VERBOSE] Coqui timeout após {_segment_timeout_seconds(segment_text)}s no segmento único"
+                    )
+                return None
             except Exception as e:
                 self.last_error = f"synthesis_error: {e}"
                 if self.verbose:
@@ -845,9 +863,25 @@ class CoquiTTSEngine:
                     temp_file.close()
                     temp_path = Path(temp_file.name)
                     temp_files.append(temp_path)
-                    await loop.run_in_executor(
-                        executor, self._synthesize_blocking, segment_text, temp_path, language
-                    )
+                    timeout = _segment_timeout_seconds(segment_text)
+                    try:
+                        await asyncio.wait_for(
+                            loop.run_in_executor(
+                                executor,
+                                self._synthesize_blocking,
+                                segment_text,
+                                temp_path,
+                                language,
+                            ),
+                            timeout=timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        self.last_error = f"synthesis_timeout_segment_{idx}"
+                        if self.verbose:
+                            print(
+                                f"⏱️ [VERBOSE] Coqui timeout após {timeout}s no segmento {idx} (sem numpy)"
+                            )
+                        return None
                     _notify_progress(segment_text)
                 if not temp_files:
                     return None
@@ -880,24 +914,47 @@ class CoquiTTSEngine:
                 temp_path = Path(temp_file.name)
                 temp_files.append(temp_path)
 
-                async def _run_and_track(text_value: str, lang_value: str, target_path: Path):
-                    await loop.run_in_executor(
-                        executor, self._synthesize_blocking, text_value, target_path, lang_value
-                    )
+                async def _run_and_track(
+                    text_value: str, lang_value: str, target_path: Path, segment_index: int
+                ):
+                    timeout = _segment_timeout_seconds(text_value)
+                    try:
+                        await asyncio.wait_for(
+                            loop.run_in_executor(
+                                executor,
+                                self._synthesize_blocking,
+                                text_value,
+                                target_path,
+                                lang_value,
+                            ),
+                            timeout=timeout,
+                        )
+                    except asyncio.TimeoutError:
+                        self.last_error = f"synthesis_timeout_segment_{segment_index}"
+                        if self.verbose:
+                            print(
+                                f"⏱️ [VERBOSE] Coqui timeout após {timeout}s no segmento {segment_index}"
+                            )
+                        raise
                     _notify_progress(text_value)
                     if chunk_callback:
                         try:
-                            chunk_callback(idx, target_path)
+                            chunk_callback(segment_index, target_path)
                         except Exception:
                             pass
 
-                tasks.append(_run_and_track(segment_text, language, temp_path))
+                tasks.append(_run_and_track(segment_text, language, temp_path, idx))
 
             # Execute all synthesis tasks in parallel
             if tasks:
                 if self.verbose:
                     print(f"🚀 [VERBOSE] Coqui processando {len(tasks)} segmentos em paralelo")
-                await asyncio.gather(*tasks)
+                try:
+                    await asyncio.gather(*tasks)
+                except asyncio.TimeoutError:
+                    if self.verbose:
+                        print("⏱️ [VERBOSE] Coqui timeout durante a síntese paralela")
+                    return None
 
             if not temp_files:
                 return None
