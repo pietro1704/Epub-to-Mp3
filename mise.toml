@@ -31,9 +31,14 @@ echo "  → Removendo .pytest_cache..."
 rm -rf .pytest_cache 2>/dev/null || true
 rm -rf python_app/.pytest_cache 2>/dev/null || true
 
-# Remove output directory (completed conversions)
-echo "  → Removendo arquivos de output..."
+# Remove output directory (completed conversions) and job metadata/uploads
+echo "  → Removendo arquivos de output e jobs..."
 rm -rf output/* 2>/dev/null || true
+rm -rf .jobs .uploads .job_inputs 2>/dev/null || true
+
+# Limpa cache de capas armazenadas no backend
+echo "  → Limpando cache de capas..."
+rm -rf output/.cover_cache 2>/dev/null || true
 
 # Remove cached books but keep downloaded models
 echo "  → Limpando cache de livros (preservando modelos)..."

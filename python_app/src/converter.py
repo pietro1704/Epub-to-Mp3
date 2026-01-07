@@ -1386,6 +1386,25 @@ class AudioConverter:
             self._current_book_path = None
 
         output_dir = self._setup_output_directory(config)
+
+        # Honrar --clear-cache/clearCache: remove cache e artefatos do livro antes de continuar
+        if getattr(config, "clear_cache", False):
+            try:
+                if self._current_book_path:
+                    self.cache_manager.clear_cache(self._current_book_path, title=reader.title)
+                elif reader.title:
+                    self.cache_manager.clear_cache(title=reader.title)
+            except Exception as exc:
+                if self.verbose:
+                    print(f"⚠️ Falha ao limpar cache: {exc}")
+            try:
+                if output_dir.exists():
+                    shutil.rmtree(output_dir, ignore_errors=True)
+                    output_dir = self._setup_output_directory(config)
+            except Exception as exc:
+                if self.verbose:
+                    print(f"⚠️ Falha ao limpar saída anterior: {exc}")
+
         # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
         chapters = list(

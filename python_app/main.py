@@ -1767,6 +1767,12 @@ class ConverterApplication:
             shutil.rmtree(output_dir, ignore_errors=True)
             print(f"🧹 Diretório de saída limpo: {output_dir}")
 
+        # Também remover filas/estados persistentes para evitar retomada indevida
+        for residual in (Path.cwd() / ".jobs", Path.cwd() / ".uploads", Path.cwd() / ".job_inputs"):
+            if residual.exists():
+                shutil.rmtree(residual, ignore_errors=True)
+                print(f"🧹 Estado de backend removido: {residual}")
+
         return 0
 
     @staticmethod
