@@ -63,6 +63,11 @@ set -euo pipefail
 echo "📦 Instalando dependências com mise..."
 mise install
 
+echo "🐍 Criando venv .venv (Python gerenciado pelo mise) se não existir..."
+if [ ! -x ".venv/bin/python" ]; then
+  mise exec -- python -m venv .venv
+fi
+
 echo "🐍 Instalando dependências Python (root)..."
 .venv/bin/python -m pip install -r requirements.txt
 
