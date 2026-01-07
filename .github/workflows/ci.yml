@@ -42,4 +42,4 @@ jobs:
           EDGE_ENABLE_PARALLEL: "false"
           EDGE_AUTO_TUNE: "false"
         run: |
-          mise exec -- python -m python_app.main convert web/public/sample.epub --engine edge --chapters 1 --no-parallel --verbose
+          mise exec -- python -m python_app.main convert web/public/sample.epub --engine edge --chapter 1 --no-parallel --verbose
