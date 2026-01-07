@@ -443,9 +443,9 @@ _CHAPTER_TIMEOUT_FACTOR = 2.5
 _CHAPTER_TIMEOUT_MIN = 120.0
 _CHAPTER_TIMEOUT_MAX = 900.0
 try:
-    _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "0") or "0"))
+    _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "3") or "3"))
 except (TypeError, ValueError):
-    _CHAPTER_RETRY_MAX = 0
+    _CHAPTER_RETRY_MAX = 3
 _CHAPTER_RETRY_FOREVER = True
 try:
     _CHAPTER_RETRY_ROUNDS = max(0, int(os.getenv("CHAPTER_RETRY_ROUNDS", "1") or "1"))
@@ -4020,10 +4020,14 @@ async def process_conversion(job_id: str) -> None:
                     engine_obj,
                     engine_config,
                 ) -> bool:
-                    nonlocal retry_count, parallel_slots
+                    nonlocal retry_count, parallel_slots, engine_index
+                    # Se existe engine de fallback disponível, prefira trocar em vez de insistir
+                    if engine_index + 1 < len(engine_chain):
+                        return False
                     if _CHAPTER_RETRY_MAX <= 0 or retry_count >= _CHAPTER_RETRY_MAX:
                         return False
                     retry_count += 1
+                    backoff = _CHAPTER_RETRY_BACKOFF_SECONDS * (1 + 0.5 * (retry_count - 1))
                     if (engine_label or "").lower() == "edge":
                         _apply_edge_slow_mode(reason)
                         adjustments = _edge_retry_adjustments(engine_config, retry_count)
@@ -4044,6 +4048,16 @@ async def process_conversion(job_id: str) -> None:
                             job,
                             f"🔧 Edge fallback: chunk={engine_config.edge_chunk_chars} seg={engine_config.edge_max_segment_seconds}s paralelo=off",
                         )
+                    elif (engine_label or "").lower().startswith("coqui"):
+                        if hasattr(engine_config, "coqui_chunk_chars"):
+                            old_chunk = int(getattr(engine_config, "coqui_chunk_chars") or 0)
+                            new_chunk = max(800, int(max(old_chunk, 1200) * 0.75))
+                            engine_config.coqui_chunk_chars = new_chunk
+                            config.coqui_chunk_chars = new_chunk
+                            _append_event(
+                                job,
+                                f"🔧 Coqui fallback: chunk={new_chunk} (antes {old_chunk or 'auto'})",
+                            )
                     if parallel_slots > 1:
                         parallel_slots = max(1, parallel_slots - 1)
                         engine_pool.update_parallel_slots(parallel_slots)
@@ -4052,8 +4066,8 @@ async def process_conversion(job_id: str) -> None:
                             job,
                             f"⚙️ Reduzindo paralelismo para {parallel_slots} após {reason}",
                         )
-                    if _CHAPTER_RETRY_BACKOFF_SECONDS > 0:
-                        await asyncio.sleep(_CHAPTER_RETRY_BACKOFF_SECONDS)
+                    if backoff > 0:
+                        await asyncio.sleep(backoff)
                     _append_event(
                         job,
                         f"🔁 Tentando novamente ({retry_count}/{_CHAPTER_RETRY_MAX}) após {reason}",
