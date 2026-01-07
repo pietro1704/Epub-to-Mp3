@@ -60,11 +60,11 @@ const DEFAULT_VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
     { name: "en_US-lessac-medium.onnx", multilingual: false },
   ],
   coqui: [
-    { name: "tts_models/pt/cv/vits", multilingual: false },
     {
       name: "tts_models/multilingual/multi-dataset/xtts_v2",
       multilingual: true,
     },
+    { name: "tts_models/pt/cv/vits", multilingual: false },
   ],
   auto: [
     { name: "tts_models/pt/cv/vits", multilingual: false },
@@ -95,7 +95,7 @@ const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
     languages: ["pt", "en"],
   },
   coqui: {
-    defaultVoice: "tts_models/pt/cv/vits",
+    defaultVoice: "tts_models/multilingual/multi-dataset/xtts_v2",
     multiLingual: true,
     autoLanguage: false,
     languages: ["pt", "en", "es", "fr", "de"],
@@ -148,7 +148,7 @@ export default function ConversionForm({
 }: ConversionFormProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
-  const initialEngine: EngineOption = "edge";
+  const initialEngine: EngineOption = "auto";
   const initialMeta = getEngineMeta(initialEngine);
   const [fileQueue, setFileQueue] = useState<QueuedFileEntry[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
