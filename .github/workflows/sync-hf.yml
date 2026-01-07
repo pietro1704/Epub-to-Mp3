@@ -36,8 +36,7 @@ jobs:
             echo "HF_TOKEN não configurado; abortando push para evitar falha"
             exit 1
           fi
-          SOURCE_REF=$(git rev-parse HEAD)
           TARGET_BRANCH="master"
-          git push --force https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 "${SOURCE_REF}:${TARGET_BRANCH}"
+          git push --force https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 "HEAD:refs/heads/${TARGET_BRANCH}"
           # Clean up old default branch on HF Space if it exists
           git push https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 --delete main || true
