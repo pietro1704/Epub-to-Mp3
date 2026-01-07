@@ -688,12 +688,36 @@ class CoquiTTSEngine:
                 if gpu_available:
                     torch.backends.cudnn.benchmark = True  # Auto-tune convolutions
                     torch.backends.cuda.matmul.allow_tf32 = True  # Faster matrix operations
-                    if self.verbose:
-                        print("🚀 [GPU] Otimizações CUDA habilitadas (cudnn.benchmark + TF32)")
+                if self.verbose:
+                    print("🚀 [GPU] Otimizações CUDA habilitadas (cudnn.benchmark + TF32)")
 
                 if self.verbose:
                     print(f"✅ [VERBOSE] Coqui modelo inicializado com sucesso em {device.upper()}")
                 self._emit_status(f"Modelo Coqui pronto ({device.upper()})")
+
+                # Melhorar tokenização para evitar avisos de attention_mask no Transformers
+                try:
+                    tokenizer = getattr(self.tts, "tokenizer", None)
+                    model = getattr(self.tts, "model", None) or getattr(
+                        getattr(self.tts, "synthesizer", None), "tts_model", None
+                    )
+                    if tokenizer:
+                        pad_id = tokenizer.pad_token_id
+                        eos_id = getattr(tokenizer, "eos_token_id", None)
+                        if pad_id is None or (eos_id is not None and pad_id == eos_id):
+                            tokenizer.add_special_tokens({"pad_token": "<pad>"})
+                            pad_id = tokenizer.pad_token_id
+                        if model and hasattr(model, "generation_config"):
+                            gen_cfg = model.generation_config
+                            if (
+                                getattr(gen_cfg, "pad_token_id", None) is None
+                                or gen_cfg.pad_token_id == gen_cfg.eos_token_id
+                            ):
+                                gen_cfg.pad_token_id = pad_id
+                                gen_cfg.eos_token_id = gen_cfg.eos_token_id or eos_id or pad_id
+                except Exception:
+                    # Best effort para reduzir ruído de warning
+                    pass
 
             except ImportError as e:
                 if "BeamSearchScorer" in str(e):
