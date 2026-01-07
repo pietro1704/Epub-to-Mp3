@@ -32,7 +32,7 @@ jobs:
 
       - name: Run web tests
         working-directory: web
-        run: mise exec -- npm test -- --threads=1
+        run: mise exec -- npm test
 
       - name: Run sample conversion smoke
         env:
