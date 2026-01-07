@@ -215,6 +215,7 @@ class LanguageMarkup:
 
         default_language = (default_language or "unknown").lower()
         default_short = default_language.split("-", 1)[0] if default_language else "unknown"
+        has_explicit_tags = bool(LANG_START_RE.search(text))
         segments: List[MarkedSegment] = []
         cursor = 0
         current_language = default_language
@@ -244,6 +245,9 @@ class LanguageMarkup:
 
         merged = LanguageMarkup._merge_segments(segments)
         if not merged or default_short in {"", "unknown"}:
+            return merged
+        if has_explicit_tags:
+            # Preserve idiomas declarados via [[lang:xx]] mesmo para textos curtos
             return merged
 
         languages = {

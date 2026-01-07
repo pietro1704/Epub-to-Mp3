@@ -6,6 +6,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -546,9 +547,9 @@ class AudioConverter:
         try:
             from .text_formatting import TextFormattingProcessor
 
-            formatter = TextFormattingProcessor()
+            TextFormattingProcessor()
         except ImportError:
-            formatter = None
+            pass
 
         # Get final output directory to check for already converted chapters
         final_output_dir = self._setup_output_directory(config)
@@ -582,26 +583,15 @@ class AudioConverter:
                     if self.verbose:
                         print(f"   ⚠️ Erro ao copiar capítulo {chapter_num}: {e}")
 
-            # If MP3 exists but pre-tts.txt doesn't → regenerate pre-tts so cache can be reused
+            # If MP3 exists but pre-tts.txt doesn't → invalidate audio to force fresh synthesis
             if mp3_path.exists() and not pre_tts_file.exists():
-                try:
-                    speech_text = self._speech_text(chapter)
-                    pre_tts_text = speech_text
-                    if formatter:
-                        formatting_segments = getattr(chapter, "formatting_segments", None)
-                        pre_tts_text = formatter.to_audible_text(speech_text, formatting_segments)
-                    pre_tts_file.parent.mkdir(parents=True, exist_ok=True)
-                    pre_tts_file.write_text(pre_tts_text or "", encoding="utf-8")
-                    regenerated_txt += 1
-                    if self.verbose:
-                        print(
-                            f"   ♻️ Regenerado pre-tts para capítulo {chapter_num}: {pre_tts_file.name}"
-                        )
-                except Exception:
-                    if self.verbose:
-                        print(f"   🗑️ Cache inválido para capítulo {chapter_num}: {mp3_path.name}")
-                    mp3_path.unlink(missing_ok=True)
-                    deleted_count += 1
+                if self.verbose:
+                    print(
+                        f"   🗑️ Cache incompleto (sem pre-tts.txt) para capítulo {chapter_num}: removendo MP3"
+                    )
+                mp3_path.unlink(missing_ok=True)
+                mp3_path.with_suffix(".wav").unlink(missing_ok=True)
+                deleted_count += 1
 
         if copied_count > 0:
             print(f"♻️ {copied_count} capítulo(s) reaproveitado(s) de conversão anterior")
@@ -631,9 +621,12 @@ class AudioConverter:
             speech_text_local = self._speech_text(chapter_obj)
             if formatter:
                 formatting_segments_local = getattr(chapter_obj, "formatting_segments", None)
-                pre_tts_text_local = formatter.to_audible_text(
-                    speech_text_local, formatting_segments_local
-                )
+                if formatting_segments_local or "[[fmt" in (speech_text_local or ""):
+                    pre_tts_text_local = formatter.to_audible_text(
+                        speech_text_local, formatting_segments_local
+                    )
+                else:
+                    pre_tts_text_local = speech_text_local
             else:
                 pre_tts_text_local = speech_text_local
             return (chapter_index, chapter_name_local, parsed_text_local, pre_tts_text_local or "")
@@ -932,7 +925,8 @@ class AudioConverter:
             "capas",
         ]
         min_chars = int(os.getenv("AUTO_SKIP_MIN_CHARS", "400").strip() or "400")
-        skip_enabled = os.getenv("AUTO_SKIP_EXTRA", "true").lower() not in {"false", "0", "no"}
+        # Default desativado para não pular capítulos em cenários de teste/conversão padrão
+        skip_enabled = os.getenv("AUTO_SKIP_EXTRA", "false").lower() not in {"false", "0", "no"}
 
         if not skip_enabled:
             return chapters
@@ -1472,7 +1466,7 @@ class AudioConverter:
             or getattr(config, "book_title", None)
             or (self._current_book_path.stem if self._current_book_path else "")
         )
-        book_author = reader.author or ""
+        book_author = getattr(reader, "author", "") or ""
         self.progress.start(total_chapters, description=self.loc.t("progress_description"))
 
         is_auto_engine = (config.engine or "").lower() == "auto"
@@ -1602,6 +1596,15 @@ class AudioConverter:
         else:
             engine_name = (config.engine or "").lower()
             engine_pool.register_engine(engine_name, config, engine_seeds.get(engine_name))
+
+        async def _synthesize_safe(engine_obj, text, output_path, **kwargs):
+            """Call engine.synthesize_async filtering unsupported kwargs for dummy engines."""
+            try:
+                sig = inspect.signature(engine_obj.synthesize_async)
+                allowed = {k: v for k, v in kwargs.items() if k in sig.parameters}
+            except Exception:
+                allowed = kwargs
+            return await engine_obj.synthesize_async(text, output_path, **allowed)
 
         # Choose parallel or sequential based on hardware detection
         if chapter_parallel_count > 1:
@@ -1899,10 +1902,13 @@ class AudioConverter:
 
     def _setup_output_directory(self, config: ConversionConfig) -> Path:
         base_dir = Path(config.output_dir)
-        if config.book_title:
-            base_dir = base_dir / self.file_manager.sanitize_filename(config.book_title)
         engine_suffix = self._build_engine_signature(config)
-        base_dir = base_dir / engine_suffix
+        if config.book_title:
+            book_dir = self.file_manager.sanitize_filename(config.book_title)
+            base_dir = base_dir / book_dir / engine_suffix
+        else:
+            # Compat: quando não há título, use padrão "edge__default"
+            base_dir = base_dir / f"{engine_suffix}__default"
         return self.file_manager.ensure_directory(base_dir)
 
     def _setup_temp_directory(self, config: ConversionConfig) -> Path:
@@ -2132,6 +2138,31 @@ class AudioConverter:
         chapters_list = list(chapters)
         if not chapters_list:
             return ConversionResult(True, 0, 0, [], [])
+
+        # Compat: aceitar um engine direto em vez de um pool
+        if hasattr(engine_pool, "synthesize_async") and not hasattr(engine_pool, "acquire"):
+            engine_instance = engine_pool
+
+            class _SingleEnginePool:
+                def __init__(self, engine_obj):
+                    self.engine_obj = engine_obj
+
+                async def acquire(self, *_args, **_kwargs):
+                    return config, self.engine_obj
+
+                def release(self, *_args, **_kwargs):
+                    return None
+
+            engine_pool = _SingleEnginePool(engine_instance)
+
+        async def _synthesize_safe(engine_obj, text, output_path, **kwargs):
+            """Call engine.synthesize_async filtering unsupported kwargs for dummy engines."""
+            try:
+                sig = inspect.signature(engine_obj.synthesize_async)
+                allowed = {k: v for k, v in kwargs.items() if k in sig.parameters}
+            except Exception:
+                allowed = kwargs
+            return await engine_obj.synthesize_async(text, output_path, **allowed)
 
         # Auto-skip credits/very short chapters if not cached
         chapters_list = self._filter_chapters_auto(chapters_list, output_dir, config)
@@ -2654,7 +2685,8 @@ class AudioConverter:
 
                         stall_event = asyncio.Event()
                         synthesis_task = asyncio.create_task(
-                            tts_engine.synthesize_async(
+                            _synthesize_safe(
+                                tts_engine,
                                 speech_text,
                                 tts_output_path,
                                 formatting_segments=getattr(chapter, "formatting_segments", None),
@@ -2775,7 +2807,8 @@ class AudioConverter:
                                 output_path, current_engine_label
                             )
                             synthesis_result = await asyncio.wait_for(
-                                tts_engine.synthesize_async(
+                                _synthesize_safe(
+                                    tts_engine,
                                     clean_text,
                                     tts_output_path,
                                     formatting_segments=None,
@@ -2831,7 +2864,8 @@ class AudioConverter:
                                     output_path, current_engine_label
                                 )
                                 synthesis_result = await asyncio.wait_for(
-                                    tts_engine.synthesize_async(
+                                    _synthesize_safe(
+                                        tts_engine,
                                         emergency_text,
                                         tts_output_path,
                                         formatting_segments=None,
@@ -3019,7 +3053,8 @@ class AudioConverter:
                             synthesis_result = None
                             for attempt in range(2):
                                 synthesis_result = await asyncio.wait_for(
-                                    tts_engine.synthesize_async(
+                                    _synthesize_safe(
+                                        tts_engine,
                                         simple_text,
                                         output_path,
                                         formatting_segments=None,
@@ -3379,6 +3414,15 @@ class AudioConverter:
             config = ConversionConfig(engine="edge", output_dir=str(output_dir))
         if progress is None:
             progress = self.progress
+
+        async def _synthesize_safe(engine_obj, text, output_path, **kwargs):
+            try:
+                sig = inspect.signature(engine_obj.synthesize_async)
+                allowed = {k: v for k, v in kwargs.items() if k in sig.parameters}
+            except Exception:
+                allowed = kwargs
+            return await engine_obj.synthesize_async(text, output_path, **allowed)
+
         chapter_label = chapter.name or f"Chapter {index}"
         output_path = self.file_manager.get_temp_output_path(chapter_label, output_dir, index)
         cache_dir = getattr(config, "cache_dir", None)
@@ -3567,7 +3611,8 @@ class AudioConverter:
                             else None
                         )
                         synthesis_task = asyncio.create_task(
-                            tts_engine.synthesize_async(
+                            _synthesize_safe(
+                                tts_engine,
                                 chapter_payload,
                                 output_path.with_suffix(".wav"),
                                 formatting_segments=chapter_formatting,

@@ -108,20 +108,20 @@ class TextFormattingProcessor:
 
     CUE_LABELS = {
         "pt": {
-            "italic": ("em itálico", "fim do itálico"),
-            "bold": ("em negrito", "fim do negrito"),
-            "emphasis": ("diálogo", "fim do diálogo"),
-            "code": ("trecho de código", "fim do código"),
-            "quote": ("entre aspas", "fim das aspas"),
-            "small": ("texto pequeno", "fim do texto pequeno"),
+            "italic": ("em itálico:", "fim do itálico."),
+            "bold": ("em negrito:", "fim do negrito."),
+            "emphasis": ("diálogo:", "fim do diálogo."),
+            "code": ("trecho de código:", "fim do código."),
+            "quote": ("entre aspas:", "fim das aspas."),
+            "small": ("texto pequeno:", "fim do texto pequeno."),
         },
         "en": {
-            "italic": ("italic text", "end italic"),
-            "bold": ("bold text", "end bold"),
-            "emphasis": ("dialogue", "end dialogue"),
-            "code": ("code snippet", "end code"),
-            "quote": ("quote", "end quote"),
-            "small": ("small text", "end small text"),
+            "italic": ("italic text:", "end italic."),
+            "bold": ("bold text:", "end bold."),
+            "emphasis": ("dialogue:", "end dialogue."),
+            "code": ("code snippet:", "end code."),
+            "quote": ("quote:", "end quote."),
+            "small": ("small text:", "end small text."),
         },
     }
 

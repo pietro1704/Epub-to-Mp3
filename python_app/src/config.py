@@ -372,21 +372,17 @@ class VoiceConfigProvider:
         python_root = Path(__file__).resolve().parents[1]
         candidate_dirs.append(python_root / "models")
 
-        directory = next(
-            (path for path in dict.fromkeys(candidate_dirs) if path.exists() and path.is_dir()),
-            None,
-        )
-        if directory is None:
-            return {}
-
         discovered: Dict[str, Dict[str, object]] = {}
-        for path in sorted(directory.glob("*.onnx")):
-            name = path.stem
-            discovered[name] = {
-                "name": name,
-                "path": path,
-                "recommended": name.lower().startswith("faber"),
-            }
+        for directory in dict.fromkeys(candidate_dirs):
+            if not directory.exists() or not directory.is_dir():
+                continue
+            for path in sorted(directory.glob("*.onnx")):
+                name = path.stem
+                discovered[name] = {
+                    "name": name,
+                    "path": path,
+                    "recommended": name.lower().startswith("faber"),
+                }
         return discovered
 
     def get_voice(self, engine: str, primary_language: Optional[str] = None) -> Optional[str]:

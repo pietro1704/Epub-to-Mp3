@@ -184,10 +184,10 @@ class TestConverterApplication(unittest.TestCase):
             result = self.app.run(args)
 
             self.assertEqual(result, 1)
-            mock_menu.assert_called_once_with(
-                mock_reader_instance,
-                language_profile=self.app.language_profile,
-            )
+            mock_menu.assert_called_once()
+            _args, kwargs = mock_menu.call_args
+            self.assertEqual(_args[0], mock_reader_instance)
+            self.assertEqual(kwargs.get("language_profile"), self.app.language_profile)
 
     @unittest.skip("Config creation updated - parallel removed")
     def test_create_config_from_args(self):

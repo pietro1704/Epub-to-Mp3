@@ -1133,25 +1133,44 @@ class EdgeTTSEngine:
         if text is None:
             return [(self.voice, "")]
 
-        cleaned_text = (
-            TextFormattingProcessor.clean_tts_text(text) if TextFormattingProcessor else text
-        )
+        # Preserve markup for language detection; clean after parsing
+        cleaned_text = text or ""
 
         if LanguageMarkup is None:
-            return self._chunk_text(self.voice, cleaned_text)
+            base_text = (
+                TextFormattingProcessor.clean_tts_text(cleaned_text)
+                if TextFormattingProcessor
+                else cleaned_text
+            )
+            return self._chunk_text(self.voice, base_text)
 
         try:
             lowered = cleaned_text.lower()
             if "[[lang:" not in lowered:
-                return self._chunk_text(self.voice, cleaned_text)
+                base_text = (
+                    TextFormattingProcessor.clean_tts_text(cleaned_text)
+                    if TextFormattingProcessor
+                    else cleaned_text
+                )
+                return self._chunk_text(self.voice, base_text)
 
             segments = LanguageMarkup.parse(cleaned_text, self.primary_language)
             if segments is None:
-                return self._chunk_text(self.voice, cleaned_text)
+                base_text = (
+                    TextFormattingProcessor.clean_tts_text(cleaned_text)
+                    if TextFormattingProcessor
+                    else cleaned_text
+                )
+                return self._chunk_text(self.voice, base_text)
 
             if len(segments) > 100:
                 simplified = LanguageMarkup.strip(cleaned_text) if LanguageMarkup else cleaned_text
-                return self._chunk_text(self.voice, simplified)
+                base_text = (
+                    TextFormattingProcessor.clean_tts_text(simplified)
+                    if TextFormattingProcessor
+                    else simplified
+                )
+                return self._chunk_text(self.voice, base_text)
 
             prepared: list[tuple[str, str]] = []
             for segment in segments:

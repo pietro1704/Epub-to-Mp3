@@ -230,13 +230,15 @@ class TestEpubParser(unittest.TestCase):
 
         parser = EpubParser(self.sample_epub_path)
         with zipfile.ZipFile(self.sample_epub_path, "r") as zf:
-            manifest, spine_ids, title, author = parser._parse_opf(zf, "OEBPS/content.opf")
+            manifest, spine_ids, title, author, language = parser._parse_opf(
+                zf, "OEBPS/content.opf"
+            )
 
-            self.assertEqual(title, "Test Book")
-            self.assertEqual(author, "Test Author")
-            self.assertIn("chapter1", manifest)
-            self.assertIn("chapter2", manifest)
-            self.assertEqual(spine_ids, ["chapter1", "chapter2"])
+        self.assertEqual(title, "Test Book")
+        self.assertEqual(author, "Test Author")
+        self.assertIn("chapter1", manifest)
+        self.assertIn("chapter2", manifest)
+        self.assertEqual(spine_ids, ["chapter1", "chapter2"])
 
     def test_extract_chapters_success(self):
         """Test successful chapter extraction"""

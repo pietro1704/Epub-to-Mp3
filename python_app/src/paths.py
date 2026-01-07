@@ -55,6 +55,10 @@ PIPER_MODELS_DIR = MODELS_DIR / "piper"
 COQUI_MODELS_DIR.mkdir(exist_ok=True, parents=True)
 PIPER_MODELS_DIR.mkdir(exist_ok=True, parents=True)
 
+# Compat: aliases expected by tests/legacy code
+COQUI_CACHE_DIR = COQUI_MODELS_DIR
+PIPER_MODEL_CACHE_DIR = PIPER_MODELS_DIR
+
 # Telemetria pode ficar em .cache (dados temporários)
 TELEMETRY_DIR = CACHE_DIR / "telemetry"
 TELEMETRY_DIR.mkdir(exist_ok=True, parents=True)

@@ -256,6 +256,9 @@ def _engine_slug(engine: Optional[str]) -> str:
 
 def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = False) -> Path:
     legacy_dir = output_dir / job_id
+    if ensure:
+        legacy_dir.mkdir(parents=True, exist_ok=True)
+        return legacy_dir
     job_data = job or jobs.get(job_id) or job_manager.load_job(job_id)
 
     if job_data:
@@ -361,9 +364,9 @@ _CHAPTER_TIMEOUT_FACTOR = 2.5
 _CHAPTER_TIMEOUT_MIN = 120.0
 _CHAPTER_TIMEOUT_MAX = 900.0
 try:
-    _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "1") or "1"))
+    _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "0") or "0"))
 except (TypeError, ValueError):
-    _CHAPTER_RETRY_MAX = 1
+    _CHAPTER_RETRY_MAX = 0
 _CHAPTER_RETRY_FOREVER = True
 try:
     _CHAPTER_RETRY_ROUNDS = max(0, int(os.getenv("CHAPTER_RETRY_ROUNDS", "1") or "1"))
@@ -2775,6 +2778,14 @@ def _purge_all_jobs(reason: str, *, keep_finished: bool = False, purge_cache: bo
         _purge_job_data(job_id, job_data, purge_cache=purge_cache)
         purged_count += 1
     logger.warning("Purged %s job(s): %s", purged_count, reason)
+    try:
+        jobs.clear()
+        _recent_jobs_index.clear()
+        # Clear in-memory cache of JobManager
+        if hasattr(job_manager, "_memory_cache"):
+            job_manager._memory_cache.clear()  # type: ignore[attr-defined]
+    except Exception:
+        pass
     return purged_count
 
 
@@ -3603,7 +3614,7 @@ async def process_conversion(job_id: str) -> None:
             if cover_name:
                 cover_path = job_output_dir / cover_name
                 if cover_path.exists():
-                    temp_cover = job_output_dir / f"{job_id}_{cover_name}.tmp"
+                    temp_cover = job_output_dir.parent / f"{job_id}_{cover_name}.tmp"
                     try:
                         shutil.move(str(cover_path), str(temp_cover))
                         cover_restore = (temp_cover, cover_path)

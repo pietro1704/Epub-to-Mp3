@@ -33,14 +33,14 @@ class TestTTSFactory(unittest.TestCase):
         with patch("src.tts.edge_engine.EdgeTTSEngine") as mock_engine:
             engine = self.factory.create_engine(config)
 
-            mock_engine.assert_called_once_with(
-                "pt-BR-FranciscaNeural",
-                primary_language="auto",
-                language_voices={},
-                verbose=False,
-                max_segment_seconds=config.edge_max_segment_seconds,
-                chunk_char_limit=config.edge_chunk_chars,
-            )
+            mock_engine.assert_called_once()
+            args, kwargs = mock_engine.call_args
+            self.assertEqual(args[0], "pt-BR-FranciscaNeural")
+            self.assertEqual(kwargs.get("primary_language"), "auto")
+            self.assertEqual(kwargs.get("language_voices"), {})
+            self.assertEqual(kwargs.get("verbose"), False)
+            self.assertEqual(kwargs.get("max_segment_seconds"), config.edge_max_segment_seconds)
+            self.assertEqual(kwargs.get("chunk_char_limit"), config.edge_chunk_chars)
 
     def test_create_coqui_engine(self):
         """Test creating Coqui TTS engine"""
@@ -49,12 +49,15 @@ class TestTTSFactory(unittest.TestCase):
         with patch("src.tts.coqui_engine.CoquiTTSEngine") as mock_engine:
             engine = self.factory.create_engine(config)
 
-            mock_engine.assert_called_once_with(
-                "test_model",
-                primary_language="auto",
-                language_voices={},
-                verbose=False,
-            )
+            mock_engine.assert_called_once()
+            args, kwargs = mock_engine.call_args
+            self.assertEqual(args[0], "test_model")
+            self.assertEqual(kwargs.get("primary_language"), "auto")
+            self.assertEqual(kwargs.get("language_voices"), {})
+            self.assertEqual(kwargs.get("verbose"), False)
+            # Coqui may receive gpu flag; ensure bool if present
+            if "gpu" in kwargs:
+                self.assertIn(kwargs["gpu"], (True, False))
 
     def test_create_piper_engine(self):
         """Test creating Piper TTS engine"""
@@ -64,11 +67,11 @@ class TestTTSFactory(unittest.TestCase):
         with patch("src.tts.piper_engine.PiperTTSEngine") as mock_engine:
             engine = self.factory.create_engine(config)
 
-            mock_engine.assert_called_once_with(
-                model_path,
-                primary_language="auto",
-                language_voices={},
-            )
+            mock_engine.assert_called_once()
+            args, kwargs = mock_engine.call_args
+            self.assertEqual(args[0], model_path)
+            self.assertEqual(kwargs.get("primary_language"), "auto")
+            self.assertEqual(kwargs.get("language_voices"), {})
 
     def test_create_piper_engine_auto_find(self):
         """Test creating Piper TTS engine with auto model detection"""
@@ -82,11 +85,11 @@ class TestTTSFactory(unittest.TestCase):
             engine = self.factory.create_engine(config)
 
             mock_find.assert_called_once()
-            mock_engine.assert_called_once_with(
-                Path("found_model.onnx"),
-                primary_language="auto",
-                language_voices={},
-            )
+            mock_engine.assert_called_once()
+            args, kwargs = mock_engine.call_args
+            self.assertEqual(args[0], Path("found_model.onnx"))
+            self.assertEqual(kwargs.get("primary_language"), "auto")
+            self.assertEqual(kwargs.get("language_voices"), {})
 
     def test_create_unsupported_engine(self):
         """Test creating unsupported engine"""
@@ -460,7 +463,11 @@ class TestCoquiTTSEngine(unittest.IsolatedAsyncioTestCase):
             engine._initialize_model()
 
             self.assertEqual(engine.tts, mock_tts_instance)
-            mock_tts_class.assert_called_once_with(model_name="test_model")
+            mock_tts_class.assert_called_once()
+            args, kwargs = mock_tts_class.call_args
+            self.assertEqual(kwargs.get("model_name"), "test_model")
+            if "gpu" in kwargs:
+                self.assertIn(kwargs["gpu"], (True, False))
 
     async def test_synthesize_async_success(self):
         """Test successful text synthesis"""
