@@ -27,27 +27,33 @@ jobs:
           lfs: true
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
-      - name: Configure SSH (preferred) or fallback to HTTPS
+      - name: Push to Hugging Face (prefer SSH, fallback token)
         env:
           HF_SSH_PRIVATE_KEY: ${{ secrets.HF_SSH_PRIVATE_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
+          set -euo pipefail
           TARGET_BRANCH="master"
-          if [ -n "$HF_SSH_PRIVATE_KEY" ]; then
+
+          if [ -n "${HF_SSH_PRIVATE_KEY:-}" ]; then
             mkdir -p ~/.ssh
             echo "$HF_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
             chmod 600 ~/.ssh/id_rsa
             eval "$(ssh-agent -s)"
             ssh-add ~/.ssh/id_rsa
             ssh-keyscan hf.co >> ~/.ssh/known_hosts
-            git remote add hf git@hf.co:spaces/pi1704/epub-to-mp3 || true
-            git push --force git@hf.co:spaces/pi1704/epub-to-mp3 "HEAD:refs/heads/${TARGET_BRANCH}"
-            git push git@hf.co:spaces/pi1704/epub-to-mp3 --delete main || true
+            REMOTE_URL="git@hf.co:spaces/pi1704/epub-to-mp3"
           else
-            if [ -z "$HF_TOKEN" ]; then
+            if [ -z "${HF_TOKEN:-}" ]; then
               echo "Nem HF_SSH_PRIVATE_KEY nem HF_TOKEN configurados; abortando push."
               exit 1
             fi
-            git remote add hf https://huggingface.co/spaces/pi1704/epub-to-mp3 || true
-            git push --force https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 "HEAD:refs/heads/${TARGET_BRANCH}"
-            git push https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 --delete main || true
+            # Avoid leaking token in logs by configuring insteadOf
+            git config --global url."https://user:${HF_TOKEN}@huggingface.co/".insteadOf "https://huggingface.co/"
+            REMOTE_URL="https://huggingface.co/spaces/pi1704/epub-to-mp3"
+          fi
+
+          git remote add hf "$REMOTE_URL" || true
+          git push --force hf "HEAD:refs/heads/${TARGET_BRANCH}"
+          # Clean up old default branch on HF Space if it exists
+          git push hf --delete main || true
