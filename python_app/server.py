@@ -58,7 +58,86 @@ from src.utils import AudioProcessor, FileManager, TextValidator
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="EPUB to MP3 Converter API")
+
+@contextlib.asynccontextmanager
+async def _lifespan(app: FastAPI):
+    """Manage FastAPI lifespan without deprecated on_event hooks."""
+    global \
+        _cleanup_task, \
+        _job_queue, \
+        _job_workers, \
+        _job_watchdog_task, \
+        _app_loop, \
+        _skip_resume_on_startup
+    _app_loop = asyncio.get_running_loop()
+    _job_queue = asyncio.Queue()
+    _job_workers = [asyncio.create_task(_job_worker(idx + 1)) for idx in range(_JOB_WORKERS)]
+    _cleanup_task = asyncio.create_task(_periodic_job_cleanup())
+    restart_marker = _load_restart_marker()
+    if restart_marker:
+        keep_cache = bool(restart_marker.get("keep_cache"))
+        keep_finished = bool(restart_marker.get("keep_finished"))
+        _skip_resume_on_startup = True
+        _purge_all_jobs(
+            "restart cleanup",
+            keep_finished=keep_finished,
+            purge_cache=not keep_cache,
+        )
+        _clear_restart_staging_dirs()
+        if not keep_finished:
+            _clear_all_outputs(preserve_cache=keep_cache)
+        if not keep_cache:
+            _clear_all_caches()
+        _clear_restart_marker()
+    else:
+        asyncio.create_task(_resume_pending_jobs())
+    system_monitor.start()
+    if not _job_watchdog_task:
+        _job_watchdog_task = asyncio.create_task(_job_watchdog())
+
+    try:
+        from health_monitor import start_monitoring
+
+        start_monitoring()
+        logger.info("✅ Health Monitor iniciado")
+    except Exception as e:
+        logger.warning(f"⚠️ Falha ao iniciar Health Monitor: {e}")
+
+    try:
+        from auto_recovery import start_auto_recovery
+
+        recovery = start_auto_recovery()
+        recovery.set_activity_provider(_has_active_jobs)
+        logger.info("✅ Auto-Recovery System iniciado")
+    except Exception as e:
+        logger.warning(f"⚠️ Falha ao iniciar Auto-Recovery: {e}")
+
+    logger.info("Started periodic job cleanup task")
+    try:
+        yield
+    finally:
+        if _cleanup_task:
+            _cleanup_task.cancel()
+            try:
+                await _cleanup_task
+            except asyncio.CancelledError:
+                pass
+        logger.info("Stopped periodic job cleanup task")
+        if _job_watchdog_task:
+            _job_watchdog_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await _job_watchdog_task
+            _job_watchdog_task = None
+        for worker in list(_job_workers):
+            worker.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await worker
+        _job_workers.clear()
+        _job_queue = None
+        system_monitor.stop()
+
+
+app = FastAPI(title="EPUB to MP3 Converter API", lifespan=_lifespan)
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 WEB_DIR = ROOT_DIR / "web"
@@ -1300,89 +1379,6 @@ async def _scale_worker_pool(target: int) -> None:
                     await task
             logger.info("Scaled worker pool down to %s workers", len(_job_workers))
         _JOB_WORKERS = target
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Start background cleanup task."""
-    global \
-        _cleanup_task, \
-        _job_queue, \
-        _job_workers, \
-        _job_watchdog_task, \
-        _app_loop, \
-        _skip_resume_on_startup
-    _app_loop = asyncio.get_running_loop()
-    _job_queue = asyncio.Queue()
-    _job_workers = [asyncio.create_task(_job_worker(idx + 1)) for idx in range(_JOB_WORKERS)]
-    _cleanup_task = asyncio.create_task(_periodic_job_cleanup())
-    restart_marker = _load_restart_marker()
-    if restart_marker:
-        keep_cache = bool(restart_marker.get("keep_cache"))
-        keep_finished = bool(restart_marker.get("keep_finished"))
-        _skip_resume_on_startup = True
-        _purge_all_jobs(
-            "restart cleanup",
-            keep_finished=keep_finished,
-            purge_cache=not keep_cache,
-        )
-        _clear_restart_staging_dirs()
-        if not keep_finished:
-            _clear_all_outputs(preserve_cache=keep_cache)
-        if not keep_cache:
-            _clear_all_caches()
-        _clear_restart_marker()
-    else:
-        asyncio.create_task(_resume_pending_jobs())
-    system_monitor.start()
-    if not _job_watchdog_task:
-        _job_watchdog_task = asyncio.create_task(_job_watchdog())
-
-    # **NOVO**: Iniciar Health Monitor automático
-    try:
-        from health_monitor import start_monitoring
-
-        start_monitoring()
-        logger.info("✅ Health Monitor iniciado")
-    except Exception as e:
-        logger.warning(f"⚠️ Falha ao iniciar Health Monitor: {e}")
-
-    # **NOVO**: Iniciar Auto-Recovery System
-    try:
-        from auto_recovery import start_auto_recovery
-
-        recovery = start_auto_recovery()
-        recovery.set_activity_provider(_has_active_jobs)
-        logger.info("✅ Auto-Recovery System iniciado")
-    except Exception as e:
-        logger.warning(f"⚠️ Falha ao iniciar Auto-Recovery: {e}")
-
-    logger.info("Started periodic job cleanup task")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Stop background cleanup task."""
-    global _cleanup_task, _job_queue, _job_workers, _job_watchdog_task
-    if _cleanup_task:
-        _cleanup_task.cancel()
-        try:
-            await _cleanup_task
-        except asyncio.CancelledError:
-            pass
-    logger.info("Stopped periodic job cleanup task")
-    if _job_watchdog_task:
-        _job_watchdog_task.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await _job_watchdog_task
-        _job_watchdog_task = None
-    for worker in list(_job_workers):
-        worker.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await worker
-    _job_workers.clear()
-    _job_queue = None
-    system_monitor.stop()
 
 
 async def _schedule_restart(delay: float = 0.5) -> None:
@@ -4067,7 +4063,6 @@ async def process_conversion(job_id: str) -> None:
                 async def _chapter_heartbeat_loop() -> None:
                     progress_tick = 5.0
                     last_log_ts = start_time
-                    progress_grace = 6.0
                     try:
                         while True:
                             try:
@@ -4079,13 +4074,6 @@ async def process_conversion(job_id: str) -> None:
                             except asyncio.TimeoutError:
                                 now = time.time()
                                 elapsed = now - start_time
-                                if estimated_seconds > 0:
-                                    last_progress = (
-                                        job.get("_chapterLastProgressUpdate") or {}
-                                    ).get(idx, 0.0)
-                                    if now - last_progress >= progress_grace:
-                                        ratio = elapsed / estimated_seconds
-                                        _update_estimated_chapter_progress(idx, ratio)
                                 if (now - last_log_ts) < _CHAPTER_HEARTBEAT_SECONDS:
                                     continue
                                 last_log_ts = now

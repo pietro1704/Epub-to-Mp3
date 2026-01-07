@@ -6,6 +6,7 @@ Serves React frontend + FastAPI backend in one app
 
 import logging
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Configure logging
@@ -72,8 +73,11 @@ else:
         return {"error": "Frontend not built. Run: cd web && npm run build"}
 
 
-@app.on_event("startup")
-async def startup_event():
+_base_lifespan = app.router.lifespan_context
+
+
+@asynccontextmanager
+async def _hf_lifespan(app):
     logger.info("=" * 60)
     logger.info("HF App startup complete!")
     logger.info(f"Web dist path: {web_dist}")
@@ -81,7 +85,14 @@ async def startup_event():
     if web_dist.exists():
         logger.info(f"Files in web/dist: {list(web_dist.iterdir())[:10]}")
     logger.info("=" * 60)
+    if _base_lifespan:
+        async with _base_lifespan(app):
+            yield
+    else:
+        yield
 
+
+app.router.lifespan_context = _hf_lifespan
 
 if __name__ == "__main__":
     import os
