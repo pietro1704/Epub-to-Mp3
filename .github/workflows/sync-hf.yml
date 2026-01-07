@@ -27,25 +27,16 @@ jobs:
           lfs: true
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
-      - name: Configure SSH for Hugging Face
+      - name: Push to Hugging Face (HTTPS token)
         env:
-          HF_SSH_PRIVATE_KEY: ${{ secrets.HF_SSH_PRIVATE_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
-          if [ -z "$HF_SSH_PRIVATE_KEY" ]; then
-            echo "HF_SSH_PRIVATE_KEY não configurada; configure o secret para usar push via SSH"
+          git remote add hf https://huggingface.co/spaces/pi1704/epub-to-mp3 || true
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN não configurado; abortando push para evitar falha"
             exit 1
           fi
-          mkdir -p ~/.ssh
-          echo "$HF_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
-          chmod 600 ~/.ssh/id_rsa
-          eval "$(ssh-agent -s)"
-          ssh-add ~/.ssh/id_rsa
-          ssh-keyscan hf.co >> ~/.ssh/known_hosts
-
-      - name: Push to Hugging Face (SSH)
-        run: |
-          git remote add hf git@hf.co:spaces/pi1704/epub-to-mp3 || true
           TARGET_BRANCH="master"
-          git push --force git@hf.co:spaces/pi1704/epub-to-mp3 "HEAD:refs/heads/${TARGET_BRANCH}"
+          git push --force https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 "HEAD:refs/heads/${TARGET_BRANCH}"
           # Clean up old default branch on HF Space if it exists
-          git push git@hf.co:spaces/pi1704/epub-to-mp3 --delete main || true
+          git push https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 --delete main || true
