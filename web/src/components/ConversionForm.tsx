@@ -222,7 +222,9 @@ export default function ConversionForm({
     position: "before" | "after";
   } | null>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
-  const uploadPromisesRef = useRef<Record<string, Promise<void>>>({});
+  const uploadPromisesRef = useRef<Record<string, Promise<void> | undefined>>(
+    {},
+  );
   const [pendingUploads, setPendingUploads] = useState(0);
 
   useEffect(() => {
@@ -644,7 +646,9 @@ export default function ConversionForm({
     }
     setShowMissingFileError(false);
     onSubmitIntent?.();
-    const pendingUploads = Object.values(uploadPromisesRef.current);
+    const pendingUploads = Object.values(uploadPromisesRef.current).filter(
+      (promise): promise is Promise<void> => Boolean(promise),
+    );
     if (pendingUploads.length > 0) {
       await Promise.allSettled(pendingUploads);
     }

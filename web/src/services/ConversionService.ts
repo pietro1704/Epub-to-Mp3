@@ -60,10 +60,10 @@ export interface UploadResponse {
 
 function buildFormData(values: ConversionFormValues): FormData {
   const formData = new FormData();
-  const hasUploadId =
-    typeof values.uploadId === "string" && values.uploadId.trim().length > 0;
-  if (hasUploadId) {
-    formData.append("upload_id", values.uploadId);
+  const uploadId = values.uploadId?.trim();
+  const hasUploadId = Boolean(uploadId);
+  if (uploadId) {
+    formData.append("upload_id", uploadId);
   }
   // Nunca reenvie o arquivo se já houver uploadId
   if (values.file && !hasUploadId) {
