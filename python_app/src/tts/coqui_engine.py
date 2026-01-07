@@ -186,9 +186,9 @@ _COQUI_GPU_AVAILABLE = False
 def _segment_timeout_seconds(text: str) -> int:
     """Estimate a timeout based on the text size to avoid infinite hangs."""
     word_count = max(len(text.split()), 1)
-    estimated = word_count * 0.45  # Slightly slower baseline (CPU-friendly)
-    min_timeout = 110 if not _COQUI_GPU_AVAILABLE else 60
-    max_timeout = 480 if not _COQUI_GPU_AVAILABLE else 300
+    estimated = word_count * 0.65  # CPU baseline: allow longer per word
+    min_timeout = 150 if not _COQUI_GPU_AVAILABLE else 75
+    max_timeout = 600 if not _COQUI_GPU_AVAILABLE else 360
     return int(max(min_timeout, min(estimated, max_timeout)))
 
 
@@ -349,10 +349,10 @@ def _get_coqui_executor():
 def _get_coqui_chunk_limit() -> int:
     """Max chars per Coqui segment to avoid very long synthesis calls."""
     try:
-        limit = int(os.environ.get("COQUI_CHUNK_CHARS", "").strip() or "2000")
+        limit = int(os.environ.get("COQUI_CHUNK_CHARS", "").strip() or "2800")
     except ValueError:
-        limit = 2000
-    return max(800, min(limit, 6000))
+        limit = 2800
+    return max(800, min(limit, 7000))
 
 
 def _coqui_phonemizer_limit(language: Optional[str]) -> Optional[int]:
@@ -966,6 +966,9 @@ class CoquiTTSEngine:
                             print(
                                 f"⏱️ [VERBOSE] Coqui timeout após {timeout}s no segmento {segment_index}"
                             )
+                        # On timeout, downgrade to single-worker safe mode for next segments
+                        self._max_workers = 1
+                        self._get_executor()
                         raise
                     _notify_progress(text_value)
                     if chunk_callback:
