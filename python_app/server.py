@@ -8,6 +8,11 @@ import os
 
 # Auto-aceitar licença Coqui TTS (CPML não-comercial) - necessário para HF Space
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
+# **CPU FIRST**: Forçar modo CPU em ambientes sem GPU (HF Spaces zero-GPU)
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+os.environ.setdefault("FORCE_CUDA", "0")
+os.environ.setdefault("FORCE_CPU_ONLY", "1")
+os.environ.setdefault("TTS_USE_GPU", "0")
 
 # Configurar otimizações de performance antes de qualquer import
 try:

@@ -187,8 +187,8 @@ def _segment_timeout_seconds(text: str) -> int:
     """Estimate a timeout based on the text size to avoid infinite hangs."""
     word_count = max(len(text.split()), 1)
     estimated = word_count * 0.45  # Slightly slower baseline (CPU-friendly)
-    min_timeout = 90 if not _COQUI_GPU_AVAILABLE else 45
-    max_timeout = 360 if not _COQUI_GPU_AVAILABLE else 240
+    min_timeout = 110 if not _COQUI_GPU_AVAILABLE else 60
+    max_timeout = 480 if not _COQUI_GPU_AVAILABLE else 300
     return int(max(min_timeout, min(estimated, max_timeout)))
 
 
@@ -349,10 +349,10 @@ def _get_coqui_executor():
 def _get_coqui_chunk_limit() -> int:
     """Max chars per Coqui segment to avoid very long synthesis calls."""
     try:
-        limit = int(os.environ.get("COQUI_CHUNK_CHARS", "").strip() or "3200")
+        limit = int(os.environ.get("COQUI_CHUNK_CHARS", "").strip() or "2000")
     except ValueError:
-        limit = 3200
-    return max(800, min(limit, 9000))
+        limit = 2000
+    return max(800, min(limit, 6000))
 
 
 def _coqui_phonemizer_limit(language: Optional[str]) -> Optional[int]:
