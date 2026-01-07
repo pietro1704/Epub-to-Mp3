@@ -32,6 +32,10 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           git remote add hf https://huggingface.co/spaces/pi1704/epub-to-mp3 || true
+          if [ -z "$HF_TOKEN" ]; then
+            echo "HF_TOKEN não configurado; abortando push para evitar falha"
+            exit 1
+          fi
           SOURCE_REF=$(git rev-parse HEAD)
           TARGET_BRANCH="master"
           git push --force https://user:$HF_TOKEN@huggingface.co/spaces/pi1704/epub-to-mp3 "${SOURCE_REF}:${TARGET_BRANCH}"
