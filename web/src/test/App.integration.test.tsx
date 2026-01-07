@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import App from "../App";
@@ -55,7 +55,9 @@ describe("App integration", () => {
       poll,
     };
 
-    renderWithProviders(<App client={client} />);
+    await act(async () => {
+      renderWithProviders(<App client={client} />);
+    });
 
     const file = new File(["ebook"], "historia.pdf", {
       type: "application/pdf",
@@ -96,7 +98,9 @@ describe("App integration", () => {
       upload,
     };
 
-    renderWithProviders(<App client={client} />);
+    await act(async () => {
+      renderWithProviders(<App client={client} />);
+    });
 
     const file = new File(["ebook"], "historia.pdf", {
       type: "application/pdf",
