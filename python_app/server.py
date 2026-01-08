@@ -296,12 +296,12 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# Para deployments em cloud (HF Spaces, etc.), use /tmp; caso contrário, usa OUTPUT_DIR da raiz do projeto
-# Se OUTPUT_DIR env var estiver definida, usa ela; senão usa OUTPUT_DIR do paths.py
+# Para deployments em cloud (HF Spaces, etc.), usa diretório persistente para sobreviver restarts
+# Se OUTPUT_DIR env var estiver definida, usa ela; senão usa diretório persistente ou OUTPUT_DIR local
 if os.getenv("OUTPUT_DIR"):
     output_dir = Path(os.getenv("OUTPUT_DIR"))
-elif os.getenv("SPACE_ID"):  # HuggingFace Spaces
-    output_dir = Path("/tmp/output")
+elif os.getenv("SPACE_ID"):  # HuggingFace Spaces - usar /data para persistência
+    output_dir = Path(os.getenv("PERSISTENT_ROOT", "/data/epub-to-mp3")) / "output"
 else:
     output_dir = OUTPUT_DIR
 
@@ -319,6 +319,25 @@ uploads_dir = persistent_root / ".uploads"
 uploads_dir.mkdir(exist_ok=True, parents=True)
 job_inputs_dir = persistent_root / ".job_inputs"
 job_inputs_dir.mkdir(exist_ok=True, parents=True)
+source_backups_dir = persistent_root / ".source_backups"
+source_backups_dir.mkdir(exist_ok=True, parents=True)
+
+# Cache persistente para textos extraídos de capítulos - sobrevive restarts
+persistent_cache_dir = persistent_root / ".cache" if os.getenv("SPACE_ID") else CACHE_DIR
+persistent_cache_dir.mkdir(exist_ok=True, parents=True)
+
+# CacheManager singleton com diretório persistente
+_persistent_cache_manager: Optional[CacheManager] = None
+
+
+def get_cache_manager() -> CacheManager:
+    """Retorna CacheManager singleton usando diretório persistente."""
+    global _persistent_cache_manager
+    if _persistent_cache_manager is None:
+        _persistent_cache_manager = CacheManager(cache_dir=persistent_cache_dir)
+    return _persistent_cache_manager
+
+
 cover_cache_dir = output_dir / ".cover_cache"
 cover_cache_dir.mkdir(exist_ok=True, parents=True)
 cover_index_path = cover_cache_dir / "index.json"
@@ -2338,12 +2357,19 @@ async def cleanup_old_files(max_age_hours: int = 48) -> dict:
 
 
 @app.post("/api/system/restart")
-async def restart_backend(options: Optional[RestartOptions] = None) -> dict:
+async def restart_backend(request: Request) -> dict:
     """
     Request a backend restart. Interrupts all conversions in progress.
     """
-    keep_cache = bool(options.keep_cache) if options else False
-    keep_finished = bool(options.keep_finished) if options else False
+    keep_cache = False
+    keep_finished = False
+    try:
+        body = await request.json()
+        if body:
+            keep_cache = bool(body.get("keep_cache", False))
+            keep_finished = bool(body.get("keep_finished", False))
+    except Exception:
+        pass  # No body or invalid JSON - use defaults
     _write_restart_marker(keep_cache=keep_cache, keep_finished=keep_finished)
     logger.warning(
         "Restart requested via API (keep_cache=%s, keep_finished=%s)",
@@ -2668,7 +2694,7 @@ async def upload_ebook(file: UploadFile = File(...)) -> dict:
 
         # **OPTIMIZATION #5**: Pre-cache parsed chapters for faster conversions
         try:
-            cache_manager = CacheManager()
+            cache_manager = get_cache_manager()
             chapters_list = list(reader.get_chapters())
             if chapters_list:
                 chapters_data = {
@@ -2875,7 +2901,7 @@ def _purge_all_jobs(reason: str, *, keep_finished: bool = False, purge_cache: bo
 def _clear_job_cache(job: dict) -> None:
     """Clear cached chapters/audio for this job."""
     try:
-        cache_manager = CacheManager()
+        cache_manager = get_cache_manager()
         source_path = Path(job.get("file_path", "")) if job.get("file_path") else None
         book_title = job.get("bookTitle")
         if source_path and source_path.exists():
@@ -2889,7 +2915,7 @@ def _clear_job_cache(job: dict) -> None:
 def _clear_all_caches() -> None:
     """Clear global caches (chapters + covers) on restart purge."""
     try:
-        CacheManager().clear_cache()
+        get_cache_manager().clear_cache()
     except Exception:
         pass
 

@@ -24,6 +24,17 @@ class UploadResult:
     size_bytes: int = 0
 
 
+@dataclass
+class DownloadResult:
+    """Result of file download from R2."""
+
+    success: bool
+    local_path: Optional[Path] = None
+    object_key: Optional[str] = None
+    error: Optional[str] = None
+    size_bytes: int = 0
+
+
 class R2StorageManager:
     """Manage file uploads to Cloudflare R2 (S3-compatible storage)."""
 
@@ -201,6 +212,62 @@ class R2StorageManager:
             return True
         except Exception as e:
             logger.error(f"Failed to delete {object_key} from R2: {e}")
+            return False
+
+    def download_file(self, object_key: str, local_path: Path) -> DownloadResult:
+        """
+        Download file from R2 bucket to local path.
+
+        Args:
+            object_key: Key (path) in bucket
+            local_path: Local path to save the file
+
+        Returns:
+            DownloadResult with success status and local path
+        """
+        if not self.is_enabled():
+            return DownloadResult(success=False, error="R2 storage not configured")
+
+        client = self._get_s3_client()
+        if client is None:
+            return DownloadResult(success=False, error="Failed to initialize R2 client")
+
+        try:
+            # Ensure parent directory exists
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+
+            logger.info(f"Downloading {object_key} from R2...")
+            client.download_file(self.bucket_name, object_key, str(local_path))
+
+            file_size = local_path.stat().st_size
+            logger.info(f"✅ Downloaded from R2: {object_key} ({file_size / 1024 / 1024:.2f} MB)")
+
+            return DownloadResult(
+                success=True,
+                local_path=local_path,
+                object_key=object_key,
+                size_bytes=file_size,
+            )
+
+        except client.exceptions.NoSuchKey:
+            return DownloadResult(success=False, error=f"File not found in R2: {object_key}")
+        except Exception as e:
+            logger.error(f"Failed to download {object_key} from R2: {e}")
+            return DownloadResult(success=False, error=str(e))
+
+    def file_exists(self, object_key: str) -> bool:
+        """Check if a file exists in R2 bucket."""
+        if not self.is_enabled():
+            return False
+
+        client = self._get_s3_client()
+        if client is None:
+            return False
+
+        try:
+            client.head_object(Bucket=self.bucket_name, Key=object_key)
+            return True
+        except Exception:
             return False
 
     def cleanup_old_files(self, max_age_hours: int = 48) -> int:
