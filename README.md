@@ -90,6 +90,9 @@ python -m python_app.main book.epub --menu
 # Single chapter
 python -m python_app.main book.epub --chapter 3
 
+# Multiple specific chapters at once (comma-separated or repeated flag)
+python -m python_app.main book.epub --chapter 5.1,5.2,5.3
+
 # Skip footnotes
 python -m python_app.main book.epub --no-footnote
 

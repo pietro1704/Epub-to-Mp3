@@ -308,10 +308,8 @@ class ConverterApplication:
             structure_items = self._generate_structure_items(reader)
 
             selectors: List[str] = []
-            for raw in getattr(args, "chapters", []) or []:
-                selectors.append(str(raw))
-            for raw in getattr(args, "sections", []) or []:
-                selectors.append(str(raw))
+            selectors.extend(self._expand_selector_args(getattr(args, "chapters", []) or []))
+            selectors.extend(self._expand_selector_args(getattr(args, "sections", []) or []))
 
             structure_items, filtered = self._filter_structure_selection(
                 structure_items, selectors if selectors else None
@@ -1853,6 +1851,20 @@ class ConverterApplication:
 
         return matched, True
 
+    @staticmethod
+    def _expand_selector_args(values: Optional[List[str]]) -> List[str]:
+        """Allow comma/semicolon separated selectors in a single flag use."""
+        expanded: List[str] = []
+        for raw in values or []:
+            if raw is None:
+                continue
+            text = str(raw)
+            for part in text.replace(";", ",").split(","):
+                cleaned = part.strip()
+                if cleaned:
+                    expanded.append(cleaned)
+        return expanded
+
     def _show_structure(self, reader: EbookReader):
         """Display book structure and save cache txt files"""
         print(f"{self.localization.t('book_label')}: {reader.title}")
@@ -2825,14 +2837,14 @@ def _add_conversion_arguments(
         action="append",
         dest="chapters",
         metavar="CHAPTER",
-        help="Select a chapter by index (supports dotted syntax like 3 or 1.2) or title snippet",
+        help="Select chapters by index (supports dotted syntax like 3 or 1.2) or title snippet; repeat the flag or pass comma-separated values (e.g., 5.1,5.2,5.3)",
     )
     parser.add_argument(
         "--section",
         action="append",
         dest="sections",
         metavar="SECTION",
-        help="Additional selectors for subsections or names (accepts dotted indices and text)",
+        help="Additional selectors for subsections or names (accepts dotted indices and text); repeat or use comma-separated values",
     )
     parser.add_argument(
         "--priority",
