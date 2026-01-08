@@ -956,7 +956,16 @@ class EdgeTTSEngine:
 
                         if chunk_callback:
                             try:
-                                chunk_callback(segment_idx, temp_file)
+                                # Pass segment text to callback for storage
+                                _, seg_text = segments_to_process[segment_idx]
+                                chunk_callback(segment_idx, temp_file, seg_text)
+                            except TypeError:
+                                # Fallback for callbacks that don't accept text
+                                try:
+                                    chunk_callback(segment_idx, temp_file)
+                                except Exception as e:
+                                    if self.verbose:
+                                        self._log(f"⚠️ Chunk callback error: {e}")
                             except Exception as e:
                                 if self.verbose:
                                     self._log(f"⚠️ Chunk callback error: {e}")
@@ -1029,7 +1038,13 @@ class EdgeTTSEngine:
                         segment_files[fail_idx] = retry_path
                         if chunk_callback:
                             try:
-                                chunk_callback(fail_idx, retry_path)
+                                chunk_callback(fail_idx, retry_path, segment_text)
+                            except TypeError:
+                                try:
+                                    chunk_callback(fail_idx, retry_path)
+                                except Exception as e:
+                                    if self.verbose:
+                                        self._log(f"⚠️ Chunk callback error (retry): {e}")
                             except Exception as e:
                                 if self.verbose:
                                     self._log(f"⚠️ Chunk callback error (retry): {e}")

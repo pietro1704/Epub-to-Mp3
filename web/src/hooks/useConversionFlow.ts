@@ -2253,6 +2253,43 @@ export function useConversionFlow(
       setCachedJobs([]);
       setRecentJobs([]);
       await api.restartBackend(options);
+
+      // Poll for backend health and auto-reload when ready
+      const pollInterval = 2000; // 2 seconds
+      const maxAttempts = 30; // 60 seconds max wait
+      let attempts = 0;
+
+      const checkHealth = async (): Promise<boolean> => {
+        try {
+          const response = await fetch(resolveApiUrl("/api/health"));
+          if (response.ok) {
+            const data = await response.json();
+            return data.status === "healthy";
+          }
+        } catch {
+          // Server not ready yet
+        }
+        return false;
+      };
+
+      const pollForHealth = async () => {
+        attempts++;
+        const isHealthy = await checkHealth();
+        if (isHealthy) {
+          // Backend is ready, reload the page
+          console.log("[Restart] Backend is healthy, reloading page...");
+          window.location.reload();
+        } else if (attempts < maxAttempts) {
+          setTimeout(pollForHealth, pollInterval);
+        } else {
+          console.warn("[Restart] Backend did not become healthy in time");
+          // Still try to reload in case it's working
+          window.location.reload();
+        }
+      };
+
+      // Start polling after a short delay to allow backend to shut down
+      setTimeout(pollForHealth, 3000);
     },
     [api, beginRestartGrace, clearQueue, reset],
   );

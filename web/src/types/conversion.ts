@@ -75,6 +75,7 @@ export interface AudioChunkEntry {
   file: string;
   url: string;
   durationSeconds?: number;
+  text?: string;
 }
 
 export interface ChapterStreamManifest {

@@ -102,7 +102,7 @@
   --hero-top-fill: clamp(1.25rem, 4vw, 2.25rem);
   --hero-top-shadow: rgba(15, 23, 42, 0.35);
   --hero-top-spacing: clamp(0.5rem, 2vw, 1rem);
-  --hero-sticky-gap: clamp(4rem, 8vw, 7rem);
+  --hero-sticky-gap: clamp(1.5rem, 3vw, 2rem);
   --hero-gradient-start: rgba(15, 23, 42, 0.15);
   --hero-fade-mid: rgba(15, 23, 42, 0.65);
   --hero-collapsed-fade: rgba(15, 23, 42, 0);
@@ -201,7 +201,7 @@
   --hero-top-fill: clamp(1.25rem, 4vw, 2.25rem);
   --hero-top-shadow: rgba(15, 23, 42, 0.08);
   --hero-top-spacing: clamp(0.5rem, 2vw, 1rem);
-  --hero-sticky-gap: clamp(4rem, 8vw, 7rem);
+  --hero-sticky-gap: clamp(1.5rem, 3vw, 2rem);
   --hero-gradient-start: rgba(15, 23, 42, 0.05);
   --hero-fade-mid: rgba(248, 250, 252, 0.85);
   --hero-collapsed-fade: rgba(248, 250, 252, 0);
@@ -1993,6 +1993,123 @@ select {
   gap: 0.5rem;
 }
 
+.chapter-progress__segments {
+  margin-top: 0.5rem;
+}
+
+.chapter-progress__segments-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.chapter-progress__segments-meta {
+  color: var(--text-secondary, #9ca3af);
+  font-size: 0.8rem;
+}
+
+.chapter-progress__segments-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.chapter-progress__segment {
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 0.4rem;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chapter-progress__segment-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.chapter-progress__segment-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.chapter-progress__segment-duration {
+  font-size: 0.75rem;
+  color: var(--text-secondary, #9ca3af);
+  font-family: monospace;
+}
+
+.chapter-progress__segment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.chapter-progress__segment-toggle {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #9ca3af);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.chapter-progress__segment-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text-primary, #f3f4f6);
+}
+
+.chapter-progress__segment-text {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--text-primary, #f3f4f6);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.theme-light .chapter-progress__segment-toggle {
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.theme-light .chapter-progress__segment-toggle:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.theme-light .chapter-progress__segment-text {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.chapter-progress__loading,
+.chapter-progress__empty,
+.chapter-progress__error,
+.chapter-progress__hint {
+  font-size: 0.85rem;
+  color: var(--text-secondary, #9ca3af);
+  padding: 0.5rem 0;
+}
+
+.chapter-progress__error {
+  color: #f87171;
+}
+
 @media (max-width: 640px) {
   .chapter-progress {
     padding: 0.5rem;
@@ -2011,6 +2128,25 @@ select {
   }
   .chapter-progress__status {
     align-items: flex-end;
+  }
+  .chapter-progress__segment-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.35rem;
+  }
+  .chapter-progress__segment-meta {
+    width: 100%;
+  }
+  .chapter-progress__segment-toggle {
+    align-self: flex-start;
+  }
+  .chapter-progress__segment-text {
+    font-size: 0.85rem;
+    padding: 0.5rem;
+    max-height: 200px;
+  }
+  .chapter-progress__audio {
+    max-width: 100%;
   }
 }
 

@@ -2371,20 +2371,34 @@ async def restart_backend(request: Request) -> dict:
     except Exception:
         pass  # No body or invalid JSON - use defaults
     _write_restart_marker(keep_cache=keep_cache, keep_finished=keep_finished)
+    print(f"\n{'='*60}")
+    print("🔄 RESTART SOLICITADO")
+    print(f"   Manter cache: {keep_cache}")
+    print(f"   Manter concluídos: {keep_finished}")
+    print(f"{'='*60}")
     logger.warning(
         "Restart requested via API (keep_cache=%s, keep_finished=%s)",
         keep_cache,
         keep_finished,
     )
+    print("🧹 Limpando jobs...")
     purged = _purge_all_jobs(
         "restart requested",
         keep_finished=keep_finished,
         purge_cache=not keep_cache,
     )
+    print(f"   ✓ {purged} job(s) removido(s)")
     if not keep_finished:
+        print("🗑️  Limpando outputs...")
         _clear_all_outputs(preserve_cache=keep_cache)
+        print("   ✓ Outputs limpos")
     if not keep_cache:
+        print("🗑️  Limpando cache...")
         _clear_all_caches()
+        print("   ✓ Cache limpo")
+    print(f"{'='*60}")
+    print("✅ LIMPEZA CONCLUÍDA - Reiniciando servidor...")
+    print(f"{'='*60}\n")
     asyncio.create_task(_schedule_restart())
     return {
         "status": "restarting",
@@ -4069,6 +4083,55 @@ async def process_conversion(job_id: str) -> None:
                 def _progress_callback(segment_text: str, total_text_chars: int = 0) -> None:
                     _advance_chapter_progress(idx, segment_text, total_text_chars)
 
+                # Streaming: create chunk directory and callback for progressive playback
+                chunk_dir = _chapter_chunk_dir(job_id, idx, ensure=True)
+                try:
+                    # Clear previous chunks for this chapter
+                    for old_file in chunk_dir.glob("chunk_*.mp3"):
+                        old_file.unlink(missing_ok=True)
+                    manifest_path = chunk_dir / "manifest.json"
+                    if manifest_path.exists():
+                        manifest_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+
+                def _chunk_callback(
+                    segment_index: int, temp_path: Path, segment_text: str = ""
+                ) -> None:
+                    """Save synthesized segment for streaming playback."""
+                    try:
+                        target = chunk_dir / f"chunk_{segment_index:04d}{temp_path.suffix}"
+                        shutil.copy2(temp_path, target)
+                        # Update manifest
+                        manifest_path = chunk_dir / "manifest.json"
+                        manifest: dict = {"jobId": job_id, "chapterIndex": idx, "chunks": []}
+                        if manifest_path.exists():
+                            try:
+                                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+                            except Exception:
+                                manifest = {"jobId": job_id, "chapterIndex": idx, "chunks": []}
+                        existing = [
+                            e for e in (manifest.get("chunks") or []) if isinstance(e, dict)
+                        ]
+                        existing = [e for e in existing if e.get("index") != segment_index]
+                        chunk_entry = {
+                            "index": segment_index,
+                            "file": target.name,
+                            "url": f"/api/streams/{job_id}/chapters/{idx}/chunks/{segment_index}",
+                        }
+                        # Include segment text for reading mode
+                        if segment_text:
+                            chunk_entry["text"] = segment_text
+                        existing.append(chunk_entry)
+                        manifest["chunks"] = sorted(existing, key=lambda x: x.get("index", 0))
+                        manifest["updatedAt"] = time.time()
+                        manifest["baseUrl"] = f"/api/streams/{job_id}/chapters/{idx}"
+                        manifest_path.write_text(
+                            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+                        )
+                    except Exception as exc:
+                        logger.debug("Chunk callback error for segment %d: %s", segment_index, exc)
+
                 auto_order: list[str] = []
                 attempted_auto: set[str] = set()
                 engine_runtime: Optional[float] = None
@@ -4277,8 +4340,10 @@ async def process_conversion(job_id: str) -> None:
                                         clean_text,
                                         tts_path,
                                         progress_callback=_progress_callback,
+                                        chunk_callback=_chunk_callback,
                                     )
                                 except TypeError:
+                                    # Fallback for engines that don't support callbacks
                                     synth_task = engine_obj.synthesize_async(clean_text, tts_path)
                                 await asyncio.wait_for(synth_task, timeout=chapter_timeout)
                                 last_stage_timestamp = time.time()

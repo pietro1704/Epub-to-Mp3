@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AudioChunkEntry,
   ChapterProgressEntry,
   ChapterStreamManifest,
 } from "../types/conversion";
@@ -43,6 +44,15 @@ export default function ChapterProgressList({
   const [manifestErrors, setManifestErrors] = useState<
     Record<number, string | null>
   >({});
+  // Track which segment texts are expanded (key: "chapterIndex-segmentIndex")
+  const [expandedTexts, setExpandedTexts] = useState<Record<string, boolean>>(
+    {},
+  );
+
+  const toggleSegmentText = (chapterIndex: number, segmentIndex: number) => {
+    const key = `${chapterIndex}-${segmentIndex}`;
+    setExpandedTexts((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
 
   const completedCount = entries.filter(
     (entry) => entry.status === "completed",
@@ -136,7 +146,7 @@ export default function ChapterProgressList({
         }
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Falha ao carregar chunks";
+          err instanceof Error ? err.message : "Falha ao carregar segments";
         setManifestErrors((prev) => ({ ...prev, [chapterIndex]: message }));
       } finally {
         if (!silent) {
@@ -163,15 +173,16 @@ export default function ChapterProgressList({
     return () => window.clearInterval(id);
   }, [jobId, entries, expanded, fetchManifest]);
 
-  const chunkCountLabel = useCallback(
+  const segmentCountLabel = useCallback(
     (count: number) => {
-      if (count <= 0) return locale === "pt" ? "sem chunks" : "no chunks yet";
-      return locale === "pt" ? `${count} chunks` : `${count} chunks`;
+      if (count <= 0)
+        return locale === "pt" ? "sem segmentos" : "no segments yet";
+      return locale === "pt" ? `${count} segmentos` : `${count} segments`;
     },
     [locale],
   );
 
-  const chunkDurationLabel = useCallback((value?: number) => {
+  const segmentDurationLabel = useCallback((value?: number) => {
     if (typeof value !== "number" || !Number.isFinite(value)) return null;
     const minutes = Math.floor(value / 60);
     const seconds = Math.round(value % 60);
@@ -215,7 +226,7 @@ export default function ChapterProgressList({
           const manifest = manifests[entry.index];
           const loading = Boolean(manifestLoading[entry.index]);
           const manifestError = manifestErrors[entry.index];
-          const chunks = manifest?.chunks ?? [];
+          const segments = manifest?.chunks ?? [];
           return (
             <li
               key={`chapter-${entry.index}`}
@@ -314,23 +325,23 @@ export default function ChapterProgressList({
                       </audio>
                     </div>
                   )}
-                  <div className="chapter-progress__chunks">
-                    <div className="chapter-progress__chunks-header">
+                  <div className="chapter-progress__segments">
+                    <div className="chapter-progress__segments-header">
                       <strong>
                         {locale === "pt"
-                          ? "Chunks do capítulo"
-                          : "Chapter chunks"}
+                          ? "Segmentos do capítulo"
+                          : "Chapter segments"}
                       </strong>
-                      <span className="chapter-progress__chunks-meta">
-                        {chunks.length > 0
-                          ? chunkCountLabel(chunks.length)
+                      <span className="chapter-progress__segments-meta">
+                        {segments.length > 0
+                          ? segmentCountLabel(segments.length)
                           : status === "completed" && !loading
                             ? locale === "pt"
-                              ? "Sem chunks disponíveis"
-                              : "No chunks available"
+                              ? "Sem segmentos disponíveis"
+                              : "No segments available"
                             : locale === "pt"
-                              ? "Aguardando chunks..."
-                              : "Waiting for chunks..."}
+                              ? "Aguardando segmentos..."
+                              : "Waiting for segments..."}
                       </span>
                     </div>
                     {manifestError && (
@@ -339,55 +350,95 @@ export default function ChapterProgressList({
                     {loading && (
                       <p className="chapter-progress__loading">
                         {locale === "pt"
-                          ? "Carregando chunks..."
-                          : "Loading chunks..."}
+                          ? "Carregando segmentos..."
+                          : "Loading segments..."}
                       </p>
                     )}
-                    {chunks.length > 0 && (
-                      <ul className="chapter-progress__chunks-list">
-                        {chunks.map((chunk) => (
-                          <li
-                            key={`chunk-${entry.index}-${chunk.index}`}
-                            className="chapter-progress__chunk"
-                          >
-                            <div className="chapter-progress__chunk-meta">
-                              <span className="chapter-progress__chunk-title">
-                                {locale === "pt"
-                                  ? `Chunk ${chunk.index + 1}`
-                                  : `Chunk ${chunk.index + 1}`}
-                              </span>
-                              {chunk.durationSeconds !== undefined && (
-                                <span className="chapter-progress__chunk-duration">
-                                  {chunkDurationLabel(chunk.durationSeconds)}
-                                </span>
-                              )}
-                            </div>
-                            <audio
-                              controls
-                              preload="metadata"
-                              className="chapter-progress__audio"
+                    {segments.length > 0 && (
+                      <ul className="chapter-progress__segments-list">
+                        {segments.map((segment: AudioChunkEntry) => {
+                          const textKey = `${entry.index}-${segment.index}`;
+                          const isTextExpanded = Boolean(
+                            expandedTexts[textKey],
+                          );
+                          const hasText = Boolean(segment.text?.trim());
+                          return (
+                            <li
+                              key={`segment-${entry.index}-${segment.index}`}
+                              className="chapter-progress__segment"
                             >
-                              <source src={chunk.url} type="audio/mpeg" />
-                              {locale === "pt"
-                                ? "Seu navegador não suporta áudio"
-                                : "Your browser does not support audio"}
-                            </audio>
-                          </li>
-                        ))}
+                              <div className="chapter-progress__segment-header">
+                                <div className="chapter-progress__segment-meta">
+                                  <span className="chapter-progress__segment-title">
+                                    {locale === "pt"
+                                      ? `Segmento ${segment.index + 1}`
+                                      : `Segment ${segment.index + 1}`}
+                                  </span>
+                                  {segment.durationSeconds !== undefined && (
+                                    <span className="chapter-progress__segment-duration">
+                                      {segmentDurationLabel(
+                                        segment.durationSeconds,
+                                      )}
+                                    </span>
+                                  )}
+                                </div>
+                                {hasText && (
+                                  <button
+                                    type="button"
+                                    className="chapter-progress__segment-toggle"
+                                    onClick={() =>
+                                      toggleSegmentText(
+                                        entry.index,
+                                        segment.index,
+                                      )
+                                    }
+                                    title={
+                                      locale === "pt"
+                                        ? isTextExpanded
+                                          ? "Ocultar texto"
+                                          : "Ver texto"
+                                        : isTextExpanded
+                                          ? "Hide text"
+                                          : "Show text"
+                                    }
+                                  >
+                                    {isTextExpanded ? "▾" : "▸"}{" "}
+                                    {locale === "pt" ? "Texto" : "Text"}
+                                  </button>
+                                )}
+                              </div>
+                              <audio
+                                controls
+                                preload="metadata"
+                                className="chapter-progress__audio"
+                              >
+                                <source src={segment.url} type="audio/mpeg" />
+                                {locale === "pt"
+                                  ? "Seu navegador não suporta áudio"
+                                  : "Your browser does not support audio"}
+                              </audio>
+                              {isTextExpanded && hasText && (
+                                <div className="chapter-progress__segment-text">
+                                  {segment.text}
+                                </div>
+                              )}
+                            </li>
+                          );
+                        })}
                       </ul>
                     )}
-                    {!loading && chunks.length === 0 && (
+                    {!loading && segments.length === 0 && (
                       <p className="chapter-progress__empty">
                         {locale === "pt"
-                          ? "Nenhum chunk disponível ainda."
-                          : "No chunks available yet."}
+                          ? "Nenhum segmento disponível ainda."
+                          : "No segments available yet."}
                       </p>
                     )}
                     {!jobId && (
                       <p className="chapter-progress__hint">
                         {locale === "pt"
-                          ? "Inicie uma conversão para carregar os chunks."
-                          : "Start a conversion to load chunks."}
+                          ? "Inicie uma conversão para carregar os segmentos."
+                          : "Start a conversion to load segments."}
                       </p>
                     )}
                   </div>
