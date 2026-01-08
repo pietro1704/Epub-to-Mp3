@@ -64,6 +64,8 @@ class HealthMonitor:
         self._alerts: List[HealthAlert] = []
         self._max_snapshots = 1000  # Últimos ~30min com interval=2s
         self._max_alerts = 500
+        self._start_time = time.time()
+        self._last_leak_alert_ts: Optional[float] = None
 
         # Thresholds para alertas
         self.thresholds = {
@@ -72,6 +74,10 @@ class HealthMonitor:
             "gpu_memory_warning": 85.0,
             "gpu_memory_critical": 95.0,
             "heap_growth_rate_mb_per_min": 2000.0,  # 2GB/min = leak suspeito (TTS carrega modelos grandes)
+            # Ignora crescimento inicial enquanto modelos pesados carregam
+            "leak_warmup_seconds": 180.0,
+            # Evita flood de alerts repetidos enquanto investiga
+            "leak_alert_cooldown_seconds": 120.0,
         }
 
         # Baseline inicial
@@ -236,7 +242,11 @@ class HealthMonitor:
             )
 
         # Detectar memory leak (crescimento rápido)
-        if self._baseline_memory_mb and len(self._snapshots) > 30:
+        if (
+            self._baseline_memory_mb
+            and len(self._snapshots) > 30
+            and (time.time() - self._start_time) > self.thresholds["leak_warmup_seconds"]
+        ):
             # Últimos 60s (30 snapshots * 2s)
             recent_snapshots = self._snapshots[-30:]
             if recent_snapshots:
@@ -248,20 +258,27 @@ class HealthMonitor:
                     growth_rate = growth_mb / time_diff_min
 
                     if growth_rate > self.thresholds["heap_growth_rate_mb_per_min"]:
-                        heap_status = "warning"
-                        alerts.append(
-                            HealthAlert(
-                                timestamp=time.time(),
-                                severity="warning",
-                                category="heap",
-                                message=f"Memory leak detectado: +{growth_rate:.1f} MB/min",
-                                details={
-                                    "growth_mb": growth_mb,
-                                    "growth_rate_mb_per_min": growth_rate,
-                                    "current_mb": memory_mb,
-                                },
+                        now = time.time()
+                        last_alert = self._last_leak_alert_ts
+                        if (
+                            last_alert is None
+                            or (now - last_alert) > self.thresholds["leak_alert_cooldown_seconds"]
+                        ):
+                            heap_status = "warning"
+                            alerts.append(
+                                HealthAlert(
+                                    timestamp=now,
+                                    severity="warning",
+                                    category="heap",
+                                    message=f"Memory leak detectado: +{growth_rate:.1f} MB/min",
+                                    details={
+                                        "growth_mb": growth_mb,
+                                        "growth_rate_mb_per_min": growth_rate,
+                                        "current_mb": memory_mb,
+                                    },
+                                )
                             )
-                        )
+                            self._last_leak_alert_ts = now
 
         # Thread count
         thread_count = threading.active_count()

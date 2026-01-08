@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useRef } from "react";
-import { ChapterProgressEntry } from "../types/conversion";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  ChapterProgressEntry,
+  ChapterStreamManifest,
+} from "../types/conversion";
+import { conversionClient } from "../services/ConversionService";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
 
 interface ChapterProgressListProps {
   entries: ChapterProgressEntry[];
+  jobId?: string;
 }
 
 const STATUS_ICONS: Record<ChapterProgressEntry["status"], string> = {
@@ -16,8 +21,11 @@ const STATUS_ICONS: Record<ChapterProgressEntry["status"], string> = {
   retrying: "🔄",
 };
 
+const STREAM_REFRESH_MS = 3000;
+
 export default function ChapterProgressList({
   entries,
+  jobId,
 }: ChapterProgressListProps): JSX.Element | null {
   const t = useTranslations();
   const { locale } = useI18n();
@@ -25,6 +33,16 @@ export default function ChapterProgressList({
   const listRef = useRef<HTMLUListElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const hasEntries = entries.length > 0;
+  const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [manifests, setManifests] = useState<
+    Record<number, ChapterStreamManifest | null>
+  >({});
+  const [manifestLoading, setManifestLoading] = useState<
+    Record<number, boolean>
+  >({});
+  const [manifestErrors, setManifestErrors] = useState<
+    Record<number, string | null>
+  >({});
 
   const completedCount = entries.filter(
     (entry) => entry.status === "completed",
@@ -93,6 +111,75 @@ export default function ChapterProgressList({
     };
   }, []);
 
+  const toggleChapter = (chapterIndex: number) => {
+    setExpanded((prev) => {
+      const next = { ...prev, [chapterIndex]: !prev[chapterIndex] };
+      return next;
+    });
+  };
+
+  const fetchManifest = useCallback(
+    async (chapterIndex: number, silent = false) => {
+      if (!jobId || !conversionClient.getChapterManifest) return;
+      if (!silent) {
+        setManifestLoading((prev) => ({ ...prev, [chapterIndex]: true }));
+        setManifestErrors((prev) => ({ ...prev, [chapterIndex]: null }));
+      }
+      try {
+        const data = await conversionClient.getChapterManifest(
+          jobId,
+          chapterIndex,
+        );
+        if (data) {
+          setManifests((prev) => ({ ...prev, [chapterIndex]: data }));
+          setManifestErrors((prev) => ({ ...prev, [chapterIndex]: null }));
+        }
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Falha ao carregar chunks";
+        setManifestErrors((prev) => ({ ...prev, [chapterIndex]: message }));
+      } finally {
+        if (!silent) {
+          setManifestLoading((prev) => ({ ...prev, [chapterIndex]: false }));
+        }
+      }
+    },
+    [jobId],
+  );
+
+  useEffect(() => {
+    // Keep streaming chapters refreshed while they process
+    if (!jobId) return;
+    const openIndices = entries
+      .filter((entry) => expanded[entry.index])
+      .map((entry) => entry.index);
+    if (openIndices.length === 0) return;
+
+    const refresh = () => {
+      openIndices.forEach((index) => fetchManifest(index, true));
+    };
+    refresh();
+    const id = window.setInterval(refresh, STREAM_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [jobId, entries, expanded, fetchManifest]);
+
+  const chunkCountLabel = useCallback(
+    (count: number) => {
+      if (count <= 0) return locale === "pt" ? "sem chunks" : "no chunks yet";
+      return locale === "pt" ? `${count} chunks` : `${count} chunks`;
+    },
+    [locale],
+  );
+
+  const chunkDurationLabel = useCallback((value?: number) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) return null;
+    const minutes = Math.floor(value / 60);
+    const seconds = Math.round(value % 60);
+    return `${minutes.toString().padStart(2, "0")}:${seconds
+      .toString()
+      .padStart(2, "0")}`;
+  }, []);
+
   if (!hasEntries) {
     return null;
   }
@@ -124,43 +211,58 @@ export default function ChapterProgressList({
         {entries.map((entry) => {
           const status = entry.status;
           const statusLabel = t.status.chapterStatuses?.[status] ?? status;
+          const isExpanded = Boolean(expanded[entry.index]);
+          const manifest = manifests[entry.index];
+          const loading = Boolean(manifestLoading[entry.index]);
+          const manifestError = manifestErrors[entry.index];
+          const chunks = manifest?.chunks ?? [];
           return (
             <li
               key={`chapter-${entry.index}`}
               className={`chapter-progress__item chapter-progress__item--${status}`}
             >
-              <span className="chapter-progress__icon" aria-hidden="true">
-                {STATUS_ICONS[status] ?? "•"}
-              </span>
-              <span className="chapter-progress__name">
-                {entry.index}. {entry.name}
-              </span>
-              <span
-                className="chapter-progress__status"
-                aria-label={statusLabel}
+              <button
+                type="button"
+                className="chapter-progress__item-header"
+                aria-expanded={isExpanded}
+                onClick={() => {
+                  toggleChapter(entry.index);
+                  if (!isExpanded && jobId) {
+                    fetchManifest(entry.index);
+                  }
+                }}
               >
-                {statusLabel}
-                {/* Retry information */}
-                {entry.status === "retrying" && (
-                  <span className="chapter-progress__retry">
-                    {entry.retryCount !== undefined &&
-                      entry.maxRetries !== undefined && (
-                        <span className="chapter-progress__retry-count">
-                          ({entry.retryCount}/{entry.maxRetries})
+                <span className="chapter-progress__icon" aria-hidden="true">
+                  {STATUS_ICONS[status] ?? "•"}
+                </span>
+                <span className="chapter-progress__name">
+                  {entry.index}. {entry.name}
+                </span>
+                <span
+                  className="chapter-progress__status"
+                  aria-label={statusLabel}
+                >
+                  {statusLabel}
+                  {/* Retry information */}
+                  {entry.status === "retrying" && (
+                    <span className="chapter-progress__retry">
+                      {entry.retryCount !== undefined &&
+                        entry.maxRetries !== undefined && (
+                          <span className="chapter-progress__retry-count">
+                            ({entry.retryCount}/{entry.maxRetries})
+                          </span>
+                        )}
+                      {entry.paramAdjustment && (
+                        <span
+                          className="chapter-progress__param-adj"
+                          title={entry.retryReason}
+                        >
+                          {entry.paramAdjustment}
                         </span>
                       )}
-                    {entry.paramAdjustment && (
-                      <span
-                        className="chapter-progress__param-adj"
-                        title={entry.retryReason}
-                      >
-                        {entry.paramAdjustment}
-                      </span>
-                    )}
-                  </span>
-                )}
-                {entry.status === "completed" && (
-                  <>
+                    </span>
+                  )}
+                  {entry.status === "completed" && (
                     <span className="chapter-progress__time">
                       {formatChapterDuration(entry.elapsedSeconds, locale) ??
                         "--"}
@@ -182,22 +284,115 @@ export default function ChapterProgressList({
                           </span>
                         )}
                     </span>
-                    {entry.downloadUrl && (
+                  )}
+                  <span
+                    className="chapter-progress__chevron"
+                    aria-hidden="true"
+                  >
+                    {isExpanded ? "▾" : "▸"}
+                  </span>
+                </span>
+              </button>
+              {isExpanded && (
+                <div className="chapter-progress__details">
+                  {entry.downloadUrl && (
+                    <div className="chapter-progress__download-audio">
+                      <strong>
+                        {locale === "pt"
+                          ? "Capítulo completo:"
+                          : "Full chapter:"}
+                      </strong>
                       <audio
                         controls
                         preload="metadata"
                         className="chapter-progress__audio"
-                        onClick={(e) => e.stopPropagation()}
                       >
                         <source src={entry.downloadUrl} type="audio/mpeg" />
                         {locale === "pt"
                           ? "Seu navegador não suporta áudio"
                           : "Your browser does not support audio"}
                       </audio>
+                    </div>
+                  )}
+                  <div className="chapter-progress__chunks">
+                    <div className="chapter-progress__chunks-header">
+                      <strong>
+                        {locale === "pt"
+                          ? "Chunks do capítulo"
+                          : "Chapter chunks"}
+                      </strong>
+                      <span className="chapter-progress__chunks-meta">
+                        {chunks.length > 0
+                          ? chunkCountLabel(chunks.length)
+                          : status === "completed" && !loading
+                            ? locale === "pt"
+                              ? "Sem chunks disponíveis"
+                              : "No chunks available"
+                            : locale === "pt"
+                              ? "Aguardando chunks..."
+                              : "Waiting for chunks..."}
+                      </span>
+                    </div>
+                    {manifestError && (
+                      <p className="chapter-progress__error">{manifestError}</p>
                     )}
-                  </>
-                )}
-              </span>
+                    {loading && (
+                      <p className="chapter-progress__loading">
+                        {locale === "pt"
+                          ? "Carregando chunks..."
+                          : "Loading chunks..."}
+                      </p>
+                    )}
+                    {chunks.length > 0 && (
+                      <ul className="chapter-progress__chunks-list">
+                        {chunks.map((chunk) => (
+                          <li
+                            key={`chunk-${entry.index}-${chunk.index}`}
+                            className="chapter-progress__chunk"
+                          >
+                            <div className="chapter-progress__chunk-meta">
+                              <span className="chapter-progress__chunk-title">
+                                {locale === "pt"
+                                  ? `Chunk ${chunk.index + 1}`
+                                  : `Chunk ${chunk.index + 1}`}
+                              </span>
+                              {chunk.durationSeconds !== undefined && (
+                                <span className="chapter-progress__chunk-duration">
+                                  {chunkDurationLabel(chunk.durationSeconds)}
+                                </span>
+                              )}
+                            </div>
+                            <audio
+                              controls
+                              preload="metadata"
+                              className="chapter-progress__audio"
+                            >
+                              <source src={chunk.url} type="audio/mpeg" />
+                              {locale === "pt"
+                                ? "Seu navegador não suporta áudio"
+                                : "Your browser does not support audio"}
+                            </audio>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {!loading && chunks.length === 0 && (
+                      <p className="chapter-progress__empty">
+                        {locale === "pt"
+                          ? "Nenhum chunk disponível ainda."
+                          : "No chunks available yet."}
+                      </p>
+                    )}
+                    {!jobId && (
+                      <p className="chapter-progress__hint">
+                        {locale === "pt"
+                          ? "Inicie uma conversão para carregar os chunks."
+                          : "Start a conversion to load chunks."}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
             </li>
           );
         })}

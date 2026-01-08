@@ -251,7 +251,7 @@ export default function StatusPanel({
         coverUrl={coverUrl}
       />
       {chapterProgress && chapterProgress.length > 0 && (
-        <ChapterProgressList entries={chapterProgress} />
+        <ChapterProgressList entries={chapterProgress} jobId={jobId} />
       )}
 
       {showRawLog && (

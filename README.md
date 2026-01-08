@@ -147,6 +147,39 @@ export EDGE_MAX_CONCURRENCY=2
 
 Lowering chunks/seconds makes each Edge request finish faster; the fallback thresholds push huge chapters directly into Coqui/Piper so the queue never stalls.
 
+### Performance profiles (CLI vs local vs Hugging Face)
+
+Perf flags are now automatic: the app infers a profile (HF vs local vs CLI) from the runtime (SPACE_ID + hardware) and sets Edge/Coqui/Piper concurrency and chunk sizes for you. You can still override with env vars if needed.
+
+Set `PERF_PROFILE` to quickly dial concurrency without risking deadlocks/starvation (optional override):
+
+- `PERF_PROFILE=hf` (default on Hugging Face Spaces): caps Edge concurrency to 3, chapter parallelism to 2/3, and worker count to available vCPUs. This matches HF docs (shared CPU, often 2 vCPU) to avoid throttling or 403s.
+- `PERF_PROFILE=local` (default outside Spaces): balanced defaults from hardware auto-detect.
+- `PERF_PROFILE=cli`: higher local throughput; raises default Edge and worker caps (still bounded) for multi-core boxes.
+
+You can still override individual knobs if needed:
+```bash
+# Hugging Face: stay under the rate/CPU limits
+export PERF_PROFILE=hf
+export EDGE_MAX_CONCURRENCY=2         # optional hard cap (default from profile)
+export EDGE_CHUNK_CHARS=9000          # smaller chunks avoid 60s timeouts
+export EDGE_MAX_SEGMENT_SECONDS=60
+export CHAPTER_PARALLEL_COUNT=1       # keep sequential to avoid CPU spikes
+export COQUI_MAX_WORKERS=2            # reduce torch threading on shared CPUs
+export PIPER_MAX_PROCS=1
+
+# Local dev workstation
+export PERF_PROFILE=local       # (default)
+
+# CLI on a beefy host
+export PERF_PROFILE=cli
+export EDGE_MAX_CONCURRENCY=4         # raise to 6-8 only if network/CPU allow
+export CHAPTER_PARALLEL_COUNT=2
+export CHAPTER_PARALLEL_MAX=4
+export COQUI_MAX_WORKERS=6            # keep below logical cores to avoid thrash
+export PIPER_MAX_PROCS=3
+```
+
 ## API Server
 
 ```bash

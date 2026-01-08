@@ -1038,8 +1038,77 @@ _sse_clients: Dict[str, set[asyncio.Queue]] = {}
 # Auto-detect hardware and optimize
 _hardware_profile = HardwareDetector.detect()
 HardwareDetector.apply_optimizations(_hardware_profile)
+
+
+def _infer_perf_profile(hw: HardwareProfile, choice: str, is_space: bool) -> str:
+    """Infer performance profile automatically (HF vs local vs CLI)."""
+    if choice in {"hf", "local", "cli"}:
+        return choice
+    if is_space:
+        return "hf"
+    # Small CPUs behave like HF; bigger boxes can run CLI mode safely
+    if (hw.cpu_physical or 0) <= 4 and not hw.has_gpu:
+        return "local"
+    return "cli"
+
+
+def _set_default(name: str, value: str) -> None:
+    if not os.getenv(name):
+        os.environ[name] = value
+
+
+def _apply_perf_defaults(profile: str, hw: HardwareProfile) -> None:
+    """Auto-apply sane defaults per profile without overriding explicit envs."""
+    if profile == "hf":
+        _set_default("EDGE_MAX_CONCURRENCY", "2")
+        _set_default("EDGE_MAX_CONCURRENCY_CAP", "3")
+        _set_default("CHAPTER_PARALLEL_COUNT", "1")
+        _set_default("CHAPTER_PARALLEL_MAX", "2")
+        _set_default("EDGE_CHUNK_CHARS", "9000")
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "60")
+        _set_default("EDGE_ENABLE_PARALLEL", "true")
+        _set_default("COQUI_MAX_WORKERS", "2")
+        _set_default("PIPER_MAX_PROCS", "1")
+    elif profile == "cli":
+        # Favor throughput on multi-core hosts while keeping caps sane
+        edge_cap = max(4, min(8, (hw.cpu_physical or 2) * 2))
+        _set_default("EDGE_MAX_CONCURRENCY", str(min(6, edge_cap)))
+        _set_default("EDGE_MAX_CONCURRENCY_CAP", str(edge_cap))
+        _set_default("CHAPTER_PARALLEL_COUNT", str(min(4, max(2, (hw.cpu_physical or 2) // 2 + 1))))
+        _set_default("CHAPTER_PARALLEL_MAX", str(min(6, (hw.cpu_physical or 2) * 2)))
+        _set_default("EDGE_CHUNK_CHARS", "11000")
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "75")
+        _set_default("EDGE_ENABLE_PARALLEL", "true")
+        _set_default("COQUI_MAX_WORKERS", str(min(8, max(4, (hw.cpu_physical or 2) * 2))))
+        _set_default("PIPER_MAX_PROCS", str(min(4, max(2, (hw.cpu_physical or 2) // 2 + 1))))
+    else:  # local (balanced default)
+        edge_cap = max(3, min(6, (hw.cpu_physical or 2) + 2))
+        _set_default("EDGE_MAX_CONCURRENCY", str(edge_cap - 1))
+        _set_default("EDGE_MAX_CONCURRENCY_CAP", str(edge_cap))
+        _set_default("CHAPTER_PARALLEL_COUNT", "2")
+        _set_default("CHAPTER_PARALLEL_MAX", "3")
+        _set_default("EDGE_CHUNK_CHARS", "10000")
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "70")
+        _set_default("EDGE_ENABLE_PARALLEL", "true")
+        _set_default("COQUI_MAX_WORKERS", str(min(6, max(3, (hw.cpu_physical or 2)))))
+        _set_default("PIPER_MAX_PROCS", "2")
+
+
+# Performance profile (auto = HF-safe on Spaces, local otherwise)
+_perf_profile_env = (os.getenv("PERF_PROFILE") or "auto").strip().lower()
+if _perf_profile_env not in {"auto", "hf", "local", "cli"}:
+    _perf_profile_env = "auto"
+_perf_profile = _infer_perf_profile(
+    _hardware_profile, _perf_profile_env, bool(os.getenv("SPACE_ID"))
+)
+_apply_perf_defaults(_perf_profile, _hardware_profile)
+
 # Research-based: 4 concurrent default (safe: 2-4, >8 causes 403)
 edge_recommended = max(2, min(6, int(_hardware_profile.recommended_concurrency or 4)))
+if _perf_profile == "hf":
+    edge_recommended = min(edge_recommended, 3)
+elif _perf_profile == "cli":
+    edge_recommended = min(8, max(edge_recommended, (_hardware_profile.cpu_physical or 2) * 2))
 if FORCE_TURBO:
     edge_recommended = max(
         edge_recommended, (_hardware_profile.cpu_physical or 2) * TURBO_SLOT_MULTIPLIER
@@ -1049,7 +1118,7 @@ if not os.getenv("EDGE_MAX_CONCURRENCY"):
 logger.info(
     f"Hardware auto-detected: {_hardware_profile.performance_tier} tier, "
     f"EDGE_MAX_CONCURRENCY={os.getenv('EDGE_MAX_CONCURRENCY')} "
-    f"{'(turbo mode)' if FORCE_TURBO else ''}"
+    f"{'(turbo mode)' if FORCE_TURBO else ''} (perf_profile={_perf_profile})"
 )
 
 try:
@@ -1092,6 +1161,19 @@ _WORKER_CAP = max(
         max(2, (_hardware_profile.cpu_physical or 1) * TURBO_SLOT_MULTIPLIER),
     ),
 )
+
+# Apply profile-specific caps after base calculations to avoid starvation on HF
+if _perf_profile == "hf":
+    _PARALLEL_SLOTS_DEFAULT = min(_PARALLEL_SLOTS_DEFAULT, 2)
+    _CHAPTER_PARALLEL_MAX = min(_CHAPTER_PARALLEL_MAX, 3)
+    _WORKER_CAP = min(_WORKER_CAP, max(2, (_hardware_profile.cpu_physical or 1)))
+    os.environ.setdefault("EDGE_MAX_CONCURRENCY_CAP", "4")
+elif _perf_profile == "cli":
+    _PARALLEL_SLOTS_DEFAULT = max(
+        _PARALLEL_SLOTS_DEFAULT, min(4, (_hardware_profile.cpu_physical or 1) * 2)
+    )
+    _CHAPTER_PARALLEL_MAX = max(_CHAPTER_PARALLEL_MAX, min(6, _PARALLEL_SLOTS_DEFAULT + 1))
+    _WORKER_CAP = min(max(_WORKER_CAP, (_hardware_profile.cpu_physical or 1) * 2), WORKER_MAX)
 
 # Background task for periodic job cleanup
 _cleanup_task: Optional[asyncio.Task] = None

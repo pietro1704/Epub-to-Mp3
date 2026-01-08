@@ -611,7 +611,16 @@ export class HttpConversionClient implements ConversionClient {
       if (!payload || !Array.isArray(payload.chunks)) {
         return null;
       }
-      return payload;
+      const normalizedChunks = payload.chunks
+        .map((chunk, idx) => ({
+          ...chunk,
+          index:
+            typeof chunk.index === "number" && Number.isFinite(chunk.index)
+              ? chunk.index
+              : idx,
+        }))
+        .sort((a, b) => a.index - b.index);
+      return { ...payload, chunks: normalizedChunks };
     } catch (error) {
       console.warn(
         "[ConversionClient] Failed to fetch stream manifest:",

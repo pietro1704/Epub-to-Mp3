@@ -100,12 +100,21 @@ export default function StreamingAudioPlayer({
           timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS);
           return;
         }
-        setManifest(data);
-        const nextChunk = (data.chunks || []).find(
+        const sortedChunks = (data.chunks || []).slice().sort((a, b) => {
+          if (typeof a.index !== "number") return -1;
+          if (typeof b.index !== "number") return 1;
+          return a.index - b.index;
+        });
+        const normalizedManifest = { ...data, chunks: sortedChunks };
+        setManifest(normalizedManifest);
+        const nextChunk = sortedChunks.find(
           (chunk) =>
             typeof chunk.index === "number" && chunk.index >= currentChunk,
         );
         if (nextChunk && nextChunk.url) {
+          if (nextChunk.index !== currentChunk) {
+            setCurrentChunk(nextChunk.index);
+          }
           setSrc(nextChunk.url);
           setWaiting(false);
         } else {
