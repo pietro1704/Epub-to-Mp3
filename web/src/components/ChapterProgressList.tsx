@@ -22,7 +22,7 @@ const STATUS_ICONS: Record<ChapterProgressEntry["status"], string> = {
   retrying: "🔄",
 };
 
-const STREAM_REFRESH_MS = 3000;
+const STREAM_REFRESH_MS = 1500;
 
 export default function ChapterProgressList({
   entries,
@@ -156,6 +156,30 @@ export default function ChapterProgressList({
     },
     [jobId],
   );
+
+  // Auto-expand processing chapters so segments are visible immediately
+  useEffect(() => {
+    if (!jobId) return;
+    const processingIndices = entries
+      .filter(
+        (entry) => entry.status === "processing" || entry.status === "retrying",
+      )
+      .map((entry) => entry.index);
+
+    if (processingIndices.length > 0) {
+      setExpanded((prev) => {
+        const next = { ...prev };
+        let changed = false;
+        for (const idx of processingIndices) {
+          if (!next[idx]) {
+            next[idx] = true;
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    }
+  }, [jobId, entries]);
 
   useEffect(() => {
     // Keep streaming chapters refreshed while they process

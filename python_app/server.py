@@ -5043,6 +5043,9 @@ async def process_conversion(job_id: str) -> None:
         job["resumeRequested"] = False
         _persist_job(job_id)
 
+        # **CRITICAL**: Ensure final broadcast so frontend transitions to step 3
+        _schedule_job_broadcast(job_id, job)
+
         if job.get("_purgeRequested"):
             _purge_job_data(job_id, job)
             return
