@@ -106,12 +106,6 @@ EDGE_MAX_CONCURRENCY=4          # Parallel requests
 EDGE_SAFE_CHAPTER_PARALLEL=8    # Parallel chapters
 ```
 
-### R2 Storage (optional, for persistent outputs)
-```bash
-R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
-R2_BUCKET_NAME, R2_PUBLIC_URL
-```
-
 ## Design Patterns
 - **Factory**: TTSFactory creates engine instances by name
 - **Job Queue**: JobManager handles async conversion with progress callbacks

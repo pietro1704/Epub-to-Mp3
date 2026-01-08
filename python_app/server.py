@@ -53,7 +53,6 @@ from src.hardware_detector import HardwareDetector, HardwareProfile
 from src.job_manager import JobManager
 from src.language.detector import LanguageDetector
 from src.paths import OUTPUT_DIR
-from src.storage_manager import get_storage_manager
 from src.system_monitor import SystemMonitor
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
@@ -182,9 +181,6 @@ EDGE_AUTO_PARALLEL_CAPS = {
 # Job cleanup configuration
 COMPLETED_JOB_TTL_HOURS = 1  # Keep completed jobs for 1 hour
 CLEANUP_INTERVAL_SECONDS = 300  # Run cleanup every 5 minutes
-
-# Initialize storage manager (R2)
-storage = get_storage_manager()
 
 # CORS configuration - supports both local dev and Cloudflare deployment
 allowed_origins = [
@@ -2316,11 +2312,11 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
 @app.post("/api/cleanup")
 async def cleanup_old_files(max_age_hours: int = 48) -> dict:
     """
-    Cleanup old files from local storage and R2.
+    Cleanup old files from local storage.
 
     This endpoint should be called periodically (e.g., via cron job).
     """
-    result = {"local_deleted": 0, "r2_deleted": 0, "errors": []}
+    result = {"local_deleted": 0, "errors": []}
 
     # Cleanup local files
     import time
@@ -2342,11 +2338,6 @@ async def cleanup_old_files(max_age_hours: int = 48) -> dict:
                 logger.info(f"Deleted old job directory: {job_dir.name}")
             except Exception as e:
                 result["errors"].append(f"Failed to delete {job_dir.name}: {str(e)}")
-
-    # Cleanup R2 files
-    if storage.is_enabled():
-        r2_deleted = storage.cleanup_old_files(max_age_hours=max_age_hours)
-        result["r2_deleted"] = r2_deleted
 
     # Cleanup old job state files
     jobs_deleted = job_manager.cleanup_old_jobs(max_age_hours=max_age_hours)
@@ -2425,7 +2416,6 @@ async def health_check() -> dict:
     health_data = {
         "status": "healthy",
         "storage": {
-            "r2_enabled": storage.is_enabled(),
             "local_output_dir": str(output_dir),
         },
         "limits": {
@@ -2850,25 +2840,6 @@ def _cleanup_job_inputs(job: dict) -> None:
         shutil.rmtree(upload_dir_path, ignore_errors=True)
 
 
-def _delete_job_storage_assets(job_id: str, job: dict) -> None:
-    """Best-effort deletion of stored outputs (R2) for a job."""
-    if not storage.is_enabled():
-        return
-    outputs = job.get("outputs") or []
-    for asset in outputs:
-        key = asset.get("r2_key") or (
-            f"{job_id}/{asset.get('name')}" if asset.get("name") else None
-        )
-        if key:
-            storage.delete_file(key)
-    cover_entry = job.get("cover") or {}
-    cover_key = cover_entry.get("r2_key") or (
-        f"{job_id}/{cover_entry.get('name')}" if cover_entry.get("name") else None
-    )
-    if cover_key:
-        storage.delete_file(cover_key)
-
-
 def _purge_job_data(job_id: str, job: Optional[dict] = None, *, purge_cache: bool = True) -> None:
     """Remove all persisted data and artifacts for a job."""
     _remove_job_from_queue(job_id)
@@ -2876,7 +2847,6 @@ def _purge_job_data(job_id: str, job: Optional[dict] = None, *, purge_cache: boo
         if purge_cache:
             _clear_job_cache(job)
         _cleanup_job_inputs(job)
-        _delete_job_storage_assets(job_id, job)
     _cleanup_job_output(job_id)
     job_manager.delete_job(job_id)
     jobs.pop(job_id, None)
@@ -4947,61 +4917,8 @@ async def process_conversion(job_id: str) -> None:
                     cover_entry["url"] = f"/api/outputs/{job_id}/{cover_entry['name']}"
                     job["coverUrl"] = cover_entry["url"]
 
-        # Upload to R2 if configured
-        if storage.is_enabled():
-            _append_event(job, "")
-            _append_event(job, "☁️ Enviando arquivos para storage permanente...")
-
-            # Upload individual MP3s to R2
-            for asset in outputs:
-                mp3_path = job_output_dir / asset["name"]
-                if mp3_path.exists():
-                    result = storage.upload_file(
-                        mp3_path, object_key=f"{job_id}/{asset['name']}", ttl_hours=48
-                    )
-                    if result.success:
-                        asset["url"] = result.public_url  # Update to R2 URL
-                        asset["r2_key"] = result.object_key
-                        _append_event(job, f"  ✅ {asset['name']} → R2")
-                    else:
-                        _append_event(job, f"  ⚠️ {asset['name']} → fallback local")
-                        # Keep local URL as fallback
-                        asset["url"] = f"/api/outputs/{job_id}/{asset['name']}"
-
-            # Upload ZIP to R2
-            zip_result = storage.upload_file(
-                zip_file, object_key=f"{job_id}/{zip_file.name}", ttl_hours=48
-            )
-
-            if zip_result.success:
-                zip_url = zip_result.public_url
-                _append_event(job, f"  ✅ {zip_file.name} → R2")
-            else:
-                zip_url = f"/api/outputs/{job_id}/{zip_file.name}"
-                _append_event(job, f"  ⚠️ {zip_file.name} → fallback local")
-
-            cover_entry = job.get("cover")
-            if cover_entry and cover_entry.get("name"):
-                cover_path = job_output_dir / cover_entry["name"]
-                if cover_path.exists():
-                    cover_result = storage.upload_file(
-                        cover_path,
-                        object_key=f"{job_id}/{cover_entry['name']}",
-                        ttl_hours=48,
-                    )
-                    if cover_result.success:
-                        cover_entry["url"] = cover_result.public_url
-                        cover_entry["r2_key"] = cover_result.object_key
-                        job["coverUrl"] = cover_result.public_url
-                        _append_event(job, "  ✅ Capa → R2")
-                    else:
-                        _append_event(job, "  ⚠️ Capa → fallback local")
-        else:
-            # R2 not configured - use local URLs
-            _append_event(job, "")
-            _append_event(job, "ℹ️ R2 não configurado - arquivos salvos localmente")
-            _append_event(job, "⚠️ Arquivos serão perdidos após restart do servidor")
-            zip_url = f"/api/outputs/{job_id}/{zip_file.name}"
+        # Local storage - files are served from local output directory
+        zip_url = f"/api/outputs/{job_id}/{zip_file.name}"
 
         outputs.insert(
             0,
