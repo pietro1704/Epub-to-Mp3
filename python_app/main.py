@@ -2737,6 +2737,8 @@ class ConverterApplication:
             priority_selectors=getattr(args, "priority", []) or [],
             speak_formatting_cues=cues_enabled,
             formatting_locale=self.localization.language,
+            max_auto_retries=getattr(args, "retry_failed_rounds", None),
+            manual_retry_failed=getattr(args, "retry_failed_manual", False),
         )
 
 
@@ -2852,6 +2854,19 @@ def _add_conversion_arguments(
         dest="priority",
         metavar="PRIORITY",
         help="Prioritize chapters before the rest (same syntax as --chapter)",
+    )
+    parser.add_argument(
+        "--retry-failed",
+        dest="retry_failed_rounds",
+        metavar="N",
+        type=int,
+        help="Number of automatic retry rounds for failed chapters (default: auto). Use 0 to disable.",
+    )
+    parser.add_argument(
+        "--retry-failed-manual",
+        dest="retry_failed_manual",
+        action="store_true",
+        help="After auto retries, force one extra pass only for failed chapters.",
     )
     parser.add_argument(
         "--batch",

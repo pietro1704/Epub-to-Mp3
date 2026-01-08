@@ -1667,7 +1667,7 @@ class AudioConverter:
         for unresolved in unresolved_failures:
             print(f"⚠️ Não foi possível correlacionar capítulo com falha: {unresolved}")
 
-        max_retry_rounds = 5
+        max_retry_rounds = 2
         extra_retry_value = None
         if getattr(config, "extra", None):
             extra_retry_value = config.extra.get("max_auto_retries") or config.extra.get(
@@ -1700,6 +1700,10 @@ class AudioConverter:
         edge_rescue_applied = False
         edge_rescue_aggressive = False
         forced_offline_once = False
+        manual_retry_requested = False
+        if getattr(config, "extra", None):
+            manual_flag = config.extra.get("manual_retry_failed")
+            manual_retry_requested = str(manual_flag).lower() in {"1", "true", "yes", "on"}
 
         retry_round = 1
         while pending_failures and retry_round <= max_retry_rounds:
@@ -1813,14 +1817,14 @@ class AudioConverter:
                 cover_art=cover_art,
             )
 
-            total_output_files.extend(retry_result.output_files)
-            retry_error_map = self._build_error_map(retry_result.errors)
-            normalised_retry, unresolved_retry = self._normalise_failure_keys(
-                retry_error_map, chapter_lookup
-            )
-            for unresolved, message in unresolved_retry.items():
-                print(f"⚠️ Falha retornada sem correspondência: {unresolved}")
-                unresolved_pool[unresolved] = message or "Motivo desconhecido"
+        total_output_files.extend(retry_result.output_files)
+        retry_error_map = self._build_error_map(retry_result.errors)
+        normalised_retry, unresolved_retry = self._normalise_failure_keys(
+            retry_error_map, chapter_lookup
+        )
+        for unresolved, message in unresolved_retry.items():
+            print(f"⚠️ Falha retornada sem correspondência: {unresolved}")
+            unresolved_pool[unresolved] = message or "Motivo desconhecido"
 
             for chapter_obj, original_idx, canonical_label in chapters_to_retry_info:
                 attempts_used[canonical_label] = attempts_used.get(canonical_label, 1) + 1
@@ -1832,6 +1836,96 @@ class AudioConverter:
                     pending_failures.pop(canonical_label, None)
 
             retry_round += 1
+
+        # Final rescue: switch engine for remaining failures (auto mode only)
+        if pending_failures and is_auto_engine and auto_engine_pool:
+            rescue_engine = None
+            if "piper" in auto_engine_pool:
+                rescue_engine = "piper"
+            elif "coqui" in auto_engine_pool:
+                rescue_engine = "coqui"
+            if rescue_engine:
+                failed_names = list(pending_failures.keys())
+                chapters_to_retry_info = []
+                for name in failed_names:
+                    entry = self._lookup_chapter_entry(chapter_lookup, name)
+                    if entry:
+                        chapter_obj, original_idx, canonical_label = entry
+                        chapters_to_retry_info.append((chapter_obj, original_idx, canonical_label))
+                        attempts_used.setdefault(canonical_label, 1)
+                chapters_to_retry_info.sort(key=lambda item: item[1])
+                chapters_to_retry = [item[0] for item in chapters_to_retry_info]
+                if chapters_to_retry:
+                    print(
+                        f"\n🛟 Resgate final: reprocessando {len(chapters_to_retry)} capítulo(s) com {rescue_engine.upper()}"
+                    )
+                    rescue_config = replace(
+                        config,
+                        engine=rescue_engine,
+                        voice=None,
+                        force_reprocess=True,
+                        edge_enable_parallel=False,
+                    )
+                    rescue_config.extra = dict(rescue_config.extra or {})
+                    rescue_result = await self._convert_chapters_sequential(
+                        chapters_to_retry,
+                        engine_pool,
+                        temp_dir,
+                        rescue_config,
+                        is_auto_engine=is_auto_engine,
+                        auto_engine_pool=auto_engine_pool,
+                        book_title=book_title,
+                        book_author=book_author,
+                        cover_art=cover_art,
+                    )
+                    total_output_files.extend(rescue_result.output_files)
+                    retry_error_map = self._build_error_map(rescue_result.errors)
+                    normalised_retry, unresolved_retry = self._normalise_failure_keys(
+                        retry_error_map, chapter_lookup
+                    )
+                    for unresolved, message in unresolved_retry.items():
+                        unresolved_pool[unresolved] = message or "Motivo desconhecido"
+                    pending_failures = normalised_retry
+
+        if pending_failures and manual_retry_requested:
+            failed_names = list(pending_failures.keys())
+            chapters_to_retry_info = []
+            for name in failed_names:
+                entry = self._lookup_chapter_entry(chapter_lookup, name)
+                if entry:
+                    chapter_obj, original_idx, canonical_label = entry
+                    chapters_to_retry_info.append((chapter_obj, original_idx, canonical_label))
+                    attempts_used.setdefault(canonical_label, 1)
+            chapters_to_retry_info.sort(key=lambda item: item[1])
+            chapters_to_retry = [item[0] for item in chapters_to_retry_info]
+            if chapters_to_retry:
+                print(
+                    f"\n🔁 Retry manual solicitado: reprocessando {len(chapters_to_retry)} capítulo(s)"
+                )
+                manual_config = replace(config, force_reprocess=True)
+                manual_config.extra = dict(manual_config.extra or {})
+                manual_config.extra.pop("manual_retry_failed", None)
+                manual_result = await self._convert_chapters_sequential(
+                    chapters_to_retry,
+                    engine_pool,
+                    temp_dir,
+                    manual_config,
+                    is_auto_engine=is_auto_engine,
+                    auto_engine_pool=auto_engine_pool,
+                    book_title=book_title,
+                    book_author=book_author,
+                    cover_art=cover_art,
+                )
+                total_output_files.extend(manual_result.output_files)
+                retry_error_map = self._build_error_map(manual_result.errors)
+                normalised_retry, unresolved_retry = self._normalise_failure_keys(
+                    retry_error_map, chapter_lookup
+                )
+                for unresolved, message in unresolved_retry.items():
+                    unresolved_pool[unresolved] = message or "Motivo desconhecido"
+                pending_failures = normalised_retry
+            else:
+                print("ℹ️ Retry manual solicitado, mas nenhum capítulo restante para reprocessar.")
 
         if pending_failures:
             print(f"\n⚠️ Alguns capítulos ainda falharam após {max_retry_rounds} tentativa(s).")

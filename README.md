@@ -93,6 +93,11 @@ python -m python_app.main book.epub --chapter 3
 # Multiple specific chapters at once (comma-separated or repeated flag)
 python -m python_app.main book.epub --chapter 5.1,5.2,5.3
 
+# Retry failed chapters automatically (default 2 rounds) or disable/force extra
+python -m python_app.main book.epub --retry-failed 3            # up to 3 auto rounds
+python -m python_app.main book.epub --retry-failed 0            # disable auto retries
+python -m python_app.main book.epub --retry-failed-manual       # force one extra pass on failures
+
 # Skip footnotes
 python -m python_app.main book.epub --no-footnote
 

@@ -1921,6 +1921,7 @@ select {
   display: block;
   padding: 0.35rem 0.25rem;
   border-radius: 0.5rem;
+  word-break: break-word;
 }
 .chapter-progress__item-header {
   width: 100%;
@@ -1990,6 +1991,27 @@ select {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+@media (max-width: 640px) {
+  .chapter-progress {
+    padding: 0.5rem;
+  }
+  .chapter-progress__item {
+    padding: 0.4rem 0.35rem;
+  }
+  .chapter-progress__item-header {
+    grid-template-columns: 1.25rem 1fr auto;
+    gap: 0.4rem;
+    align-items: flex-start;
+  }
+  .chapter-progress__name {
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+  .chapter-progress__status {
+    align-items: flex-end;
+  }
 }
 
 .chapter-progress__audio {
