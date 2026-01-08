@@ -3385,8 +3385,13 @@ class AudioConverter:
         if not prioritized:
             return chapters
 
+        # Keep prioritized chapters in natural book order (ascending index),
+        # then append the remaining chapters also in natural order.
+        prioritized_sorted = [
+            chapter for idx, chapter in enumerate(chapters) if idx in seen_indices
+        ]
         remaining = [chapter for idx, chapter in enumerate(chapters) if idx not in seen_indices]
-        return prioritized + remaining
+        return prioritized_sorted + remaining
 
     def _install_requirements(self) -> bool:
         if self._requirements_attempted:
