@@ -1817,14 +1817,14 @@ class AudioConverter:
                 cover_art=cover_art,
             )
 
-        total_output_files.extend(retry_result.output_files)
-        retry_error_map = self._build_error_map(retry_result.errors)
-        normalised_retry, unresolved_retry = self._normalise_failure_keys(
-            retry_error_map, chapter_lookup
-        )
-        for unresolved, message in unresolved_retry.items():
-            print(f"⚠️ Falha retornada sem correspondência: {unresolved}")
-            unresolved_pool[unresolved] = message or "Motivo desconhecido"
+            total_output_files.extend(retry_result.output_files)
+            retry_error_map = self._build_error_map(retry_result.errors)
+            normalised_retry, unresolved_retry = self._normalise_failure_keys(
+                retry_error_map, chapter_lookup
+            )
+            for unresolved, message in unresolved_retry.items():
+                print(f"⚠️ Falha retornada sem correspondência: {unresolved}")
+                unresolved_pool[unresolved] = message or "Motivo desconhecido"
 
             for chapter_obj, original_idx, canonical_label in chapters_to_retry_info:
                 attempts_used[canonical_label] = attempts_used.get(canonical_label, 1) + 1
@@ -2728,8 +2728,7 @@ class AudioConverter:
                                 / f"chapter_{chapter_num:04d}"
                             )
                             try:
-                                if chunk_root.exists():
-                                    shutil.rmtree(chunk_root, ignore_errors=True)
+                                # **RESUME**: Don't delete existing chunks - Edge engine will resume
                                 chunk_root.mkdir(parents=True, exist_ok=True)
                             except Exception:
                                 chunk_root = None
@@ -2805,6 +2804,7 @@ class AudioConverter:
                                 formatting_segments=getattr(chapter, "formatting_segments", None),
                                 progress_callback=on_segment_complete,
                                 chunk_callback=chunk_callback,
+                                resume_chunks_dir=chunk_root,
                             )
                         )
                         stall_task = asyncio.create_task(
@@ -2926,6 +2926,7 @@ class AudioConverter:
                                     tts_output_path,
                                     formatting_segments=None,
                                     chunk_callback=chunk_callback,
+                                    resume_chunks_dir=chunk_root,
                                 ),
                                 timeout=fallback_timeout,
                             )
@@ -2983,6 +2984,7 @@ class AudioConverter:
                                         tts_output_path,
                                         formatting_segments=None,
                                         chunk_callback=chunk_callback,
+                                        resume_chunks_dir=chunk_root,
                                     ),
                                     timeout=emergency_timeout,
                                 )
@@ -3172,6 +3174,7 @@ class AudioConverter:
                                         output_path,
                                         formatting_segments=None,
                                         chunk_callback=chunk_callback,
+                                        resume_chunks_dir=chunk_root,
                                     ),
                                     timeout=retry_timeout,
                                 )

@@ -1154,6 +1154,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             extra={"max_auto_retries": 3},
             edge_auto_offline_chars=0,
             edge_auto_offline_seconds=0,
+            force_reprocess=True,
         )
 
         result = await self.converter.convert(reader, config)

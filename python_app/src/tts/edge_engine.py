@@ -608,6 +608,7 @@ class EdgeTTSEngine:
         formatting_segments=None,
         progress_callback=None,
         chunk_callback=None,
+        resume_chunks_dir: Optional[Path] = None,
     ) -> Optional[Path]:
         if not text:
             return None
@@ -673,6 +674,24 @@ class EdgeTTSEngine:
         if progress_callback:
             total_text_chars = sum(len(text) for _, text in segments_to_process)
 
+        # **RESUME**: Detect pre-existing chunks to resume from
+        pre_existing_chunks: Dict[int, Path] = {}
+        if resume_chunks_dir and resume_chunks_dir.exists():
+            for chunk_file in resume_chunks_dir.glob("chunk_*.mp3"):
+                try:
+                    # Extract segment index from filename: chunk_0000.mp3 -> 0
+                    chunk_idx = int(chunk_file.stem.split("_")[1])
+                    # Validate chunk file is not empty/corrupt (min 1KB)
+                    if chunk_file.stat().st_size >= 1024:
+                        pre_existing_chunks[chunk_idx] = chunk_file
+                except (ValueError, IndexError, OSError):
+                    pass
+            if pre_existing_chunks and self.verbose:
+                self._log(
+                    f"♻️ [RESUME] Encontrados {len(pre_existing_chunks)}/{len(segments_to_process)} "
+                    f"segmentos já processados, retomando do restante"
+                )
+
         # **PARALLEL OPTIMIZATION**: Process segments in batches when parallel mode is enabled
         if self._enable_parallel and self._rate_limiter and len(segments_to_process) > 1:
             if self.verbose:
@@ -684,6 +703,7 @@ class EdgeTTSEngine:
                 force_plain_segments,
                 progress_callback=progress_callback,
                 chunk_callback=chunk_callback,
+                pre_existing_chunks=pre_existing_chunks,
             )
 
         # **SEQUENTIAL MODE**: Original logic for compatibility
@@ -880,6 +900,7 @@ class EdgeTTSEngine:
         force_plain_segments: bool,
         progress_callback=None,
         chunk_callback=None,
+        pre_existing_chunks: Optional[Dict[int, Path]] = None,
     ) -> Optional[Path]:
         """Process segments in parallel batches for faster synthesis."""
         import tempfile
@@ -891,14 +912,29 @@ class EdgeTTSEngine:
         # Use dict to maintain segment order
         segment_files: Dict[int, Optional[Path]] = {i: None for i in range(total_segments)}
 
+        # **RESUME**: Pre-populate with existing chunks
+        if pre_existing_chunks:
+            for idx, existing_path in pre_existing_chunks.items():
+                if 0 <= idx < total_segments and existing_path.exists():
+                    segment_files[idx] = existing_path
+                    successful_segments += 1
+
         # **OPTIMIZED**: Process in fixed batches to avoid semaphore queue explosion
         # asyncio.gather respects rate limiter naturally without creating excessive queue
         completed_count = 0
 
         if self.verbose:
-            self._log(
-                f"🚀 [PARALLEL] Processando {total_segments} segmentos em batches de {batch_size}"
-            )
+            resumed_count = len(pre_existing_chunks) if pre_existing_chunks else 0
+            remaining = total_segments - resumed_count
+            if resumed_count > 0:
+                self._log(
+                    f"🚀 [PARALLEL] Processando {remaining} segmentos restantes "
+                    f"(♻️ {resumed_count} já prontos) em batches de {batch_size}"
+                )
+            else:
+                self._log(
+                    f"🚀 [PARALLEL] Processando {total_segments} segmentos em batches de {batch_size}"
+                )
 
         # Process segments in fixed batches
         for batch_idx, batch_start in enumerate(range(0, total_segments, batch_size)):
@@ -913,6 +949,13 @@ class EdgeTTSEngine:
             task_metadata = []  # (segment_idx, temp_path)
 
             for i, (voice, segment_text) in enumerate(batch_segments, start=batch_start):
+                # **RESUME**: Skip segments that already have files
+                if segment_files.get(i) is not None:
+                    completed_count += 1
+                    if self.verbose:
+                        self._log(f"♻️ [RESUME] Segmento {i + 1} já existe, pulando")
+                    continue
+
                 # Validate and prepare segment
                 if voice is None:
                     voice = self.voice or "en-US-GuyNeural"
