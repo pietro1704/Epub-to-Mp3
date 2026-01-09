@@ -61,6 +61,14 @@ class ConversionConfig:
     speak_formatting_cues: bool = True
     formatting_locale: str = "pt"
 
+    def __post_init__(self) -> None:
+        if self.output_dir is not None and not isinstance(self.output_dir, Path):
+            self.output_dir = Path(self.output_dir)
+        if self.model_path is not None and not isinstance(self.model_path, Path):
+            self.model_path = Path(self.model_path)
+        if self.cache_dir is not None and not isinstance(self.cache_dir, Path):
+            self.cache_dir = Path(self.cache_dir)
+
     def as_dict(self) -> Dict[str, object]:
         """Return a serialisable representation useful for debugging."""
         data: Dict[str, object] = {

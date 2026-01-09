@@ -73,6 +73,7 @@ packaging>=23.2,<24.0
 # DESENVOLVIMENTO (OPCIONAL)
 # =============================================================================
 pytest
+pytest-asyncio
 
 # =============================================================================
 # RESOLVENDO CONFLITOS IDENTIFICADOS:

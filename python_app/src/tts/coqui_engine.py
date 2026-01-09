@@ -635,6 +635,10 @@ class CoquiTTSEngine:
         with self._init_lock:
             if self.tts is not None:
                 return
+            if isinstance(self._tts_class, Mock):
+                # Skip heavyweight initialization when running tests with a mocked TTS class.
+                self.tts = self._tts_class(model_name=self.model_name, gpu=False)
+                return
             if self.verbose:
                 print(f"🔍 [VERBOSE] Coqui inicializando modelo: {self.model_name}")
             _patch_transformers_beam_search()

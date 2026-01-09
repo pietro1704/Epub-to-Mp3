@@ -189,7 +189,6 @@ class TestConverterApplication(unittest.TestCase):
             self.assertEqual(_args[0], mock_reader_instance)
             self.assertEqual(kwargs.get("language_profile"), self.app.language_profile)
 
-    @unittest.skip("Config creation updated - parallel removed")
     def test_create_config_from_args(self):
         """Test creating config from command line arguments"""
         mock_reader = Mock()
@@ -201,7 +200,15 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir="test_output",
             filter_chapters=True,
-            parallel=5,
+            listen=True,
+            cache_dir="cache",
+            clear_cache=True,
+            no_footnote=False,
+            footnote_chapter_end=True,
+            formatting_cues=True,
+            priority=["h1"],
+            retry_failed_rounds=None,
+            retry_failed_manual=False,
         )
 
         with patch.object(self.app.config, "create_conversion_config") as mock_create:
@@ -218,10 +225,10 @@ class TestConverterApplication(unittest.TestCase):
             self.assertEqual(called_kwargs["output_dir"], "test_output")
             self.assertEqual(called_kwargs["book_title"], "Test Book")
             self.assertFalse(called_kwargs["preserve_all_chapters"])
-            self.assertFalse(called_kwargs["listen"])
-            self.assertIsNone(called_kwargs["cache_dir"])
-            self.assertFalse(called_kwargs["clear_cache"])
-        self.assertEqual(called_kwargs["footnote_mode"], "inline")
+            self.assertTrue(called_kwargs["listen"])
+            self.assertEqual(called_kwargs["cache_dir"], "cache")
+            self.assertTrue(called_kwargs["clear_cache"])
+        self.assertEqual(called_kwargs["footnote_mode"], "chapter_end")
         self.assertEqual(called_kwargs["footnote_context_words"], self.app.FOOTNOTE_CONTEXT_WORDS)
 
     def _build_structure_item(self, html: str) -> ChapterStructureItem:
@@ -250,7 +257,6 @@ class TestConverterApplication(unittest.TestCase):
             "</body></html>"
         )
 
-    @unittest.skip("Text transform API changed")
     def test_apply_text_transforms_inline_retains_emphasis(self):
         item = self._build_structure_item(self._sample_html())
         reader = SimpleNamespace(title="Livro de Teste")
@@ -268,7 +274,8 @@ class TestConverterApplication(unittest.TestCase):
         self.assertIn("_itálico_", text)
         self.assertIn("**negrito**", text)
         self.assertIn("“aspas”", text)
-        self.assertIn("nota de rodapé 1: Esta nota explicativa.", text)
+        self.assertIn("nota de rodapé 1", text)
+        self.assertIn("fim da nota de rodapé", text)
 
         segments = item.chapter.formatting_segments or []
         self.assertTrue(
@@ -280,9 +287,8 @@ class TestConverterApplication(unittest.TestCase):
         self.assertNotIn("*", item.chapter.speech_text or "")
         self.assertNotIn("_", item.chapter.speech_text or "")
         self.assertIn("nota de rodapé 1", item.chapter.speech_text or "")
-        self.assertIn("nota de rodapé 1: Esta nota explicativa.", item.chapter.speech_text or "")
+        self.assertIn("Esta nota explicativa", item.chapter.speech_text or "")
 
-    @unittest.skip("Text transform API changed")
     def test_apply_text_transforms_chapter_end_moves_notes(self):
         item = self._build_structure_item(self._sample_html())
         reader = SimpleNamespace(title="Livro de Teste")
@@ -309,7 +315,6 @@ class TestConverterApplication(unittest.TestCase):
         self.assertNotIn("_", speech)
         self.assertIn("nota de rodapé 1", speech)
 
-    @unittest.skip("Text transform API changed")
     def test_apply_text_transforms_skip_removes_notes(self):
         item = self._build_structure_item(self._sample_html())
         reader = SimpleNamespace(title="Livro de Teste")

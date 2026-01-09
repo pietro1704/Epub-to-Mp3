@@ -30,7 +30,6 @@ class TestConversionConfig(unittest.TestCase):
         self.assertEqual(config.book_title, "")
         self.assertTrue(config.preserve_all_chapters)
 
-    @unittest.skip("Parallel processing removed - sequential only")
     def test_config_creation_full(self):
         """Test config creation with all parameters"""
         model_path = Path("test/model.onnx")
@@ -51,7 +50,7 @@ class TestConversionConfig(unittest.TestCase):
         self.assertEqual(config.engine, "piper")
         self.assertEqual(config.voice, "test-voice")
         self.assertEqual(config.model_path, model_path)
-        self.assertEqual(config.output_dir, "custom_output")
+        self.assertEqual(config.output_dir, Path("custom_output"))
         self.assertEqual(config.book_title, "Test Book")
         self.assertFalse(config.preserve_all_chapters)
         self.assertEqual(config.bitrate, "64k")
@@ -59,7 +58,6 @@ class TestConversionConfig(unittest.TestCase):
         self.assertEqual(config.channels, 2)
         self.assertTrue(config.force_reprocess)
 
-    @unittest.skip("Parallel processing removed - sequential only")
     def test_config_defaults(self):
         """Test default values"""
         config = ConversionConfig(engine="test")
@@ -84,7 +82,6 @@ class TestAppConfig(unittest.TestCase):
         """Test AppConfig initialization"""
         self.assertIsInstance(self.config.voice_configs, VoiceConfigProvider)
 
-    @unittest.skip("Parallel processing removed - sequential only")
     def test_create_conversion_config_minimal(self):
         """Test creating conversion config with minimal parameters"""
         config = self.config.create_conversion_config("edge")
@@ -173,14 +170,16 @@ class TestVoiceConfigProvider(unittest.TestCase):
         xtts_model, xtts_name, xtts_desc, xtts_multi = models["1"]
         self.assertIn("xtts_v2", xtts_model)
 
-    @unittest.skip("Piper packaged models path changed")
     def test_get_piper_models_defaults_to_packaged_models(self):
-        """Fallback to packaged models when CWD lacks a models directory."""
+        """Discover Piper models from a provided models directory."""
         with tempfile.TemporaryDirectory() as temp_dir:
             original_cwd = os.getcwd()
             try:
                 os.chdir(temp_dir)
-                models = self.provider.get_piper_models()
+                project_root = Path(__file__).resolve().parents[2]
+                models_dir = project_root / "models"
+                self.assertTrue(models_dir.exists())
+                models = self.provider.get_piper_models(models_dir=models_dir)
                 self.assertTrue(models)
                 self.assertIn("pt_BR-faber-medium", models)
             finally:

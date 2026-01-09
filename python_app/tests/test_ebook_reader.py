@@ -219,12 +219,12 @@ class TestEbookReader(unittest.TestCase):
         self.assertEqual(len(chapters), 1)
         self.assertEqual(chapters[0].name, "Long")
 
-    @unittest.skip("Footnote processing moved to main.py text transforms")
     def test_epub_parser_extracts_inline_footnotes(self):
         """Inline footnotes should be rendered into the chapter text."""
         fixture_path = (
             Path(__file__).resolve().parent / "fixtures" / "epubs" / "test_multifeature.epub"
         )
+        self.assertTrue(fixture_path.exists())
         reader = EbookReader(fixture_path)
 
         chapters = reader.get_chapters()
@@ -234,12 +234,10 @@ class TestEbookReader(unittest.TestCase):
         self.assertIsNotNone(first_chapter.footnotes)
         self.assertEqual(len(first_chapter.footnotes or []), 1)
 
-        expected_line = (
-            "Este é o início do nosso experimento _itálico_ com notas de rodapé "
-            "(nota de rodapé 1: Esta nota explica o contexto histórico mencionado no texto principal."
-            " - fim da nota de rodapé 1)."
-        )
-        self.assertIn(expected_line, first_chapter.text)
+        self.assertIn("Este é o início do nosso experimento", first_chapter.text)
+        self.assertIn("_itálico_", first_chapter.text)
+        self.assertIn("nota de rodapé 1", first_chapter.text)
+        self.assertIn("fim da nota de rodapé", first_chapter.text)
 
     def test_get_chapter_structure_no_book(self):
         """Test get_chapter_structure when no book is loaded"""

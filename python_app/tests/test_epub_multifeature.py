@@ -24,8 +24,7 @@ class TestSampleEpubFeatures(unittest.TestCase):
     """Validate parsing features present in the bundled sample EPUB."""
 
     def setUp(self) -> None:
-        if not SAMPLE_EPUB.exists():  # pragma: no cover - guard for optional installs
-            self.skipTest("Sample EPUB fixture not found")
+        self.assertTrue(SAMPLE_EPUB.exists())
 
     def test_epub_reader_extracts_multifeature_content(self) -> None:
         reader = EbookReader(SAMPLE_EPUB)
@@ -206,8 +205,7 @@ class TestMultilangEpubParsing(unittest.TestCase):
     """Test EPUB parsing with multiple language attributes"""
 
     def setUp(self) -> None:
-        if not SAMPLE_MULTILANG.exists():  # pragma: no cover
-            self.skipTest("Multilang EPUB fixture not found")
+        self.assertTrue(SAMPLE_MULTILANG.exists())
 
     def test_multilang_epub_extracts_language_tags(self) -> None:
         """Test that language tags are extracted from multilang EPUB"""

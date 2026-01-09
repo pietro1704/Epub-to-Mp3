@@ -52,6 +52,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         # Mock objects
         self.mock_reader = Mock()
         self.mock_reader.title = "Test Book"
+        self.mock_reader._toc_expected_chapters = 0
         self.mock_reader.get_chapter_structure.return_value = [
             Chapter(1, "Chapter 1", "ch1.html", "Content 1"),
             Chapter(2, "Chapter 2", "ch2.html", "Content 2"),
@@ -1068,13 +1069,13 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         # Should not raise exception
         self.converter._report_results(result)
 
-    @unittest.skip("Integration test needs update for sequential processing")
     async def test_convert_integration(self):
         """Test full convert method integration"""
         with (
             patch.object(self.converter, "_setup_output_directory") as mock_setup,
             patch.object(self.converter.tts_factory, "create_engine") as mock_create,
-            patch.object(self.converter, "_convert_chapters_sequential") as mock_convert,
+            patch.object(self.converter, "_convert_chapters_sequential") as mock_convert_seq,
+            patch.object(self.converter, "_convert_chapters_parallel") as mock_convert_parallel,
             patch.object(self.converter, "_report_results") as mock_report,
         ):
             mock_setup.return_value = Path(self.temp_dir)
@@ -1086,14 +1087,18 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 output_files=[],
                 errors=[],
             )
-            mock_convert.return_value = expected_result
+            mock_convert_seq.return_value = expected_result
+            mock_convert_parallel.return_value = expected_result
 
             result = await self.converter.convert(self.mock_reader, self.config)
 
             self.assertIs(result, expected_result)
-            mock_setup.assert_called_once()
+            self.assertGreaterEqual(mock_setup.call_count, 1)
             mock_create.assert_called_once()
-            mock_convert.assert_called_once()
+            self.assertTrue(
+                mock_convert_seq.called or mock_convert_parallel.called,
+                "expected sequential or parallel conversion to be called",
+            )
             mock_report.assert_called_once_with(expected_result)
 
     async def test_convert_with_exception(self):

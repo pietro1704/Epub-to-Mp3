@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import shutil
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
-import pytest
 from fastapi.testclient import TestClient
 from src.config import ConversionConfig
 from src.job_manager import JobManager
@@ -33,7 +31,9 @@ MINIMAL_WAV = (
     + b"\x40\x1f\x00\x00\x80>\x00\x00\x02\x00\x10\x00data\x00\x80\x00\x00"
 )
 
-requires_ffmpeg = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg não encontrado")
+
+def requires_ffmpeg(func):
+    return func
 
 
 def _configure_server_paths(tmp_path, monkeypatch):
@@ -54,7 +54,6 @@ def _configure_server_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "job_manager", JobManager(jobs_dir))
 
 
-@requires_ffmpeg
 def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     """Test server conversion with mocked TTS engine."""
     job_id = str(uuid4())
@@ -96,6 +95,8 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
         return output_path
 
     _make_telemetry(tmp_path, monkeypatch)
+
+    monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
 
     with patch("src.tts.edge_engine.EdgeTTSEngine.synthesize_async", mock_synthesize):
         asyncio.run(server.process_conversion(job_id))
@@ -156,7 +157,6 @@ async def _fake_convert_to_mp3(input_file: Path, output_file: Path, bitrate: str
     return output_path
 
 
-@requires_ffmpeg
 def test_preserves_reused_upload_inside_job_dir(tmp_path, monkeypatch):
     """Ensure metadata uploads stored inside job folder survive cleanup."""
     job_id = str(uuid4())
@@ -207,7 +207,6 @@ def test_preserves_reused_upload_inside_job_dir(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
-@requires_ffmpeg
 def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)
@@ -248,7 +247,6 @@ def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
-@requires_ffmpeg
 def test_edge_fallbacks_to_piper_when_coqui_fails(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)

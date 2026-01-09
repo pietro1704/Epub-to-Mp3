@@ -159,7 +159,7 @@ class EdgeEngineBaseline:
             return None
 
 
-async def test_configuration(
+async def run_configuration(
     config: EdgeConfig,
     texts: Dict[str, str],
     voice: str = "pt-BR-ThalitaMultilingualNeural",
@@ -271,7 +271,7 @@ async def test_configuration(
     )
 
 
-async def test_rate_limit_recovery(voice: str = "pt-BR-ThalitaMultilingualNeural"):
+async def run_rate_limit_recovery(voice: str = "pt-BR-ThalitaMultilingualNeural"):
     """Test rate limit recovery behavior with long text."""
     print("\n" + "=" * 60)
     print("Testing Rate Limit Recovery (long text)")
@@ -441,7 +441,7 @@ async def main():
     # Test each configuration
     for config in CONFIGURATIONS:
         try:
-            result = await test_configuration(config, TEST_TEXTS)
+            result = await run_configuration(config, TEST_TEXTS)
             results.append(result)
         except Exception as e:
             print(f"❌ Configuration '{config.name}' failed: {e}")
@@ -463,7 +463,7 @@ async def main():
         await asyncio.sleep(2)
 
     # Test rate limit recovery
-    rate_limit_results = await test_rate_limit_recovery()
+    rate_limit_results = await run_rate_limit_recovery()
 
     # Print summary
     print_summary(results, rate_limit_results)
