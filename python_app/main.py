@@ -2721,7 +2721,7 @@ class ConverterApplication:
         formatting_cues_pref = getattr(args, "formatting_cues", None)
         cues_enabled = True if formatting_cues_pref is None else bool(formatting_cues_pref)
         return self.config.create_conversion_config(
-            engine=args.engine or "auto",
+            engine=args.engine or "edge",
             voice=args.voice,
             model=args.model,
             output_dir=args.output_dir or str(Path.cwd() / "output"),
@@ -2762,11 +2762,12 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["auto", "edge", "coqui", "piper"],
-        help="TTS engine to use",
+        choices=["edge", "coqui", "piper", "kokoro", "spark"],
+        default="edge",
+        help="TTS engine to use (default: edge). edge=fast cloud, coqui=neural local, kokoro=fast local, spark=LLM-based",
     )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
-    parser.add_argument("--model", help="Model path (for Piper/Coqui)")
+    parser.add_argument("--model", help="Model path (for Piper/Coqui/Spark)")
     parser.add_argument("--output-dir", help="Output directory")
     parser.add_argument(
         "--show-structure",

@@ -20,6 +20,7 @@ from unittest.mock import Mock
 
 from ..speed_monitor import AdaptiveEdgeTuner, get_edge_tuner
 from ..utils import TextValidator
+from .network_tuner import NetworkTuner
 
 # Salvar função original
 _original_create_default_context = _ssl_module.create_default_context
@@ -38,7 +39,7 @@ _ssl_module._create_default_https_context = _ssl_module._create_unverified_conte
 edge_tts = None
 
 try:
-    _segment_seconds_env = float(os.getenv("EDGE_MAX_SEGMENT_SECONDS", "75"))
+    _segment_seconds_env = float(os.getenv("EDGE_MAX_SEGMENT_SECONDS", "85"))
 except (TypeError, ValueError):
     _segment_seconds_env = 75.0
 
@@ -96,7 +97,8 @@ except ImportError:
 
 # Defaults based on research + aggressive throughput target (Jan 2026)
 # Target: 200+ chars/s with higher concurrency/segment sizes.
-_DEFAULT_CHUNK_SIZE = 4000  # Best overall from exhaustive merged
+# Benchmark (Jan 2026): 10K chunks + 8 concurrent = 62.6 chars/s (best)
+_DEFAULT_CHUNK_SIZE = 10000  # Maximum speed from benchmark testing
 _DEFAULT_CONCURRENCY = 8
 _SAFE_CHUNK_MIN = 2000  # Minimum safe chunk size (reduced for rate-limit recovery)
 _SAFE_CHUNK_MAX = 15000  # Upper bound for throughput testing
@@ -416,6 +418,16 @@ class EdgeTTSEngine:
         # Stable view of how many tasks we *intend* to run in parallel regardless of current semaphore value
         self._parallel_slots = _edge_max_concurrency if self._enable_parallel else 1
 
+        # Network-aware auto-tuner for adaptive parameter adjustment
+        self._network_tuner = NetworkTuner(
+            log_callback=self._log if (verbose or log_callback) else None,
+            verbose=verbose,
+        )
+        # Initialize tuner with current settings
+        self._network_tuner.config.chunk_size = self._chunk_char_limit
+        self._network_tuner.config.concurrency = self._parallel_slots
+        self._network_tuner.config.segment_seconds = self._max_segment_seconds
+
         # Initialize adaptive tuner for real-time speed monitoring
         self._tuner: Optional[AdaptiveEdgeTuner] = None
         self._auto_tune_enabled = True
@@ -492,6 +504,69 @@ class EdgeTTSEngine:
 
         if changed and self.verbose:
             self._log(f"🔧 AUTO-TUNE: {', '.join(changed)}")
+
+    def _apply_network_tuning(self) -> None:
+        """Apply settings from network tuner to engine."""
+        global _edge_max_concurrency, _edge_current_chunk_size
+
+        config = self._network_tuner.config
+        changed = []
+
+        # Apply chunk size
+        if config.chunk_size != self._chunk_char_limit:
+            old = self._chunk_char_limit
+            self._chunk_char_limit = max(
+                config.min_chunk_size, min(config.chunk_size, config.max_chunk_size)
+            )
+            _edge_current_chunk_size = self._chunk_char_limit
+            changed.append(f"chunk: {old}→{self._chunk_char_limit}")
+
+        # Apply concurrency
+        if config.concurrency != self._parallel_slots:
+            old = self._parallel_slots
+            self._parallel_slots = max(
+                config.min_concurrency, min(config.concurrency, config.max_concurrency)
+            )
+            _edge_max_concurrency = self._parallel_slots
+            # Update rate limiters
+            for loop_id in list(_edge_rate_limiters.keys()):
+                _edge_rate_limiters[loop_id] = asyncio.Semaphore(_edge_max_concurrency)
+            changed.append(f"concurrency: {old}→{self._parallel_slots}")
+
+        # Apply segment duration
+        if config.segment_seconds != self._max_segment_seconds:
+            old = self._max_segment_seconds
+            self._max_segment_seconds = max(
+                config.min_segment_seconds, min(config.segment_seconds, config.max_segment_seconds)
+            )
+            changed.append(f"segment: {old:.0f}s→{self._max_segment_seconds:.0f}s")
+
+        if changed:
+            self._log(f"🔧 Rede: {', '.join(changed)}")
+
+    def _record_network_result(
+        self,
+        success: bool,
+        latency: float,
+        is_rate_limit: bool = False,
+        is_timeout: bool = False,
+        error_msg: str = "",
+    ) -> None:
+        """Record result to network tuner and apply adjustments."""
+        if success:
+            self._network_tuner.record_success(latency)
+        else:
+            self._network_tuner.record_failure(
+                is_rate_limit=is_rate_limit,
+                is_timeout=is_timeout,
+                error_msg=error_msg,
+            )
+            # Apply adjusted settings immediately after failure
+            self._apply_network_tuning()
+
+    def get_network_status(self) -> str:
+        """Get human-readable network status."""
+        return self._network_tuner.get_status_message()
 
     def supports_multilingual(self) -> bool:
         """Edge TTS suporta multiidioma via voice switching e [[lang:]] tags"""
@@ -1737,6 +1812,13 @@ class EdgeTTSEngine:
                             self._log(
                                 f"   ⏱️ Timeout após {synthesis_time:.1f}s (limite: {timeout}s)"
                             )
+                        # Record timeout to network tuner
+                        self._record_network_result(
+                            success=False,
+                            latency=synthesis_time,
+                            is_timeout=True,
+                            error_msg="timeout",
+                        )
                         return False
 
                     except asyncio.CancelledError:
@@ -1784,6 +1866,13 @@ class EdgeTTSEngine:
 
                         if is_rate_limit:
                             self.last_error = f"rate_limit: {exc}" if exc else "rate_limit"
+                            # Record rate limit to network tuner
+                            self._record_network_result(
+                                success=False,
+                                latency=synthesis_time,
+                                is_rate_limit=True,
+                                error_msg=str(exc),
+                            )
                             backoff_time = await _handle_rate_limit(log_callback)
                             self._parallel_slots = min(self._parallel_slots, _edge_max_concurrency)
                             if retry_count < max_retries - 1:
@@ -1890,10 +1979,21 @@ class EdgeTTSEngine:
                     await _record_success()
                 # Record successful segment timing for auto-tuning
                 self._record_segment_timing(text_chars, segment_duration, success=True)
+                # Record success to network tuner for adaptive speed recovery
+                self._record_network_result(
+                    success=True,
+                    latency=segment_duration,
+                )
             else:
                 self.last_error = "no_audio"
                 # Record failed segment timing
                 self._record_segment_timing(text_chars, segment_duration, success=False)
+                # Record failure to network tuner for automatic adjustment
+                self._record_network_result(
+                    success=False,
+                    latency=segment_duration,
+                    error_msg="no_audio",
+                )
 
             return received_audio
 

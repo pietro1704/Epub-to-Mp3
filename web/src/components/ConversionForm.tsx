@@ -66,13 +66,40 @@ const DEFAULT_VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
     },
     { name: "tts_models/pt/cv/vits", multilingual: false },
   ],
-  auto: [
-    { name: "tts_models/pt/cv/vits", multilingual: false },
-    { name: "pt-BR-ThalitaMultilingualNeural", multilingual: true },
+  kokoro: [
+    {
+      name: "af_heart",
+      multilingual: false,
+      label: "Heart – American English Female",
+    },
+    {
+      name: "af_bella",
+      multilingual: false,
+      label: "Bella – American English Female",
+    },
+    {
+      name: "bf_emma",
+      multilingual: false,
+      label: "Emma – British English Female",
+    },
+    { name: "jf_alpha", multilingual: false, label: "Alpha – Japanese Female" },
+    {
+      name: "zf_xiaobei",
+      multilingual: false,
+      label: "Xiaobei – Chinese Female",
+    },
+  ],
+  spark: [
+    { name: "default", multilingual: true, label: "Default – Spark Voice" },
+    {
+      name: "clone",
+      multilingual: true,
+      label: "Clone – Custom Voice (reference audio)",
+    },
   ],
 };
 
-type KnownEngine = "edge" | "piper" | "coqui" | "auto";
+type KnownEngine = "edge" | "piper" | "coqui" | "kokoro" | "spark";
 
 interface EngineInsights {
   defaultVoice: string;
@@ -100,8 +127,14 @@ const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
     autoLanguage: false,
     languages: ["pt", "en", "es", "fr", "de"],
   },
-  auto: {
-    defaultVoice: "",
+  kokoro: {
+    defaultVoice: "af_heart",
+    multiLingual: true,
+    autoLanguage: false,
+    languages: ["en", "ja", "zh"],
+  },
+  spark: {
+    defaultVoice: "default",
     multiLingual: true,
     autoLanguage: true,
     languages: ["auto"],
@@ -148,7 +181,7 @@ export default function ConversionForm({
 }: ConversionFormProps): JSX.Element {
   const t = useTranslations();
   const { locale } = useI18n();
-  const initialEngine: EngineOption = "auto";
+  const initialEngine: EngineOption = "edge";
   const initialMeta = getEngineMeta(initialEngine);
   const [fileQueue, setFileQueue] = useState<QueuedFileEntry[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);

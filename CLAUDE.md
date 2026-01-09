@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Full-stack EPUB/PDF to MP3 audiobook converter. Python backend with FastAPI server and React/TypeScript frontend. Deployed as Docker container on Hugging Face Spaces.
 
-**TTS Engines**: Edge-TTS (Microsoft cloud), Coqui TTS (local neural), Piper (local ONNX)
+**TTS Engines**: Edge-TTS (Microsoft cloud), Coqui TTS (local neural), Kokoro (fast local), Spark-TTS (LLM-based), Piper (local ONNX)
 
 ## Commands
 
@@ -71,11 +71,13 @@ src/
 ├── engine_pool.py     # TTS engine resource pooling
 ├── telemetry.py       # Engine performance tracking
 └── tts/
-    ├── factory.py     # TTSFactory (factory pattern)
-    ├── base.py        # TTSEngine abstract base
-    ├── edge_engine.py # Edge-TTS (8000 char chunks, 4 concurrent)
-    ├── coqui_engine.py# Coqui neural TTS (1500 char chunks)
-    └── piper_engine.py# Piper ONNX (1500 char chunks)
+    ├── factory.py      # TTSFactory (factory pattern)
+    ├── base.py         # TTSEngine abstract base
+    ├── edge_engine.py  # Edge-TTS (cloud, 10K char chunks, 8 concurrent, 85s segments)
+    ├── coqui_engine.py # Coqui XTTS (neural local, GPU recommended)
+    ├── kokoro_engine.py# Kokoro (fast local, 82M params, EN/JA/ZH)
+    ├── spark_engine.py # Spark-TTS (LLM-based, voice cloning)
+    └── piper_engine.py # Piper ONNX (basic local)
 ```
 
 ### Frontend (`web/`)
@@ -101,9 +103,23 @@ React 18 + TypeScript + Vite. Key files:
 
 ### Edge-TTS Tuning
 ```bash
-EDGE_CHUNK_CHARS=8000           # Chars per request (3k-8k safe, >15k fails)
-EDGE_MAX_CONCURRENCY=4          # Parallel requests
+EDGE_CHUNK_CHARS=10000          # Chars per request (default 10K, max 15K)
+EDGE_MAX_CONCURRENCY=8          # Parallel requests (optimal)
+EDGE_MAX_SEGMENT_SECONDS=85     # Max audio segment duration
 EDGE_SAFE_CHAPTER_PARALLEL=8    # Parallel chapters
+```
+
+### Kokoro Tuning
+```bash
+KOKORO_CHUNK_CHARS=2000         # Chars per chunk
+KOKORO_MAX_WORKERS=2            # Parallel workers
+```
+
+### Spark-TTS Tuning
+```bash
+SPARK_TTS_MODEL_DIR=pretrained_models/Spark-TTS-0.5B  # Model directory
+SPARK_CHUNK_CHARS=1500          # Chars per chunk
+SPARK_MAX_WORKERS=1             # Workers (GPU-bound)
 ```
 
 ## Design Patterns

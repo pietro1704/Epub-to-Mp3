@@ -1583,7 +1583,7 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
         return ordered
 
     if (config.engine or "").lower() == "edge":
-        fallback_engines = _rank_fallbacks(["coqui", "piper"])
+        fallback_engines = _rank_fallbacks(["coqui", "kokoro", "spark", "piper"])
         for engine_name in fallback_engines:
             clone = _clone_config_for_engine(config, engine_name)
             if clone.engine.lower() == "edge":
@@ -1594,7 +1594,9 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
 
 def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, ConversionConfig]:
     pool: dict[str, ConversionConfig] = {}
-    for name in ("edge", "coqui", "piper"):
+    # Priority: edge (fast cloud), coqui (quality), kokoro (fast local), spark (LLM-based)
+    # Piper excluded from auto due to lower quality
+    for name in ("edge", "coqui", "kokoro", "spark"):
         try:
             candidate = _clone_config_for_engine(config, name)
             pool[name] = candidate
@@ -3195,20 +3197,40 @@ async def process_conversion(job_id: str) -> None:
             """Capture verbose TTS output and add to raw log + statusHint."""
             raw_log = job.setdefault("_raw_log", [])
             raw_log.append(message)
-            # Show model loading/downloading status in UI
-            if any(
-                kw in message.lower()
-                for kw in [
-                    "carregando",
-                    "baixando",
-                    "modelo",
-                    "loading",
-                    "download",
-                    "pronto",
-                    "ready",
-                ]
-            ):
+            # Show important status messages in UI (model loading, tuning, retry)
+            status_keywords = [
+                # Loading/downloading
+                "carregando",
+                "baixando",
+                "modelo",
+                "loading",
+                "download",
+                "pronto",
+                "ready",
+                # Tuning and retry
+                "tuning",
+                "ajust",
+                "chunk",
+                "retry",
+                "tentando",
+                "rate limit",
+                "aguardando",
+                "backoff",
+                "dividindo",
+                "recuper",
+                "segment",
+                "reduz",
+                "otimiz",
+                # Warmup and config
+                "warmup",
+                "config",
+                "parallel",
+                "concurr",
+            ]
+            if any(kw in message.lower() for kw in status_keywords):
                 job["statusHint"] = message
+                # Also append to events for visibility
+                _append_event(job, f"🔧 {message}")
 
         # Resolve per-book/per-engine roots
         book_slug = _book_slug(job.get("bookTitle"), job.get("file_path"))
@@ -3219,8 +3241,12 @@ async def process_conversion(job_id: str) -> None:
         # Create TTS engine using factory with optimized compression
         verbose_enabled = True if verbose_flag is None else bool(verbose_flag)
         model_path = Path(job.get("model")) if job.get("model") else None
+        # Treat "auto" as "edge" (auto mode removed - edge is now default)
+        requested_engine = job.get("engine", "edge")
+        if (requested_engine or "").lower() == "auto":
+            requested_engine = "edge"
         config = ConversionConfig(
-            engine=job.get("engine", "edge"),
+            engine=requested_engine,
             job_id=job_id,
             voice=job.get("voice"),
             model_path=model_path,

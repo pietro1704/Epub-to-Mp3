@@ -21,6 +21,13 @@ pandas>=1.5.0,<2.0.0
 # Offline fallback (fast, small)
 piper-tts>=1.3.0
 
+# Kokoro TTS (fast, lightweight 82M model)
+kokoro>=0.9.4
+
+# Spark-TTS dependencies (LLM-based, voice cloning)
+huggingface_hub>=0.20.0
+transformers>=4.36.0
+
 # Ebook Processing
 ebooklib>=0.18
 beautifulsoup4>=4.12.0

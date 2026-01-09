@@ -125,6 +125,57 @@ class TTSFactory:
             engine_instance.verbose = config.verbose
             return engine_instance
 
+        if engine == "kokoro":
+            from .kokoro_engine import KokoroTTSEngine
+
+            voice = config.voice or self.voice_provider.get_voice("kokoro", config.primary_language)
+            if not voice:
+                # Select default voice based on language
+                lang = (config.primary_language or "en").lower().split("-")[0]
+                if lang in ("ja", "jp"):
+                    voice = "jf_alpha"
+                elif lang in ("zh", "cn"):
+                    voice = "zf_xiaobei"
+                elif lang == "en" and "gb" in (config.primary_language or "").lower():
+                    voice = "bf_emma"
+                else:
+                    voice = "af_heart"  # American English default
+
+            return KokoroTTSEngine(
+                voice,
+                primary_language=config.primary_language,
+                language_voices=config.language_voices,
+                verbose=config.verbose,
+                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+                formatting_locale=getattr(config, "formatting_locale", "pt"),
+                status_callback=config.log_callback,
+                chunk_char_limit=getattr(config, "kokoro_chunk_chars", None),
+                max_workers=getattr(config, "kokoro_max_workers", None),
+            )
+
+        if engine == "spark":
+            from .spark_engine import SparkTTSEngine
+
+            voice = config.voice or "default"
+            model_dir = getattr(config, "spark_model_dir", None)
+            reference_audio = getattr(config, "spark_reference_audio", None)
+            reference_text = getattr(config, "spark_reference_text", None)
+
+            return SparkTTSEngine(
+                voice,
+                model_dir=model_dir,
+                primary_language=config.primary_language,
+                language_voices=config.language_voices,
+                verbose=config.verbose,
+                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
+                formatting_locale=getattr(config, "formatting_locale", "pt"),
+                status_callback=config.log_callback,
+                chunk_char_limit=getattr(config, "spark_chunk_chars", None),
+                max_workers=getattr(config, "spark_max_workers", None),
+                reference_audio=reference_audio,
+                reference_text=reference_text,
+            )
+
         raise ValueError(f"Unsupported engine: {config.engine}")
 
     def _find_piper_model(

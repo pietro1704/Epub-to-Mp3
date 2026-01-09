@@ -1838,12 +1838,13 @@ class AudioConverter:
             retry_round += 1
 
         # Final rescue: switch engine for remaining failures (auto mode only)
+        # Priority: coqui > piper (piper has lower quality)
         if pending_failures and is_auto_engine and auto_engine_pool:
             rescue_engine = None
-            if "piper" in auto_engine_pool:
-                rescue_engine = "piper"
-            elif "coqui" in auto_engine_pool:
+            if "coqui" in auto_engine_pool:
                 rescue_engine = "coqui"
+            elif "piper" in auto_engine_pool:
+                rescue_engine = "piper"
             if rescue_engine:
                 failed_names = list(pending_failures.keys())
                 chapters_to_retry_info = []

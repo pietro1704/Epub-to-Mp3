@@ -609,24 +609,29 @@ export const translations: Record<Locale, Translations> = {
       engineLabel: "Como quer que a voz soe?",
       engineOptions: [
         {
-          value: "auto",
-          label: "Automático (padrão)",
-          help: "Escolhe Edge/Coqui/Piper por capítulo para máxima velocidade.",
-        },
-        {
           value: "edge",
-          label: "Edge (nuvem Microsoft)",
-          help: "Vozes de nuvem da Microsoft. Ótima qualidade e sotaque natural.",
-        },
-        {
-          value: "piper",
-          label: "Piper (local)",
-          help: "Modelos PT/EN incluídos. Funciona offline, mas exige escolher o idioma.",
+          label: "Edge (padrão)",
+          help: "Vozes de nuvem da Microsoft. Mais rápido (~70 chars/s). Multilíngue.",
         },
         {
           value: "coqui",
-          label: "Coqui (personalizado)",
-          help: "Motor multilíngue (XTTS ou VITS). Detecta idioma automaticamente.",
+          label: "Coqui XTTS",
+          help: "Motor neural multilíngue de alta qualidade. Requer GPU. Lento.",
+        },
+        {
+          value: "kokoro",
+          label: "Kokoro",
+          help: "Modelo leve (82M params). Rápido e offline. EN/JA/ZH.",
+        },
+        {
+          value: "spark",
+          label: "Spark-TTS",
+          help: "Baseado em Qwen2.5. Suporta clonagem de voz.",
+        },
+        {
+          value: "piper",
+          label: "Piper",
+          help: "Modelos PT/EN incluídos. Offline, qualidade básica.",
         },
       ],
       defaultVoiceLabel: "Voz padrão com suporte a vários idiomas",
@@ -1185,24 +1190,29 @@ export const translations: Record<Locale, Translations> = {
       engineLabel: "How should the voice sound?",
       engineOptions: [
         {
-          value: "auto",
-          label: "Auto (default)",
-          help: "Chooses Edge/Coqui/Piper per chapter for maximum speed.",
-        },
-        {
           value: "edge",
-          label: "Edge (Microsoft cloud)",
-          help: "Microsoft cloud voices with natural accents.",
-        },
-        {
-          value: "piper",
-          label: "Piper (local)",
-          help: "Bundled PT/EN voices. Works offline but needs a chosen language.",
+          label: "Edge (default)",
+          help: "Microsoft cloud voices. Fastest (~70 chars/s). Multilingual.",
         },
         {
           value: "coqui",
-          label: "Coqui (custom)",
-          help: "XTTS/VITS voices with automatic language detection.",
+          label: "Coqui XTTS",
+          help: "High-quality multilingual neural TTS. Requires GPU. Slow.",
+        },
+        {
+          value: "kokoro",
+          label: "Kokoro",
+          help: "Lightweight (82M params). Fast and offline. EN/JA/ZH.",
+        },
+        {
+          value: "spark",
+          label: "Spark-TTS",
+          help: "Built on Qwen2.5. Supports voice cloning.",
+        },
+        {
+          value: "piper",
+          label: "Piper",
+          help: "Bundled PT/EN voices. Offline, basic quality.",
         },
       ],
       defaultVoiceLabel: "Default voice with multi-language support",
