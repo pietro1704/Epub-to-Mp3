@@ -176,9 +176,10 @@ class TestVoiceConfigProvider(unittest.TestCase):
             original_cwd = os.getcwd()
             try:
                 os.chdir(temp_dir)
-                project_root = Path(__file__).resolve().parents[2]
-                models_dir = project_root / "models"
-                self.assertTrue(models_dir.exists())
+                models_dir = Path(temp_dir) / "models"
+                models_dir.mkdir(parents=True, exist_ok=True)
+                model_path = models_dir / "pt_BR-faber-medium.onnx"
+                model_path.write_text("dummy model")
                 models = self.provider.get_piper_models(models_dir=models_dir)
                 self.assertTrue(models)
                 self.assertIn("pt_BR-faber-medium", models)
