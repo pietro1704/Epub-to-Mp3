@@ -1153,7 +1153,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.converter.tts_factory.create_engine = Mock(return_value=flaky_engine)
 
         config = ConversionConfig(
-            engine="edge",
+            engine="piper",
             output_dir=str(output_root),
             book_title="Livro Retry",
             extra={"max_auto_retries": 3},

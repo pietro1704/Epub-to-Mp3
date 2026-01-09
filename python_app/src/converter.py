@@ -307,9 +307,14 @@ class AudioConverter:
         audio_path: Path,
         payload_text: Optional[str],
         config: ConversionConfig,
+        engine_label: Optional[str] = None,
     ) -> Optional[str]:
         audio_path = Path(audio_path)
         if not audio_path.exists() or not payload_text:
+            return None
+
+        engine_hint = (engine_label or getattr(config, "engine", "") or "").lower()
+        if engine_hint == "edge":
             return None
 
         try:
@@ -2491,7 +2496,10 @@ class AudioConverter:
                             chapter, chapter_num, output_dir
                         ) or self._speech_text(chapter)
                         truncation_warning = self._detect_short_audio_output(
-                            output_path, cached_payload, config
+                            output_path,
+                            cached_payload,
+                            config,
+                            engine_label=engine_tracker.get("label"),
                         )
                         if truncation_warning:
                             if self.verbose:
@@ -3052,6 +3060,7 @@ class AudioConverter:
                             output_path,
                             current_payload,
                             config,
+                            engine_label=engine_tracker.get("label"),
                         )
                         if truncation_warning:
                             if self.verbose:
@@ -3198,6 +3207,7 @@ class AudioConverter:
                                         output_path,
                                         current_payload,
                                         config,
+                                        engine_label=engine_tracker.get("label"),
                                     )
                                     if truncation_warning:
                                         if self.verbose:
