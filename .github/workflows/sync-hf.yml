@@ -36,6 +36,9 @@ jobs:
           set -euo pipefail
           TARGET_BRANCH="master"
 
+          # Remove large assets before pushing to HF (download on demand).
+          rm -rf pretrained_models voice_samples output || true
+
           if [ -n "${HF_SSH_PRIVATE_KEY:-}" ]; then
             mkdir -p ~/.ssh
             echo "$HF_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
