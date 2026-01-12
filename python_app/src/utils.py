@@ -59,8 +59,7 @@ class FileManager:
     @classmethod
     def build_output_filename(cls, chapter_name: str, index: int) -> str:
         safe_name = cls.sanitize_filename(chapter_name or f"Chapter {index}")
-        safe_name = safe_name.replace(" ", "_")
-        return f"{index:03d}_{safe_name}.mp3"
+        return f"{index:03d} - {safe_name}.mp3"
 
     @classmethod
     def get_output_path(cls, chapter_name: str, output_dir: Path, index: int) -> Path:

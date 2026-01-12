@@ -99,7 +99,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         self.converter._cache_text(cache_dir, chapter, 1, payload)
 
-        expected = cache_dir / "text" / "001_Cache_Chapter.txt"
+        expected = cache_dir / "text" / "001 - Cache Chapter.txt"
         self.assertTrue(expected.exists())
         self.assertEqual(expected.read_text(encoding="utf-8"), payload)
 
@@ -119,7 +119,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.converter._cache_text(cache_dir, chapter, 1, tts_input)
 
         # Read back
-        cached_path = cache_dir / "text" / "001_Simple_Chapter.txt"
+        cached_path = cache_dir / "text" / "001 - Simple Chapter.txt"
         cached_text = cached_path.read_text(encoding="utf-8")
 
         # MUST BE IDENTICAL
@@ -146,7 +146,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.converter._cache_text(cache_dir, chapter, 2, tts_input)
 
         # Read back
-        cached_path = cache_dir / "text" / "002_Multilingual_Chapter.txt"
+        cached_path = cache_dir / "text" / "002 - Multilingual Chapter.txt"
         cached_text = cached_path.read_text(encoding="utf-8")
 
         # MUST BE IDENTICAL
@@ -187,7 +187,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.converter._cache_text(cache_dir, chapter, 3, tts_input)
 
         # Read back
-        cached_path = cache_dir / "text" / "003_Speech_Chapter.txt"
+        cached_path = cache_dir / "text" / "003 - Speech Chapter.txt"
         cached_text = cached_path.read_text(encoding="utf-8")
 
         # MUST BE IDENTICAL to speech_text
@@ -275,7 +275,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.converter._cache_text(cache_dir, chapter, 4, tts_input)
 
         # Read back
-        cached_path = cache_dir / "text" / "004_Pause_Chapter.txt"
+        cached_path = cache_dir / "text" / "004 - Pause Chapter.txt"
         cached_text = cached_path.read_text(encoding="utf-8")
 
         # MUST BE IDENTICAL
@@ -778,7 +778,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         # Verify files were created
         text_dir = cache_dir / "text"
-        mp3_file = cache_dir / "001_Cache_Test_Chapter.mp3"
+        mp3_file = cache_dir / "001 - Cache Test Chapter.mp3"
 
         # NEW FORMAT: "N - Name-pre-tts.txt" (sanitize keeps spaces)
         pre_tts_file = text_dir / "1 - Cache Test Chapter-pre-tts.txt"
@@ -999,7 +999,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         # Create existing output file
         output_dir = Path(self.temp_dir)
-        existing_file = output_dir / "001_Test_Chapter.mp3"
+        existing_file = output_dir / "001 - Test Chapter.mp3"
         existing_file.write_text("existing content")
 
         mock_tts_engine = Mock()

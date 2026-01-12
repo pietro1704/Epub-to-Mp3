@@ -153,7 +153,7 @@ class CacheManager:
                 chapter_text = chapter.get("text", "") or ""
 
                 chapter_file = (
-                    txt_dir / f"{index:03d}_{self._sanitize_filename(str(chapter_title))}.txt"
+                    txt_dir / f"{index:03d} - {self._sanitize_filename(str(chapter_title))}.txt"
                 )
                 with open(chapter_file, "w", encoding="utf-8") as handle:
                     handle.write(chapter_text)
@@ -387,7 +387,9 @@ class CacheManager:
                 return False
 
             for chapter_idx in checkpoint.completed_chapters:
-                expected_files = list(temp_dir.glob(f"{chapter_idx:03d}_*.mp3"))
+                expected_files = list(temp_dir.glob(f"{chapter_idx:03d} - *.mp3"))
+                if not expected_files:
+                    expected_files = list(temp_dir.glob(f"{chapter_idx:03d}_*.mp3"))
                 if not expected_files:
                     print(f"⚠️ Arquivo do capítulo {chapter_idx} não encontrado")
                     return False

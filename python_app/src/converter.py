@@ -203,11 +203,17 @@ class AudioConverter:
     @staticmethod
     def _title_from_filename(mp3_path: Path) -> str:
         stem = mp3_path.stem
-        parts = stem.split("_", 1)
         candidate = stem
-        if len(parts) == 2 and parts[0].isdigit():
-            candidate = parts[1]
-        candidate = candidate.replace("_", " ").strip()
+        if " - " in stem:
+            parts = stem.split(" - ", 1)
+            if len(parts) == 2 and parts[0].isdigit():
+                candidate = parts[1]
+        else:
+            parts = stem.split("_", 1)
+            if len(parts) == 2 and parts[0].isdigit():
+                candidate = parts[1]
+            candidate = candidate.replace("_", " ")
+        candidate = candidate.strip()
         return candidate or mp3_path.name
 
     def _apply_final_id3_tags(
@@ -743,6 +749,7 @@ class AudioConverter:
             text_dir = Path(output_dir) / "text"
             candidates.append(text_dir / f"{index} - {safe_name}-pre-tts.txt")
         if cache_dir:
+            candidates.append(Path(cache_dir) / "text" / f"{index:03d} - {safe_name}.txt")
             safe_cache = safe_name.replace(" ", "_")
             candidates.append(Path(cache_dir) / "text" / f"{index:03d}_{safe_cache}.txt")
         for cand in candidates:
@@ -763,9 +770,14 @@ class AudioConverter:
             if model_bucket:
                 target_dir /= model_bucket
             safe_name = FileManager.sanitize_filename(chapter_name or f"Chapter {index}")
-            candidate = target_dir / f"{index:03d}_{safe_name}.mp3"
-            if candidate.exists() and candidate.stat().st_size > 1000:
-                return candidate
+            legacy_name = safe_name.replace(" ", "_")
+            candidates = [
+                target_dir / f"{index:03d} - {safe_name}.mp3",
+                target_dir / f"{index:03d}_{legacy_name}.mp3",
+            ]
+            for candidate in candidates:
+                if candidate.exists() and candidate.stat().st_size > 1000:
+                    return candidate
         except Exception:
             return None
         return None
@@ -3953,7 +3965,7 @@ class AudioConverter:
             target_dir.mkdir(parents=True, exist_ok=True)
             chapter_name = getattr(chapter, "name", None) or f"Chapter {index}"
             safe_name = FileManager.sanitize_filename(chapter_name)
-            target_path = target_dir / f"{index:03d}_{safe_name}.mp3"
+            target_path = target_dir / f"{index:03d} - {safe_name}.mp3"
             if not target_path.exists() or target_path.stat().st_mtime < audio_path.stat().st_mtime:
                 shutil.copy2(audio_path, target_path)
 
@@ -4020,8 +4032,7 @@ class AudioConverter:
             target_dir.mkdir(parents=True, exist_ok=True)
             chapter_name = getattr(chapter, "name", None) or f"Chapter {index}"
             safe_name = FileManager.sanitize_filename(chapter_name)
-            safe_name = safe_name.replace(" ", "_")
-            target_path = target_dir / f"{index:03d}_{safe_name}.txt"
+            target_path = target_dir / f"{index:03d} - {safe_name}.txt"
             target_path.write_text(text, encoding="utf-8")
         except OSError:
             pass
