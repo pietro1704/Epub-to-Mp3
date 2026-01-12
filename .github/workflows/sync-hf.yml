@@ -28,6 +28,16 @@ jobs:
           lfs: false
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
+      - name: Prepare HF-only commit (strip large assets)
+        run: |
+          set -euo pipefail
+          git config user.name "hf-sync-bot"
+          git config user.email "hf-sync-bot@users.noreply.github.com"
+          git rm -r --ignore-unmatch pretrained_models voice_samples output
+          if ! git diff --cached --quiet; then
+            git commit -m "HF: strip large assets for on-demand download"
+          fi
+
       - name: Push to Hugging Face (prefer SSH, fallback token)
         env:
           HF_SSH_PRIVATE_KEY: ${{ secrets.HF_SSH_PRIVATE_KEY }}
@@ -35,9 +45,6 @@ jobs:
         run: |
           set -euo pipefail
           TARGET_BRANCH="master"
-
-          # Remove large assets before pushing to HF (download on demand).
-          rm -rf pretrained_models voice_samples output || true
 
           if [ -n "${HF_SSH_PRIVATE_KEY:-}" ]; then
             mkdir -p ~/.ssh
