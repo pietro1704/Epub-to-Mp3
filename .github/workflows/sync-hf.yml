@@ -1,0 +1,60 @@
+name: Sync to Hugging Face Space
+
+on:
+  # Auto-sync only after CI succeeds on master
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+  # Manual trigger only if needed
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # Run automatically on successful CI for master; allow manual override
+    if: >
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'master' &&
+       github.event.workflow_run.head_repository.full_name == github.repository) ||
+      github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # Avoid LFS fetch (budget exceeded)
+          lfs: false
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Push to Hugging Face (prefer SSH, fallback token)
+        env:
+          HF_SSH_PRIVATE_KEY: ${{ secrets.HF_SSH_PRIVATE_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          TARGET_BRANCH="master"
+
+          if [ -n "${HF_SSH_PRIVATE_KEY:-}" ]; then
+            mkdir -p ~/.ssh
+            echo "$HF_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+            chmod 600 ~/.ssh/id_rsa
+            eval "$(ssh-agent -s)"
+            ssh-add ~/.ssh/id_rsa
+            ssh-keyscan hf.co >> ~/.ssh/known_hosts
+            REMOTE_URL="git@hf.co:spaces/pi1704/epub-to-mp3"
+          else
+            if [ -z "${HF_TOKEN:-}" ]; then
+              echo "Nem HF_SSH_PRIVATE_KEY nem HF_TOKEN configurados; abortando push."
+              exit 1
+            fi
+            # Avoid leaking token in logs by configuring insteadOf
+            git config --global url."https://user:${HF_TOKEN}@huggingface.co/".insteadOf "https://huggingface.co/"
+            REMOTE_URL="https://huggingface.co/spaces/pi1704/epub-to-mp3"
+          fi
+
+          git remote add hf "$REMOTE_URL" || true
+          git push --force hf "HEAD:refs/heads/${TARGET_BRANCH}"
+          # Também atualiza main para manter compatibilidade enquanto a branch default não for trocada
+          git push --force hf "HEAD:refs/heads/main"
