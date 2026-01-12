@@ -28,15 +28,29 @@ jobs:
           lfs: false
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
-      - name: Prepare HF-only commit (strip large assets)
+      - name: Build HF-only repo snapshot
         run: |
           set -euo pipefail
+          HF_SYNC_DIR="$(mktemp -d)"
+          echo "HF_SYNC_DIR=$HF_SYNC_DIR" >> "$GITHUB_ENV"
+          rsync -a --delete ./ "$HF_SYNC_DIR/" \
+            --exclude ".git" \
+            --exclude "pretrained_models" \
+            --exclude "voice_samples" \
+            --exclude "output" \
+            --exclude "node_modules" \
+            --exclude "web/node_modules" \
+            --exclude "__pycache__" \
+            --exclude ".pytest_cache" \
+            --exclude ".mypy_cache" \
+            --exclude ".ruff_cache" \
+            --exclude ".cache"
+          cd "$HF_SYNC_DIR"
+          git init
           git config user.name "hf-sync-bot"
           git config user.email "hf-sync-bot@users.noreply.github.com"
-          git rm -r --ignore-unmatch pretrained_models voice_samples output
-          if ! git diff --cached --quiet; then
-            git commit -m "HF: strip large assets for on-demand download"
-          fi
+          git add -A
+          git commit -m "HF snapshot"
 
       - name: Push to Hugging Face (prefer SSH, fallback token)
         env:
@@ -45,6 +59,7 @@ jobs:
         run: |
           set -euo pipefail
           TARGET_BRANCH="master"
+          cd "$HF_SYNC_DIR"
 
           if [ -n "${HF_SSH_PRIVATE_KEY:-}" ]; then
             mkdir -p ~/.ssh
