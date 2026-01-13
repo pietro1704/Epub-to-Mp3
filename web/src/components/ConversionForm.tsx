@@ -189,6 +189,8 @@ export default function ConversionForm({
   const [voice, setVoice] = useState(initialMeta.defaultVoice);
   const [model, setModel] = useState("");
   const [chapters, setChapters] = useState("");
+  const [fromChapterToEnd, setFromChapterToEnd] = useState("");
+  const [fromChapterToChapter, setFromChapterToChapter] = useState("");
   const [sections, setSections] = useState("");
   const [priority, setPriority] = useState("");
   const [footnoteMode, setFootnoteMode] = useState<FootnoteMode>("inline");
@@ -691,6 +693,8 @@ export default function ConversionForm({
       model: model || undefined,
       chapters: chapters || undefined,
       sections: sections || undefined,
+      fromChapterToEnd: fromChapterToEnd || undefined,
+      fromChapterToChapter: fromChapterToChapter || undefined,
       priority: priority || undefined,
       footnoteMode,
       language:
@@ -1724,6 +1728,36 @@ export default function ConversionForm({
               onChange={(event) => setChapters(event.target.value)}
             />
             <p className="form-hint">{t.form.chaptersHint}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="fromChapterToEnd">
+              {t.form.fromChapterToEndLabel}
+            </label>
+            <input
+              id="fromChapterToEnd"
+              name="fromChapterToEnd"
+              placeholder={t.form.fromChapterToEndPlaceholder}
+              value={fromChapterToEnd}
+              disabled={isSubmitting}
+              onChange={(event) => setFromChapterToEnd(event.target.value)}
+            />
+            <p className="form-hint">{t.form.fromChapterToEndHint}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="fromChapterToChapter">
+              {t.form.fromChapterToChapterLabel}
+            </label>
+            <input
+              id="fromChapterToChapter"
+              name="fromChapterToChapter"
+              placeholder={t.form.fromChapterToChapterPlaceholder}
+              value={fromChapterToChapter}
+              disabled={isSubmitting}
+              onChange={(event) => setFromChapterToChapter(event.target.value)}
+            />
+            <p className="form-hint">{t.form.fromChapterToChapterHint}</p>
           </fieldset>
 
           <fieldset className="form-row">

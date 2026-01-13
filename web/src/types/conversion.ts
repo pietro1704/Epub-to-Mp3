@@ -10,6 +10,8 @@ export interface ConversionFormValues {
   model?: string;
   chapters?: string;
   sections?: string;
+  fromChapterToEnd?: string;
+  fromChapterToChapter?: string;
   priority?: string;
   footnoteMode: FootnoteMode;
   language?: string;

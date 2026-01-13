@@ -82,6 +82,12 @@ function buildFormData(values: ConversionFormValues): FormData {
   if (values.sections) {
     formData.append("sections", values.sections);
   }
+  if (values.fromChapterToEnd) {
+    formData.append("fromChapterToEnd", values.fromChapterToEnd);
+  }
+  if (values.fromChapterToChapter) {
+    formData.append("fromChapterToChapter", values.fromChapterToChapter);
+  }
   if (values.priority) {
     formData.append("priority", values.priority);
   }

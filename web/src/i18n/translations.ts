@@ -109,6 +109,12 @@ export interface FormText {
   chaptersLabel: string;
   chaptersPlaceholder: string;
   chaptersHint: string;
+  fromChapterToEndLabel: string;
+  fromChapterToEndPlaceholder: string;
+  fromChapterToEndHint: string;
+  fromChapterToChapterLabel: string;
+  fromChapterToChapterPlaceholder: string;
+  fromChapterToChapterHint: string;
   priorityLabel: string;
   priorityPlaceholder: string;
   priorityHint: string;
@@ -653,6 +659,15 @@ export const translations: Record<Locale, Translations> = {
       chaptersPlaceholder: "Ex.: 1,2 ou 3.1 (deixe em branco para todos)",
       chaptersHint:
         "Separe os números por vírgula. O app usa todos os capítulos se você deixar vazio.",
+      fromChapterToEndLabel:
+        "Converter do capítulo (inclusive) até o fim (opcional)",
+      fromChapterToEndPlaceholder: "Ex.: 5.1",
+      fromChapterToEndHint:
+        "Use a mesma sintaxe do campo de capítulos. Deixe vazio para ignorar.",
+      fromChapterToChapterLabel: "Converter intervalo de capítulos (opcional)",
+      fromChapterToChapterPlaceholder: "Ex.: 5.1..7.3",
+      fromChapterToChapterHint:
+        "Informe início e fim com '..' (mesma sintaxe do campo de capítulos).",
       priorityLabel: "Quais capítulos devem ter prioridade? (opcional)",
       priorityPlaceholder: "Ex.: 1,4 ou Prólogo (sintaxe igual ao campo acima)",
       priorityHint:
@@ -1234,6 +1249,14 @@ export const translations: Record<Locale, Translations> = {
       chaptersPlaceholder: "Example: 1,2 or 3.1 (leave blank for all)",
       chaptersHint:
         "Separate numbers with commas. All chapters are used if left blank.",
+      fromChapterToEndLabel: "Convert from this chapter to the end (optional)",
+      fromChapterToEndPlaceholder: "Example: 5.1",
+      fromChapterToEndHint:
+        "Uses the same syntax as the chapters field. Leave blank to ignore.",
+      fromChapterToChapterLabel: "Convert a chapter range (optional)",
+      fromChapterToChapterPlaceholder: "Example: 5.1..7.3",
+      fromChapterToChapterHint:
+        "Provide start and end with '..' (same syntax as chapters).",
       priorityLabel: "Prioritize specific chapters? (optional)",
       priorityPlaceholder: "Example: 1,4 or Prologue (same syntax as above)",
       priorityHint:

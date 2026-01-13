@@ -1697,6 +1697,8 @@ class AudioConverter:
                 max_retry_rounds = max(0, int(extra_retry_value))
         except (ValueError, TypeError):
             pass
+        if extra_retry_value is None and (config.engine or "").lower() == "edge":
+            max_retry_rounds = max(max_retry_rounds, 6)
         if not pending_failures and result.converted_chapters < total_chapters:
             fallback_detected = self._detect_failed_chapters_by_output(chapters, temp_dir)
             if fallback_detected:
@@ -1804,6 +1806,20 @@ class AudioConverter:
                     retry_config,
                     edge_chunk_chars=4000,
                     edge_max_segment_seconds=45,
+                    edge_enable_parallel=False,
+                    edge_max_concurrency=1,
+                )
+            if (retry_config.engine or "").lower() == "edge":
+                base_chunk = int(retry_config.edge_chunk_chars or config.edge_chunk_chars or 4000)
+                base_seg = float(
+                    retry_config.edge_max_segment_seconds or config.edge_max_segment_seconds or 45
+                )
+                chunk_factor = 0.75 ** max(1, retry_round)
+                seg_factor = 0.85 ** max(1, retry_round)
+                retry_config = replace(
+                    retry_config,
+                    edge_chunk_chars=max(1200, int(base_chunk * chunk_factor)),
+                    edge_max_segment_seconds=max(30, int(base_seg * seg_factor)),
                     edge_enable_parallel=False,
                     edge_max_concurrency=1,
                 )

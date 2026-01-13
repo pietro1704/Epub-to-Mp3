@@ -463,7 +463,7 @@ _CHAPTER_TIMEOUT_FACTOR = 2.5
 _CHAPTER_TIMEOUT_MIN = 120.0
 _CHAPTER_TIMEOUT_MAX = 900.0
 try:
-    _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "3") or "3"))
+    _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "6") or "6"))
 except (TypeError, ValueError):
     _CHAPTER_RETRY_MAX = 3
 _CHAPTER_RETRY_FOREVER = True
@@ -1862,6 +1862,8 @@ async def convert_ebook(
     model: Optional[str] = Form(None),
     chapters: Optional[str] = Form(None),
     sections: Optional[str] = Form(None),
+    fromChapterToEnd: Optional[str] = Form(None),
+    fromChapterToChapter: Optional[str] = Form(None),
     footnote_mode: Optional[str] = Form("inline"),
     language: Optional[str] = Form(None),
     priority: Optional[str] = Form(None),
@@ -2076,6 +2078,8 @@ async def convert_ebook(
         "model": model,
         "chapters": chapters,
         "sections": sections,
+        "fromChapterToEnd": fromChapterToEnd,
+        "fromChapterToChapter": fromChapterToChapter,
         "footnote_mode": footnote_mode,
         "language": language,
         "priority": priority,
@@ -3129,13 +3133,21 @@ async def process_conversion(job_id: str) -> None:
         _update_job_activity(job, stage="chapter_extraction")
         selector_parts = [job.get("chapters"), job.get("sections")]
         selector_text = " ".join(part for part in selector_parts if part)
+        range_start = job.get("fromChapterToEnd")
+        range_span = job.get("fromChapterToChapter")
         temp_output_base = output_dir / _book_slug(job.get("bookTitle"), job.get("file_path"))
         temp_config = ConversionConfig(
             engine="edge",  # Temporary, just for chapter parsing
             output_dir=str(temp_output_base),
             preserve_all_chapters=not filter_chapters_flag,
         )
-        chapters = _prepare_chapters(reader, temp_config, selector_text)
+        chapters = _prepare_chapters(
+            reader,
+            temp_config,
+            selector_text,
+            range_start=range_start,
+            range_span=range_span,
+        )
         _append_event(job, f"✅ {len(chapters)} capítulos encontrados")
         job["chaptersTotal"] = len(chapters)
         _schedule_job_broadcast(job_id, job)  # Broadcast chapter count to UI
@@ -4176,9 +4188,9 @@ async def process_conversion(job_id: str) -> None:
                     # Research-based default: 8k chars
                     chunk = int(getattr(edge_config, "edge_chunk_chars", 8000) or 8000)
                     seg = float(getattr(edge_config, "edge_max_segment_seconds", 75) or 75)
-                    factor = 0.7 if attempt <= 1 else 0.55
-                    chunk = max(3000, int(chunk * factor))  # Min 3000 for retries
-                    seg = max(50.0, min(seg, seg * factor))
+                    factor = 0.75 ** max(1, attempt)
+                    chunk = max(1200, int(chunk * factor))  # allow deeper retries
+                    seg = max(30.0, min(seg, seg * (0.85 ** max(1, attempt))))
                     return {
                         "chunk_char_limit": chunk,
                         "max_segment_seconds": seg,
@@ -5214,7 +5226,12 @@ def _cleanup_output_directory(job_output_dir: Path) -> None:
 
 
 def _prepare_chapters(
-    reader: EbookReader, config: ConversionConfig, selectors: Optional[str] = None
+    reader: EbookReader,
+    config: ConversionConfig,
+    selectors: Optional[str] = None,
+    *,
+    range_start: Optional[str] = None,
+    range_span: Optional[str] = None,
 ) -> list:
     """Mirror CLI chapter processing so output matches show-structure."""
 
@@ -5228,6 +5245,27 @@ def _prepare_chapters(
 
     if not structure_items:
         return reader.get_chapters()
+
+    if range_start or range_span:
+        try:
+            if range_start and range_span:
+                range_span = None
+            if range_span:
+                parsed = converter_app._parse_range_selector(range_span)
+                if parsed:
+                    range_start, range_end = parsed
+                else:
+                    range_start, range_end = None, None
+            else:
+                range_end = None
+            if range_start:
+                filtered_items, filtered = converter_app._filter_structure_range(
+                    structure_items, range_start, range_end
+                )
+                if filtered and filtered_items:
+                    structure_items = filtered_items
+        except Exception:
+            pass
 
     if selectors:
         raw_selectors = [
