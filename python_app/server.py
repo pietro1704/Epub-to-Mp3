@@ -51,7 +51,7 @@ from src.ebook_reader import EbookReader
 from src.engine_pool import JobEnginePool, ResourceSnapshot
 from src.hardware_detector import HardwareDetector, HardwareProfile
 from src.job_manager import JobManager
-from src.language.detector import LanguageDetector
+from src.language import LanguageProfile
 from src.paths import OUTPUT_DIR
 from src.system_monitor import SystemMonitor
 from src.telemetry import TelemetryRecorder
@@ -1517,7 +1517,6 @@ if not _skip_resume_on_startup:
 
 tts_factory = TTSFactory()
 telemetry = TelemetryRecorder()
-language_detector = LanguageDetector()
 MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "100"))
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
@@ -1963,6 +1962,20 @@ async def convert_ebook(
         min_value=1,
         max_value=6,
     )
+    from_chapter_to_end = (fromChapterToEnd or "").strip() or None
+    from_chapter_to_chapter = (fromChapterToChapter or "").strip() or None
+    if from_chapter_to_end and from_chapter_to_chapter:
+        raise HTTPException(
+            status_code=400,
+            detail="Use apenas fromChapterToEnd ou fromChapterToChapter.",
+        )
+    if from_chapter_to_chapter:
+        parsed_range = ConverterApplication._parse_range_selector(from_chapter_to_chapter)
+        if not parsed_range:
+            raise HTTPException(
+                status_code=400,
+                detail="Intervalo inválido. Use A..B (ex.: 5.1..7.3).",
+            )
     reuse_upload = None
     job_input_dir = None
     book_title: Optional[str] = None
@@ -2078,8 +2091,8 @@ async def convert_ebook(
         "model": model,
         "chapters": chapters,
         "sections": sections,
-        "fromChapterToEnd": fromChapterToEnd,
-        "fromChapterToChapter": fromChapterToChapter,
+        "fromChapterToEnd": from_chapter_to_end,
+        "fromChapterToChapter": from_chapter_to_chapter,
         "footnote_mode": footnote_mode,
         "language": language,
         "priority": priority,
@@ -3127,79 +3140,121 @@ async def process_conversion(job_id: str) -> None:
         _append_event(job, f"📜 Título: {title}")
         _append_event(job, f"✍️ Autor: {author}")
         job["chaptersCompleted"] = 0
+        verbose_enabled = True if verbose_flag is None else bool(verbose_flag)
 
         # Prepare chapters first to analyze language
         _append_event(job, "📑 Extraindo capítulos do livro...")
         _update_job_activity(job, stage="chapter_extraction")
-        selector_parts = [job.get("chapters"), job.get("sections")]
-        selector_text = " ".join(part for part in selector_parts if part)
+        converter_app = ConverterApplication()
+        converter_app._interactive_mode = False
+        try:
+            structure_items = converter_app._generate_structure_items(reader)
+        except Exception:
+            structure_items = []
+        selector_text = " ".join(
+            part for part in (job.get("chapters"), job.get("sections")) if part
+        )
         range_start = job.get("fromChapterToEnd")
         range_span = job.get("fromChapterToChapter")
-        temp_output_base = output_dir / _book_slug(job.get("bookTitle"), job.get("file_path"))
-        temp_config = ConversionConfig(
-            engine="edge",  # Temporary, just for chapter parsing
-            output_dir=str(temp_output_base),
-            preserve_all_chapters=not filter_chapters_flag,
-        )
-        chapters = _prepare_chapters(
-            reader,
-            temp_config,
-            selector_text,
-            range_start=range_start,
-            range_span=range_span,
-        )
-        _append_event(job, f"✅ {len(chapters)} capítulos encontrados")
-        job["chaptersTotal"] = len(chapters)
-        _schedule_job_broadcast(job_id, job)  # Broadcast chapter count to UI
-        _update_job_activity(job, stage="chapters_ready")
+        available_preview = ", ".join(str(item.index) for item in structure_items[:10])
+
+        if structure_items:
+            range_end = None
+            if range_span:
+                parsed_range = converter_app._parse_range_selector(range_span)
+                if parsed_range:
+                    range_start, range_end = parsed_range
+                else:
+                    range_start = None
+            if range_start:
+                structure_items, filtered = converter_app._filter_structure_range(
+                    structure_items, range_start, range_end
+                )
+                if filtered and not structure_items:
+                    selector_label = range_span or range_start
+                    message = converter_app.localization.t(
+                        "selectors_not_found",
+                        selectors=selector_label,
+                        available=available_preview,
+                    )
+                    _append_event(job, f"❌ {message}")
+                    raise RuntimeError(message)
+
+            selectors: list[str] = []
+            if job.get("chapters"):
+                selectors.extend(converter_app._expand_selector_args([job.get("chapters")]))
+            if job.get("sections"):
+                selectors.extend(converter_app._expand_selector_args([job.get("sections")]))
+            if selectors:
+                structure_items, filtered = converter_app._filter_structure_selection(
+                    structure_items, selectors
+                )
+                if filtered and not structure_items:
+                    selector_preview = ", ".join(selectors)
+                    message = converter_app.localization.t(
+                        "selectors_not_found",
+                        selectors=selector_preview,
+                        available=available_preview,
+                    )
+                    _append_event(job, f"❌ {message}")
+                    raise RuntimeError(message)
 
         # Detect language from book content
         _append_event(job, "")
         _append_event(job, "🌐 DETECÇÃO DE IDIOMA")
         _append_event(job, "-" * 64)
 
-        # Use user-specified language if provided, otherwise detect
-        if job.get("language") and job.get("language").lower() not in ("auto", ""):
-            detected_lang = job.get("language")
+        language_profile: Optional[LanguageProfile] = None
+        detected_lang = None
+        job_language = job.get("language")
+        if job_language and job_language.lower() not in ("auto", ""):
+            detected_lang = job_language
+            language_profile = LanguageProfile(
+                primary=detected_lang,
+                languages=[detected_lang],
+                predictions=[],
+                analysed_chars=0,
+            )
             _append_event(job, f"🌐 Idioma especificado pelo usuário: {detected_lang}")
-        else:
+        elif structure_items:
             _append_event(job, "🔍 Analisando conteúdo para detectar idioma...")
-            # Sample text from multiple chapters for better detection
-            sample_texts = []
-            max_samples = min(10, len(chapters))  # Use up to 10 chapters
-            step = max(1, len(chapters) // max_samples)
-
-            for i in range(0, len(chapters), step):
-                if len(sample_texts) >= max_samples:
-                    break
-                chapter = chapters[i]
-                text = getattr(chapter, "text", "") or ""
-                if text and len(text) > 100:
-                    # Take first 500 chars from each sampled chapter
-                    sample_texts.append(text[:500])
-
-            if sample_texts:
-                try:
-                    profile = language_detector.detect_profile(sample_texts, max_chars=8000)
-                    detected_lang = profile.primary or "pt-BR"
-                    if profile.predictions and len(profile.predictions) > 0:
-                        confidence = profile.predictions[0].probability
-                        _append_event(
-                            job,
-                            f"🌐 Idioma detectado: {detected_lang} (confiança: {confidence:.1%})",
-                        )
-                    else:
-                        _append_event(job, f"🌐 Idioma detectado: {detected_lang}")
-                except Exception as e:
-                    detected_lang = "pt-BR"
-                    _append_event(job, f"⚠️ Erro na detecção de idioma: {e}")
-                    _append_event(job, f"🌐 Usando idioma padrão: {detected_lang}")
+            try:
+                language_profile = converter_app._prepare_language_profile(
+                    reader, structure_items, verbose=verbose_enabled
+                )
+            except Exception as exc:
+                _append_event(job, f"⚠️ Erro na detecção de idioma: {exc}")
+                language_profile = None
+            if language_profile and language_profile.primary:
+                detected_lang = language_profile.primary
+                if language_profile.predictions:
+                    confidence = language_profile.predictions[0].probability
+                    _append_event(
+                        job,
+                        f"🌐 Idioma detectado: {detected_lang} (confiança: {confidence:.1%})",
+                    )
+                else:
+                    _append_event(job, f"🌐 Idioma detectado: {detected_lang}")
             else:
                 detected_lang = "pt-BR"
-                _append_event(
-                    job, f"🌐 Sem texto suficiente para detecção, usando: {detected_lang}"
+                _append_event(job, f"🌐 Usando idioma padrão: {detected_lang}")
+                language_profile = LanguageProfile(
+                    primary=detected_lang,
+                    languages=[detected_lang],
+                    predictions=[],
+                    analysed_chars=0,
                 )
+        else:
+            detected_lang = "pt-BR"
+            _append_event(job, f"🌐 Sem texto suficiente para detecção, usando: {detected_lang}")
+            language_profile = LanguageProfile(
+                primary=detected_lang,
+                languages=[detected_lang],
+                predictions=[],
+                analysed_chars=0,
+            )
 
+        converter_app.language_profile = language_profile
         job["detectedLanguage"] = detected_lang
         _persist_job(job_id, force=True)  # Persist metadata
         _update_job_activity(job, stage="language_detected")
@@ -3251,18 +3306,22 @@ async def process_conversion(job_id: str) -> None:
         cache_root = Path(job.get("cacheDir") or (CACHE_DIR / book_slug / engine_slug))
 
         # Create TTS engine using factory with optimized compression
-        verbose_enabled = True if verbose_flag is None else bool(verbose_flag)
         model_path = Path(job.get("model")) if job.get("model") else None
         # Treat "auto" as "edge" (auto mode removed - edge is now default)
         requested_engine = job.get("engine", "edge")
         if (requested_engine or "").lower() == "auto":
             requested_engine = "edge"
+        priority_selectors = (
+            converter_app._expand_selector_args([job.get("priority")])
+            if job.get("priority")
+            else []
+        )
         config = ConversionConfig(
             engine=requested_engine,
             job_id=job_id,
             voice=job.get("voice"),
             model_path=model_path,
-            primary_language=detected_lang,
+            primary_language=detected_lang or "auto",
             output_dir=str(output_root),
             cache_dir=str(cache_root),
             preserve_all_chapters=not filter_chapters_flag,
@@ -3272,20 +3331,11 @@ async def process_conversion(job_id: str) -> None:
             channels=job.get("channels") or 1,  # Mono - audiobooks don't need stereo
             force_reprocess=bool(job.get("forceReprocess")),
             clear_cache=clear_cache_flag,
-            languages=[detected_lang] if detected_lang and detected_lang.lower() != "auto" else [],
-            priority_selectors=[
-                token.strip()
-                for token in re.split(r"[\s,;]+", job.get("priority") or "")
-                if token.strip()
-            ],
+            footnote_mode=job.get("footnote_mode") or "inline",
+            footnote_context_words=converter_app.FOOTNOTE_CONTEXT_WORDS,
+            priority_selectors=priority_selectors,
             speak_formatting_cues=job.get("formattingCues", True),
             formatting_locale=_normalize_locale(job.get("uiLanguage"), "pt"),
-            use_language_detection=True
-            if use_language_detection_flag is None
-            else bool(use_language_detection_flag),
-            prioritize_primary_language=True
-            if prioritize_primary_flag is None
-            else bool(prioritize_primary_flag),
             coqui_chunk_chars=coqui_chunk_override,
             coqui_max_workers=coqui_workers_override,
             coqui_safe_mode=coqui_safe_override,
@@ -3293,6 +3343,27 @@ async def process_conversion(job_id: str) -> None:
             verbose=verbose_enabled,  # Enable verbose logging for terminal-like output
             log_callback=tts_log_callback,  # Capture all verbose logs
         )
+        config.use_language_detection = (
+            True if use_language_detection_flag is None else bool(use_language_detection_flag)
+        )
+        config.prioritize_primary_language = (
+            True if prioritize_primary_flag is None else bool(prioritize_primary_flag)
+        )
+        config.extra.setdefault("voice_auto", "1" if job.get("voice") is None else "0")
+        converter_app._apply_language_preferences(config)
+
+        chapters = list(reader.get_chapters())
+        if structure_items:
+            structure_items = converter_app._apply_text_transforms(structure_items, config, reader)
+            converter_app._apply_structure_to_reader(reader, structure_items)
+            chapters = (
+                reader.get_chapter_structure(preserve_all=config.preserve_all_chapters)
+                or reader.get_chapters()
+            )
+        if config.priority_selectors:
+            chapters = _apply_priority_order(chapters, config.priority_selectors)
+        _append_event(job, f"✅ {len(chapters)} capítulos encontrados")
+        _update_job_activity(job, stage="chapters_ready")
         if (config.engine or "").lower() == "edge":
             # **PERFORMANCE OPTIMIZATIONS**: Use auto-tuned Edge profile from hardware/network detector
             def _env_int(name: str, fallback: int) -> int:
