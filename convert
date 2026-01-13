@@ -47,7 +47,7 @@ echo "║  🚀 EPUB/PDF TO MP3 CONVERTER - TURBO MODE               ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-# If the user did not pass --engine, default to auto (do NOT override explicit engines)
+# If the user did not pass --engine, default to edge (do NOT override explicit engines)
 ENGINE_PRESENT=0
 for arg in "$@"; do
     case "$arg" in
@@ -60,7 +60,7 @@ done
 
 EXTRA_ARGS=()
 if [ "$ENGINE_PRESENT" -eq 0 ]; then
-    EXTRA_ARGS+=(--engine auto)
+    EXTRA_ARGS+=(--engine edge)
 fi
 
 # Run conversion with optimal settings; append default engine only when absent

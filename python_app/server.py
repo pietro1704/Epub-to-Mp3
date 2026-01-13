@@ -165,7 +165,7 @@ EDGE_SLOW_RATIO_THRESHOLD = float(os.getenv("EDGE_SLOW_RATIO_THRESHOLD", "2.5") 
 # Research-based (Jan 2026): 8k default (safe range 3k-8k, >15k = incomplete)
 EDGE_SAFE_CHUNK_CHARS = max(3000, int(os.getenv("EDGE_SAFE_CHUNK_CHARS", "8000") or "8000"))
 EDGE_SAFE_MAX_SEGMENT_SECONDS = max(
-    30, int(os.getenv("EDGE_SAFE_MAX_SEGMENT_SECONDS", "75") or "75")
+    30, int(os.getenv("EDGE_SAFE_MAX_SEGMENT_SECONDS", "300") or "300")
 )
 # **PERFORMANCE**: Aumentar paralelismo de capítulos para igualar CLI
 EDGE_SAFE_CHAPTER_PARALLEL = max(1, int(os.getenv("EDGE_SAFE_CHAPTER_PARALLEL", "8") or "8"))
@@ -1080,7 +1080,7 @@ def _apply_perf_defaults(profile: str, hw: HardwareProfile) -> None:
         _set_default("CHAPTER_PARALLEL_COUNT", "1")
         _set_default("CHAPTER_PARALLEL_MAX", "2")
         _set_default("EDGE_CHUNK_CHARS", "9000")
-        _set_default("EDGE_MAX_SEGMENT_SECONDS", "60")
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "180")
         _set_default("EDGE_ENABLE_PARALLEL", "true")
         _set_default("COQUI_MAX_WORKERS", "2")
         _set_default("PIPER_MAX_PROCS", "1")
@@ -1092,7 +1092,7 @@ def _apply_perf_defaults(profile: str, hw: HardwareProfile) -> None:
         _set_default("CHAPTER_PARALLEL_COUNT", str(min(4, max(2, (hw.cpu_physical or 2) // 2 + 1))))
         _set_default("CHAPTER_PARALLEL_MAX", str(min(6, (hw.cpu_physical or 2) * 2)))
         _set_default("EDGE_CHUNK_CHARS", "11000")
-        _set_default("EDGE_MAX_SEGMENT_SECONDS", "75")
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "300")
         _set_default("EDGE_ENABLE_PARALLEL", "true")
         _set_default("COQUI_MAX_WORKERS", str(min(8, max(4, (hw.cpu_physical or 2) * 2))))
         _set_default("PIPER_MAX_PROCS", str(min(4, max(2, (hw.cpu_physical or 2) // 2 + 1))))
@@ -1103,7 +1103,7 @@ def _apply_perf_defaults(profile: str, hw: HardwareProfile) -> None:
         _set_default("CHAPTER_PARALLEL_COUNT", "2")
         _set_default("CHAPTER_PARALLEL_MAX", "3")
         _set_default("EDGE_CHUNK_CHARS", "10000")
-        _set_default("EDGE_MAX_SEGMENT_SECONDS", "70")
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "240")
         _set_default("EDGE_ENABLE_PARALLEL", "true")
         _set_default("COQUI_MAX_WORKERS", str(min(6, max(3, (hw.cpu_physical or 2)))))
         _set_default("PIPER_MAX_PROCS", "2")
@@ -1679,7 +1679,7 @@ def _auto_tune_engine_pool(
         edge_cfg.edge_max_segment_seconds = int(seg_override or default_seg)
         # Research-based: safe range 3,000-12,000 chars
         edge_cfg.edge_chunk_chars = max(3000, min(edge_cfg.edge_chunk_chars, 12000))
-        edge_cfg.edge_max_segment_seconds = max(45, min(edge_cfg.edge_max_segment_seconds, 95))
+        edge_cfg.edge_max_segment_seconds = max(45, min(edge_cfg.edge_max_segment_seconds, 600))
         if parallel_override is None:
             edge_cfg.edge_enable_parallel = not force_sequential
         else:
@@ -1906,7 +1906,7 @@ async def convert_ebook(
         max_value=_CHAPTER_PARALLEL_MAX,
     )
     edge_chunk_override = _parse_form_int(edge_chunk_chars, min_value=4000, max_value=24000)
-    edge_segment_override = _parse_form_int(edge_max_segment_seconds, min_value=30, max_value=120)
+    edge_segment_override = _parse_form_int(edge_max_segment_seconds, min_value=30, max_value=600)
     edge_parallel_override = _parse_form_optional_bool(edge_enable_parallel)
     edge_auto_tune_override = _parse_form_optional_bool(edge_auto_tune)
     coqui_chunk_override = _parse_form_int(coqui_chunk_chars, min_value=800, max_value=8000)
@@ -3074,7 +3074,7 @@ async def process_conversion(job_id: str) -> None:
             if edge_chunk_override is None:
                 edge_chunk_override = 24000
             if edge_segment_override is None:
-                edge_segment_override = 95
+                edge_segment_override = 300
             if edge_parallel_override is None:
                 edge_parallel_override = True
             if coqui_chunk_override is None:

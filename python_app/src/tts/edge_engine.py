@@ -43,7 +43,8 @@ try:
 except (TypeError, ValueError):
     _segment_seconds_env = 75.0
 
-DEFAULT_EDGE_SEGMENT_SECONDS = max(30.0, min(_segment_seconds_env, 95.0))
+MAX_EDGE_SEGMENT_SECONDS = 600.0  # Align with Edge's ~10 min per request limit
+DEFAULT_EDGE_SEGMENT_SECONDS = max(30.0, min(_segment_seconds_env, MAX_EDGE_SEGMENT_SECONDS))
 WORDS_PER_MINUTE = 150
 MIN_WORDS_PER_SEGMENT = 40
 MAX_SEGMENT_SPLIT_ATTEMPTS = 2
@@ -398,7 +399,7 @@ class EdgeTTSEngine:
         max_seconds = (
             max_segment_seconds if max_segment_seconds is not None else DEFAULT_EDGE_SEGMENT_SECONDS
         )
-        self._max_segment_seconds = max(30.0, min(float(max_seconds), 95.0))
+        self._max_segment_seconds = max(30.0, min(float(max_seconds), MAX_EDGE_SEGMENT_SECONDS))
         # Use adaptive chunk size if no override provided
         if chunk_char_limit is not None:
             try:
@@ -499,7 +500,7 @@ class EdgeTTSEngine:
         new_seg = config.get("max_segment_seconds")
         if new_seg and new_seg != self._max_segment_seconds:
             old_seg = self._max_segment_seconds
-            self._max_segment_seconds = max(30.0, min(float(new_seg), 95.0))
+            self._max_segment_seconds = max(30.0, min(float(new_seg), MAX_EDGE_SEGMENT_SECONDS))
             changed.append(f"segment: {old_seg:.0f}s -> {self._max_segment_seconds:.0f}s")
 
         if changed and self.verbose:
@@ -1256,9 +1257,10 @@ class EdgeTTSEngine:
         # Mais agressivo para evitar esperas longas
         timeout = estimated * 1.4 + 20.0
 
-        # Limites: mínimo 45s, máximo 300s (5 min)
+        # Limites: mínimo 45s, máximo dinâmico para evitar cortes de segmentos longos
         timeout = max(timeout, 45.0)
-        timeout = min(timeout, 300.0)
+        timeout_cap = max(300.0, self._max_segment_seconds * 1.5 + 60.0)
+        timeout = min(timeout, timeout_cap)
 
         return int(round(timeout))
 
@@ -1766,7 +1768,6 @@ class EdgeTTSEngine:
                         await stream.aclose()
 
             synthesis_start = asyncio.get_event_loop().time()
-            SEGMENT_HARD_TIMEOUT = 60.0
             max_retries = 3
             retry_count = 0
 
@@ -1787,10 +1788,7 @@ class EdgeTTSEngine:
 
                         try:
                             with output_path.open(mode) as out_file:
-                                await asyncio.wait_for(
-                                    _consume_stream(out_file),
-                                    timeout=min(timeout, SEGMENT_HARD_TIMEOUT),
-                                )
+                                await asyncio.wait_for(_consume_stream(out_file), timeout=timeout)
                         finally:
                             if heartbeat_task is not None:
                                 heartbeat_task.cancel()

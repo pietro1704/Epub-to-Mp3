@@ -37,9 +37,9 @@ class EdgeTTSPerformanceProfile:
     chunk_char_max: int = 15000
 
     # Segment duration (research: 10 min max per request)
-    max_segment_seconds: float = 60.0
+    max_segment_seconds: float = 90.0
     max_segment_min: float = 30.0
-    max_segment_max: float = 90.0
+    max_segment_max: float = 600.0
 
     # Parallelism (research: 2-4 safe, >8 triggers rate limits)
     parallel_slots: int = 4
@@ -81,19 +81,19 @@ class EdgeTTSAutoTuner:
     PROFILES = {
         "conservative": EdgeTTSPerformanceProfile(
             chunk_char_limit=6000,
-            max_segment_seconds=50.0,
+            max_segment_seconds=75.0,
             parallel_slots=2,
             name="conservative",
         ),
         "balanced": EdgeTTSPerformanceProfile(
             chunk_char_limit=8000,
-            max_segment_seconds=60.0,
+            max_segment_seconds=90.0,
             parallel_slots=4,
             name="balanced",
         ),
         "aggressive": EdgeTTSPerformanceProfile(
             chunk_char_limit=4000,
-            max_segment_seconds=45.0,
+            max_segment_seconds=70.0,
             parallel_slots=8,
             name="aggressive",
         ),

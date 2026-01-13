@@ -246,7 +246,7 @@ class AdaptiveSpeedController:
 
         # Keep chunk sizes within reliable bounds.
         chunk_limit = int(max(4000, min(chunk_limit, 12000)))
-        max_seconds = float(max(45.0, min(max_seconds, 85.0)))
+        max_seconds = float(max(45.0, min(max_seconds, 300.0)))
         words_per_minute = int(max(160, min(words_per_minute, 230)))
 
         changed = False

@@ -67,28 +67,28 @@ class HardwareDetector:
     _EDGE_NETWORK_PROFILES = {
         "slow": {
             "chunk_chars": 8000,  # Increased from 6k
-            "max_segment_seconds": 55,  # Increased from 45
+            "max_segment_seconds": 120,  # Allow longer segments on Edge
             "concurrency_scale": 0.6,  # Increased from 0.5
             "concurrency_cap": 3,  # Increased from 2
             "edge_parallel": True,  # Changed to True
         },
         "medium": {
             "chunk_chars": 10000,  # Increased from 8k
-            "max_segment_seconds": 65,  # Increased from 55
+            "max_segment_seconds": 180,  # Allow longer segments on Edge
             "concurrency_scale": 0.8,  # Increased from 0.7
             "concurrency_cap": 4,  # Increased from 3
             "edge_parallel": True,
         },
         "fast": {
             "chunk_chars": 12000,  # Increased from 10k
-            "max_segment_seconds": 75,  # Increased from 65
+            "max_segment_seconds": 240,  # Allow longer segments on Edge
             "concurrency_scale": 0.9,  # Increased from 0.85
             "concurrency_cap": 6,  # Increased from 4
             "edge_parallel": True,
         },
         "ultra": {
             "chunk_chars": 15000,  # Increased from 12k
-            "max_segment_seconds": 85,  # Increased from 75
+            "max_segment_seconds": 300,  # Allow longer segments on Edge
             "concurrency_scale": 1.0,
             "concurrency_cap": 8,  # Increased from 4
             "edge_parallel": True,
