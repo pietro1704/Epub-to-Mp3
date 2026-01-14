@@ -1566,7 +1566,10 @@ class AudioConverter:
         edge_network_tier = (edge_network_tier or "fast").strip().lower()
         if edge_network_tier not in EDGE_AUTO_PARALLEL_CAPS:
             edge_network_tier = "fast"
-        edge_auto_enabled = EDGE_AUTO_TUNE and has_edge_engine
+        edge_auto_override = getattr(config, "edge_auto_tune", None)
+        edge_auto_enabled = (
+            EDGE_AUTO_TUNE if edge_auto_override is None else bool(edge_auto_override)
+        ) and has_edge_engine
         parallel_slots_cap: Optional[int] = None
         if edge_auto_enabled:
             parallel_slots_cap = EDGE_AUTO_PARALLEL_CAPS.get(

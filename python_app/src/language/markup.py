@@ -58,7 +58,13 @@ class LanguageMarkup:
         """Apply text formatting markup for TTS guidance (emphasis, pauses, etc.)"""
         return text
 
-    def annotate(self, text: str, default_language: Optional[str]) -> str:
+    def annotate(
+        self,
+        text: str,
+        default_language: Optional[str],
+        *,
+        prioritize_primary_language: bool = True,
+    ) -> str:
         if not text:
             return text
 
@@ -131,12 +137,13 @@ class LanguageMarkup:
         try:
             # **TIMEOUT**: Aplicar timeout na segmentação
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                primary_language = default_short if prioritize_primary_language else None
                 future = executor.submit(
                     self.detector.detect_segments,
                     text,
                     timeout_seconds=1.5,  # Timeout mais agressivo para segmentos
                     fallback_language=default_short,
-                    primary_language=default_short,  # **NEW**: Priorizar idioma primário em ambiguidades
+                    primary_language=primary_language,
                 )
                 try:
                     segments = future.result(timeout=5.0)  # 5 segundos max total

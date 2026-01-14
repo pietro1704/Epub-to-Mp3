@@ -52,6 +52,7 @@ class ConversionConfig:
     edge_chunk_chars: int = 10000  # Aggressive default tuned for throughput
     edge_max_segment_seconds: int = 75
     edge_aggressive_mode: bool = False
+    edge_auto_tune: Optional[bool] = None
     edge_enable_parallel: bool = True
     edge_max_concurrency: int = 6
     coqui_chunk_chars: Optional[int] = None  # override Coqui chunk size when auto-tuning
@@ -97,6 +98,7 @@ class ConversionConfig:
             "edge_auto_offline_chars": self.edge_auto_offline_chars,
             "edge_chunk_chars": self.edge_chunk_chars,
             "edge_max_segment_seconds": self.edge_max_segment_seconds,
+            "edge_auto_tune": self.edge_auto_tune,
             "edge_enable_parallel": self.edge_enable_parallel,
             "edge_max_concurrency": self.edge_max_concurrency,
             "coqui_chunk_chars": self.coqui_chunk_chars,
@@ -626,6 +628,7 @@ class AppConfig:
             "edge_enable_parallel",
             os.getenv("EDGE_ENABLE_PARALLEL", "true").lower() in ("true", "1", "yes"),
         )
+        edge_auto_tune = kwargs.pop("edge_auto_tune", None)
         edge_max_concurrency = kwargs.pop(
             "edge_max_concurrency",
             _safe_int(os.getenv("EDGE_MAX_CONCURRENCY"), ConversionConfig.edge_max_concurrency),
@@ -662,6 +665,7 @@ class AppConfig:
             edge_auto_offline_chars=edge_auto_offline_chars,
             edge_chunk_chars=edge_chunk_chars,
             edge_max_segment_seconds=edge_max_segment_seconds,
+            edge_auto_tune=edge_auto_tune,
             edge_enable_parallel=edge_enable_parallel,
             edge_max_concurrency=edge_max_concurrency,
             coqui_chunk_chars=coqui_chunk_chars,

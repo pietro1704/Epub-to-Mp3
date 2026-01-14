@@ -150,7 +150,7 @@ def main() -> int:
     if not hasattr(args, "menu"):
         args.menu = False
 
-    app = ConverterApplication()
+    app = ConverterApplication(ui_language=getattr(args, "ui_language", None))
     try:
         return app.run(args)
     except KeyboardInterrupt:

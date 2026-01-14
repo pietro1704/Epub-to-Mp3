@@ -3349,6 +3349,8 @@ async def process_conversion(job_id: str) -> None:
         config.prioritize_primary_language = (
             True if prioritize_primary_flag is None else bool(prioritize_primary_flag)
         )
+        if edge_auto_tune_override is not None:
+            config.edge_auto_tune = bool(edge_auto_tune_override)
         config.extra.setdefault("voice_auto", "1" if job.get("voice") is None else "0")
         converter_app._apply_language_preferences(config)
 

@@ -66,8 +66,8 @@ class ConverterApplication:
     FOOTNOTE_CONTEXT_WORDS = 8
     SUPPORTED_INPUT_SUFFIXES = (".epub", ".pdf")
 
-    def __init__(self):
-        self.localization = get_localization()
+    def __init__(self, ui_language: Optional[str] = None):
+        self.localization = get_localization(ui_language)
         self.config = AppConfig()
         self.menu = MenuInterface(localization=self.localization)
         self.converter = AudioConverter(localization=self.localization)
@@ -91,6 +91,55 @@ class ConverterApplication:
         if raw is None:
             return default
         return bool(raw)
+
+    @staticmethod
+    def _normalize_language_override(raw: Optional[str]) -> Optional[str]:
+        if raw is None:
+            return None
+        cleaned = str(raw).strip()
+        if not cleaned:
+            return None
+        if cleaned.lower() in {"auto", "unknown"}:
+            return None
+        return cleaned
+
+    @staticmethod
+    def _clamp_int(
+        value: Optional[int],
+        *,
+        min_value: Optional[int] = None,
+        max_value: Optional[int] = None,
+    ) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            parsed = int(value)
+        except (TypeError, ValueError):
+            return None
+        if min_value is not None:
+            parsed = max(min_value, parsed)
+        if max_value is not None:
+            parsed = min(max_value, parsed)
+        return parsed
+
+    @staticmethod
+    def _clamp_float(
+        value: Optional[float],
+        *,
+        min_value: Optional[float] = None,
+        max_value: Optional[float] = None,
+    ) -> Optional[float]:
+        if value is None:
+            return None
+        try:
+            parsed = float(value)
+        except (TypeError, ValueError):
+            return None
+        if min_value is not None:
+            parsed = max(min_value, parsed)
+        if max_value is not None:
+            parsed = min(max_value, parsed)
+        return parsed
 
     @staticmethod
     def _apply_no_parallel_env(args: argparse.Namespace) -> None:
@@ -395,9 +444,18 @@ class ConverterApplication:
 
             # Prepare language profile AFTER displaying initial metadata
             verbose = self._resolve_verbose(args)
-            self.language_profile = self._prepare_language_profile(
-                reader, structure_items, verbose=verbose
-            )
+            language_override = self._normalize_language_override(getattr(args, "language", None))
+            if language_override:
+                self.language_profile = LanguageProfile(
+                    primary=language_override,
+                    languages=[language_override],
+                    predictions=[],
+                    analysed_chars=0,
+                )
+            else:
+                self.language_profile = self._prepare_language_profile(
+                    reader, structure_items, verbose=verbose
+                )
 
             # Update display with language detection results
             self._update_metadata_display_language()
@@ -1143,7 +1201,13 @@ class ConverterApplication:
                     from src.language import LanguageMarkup
 
                     markup = LanguageMarkup()
-                    speech_text = markup.annotate(speech_text, primary_language)
+                    speech_text = markup.annotate(
+                        speech_text,
+                        primary_language,
+                        prioritize_primary_language=getattr(
+                            config, "prioritize_primary_language", True
+                        ),
+                    )
                 except (ImportError, Exception) as e:
                     # Falha silenciosa - continua sem detecção
                     if config.verbose:
@@ -2784,14 +2848,12 @@ class ConverterApplication:
                 config.speak_formatting_cues = bool(cues_enabled)
                 config.formatting_locale = self.localization.language
                 apply_benchmark_profile(config.engine, config=config)
-                if getattr(args, "no_parallel", False):
-                    config.edge_enable_parallel = False
+                self._apply_cli_overrides(args, config)
             return config
         config = self._create_config_from_args(args, reader)
         self._apply_language_preferences(config)
         apply_benchmark_profile(config.engine, config=config)
-        if getattr(args, "no_parallel", False):
-            config.edge_enable_parallel = False
+        self._apply_cli_overrides(args, config)
         return config
 
     def _create_config_from_args(self, args: argparse.Namespace, reader: EbookReader):
@@ -2799,7 +2861,53 @@ class ConverterApplication:
         verbose = self._resolve_verbose(args)
         formatting_cues_pref = getattr(args, "formatting_cues", None)
         cues_enabled = True if formatting_cues_pref is None else bool(formatting_cues_pref)
-        return self.config.create_conversion_config(
+        primary_language = self._normalize_language_override(getattr(args, "language", None))
+        edge_chunk_chars = self._clamp_int(
+            getattr(args, "edge_chunk_chars", None), min_value=4000, max_value=24000
+        )
+        edge_max_segment_seconds = self._clamp_int(
+            getattr(args, "edge_max_segment_seconds", None), min_value=30, max_value=600
+        )
+        coqui_chunk_chars = self._clamp_int(
+            getattr(args, "coqui_chunk_chars", None), min_value=800, max_value=8000
+        )
+        coqui_max_workers = self._clamp_int(
+            getattr(args, "coqui_max_workers", None), min_value=1, max_value=12
+        )
+        piper_max_procs = self._clamp_int(
+            getattr(args, "piper_max_procs", None), min_value=1, max_value=12
+        )
+        sample_rate = self._clamp_int(
+            getattr(args, "sample_rate", None), min_value=8000, max_value=96000
+        )
+        channels = self._clamp_int(getattr(args, "channels", None), min_value=1, max_value=2)
+        overrides: Dict[str, Any] = {}
+        if primary_language:
+            overrides["primary_language"] = primary_language
+        if edge_chunk_chars is not None:
+            overrides["edge_chunk_chars"] = edge_chunk_chars
+        if edge_max_segment_seconds is not None:
+            overrides["edge_max_segment_seconds"] = edge_max_segment_seconds
+        if getattr(args, "edge_enable_parallel", None) is not None:
+            overrides["edge_enable_parallel"] = bool(getattr(args, "edge_enable_parallel"))
+        if getattr(args, "edge_auto_tune", None) is not None:
+            overrides["edge_auto_tune"] = bool(getattr(args, "edge_auto_tune"))
+        if coqui_chunk_chars is not None:
+            overrides["coqui_chunk_chars"] = coqui_chunk_chars
+        if coqui_max_workers is not None:
+            overrides["coqui_max_workers"] = coqui_max_workers
+        if getattr(args, "coqui_safe_mode", None) is not None:
+            overrides["coqui_safe_mode"] = bool(getattr(args, "coqui_safe_mode"))
+        if piper_max_procs is not None:
+            overrides["piper_max_procs"] = piper_max_procs
+        if getattr(args, "bitrate", None):
+            overrides["bitrate"] = str(getattr(args, "bitrate"))
+        if sample_rate is not None:
+            overrides["sample_rate"] = sample_rate
+        if channels is not None:
+            overrides["channels"] = channels
+
+        config = self.config.create_conversion_config(
             engine=args.engine or "edge",
             voice=args.voice,
             model=args.model,
@@ -2818,7 +2926,173 @@ class ConverterApplication:
             formatting_locale=self.localization.language,
             max_auto_retries=getattr(args, "retry_failed_rounds", None),
             manual_retry_failed=getattr(args, "retry_failed_manual", False),
+            force_reprocess=bool(getattr(args, "force_reprocess", False)),
+            **overrides,
         )
+        use_language_detection = getattr(args, "use_language_detection", None)
+        if use_language_detection is not None:
+            config.use_language_detection = bool(use_language_detection)
+        prioritize_primary = getattr(args, "prioritize_primary_language", None)
+        if prioritize_primary is not None:
+            config.prioritize_primary_language = bool(prioritize_primary)
+        return config
+
+    def _apply_cli_overrides(self, args: argparse.Namespace, config: ConversionConfig) -> None:
+        if config is None:
+            return
+        use_language_detection = getattr(args, "use_language_detection", None)
+        if use_language_detection is not None:
+            config.use_language_detection = bool(use_language_detection)
+        prioritize_primary = getattr(args, "prioritize_primary_language", None)
+        if prioritize_primary is not None:
+            config.prioritize_primary_language = bool(prioritize_primary)
+
+        if getattr(args, "force_reprocess", False):
+            config.force_reprocess = True
+
+        edge_chunk_chars = self._clamp_int(
+            getattr(args, "edge_chunk_chars", None), min_value=4000, max_value=24000
+        )
+        edge_max_segment_seconds = self._clamp_int(
+            getattr(args, "edge_max_segment_seconds", None), min_value=30, max_value=600
+        )
+        edge_parallel_override = getattr(args, "edge_enable_parallel", None)
+        edge_auto_tune_override = getattr(args, "edge_auto_tune", None)
+        coqui_chunk_chars = self._clamp_int(
+            getattr(args, "coqui_chunk_chars", None), min_value=800, max_value=8000
+        )
+        coqui_max_workers = self._clamp_int(
+            getattr(args, "coqui_max_workers", None), min_value=1, max_value=12
+        )
+        coqui_safe_mode = getattr(args, "coqui_safe_mode", None)
+        piper_max_procs = self._clamp_int(
+            getattr(args, "piper_max_procs", None), min_value=1, max_value=12
+        )
+
+        if edge_chunk_chars is not None:
+            config.edge_chunk_chars = edge_chunk_chars
+        if edge_max_segment_seconds is not None:
+            config.edge_max_segment_seconds = edge_max_segment_seconds
+        if edge_parallel_override is not None:
+            config.edge_enable_parallel = bool(edge_parallel_override)
+        if edge_auto_tune_override is not None:
+            config.edge_auto_tune = bool(edge_auto_tune_override)
+        if coqui_chunk_chars is not None:
+            config.coqui_chunk_chars = coqui_chunk_chars
+        if coqui_max_workers is not None:
+            config.coqui_max_workers = coqui_max_workers
+        if coqui_safe_mode is not None:
+            config.coqui_safe_mode = bool(coqui_safe_mode)
+        if piper_max_procs is not None:
+            config.piper_max_procs = piper_max_procs
+
+        bitrate = getattr(args, "bitrate", None)
+        if bitrate:
+            config.bitrate = str(bitrate)
+        sample_rate = self._clamp_int(
+            getattr(args, "sample_rate", None), min_value=8000, max_value=96000
+        )
+        if sample_rate is not None:
+            config.sample_rate = sample_rate
+        channels = self._clamp_int(getattr(args, "channels", None), min_value=1, max_value=2)
+        if channels is not None:
+            config.channels = channels
+
+        max_performance = bool(getattr(args, "max_performance", False))
+        if max_performance:
+            profile = getattr(self.converter, "hardware_profile", None)
+            cpu_physical = int(getattr(profile, "cpu_physical", 2) or 2)
+            has_gpu = bool(getattr(profile, "has_gpu", False))
+            ram_total = float(getattr(profile, "ram_total_gb", 0.0) or 0.0)
+            if edge_chunk_chars is None:
+                config.edge_chunk_chars = 24000
+            if edge_max_segment_seconds is None:
+                config.edge_max_segment_seconds = 300
+            if edge_parallel_override is None:
+                config.edge_enable_parallel = True
+            if coqui_chunk_chars is None:
+                config.coqui_chunk_chars = 8000
+            if coqui_max_workers is None:
+                if has_gpu:
+                    config.coqui_max_workers = 3 if ram_total >= 8 else 2
+                else:
+                    config.coqui_max_workers = min(12, max(2, cpu_physical * 2))
+            if piper_max_procs is None:
+                config.piper_max_procs = min(6, max(1, cpu_physical))
+
+        parallel_slots = self._clamp_int(
+            getattr(args, "parallel_slots", None), min_value=1, max_value=12
+        )
+        if parallel_slots is None and max_performance and not getattr(args, "no_parallel", False):
+            profile = getattr(self.converter, "hardware_profile", None)
+            cpu_physical = int(getattr(profile, "cpu_physical", 2) or 2)
+            parallel_slots = min(6, max(2, cpu_physical * 2))
+        if parallel_slots is not None:
+            os.environ["CHAPTER_PARALLEL_COUNT"] = str(parallel_slots)
+            os.environ["CHAPTER_PARALLEL_MAX"] = str(parallel_slots)
+
+        self._apply_healthcheck_env(args)
+
+        if getattr(args, "no_parallel", False):
+            config.edge_enable_parallel = False
+            os.environ["CHAPTER_PARALLEL_COUNT"] = "1"
+            os.environ["CHAPTER_PARALLEL_MAX"] = "1"
+
+    def _apply_healthcheck_env(self, args: argparse.Namespace) -> None:
+        interval = self._clamp_float(
+            getattr(args, "health_check_interval_seconds", None),
+            min_value=10.0,
+            max_value=300.0,
+        )
+        slow_edge = self._clamp_float(
+            getattr(args, "health_check_slow_edge_cps", None),
+            min_value=10.0,
+            max_value=500.0,
+        )
+        slow_cps = self._clamp_float(
+            getattr(args, "health_check_slow_cps", None),
+            min_value=10.0,
+            max_value=300.0,
+        )
+        high_cpu = self._clamp_float(
+            getattr(args, "health_check_high_cpu", None),
+            min_value=30.0,
+            max_value=100.0,
+        )
+        high_mem = self._clamp_float(
+            getattr(args, "health_check_high_mem", None),
+            min_value=30.0,
+            max_value=100.0,
+        )
+        ok_cpu = self._clamp_float(
+            getattr(args, "health_check_ok_cpu", None),
+            min_value=10.0,
+            max_value=100.0,
+        )
+        ok_mem = self._clamp_float(
+            getattr(args, "health_check_ok_mem", None),
+            min_value=10.0,
+            max_value=100.0,
+        )
+        slow_streak = self._clamp_int(
+            getattr(args, "health_check_slow_streak", None), min_value=1, max_value=6
+        )
+        if interval is not None:
+            os.environ["JOB_HEALTHCHECK_INTERVAL_SECONDS"] = str(interval)
+        if slow_edge is not None:
+            os.environ["JOB_HEALTHCHECK_SLOW_EDGE_CPS"] = str(slow_edge)
+        if slow_cps is not None:
+            os.environ["JOB_HEALTHCHECK_SLOW_CPS"] = str(slow_cps)
+        if high_cpu is not None:
+            os.environ["JOB_HEALTHCHECK_HIGH_CPU_PERCENT"] = str(high_cpu)
+        if high_mem is not None:
+            os.environ["JOB_HEALTHCHECK_HIGH_MEM_PERCENT"] = str(high_mem)
+        if ok_cpu is not None:
+            os.environ["JOB_HEALTHCHECK_OK_CPU_PERCENT"] = str(ok_cpu)
+        if ok_mem is not None:
+            os.environ["JOB_HEALTHCHECK_OK_MEM_PERCENT"] = str(ok_mem)
+        if slow_streak is not None:
+            os.environ["JOB_HEALTHCHECK_SLOW_STREAK"] = str(slow_streak)
 
 
 def _add_conversion_arguments(
@@ -2948,6 +3222,203 @@ def _add_conversion_arguments(
         help="Prioritize chapters before the rest (same syntax as --chapter)",
     )
     parser.add_argument(
+        "--language",
+        help="Override primary language (e.g., pt, en, pt-BR). Use 'auto' to detect",
+    )
+    language_detection_group = parser.add_mutually_exclusive_group()
+    language_detection_group.add_argument(
+        "--use-language-detection",
+        dest="use_language_detection",
+        action="store_true",
+        default=None,
+        help="Enable automatic language markup for mixed-language text",
+    )
+    language_detection_group.add_argument(
+        "--no-language-detection",
+        dest="use_language_detection",
+        action="store_false",
+        default=None,
+        help="Disable automatic language markup for mixed-language text",
+    )
+    prioritize_language_group = parser.add_mutually_exclusive_group()
+    prioritize_language_group.add_argument(
+        "--prioritize-primary-language",
+        dest="prioritize_primary_language",
+        action="store_true",
+        default=None,
+        help="Prefer the primary language when detections are ambiguous",
+    )
+    prioritize_language_group.add_argument(
+        "--no-prioritize-primary-language",
+        dest="prioritize_primary_language",
+        action="store_false",
+        default=None,
+        help="Allow ambiguous language detections to override the primary language",
+    )
+    parser.add_argument(
+        "--ui-language",
+        dest="ui_language",
+        help="Force CLI language (pt or en)",
+    )
+    parser.add_argument(
+        "--max-performance",
+        dest="max_performance",
+        action="store_true",
+        help="Use aggressive performance defaults (larger chunks and more parallelism)",
+    )
+    parser.add_argument(
+        "--parallel-slots",
+        dest="parallel_slots",
+        type=int,
+        help="Override number of parallel chapters",
+    )
+    parser.add_argument(
+        "--edge-chunk-chars",
+        dest="edge_chunk_chars",
+        type=int,
+        help="Override Edge chunk size (chars)",
+    )
+    parser.add_argument(
+        "--edge-max-segment-seconds",
+        dest="edge_max_segment_seconds",
+        type=int,
+        help="Override Edge max segment duration (seconds)",
+    )
+    edge_parallel_group = parser.add_mutually_exclusive_group()
+    edge_parallel_group.add_argument(
+        "--edge-enable-parallel",
+        dest="edge_enable_parallel",
+        action="store_true",
+        default=None,
+        help="Enable Edge internal parallelism",
+    )
+    edge_parallel_group.add_argument(
+        "--edge-disable-parallel",
+        dest="edge_enable_parallel",
+        action="store_false",
+        default=None,
+        help="Disable Edge internal parallelism",
+    )
+    edge_auto_tune_group = parser.add_mutually_exclusive_group()
+    edge_auto_tune_group.add_argument(
+        "--edge-auto-tune",
+        dest="edge_auto_tune",
+        action="store_true",
+        default=None,
+        help="Enable Edge auto-tuning (adaptive chunk/segment sizes)",
+    )
+    edge_auto_tune_group.add_argument(
+        "--no-edge-auto-tune",
+        dest="edge_auto_tune",
+        action="store_false",
+        default=None,
+        help="Disable Edge auto-tuning",
+    )
+    parser.add_argument(
+        "--coqui-chunk-chars",
+        dest="coqui_chunk_chars",
+        type=int,
+        help="Override Coqui chunk size (chars)",
+    )
+    parser.add_argument(
+        "--coqui-max-workers",
+        dest="coqui_max_workers",
+        type=int,
+        help="Override Coqui worker pool size",
+    )
+    coqui_safe_group = parser.add_mutually_exclusive_group()
+    coqui_safe_group.add_argument(
+        "--coqui-safe-mode",
+        dest="coqui_safe_mode",
+        action="store_true",
+        default=None,
+        help="Enable Coqui safe mode (limit parallelism)",
+    )
+    coqui_safe_group.add_argument(
+        "--no-coqui-safe-mode",
+        dest="coqui_safe_mode",
+        action="store_false",
+        default=None,
+        help="Disable Coqui safe mode",
+    )
+    parser.add_argument(
+        "--piper-max-procs",
+        dest="piper_max_procs",
+        type=int,
+        help="Override Piper concurrent process limit",
+    )
+    parser.add_argument(
+        "--bitrate",
+        dest="bitrate",
+        help="Override output bitrate (e.g., 8k, 32k)",
+    )
+    parser.add_argument(
+        "--sample-rate",
+        dest="sample_rate",
+        type=int,
+        help="Override output sample rate (Hz)",
+    )
+    parser.add_argument(
+        "--channels",
+        dest="channels",
+        type=int,
+        help="Override output channels (1=mono, 2=stereo)",
+    )
+    parser.add_argument(
+        "--force-reprocess",
+        dest="force_reprocess",
+        action="store_true",
+        help="Ignore cached audio and regenerate all chapters",
+    )
+    parser.add_argument(
+        "--health-check-interval-seconds",
+        dest="health_check_interval_seconds",
+        type=float,
+        help="Healthcheck interval in seconds (server mode only)",
+    )
+    parser.add_argument(
+        "--health-check-slow-edge-cps",
+        dest="health_check_slow_edge_cps",
+        type=float,
+        help="Healthcheck Edge slow threshold (chars/s)",
+    )
+    parser.add_argument(
+        "--health-check-slow-cps",
+        dest="health_check_slow_cps",
+        type=float,
+        help="Healthcheck slow threshold for non-Edge engines (chars/s)",
+    )
+    parser.add_argument(
+        "--health-check-high-cpu",
+        dest="health_check_high_cpu",
+        type=float,
+        help="Healthcheck high CPU threshold (percent)",
+    )
+    parser.add_argument(
+        "--health-check-high-mem",
+        dest="health_check_high_mem",
+        type=float,
+        help="Healthcheck high memory threshold (percent)",
+    )
+    parser.add_argument(
+        "--health-check-ok-cpu",
+        dest="health_check_ok_cpu",
+        type=float,
+        help="Healthcheck OK CPU threshold (percent)",
+    )
+    parser.add_argument(
+        "--health-check-ok-mem",
+        dest="health_check_ok_mem",
+        type=float,
+        help="Healthcheck OK memory threshold (percent)",
+    )
+    parser.add_argument(
+        "--health-check-slow-streak",
+        dest="health_check_slow_streak",
+        type=int,
+        help="Healthcheck slow streak before reducing parallelism",
+    )
+    parser.add_argument(
         "--retry-failed",
         dest="retry_failed_rounds",
         metavar="N",
@@ -3067,7 +3538,7 @@ def main() -> int:
     if not hasattr(args, "batch_stop_on_error"):
         args.batch_stop_on_error = False
 
-    app = ConverterApplication()
+    app = ConverterApplication(ui_language=getattr(args, "ui_language", None))
     return app.run(args)
 
 
