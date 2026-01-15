@@ -10,6 +10,7 @@ import { useI18n, useTranslations } from "../i18n/I18nProvider";
 import {
   ConversionFormValues,
   ConversionState,
+  ConversionTemplate,
   EngineOption,
   FootnoteMode,
   SubmitBatchOptions,
@@ -706,7 +707,7 @@ export default function ConversionForm({
       return undefined;
     };
 
-    const sharedConfig = {
+    const sharedConfig: ConversionTemplate = {
       engine,
       voice: voice || undefined,
       model: model || undefined,
