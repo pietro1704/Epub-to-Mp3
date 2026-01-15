@@ -61,6 +61,10 @@ class ConversionConfig:
     piper_max_procs: Optional[int] = None  # override Piper concurrent process limit
     speak_formatting_cues: bool = True
     formatting_locale: str = "pt"
+    # Validation settings
+    verify_transcription: bool = False
+    transcription_model: str = "small"
+    validation_language: Optional[str] = None  # Language for transcription validation
 
     def __post_init__(self) -> None:
         if self.output_dir is not None and not isinstance(self.output_dir, Path):
@@ -110,6 +114,9 @@ class ConversionConfig:
             data["extra"] = dict(self.extra)
         data["speak_formatting_cues"] = self.speak_formatting_cues
         data["formatting_locale"] = self.formatting_locale
+        data["verify_transcription"] = self.verify_transcription
+        data["transcription_model"] = self.transcription_model
+        data["validation_language"] = self.validation_language
         return data
 
 
@@ -638,6 +645,11 @@ class AppConfig:
         coqui_safe_mode = kwargs.pop("coqui_safe_mode", None)
         piper_max_procs = kwargs.pop("piper_max_procs", None)
 
+        # Validation settings
+        verify_transcription = bool(kwargs.pop("verify_transcription", False))
+        transcription_model = str(kwargs.pop("transcription_model", "small"))
+        validation_language = kwargs.pop("validation_language", None)
+
         config = ConversionConfig(
             engine=engine,
             voice=voice,
@@ -674,6 +686,9 @@ class AppConfig:
             piper_max_procs=piper_max_procs,
             speak_formatting_cues=speak_formatting_cues,
             formatting_locale=formatting_locale,
+            verify_transcription=verify_transcription,
+            transcription_model=transcription_model,
+            validation_language=validation_language,
         )
 
         if kwargs:

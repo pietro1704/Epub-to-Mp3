@@ -462,6 +462,41 @@ class CacheManager:
 
         return checkpoints
 
+    def get_validation_log_path(self, ebook_path: Path, chapter_number: int) -> Path:
+        """
+        Retorna path para log de validação de um capítulo.
+
+        Args:
+            ebook_path: Caminho do ebook
+            chapter_number: Número do capítulo
+
+        Returns:
+            Path para o arquivo de log de validação
+        """
+        cache_path = self._get_cache_path(ebook_path)
+        logs_dir = cache_path / "validation_logs"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        return logs_dir / f"chapter_{chapter_number:03d}_validation.json"
+
+    def get_cached_audio_path(
+        self, ebook_path: Path, chapter_number: int, chapter_title: str
+    ) -> Path:
+        """
+        Retorna path para áudio em cache de um capítulo.
+
+        Args:
+            ebook_path: Caminho do ebook
+            chapter_number: Número do capítulo
+            chapter_title: Título do capítulo
+
+        Returns:
+            Path para o arquivo de áudio (pode não existir)
+        """
+        cache_path = self._get_cache_path(ebook_path)
+        audio_dir = cache_path / "audio"
+        sanitized_title = self._sanitize_filename(chapter_title)
+        return audio_dir / f"{chapter_number:03d} - {sanitized_title}.mp3"
+
     def _sanitize_filename(self, filename: str) -> str:
         """Sanitiza nome de arquivo"""
         import re

@@ -2,7 +2,7 @@
 """Ultra-simplified TTS Base - Just protocol definition"""
 
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Dict, List, Optional, Protocol
 
 
 class TTSEngine(Protocol):
@@ -25,4 +25,22 @@ class TTSEngine(Protocol):
         chunk_callback=None,
     ) -> Path:
         """Synthesize text to audio file"""
+        ...
+
+    def get_synthesis_log(self) -> List[Dict[str, Any]]:
+        """
+        Return log of all segments processed during last synthesis.
+
+        Returns:
+            List of dictionaries with segment information (index, text, status, etc.)
+        """
+        ...
+
+    def get_synthesis_tracker(self) -> Optional[Any]:
+        """
+        Return the SynthesisTracker instance used for last synthesis.
+
+        Returns:
+            SynthesisTracker instance, or None if not available
+        """
         ...

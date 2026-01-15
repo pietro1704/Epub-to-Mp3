@@ -19,6 +19,7 @@ from typing import Callable, Dict, List, Optional, Set, Tuple
 from unittest.mock import Mock
 
 from ..speed_monitor import AdaptiveEdgeTuner, get_edge_tuner
+from ..synthesis_tracker import SynthesisTracker
 from ..utils import TextValidator
 from .network_tuner import NetworkTuner
 
@@ -434,6 +435,9 @@ class EdgeTTSEngine:
         self._auto_tune_enabled = True
         self._segment_timings: List[Tuple[int, float]] = []  # (chars, duration)
 
+        # Initialize synthesis tracker for integrity validation
+        self._synthesis_tracker: Optional[SynthesisTracker] = None
+
         if self.verbose:
             parallel_mode = "ativado" if self._enable_parallel else "desativado"
             max_concurrent = self._parallel_slots if self._enable_parallel else 1
@@ -449,6 +453,16 @@ class EdgeTTSEngine:
             self.log_callback(message)
         else:
             print(message)
+
+    def get_synthesis_log(self) -> List[Dict]:
+        """Return log of all segments processed during last synthesis."""
+        if self._synthesis_tracker is None:
+            return []
+        return self._synthesis_tracker.get_synthesis_log()
+
+    def get_synthesis_tracker(self) -> Optional[SynthesisTracker]:
+        """Return the SynthesisTracker instance used for last synthesis."""
+        return self._synthesis_tracker
 
     def _get_tuner(self) -> AdaptiveEdgeTuner:
         """Get or create the adaptive tuner for this engine."""
