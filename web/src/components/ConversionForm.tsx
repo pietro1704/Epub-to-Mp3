@@ -202,7 +202,9 @@ export default function ConversionForm({
   const [maxPerformance, setMaxPerformance] = useState(true);
   const [parallelSlots, setParallelSlots] = useState("");
   const [chapterStallSeconds, setChapterStallSeconds] = useState("");
-  const [edgeNetworkTier, setEdgeNetworkTier] = useState("");
+  const [edgeNetworkTier, setEdgeNetworkTier] = useState<
+    "" | "slow" | "medium" | "fast" | "ultra"
+  >("");
   const [edgeChunkChars, setEdgeChunkChars] = useState("");
   const [edgeMaxSegmentSeconds, setEdgeMaxSegmentSeconds] = useState("");
   const [edgeEnableParallel, setEdgeEnableParallel] = useState(true);
@@ -690,6 +692,20 @@ export default function ConversionForm({
     if (pendingUploads.length > 0) {
       await Promise.allSettled(pendingUploads);
     }
+    const normalizeEdgeTier = (
+      value: string,
+    ): "slow" | "medium" | "fast" | "ultra" | undefined => {
+      if (
+        value === "slow" ||
+        value === "medium" ||
+        value === "fast" ||
+        value === "ultra"
+      ) {
+        return value;
+      }
+      return undefined;
+    };
+
     const sharedConfig = {
       engine,
       voice: voice || undefined,
@@ -709,7 +725,7 @@ export default function ConversionForm({
       maxPerformance,
       parallelSlots: parseOptionalInt(parallelSlots),
       chapterStallSeconds: parseOptionalNumber(chapterStallSeconds),
-      edgeNetworkTier: edgeNetworkTier || undefined,
+      edgeNetworkTier: normalizeEdgeTier(edgeNetworkTier),
       edgeChunkChars: parseOptionalInt(edgeChunkChars),
       edgeMaxSegmentSeconds: parseOptionalInt(edgeMaxSegmentSeconds),
       edgeEnableParallel,
