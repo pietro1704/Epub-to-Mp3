@@ -1279,7 +1279,16 @@ export default function ConversionForm({
               name="edgeNetworkTier"
               value={edgeNetworkTier}
               disabled={isSubmitting || edgeStableMode}
-              onChange={(event) => setEdgeNetworkTier(event.target.value)}
+              onChange={(event) =>
+                setEdgeNetworkTier(
+                  event.target.value as
+                    | ""
+                    | "slow"
+                    | "medium"
+                    | "fast"
+                    | "ultra",
+                )
+              }
             >
               <option value="">{t.form.edgeNetworkTierAuto}</option>
               <option value="slow">{t.form.edgeNetworkTierSlow}</option>
