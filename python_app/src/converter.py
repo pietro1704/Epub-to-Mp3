@@ -14,6 +14,7 @@ import shutil
 import subprocess
 import sys
 import time
+import unicodedata
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -172,6 +173,8 @@ class AudioConverter:
     def _normalize_title_match(self, title: str) -> str:
         safe = self.file_manager.sanitize_filename(title)
         normalized = safe.replace("_", " ")
+        normalized = unicodedata.normalize("NFKD", normalized)
+        normalized = "".join(ch for ch in normalized if not unicodedata.combining(ch))
         normalized = re.sub(r"\s+", " ", normalized).strip().lower()
         return normalized
 
@@ -203,9 +206,27 @@ class AudioConverter:
         chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
         key = self._normalize_title_match(chapter_name)
         candidates = title_index.get(key) or []
-        if len(candidates) != 1:
+        if not candidates:
             return None
-        candidate = candidates[0]
+        if len(candidates) == 1:
+            candidate = candidates[0]
+            candidates = []
+        else:
+
+            def _candidate_key(path: Path) -> tuple[int, float, str]:
+                try:
+                    size = path.stat().st_size
+                except OSError:
+                    size = 0
+                try:
+                    mtime = path.stat().st_mtime
+                except OSError:
+                    mtime = 0.0
+                return (size, mtime, path.name)
+
+            candidates_sorted = sorted(candidates, key=_candidate_key, reverse=True)
+            candidate = candidates_sorted[0]
+            candidates = candidates_sorted[1:]
         if not candidate.exists():
             return None
         if expected.exists():
@@ -213,6 +234,17 @@ class AudioConverter:
         try:
             candidate.rename(expected)
             title_index[key] = []
+            if candidates:
+                for idx, leftover in enumerate(candidates, start=1):
+                    if not leftover.exists():
+                        continue
+                    dup_name = f"{expected.stem} (dup-{idx}).mp3"
+                    dup_path = expected.with_name(dup_name)
+                    try:
+                        leftover.rename(dup_path)
+                    except OSError:
+                        if self.verbose:
+                            print(f"⚠️ Falha ao mover duplicado: {leftover.name} → {dup_name}")
             return expected
         except OSError:
             if self.verbose:
