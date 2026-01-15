@@ -69,8 +69,9 @@ EDGE_SLOW_RATIO_THRESHOLD = _env_float("EDGE_SLOW_RATIO_THRESHOLD", 1.5)  # More
 EDGE_SAFE_CHUNK_CHARS = _env_int("EDGE_SAFE_CHUNK_CHARS", 4000)
 EDGE_SAFE_MAX_SEGMENT_SECONDS = _env_float("EDGE_SAFE_MAX_SEGMENT_SECONDS", 300.0)
 EDGE_SAFE_CHAPTER_PARALLEL = _env_int("EDGE_SAFE_CHAPTER_PARALLEL", 1)
-EDGE_SAFE_TIMEOUT_MAX = _env_float("EDGE_SAFE_TIMEOUT_MAX", 360.0)  # Reduced from 420
+EDGE_SAFE_TIMEOUT_MAX = _env_float("EDGE_SAFE_TIMEOUT_MAX", 900.0)  # Safer for long Edge chapters
 EDGE_FORCE_SAFE_CHARS = _env_int("EDGE_FORCE_SAFE_CHARS", 60000)
+EDGE_AUTO_STABLE = _env_bool("EDGE_AUTO_STABLE", True)
 EDGE_AUTO_PARALLEL_CAPS = {
     "slow": _env_int("EDGE_AUTO_PARALLEL_CAP_SLOW", 2),  # Increased from 1
     "medium": _env_int("EDGE_AUTO_PARALLEL_CAP_MEDIUM", 3),  # Increased from 2
@@ -319,9 +320,7 @@ class AudioConverter:
         if not audio_path.exists() or not payload_text:
             return None
 
-        engine_hint = (engine_label or getattr(config, "engine", "") or "").lower()
-        if engine_hint == "edge":
-            return None
+        (engine_label or getattr(config, "engine", "") or "").lower()
 
         try:
             file_size = audio_path.stat().st_size
@@ -856,6 +855,109 @@ class AudioConverter:
             return None
 
         return cached_paths
+
+    def _split_cached_chapters(
+        self,
+        chapters: List[Chapter],
+        output_dir: Path,
+        config: ConversionConfig,
+        *,
+        allow_index_only: bool = False,
+    ) -> tuple[List[Path], List[Chapter]]:
+        """Return cached audio paths and pending chapters (partial cache-aware)."""
+        final_output_dir = self._setup_output_directory(config)
+        cache_dir = getattr(config, "cache_dir", None)
+        cache_index = self._load_cache_index(cache_dir)
+        cached_paths: List[Path] = []
+        pending: List[Chapter] = []
+
+        for idx, chapter in enumerate(chapters, start=1):
+            temp_mp3 = self.file_manager.get_temp_output_path(chapter.name, output_dir, idx)
+            final_mp3 = final_output_dir / temp_mp3.name
+            candidate: Optional[Path] = temp_mp3 if temp_mp3.exists() else None
+
+            if candidate is None and final_mp3.exists():
+                candidate = final_mp3
+
+            if candidate is None and cache_dir:
+                cached_audio = self._find_cached_audio_path(
+                    cache_dir, config, getattr(chapter, "name", None) or "", idx
+                )
+                if cached_audio:
+                    try:
+                        final_mp3.parent.mkdir(parents=True, exist_ok=True)
+                        if not final_mp3.exists():
+                            shutil.copy2(cached_audio, final_mp3)
+                        candidate = final_mp3
+                    except Exception:
+                        candidate = cached_audio
+
+            try:
+                size = candidate.stat().st_size if candidate and candidate.exists() else 0
+            except OSError:
+                size = 0
+            if size <= 1000:
+                pending.append(chapter)
+                continue
+
+            pre_tts_path = self._find_pre_tts_path(
+                cache_dir, output_dir, idx, getattr(chapter, "name", None)
+            )
+            pre_tts_hash = None
+            if pre_tts_path and pre_tts_path.exists():
+                with contextlib.suppress(Exception):
+                    pre_tts_hash = self._hash_text(pre_tts_path.read_text(encoding="utf-8"))
+            entry = cache_index.get(str(idx)) or {}
+            entry_hash = entry.get("pre_tts_hash")
+            hash_ok = pre_tts_hash and entry_hash == pre_tts_hash
+            duration_ok = True
+            try:
+                bitrate_bps = self._bitrate_to_bps(getattr(config, "bitrate", "8k")) or 8000
+                approx_seconds = (size * 8) / max(bitrate_bps, 1)
+                estimated_text = ""
+                if pre_tts_path and pre_tts_path.exists():
+                    estimated_text = pre_tts_path.read_text(encoding="utf-8")
+                expected_seconds = TextValidator.estimate_duration(estimated_text)
+                if expected_seconds > 0:
+                    duration_ok = approx_seconds >= expected_seconds * 0.5
+            except Exception:
+                duration_ok = True
+
+            cached_ok = False
+            if pre_tts_hash and hash_ok and duration_ok:
+                cached_ok = True
+            elif allow_index_only and entry_hash and size > 1000:
+                cached_ok = True
+
+            if cached_ok and candidate is not None and candidate.exists():
+                if pre_tts_path and pre_tts_path.exists():
+                    cached_payload = self._load_cached_payload(chapter, idx, output_dir)
+                    if cached_payload:
+                        truncation_warning = self._detect_short_audio_output(
+                            candidate,
+                            cached_payload,
+                            config,
+                            engine_label=(config.engine or "").lower(),
+                        )
+                        if truncation_warning:
+                            cached_ok = False
+                if cached_ok:
+                    cached_paths.append(candidate)
+                else:
+                    pending.append(chapter)
+            else:
+                pending.append(chapter)
+
+        return cached_paths, pending
+
+    @staticmethod
+    def _assign_progress_indices(chapters: List[Chapter]) -> None:
+        """Attach a stable progress index used for UI/percentage counters."""
+        for idx, chapter in enumerate(chapters, start=1):
+            try:
+                setattr(chapter, "_progress_index", idx)
+            except Exception:
+                pass
 
     def _segment_plan_path(self, cache_dir: Optional[Path], index: int) -> Optional[Path]:
         if not cache_dir:
@@ -1462,6 +1564,35 @@ class AudioConverter:
 
         print(self.loc.t("conversion_start", title=reader.title, chapters=total_chapters))
         print(self.loc.t("conversion_output", path=output_dir))
+        edge_stable_mode = False
+        edge_stable_explicit = False
+        if getattr(config, "extra", None):
+            stable_raw = config.extra.get("edge_stable_mode")
+            if stable_raw is not None:
+                edge_stable_explicit = True
+                edge_stable_mode = str(stable_raw).lower() in {"1", "true", "yes", "on"}
+        if (
+            not edge_stable_explicit
+            and EDGE_AUTO_STABLE
+            and (config.engine or "").lower() == "edge"
+        ):
+            inferred_tier = None
+            if self.hardware_profile:
+                inferred_tier = getattr(self.hardware_profile, "network_speed_estimate", None)
+            if not inferred_tier:
+                inferred_tier = os.getenv("EDGE_NETWORK_TIER")
+            inferred_tier = (inferred_tier or "").strip().lower()
+            if inferred_tier == "slow":
+                edge_stable_mode = True
+                if getattr(config, "extra", None) is not None:
+                    config.extra["edge_stable_mode"] = "1"
+                print("🛡️ Edge modo estável automático: rede lenta detectada")
+        if edge_stable_mode and (config.engine or "").lower() == "edge":
+            config.edge_enable_parallel = False
+            config.edge_auto_tune = False
+            config.edge_chunk_chars = 4000
+            config.edge_max_segment_seconds = 120
+            print("🛡️ Edge modo estável: paralelismo reduzido e timeouts ampliados")
         # Auto-parallel: prefer env override, else derive from hardware profile (defaults later)
         chapter_parallel_count = int(os.getenv("CHAPTER_PARALLEL_COUNT", "0") or "0")
         if chapter_parallel_count <= 0:
@@ -1474,6 +1605,8 @@ class AudioConverter:
                 chapter_parallel_count = 2
             else:
                 chapter_parallel_count = 1
+        if edge_stable_mode and chapter_parallel_count != 1:
+            chapter_parallel_count = 1
         self._reset_parallel_state(chapter_parallel_count)
 
         if total_chapters == 0:
@@ -1481,20 +1614,19 @@ class AudioConverter:
             self._report_results(empty_result)
             return empty_result
 
-        self._start_health_watchdog(total_chapters)
-
         # Fast-path cache check before heavy prep (uses existing text/cache index if present)
-        precheck_cached = self._collect_cached_audio(
+        cached_paths, pending_chapters = self._split_cached_chapters(
             chapters, temp_dir, config, allow_index_only=True
         )
 
         # **NEW**: Generate ALL .txt files BEFORE starting TTS conversion (unless fully cached)
-        generated_text = False
-        if not precheck_cached:
+        if pending_chapters:
             print("\n📝 Gerando arquivos de texto...")
             self._generate_all_text_files(chapters, temp_dir, config)
-            generated_text = True
             print(f"✅ {total_chapters} arquivos de texto gerados\n")
+            cached_paths, pending_chapters = self._split_cached_chapters(
+                chapters, temp_dir, config, allow_index_only=False
+            )
 
         cover_art = self._extract_cover_art(reader)
         book_title = (
@@ -1503,7 +1635,31 @@ class AudioConverter:
             or (self._current_book_path.stem if self._current_book_path else "")
         )
         book_author = getattr(reader, "author", "") or ""
-        self.progress.start(total_chapters, description=self.loc.t("progress_description"))
+        if cached_paths and pending_chapters:
+            print(
+                f"♻️ Cache detectado: {len(cached_paths)} capítulo(s) pronto(s); "
+                f"convertendo {len(pending_chapters)} restante(s)"
+            )
+        elif cached_paths and not pending_chapters:
+            print(f"♻️ Todos os {len(cached_paths)} capítulos já estão em cache (MP3)")
+
+        pending_total = len(pending_chapters)
+        self._start_health_watchdog(pending_total)
+        self._assign_progress_indices(pending_chapters)
+        self.progress.start(pending_total, description=self.loc.t("progress_description"))
+
+        if pending_total == 0:
+            moved_files = self.file_manager.move_files_to_final_output(temp_dir, output_dir)
+            result = ConversionResult(
+                success=True,
+                total_chapters=total_chapters,
+                converted_chapters=total_chapters,
+                output_files=moved_files or cached_paths,
+                errors=[],
+            )
+            self.progress.finish()
+            self._report_results(result)
+            return result
 
         is_auto_engine = (config.engine or "").lower() == "auto"
         auto_engine_pool: Dict[str, tuple[ConversionConfig, object]] = {}
@@ -1586,6 +1742,28 @@ class AudioConverter:
             if cfg and (cfg.engine or "").lower() == "edge" and id(cfg) not in edge_seen:
                 edge_configs.append(cfg)
                 edge_seen.add(id(cfg))
+        if has_edge_engine and edge_network_tier in {"slow", "medium"} and not edge_stable_mode:
+            for cfg in edge_configs:
+                if (cfg.engine or "").lower() != "edge":
+                    continue
+                if edge_network_tier == "slow":
+                    if (cfg.edge_chunk_chars or 0) > 6000:
+                        cfg.edge_chunk_chars = 6000
+                    if (cfg.edge_max_segment_seconds or 0) > 60:
+                        cfg.edge_max_segment_seconds = 60
+                    cfg.edge_enable_parallel = False
+                else:
+                    if (cfg.edge_chunk_chars or 0) > 8000:
+                        cfg.edge_chunk_chars = 8000
+                    if (cfg.edge_max_segment_seconds or 0) > 75:
+                        cfg.edge_max_segment_seconds = 75
+            if edge_network_tier == "slow" and chapter_parallel_count > 1:
+                chapter_parallel_count = 1
+                self._reset_parallel_state(chapter_parallel_count)
+            elif edge_network_tier == "medium" and chapter_parallel_count > 2:
+                chapter_parallel_count = 2
+                self._reset_parallel_state(chapter_parallel_count)
+            print("🌧️ Edge: rede instável detectada → perfil inicial mais conservador")
         self._edge_auto_state = {
             "enabled": edge_auto_enabled,
             "network_tier": edge_network_tier,
@@ -1601,6 +1779,14 @@ class AudioConverter:
             "slow_ratio_threshold": EDGE_SLOW_RATIO_THRESHOLD,
             "configs": edge_configs,
         }
+        if edge_stable_mode and has_edge_engine:
+            safe_profile = self._edge_auto_state.get("safe_profile") or {}
+            safe_profile["chunk_chars"] = 4000
+            safe_profile["max_segment_seconds"] = 120
+            safe_profile["timeout_max"] = max(float(safe_profile.get("timeout_max") or 0), 1200.0)
+            safe_profile["parallel_cap"] = 1
+            self._edge_auto_state["safe_profile"] = safe_profile
+            self._edge_auto_state["parallel_cap"] = 1
         if edge_auto_enabled and parallel_slots_cap:
             if chapter_parallel_count > parallel_slots_cap:
                 chapter_parallel_count = parallel_slots_cap
@@ -1648,7 +1834,7 @@ class AudioConverter:
         # Choose parallel or sequential based on hardware detection
         if chapter_parallel_count > 1:
             result = await self._convert_chapters_parallel(
-                chapters,
+                pending_chapters,
                 engine_pool,
                 temp_dir,
                 config,
@@ -1661,7 +1847,7 @@ class AudioConverter:
             )
         else:
             result = await self._convert_chapters_sequential(
-                chapters,
+                pending_chapters,
                 engine_pool,
                 temp_dir,
                 config,
@@ -1671,12 +1857,7 @@ class AudioConverter:
                 book_author=book_author,
                 cover_art=cover_art,
             )
-        # If we skipped text generation and already had full cache, convert result if missing
-        if precheck_cached and not generated_text and not result.output_files:
-            result.output_files = precheck_cached
-            result.converted_chapters = len(precheck_cached)
-
-        total_output_files = list(result.output_files)
+        total_output_files = list(cached_paths) + list(result.output_files)
         raw_failures = self._build_error_map(result.errors)
         pending_failures, unresolved_failures = self._normalise_failure_keys(
             raw_failures, chapter_lookup
@@ -1702,8 +1883,8 @@ class AudioConverter:
             pass
         if extra_retry_value is None and (config.engine or "").lower() == "edge":
             max_retry_rounds = max(max_retry_rounds, 6)
-        if not pending_failures and result.converted_chapters < total_chapters:
-            fallback_detected = self._detect_failed_chapters_by_output(chapters, temp_dir)
+        if not pending_failures and result.converted_chapters < pending_total:
+            fallback_detected = self._detect_failed_chapters_by_output(pending_chapters, temp_dir)
             if fallback_detected:
                 for label in fallback_detected:
                     attempts_used.setdefault(label, 1)
@@ -1982,6 +2163,7 @@ class AudioConverter:
 
         result.output_files = unique_outputs
         result.converted_chapters = len(unique_outputs)
+        result.total_chapters = total_chapters
 
         if pending_failures:
             ordered_errors = []
@@ -2127,19 +2309,21 @@ class AudioConverter:
         # Validate and clean cache (once for all chapters)
         self._validate_and_clean_cache(chapters_list, output_dir, config)
 
-        # Fast-path cache check before generating text
-        cached_audio = self._collect_cached_audio(
+        # Fast-path cache check before generating text (partial-aware)
+        cached_audio, pending_chapters = self._split_cached_chapters(
             chapters_list, output_dir, config, allow_index_only=True
         )
 
         # Generate all text files (once for all chapters) if needed
-        if not cached_audio:
+        if pending_chapters:
             self._generate_all_text_files(chapters_list, output_dir, config)
 
             # Retry cache check after text generation (allows hash validation)
-            cached_audio = self._collect_cached_audio(chapters_list, output_dir, config)
+            cached_audio, pending_chapters = self._split_cached_chapters(
+                chapters_list, output_dir, config, allow_index_only=False
+            )
 
-        if cached_audio:
+        if cached_audio and not pending_chapters:
             print(
                 f"♻️ Todos os {len(chapters_list)} capítulos já estão em cache (MP3) — pulando síntese"
             )
@@ -2152,6 +2336,15 @@ class AudioConverter:
                 output_files=cached_audio,
                 errors=[],
             )
+
+        if cached_audio and pending_chapters:
+            print(
+                f"♻️ Cache detectado: {len(cached_audio)} capítulo(s) pronto(s); "
+                f"convertendo {len(pending_chapters)} restante(s)"
+            )
+
+        self._assign_progress_indices(pending_chapters)
+        chapters_list = pending_chapters
 
         all_converted_files: List[Path] = []
         all_errors: List[str] = []
@@ -2263,6 +2456,9 @@ class AudioConverter:
             )
 
         # All chapters processed dynamically
+        if cached_audio:
+            all_converted_files = list(cached_audio) + all_converted_files
+            converted_total = len(all_converted_files)
         return ConversionResult(
             success=len(all_errors) == 0,
             total_chapters=total_chapters,
@@ -2288,6 +2484,24 @@ class AudioConverter:
         chapters_list = list(chapters)
         if not chapters_list:
             return ConversionResult(True, 0, 0, [], [])
+        original_total = len(chapters_list)
+        edge_stable_mode = False
+        if getattr(config, "extra", None):
+            stable_raw = config.extra.get("edge_stable_mode")
+            if stable_raw is not None:
+                edge_stable_mode = str(stable_raw).lower() in {
+                    "1",
+                    "true",
+                    "yes",
+                    "on",
+                }
+        if (
+            not edge_stable_mode
+            and EDGE_AUTO_STABLE
+            and (config.engine or "").lower() == "edge"
+            and os.getenv("EDGE_NETWORK_TIER", "").strip().lower() == "slow"
+        ):
+            edge_stable_mode = True
 
         # Compat: aceitar um engine direto em vez de um pool
         if hasattr(engine_pool, "synthesize_async") and not hasattr(engine_pool, "acquire"):
@@ -2324,18 +2538,20 @@ class AudioConverter:
         self._validate_and_clean_cache(chapters_list, output_dir, config)
 
         # **FAST-PATH**: Try cache reuse before generating text (index-only allowed)
-        cached_audio = self._collect_cached_audio(
+        cached_audio, pending_chapters = self._split_cached_chapters(
             chapters_list, output_dir, config, allow_index_only=True
         )
 
         # **NEW**: Generate ALL text files BEFORE starting conversion (if needed)
-        if not cached_audio:
+        if pending_chapters:
             self._generate_all_text_files(chapters_list, output_dir, config)
             # Retry cache after having pre-tts hashes
-            cached_audio = self._collect_cached_audio(chapters_list, output_dir, config)
+            cached_audio, pending_chapters = self._split_cached_chapters(
+                chapters_list, output_dir, config, allow_index_only=False
+            )
 
         # **FAST-PATH**: If all MP3s already exist, skip synthesis and return.
-        if cached_audio:
+        if cached_audio and not pending_chapters:
             print(
                 f"♻️ Todos os {len(chapters_list)} capítulos já estão em cache (MP3) — pulando síntese"
             )
@@ -2343,15 +2559,36 @@ class AudioConverter:
                 self.progress.tick("✅ Completo (cache)") if hasattr(self, "progress") else None
             return ConversionResult(
                 success=True,
-                total_chapters=len(chapters_list),
-                converted_chapters=len(chapters_list),
+                total_chapters=original_total,
+                converted_chapters=original_total,
                 output_files=cached_audio,
                 errors=[],
             )
+        if cached_audio and pending_chapters:
+            print(
+                f"♻️ Cache detectado: {len(cached_audio)} capítulo(s) pronto(s); "
+                f"convertendo {len(pending_chapters)} restante(s)"
+            )
+        self._assign_progress_indices(pending_chapters)
+        chapters_list = pending_chapters
 
-        converted_files: List[Path] = []
+        converted_files: List[Path] = list(cached_audio)
         errors: List[str] = []
         cooldown_pattern = re.compile(r"cooldown\\s+(\\d+)s", re.IGNORECASE)
+
+        def _edge_error_reason(last_error: Optional[str]) -> str:
+            text = str(last_error or "").lower()
+            if "rate_limit" in text or "too many requests" in text:
+                return "rate_limit"
+            if "noaudio" in text or "no_audio" in text or "noaudioreceived" in text:
+                return "no_audio"
+            if "service_unavailable" in text or "503" in text:
+                return "service_unavailable"
+            if "timeout" in text:
+                return "timeout"
+            if "ssl" in text or "certificate" in text or "connection" in text:
+                return "network"
+            return "unknown"
 
         edge_unavailable_hits = 0
         auto_engine_pool = auto_engine_pool or {}
@@ -2449,25 +2686,27 @@ class AudioConverter:
                 if not last_error:
                     return False
 
-                error_text = str(last_error)
-                lower_error = error_text.lower()
-                should_switch = (
-                    "service_unavailable" in lower_error or "no_audio_payload" in lower_error
-                )
-                if not should_switch:
+                reason = _edge_error_reason(last_error)
+                if reason not in {
+                    "service_unavailable",
+                    "no_audio",
+                    "rate_limit",
+                    "timeout",
+                    "network",
+                }:
                     return False
 
                 match = cooldown_pattern.search(str(last_error))
                 seconds = int(match.group(1)) if match else 0
                 if seconds <= 0:
-                    seconds = 45
+                    seconds = 12
                 if self.verbose:
                     print(f"   ⚠️ Edge indisponível ({context}) - erro: {last_error}")
                 nonlocal edge_unavailable_hits
                 edge_unavailable_hits += 1
-                _maybe_apply_edge_slow_mode(f"Edge indisponível ({context})", engine_obj=engine_obj)
+                _maybe_apply_edge_slow_mode(f"Edge indisponível ({reason})", engine_obj=engine_obj)
 
-                max_wait = min(seconds, 90)
+                max_wait = min(seconds, 25)
                 if self.verbose:
                     print(
                         f"   ⏳ Sem fallback disponível; aguardando {max_wait}s antes de tentar novamente..."
@@ -2496,10 +2735,11 @@ class AudioConverter:
             except (ValueError, TypeError):
                 original_index = idx + 1
             chapter_num = original_index if original_index > 0 else idx + 1
+            progress_index = getattr(chapter, "_progress_index", None) or (idx + 1)
             start_time = time.time()
 
             # **RESTORED**: Usar progress tracker
-            self.progress.start_chapter(chapter.name, chapter_num)
+            self.progress.start_chapter(chapter.name, progress_index)
             chapter_label = self._chapter_display_name(chapter, chapter_num)
             speech_text = self._speech_text(chapter)
             current_payload: Optional[str] = speech_text
@@ -2681,14 +2921,23 @@ class AudioConverter:
                     with contextlib.suppress(Exception):
                         setattr(tts_engine, "_auto_tune_enabled", False)
 
-                # Timeout otimizado: mais agressivo para falhar rápido
+                # Timeout otimizado: agressivo, mas com teto maior para capítulos longos no Edge
                 # Base: duração estimada * 1.5 + 30s buffer
                 base_timeout = estimated_seconds * 1.5 + 30.0
                 timeout_seconds = max(base_timeout, 60.0)  # Mínimo 60s
-                timeout_seconds = min(timeout_seconds, 600.0)  # Máximo 10 min
+                max_timeout = 600.0  # Padrão: até 10 min
+                if current_engine_label == "edge":
+                    if chapter_chars >= 80000:
+                        max_timeout = 2400.0
+                    elif chapter_chars >= 50000:
+                        max_timeout = 1800.0
+                    elif chapter_chars >= 30000:
+                        max_timeout = 1200.0
+                    if edge_stable_mode:
+                        max_timeout = max(max_timeout, 3600.0)
+                timeout_seconds = min(timeout_seconds, max_timeout)
                 if decision.timeout_scale:
                     timeout_seconds = timeout_seconds * decision.timeout_scale
-                timeout_seconds = int(timeout_seconds)
                 if current_engine_label == "coqui":
                     coqui_min_timeout = int(os.getenv("COQUI_TIMEOUT_MIN", "180") or "180")
                     timeout_seconds = max(timeout_seconds, coqui_min_timeout)
@@ -2700,7 +2949,8 @@ class AudioConverter:
                     safe_timeout = (edge_state.get("safe_profile") or {}).get("timeout_max")
                     if safe_timeout:
                         timeout_seconds = min(timeout_seconds, int(safe_timeout))
-                stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "120") or "120")
+                timeout_seconds = int(timeout_seconds)
+                stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "60") or "60")
                 if stall_seconds < 0:
                     stall_seconds = 0.0
 
@@ -2772,6 +3022,15 @@ class AudioConverter:
                                 chunk_root.mkdir(parents=True, exist_ok=True)
                             except Exception:
                                 chunk_root = None
+                        if chunk_root and chunk_root.exists():
+                            try:
+                                existing_chunks = list(chunk_root.glob("chunk_*.mp3"))
+                            except Exception:
+                                existing_chunks = []
+                            if existing_chunks:
+                                self.progress.tick(
+                                    f"♻️ Retomando {len(existing_chunks)} chunk(s) já prontos"
+                                )
 
                         def on_chunk_ready(segment_index: int, temp_path: Path) -> None:
                             # Atualiza barra com chunks concluídos
@@ -2904,6 +3163,12 @@ class AudioConverter:
                         _maybe_apply_edge_slow_mode(
                             f"timeout após {elapsed}s", engine_obj=tts_engine
                         )
+                        setattr(tts_engine, "last_error", "timeout")
+                        await wait_edge_cooldown_if_needed(
+                            f"timeout após {elapsed}s",
+                            tracker=engine_tracker,
+                            engine_ref=engine_instance,
+                        )
                     elif current_engine_label == "coqui":
                         _maybe_apply_coqui_recovery(
                             f"timeout após {elapsed}s", engine_obj=tts_engine
@@ -2919,7 +3184,9 @@ class AudioConverter:
                         )
                         current_payload = clean_text
                         clean_chars = len(clean_text)
-                        fallback_timeout = timeout_seconds // 2
+                        fallback_timeout = max(90, int(timeout_seconds * 0.5))
+                        if current_engine_label == "edge":
+                            fallback_timeout = max(120, min(int(timeout_seconds * 0.6), 600))
 
                         if self.verbose:
                             print("   🔄 RETRY: Tentando novamente sem marcas de idioma")
@@ -3005,7 +3272,9 @@ class AudioConverter:
                             # Get first 1000 chars as emergency fallback
                             emergency_text = (speech_text or "")[:1000].strip()
                             if emergency_text:
-                                emergency_timeout = 30  # Short timeout for emergency
+                                emergency_timeout = (
+                                    90 if current_engine_label == "edge" else 30
+                                )  # Short timeout for emergency
                                 if self.verbose:
                                     print(
                                         f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)"
@@ -3188,6 +3457,23 @@ class AudioConverter:
                         synthesis_result = None  # Forçar retry
                 else:
                     # **RETRY**: Tentar com idioma padrão em caso de falha
+                    if current_engine_label == "edge":
+                        last_err = getattr(tts_engine, "last_error", None)
+                        reason = _edge_error_reason(last_err)
+                        if reason in {
+                            "service_unavailable",
+                            "no_audio",
+                            "rate_limit",
+                            "timeout",
+                            "network",
+                        }:
+                            _maybe_apply_edge_slow_mode(
+                                f"falha Edge ({reason})", engine_obj=tts_engine
+                            )
+                            chapter_error = f"Edge indisponível ({reason})"
+                            errors.append(f"{chapter.name}: {chapter_error}")
+                            self.progress.complete_chapter(f"❌ {chapter_error}")
+                            continue
                     if self.verbose:
                         print("   ⚠️ RETRY: Síntese falhou, tentando com idioma padrão")
 
@@ -3366,7 +3652,7 @@ class AudioConverter:
         success = len(errors) == 0
         return ConversionResult(
             success=success,
-            total_chapters=len(chapters_list),
+            total_chapters=original_total,
             converted_chapters=len(converted_files),
             output_files=converted_files,
             errors=errors,
@@ -3538,6 +3824,7 @@ class AudioConverter:
         self._requirements_attempted = True
 
         python_root = Path(__file__).resolve().parents[1]
+        project_root = python_root.parent
         candidate_paths = [
             Path("requirements.txt"),
             Path.cwd() / "requirements.txt",
@@ -3553,11 +3840,44 @@ class AudioConverter:
         result = subprocess.run(
             [sys.executable, "-m", "pip", "install", "-r", str(requirements_path)],
             check=False,
+            capture_output=True,
+            text=True,
         )
 
         if result.returncode == 0:
             print(self.loc.t("requirements_success"))
             return True
+
+        stderr = (result.stderr or "").lower()
+        stdout = (result.stdout or "").lower()
+        if "externally-managed-environment" in stderr or "externally-managed-environment" in stdout:
+            if not os.getenv("EPUB2MP3_VENV_BOOTSTRAPPED"):
+                venv_path = project_root / ".venv"
+                venv_python = venv_path / "bin" / "python"
+                try:
+                    if not venv_python.exists():
+                        print("🔧 Criando ambiente virtual local (.venv)...")
+                        subprocess.run(
+                            [sys.executable, "-m", "venv", str(venv_path)],
+                            check=False,
+                        )
+                    if venv_python.exists():
+                        print("📦 Instalando dependências no .venv...")
+                        subprocess.run(
+                            [
+                                str(venv_python),
+                                "-m",
+                                "pip",
+                                "install",
+                                "-r",
+                                str(requirements_path),
+                            ],
+                            check=False,
+                        )
+                        os.environ["EPUB2MP3_VENV_BOOTSTRAPPED"] = "1"
+                        os.execv(str(venv_python), [str(venv_python)] + sys.argv)
+                except Exception:
+                    pass
 
         print(self.loc.t("requirements_failure"))
         return False

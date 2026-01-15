@@ -150,6 +150,16 @@ export interface FormText {
   parallelSlotsLabel: string;
   parallelSlotsPlaceholder: string;
   parallelSlotsHint: string;
+  chapterStallSecondsLabel: string;
+  chapterStallSecondsPlaceholder: string;
+  chapterStallSecondsHint: string;
+  edgeNetworkTierLabel: string;
+  edgeNetworkTierHint: string;
+  edgeNetworkTierAuto: string;
+  edgeNetworkTierSlow: string;
+  edgeNetworkTierMedium: string;
+  edgeNetworkTierFast: string;
+  edgeNetworkTierUltra: string;
   engineTuningLegend: string;
   modelLabel: string;
   modelPlaceholder: string;
@@ -168,6 +178,10 @@ export interface FormText {
   edgeAutoTuneHint: string;
   edgeAutoTuneOn: string;
   edgeAutoTuneOff: string;
+  edgeStableModeLabel: string;
+  edgeStableModeHint: string;
+  edgeStableModeOn: string;
+  edgeStableModeOff: string;
   coquiChunkCharsLabel: string;
   coquiChunkCharsPlaceholder: string;
   coquiChunkCharsHint: string;
@@ -301,6 +315,16 @@ export interface StatusText {
   summaryProgress: string;
   summaryParallel: string;
   chapterProgressTitle: string;
+  expandAllChapters: string;
+  collapseAllChapters: string;
+  showAllText: string;
+  hideAllText: string;
+  scrollToTop: string;
+  downloadFullText: string;
+  searchPlaceholder: string;
+  searchCount: (count: number) => string;
+  searchPrev: string;
+  searchNext: string;
   chapterStatuses: Record<ChapterProgressStatus, string>;
   bookFallbackTitle: string;
   bookFallbackAuthor: string;
@@ -738,6 +762,18 @@ export const translations: Record<Locale, Translations> = {
       parallelSlotsPlaceholder: "Deixe vazio para automático",
       parallelSlotsHint:
         "Define quantos capítulos podem ser processados ao mesmo tempo.",
+      chapterStallSecondsLabel: "Watchdog: travamento por capítulo (s)",
+      chapterStallSecondsPlaceholder: "Ex.: 60",
+      chapterStallSecondsHint:
+        "Reinicia o capítulo se ficar sem progresso por esse tempo.",
+      edgeNetworkTierLabel: "Edge: perfil de rede",
+      edgeNetworkTierHint:
+        "Força um perfil de rede para ajustar o Edge logo no início.",
+      edgeNetworkTierAuto: "Auto",
+      edgeNetworkTierSlow: "Lenta",
+      edgeNetworkTierMedium: "Média",
+      edgeNetworkTierFast: "Rápida",
+      edgeNetworkTierUltra: "Ultra",
       engineTuningLegend: "Ajustes por engine",
       modelLabel: "Modelo (Piper/Coqui) opcional",
       modelPlaceholder: "Ex.: tts_models/multilingual/multi-dataset/xtts_v2",
@@ -761,6 +797,11 @@ export const translations: Record<Locale, Translations> = {
         "Ajusta chunk/tempo conforme rede e performance detectadas.",
       edgeAutoTuneOn: "Ativado",
       edgeAutoTuneOff: "Desativado",
+      edgeStableModeLabel: "Edge: modo estável",
+      edgeStableModeHint:
+        "Força menos paralelismo e timeouts maiores para reduzir falhas em capítulos longos.",
+      edgeStableModeOn: "Estável",
+      edgeStableModeOff: "Normal",
       coquiChunkCharsLabel: "Coqui: tamanho do chunk (chars)",
       coquiChunkCharsPlaceholder: "Ex.: 8000",
       coquiChunkCharsHint:
@@ -884,6 +925,17 @@ export const translations: Record<Locale, Translations> = {
       summaryProgress: "Progresso",
       summaryParallel: "Capítulos em paralelo",
       chapterProgressTitle: "Progresso por capítulo",
+      expandAllChapters: "Expandir tudo",
+      collapseAllChapters: "Recolher tudo",
+      showAllText: "Mostrar todo texto",
+      hideAllText: "Ocultar texto",
+      scrollToTop: "Ir ao topo",
+      downloadFullText: "Baixar texto completo",
+      searchPlaceholder: "Buscar no texto completo…",
+      searchCount: (count: number) =>
+        count === 1 ? "1 ocorrência" : `${count} ocorrências`,
+      searchPrev: "Anterior",
+      searchNext: "Próxima",
       chapterStatuses: {
         pending: "Na fila",
         processing: "Convertendo",
@@ -1324,6 +1376,18 @@ export const translations: Record<Locale, Translations> = {
       parallelSlotsLabel: "Parallel chapters (optional)",
       parallelSlotsPlaceholder: "Leave blank for automatic",
       parallelSlotsHint: "Sets how many chapters can run in parallel.",
+      chapterStallSecondsLabel: "Watchdog: chapter stall (s)",
+      chapterStallSecondsPlaceholder: "e.g., 60",
+      chapterStallSecondsHint:
+        "Restarts the chapter if no progress happens for this long.",
+      edgeNetworkTierLabel: "Edge: network profile",
+      edgeNetworkTierHint:
+        "Forces a network profile so Edge adjusts settings early.",
+      edgeNetworkTierAuto: "Auto",
+      edgeNetworkTierSlow: "Slow",
+      edgeNetworkTierMedium: "Medium",
+      edgeNetworkTierFast: "Fast",
+      edgeNetworkTierUltra: "Ultra",
       engineTuningLegend: "Engine tuning",
       modelLabel: "Model (Piper/Coqui) optional",
       modelPlaceholder: "e.g., tts_models/multilingual/multi-dataset/xtts_v2",
@@ -1345,6 +1409,11 @@ export const translations: Record<Locale, Translations> = {
         "Adapts chunk/segment settings to network and performance.",
       edgeAutoTuneOn: "Enabled",
       edgeAutoTuneOff: "Disabled",
+      edgeStableModeLabel: "Edge: stable mode",
+      edgeStableModeHint:
+        "Forces lower parallelism and longer timeouts to reduce failures on long chapters.",
+      edgeStableModeOn: "Stable",
+      edgeStableModeOff: "Normal",
       coquiChunkCharsLabel: "Coqui: chunk size (chars)",
       coquiChunkCharsPlaceholder: "e.g., 8000",
       coquiChunkCharsHint: "Larger chunks reduce overhead but use more memory.",
@@ -1461,6 +1530,17 @@ export const translations: Record<Locale, Translations> = {
       summaryProgress: "Progress",
       summaryParallel: "Parallel chapters",
       chapterProgressTitle: "Chapter progress",
+      expandAllChapters: "Expand all",
+      collapseAllChapters: "Collapse all",
+      showAllText: "Show full text",
+      hideAllText: "Hide text",
+      scrollToTop: "Back to top",
+      downloadFullText: "Download full text",
+      searchPlaceholder: "Search in full text…",
+      searchCount: (count: number) =>
+        count === 1 ? "1 match" : `${count} matches`,
+      searchPrev: "Previous",
+      searchNext: "Next",
       chapterStatuses: {
         pending: "Queued",
         processing: "Converting",

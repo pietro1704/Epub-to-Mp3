@@ -165,10 +165,10 @@ async def run_configuration(
     voice: str = "pt-BR-ThalitaMultilingualNeural",
 ) -> BenchmarkResult:
     """Test a specific Edge-TTS configuration."""
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Testing: {config.name}")
     print(f"Config: {config.description}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     total_chars = 0
     total_time = 0
@@ -297,7 +297,7 @@ async def run_rate_limit_recovery(voice: str = "pt-BR-ThalitaMultilingualNeural"
                 "time": elapsed,
                 "chars_per_second": len(long_text) / elapsed,
             }
-            print(f"    ✅ Success: {elapsed:.2f}s ({len(long_text)/elapsed:.1f} chars/s)")
+            print(f"    ✅ Success: {elapsed:.2f}s ({len(long_text) / elapsed:.1f} chars/s)")
         else:
             results["baseline"] = {"success": False, "error": "Empty output"}
             print("    ❌ Failed: Empty output")
@@ -338,7 +338,7 @@ async def run_rate_limit_recovery(voice: str = "pt-BR-ThalitaMultilingualNeural"
                 "time": elapsed,
                 "chars_per_second": len(long_text) / elapsed,
             }
-            print(f"    ✅ Success: {elapsed:.2f}s ({len(long_text)/elapsed:.1f} chars/s)")
+            print(f"    ✅ Success: {elapsed:.2f}s ({len(long_text) / elapsed:.1f} chars/s)")
         else:
             results["optimized"] = {"success": False, "error": "Empty output"}
             print("    ❌ Failed: Empty output")
@@ -368,7 +368,7 @@ def print_summary(results: List[BenchmarkResult], rate_limit_results: dict):
     for r in sorted_results:
         warmup_str = f"{r.warmup_time:.1f}s" if r.warmup_time > 0 else "N/A"
         print(
-            f"{r.config_name:<35} {r.chars_per_second:<10.1f} {r.success_rate*100:<9.0f}% {r.total_time:<11.2f}s {warmup_str:<8}"
+            f"{r.config_name:<35} {r.chars_per_second:<10.1f} {r.success_rate * 100:<9.0f}% {r.total_time:<11.2f}s {warmup_str:<8}"
         )
         if r.errors:
             for e in r.errors[:2]:
@@ -379,7 +379,7 @@ def print_summary(results: List[BenchmarkResult], rate_limit_results: dict):
     print("\n" + "=" * 80)
     print(f"🏆 BEST CONFIGURATION: {best.config_name}")
     print(f"   Speed: {best.chars_per_second:.1f} chars/s")
-    print(f"   Success Rate: {best.success_rate*100:.0f}%")
+    print(f"   Success Rate: {best.success_rate * 100:.0f}%")
     print("=" * 80)
 
     # Rate limit recovery results
@@ -408,17 +408,17 @@ def print_summary(results: List[BenchmarkResult], rate_limit_results: dict):
     if best.success_rate >= 0.9:
         print(f"\n  For SPEED: Use '{best.config_name}'")
         print(
-            f"     - {best.chars_per_second:.1f} chars/s with {best.success_rate*100:.0f}% success"
+            f"     - {best.chars_per_second:.1f} chars/s with {best.success_rate * 100:.0f}% success"
         )
     else:
-        print(f"\n  ⚠️ Best speed config has low reliability ({best.success_rate*100:.0f}%)")
+        print(f"\n  ⚠️ Best speed config has low reliability ({best.success_rate * 100:.0f}%)")
 
     # Default recommendation
     balanced = next((r for r in results if "Balanced" in r.config_name), None)
     if balanced:
         print(f"\n  DEFAULT RECOMMENDATION: '{balanced.config_name}'")
         print(
-            f"     - Good balance of speed ({balanced.chars_per_second:.1f} chars/s) and reliability ({balanced.success_rate*100:.0f}%)"
+            f"     - Good balance of speed ({balanced.chars_per_second:.1f} chars/s) and reliability ({balanced.success_rate * 100:.0f}%)"
         )
 
 

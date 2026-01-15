@@ -293,7 +293,7 @@ async def benchmark_language_detection_approach(
         engine_sentences[best_engine][detected_lang].append((sentence, true_lang, voice))
 
     avg_detection_time = sum(detection_times) / len(detection_times) if detection_times else 0
-    print(f"\n📊 Language detection avg time: {avg_detection_time*1000:.2f}ms per sentence")
+    print(f"\n📊 Language detection avg time: {avg_detection_time * 1000:.2f}ms per sentence")
 
     # Now synthesize with each engine
     for engine_name, lang_groups in engine_sentences.items():
@@ -404,7 +404,7 @@ def print_results(results: List[BenchmarkResult]):
 
     for r in sorted(multilingual, key=lambda x: (x.engine, x.language)):
         print(
-            f"{r.engine:<12} {r.language:<6} {r.sentences:<10} {r.total_chars:<8} {r.total_time:<10.2f} {r.chars_per_second:<10.1f} {r.success_rate*100:<7.0f}%"
+            f"{r.engine:<12} {r.language:<6} {r.sentences:<10} {r.total_chars:<8} {r.total_time:<10.2f} {r.chars_per_second:<10.1f} {r.success_rate * 100:<7.0f}%"
         )
         if r.errors:
             for e in r.errors[:2]:
@@ -419,7 +419,7 @@ def print_results(results: List[BenchmarkResult]):
 
     for r in sorted(detection, key=lambda x: (x.engine, x.language)):
         print(
-            f"{r.engine:<12} {r.language:<6} {r.sentences:<10} {r.total_chars:<8} {r.total_time:<10.2f} {r.chars_per_second:<10.1f} {r.success_rate*100:<7.0f}%"
+            f"{r.engine:<12} {r.language:<6} {r.sentences:<10} {r.total_chars:<8} {r.total_time:<10.2f} {r.chars_per_second:<10.1f} {r.success_rate * 100:<7.0f}%"
         )
         if r.errors:
             for e in r.errors[:2]:
@@ -444,7 +444,7 @@ def print_results(results: List[BenchmarkResult]):
             print(f"  Total chars: {total_chars}")
             print(f"  Total time: {total_time:.2f}s")
             print(f"  Average speed: {avg_speed:.1f} chars/s")
-            print(f"  Success rate: {success_rate*100:.0f}%")
+            print(f"  Success rate: {success_rate * 100:.0f}%")
 
 
 async def main():

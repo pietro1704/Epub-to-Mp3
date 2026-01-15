@@ -762,7 +762,7 @@ class EdgeTTSEngine:
                         pre_existing_chunks[chunk_idx] = chunk_file
                 except (ValueError, IndexError, OSError):
                     pass
-            if pre_existing_chunks and self.verbose:
+            if pre_existing_chunks:
                 self._log(
                     f"♻️ [RESUME] Encontrados {len(pre_existing_chunks)}/{len(segments_to_process)} "
                     f"segmentos já processados, retomando do restante"
@@ -1351,7 +1351,30 @@ class EdgeTTSEngine:
         # If converter injected a precomputed plan, reuse it
         pre_segments = getattr(self, "_precomputed_segments", None)
         if pre_segments and isinstance(pre_segments, list):
-            return [(voice, seg) for seg in pre_segments if isinstance(seg, str) and seg.strip()]
+            cleaned_segments: List[str] = []
+            try:
+                current_len = len(stripped)
+            except Exception:
+                current_len = 0
+            for seg in pre_segments:
+                if not isinstance(seg, str):
+                    continue
+                seg_text = seg.strip()
+                if not seg_text:
+                    continue
+                cleaned_segments.append(self._sanitize_for_edge(seg_text))
+            if cleaned_segments:
+                total_len = sum(len(seg) for seg in cleaned_segments)
+                # Guard against stale plans that don't match the current payload size.
+                if current_len and total_len:
+                    ratio = total_len / max(current_len, 1)
+                    if ratio < 0.75 or ratio > 1.25:
+                        cleaned_segments = []
+                if cleaned_segments:
+                    refined: List[tuple[str, str]] = []
+                    for seg_text in cleaned_segments:
+                        refined.extend(self._split_if_needed(voice, seg_text))
+                    return refined
 
         try:
             active_chunk_limit = (

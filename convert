@@ -16,9 +16,20 @@
 
 set -e  # Exit on error
 
+VENV_DIR=".venv"
+PYTHON_BIN="$VENV_DIR/bin/python"
+
+# Bootstrap venv if needed (avoids PEP 668 issues on system Python)
+if [ ! -x "$PYTHON_BIN" ]; then
+    echo "🔧 Criando ambiente virtual em $VENV_DIR..."
+    python3 -m venv "$VENV_DIR"
+    echo "📦 Instalando dependências em $VENV_DIR..."
+    "$PYTHON_BIN" -m pip install --disable-pip-version-check -r python_app/requirements.txt
+fi
+
 # Check if special flags (--help, -h, --version)
 if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "--version" ]; then
-    python -m python_app.main "$@"
+    "$PYTHON_BIN" -m python_app.main "$@"
     exit 0
 fi
 
@@ -64,7 +75,7 @@ if [ "$ENGINE_PRESENT" -eq 0 ]; then
 fi
 
 # Run conversion with optimal settings; append default engine only when absent
-python -m python_app.main convert "$@" --verbose "${EXTRA_ARGS[@]}"
+"$PYTHON_BIN" -m python_app.main convert "$@" --verbose "${EXTRA_ARGS[@]}"
 
 # Print completion
 echo ""

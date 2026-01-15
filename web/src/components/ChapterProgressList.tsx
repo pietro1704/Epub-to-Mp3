@@ -35,6 +35,11 @@ export default function ChapterProgressList({
   const headerRef = useRef<HTMLDivElement>(null);
   const hasEntries = entries.length > 0;
   const [expanded, setExpanded] = useState<Record<number, boolean>>({});
+  const [expandAllChapters, setExpandAllChapters] = useState(false);
+  const [expandAllTexts, setExpandAllTexts] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchHits, setSearchHits] = useState(0);
+  const [activeMatchIndex, setActiveMatchIndex] = useState(0);
   const [manifests, setManifests] = useState<
     Record<number, ChapterStreamManifest | null>
   >({});
@@ -44,6 +49,7 @@ export default function ChapterProgressList({
   const [manifestErrors, setManifestErrors] = useState<
     Record<number, string | null>
   >({});
+  const matchCounterRef = useRef(0);
   // Track which segment texts are expanded (key: "chapterIndex-segmentIndex")
   const [expandedTexts, setExpandedTexts] = useState<Record<string, boolean>>(
     {},
@@ -157,6 +163,206 @@ export default function ChapterProgressList({
     [jobId],
   );
 
+  const fetchAllManifests = useCallback(
+    async (chapterIndices: number[]) => {
+      if (!jobId) return;
+      const pending = chapterIndices.filter((index) => !manifests[index]);
+      if (pending.length === 0) return;
+      const queue = [...pending];
+      const concurrency = 4;
+      const workers = Array.from({ length: concurrency }).map(async () => {
+        while (queue.length > 0) {
+          const index = queue.shift();
+          if (index === undefined) break;
+          await fetchManifest(index, true);
+        }
+      });
+      await Promise.all(workers);
+    },
+    [fetchManifest, jobId, manifests],
+  );
+
+  const handleSearchChange = (value: string) => {
+    setSearchQuery(value);
+  };
+
+  const highlightMatches = useCallback(
+    (text: string, query: string) => {
+      if (!query.trim()) return text;
+      try {
+        const safe = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        const regex = new RegExp(safe, "gi");
+        const parts = text.split(regex);
+        const matches = text.match(regex) || [];
+        const result: (string | JSX.Element)[] = [];
+        parts.forEach((part, idx) => {
+          result.push(part);
+          if (idx < matches.length) {
+            const matchIndex = matchCounterRef.current;
+            const isActive = matchIndex === activeMatchIndex;
+            matchCounterRef.current += 1;
+            result.push(
+              <mark
+                key={`hit-${idx}-${matchIndex}`}
+                className={`chapter-progress__highlight${
+                  isActive ? " chapter-progress__highlight--active" : ""
+                }`}
+              >
+                {matches[idx]}
+              </mark>,
+            );
+          }
+        });
+        return result;
+      } catch {
+        return text;
+      }
+    },
+    [activeMatchIndex],
+  );
+
+  const buildFullText = useCallback(() => {
+    const chapters = [...entries].sort((a, b) => a.index - b.index);
+    const lines: string[] = [];
+    chapters.forEach((entry) => {
+      lines.push(`${entry.index}. ${entry.name}`);
+      lines.push("");
+      const manifest = manifests[entry.index];
+      const chunks = (manifest?.chunks || [])
+        .slice()
+        .sort((a, b) => a.index - b.index);
+      const chunkText = chunks
+        .map((chunk) => chunk.text)
+        .filter((text): text is string => Boolean(text && text.trim()));
+      if (chunkText.length > 0) {
+        lines.push(chunkText.join("\n"));
+      } else {
+        lines.push(
+          locale === "pt" ? "[texto indisponível]" : "[text unavailable]",
+        );
+      }
+      lines.push("\n");
+    });
+    return lines.join("\n").trim();
+  }, [entries, locale, manifests]);
+
+  const handleDownloadText = useCallback(async () => {
+    if (!jobId) return;
+    setExpandAllChapters(true);
+    await fetchAllManifests(entries.map((entry) => entry.index));
+    const fullText = buildFullText();
+    if (!fullText) return;
+    const blob = new Blob([fullText], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `book-${jobId}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }, [buildFullText, entries, fetchAllManifests, jobId]);
+
+  useEffect(() => {
+    if (!expandAllTexts || !searchQuery.trim()) {
+      setSearchHits(0);
+      return;
+    }
+    const query = searchQuery.trim().toLowerCase();
+    let hits = 0;
+    Object.values(manifests).forEach((manifest) => {
+      (manifest?.chunks || []).forEach((chunk) => {
+        if (chunk.text) {
+          const text = chunk.text.toLowerCase();
+          const count = text.split(query).length - 1;
+          if (count > 0) {
+            hits += count;
+          }
+        }
+      });
+    });
+    setSearchHits(hits);
+  }, [expandAllTexts, manifests, searchQuery]);
+
+  const handleScrollTop = useCallback(() => {
+    containerRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, []);
+
+  const scrollToMatch = useCallback(
+    (index: number) => {
+      const container = containerRef.current;
+      if (!container) return;
+      const marks = container.querySelectorAll(".chapter-progress__highlight");
+      if (marks.length === 0) return;
+      const normalized = ((index % marks.length) + marks.length) % marks.length;
+      const target = marks[normalized] as HTMLElement;
+      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      setActiveMatchIndex(normalized);
+    },
+    [setActiveMatchIndex],
+  );
+
+  const handleNextMatch = useCallback(() => {
+    if (!searchHits) return;
+    scrollToMatch(activeMatchIndex + 1);
+  }, [activeMatchIndex, scrollToMatch, searchHits]);
+
+  const handlePrevMatch = useCallback(() => {
+    if (!searchHits) return;
+    scrollToMatch(activeMatchIndex - 1);
+  }, [activeMatchIndex, scrollToMatch, searchHits]);
+
+  useEffect(() => {
+    if (!expandAllTexts) {
+      setSearchQuery("");
+      setSearchHits(0);
+      setActiveMatchIndex(0);
+    }
+  }, [expandAllTexts]);
+
+  useEffect(() => {
+    if (!expandAllTexts || !searchQuery.trim()) {
+      setActiveMatchIndex(0);
+      return;
+    }
+    scrollToMatch(0);
+  }, [expandAllTexts, searchQuery, scrollToMatch, searchHits]);
+
+  const handleToggleAllChapters = useCallback(() => {
+    const next = !expandAllChapters;
+    setExpandAllChapters(next);
+    if (next) {
+      const allExpanded = entries.reduce<Record<number, boolean>>(
+        (acc, entry) => {
+          acc[entry.index] = true;
+          return acc;
+        },
+        {},
+      );
+      setExpanded(allExpanded);
+      void fetchAllManifests(entries.map((entry) => entry.index));
+    } else {
+      setExpanded({});
+    }
+  }, [entries, expandAllChapters, fetchAllManifests]);
+
+  const handleToggleAllTexts = useCallback(() => {
+    const next = !expandAllTexts;
+    setExpandAllTexts(next);
+    if (next) {
+      setExpandAllChapters(true);
+      const allExpanded = entries.reduce<Record<number, boolean>>(
+        (acc, entry) => {
+          acc[entry.index] = true;
+          return acc;
+        },
+        {},
+      );
+      setExpanded(allExpanded);
+      void fetchAllManifests(entries.map((entry) => entry.index));
+    }
+  }, [entries, expandAllTexts, fetchAllManifests]);
+
   // Auto-expand processing chapters so segments are visible immediately
   useEffect(() => {
     if (!jobId) return;
@@ -180,6 +386,21 @@ export default function ChapterProgressList({
       });
     }
   }, [jobId, entries]);
+
+  useEffect(() => {
+    if (!expandAllChapters) return;
+    setExpanded((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const entry of entries) {
+        if (!next[entry.index]) {
+          next[entry.index] = true;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [entries, expandAllChapters]);
 
   useEffect(() => {
     // Keep streaming chapters refreshed while they process
@@ -218,12 +439,13 @@ export default function ChapterProgressList({
   if (!hasEntries) {
     return null;
   }
+  matchCounterRef.current = 0;
 
   return (
     <div className="chapter-progress" aria-live="polite" ref={containerRef}>
       <div className="chapter-progress__header" ref={headerRef}>
         <h3>{t.status.chapterProgressTitle}</h3>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+        <div className="chapter-progress__actions">
           <button
             type="button"
             className="status-panel__toggle"
@@ -237,6 +459,71 @@ export default function ChapterProgressList({
           >
             ↓ {locale === "pt" ? "Ver atual" : "Go to current"}
           </button>
+          <button
+            type="button"
+            className="status-panel__toggle"
+            onClick={handleToggleAllChapters}
+            disabled={!jobId}
+          >
+            {expandAllChapters
+              ? t.status.collapseAllChapters
+              : t.status.expandAllChapters}
+          </button>
+          <button
+            type="button"
+            className="status-panel__toggle"
+            onClick={handleToggleAllTexts}
+            disabled={!jobId}
+          >
+            {expandAllTexts ? t.status.hideAllText : t.status.showAllText}
+          </button>
+          {expandAllTexts && (
+            <>
+              <button
+                type="button"
+                className="status-panel__toggle"
+                onClick={handleScrollTop}
+              >
+                {t.status.scrollToTop}
+              </button>
+              <button
+                type="button"
+                className="status-panel__toggle"
+                onClick={handleDownloadText}
+              >
+                {t.status.downloadFullText}
+              </button>
+              <div className="chapter-progress__search">
+                <input
+                  type="search"
+                  placeholder={t.status.searchPlaceholder}
+                  value={searchQuery}
+                  onChange={(event) => handleSearchChange(event.target.value)}
+                />
+                <span className="chapter-progress__search-count">
+                  {searchQuery.trim() ? t.status.searchCount(searchHits) : ""}
+                </span>
+                <div className="chapter-progress__search-nav">
+                  <button
+                    type="button"
+                    className="status-panel__toggle"
+                    onClick={handlePrevMatch}
+                    disabled={!searchHits}
+                  >
+                    {t.status.searchPrev}
+                  </button>
+                  <button
+                    type="button"
+                    className="status-panel__toggle"
+                    onClick={handleNextMatch}
+                    disabled={!searchHits}
+                  >
+                    {t.status.searchNext}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
           <span className="chapter-progress__totals">
             {completedCount}/{entries.length}
           </span>
@@ -383,7 +670,7 @@ export default function ChapterProgressList({
                         {segments.map((segment: AudioChunkEntry) => {
                           const textKey = `${entry.index}-${segment.index}`;
                           const isTextExpanded = Boolean(
-                            expandedTexts[textKey],
+                            expandAllTexts || expandedTexts[textKey],
                           );
                           const hasText = Boolean(segment.text?.trim());
                           return (
@@ -406,7 +693,7 @@ export default function ChapterProgressList({
                                     </span>
                                   )}
                                 </div>
-                                {hasText && (
+                                {hasText && !expandAllTexts && (
                                   <button
                                     type="button"
                                     className="chapter-progress__segment-toggle"
@@ -442,8 +729,19 @@ export default function ChapterProgressList({
                                   : "Your browser does not support audio"}
                               </audio>
                               {isTextExpanded && hasText && (
-                                <div className="chapter-progress__segment-text">
-                                  {segment.text}
+                                <div
+                                  className={`chapter-progress__segment-text${
+                                    expandAllTexts
+                                      ? " chapter-progress__segment-text--full"
+                                      : ""
+                                  }`}
+                                >
+                                  {expandAllTexts && searchQuery.trim()
+                                    ? highlightMatches(
+                                        segment.text || "",
+                                        searchQuery,
+                                      )
+                                    : segment.text}
                                 </div>
                               )}
                             </li>

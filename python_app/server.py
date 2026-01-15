@@ -1870,10 +1870,13 @@ async def convert_ebook(
     no_parallel: Optional[str] = Form(None),
     parallel_slots: Optional[str] = Form(None),
     max_performance: Optional[str] = Form(None),
+    chapter_stall_seconds: Optional[str] = Form(None),
+    edge_network_tier: Optional[str] = Form(None),
     edge_chunk_chars: Optional[str] = Form(None),
     edge_max_segment_seconds: Optional[str] = Form(None),
     edge_enable_parallel: Optional[str] = Form(None),
     edge_auto_tune: Optional[str] = Form(None),
+    edge_stable_mode: Optional[str] = Form(None),
     coqui_chunk_chars: Optional[str] = Form(None),
     coqui_max_workers: Optional[str] = Form(None),
     coqui_safe_mode: Optional[str] = Form(None),
@@ -1906,10 +1909,21 @@ async def convert_ebook(
         min_value=1,
         max_value=_CHAPTER_PARALLEL_MAX,
     )
+    chapter_stall_override = _parse_form_float(
+        chapter_stall_seconds,
+        min_value=10.0,
+        max_value=900.0,
+    )
+    edge_network_tier_override = None
+    if edge_network_tier:
+        normalized = edge_network_tier.strip().lower()
+        if normalized in {"slow", "medium", "fast", "ultra"}:
+            edge_network_tier_override = normalized
     edge_chunk_override = _parse_form_int(edge_chunk_chars, min_value=4000, max_value=24000)
     edge_segment_override = _parse_form_int(edge_max_segment_seconds, min_value=30, max_value=600)
     edge_parallel_override = _parse_form_optional_bool(edge_enable_parallel)
     edge_auto_tune_override = _parse_form_optional_bool(edge_auto_tune)
+    edge_stable_mode_flag = _parse_form_optional_bool(edge_stable_mode)
     coqui_chunk_override = _parse_form_int(coqui_chunk_chars, min_value=800, max_value=8000)
     coqui_workers_override = _parse_form_int(coqui_max_workers, min_value=1, max_value=12)
     coqui_safe_override = _parse_form_optional_bool(coqui_safe_mode)
@@ -2115,10 +2129,13 @@ async def convert_ebook(
         "parallelActive": 0,
         "noParallel": disable_parallel,
         "maxPerformance": max_performance_enabled,
+        "chapterStallSeconds": chapter_stall_override,
+        "edgeNetworkTier": edge_network_tier_override,
         "edgeChunkChars": edge_chunk_override,
         "edgeMaxSegmentSeconds": edge_segment_override,
         "edgeEnableParallel": edge_parallel_override,
         "edgeAutoTune": edge_auto_tune_override,
+        "edgeStableMode": edge_stable_mode_flag,
         "coquiChunkChars": coqui_chunk_override,
         "coquiMaxWorkers": coqui_workers_override,
         "coquiSafeMode": coqui_safe_override,
@@ -2381,11 +2398,11 @@ async def restart_backend(request: Request) -> dict:
     except Exception:
         pass  # No body or invalid JSON - use defaults
     _write_restart_marker(keep_cache=keep_cache, keep_finished=keep_finished)
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print("🔄 RESTART SOLICITADO")
     print(f"   Manter cache: {keep_cache}")
     print(f"   Manter concluídos: {keep_finished}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     logger.warning(
         "Restart requested via API (keep_cache=%s, keep_finished=%s)",
         keep_cache,
@@ -2406,9 +2423,9 @@ async def restart_backend(request: Request) -> dict:
         print("🗑️  Limpando cache...")
         _clear_all_caches()
         print("   ✓ Cache limpo")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print("✅ LIMPEZA CONCLUÍDA - Reiniciando servidor...")
-    print(f"{'='*60}\n")
+    print(f"{'=' * 60}\n")
     asyncio.create_task(_schedule_restart())
     return {
         "status": "restarting",
@@ -3082,6 +3099,9 @@ async def process_conversion(job_id: str) -> None:
         edge_segment_override = job.get("edgeMaxSegmentSeconds")
         edge_parallel_override = job.get("edgeEnableParallel")
         edge_auto_tune_override = job.get("edgeAutoTune")
+        edge_stable_mode = job.get("edgeStableMode")
+        chapter_stall_seconds = job.get("chapterStallSeconds")
+        edge_network_tier = job.get("edgeNetworkTier")
         coqui_chunk_override = job.get("coquiChunkChars")
         coqui_workers_override = job.get("coquiMaxWorkers")
         coqui_safe_override = job.get("coquiSafeMode")
@@ -3107,6 +3127,24 @@ async def process_conversion(job_id: str) -> None:
             if piper_procs_override is None:
                 cpu_physical = int(getattr(_hardware_profile, "cpu_physical", 2) or 2)
                 piper_procs_override = min(6, max(1, cpu_physical))
+
+        if edge_stable_mode:
+            if edge_chunk_override is None:
+                edge_chunk_override = 4000
+            if edge_segment_override is None:
+                edge_segment_override = 120
+            edge_parallel_override = False
+            if edge_auto_tune_override is None:
+                edge_auto_tune_override = False
+            if chapter_stall_seconds is None:
+                chapter_stall_seconds = 60.0
+            if not edge_network_tier:
+                edge_network_tier = "slow"
+
+        if chapter_stall_seconds is not None:
+            os.environ["CHAPTER_STALL_SECONDS"] = str(chapter_stall_seconds)
+        if edge_network_tier:
+            os.environ["EDGE_NETWORK_TIER"] = str(edge_network_tier)
 
         if clear_cache_flag:
             _append_event(job, "🗑️ Limpando cache do livro antes de iniciar…")
@@ -3351,6 +3389,8 @@ async def process_conversion(job_id: str) -> None:
         )
         if edge_auto_tune_override is not None:
             config.edge_auto_tune = bool(edge_auto_tune_override)
+        if edge_stable_mode is not None:
+            config.extra["edge_stable_mode"] = "1" if edge_stable_mode else "0"
         config.extra.setdefault("voice_auto", "1" if job.get("voice") is None else "0")
         converter_app._apply_language_preferences(config)
 
@@ -3397,7 +3437,7 @@ async def process_conversion(job_id: str) -> None:
                 config.edge_max_segment_seconds = _env_int(
                     "EDGE_MAX_SEGMENT_SECONDS", config.edge_max_segment_seconds or 75
                 )
-        force_sequential = bool(job.get("noParallel"))
+        force_sequential = bool(job.get("noParallel")) or edge_stable_mode
         if force_sequential:
             config.edge_enable_parallel = False
 
@@ -4631,11 +4671,63 @@ async def process_conversion(job_id: str) -> None:
                         ):
                             job_failed["value"] = True
                         return
+                    duration_seconds = await _get_audio_duration(output_file)
+                    chapter_elapsed = time.time() - start_time
+
+                    engine_label = (
+                        (local_active_config.engine if local_active_config else None)
+                        or engine_name
+                        or "auto"
+                    )
+                    truncation_warning = _detect_short_audio_output(
+                        clean_text, duration_seconds, engine_label=engine_label
+                    )
+                    if truncation_warning:
+                        _append_event(job, f"⚠️ {truncation_warning}")
+                        if hasattr(engine_obj, "last_error"):
+                            setattr(engine_obj, "last_error", "short_output")
+                        with contextlib.suppress(OSError):
+                            output_file.unlink(missing_ok=True)
+                        if await _maybe_retry(
+                            reason="áudio truncado",
+                            engine_label=engine_label,
+                            engine_obj=engine_obj,
+                            engine_config=engine_config,
+                        ):
+                            continue
+                        if auto_mode:
+                            available_auto = _available_auto_pool()
+                            next_engine = _next_auto_engine(
+                                auto_order, attempted_auto, available_auto
+                            )
+                            if next_engine:
+                                attempted_auto.add(next_engine)
+                                local_engine_name = next_engine
+                                local_active_config = available_auto[next_engine]
+                                _append_event(
+                                    job,
+                                    "   ↳ AUTO: áudio truncado; tentando outra engine",
+                                )
+                                continue
+                        if _switch_to_next_engine("Áudio truncado"):
+                            local_active_config = active_config
+                            local_engine_name = (
+                                active_config.engine if active_config else config.engine
+                            ) or "auto"
+                            continue
+                        if _record_chapter_failure(
+                            job,
+                            engine_obj,
+                            chapter_name,
+                            truncation_warning,
+                            chapter_index=idx,
+                            fatal=False,
+                        ):
+                            job_failed["value"] = True
+                        return
                     break
 
                 engine_runtime = max((last_stage_timestamp - synth_started), 0.001)
-                duration_seconds = await _get_audio_duration(output_file)
-                chapter_elapsed = time.time() - start_time
 
                 _append_event(
                     job, f"✅ Concluído: {output_file.name} (em {_format_hms(chapter_elapsed)})"
@@ -5149,6 +5241,39 @@ async def _get_audio_duration(file_path: Path) -> float:
 
     # Fallback: estimate based on file size (rough approximation)
     return file_path.stat().st_size / 1000.0  # ~1KB per second for 8kbps
+
+
+def _detect_short_audio_output(
+    text: str,
+    duration_seconds: float,
+    *,
+    engine_label: Optional[str] = None,
+) -> Optional[str]:
+    """Return warning text when audio looks far shorter than expected."""
+    if not text or duration_seconds <= 0:
+        return None
+
+    engine = (engine_label or "").lower()
+    if engine != "edge":
+        return None
+
+    stripped = text.strip()
+    if len(stripped) < 2000:
+        return None
+
+    estimated_seconds = TextValidator.estimate_duration(stripped)
+    if estimated_seconds < 150:
+        return None
+
+    if duration_seconds >= estimated_seconds * 0.60:
+        return None
+    if duration_seconds >= max(estimated_seconds - 90, estimated_seconds * 0.5):
+        return None
+
+    return (
+        "Áudio possivelmente truncado "
+        f"({int(duration_seconds)}s, esperado ≈ {int(estimated_seconds)}s)"
+    )
 
 
 def _set_chapter_status(

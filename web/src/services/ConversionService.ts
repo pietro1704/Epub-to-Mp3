@@ -113,6 +113,18 @@ function buildFormData(values: ConversionFormValues): FormData {
     formData.append("parallel_slots", String(values.parallelSlots));
   }
   if (
+    typeof values.chapterStallSeconds === "number" &&
+    Number.isFinite(values.chapterStallSeconds)
+  ) {
+    formData.append(
+      "chapter_stall_seconds",
+      String(values.chapterStallSeconds),
+    );
+  }
+  if (values.edgeNetworkTier) {
+    formData.append("edge_network_tier", values.edgeNetworkTier);
+  }
+  if (
     typeof values.edgeChunkChars === "number" &&
     Number.isFinite(values.edgeChunkChars)
   ) {
@@ -135,6 +147,9 @@ function buildFormData(values: ConversionFormValues): FormData {
   }
   if (typeof values.edgeAutoTune === "boolean") {
     formData.append("edge_auto_tune", values.edgeAutoTune ? "on" : "off");
+  }
+  if (typeof values.edgeStableMode === "boolean") {
+    formData.append("edge_stable_mode", values.edgeStableMode ? "on" : "off");
   }
   if (
     typeof values.coquiChunkChars === "number" &&

@@ -19,10 +19,13 @@ export interface ConversionFormValues {
   noParallel?: boolean;
   maxPerformance?: boolean;
   parallelSlots?: number;
+  chapterStallSeconds?: number;
+  edgeNetworkTier?: "slow" | "medium" | "fast" | "ultra";
   edgeChunkChars?: number;
   edgeMaxSegmentSeconds?: number;
   edgeEnableParallel?: boolean;
   edgeAutoTune?: boolean;
+  edgeStableMode?: boolean;
   coquiChunkChars?: number;
   coquiMaxWorkers?: number;
   coquiSafeMode?: boolean;

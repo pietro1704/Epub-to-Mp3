@@ -494,7 +494,7 @@ async def run_benchmark(real_mode: bool = False):
 
             for i, (lang, sentence) in enumerate(segments):
                 output_file = temp_path / f"mixed_edge_{i}_{lang}.wav"
-                print(f"  Segmento {i+1} [{lang}]...", end=" ", flush=True)
+                print(f"  Segmento {i + 1} [{lang}]...", end=" ", flush=True)
 
                 success, elapsed = await synthesize_edge(sentence, lang, output_file)
                 chars_per_sec = len(sentence) / elapsed if elapsed > 0 else 0

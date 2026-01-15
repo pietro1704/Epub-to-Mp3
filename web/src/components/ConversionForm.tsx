@@ -201,10 +201,13 @@ export default function ConversionForm({
   const [noParallel, setNoParallel] = useState(false);
   const [maxPerformance, setMaxPerformance] = useState(true);
   const [parallelSlots, setParallelSlots] = useState("");
+  const [chapterStallSeconds, setChapterStallSeconds] = useState("");
+  const [edgeNetworkTier, setEdgeNetworkTier] = useState("");
   const [edgeChunkChars, setEdgeChunkChars] = useState("");
   const [edgeMaxSegmentSeconds, setEdgeMaxSegmentSeconds] = useState("");
   const [edgeEnableParallel, setEdgeEnableParallel] = useState(true);
   const [edgeAutoTune, setEdgeAutoTune] = useState(true);
+  const [edgeStableMode, setEdgeStableMode] = useState(false);
   const [coquiChunkChars, setCoquiChunkChars] = useState("");
   const [coquiMaxWorkers, setCoquiMaxWorkers] = useState("");
   const [coquiSafeMode, setCoquiSafeMode] = useState(true);
@@ -705,10 +708,13 @@ export default function ConversionForm({
       noParallel,
       maxPerformance,
       parallelSlots: parseOptionalInt(parallelSlots),
+      chapterStallSeconds: parseOptionalNumber(chapterStallSeconds),
+      edgeNetworkTier: edgeNetworkTier || undefined,
       edgeChunkChars: parseOptionalInt(edgeChunkChars),
       edgeMaxSegmentSeconds: parseOptionalInt(edgeMaxSegmentSeconds),
       edgeEnableParallel,
       edgeAutoTune,
+      edgeStableMode,
       coquiChunkChars: parseOptionalInt(coquiChunkChars),
       coquiMaxWorkers: parseOptionalInt(coquiMaxWorkers),
       coquiSafeMode,
@@ -1231,6 +1237,41 @@ export default function ConversionForm({
             />
             <p className="form-hint">{t.form.parallelSlotsHint}</p>
           </fieldset>
+          <fieldset className="form-row">
+            <label htmlFor="chapterStallSeconds">
+              {t.form.chapterStallSecondsLabel}
+            </label>
+            <input
+              id="chapterStallSeconds"
+              name="chapterStallSeconds"
+              type="number"
+              min={10}
+              placeholder={t.form.chapterStallSecondsPlaceholder}
+              value={chapterStallSeconds}
+              disabled={isSubmitting || edgeStableMode}
+              onChange={(event) => setChapterStallSeconds(event.target.value)}
+            />
+            <p className="form-hint">{t.form.chapterStallSecondsHint}</p>
+          </fieldset>
+          <fieldset className="form-row">
+            <label htmlFor="edgeNetworkTier">
+              {t.form.edgeNetworkTierLabel}
+            </label>
+            <select
+              id="edgeNetworkTier"
+              name="edgeNetworkTier"
+              value={edgeNetworkTier}
+              disabled={isSubmitting || edgeStableMode}
+              onChange={(event) => setEdgeNetworkTier(event.target.value)}
+            >
+              <option value="">{t.form.edgeNetworkTierAuto}</option>
+              <option value="slow">{t.form.edgeNetworkTierSlow}</option>
+              <option value="medium">{t.form.edgeNetworkTierMedium}</option>
+              <option value="fast">{t.form.edgeNetworkTierFast}</option>
+              <option value="ultra">{t.form.edgeNetworkTierUltra}</option>
+            </select>
+            <p className="form-hint">{t.form.edgeNetworkTierHint}</p>
+          </fieldset>
 
           <fieldset className="form-field">
             <legend className="form-legend">{t.form.engineTuningLegend}</legend>
@@ -1321,6 +1362,37 @@ export default function ConversionForm({
                 </span>
               </label>
               <p className="form-hint">{t.form.edgeAutoTuneHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="edgeStableModeToggle">
+                {t.form.edgeStableModeLabel}
+              </label>
+              <label className="form-toggle" htmlFor="edgeStableModeToggle">
+                <input
+                  id="edgeStableModeToggle"
+                  type="checkbox"
+                  checked={edgeStableMode}
+                  disabled={isSubmitting}
+                  onChange={(event) => {
+                    const next = event.target.checked;
+                    setEdgeStableMode(next);
+                    if (next) {
+                      if (!chapterStallSeconds) {
+                        setChapterStallSeconds("60");
+                      }
+                      if (!edgeNetworkTier) {
+                        setEdgeNetworkTier("slow");
+                      }
+                    }
+                  }}
+                />
+                <span>
+                  {edgeStableMode
+                    ? t.form.edgeStableModeOn
+                    : t.form.edgeStableModeOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.edgeStableModeHint}</p>
             </div>
             <div className="form-row">
               <label htmlFor="coquiChunkChars">

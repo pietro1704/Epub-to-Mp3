@@ -2986,6 +2986,23 @@ class ConverterApplication:
         if piper_max_procs is not None:
             config.piper_max_procs = piper_max_procs
 
+        edge_stable_mode = getattr(args, "edge_stable_mode", None)
+        if edge_stable_mode is not None:
+            config.extra["edge_stable_mode"] = "1" if edge_stable_mode else "0"
+        if edge_stable_mode:
+            if (config.engine or "").lower() == "edge":
+                if edge_chunk_chars is None:
+                    config.edge_chunk_chars = 4000
+                if edge_max_segment_seconds is None:
+                    config.edge_max_segment_seconds = 120
+                if edge_auto_tune_override is None:
+                    config.edge_auto_tune = False
+                config.edge_enable_parallel = False
+            os.environ["CHAPTER_PARALLEL_COUNT"] = "1"
+            os.environ["CHAPTER_PARALLEL_MAX"] = "1"
+            os.environ.setdefault("CHAPTER_STALL_SECONDS", "60")
+            os.environ.setdefault("EDGE_NETWORK_TIER", "slow")
+
         bitrate = getattr(args, "bitrate", None)
         if bitrate:
             config.bitrate = str(bitrate)
@@ -3030,6 +3047,18 @@ class ConverterApplication:
         if parallel_slots is not None:
             os.environ["CHAPTER_PARALLEL_COUNT"] = str(parallel_slots)
             os.environ["CHAPTER_PARALLEL_MAX"] = str(parallel_slots)
+
+        chapter_stall_seconds = self._clamp_float(
+            getattr(args, "chapter_stall_seconds", None),
+            min_value=10.0,
+            max_value=900.0,
+        )
+        if chapter_stall_seconds is not None:
+            os.environ["CHAPTER_STALL_SECONDS"] = str(chapter_stall_seconds)
+
+        edge_network_tier = getattr(args, "edge_network_tier", None)
+        if edge_network_tier:
+            os.environ["EDGE_NETWORK_TIER"] = str(edge_network_tier)
 
         self._apply_healthcheck_env(args)
 
@@ -3273,6 +3302,12 @@ def _add_conversion_arguments(
         help="Override number of parallel chapters",
     )
     parser.add_argument(
+        "--chapter-stall-seconds",
+        dest="chapter_stall_seconds",
+        type=float,
+        help="Watchdog timeout before restarting a stalled chapter",
+    )
+    parser.add_argument(
         "--edge-chunk-chars",
         dest="edge_chunk_chars",
         type=int,
@@ -3283,6 +3318,12 @@ def _add_conversion_arguments(
         dest="edge_max_segment_seconds",
         type=int,
         help="Override Edge max segment duration (seconds)",
+    )
+    parser.add_argument(
+        "--edge-network-tier",
+        dest="edge_network_tier",
+        choices=["slow", "medium", "fast", "ultra"],
+        help="Override Edge network tier (slow/medium/fast/ultra)",
     )
     edge_parallel_group = parser.add_mutually_exclusive_group()
     edge_parallel_group.add_argument(
@@ -3313,6 +3354,21 @@ def _add_conversion_arguments(
         action="store_false",
         default=None,
         help="Disable Edge auto-tuning",
+    )
+    edge_stable_group = parser.add_mutually_exclusive_group()
+    edge_stable_group.add_argument(
+        "--edge-stable-mode",
+        dest="edge_stable_mode",
+        action="store_true",
+        default=None,
+        help="Use a safer Edge profile (lower parallelism, longer timeouts)",
+    )
+    edge_stable_group.add_argument(
+        "--no-edge-stable-mode",
+        dest="edge_stable_mode",
+        action="store_false",
+        default=None,
+        help="Disable Edge stable mode overrides",
     )
     parser.add_argument(
         "--coqui-chunk-chars",

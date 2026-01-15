@@ -10,14 +10,14 @@ from typing import Callable, Deque, Dict, List, Optional, Tuple
 
 # Configuracoes de monitoramento - baseado em benchmark (Jan 2026)
 # Benchmark results: best config = chunk 10k, conc 6, parallel -> 68 chars/s
-MIN_SAMPLES_FOR_DETECTION = 2  # Reduced for faster detection
-WARMUP_SAMPLES = 2  # First N samples may be slow (cold start)
-SPEED_DROP_THRESHOLD = 0.5  # 50% drop = slow (more sensitive)
+MIN_SAMPLES_FOR_DETECTION = 1  # Detect asap after first sample
+WARMUP_SAMPLES = 1  # Shorter warmup to react earlier
+SPEED_DROP_THRESHOLD = 0.65  # 35% drop triggers earlier slow mode
 SPEED_RECOVERY_THRESHOLD = 0.75  # 75% of target = recovered
 TARGET_CHARS_PER_SECOND = 200.0  # Aggressive throughput target
-MIN_ACCEPTABLE_SPEED = 80.0  # Floor before reacting
+MIN_ACCEPTABLE_SPEED = 100.0  # Higher floor to react sooner
 EXCELLENT_SPEED = 250.0  # Above this, increase aggressiveness
-STALL_DURATION_SECONDS = 90.0  # Treat very long segments as stalls
+STALL_DURATION_SECONDS = 45.0  # Treat long segments as stalls sooner
 
 # Configuracoes de auto-tuning - ordenadas por performance do benchmark
 CHUNK_SIZE_OPTIONS = [4000, 6000, 8000]  # Focus on fastest buckets
@@ -550,7 +550,7 @@ class AdaptiveEdgeTuner:
         # Auto-tune state
         self._auto_tune_enabled = True
         self._segments_since_last_tune = 0
-        self._tune_every_n_segments = 3  # Reduced for faster adaptation
+        self._tune_every_n_segments = 2  # Faster adaptation
 
         # Current settings - start aggressive for throughput
         self._chunk_size = 4000
@@ -596,8 +596,8 @@ class AdaptiveEdgeTuner:
         # Handle failures - may need to reduce aggressiveness
         if not success:
             self._failures_since_optimal += 1
-            if self._failures_since_optimal >= 2:
-                # Multiple failures - reduce chunk size
+            if self._failures_since_optimal >= 1:
+                # Fail fast - reduce aggressiveness immediately
                 self._log("FAILURE_DETECTED: reducing chunk size")
                 return self._reduce_aggressiveness()
             return None
@@ -630,9 +630,11 @@ class AdaptiveEdgeTuner:
 
         self._segments_since_last_tune += 1
 
-        # Handle stalls aggressively
-        if action and "STALL_DETECTED" in action:
-            self._log("STALL_DETECTED: reducing aggressiveness")
+        # Handle stalls/slowdowns aggressively
+        if action and (
+            "STALL_DETECTED" in action or "SLOW_DETECTED" in action or "SPEED_DROP" in action
+        ):
+            self._log(f"{action} -> reducing aggressiveness")
             return self._reduce_aggressiveness()
 
         # Check if we should auto-tune

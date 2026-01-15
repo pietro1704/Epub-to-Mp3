@@ -1903,6 +1903,56 @@ select {
   color: var(--text-primary);
 }
 
+.chapter-progress__actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.chapter-progress__search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.chapter-progress__search input[type="search"] {
+  min-width: 180px;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-primary);
+  font-size: 0.85rem;
+}
+
+.chapter-progress__search input[type="search"]::placeholder {
+  color: var(--text-secondary);
+}
+
+.chapter-progress__search-count {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.chapter-progress__search-nav {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.chapter-progress__highlight {
+  background: rgba(250, 204, 21, 0.35);
+  color: inherit;
+  border-radius: 0.2rem;
+  padding: 0 0.15rem;
+}
+
+.chapter-progress__highlight--active {
+  background: rgba(59, 130, 246, 0.4);
+}
+
 .chapter-progress__totals {
   font-size: 0.85rem;
   color: var(--text-muted);
@@ -2084,6 +2134,11 @@ select {
   overflow-y: auto;
 }
 
+.chapter-progress__segment-text--full {
+  max-height: none;
+  overflow: visible;
+}
+
 .theme-light .chapter-progress__segment-toggle {
   background: rgba(0, 0, 0, 0.05);
   border-color: rgba(0, 0, 0, 0.1);
@@ -2113,6 +2168,19 @@ select {
 @media (max-width: 640px) {
   .chapter-progress {
     padding: 0.5rem;
+  }
+  .chapter-progress__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+  .chapter-progress__actions {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 0.5rem;
+  }
+  .chapter-progress__search input[type="search"] {
+    min-width: 140px;
   }
   .chapter-progress__item {
     padding: 0.4rem 0.35rem;
