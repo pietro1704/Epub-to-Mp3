@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .config import ConversionConfig
-from .ebook_reader import EbookReader
+from .ebook_reader import Chapter, EbookReader
 from .i18n import Localization, get_localization
 from .progress import ProgressTracker
 from .tts.factory import TTSFactory
@@ -38,6 +38,28 @@ class SimpleAudioConverter:
         self.loc = localization or get_localization()
         self.verbose = False
 
+    @staticmethod
+    def _chapter_number(chapter: Chapter, fallback: int) -> int:
+        raw = getattr(chapter, "index", None)
+        if raw is None:
+            return fallback
+        try:
+            if isinstance(raw, str):
+                text = raw.strip()
+                if not text:
+                    return fallback
+                if text.replace(".", "", 1).isdigit():
+                    raw = float(text) if "." in text else int(text)
+                else:
+                    return fallback
+            value = int(raw)
+        except Exception:
+            try:
+                value = int(float(raw))  # type: ignore[arg-type]
+            except Exception:
+                return fallback
+        return value if value > 0 else fallback
+
     async def convert(self, config: ConversionConfig, reader: EbookReader) -> ConversionResult:
         """Convert ebook to audiobook with simple MP3 cache check"""
         self.verbose = getattr(config, "verbose", False)
@@ -65,12 +87,13 @@ class SimpleAudioConverter:
             output_paths = []
             completed_count = 0
 
-            for idx, chapter in enumerate(chapters):
-                chapter_num = idx + 1
+            for idx, chapter in enumerate(chapters, start=1):
+                chapter_num = self._chapter_number(chapter, idx)
 
                 # Generate expected MP3 filename
-                safe_title = self.file_manager.sanitize_filename(chapter.name)
-                output_filename = f"{chapter_num:03d} - {safe_title}.mp3"
+                output_filename = self.file_manager.build_output_filename(
+                    chapter.name or f"Chapter {chapter_num}", chapter_num
+                )
                 output_path = output_dir / output_filename
 
                 # Simple cache check: skip if MP3 already exists

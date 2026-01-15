@@ -58,7 +58,10 @@ class FileManager:
 
     @classmethod
     def build_output_filename(cls, chapter_name: str, index: int) -> str:
-        safe_name = cls.sanitize_filename(chapter_name or f"Chapter {index}")
+        raw_name = chapter_name or f"Chapter {index}"
+        safe_name = cls.sanitize_filename(raw_name)
+        if re.match(r"^\s*\d+(?:[.,]\d+)*\b", str(raw_name)):
+            return f"{safe_name}.mp3"
         return f"{index:03d} - {safe_name}.mp3"
 
     @classmethod

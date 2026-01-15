@@ -22,6 +22,28 @@ class SimpleConverter:
         self.loc = localization
         self.progress: Optional[ProgressTracker] = None
 
+    @staticmethod
+    def _chapter_number(chapter: Chapter, fallback: int) -> int:
+        raw = getattr(chapter, "index", None)
+        if raw is None:
+            return fallback
+        try:
+            if isinstance(raw, str):
+                text = raw.strip()
+                if not text:
+                    return fallback
+                if text.replace(".", "", 1).isdigit():
+                    raw = float(text) if "." in text else int(text)
+                else:
+                    return fallback
+            value = int(raw)
+        except Exception:
+            try:
+                value = int(float(raw))  # type: ignore[arg-type]
+            except Exception:
+                return fallback
+        return value if value > 0 else fallback
+
     async def convert_chapters(
         self,
         chapters: List[Chapter],
@@ -62,8 +84,8 @@ class SimpleConverter:
         converted_files = []
         errors = []
 
-        for idx, chapter in enumerate(chapters):
-            chapter_num = idx + 1
+        for idx, chapter in enumerate(chapters, start=1):
+            chapter_num = self._chapter_number(chapter, idx)
             start_time = time.time()
 
             print(f"\n📖 [{chapter_num}/{len(chapters)}] {chapter.name}")
@@ -134,9 +156,10 @@ class SimpleConverter:
 
         # Criar tasks para todos os capítulos
         tasks = []
-        for idx, chapter in enumerate(chapters):
+        for idx, chapter in enumerate(chapters, start=1):
+            chapter_num = self._chapter_number(chapter, idx)
             task = self._process_chapter_with_semaphore(
-                semaphore, chapter, idx + 1, len(chapters), tts_engine, output_dir, config
+                semaphore, chapter, chapter_num, len(chapters), tts_engine, output_dir, config
             )
             tasks.append(task)
 

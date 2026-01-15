@@ -105,6 +105,8 @@ class ChapterConversionOutcome:
 class AudioConverter:
     """Coordinate ebook parsing, TTS synthesis and post-processing."""
 
+    _NUMBERED_FILENAME_RE = re.compile(r"^(\d+)[\s_-]+(.+)$")
+
     def __init__(self, localization: Optional[Localization] = None) -> None:
         self.tts_factory = TTSFactory()
         self.audio_processor = AudioProcessor()
@@ -137,6 +139,124 @@ class AudioConverter:
         if text is None:
             text = chapter.text or ""
         return text
+
+    @staticmethod
+    def _coerce_chapter_index(raw: object, fallback: int) -> int:
+        if raw is None:
+            return fallback
+        try:
+            if isinstance(raw, str):
+                text = raw.strip()
+                if not text:
+                    return fallback
+                if text.replace(".", "", 1).isdigit():
+                    raw = float(text) if "." in text else int(text)
+                else:
+                    return fallback
+            value = int(raw)
+        except Exception:
+            try:
+                value = int(float(raw))  # type: ignore[arg-type]
+            except Exception:
+                return fallback
+        return value if value > 0 else fallback
+
+    def _chapter_number(self, chapter: Chapter, fallback: int) -> int:
+        return self._coerce_chapter_index(getattr(chapter, "index", None), fallback)
+
+    def _expected_output_path(self, chapter: Chapter, chapter_num: int, directory: Path) -> Path:
+        chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
+        filename = self.file_manager.build_output_filename(chapter_name, chapter_num)
+        return Path(directory) / filename
+
+    def _normalize_title_match(self, title: str) -> str:
+        safe = self.file_manager.sanitize_filename(title)
+        normalized = safe.replace("_", " ")
+        normalized = re.sub(r"\s+", " ", normalized).strip().lower()
+        return normalized
+
+    def _build_title_index(self, directory: Path) -> Dict[str, List[Path]]:
+        index: Dict[str, List[Path]] = {}
+        dir_path = Path(directory)
+        if not dir_path.exists():
+            return index
+        for candidate in dir_path.glob("*.mp3"):
+            match = self._NUMBERED_FILENAME_RE.match(candidate.stem)
+            if not match:
+                continue
+            key = self._normalize_title_match(match.group(2))
+            if not key:
+                continue
+            index.setdefault(key, []).append(candidate)
+        return index
+
+    def _resolve_misnumbered_audio(
+        self,
+        chapter: Chapter,
+        chapter_num: int,
+        directory: Path,
+        title_index: Dict[str, List[Path]],
+    ) -> Optional[Path]:
+        expected = self._expected_output_path(chapter, chapter_num, directory)
+        if expected.exists():
+            return expected
+        chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
+        key = self._normalize_title_match(chapter_name)
+        candidates = title_index.get(key) or []
+        if len(candidates) != 1:
+            return None
+        candidate = candidates[0]
+        if not candidate.exists():
+            return None
+        if expected.exists():
+            return expected
+        try:
+            candidate.rename(expected)
+            title_index[key] = []
+            return expected
+        except OSError:
+            if self.verbose:
+                print(f"⚠️ Falha ao renomear cache: {candidate.name} → {expected.name}")
+            return candidate
+
+    def _normalize_output_numbers(
+        self,
+        chapters: List[Chapter],
+        output_dir: Path,
+        config: ConversionConfig,
+        *,
+        temp_dir: Optional[Path] = None,
+    ) -> List[Path]:
+        output_index = self._build_title_index(output_dir)
+        for idx, chapter in enumerate(chapters, start=1):
+            chapter_num = self._chapter_number(chapter, idx)
+            self._resolve_misnumbered_audio(chapter, chapter_num, output_dir, output_index)
+
+        if temp_dir:
+            temp_index = self._build_title_index(temp_dir)
+            for idx, chapter in enumerate(chapters, start=1):
+                chapter_num = self._chapter_number(chapter, idx)
+                self._resolve_misnumbered_audio(chapter, chapter_num, temp_dir, temp_index)
+
+        cache_root = getattr(config, "cache_dir", None)
+        if cache_root:
+            cache_dir = Path(cache_root)
+            audio_dir = cache_dir / "audio"
+            model_bucket = AudioConverter._cache_model_bucket(config)
+            if model_bucket:
+                audio_dir = audio_dir / model_bucket
+            audio_index = self._build_title_index(audio_dir)
+            for idx, chapter in enumerate(chapters, start=1):
+                chapter_num = self._chapter_number(chapter, idx)
+                self._resolve_misnumbered_audio(chapter, chapter_num, audio_dir, audio_index)
+
+        normalized_outputs: List[Path] = []
+        for idx, chapter in enumerate(chapters, start=1):
+            chapter_num = self._chapter_number(chapter, idx)
+            expected = self._expected_output_path(chapter, chapter_num, output_dir)
+            if expected.exists():
+                normalized_outputs.append(expected)
+        return normalized_outputs
 
     def _extract_cover_art(self, reader: EbookReader) -> Optional[dict]:
         extractor = getattr(reader, "extract_cover_image", None)
@@ -420,8 +540,8 @@ class AudioConverter:
             chapter.formatting_segments = None
         else:
             stripped = LanguageMarkup.strip(baseline) if LanguageMarkup else baseline  # type: ignore[attr-defined]
-            truncated = (stripped or "")[: max(12_000, len(stripped or "") // 2 or 6_000)]
-            updated_text = truncated.strip()
+            cleaned = re.sub(r"\[\[fmt:[^\]]+\]\]|\[\[/fmt\]\]", "", stripped or "")
+            updated_text = cleaned.strip()
             chapter.formatting_segments = None
 
         if updated_text and updated_text != self._speech_text(chapter):
@@ -530,8 +650,9 @@ class AudioConverter:
         """Detect chapters that lack a valid audio artifact after conversion."""
         detected: Dict[str, str] = {}
         for idx, chapter in enumerate(chapters, start=1):
-            label = self._chapter_display_name(chapter, idx).strip()
-            output_path = self.file_manager.get_temp_output_path(chapter.name, temp_dir, idx)
+            chapter_num = self._chapter_number(chapter, idx)
+            label = self._chapter_display_name(chapter, chapter_num).strip()
+            output_path = self._expected_output_path(chapter, chapter_num, temp_dir)
             if not output_path.exists():
                 detected[label] = "Arquivo ausente após tentativa inicial"
                 continue
@@ -564,8 +685,8 @@ class AudioConverter:
         # Get final output directory to check for already converted chapters
         final_output_dir = self._setup_output_directory(config)
 
-        for idx, chapter in enumerate(chapters):
-            chapter_num = idx + 1
+        for idx, chapter in enumerate(chapters, start=1):
+            chapter_num = self._chapter_number(chapter, idx)
             chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
             safe_name = self.file_manager.sanitize_filename(chapter_name)
 
@@ -573,7 +694,7 @@ class AudioConverter:
             pre_tts_file = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
 
             # Check for MP3 in temp/cache dir
-            mp3_path = self.file_manager.get_temp_output_path(chapter.name, output_dir, chapter_num)
+            mp3_path = self._expected_output_path(chapter, chapter_num, output_dir)
 
             # Check for MP3 in final output dir (for resume capability)
             final_mp3_path = final_output_dir / mp3_path.name
@@ -643,14 +764,18 @@ class AudioConverter:
 
         files_generated = 0
         futures = []
+        chapter_entries: List[tuple[int, Chapter]] = []
         with ThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 1))) as executor:
-            for idx, chapter in enumerate(chapters):
+            for idx, chapter in enumerate(chapters, start=1):
+                chapter_num = self._chapter_number(chapter, idx)
+                chapter_entries.append((chapter_num, chapter))
                 if formatter:
                     formatting_segments_local = getattr(chapter, "formatting_segments", None)
                     formatter.to_audible_text(self._speech_text(chapter), formatting_segments_local)
-                futures.append(executor.submit(_prepare_payload, idx + 1, chapter))
+                futures.append(executor.submit(_prepare_payload, chapter_num, chapter))
 
             for idx, future in enumerate(futures):
+                chapter_num, chapter = chapter_entries[idx]
                 max_retries = 3
                 retry_count = 0
                 result_data = None
@@ -662,18 +787,17 @@ class AudioConverter:
                         retry_count += 1
                         if retry_count < max_retries:
                             print(
-                                f"⚠️ Timeout ao processar capítulo {idx + 1} - tentativa {retry_count}/{max_retries}"
+                                f"⚠️ Timeout ao processar capítulo {chapter_num} - tentativa {retry_count}/{max_retries}"
                             )
-                            chapter = chapters[idx]
-                            future = executor.submit(_prepare_payload, idx + 1, chapter)
+                            future = executor.submit(_prepare_payload, chapter_num, chapter)
                         else:
-                            print(f"❌ Capítulo {idx + 1} falhou após {max_retries} tentativas")
+                            print(f"❌ Capítulo {chapter_num} falhou após {max_retries} tentativas")
                             raise Exception(
-                                f"Capítulo {idx + 1} não pode ser processado após {max_retries} tentativas"
+                                f"Capítulo {chapter_num} não pode ser processado após {max_retries} tentativas"
                             )
 
                 if result_data is None:
-                    raise Exception(f"Capítulo {idx + 1} retornou dados nulos")
+                    raise Exception(f"Capítulo {chapter_num} retornou dados nulos")
 
                 chapter_num, chapter_name, parsed_text, pre_tts_text = result_data
                 safe_name = self.file_manager.sanitize_filename(chapter_name)
@@ -797,12 +921,13 @@ class AudioConverter:
         cache_index = self._load_cache_index(cache_dir)
         cached_paths: List[Path] = []
         for idx, chapter in enumerate(chapters, start=1):
-            temp_mp3 = self.file_manager.get_temp_output_path(chapter.name, output_dir, idx)
+            chapter_num = self._chapter_number(chapter, idx)
+            temp_mp3 = self._expected_output_path(chapter, chapter_num, output_dir)
             final_mp3 = final_output_dir / temp_mp3.name
             candidate = temp_mp3 if temp_mp3.exists() else final_mp3
             if not candidate.exists() and cache_dir:
                 cached_audio = self._find_cached_audio_path(
-                    cache_dir, config, getattr(chapter, "name", None) or "", idx
+                    cache_dir, config, getattr(chapter, "name", None) or "", chapter_num
                 )
                 if cached_audio:
                     try:
@@ -820,15 +945,16 @@ class AudioConverter:
                 return None
 
             pre_tts_path = self._find_pre_tts_path(
-                cache_dir, output_dir, idx, getattr(chapter, "name", None)
+                cache_dir, output_dir, chapter_num, getattr(chapter, "name", None)
             )
             pre_tts_hash = None
             if pre_tts_path and pre_tts_path.exists():
                 with contextlib.suppress(Exception):
                     pre_tts_hash = self._hash_text(pre_tts_path.read_text(encoding="utf-8"))
-            entry = cache_index.get(str(idx)) or {}
+            entry = cache_index.get(str(chapter_num)) or {}
             entry_hash = entry.get("pre_tts_hash")
             hash_ok = pre_tts_hash and entry_hash == pre_tts_hash
+            hash_missing = pre_tts_hash and not entry_hash
             duration_ok = True
             try:
                 bitrate_bps = self._bitrate_to_bps(getattr(config, "bitrate", "8k")) or 8000
@@ -842,7 +968,13 @@ class AudioConverter:
             except Exception:
                 duration_ok = True
 
-            if pre_tts_hash and hash_ok and duration_ok:
+            if pre_tts_hash and duration_ok and (hash_ok or hash_missing):
+                if hash_missing and cache_dir:
+                    entry["path"] = str(candidate)
+                    entry["size"] = size
+                    entry["pre_tts_hash"] = pre_tts_hash
+                    cache_index[str(chapter_num)] = entry
+                    self._save_cache_index(cache_dir, cache_index)
                 cached_paths.append(candidate)
                 continue
 
@@ -872,7 +1004,8 @@ class AudioConverter:
         pending: List[Chapter] = []
 
         for idx, chapter in enumerate(chapters, start=1):
-            temp_mp3 = self.file_manager.get_temp_output_path(chapter.name, output_dir, idx)
+            chapter_num = self._chapter_number(chapter, idx)
+            temp_mp3 = self._expected_output_path(chapter, chapter_num, output_dir)
             final_mp3 = final_output_dir / temp_mp3.name
             candidate: Optional[Path] = temp_mp3 if temp_mp3.exists() else None
 
@@ -881,7 +1014,7 @@ class AudioConverter:
 
             if candidate is None and cache_dir:
                 cached_audio = self._find_cached_audio_path(
-                    cache_dir, config, getattr(chapter, "name", None) or "", idx
+                    cache_dir, config, getattr(chapter, "name", None) or "", chapter_num
                 )
                 if cached_audio:
                     try:
@@ -901,15 +1034,16 @@ class AudioConverter:
                 continue
 
             pre_tts_path = self._find_pre_tts_path(
-                cache_dir, output_dir, idx, getattr(chapter, "name", None)
+                cache_dir, output_dir, chapter_num, getattr(chapter, "name", None)
             )
             pre_tts_hash = None
             if pre_tts_path and pre_tts_path.exists():
                 with contextlib.suppress(Exception):
                     pre_tts_hash = self._hash_text(pre_tts_path.read_text(encoding="utf-8"))
-            entry = cache_index.get(str(idx)) or {}
+            entry = cache_index.get(str(chapter_num)) or {}
             entry_hash = entry.get("pre_tts_hash")
             hash_ok = pre_tts_hash and entry_hash == pre_tts_hash
+            hash_missing = pre_tts_hash and not entry_hash
             duration_ok = True
             try:
                 bitrate_bps = self._bitrate_to_bps(getattr(config, "bitrate", "8k")) or 8000
@@ -924,14 +1058,20 @@ class AudioConverter:
                 duration_ok = True
 
             cached_ok = False
-            if pre_tts_hash and hash_ok and duration_ok:
+            if pre_tts_hash and duration_ok and (hash_ok or hash_missing):
                 cached_ok = True
+                if hash_missing and cache_dir:
+                    entry["path"] = str(candidate)
+                    entry["size"] = size
+                    entry["pre_tts_hash"] = pre_tts_hash
+                    cache_index[str(chapter_num)] = entry
+                    self._save_cache_index(cache_dir, cache_index)
             elif allow_index_only and entry_hash and size > 1000:
                 cached_ok = True
 
             if cached_ok and candidate is not None and candidate.exists():
                 if pre_tts_path and pre_tts_path.exists():
-                    cached_payload = self._load_cached_payload(chapter, idx, output_dir)
+                    cached_payload = self._load_cached_payload(chapter, chapter_num, output_dir)
                     if cached_payload:
                         truncation_warning = self._detect_short_audio_output(
                             candidate,
@@ -1053,9 +1193,10 @@ class AudioConverter:
         filtered: List[Chapter] = []
         skipped = []
         for idx, chapter in enumerate(chapters, start=1):
-            name = (getattr(chapter, "name", None) or f"Chapter {idx}").lower()
+            chapter_num = self._chapter_number(chapter, idx)
+            name = (getattr(chapter, "name", None) or f"Chapter {chapter_num}").lower()
             chars = self._estimate_chapter_chars(chapter)
-            mp3_temp = self.file_manager.get_temp_output_path(chapter.name, output_dir, idx)
+            mp3_temp = self._expected_output_path(chapter, chapter_num, output_dir)
             mp3_final = self._setup_output_directory(config) / mp3_temp.name
             has_audio = mp3_temp.exists() or mp3_final.exists()
 
@@ -1066,7 +1207,7 @@ class AudioConverter:
             is_pattern = any(pat in name for pat in patterns)
             too_short = chars < min_chars
             if is_pattern or too_short:
-                skipped.append((idx, chapter.name, chars))
+                skipped.append((chapter_num, chapter.name, chars))
                 continue
 
             filtered.append(chapter)
@@ -1554,13 +1695,17 @@ class AudioConverter:
         total_chapters = len(chapters)
         chapter_lookup: Dict[str, tuple[Chapter, int, str]] = {}
         for idx, chapter in enumerate(chapters, start=1):
-            label = self._chapter_display_name(chapter, idx)
-            self._register_chapter_lookup(chapter_lookup, label, chapter, idx)
+            chapter_num = self._chapter_number(chapter, idx)
+            label = self._chapter_display_name(chapter, chapter_num)
+            self._register_chapter_lookup(chapter_lookup, label, chapter, chapter_num)
 
         if self.verbose:
             print(f"🔍 [VERBOSE] Total de capítulos: {total_chapters}")
             print(f"🔍 [VERBOSE] Diretório de saída: {output_dir}")
             print(f"🔍 [VERBOSE] Diretório temporário: {temp_dir}")
+
+        if chapters:
+            self._normalize_output_numbers(chapters, output_dir, config, temp_dir=temp_dir)
 
         print(self.loc.t("conversion_start", title=reader.title, chapters=total_chapters))
         print(self.loc.t("conversion_output", path=output_dir))
@@ -1657,6 +1802,9 @@ class AudioConverter:
                 output_files=moved_files or cached_paths,
                 errors=[],
             )
+            normalized_outputs = self._normalize_output_numbers(chapters, output_dir, config)
+            if normalized_outputs:
+                result.output_files = normalized_outputs
             self.progress.finish()
             self._report_results(result)
             return result
@@ -2205,17 +2353,23 @@ class AudioConverter:
                 else:
                     print(f"📁 {len(moved_files)} capítulos convertidos movidos para: {output_dir}")
                     print("   💡 Execute novamente para converter os capítulos restantes")
+            elif self.verbose:
+                print("🔍 [VERBOSE] Nenhum MP3 para mover (provavelmente reuso total de cache)")
+
+            normalized_outputs = self._normalize_output_numbers(chapters, output_dir, config)
+            if normalized_outputs:
+                result.output_files = normalized_outputs
+
+            if result.output_files:
                 album_name = book_title or (
                     self._current_book_path.stem if self._current_book_path else output_dir.name
                 )
                 self._apply_final_id3_tags(
-                    moved_files,
+                    result.output_files,
                     default_album=album_name,
                     artist=book_author or None,
                     cover_art=cover_art,
                 )
-            elif self.verbose:
-                print("🔍 [VERBOSE] Nenhum MP3 para mover (provavelmente reuso total de cache)")
 
             # Clean temp audio only if we actually used temp files
             if temp_mp3s:
@@ -2730,11 +2884,7 @@ class AudioConverter:
         for idx, chapter in enumerate(chapters_list):
             # Use chapter's original index if available (important for parallel mode)
             # where each task receives a single-chapter list
-            try:
-                original_index = int(chapter.index) if hasattr(chapter, "index") else idx + 1
-            except (ValueError, TypeError):
-                original_index = idx + 1
-            chapter_num = original_index if original_index > 0 else idx + 1
+            chapter_num = self._chapter_number(chapter, idx + 1)
             progress_index = getattr(chapter, "_progress_index", None) or (idx + 1)
             start_time = time.time()
 
@@ -2754,9 +2904,7 @@ class AudioConverter:
 
             try:
                 # Conversão para diretório temporário
-                output_path = self.file_manager.get_temp_output_path(
-                    chapter.name, output_dir, idx + 1
-                )
+                output_path = self._expected_output_path(chapter, chapter_num, output_dir)
 
                 # Check if MP3 already exists and is valid (size > 1KB)
                 # Note: Cache validation already done by _validate_and_clean_cache()
@@ -3010,13 +3158,16 @@ class AudioConverter:
 
                         chunk_callback = None
                         chunk_root: Optional[Path] = None
-                        if getattr(config, "job_id", None):
-                            chunk_root = (
-                                Path(config.output_dir)
-                                / "streams"
-                                / str(config.job_id)
-                                / f"chapter_{chapter_num:04d}"
-                            )
+                        chunk_base: Optional[Path] = None
+                        job_id = getattr(config, "job_id", None)
+                        if job_id:
+                            chunk_base = Path(config.output_dir) / "streams" / str(job_id)
+                        else:
+                            cache_root = getattr(config, "cache_dir", None)
+                            if cache_root:
+                                chunk_base = Path(cache_root) / "streams" / "cli"
+                        if chunk_base:
+                            chunk_root = chunk_base / f"chapter_{chapter_num:04d}"
                             try:
                                 # **RESUME**: Don't delete existing chunks - Edge engine will resume
                                 chunk_root.mkdir(parents=True, exist_ok=True)
@@ -3032,7 +3183,11 @@ class AudioConverter:
                                     f"♻️ Retomando {len(existing_chunks)} chunk(s) já prontos"
                                 )
 
-                        def on_chunk_ready(segment_index: int, temp_path: Path) -> None:
+                        def on_chunk_ready(
+                            segment_index: int,
+                            temp_path: Path,
+                            segment_text: Optional[str] = None,
+                        ) -> None:
                             # Atualiza barra com chunks concluídos
                             if hasattr(self, "progress"):
                                 try:
@@ -3044,10 +3199,14 @@ class AudioConverter:
                                 return
                             try:
                                 target = chunk_root / f"chunk_{segment_index:04d}{temp_path.suffix}"
-                                shutil.copy2(temp_path, target)
+                                try:
+                                    if temp_path.resolve() != target.resolve():
+                                        shutil.copy2(temp_path, target)
+                                except OSError:
+                                    shutil.copy2(temp_path, target)
                                 manifest_path = chunk_root / "manifest.json"
                                 manifest = {
-                                    "jobId": config.job_id,
+                                    "jobId": job_id or "cli",
                                     "chapterIndex": chapter_num,
                                     "chunks": [],
                                 }
@@ -3058,30 +3217,39 @@ class AudioConverter:
                                         )
                                     except Exception:
                                         manifest = {
-                                            "jobId": config.job_id,
+                                            "jobId": job_id or "cli",
                                             "chapterIndex": chapter_num,
                                             "chunks": [],
                                         }
                                 existing = manifest.get("chunks") or []
                                 existing = [entry for entry in existing if isinstance(entry, dict)]
-                                existing = [
-                                    entry
-                                    for entry in existing
-                                    if entry.get("index") != segment_index
-                                ]
-                                existing.append(
-                                    {
-                                        "index": segment_index,
-                                        "file": target.name,
-                                        "url": f"/api/streams/{config.job_id}/chapters/{chapter_num}/chunks/{segment_index}",
-                                    }
-                                )
+                                existing_by_index = {
+                                    entry.get("index"): entry for entry in existing
+                                }
+                                previous = existing_by_index.get(segment_index) or {}
+                                entry = {
+                                    "index": segment_index,
+                                    "file": target.name,
+                                }
+                                if job_id:
+                                    entry["url"] = (
+                                        f"/api/streams/{job_id}/chapters/"
+                                        f"{chapter_num}/chunks/{segment_index}"
+                                    )
+                                if segment_text:
+                                    entry["text"] = segment_text
+                                elif previous.get("text"):
+                                    entry["text"] = previous["text"]
+                                existing_by_index[segment_index] = entry
                                 manifest["chunks"] = sorted(
-                                    existing, key=lambda item: item.get("index", 0)
+                                    existing_by_index.values(),
+                                    key=lambda item: item.get("index", 0),
                                 )
                                 manifest["updatedAt"] = time.time()
                                 manifest["baseUrl"] = (
-                                    f"/api/streams/{config.job_id}/chapters/{chapter_num}"
+                                    f"/api/streams/{job_id}/chapters/{chapter_num}"
+                                    if job_id
+                                    else ""
                                 )
                                 manifest_path.write_text(
                                     json.dumps(manifest, ensure_ascii=False, indent=2),
@@ -3091,8 +3259,10 @@ class AudioConverter:
                                 if self.verbose:
                                     print(f"   ⚠️ Falha ao salvar chunk {segment_index}: {exc}")
 
-                        # Sempre definir callback para refletir progresso mesmo sem streaming
-                        chunk_callback = on_chunk_ready
+                        # Só usar callback/chunking quando há diretório de resume disponível
+                        chunk_callback = on_chunk_ready if chunk_root else None
+                        primary_chunk_callback = chunk_callback
+                        primary_chunk_root = chunk_root if chunk_root else None
 
                         stall_event = asyncio.Event()
                         synthesis_task = asyncio.create_task(
@@ -3102,8 +3272,8 @@ class AudioConverter:
                                 tts_output_path,
                                 formatting_segments=getattr(chapter, "formatting_segments", None),
                                 progress_callback=on_segment_complete,
-                                chunk_callback=chunk_callback,
-                                resume_chunks_dir=chunk_root,
+                                chunk_callback=primary_chunk_callback,
+                                resume_chunks_dir=primary_chunk_root,
                             )
                         )
                         stall_task = asyncio.create_task(
@@ -3232,8 +3402,8 @@ class AudioConverter:
                                     clean_text,
                                     tts_output_path,
                                     formatting_segments=None,
-                                    chunk_callback=chunk_callback,
-                                    resume_chunks_dir=chunk_root,
+                                    chunk_callback=None,
+                                    resume_chunks_dir=None,
                                 ),
                                 timeout=fallback_timeout,
                             )
@@ -3269,56 +3439,61 @@ class AudioConverter:
 
                         # **THIRD ATTEMPT**: Synthesis with minimal text processing
                         try:
-                            # Get first 1000 chars as emergency fallback
-                            emergency_text = (speech_text or "")[:1000].strip()
-                            if emergency_text:
-                                emergency_timeout = (
-                                    90 if current_engine_label == "edge" else 30
-                                )  # Short timeout for emergency
+                            if current_engine_label == "edge":
                                 if self.verbose:
-                                    print(
-                                        f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)"
-                                    )
-
-                                current_engine_label = (
-                                    engine_tracker.get("label") or (config.engine or "").lower()
-                                )
-                                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
-                                    output_path, current_engine_label
-                                )
-                                synthesis_result = await asyncio.wait_for(
-                                    _synthesize_safe(
-                                        tts_engine,
-                                        emergency_text,
-                                        tts_output_path,
-                                        formatting_segments=None,
-                                        chunk_callback=chunk_callback,
-                                        resume_chunks_dir=chunk_root,
-                                    ),
-                                    timeout=emergency_timeout,
-                                )
-                                if synthesis_result and needs_mp3_transcode:
-                                    self.progress.tick("🎼 Convertendo WAV→MP3 (emergência)...")
+                                    print("   ⏭️ EMERGÊNCIA ignorada para Edge (preservando chunks)")
+                                synthesis_result = None
+                            else:
+                                # Get first 1000 chars as emergency fallback
+                                emergency_text = (speech_text or "")[:1000].strip()
+                                if emergency_text:
+                                    emergency_timeout = (
+                                        90 if current_engine_label == "edge" else 30
+                                    )  # Short timeout for emergency
                                     if self.verbose:
                                         print(
-                                            f"🔍 [VERBOSE] Convertendo WAV→MP3 (emergência): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                            f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)"
                                         )
-                                    converted = await self.audio_processor.convert_to_mp3(
-                                        tts_output_path,
-                                        output_path,
-                                        bitrate=config.bitrate,
+
+                                    current_engine_label = (
+                                        engine_tracker.get("label") or (config.engine or "").lower()
                                     )
-                                    if self.verbose and converted is None:
-                                        print(
-                                            "🔍 [VERBOSE] Falha ao converter WAV→MP3 (emergência)"
+                                    tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                                        output_path, current_engine_label
+                                    )
+                                    synthesis_result = await asyncio.wait_for(
+                                        _synthesize_safe(
+                                            tts_engine,
+                                            emergency_text,
+                                            tts_output_path,
+                                            formatting_segments=None,
+                                            chunk_callback=None,
+                                            resume_chunks_dir=None,
+                                        ),
+                                        timeout=emergency_timeout,
+                                    )
+                                    if synthesis_result and needs_mp3_transcode:
+                                        self.progress.tick("🎼 Convertendo WAV→MP3 (emergência)...")
+                                        if self.verbose:
+                                            print(
+                                                f"🔍 [VERBOSE] Convertendo WAV→MP3 (emergência): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                            )
+                                        converted = await self.audio_processor.convert_to_mp3(
+                                            tts_output_path,
+                                            output_path,
+                                            bitrate=config.bitrate,
                                         )
-                                    synthesis_result = converted
-                                    with contextlib.suppress(OSError):
-                                        tts_output_path.unlink(missing_ok=True)
-                                if synthesis_result and self.verbose:
-                                    print("   ✅ EMERGÊNCIA: Sucesso com texto reduzido!")
-                            else:
-                                synthesis_result = None
+                                        if self.verbose and converted is None:
+                                            print(
+                                                "🔍 [VERBOSE] Falha ao converter WAV→MP3 (emergência)"
+                                            )
+                                        synthesis_result = converted
+                                        with contextlib.suppress(OSError):
+                                            tts_output_path.unlink(missing_ok=True)
+                                    if synthesis_result and self.verbose:
+                                        print("   ✅ EMERGÊNCIA: Sucesso com texto reduzido!")
+                                else:
+                                    synthesis_result = None
                         except Exception as final_e:
                             synthesis_result = None
                             if self.verbose:
@@ -3797,8 +3972,9 @@ class AudioConverter:
             for idx, chapter in enumerate(chapters):
                 if idx in seen_indices:
                     continue
-                display_name = self._chapter_display_name(chapter, idx + 1).lower()
-                if numeric_target is not None and (idx + 1) == numeric_target:
+                chapter_num = self._chapter_number(chapter, idx + 1)
+                display_name = self._chapter_display_name(chapter, chapter_num).lower()
+                if numeric_target is not None and chapter_num == numeric_target:
                     prioritized.append(chapter)
                     seen_indices.add(idx)
                     break

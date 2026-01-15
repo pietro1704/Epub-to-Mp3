@@ -768,6 +768,24 @@ class EdgeTTSEngine:
                     f"segmentos já processados, retomando do restante"
                 )
 
+        use_chunk_files = bool(chunk_callback) or bool(resume_chunks_dir)
+
+        def _append_chunk_file(chunk_path: Path, first: bool) -> bool:
+            try:
+                mode = "wb" if first else "ab"
+                with output_path.open(mode) as outfile, chunk_path.open("rb") as infile:
+                    while True:
+                        block = infile.read(1024 * 1024)
+                        if not block:
+                            break
+                        outfile.write(block)
+                return True
+            except Exception as exc:
+                self.last_error = f"append_failed:{exc}"
+                if self.verbose:
+                    self._log(f"❌ Falha ao anexar chunk: {exc}")
+                return False
+
         # **PARALLEL OPTIMIZATION**: Process segments in batches when parallel mode is enabled
         if self._enable_parallel and self._rate_limiter and len(segments_to_process) > 1:
             if self.verbose:
@@ -803,6 +821,27 @@ class EdgeTTSEngine:
                         segment_text = simplified_segment
                         force_plain_segments = True
 
+                if use_chunk_files:
+                    existing_chunk = pre_existing_chunks.get(idx)
+                    if existing_chunk and existing_chunk.exists():
+                        if self.verbose:
+                            self._log(f"♻️ [RESUME] Segmento {idx + 1} já existe, anexando")
+                        if not _append_chunk_file(existing_chunk, total_segments == 0):
+                            return None
+                        if chunk_callback:
+                            try:
+                                chunk_callback(idx, existing_chunk, segment_text)
+                            except TypeError:
+                                try:
+                                    chunk_callback(idx, existing_chunk)
+                                except Exception:
+                                    pass
+                        if progress_callback:
+                            progress_callback(segment_text, total_text_chars or 0)
+                        total_segments += 1
+                        idx += 1
+                        continue
+
                 if self.verbose:
                     text_preview = (
                         segment_text[:200] + "..." if len(segment_text) > 200 else segment_text
@@ -813,12 +852,32 @@ class EdgeTTSEngine:
                     self._log(f"   Texto: {text_preview}")
 
                 # **CRITICAL FIX**: Try to process segment with retries
+                segment_output_path = output_path
+                temp_segment_path: Optional[Path] = None
+                if use_chunk_files:
+                    if resume_chunks_dir:
+                        segment_output_path = Path(resume_chunks_dir) / f"chunk_{idx:04d}.mp3"
+                    else:
+                        import tempfile
+
+                        temp_file = tempfile.NamedTemporaryFile(
+                            delete=False, suffix=".mp3", dir=output_path.parent
+                        )
+                        temp_file.close()
+                        temp_segment_path = Path(temp_file.name)
+                        segment_output_path = temp_segment_path
+
                 success = await self._synthesize_segment(
                     segment_text,
                     voice,
-                    output_path,
-                    append=(total_segments > 0),
+                    segment_output_path,
+                    append=False if use_chunk_files else (total_segments > 0),
                 )
+
+                if use_chunk_files and not success:
+                    with suppress(OSError):
+                        if segment_output_path != output_path:
+                            segment_output_path.unlink(missing_ok=True)
 
                 if not success:
                     # If the Edge service is returning *no audio at all*, splitting/cleaning won't help.
@@ -854,16 +913,36 @@ class EdgeTTSEngine:
                         success = await self._synthesize_segment(
                             simplified_text,
                             voice,
-                            output_path,
-                            append=(total_segments > 0),
+                            segment_output_path if use_chunk_files else output_path,
+                            append=False if use_chunk_files else (total_segments > 0),
                         )
                         if success:
+                            if use_chunk_files:
+                                if chunk_callback:
+                                    try:
+                                        chunk_callback(idx, segment_output_path, simplified_text)
+                                    except TypeError:
+                                        try:
+                                            chunk_callback(idx, segment_output_path)
+                                        except Exception:
+                                            pass
+                                if not _append_chunk_file(segment_output_path, total_segments == 0):
+                                    return None
+                                if temp_segment_path is not None:
+                                    with suppress(OSError):
+                                        temp_segment_path.unlink(missing_ok=True)
                             if self.verbose:
                                 self._log("   ✅ Sucesso com texto simplificado")
                             force_plain_segments = True
+                            if progress_callback:
+                                progress_callback(simplified_text, total_text_chars or 0)
                             total_segments += 1
                             idx += 1
                             continue
+                        if use_chunk_files and not success:
+                            with suppress(OSError):
+                                if segment_output_path != output_path:
+                                    segment_output_path.unlink(missing_ok=True)
 
                     failed_segments += 1
                     if self.verbose:
@@ -879,9 +958,14 @@ class EdgeTTSEngine:
                         success = await self._synthesize_segment(
                             segment_text,
                             voice,
-                            output_path,
-                            append=(total_segments > 0),
+                            segment_output_path if use_chunk_files else output_path,
+                            append=False if use_chunk_files else (total_segments > 0),
                         )
+
+                        if use_chunk_files and not success:
+                            with suppress(OSError):
+                                if segment_output_path != output_path:
+                                    segment_output_path.unlink(missing_ok=True)
 
                         if success:
                             if self.verbose:
@@ -909,6 +993,21 @@ class EdgeTTSEngine:
 
                     idx += 1
                     continue
+
+                if use_chunk_files:
+                    if chunk_callback:
+                        try:
+                            chunk_callback(idx, segment_output_path, segment_text)
+                        except TypeError:
+                            try:
+                                chunk_callback(idx, segment_output_path)
+                            except Exception:
+                                pass
+                    if not _append_chunk_file(segment_output_path, total_segments == 0):
+                        return None
+                    if temp_segment_path is not None:
+                        with suppress(OSError):
+                            temp_segment_path.unlink(missing_ok=True)
 
                 # Success!
                 total_segments += 1
