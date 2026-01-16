@@ -142,6 +142,45 @@ class AudioConverter:
         return text
 
     @staticmethod
+    def _cleanup_duplicate_files(directory: Path, verbose: bool = False) -> int:
+        """Remove duplicate files with (dup-N) suffix from directory and subdirectories.
+
+        Args:
+            directory: Root directory to scan for duplicates
+            verbose: Print cleanup information
+
+        Returns:
+            Number of duplicate files removed
+        """
+        if not directory.exists():
+            return 0
+
+        # Pattern to match files like "filename (dup-1).mp3", "filename (dup-2).mp3", etc.
+        dup_pattern = re.compile(r"^(.+)\s+\(dup-\d+\)(\.\w+)$")
+        removed_count = 0
+
+        # Recursively scan directory
+        for file_path in directory.rglob("*"):
+            if not file_path.is_file():
+                continue
+
+            match = dup_pattern.match(file_path.name)
+            if match:
+                try:
+                    file_path.unlink()
+                    removed_count += 1
+                    if verbose:
+                        print(f"   🗑️ Removed duplicate: {file_path.name}")
+                except OSError as e:
+                    if verbose:
+                        print(f"   ⚠️ Could not remove {file_path.name}: {e}")
+
+        if removed_count > 0 and verbose:
+            print(f"✓ Cleaned up {removed_count} duplicate file(s)")
+
+        return removed_count
+
+    @staticmethod
     def _coerce_chapter_index(raw: object, fallback: int) -> int:
         if raw is None:
             return fallback
@@ -1648,6 +1687,95 @@ class AudioConverter:
             return True
         return False
 
+    def _print_final_validation_report(
+        self,
+        chapters: List[Chapter],
+        converted_files: List[Path],
+        errors: List[str],
+        output_dir: Path,
+        verbose: bool = False,
+    ) -> None:
+        """Print comprehensive validation report comparing EPUB chapters with audio output.
+
+        Args:
+            chapters: List of chapters from the original EPUB
+            converted_files: List of successfully converted audio files
+            errors: List of conversion errors
+            output_dir: Output directory containing audio files
+            verbose: Print detailed information
+        """
+        if not chapters:
+            return
+
+        print("\n" + "=" * 70)
+        print("📊 RELATÓRIO DE VALIDAÇÃO DE INTEGRIDADE")
+        print("=" * 70)
+
+        # Count chapters
+        total_chapters = len(chapters)
+        successful_chapters = len(converted_files)
+        failed_chapters = len(errors)
+        missing_chapters = total_chapters - successful_chapters
+
+        # Basic stats
+        print(f"\n📚 CAPÍTULOS DO EPUB ORIGINAL: {total_chapters}")
+        print(f"✅ ÁUDIOS GERADOS COM SUCESSO: {successful_chapters}")
+
+        if missing_chapters > 0:
+            print(f"❌ CAPÍTULOS FALTANTES: {missing_chapters}")
+
+        if failed_chapters > 0:
+            print(f"⚠️  ERROS DURANTE CONVERSÃO: {failed_chapters}")
+
+        # Check for duplicates by comparing file names
+        file_names = [f.name for f in converted_files]
+        unique_names = set(file_names)
+        duplicate_count = len(file_names) - len(unique_names)
+
+        if duplicate_count > 0:
+            print(f"🔄 ARQUIVOS DUPLICADOS DETECTADOS: {duplicate_count}")
+            if verbose:
+                # Find and print duplicate names
+                seen = set()
+                duplicates = []
+                for name in file_names:
+                    if name in seen:
+                        duplicates.append(name)
+                    seen.add(name)
+                if duplicates:
+                    print("   Duplicatas:")
+                    for dup in duplicates[:5]:  # Show first 5
+                        print(f"   - {dup}")
+                    if len(duplicates) > 5:
+                        print(f"   ... e mais {len(duplicates) - 5}")
+
+        # Check for missing chapters by comparing titles
+        if missing_chapters > 0 and verbose:
+            print("\n⚠️  Capítulos potencialmente faltantes:")
+            converted_titles = {self._normalize_title_match(f.stem) for f in converted_files}
+            for idx, chapter in enumerate(chapters, start=1):
+                chapter_title = getattr(chapter, "name", f"Chapter {idx}")
+                normalized_title = self._normalize_title_match(chapter_title)
+                # Check if any converted file matches this chapter
+                found = any(normalized_title in title for title in converted_titles)
+                if not found:
+                    print(f"   - Capítulo {idx}: {chapter_title[:60]}")
+
+        # Overall validation status
+        print("\n" + "-" * 70)
+        if successful_chapters == total_chapters and duplicate_count == 0:
+            print("✅ VALIDAÇÃO: COMPLETA E ÍNTEGRA")
+            print("   Todos os capítulos do EPUB original foram convertidos com sucesso.")
+        elif successful_chapters == total_chapters:
+            print("✅ VALIDAÇÃO: COMPLETA (com advertências)")
+            print("   Todos os capítulos foram convertidos, mas há duplicatas.")
+        elif missing_chapters > 0:
+            print("⚠️  VALIDAÇÃO: INCOMPLETA")
+            print(f"   {missing_chapters} capítulo(s) não foram convertidos ou falharam.")
+            if errors:
+                print("   Verifique os logs de erro acima para mais detalhes.")
+        print("=" * 70 + "\n")
+
     async def convert(self, reader: EbookReader, config: ConversionConfig) -> ConversionResult:
         """Convert all chapters in ``reader`` according to ``config``."""
 
@@ -1696,6 +1824,25 @@ class AudioConverter:
             except Exception as exc:
                 if self.verbose:
                     print(f"⚠️ Falha ao limpar saída anterior: {exc}")
+
+        # **CLEANUP**: Remove duplicate files (dup-1, dup-2, etc.) from output and cache
+        if self.verbose:
+            print("🧹 Scanning for duplicate files to clean up...")
+
+        # Clean output directory
+        cleanup_count = self._cleanup_duplicate_files(output_dir, verbose=self.verbose)
+
+        # Clean cache directory if exists
+        if self._current_book_path:
+            cache_root = resolve_cache_root(getattr(config, "cache_dir", None))
+            cache_dir = self.cache_manager.get_cache_directory(
+                self._current_book_path, title=reader.title, cache_root=cache_root
+            )
+            if cache_dir.exists():
+                cleanup_count += self._cleanup_duplicate_files(cache_dir, verbose=False)
+
+        if cleanup_count > 0 and not self.verbose:
+            print(f"🧹 Cleaned up {cleanup_count} duplicate file(s)")
 
         # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
@@ -2645,6 +2792,16 @@ class AudioConverter:
         if cached_audio:
             all_converted_files = list(cached_audio) + all_converted_files
             converted_total = len(all_converted_files)
+
+        # **INTEGRITY VALIDATION**: Verify all chapters from EPUB are present in audio output
+        self._print_final_validation_report(
+            chapters=chapters,
+            converted_files=all_converted_files,
+            errors=all_errors,
+            output_dir=output_dir,
+            verbose=self.verbose,
+        )
+
         return ConversionResult(
             success=len(all_errors) == 0,
             total_chapters=total_chapters,
