@@ -976,6 +976,9 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         temp_wav = Path(self.temp_dir) / "temp.wav"
         temp_wav.write_text("dummy wav")
         mock_tts_engine.synthesize_async.return_value = temp_wav
+        # Configure Protocol methods for validation system
+        mock_tts_engine.get_synthesis_tracker = Mock(return_value=None)
+        mock_tts_engine.get_synthesis_log = Mock(return_value=[])
 
         # Mock audio processor
         output_mp3 = Path(self.temp_dir) / "output.mp3"
@@ -1003,6 +1006,9 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         existing_file.write_text("existing content")
 
         mock_tts_engine = Mock()
+        # Configure Protocol methods for validation system
+        mock_tts_engine.get_synthesis_tracker = Mock(return_value=None)
+        mock_tts_engine.get_synthesis_log = Mock(return_value=[])
 
         result = await self.converter._convert_single_chapter(
             semaphore, chapter, mock_tts_engine, output_dir, 1
@@ -1018,6 +1024,9 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         # Mock TTS engine to return None (failure)
         mock_tts_engine = AsyncMock()
         mock_tts_engine.synthesize_async.return_value = None
+        # Configure Protocol methods for validation system
+        mock_tts_engine.get_synthesis_tracker = Mock(return_value=None)
+        mock_tts_engine.get_synthesis_log = Mock(return_value=[])
 
         output_dir = Path(self.temp_dir)
 
@@ -1035,6 +1044,9 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         # Mock TTS engine to raise exception
         mock_tts_engine = AsyncMock()
         mock_tts_engine.synthesize_async.side_effect = Exception("Test error")
+        # Configure Protocol methods for validation system
+        mock_tts_engine.get_synthesis_tracker = Mock(return_value=None)
+        mock_tts_engine.get_synthesis_log = Mock(return_value=[])
 
         output_dir = Path(self.temp_dir)
 
@@ -1079,7 +1091,11 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             patch.object(self.converter, "_report_results") as mock_report,
         ):
             mock_setup.return_value = Path(self.temp_dir)
-            mock_create.return_value = Mock()
+            mock_engine = Mock()
+            # Configure Protocol methods for validation system
+            mock_engine.get_synthesis_tracker = Mock(return_value=None)
+            mock_engine.get_synthesis_log = Mock(return_value=[])
+            mock_create.return_value = mock_engine
             expected_result = ConversionResult(
                 success=True,
                 total_chapters=2,
