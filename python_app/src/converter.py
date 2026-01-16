@@ -4119,22 +4119,66 @@ class AudioConverter:
         cache_dir = getattr(config, "cache_dir", None)
 
         if output_path.exists() and not config.force_reprocess:
-            progress.start_chapter(chapter_label, index)
-            self._cache_audio(cache_dir, output_path, chapter, index, config, text_root=output_dir)
-            status = self.loc.t("status_cached")
-            self._announce_stage(index, chapter_label, status)
-            if getattr(config, "listen", False):
-                progress.tick(self.loc.t("status_playing"))
-                played = await self.audio_processor.play_audio(output_path)
-                status = (
-                    self.loc.t("status_complete")
-                    if played
-                    else self.loc.t("status_play_unavailable")
+            # **AUTOMATIC CACHE VALIDATION**: Verify cached audio integrity
+            cache_valid = True
+            try:
+                from .audio_validator import AudioValidator
+
+                speech_text = self._speech_text(chapter)
+                if speech_text:
+                    validator = AudioValidator()
+                    validation_result = validator.validate_duration(
+                        speech_text,
+                        output_path,
+                        tolerance=0.25,  # 25% tolerance for cached files
+                    )
+
+                    if not validation_result.is_valid:
+                        cache_valid = False
+                        if self.verbose:
+                            print(
+                                f"⚠️ Chapter {index} cache INVALID: {validation_result.error_message}"
+                            )
+                            print(f"   Re-converting chapter {index}...")
+                        # Delete invalid cached file
+                        try:
+                            output_path.unlink()
+                        except OSError:
+                            pass
+                    elif self.verbose:
+                        print(
+                            f"✓ Chapter {index} cache valid: "
+                            f"{validation_result.actual_duration:.1f}s "
+                            f"({validation_result.duration_diff_percent:+.1f}% diff)"
+                        )
+            except Exception as e:
+                if self.verbose:
+                    print(f"⚠️ Chapter {index} cache validation error: {e}")
+                # On validation error, trust cache and continue
+                cache_valid = True
+
+            if cache_valid:
+                progress.start_chapter(chapter_label, index)
+                self._cache_audio(
+                    cache_dir, output_path, chapter, index, config, text_root=output_dir
                 )
+                status = self.loc.t("status_cached")
                 self._announce_stage(index, chapter_label, status)
-            progress.complete_chapter(status)
-            outcome = ChapterConversionOutcome(index=index, name=chapter_label, path=output_path)
-            return output_path if legacy_mode else outcome
+                if getattr(config, "listen", False):
+                    progress.tick(self.loc.t("status_playing"))
+                    played = await self.audio_processor.play_audio(output_path)
+                    status = (
+                        self.loc.t("status_complete")
+                        if played
+                        else self.loc.t("status_play_unavailable")
+                    )
+                    self._announce_stage(index, chapter_label, status)
+                progress.complete_chapter(status)
+                outcome = ChapterConversionOutcome(
+                    index=index, name=chapter_label, path=output_path
+                )
+                return output_path if legacy_mode else outcome
+            # If cache invalid, fall through to reconversion below
 
         progress.start_chapter(chapter_label, index)
         status_holder = {"text": self.loc.t("status_waiting_slot")}
@@ -4428,6 +4472,55 @@ class AudioConverter:
                             )
                         # Log warning but don't fail - audio may still be usable
                         # Future: could add strict mode to fail on validation errors
+
+                    # **AUTOMATIC RETRY**: Check for failed segments and retry
+                    try:
+                        if hasattr(tts_engine, "get_synthesis_tracker"):
+                            tracker = tts_engine.get_synthesis_tracker()
+                            if tracker:
+                                missing_segments = tracker.get_missing_segments()
+                                if missing_segments:
+                                    if self.verbose:
+                                        print(
+                                            f"🔄 Chapter {index}: Found {len(missing_segments)} failed segments, attempting retry..."
+                                        )
+
+                                    from .retry_manager import RetryManager
+
+                                    retry_manager = RetryManager(max_retries=3)
+                                    temp_retry_dir = converted.parent / f"retry_temp_{index}"
+
+                                    retry_report = await retry_manager.retry_failed_segments(
+                                        engine=tts_engine,
+                                        failed_segments=missing_segments,
+                                        output_path=converted,
+                                        temp_dir=temp_retry_dir,
+                                    )
+
+                                    if self.verbose:
+                                        print(
+                                            f"✓ Retry results: {retry_report.successful}/{retry_report.total_retried} recovered, "
+                                            f"{retry_report.still_failed} still failed"
+                                        )
+
+                                    # Clean up retry temp dir
+                                    try:
+                                        if temp_retry_dir.exists():
+                                            import shutil
+
+                                            shutil.rmtree(temp_retry_dir, ignore_errors=True)
+                                    except Exception:
+                                        pass
+
+                                    # If still have failures, warn but don't fail
+                                    if retry_report.still_failed > 0:
+                                        if self.verbose:
+                                            print(
+                                                f"⚠️ Chapter {index}: {retry_report.still_failed} segments could not be recovered after retries"
+                                            )
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"⚠️ Retry mechanism error: {e}")
 
                     # Save validation log
                     if cache_dir:

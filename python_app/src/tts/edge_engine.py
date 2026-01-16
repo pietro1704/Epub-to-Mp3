@@ -713,6 +713,11 @@ class EdgeTTSEngine:
         self.partial_failure_detected = False
         self.last_segment_report = {"expected": 0, "generated": 0, "failed": 0}
 
+        # **INTEGRITY TRACKING**: Initialize synthesis tracker
+        from ..synthesis_tracker import SynthesisTracker
+
+        self._synthesis_tracker = SynthesisTracker(chapter_title=output_path.stem)
+
         # Use formatting segments if available
         payload_text = text or ""
 
@@ -1143,6 +1148,23 @@ class EdgeTTSEngine:
                     completed_count += 1
                     if self.verbose:
                         self._log(f"♻️ [RESUME] Segmento {i + 1} já existe, pulando")
+                    # **INTEGRITY TRACKING**: Mark resumed segment as success
+                    if self._synthesis_tracker:
+                        try:
+                            from ..audio_validator import AudioValidator
+
+                            validator = AudioValidator()
+                            duration = validator.get_audio_duration(segment_files[i])
+                            _, seg_text = segments_to_process[i]
+                            self._synthesis_tracker.record_segment(
+                                index=i,
+                                text=seg_text,
+                                audio_path=segment_files[i],
+                                duration=duration,
+                                status="success",
+                            )
+                        except Exception:
+                            pass  # Non-critical
                     continue
 
                 # Validate and prepare segment
@@ -1157,6 +1179,15 @@ class EdgeTTSEngine:
                     simplified = self._simplify_segment_text(segment_text, limit_chars=None)
                     if simplified:
                         segment_text = simplified
+
+                # **INTEGRITY TRACKING**: Record segment as pending before synthesis
+                if self._synthesis_tracker:
+                    try:
+                        self._synthesis_tracker.record_segment(
+                            index=i, text=segment_text, status="pending"
+                        )
+                    except Exception:
+                        pass  # Non-critical
 
                 # Create temp file
                 temp_file = tempfile.NamedTemporaryFile(
@@ -1185,6 +1216,24 @@ class EdgeTTSEngine:
                     if result:  # Success
                         successful_segments += 1
                         segment_files[segment_idx] = temp_file
+
+                        # **INTEGRITY TRACKING**: Record successful segment
+                        if self._synthesis_tracker:
+                            try:
+                                from ..audio_validator import AudioValidator
+
+                                validator = AudioValidator()
+                                duration = validator.get_audio_duration(temp_file)
+                                _, seg_text = segments_to_process[segment_idx]
+                                self._synthesis_tracker.record_segment(
+                                    index=segment_idx,
+                                    text=seg_text,
+                                    audio_path=temp_file,
+                                    duration=duration,
+                                    status="success",
+                                )
+                            except Exception:
+                                pass  # Non-critical
 
                         if chunk_callback:
                             try:
@@ -1221,12 +1270,36 @@ class EdgeTTSEngine:
                                 f"✅ [PARALLEL] Segmento {segment_num} OK ({file_size} bytes, {completed_count}/{total_segments})"
                             )
                     else:
+                        # **INTEGRITY TRACKING**: Record failed segment
+                        if self._synthesis_tracker:
+                            try:
+                                _, seg_text = segments_to_process[segment_idx]
+                                self._synthesis_tracker.record_segment(
+                                    index=segment_idx,
+                                    text=seg_text,
+                                    status="failed",
+                                    error="No audio generated",
+                                )
+                            except Exception:
+                                pass  # Non-critical
+
                         if self.verbose:
                             self._log(f"⚠️ [PARALLEL] Segmento {segment_num} falhou (sem áudio)")
                         with suppress(OSError):
                             temp_file.unlink()
 
                 except Exception as exc:
+                    # **INTEGRITY TRACKING**: Record exception
+                    if self._synthesis_tracker:
+                        try:
+                            _, seg_text = segments_to_process[segment_idx]
+                            error_msg = str(exc)[:200]
+                            self._synthesis_tracker.record_segment(
+                                index=segment_idx, text=seg_text, status="failed", error=error_msg
+                            )
+                        except Exception:
+                            pass  # Non-critical
+
                     if self.verbose:
                         error_msg = str(exc)[:100]
                         self._log(f"⚠️ [PARALLEL] Segmento {segment_num} falhou: {error_msg}")
@@ -1268,6 +1341,24 @@ class EdgeTTSEngine:
                     if success and retry_path.exists():
                         successful_segments += 1
                         segment_files[fail_idx] = retry_path
+
+                        # **INTEGRITY TRACKING**: Update retried segment as success
+                        if self._synthesis_tracker:
+                            try:
+                                from ..audio_validator import AudioValidator
+
+                                validator = AudioValidator()
+                                duration = validator.get_audio_duration(retry_path)
+                                self._synthesis_tracker.record_segment(
+                                    index=fail_idx,
+                                    text=segment_text,
+                                    audio_path=retry_path,
+                                    duration=duration,
+                                    status="success",
+                                )
+                            except Exception:
+                                pass  # Non-critical
+
                         if chunk_callback:
                             try:
                                 chunk_callback(fail_idx, retry_path, segment_text)
@@ -1283,9 +1374,20 @@ class EdgeTTSEngine:
                         if self.verbose:
                             self._log(f"✅ [PARALLEL] Segmento {fail_idx + 1} recuperado no retry")
                     else:
+                        # **INTEGRITY TRACKING**: Keep failed status (already recorded earlier)
                         with suppress(OSError):
                             retry_path.unlink()
                 except Exception as exc:
+                    # **INTEGRITY TRACKING**: Update with retry error
+                    if self._synthesis_tracker:
+                        try:
+                            error_msg = f"Retry failed: {str(exc)[:150]}"
+                            self._synthesis_tracker.record_segment(
+                                index=fail_idx, text=segment_text, status="failed", error=error_msg
+                            )
+                        except Exception:
+                            pass  # Non-critical
+
                     if self.verbose:
                         self._log(f"⚠️ [PARALLEL] Retry segmento {fail_idx + 1} falhou: {exc}")
                     with suppress(OSError):

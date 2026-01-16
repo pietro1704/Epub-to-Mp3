@@ -97,7 +97,7 @@ class RetryManager:
 
             for attempt in range(1, self.max_retries + 1):
                 logger.info(
-                    f"Retry attempt {attempt}/{self.max_retries} " f"for segment {segment.index}"
+                    f"Retry attempt {attempt}/{self.max_retries} for segment {segment.index}"
                 )
 
                 # Tentar reconverter apenas este segmento
