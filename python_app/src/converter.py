@@ -1834,7 +1834,7 @@ class AudioConverter:
 
         # Clean cache directory if exists
         if self._current_book_path:
-            cache_root = resolve_cache_root(getattr(config, "cache_dir", None))
+            cache_root = getattr(config, "cache_dir", None) or resolve_cache_root()
             cache_dir = self.cache_manager.get_cache_directory(
                 self._current_book_path, title=reader.title, cache_root=cache_root
             )
