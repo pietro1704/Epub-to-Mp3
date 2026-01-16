@@ -1833,13 +1833,10 @@ class AudioConverter:
         cleanup_count = self._cleanup_duplicate_files(output_dir, verbose=self.verbose)
 
         # Clean cache directory if exists
-        if self._current_book_path:
-            cache_root = getattr(config, "cache_dir", None) or resolve_cache_root()
-            cache_dir = self.cache_manager.get_cache_directory(
-                self._current_book_path, title=reader.title, cache_root=cache_root
-            )
-            if cache_dir.exists():
-                cleanup_count += self._cleanup_duplicate_files(cache_dir, verbose=False)
+        if self._current_book_path and self.cache_manager.cache_dir:
+            cache_path = self.cache_manager._get_cache_path(self._current_book_path)
+            if cache_path.exists():
+                cleanup_count += self._cleanup_duplicate_files(cache_path, verbose=False)
 
         if cleanup_count > 0 and not self.verbose:
             print(f"🧹 Cleaned up {cleanup_count} duplicate file(s)")
