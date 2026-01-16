@@ -3,7 +3,9 @@
 Unit tests for audio_validator module
 """
 
+import builtins
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -75,7 +77,7 @@ class TestAudioValidator(unittest.TestCase):
 
         try:
             # Mock mutagen to return fake duration
-            with patch("python_app.src.audio_validator.MP3") as mock_mp3:
+            with patch("mutagen.mp3.MP3") as mock_mp3:
                 mock_info = Mock()
                 mock_info.length = 42.5
                 mock_audio = Mock()
@@ -94,13 +96,28 @@ class TestAudioValidator(unittest.TestCase):
             tmp.write(b"fake mp3 data" * 100)
 
         try:
-            # Mock mutagen to raise ImportError, pydub to succeed
-            with patch("python_app.src.audio_validator.MP3", side_effect=ImportError):
-                with patch("python_app.src.audio_validator.AudioSegment") as mock_pydub:
-                    mock_audio = Mock()
-                    mock_audio.__len__ = Mock(return_value=30000)  # 30 seconds in ms
-                    mock_pydub.from_mp3.return_value = mock_audio
+            real_import = builtins.__import__
 
+            def mock_import(name, *args, **kwargs):
+                if name.startswith("mutagen"):
+                    raise ImportError("Mocked import error")
+                return real_import(name, *args, **kwargs)
+
+            fake_pydub = types.ModuleType("pydub")
+
+            class FakeAudio:
+                def __len__(self):
+                    return 30000  # 30 seconds
+
+            class FakeAudioSegment:
+                @staticmethod
+                def from_mp3(path):
+                    return FakeAudio()
+
+            fake_pydub.AudioSegment = FakeAudioSegment
+
+            with patch("builtins.__import__", side_effect=mock_import):
+                with patch.dict("sys.modules", {"pydub": fake_pydub}):
                     duration = self.validator.get_audio_duration(tmp_path)
                     self.assertEqual(duration, 30.0)
         finally:
@@ -113,12 +130,21 @@ class TestAudioValidator(unittest.TestCase):
             tmp.write(b"fake data" * 100)
 
         try:
-            # Mock all libraries to raise ImportError
-            with patch("python_app.src.audio_validator.MP3", side_effect=ImportError):
-                with patch("python_app.src.audio_validator.AudioSegment", side_effect=ImportError):
-                    with patch("python_app.src.audio_validator.sf", side_effect=ImportError):
-                        duration = self.validator.get_audio_duration(tmp_path)
-                        self.assertIsNone(duration)
+            real_import = builtins.__import__
+
+            def mock_import(name, *args, **kwargs):
+                if name.startswith(("mutagen", "pydub", "soundfile")):
+                    raise ImportError("Forced missing dependency")
+                return real_import(name, *args, **kwargs)
+
+            with patch("builtins.__import__", side_effect=mock_import):
+                # Ensure no cached modules sneak through
+                with patch.dict(
+                    "sys.modules",
+                    {"mutagen": None, "mutagen.mp3": None, "pydub": None, "soundfile": None},
+                ):
+                    duration = self.validator.get_audio_duration(tmp_path)
+                    self.assertIsNone(duration)
         finally:
             tmp_path.unlink()
 

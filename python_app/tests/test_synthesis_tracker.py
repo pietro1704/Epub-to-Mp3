@@ -15,7 +15,7 @@ class TestSegmentRecord(unittest.TestCase):
 
     def test_create_simple_text(self):
         """Test creating SegmentRecord with simple text"""
-        text = "This is a simple test with ten words here right now okay."
+        text = "This is a simple test with exactly ten words now."
         record = SegmentRecord.create(index=0, text=text)
 
         self.assertEqual(record.index, 0)
@@ -38,7 +38,7 @@ class TestSegmentRecord(unittest.TestCase):
 
     def test_create_with_custom_wpm(self):
         """Test creating SegmentRecord with custom words per minute"""
-        text = "This has exactly five words here."
+        text = "This has exactly five words."
         record = SegmentRecord.create(index=2, text=text, words_per_minute=200)
 
         # 5 words at 200 WPM = 5/200 * 60 = 1.5 seconds
@@ -137,13 +137,15 @@ class TestSynthesisTracker(unittest.TestCase):
     def test_validate_completeness_success(self):
         """Test validation when all segments are successful"""
         for i in range(3):
-            self.tracker.record_segment(i, f"Text {i}" * 20, status="pending")
-            # Simulate successful conversion with realistic duration
+            # Create text with 30 words (30/150 * 60 = 12 seconds expected)
+            text = " ".join([f"word{i}"] * 30)
+            self.tracker.record_segment(i, text, status="pending")
+            # Simulate successful conversion with realistic duration (within 15% tolerance)
             self.tracker.record_segment(
                 i,
-                f"Text {i}" * 20,
+                text,
                 audio_path=Path(f"/tmp/{i}.mp3"),
-                duration=4.0,  # 4 seconds per segment
+                duration=12.0,  # Exactly expected duration
                 status="success",
             )
 

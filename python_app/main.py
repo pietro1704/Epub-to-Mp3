@@ -350,11 +350,15 @@ class ConverterApplication:
 
             # Show structure only
             if args.show_structure:
-                self._show_structure(reader)
+                self._show_structure(
+                    reader, filter_chapters=bool(getattr(args, "filter_chapters", False))
+                )
                 return 0
 
             # Prepare structured chapters for conversion
-            structure_items = self._generate_structure_items(reader)
+            structure_items = self._generate_structure_items(
+                reader, filter_chapters=bool(getattr(args, "filter_chapters", False))
+            )
 
             range_start = getattr(args, "from_chapter_to_end", None)
             range_span = getattr(args, "from_chapter_to_chapter", None)
@@ -512,7 +516,9 @@ class ConverterApplication:
         parts.append(f"{secs:02d}s")
         return " ".join(parts)
 
-    def _generate_structure_items(self, reader: EbookReader) -> List[ChapterStructureItem]:
+    def _generate_structure_items(
+        self, reader: EbookReader, *, filter_chapters: bool = True
+    ) -> List[ChapterStructureItem]:
         """Prepare structured information for chapters shared across features"""
 
         try:
@@ -555,7 +561,7 @@ class ConverterApplication:
 
         for i, chapter in enumerate(chapters):
             speak_heading = True
-            if self._should_skip_chapter(chapters, i, toc_map):
+            if filter_chapters and self._should_skip_chapter(chapters, i, toc_map):
                 continue
 
             href_key = self._normalize_href(str(getattr(chapter, "source_path", "")))
@@ -1064,12 +1070,18 @@ class ConverterApplication:
         for chapter_num, item in enumerate(items, 1):
             chapter = item.chapter
             raw_html = getattr(chapter, "raw_html", None)
+            if raw_html is not None and not isinstance(raw_html, str):
+                raw_html = None
             chapter_footnotes = getattr(chapter, "footnotes", None)
+            if chapter_footnotes is not None and not isinstance(chapter_footnotes, list):
+                chapter_footnotes = None
             text_source = (
                 item.text_override
                 if item.text_override is not None
                 else getattr(chapter, "text", "")
             )
+            if text_source is None or not isinstance(text_source, str):
+                text_source = str(text_source or "")
             if item.text_override is not None:
                 raw_html = None
 
@@ -1158,6 +1170,8 @@ class ConverterApplication:
                     else:
                         updated_text = text_source
                 formatting_segments = getattr(chapter, "formatting_segments", None)
+                if formatting_segments is not None and not isinstance(formatting_segments, list):
+                    formatting_segments = None
                 replacements = build_inline_replacements(footnotes or [])
                 if formatting_segments:
                     updated_segments: list[FormattingSegment] = []
@@ -2008,11 +2022,11 @@ class ConverterApplication:
                     expanded.append(cleaned)
         return expanded
 
-    def _show_structure(self, reader: EbookReader):
+    def _show_structure(self, reader: EbookReader, *, filter_chapters: bool = True):
         """Display book structure and save cache txt files"""
         print(f"{self.localization.t('book_label')}: {reader.title}")
         print(f"{self.localization.t('author_label')}: {reader.author}")
-        structure_items = self._generate_structure_items(reader)
+        structure_items = self._generate_structure_items(reader, filter_chapters=filter_chapters)
 
         preview_config = self.config.create_conversion_config(
             engine="edge",

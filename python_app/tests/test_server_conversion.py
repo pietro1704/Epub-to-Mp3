@@ -1,12 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi.testclient import TestClient
+try:
+    from fastapi.testclient import TestClient
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    raise unittest.SkipTest("fastapi not installed; skipping server conversion tests")
+
 from src.config import ConversionConfig
 from src.job_manager import JobManager
 from src.telemetry import TelemetryRecorder

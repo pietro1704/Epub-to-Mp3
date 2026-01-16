@@ -47,9 +47,14 @@ class TestRetryManager(unittest.IsolatedAsyncioTestCase):
         segment.status = "failed"
         failed_segments = [segment]
 
-        # Mock engine with synthesize_segment that succeeds
+        # Mock engine with synthesize_segment that succeeds and creates file
+        async def mock_synthesize(text, output_path, formatting_segments=None):
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"audio" * 100)
+            return True
+
         mock_engine = Mock()
-        mock_engine.synthesize_segment = AsyncMock(return_value=True)
+        mock_engine.synthesize_segment = mock_synthesize
 
         output_path = Path(self.temp_dir) / "output.mp3"
         temp_dir = Path(self.temp_dir) / "retry"
@@ -188,7 +193,7 @@ class TestRetryManager(unittest.IsolatedAsyncioTestCase):
             Path(output_path).write_bytes(b"audio" * 200)
             return Path(output_path)
 
-        mock_engine = Mock()
+        mock_engine = Mock(spec=[])  # Empty spec so hasattr(synthesize_segment) = False
         mock_engine.synthesize_async = mock_synthesize_async
 
         output_path = Path(self.temp_dir) / "output.mp3"

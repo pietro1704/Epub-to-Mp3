@@ -44,6 +44,8 @@ class ConversionConfig:
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
+    auto_validate_output: bool = True  # Run post-validation (validate_conversion) automatically
+    auto_fix_output: bool = True  # Auto-reconvert (cache clean) if validation fails
     log_callback: Optional[Callable[[str], None]] = None  # Callback for verbose logging
     edge_auto_offline_seconds: int = 0  # disabled: Edge handles large chapters via chunking
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking

@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -33,6 +34,7 @@ from .hardware_detector import HardwareProfile
 from .i18n import Localization, get_localization
 from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController
+from .text_integrity_validator import TextIntegrityValidator
 from .tts.factory import TTSFactory
 from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
 
@@ -119,6 +121,9 @@ class AudioConverter:
         self.loc = localization or get_localization()
         self.verbose = False
         self._current_book_path: Optional[Path] = None
+        self._active_config: Optional[ConversionConfig] = None
+        self._auto_fix_guard: bool = False
+        self._last_output_dir: Optional[Path] = None
         self.show_tts_output = False  # Only show TTS output in verbose mode
         self._retry_original_texts: Dict[str, str] = {}
         self._parallel_state: Dict[str, Any] = {
@@ -133,6 +138,97 @@ class AudioConverter:
         self._health_state: Dict[str, Any] = {"active": False}
         self._health_watchdog: Optional[asyncio.Task] = None
         self._cover_art: Optional[dict] = None
+
+    def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
+        """
+        Run validate_conversion.validate_book to cross-check EPUB, cache and MP3.
+
+        Best-effort: failures are logged only in verbose mode.
+        """
+        try:
+            config = self._active_config
+            if not config or getattr(config, "auto_validate_output", True) is False:
+                return
+            epub_path = getattr(self, "_current_book_path", None)
+            if not epub_path or not Path(epub_path).exists():
+                return
+            if not output_dir:
+                output_dir = self._last_output_dir
+            if not output_dir:
+                return
+            from validate_conversion import auto_fix, validate_book
+
+            cache_dir = getattr(config, "cache_dir", None)
+            if cache_dir:
+                cache_dir = Path(cache_dir)
+            else:
+                try:
+                    if self._current_book_path:
+                        cache_dir = self.cache_manager._get_cache_path(self._current_book_path)
+                except Exception:
+                    cache_dir = None
+
+            stats, issues = validate_book(Path(epub_path), Path(output_dir), cache_dir=cache_dir)
+            has_problems = bool(
+                issues
+                or any(
+                    stats.get(key, 0) > 0
+                    for key in (
+                        "missing_cache",
+                        "text_mismatch",
+                        "parsed_pretts_diff",
+                        "missing_mp3",
+                        "duration_mismatch",
+                    )
+                )
+            )
+            if (
+                has_problems
+                and getattr(config, "auto_fix_output", True)
+                and not self._auto_fix_guard
+            ):
+                # Avoid auto-fix inside an active event loop (e.g., during async conversion)
+                in_loop = False
+                try:
+                    loop = asyncio.get_running_loop()
+                    in_loop = loop.is_running()
+                except RuntimeError:
+                    in_loop = False
+                if in_loop:
+                    if self.verbose:
+                        print(f"⚠️ Auto-fix em background ({stage}) - event loop em execução")
+
+                    def _background_fix() -> None:
+                        try:
+                            auto_fix(
+                                Path(epub_path),
+                                Path(output_dir),
+                                engine=config.engine,
+                                voice=config.voice,
+                            )
+                            validate_book(Path(epub_path), Path(output_dir))
+                        finally:
+                            self._auto_fix_guard = False
+
+                    self._auto_fix_guard = True
+                    threading.Thread(target=_background_fix, daemon=True).start()
+                    return
+                self._auto_fix_guard = True
+                try:
+                    auto_fix(
+                        Path(epub_path),
+                        Path(output_dir),
+                        engine=config.engine,
+                        voice=config.voice,
+                    )
+                    stats, issues = validate_book(Path(epub_path), Path(output_dir))
+                finally:
+                    self._auto_fix_guard = False
+            if self.verbose and (issues or has_problems):
+                print(f"⚠️ Auto-validate ({stage}): {len(issues)} issues, stats={stats}")
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️ Auto-validate ({stage}) falhou: {exc}")
 
     @staticmethod
     def _speech_text(chapter: Chapter) -> str:
@@ -201,8 +297,45 @@ class AudioConverter:
                 return fallback
         return value if value > 0 else fallback
 
+    @staticmethod
+    def _spot_check_text_against_epub(epub_text: str, payload: str) -> bool:
+        """Lightweight spot-check: ensure key snippets from EPUB exist in the TTS payload."""
+        if not epub_text or not payload:
+            return False
+
+        def normalize(val: str) -> str:
+            val = re.sub(r"\s+", " ", val or "")
+            return val.strip().lower()
+
+        epub_norm = normalize(epub_text)
+        payload_norm = normalize(payload)
+        if not epub_norm or not payload_norm:
+            return False
+
+        # Take first snippet and a middle snippet to detect truncation/duplication.
+        first_snippet = epub_norm[:200]
+        mid_start = max(len(epub_norm) // 2 - 100, 0)
+        mid_snippet = epub_norm[mid_start : mid_start + 200]
+
+        first_ok = first_snippet in payload_norm
+        mid_ok = mid_snippet in payload_norm
+        return first_ok and mid_ok
+
     def _chapter_number(self, chapter: Chapter, fallback: int) -> int:
         return self._coerce_chapter_index(getattr(chapter, "index", None), fallback)
+
+    @staticmethod
+    def _chapter_index_label(chapter: Chapter, fallback: int) -> str:
+        raw = getattr(chapter, "index", None)
+        if isinstance(raw, str):
+            value = raw.strip()
+            return value or str(fallback)
+        if raw is None:
+            return str(fallback)
+        try:
+            return str(raw)
+        except Exception:
+            return str(fallback)
 
     def _expected_output_path(self, chapter: Chapter, chapter_num: int, directory: Path) -> Path:
         chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
@@ -758,11 +891,12 @@ class AudioConverter:
 
         for idx, chapter in enumerate(chapters, start=1):
             chapter_num = self._chapter_number(chapter, idx)
-            chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_num}"
+            chapter_label = self._chapter_index_label(chapter, idx)
+            chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_label}"
             safe_name = self.file_manager.sanitize_filename(chapter_name)
 
             # Check for pre-tts.txt
-            pre_tts_file = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
+            pre_tts_file = text_dir / f"{chapter_label} - {safe_name}-pre-tts.txt"
 
             # Check for MP3 in temp/cache dir
             mp3_path = self._expected_output_path(chapter, chapter_num, output_dir)
@@ -808,6 +942,11 @@ class AudioConverter:
         """Generate all text files BEFORE starting TTS conversion"""
         text_dir = Path(output_dir) / "text"
         text_dir.mkdir(parents=True, exist_ok=True)
+        if any(text_dir.glob("*.txt")):
+            for txt_file in text_dir.glob("*.txt"):
+                txt_file.unlink(missing_ok=True)
+            if self.verbose:
+                print("🧹 Arquivos de texto antigos removidos")
 
         # Import TextFormattingProcessor to apply the same processing as TTS
         try:
@@ -817,7 +956,7 @@ class AudioConverter:
         except ImportError:
             formatter = None
 
-        def _prepare_payload(chapter_index: int, chapter_obj: Chapter) -> tuple[int, str, str, str]:
+        def _prepare_payload(chapter_index: str, chapter_obj: Chapter) -> tuple[str, str, str, str]:
             chapter_name_local = getattr(chapter_obj, "name", None) or f"Chapter {chapter_index}"
             parsed_text_local = chapter_obj.text or ""
             speech_text_local = self._speech_text(chapter_obj)
@@ -835,18 +974,19 @@ class AudioConverter:
 
         files_generated = 0
         futures = []
-        chapter_entries: List[tuple[int, Chapter]] = []
+        chapter_entries: List[tuple[str, int, Chapter]] = []
         with ThreadPoolExecutor(max_workers=min(8, (os.cpu_count() or 1))) as executor:
             for idx, chapter in enumerate(chapters, start=1):
+                chapter_label = self._chapter_index_label(chapter, idx)
                 chapter_num = self._chapter_number(chapter, idx)
-                chapter_entries.append((chapter_num, chapter))
+                chapter_entries.append((chapter_label, chapter_num, chapter))
                 if formatter:
                     formatting_segments_local = getattr(chapter, "formatting_segments", None)
                     formatter.to_audible_text(self._speech_text(chapter), formatting_segments_local)
-                futures.append(executor.submit(_prepare_payload, chapter_num, chapter))
+                futures.append(executor.submit(_prepare_payload, chapter_label, chapter))
 
             for idx, future in enumerate(futures):
-                chapter_num, chapter = chapter_entries[idx]
+                chapter_label, chapter_num, chapter = chapter_entries[idx]
                 max_retries = 3
                 retry_count = 0
                 result_data = None
@@ -858,22 +998,24 @@ class AudioConverter:
                         retry_count += 1
                         if retry_count < max_retries:
                             print(
-                                f"⚠️ Timeout ao processar capítulo {chapter_num} - tentativa {retry_count}/{max_retries}"
+                                f"⚠️ Timeout ao processar capítulo {chapter_label} - tentativa {retry_count}/{max_retries}"
                             )
-                            future = executor.submit(_prepare_payload, chapter_num, chapter)
+                            future = executor.submit(_prepare_payload, chapter_label, chapter)
                         else:
-                            print(f"❌ Capítulo {chapter_num} falhou após {max_retries} tentativas")
+                            print(
+                                f"❌ Capítulo {chapter_label} falhou após {max_retries} tentativas"
+                            )
                             raise Exception(
-                                f"Capítulo {chapter_num} não pode ser processado após {max_retries} tentativas"
+                                f"Capítulo {chapter_label} não pode ser processado após {max_retries} tentativas"
                             )
 
                 if result_data is None:
-                    raise Exception(f"Capítulo {chapter_num} retornou dados nulos")
+                    raise Exception(f"Capítulo {chapter_label} retornou dados nulos")
 
-                chapter_num, chapter_name, parsed_text, pre_tts_text = result_data
+                chapter_label, chapter_name, parsed_text, pre_tts_text = result_data
                 safe_name = self.file_manager.sanitize_filename(chapter_name)
-                parsed_path = text_dir / f"{chapter_num} - {safe_name}-parsed.txt"
-                pre_tts_path = text_dir / f"{chapter_num} - {safe_name}-pre-tts.txt"
+                parsed_path = text_dir / f"{chapter_label} - {safe_name}-parsed.txt"
+                pre_tts_path = text_dir / f"{chapter_label} - {safe_name}-pre-tts.txt"
 
                 if parsed_path.exists() and pre_tts_path.exists():
                     continue
@@ -935,12 +1077,15 @@ class AudioConverter:
         output_dir: Optional[Path],
         index: int,
         chapter_name: Optional[str],
+        index_label: Optional[str] = None,
     ) -> Optional[Path]:
         """Locate the pre-tts text for hashing, checking both temp and cache layouts."""
         safe_name = FileManager.sanitize_filename(chapter_name or f"Chapter {index}")
+        label = index_label or str(index)
         candidates: List[Path] = []
         if output_dir:
             text_dir = Path(output_dir) / "text"
+            candidates.append(text_dir / f"{label} - {safe_name}-pre-tts.txt")
             candidates.append(text_dir / f"{index} - {safe_name}-pre-tts.txt")
         if cache_dir:
             candidates.append(Path(cache_dir) / "text" / f"{index:03d} - {safe_name}.txt")
@@ -1015,14 +1160,20 @@ class AudioConverter:
             if size <= 1000:
                 return None
 
+            index_label = self._chapter_index_label(chapter, idx)
             pre_tts_path = self._find_pre_tts_path(
-                cache_dir, output_dir, chapter_num, getattr(chapter, "name", None)
+                cache_dir,
+                output_dir,
+                chapter_num,
+                getattr(chapter, "name", None),
+                index_label=index_label,
             )
             pre_tts_hash = None
             if pre_tts_path and pre_tts_path.exists():
                 with contextlib.suppress(Exception):
                     pre_tts_hash = self._hash_text(pre_tts_path.read_text(encoding="utf-8"))
-            entry = cache_index.get(str(chapter_num)) or {}
+            cache_key = index_label
+            entry = cache_index.get(cache_key) or cache_index.get(str(chapter_num)) or {}
             entry_hash = entry.get("pre_tts_hash")
             hash_ok = pre_tts_hash and entry_hash == pre_tts_hash
             hash_missing = pre_tts_hash and not entry_hash
@@ -1044,7 +1195,7 @@ class AudioConverter:
                     entry["path"] = str(candidate)
                     entry["size"] = size
                     entry["pre_tts_hash"] = pre_tts_hash
-                    cache_index[str(chapter_num)] = entry
+                    cache_index[cache_key] = entry
                     self._save_cache_index(cache_dir, cache_index)
                 cached_paths.append(candidate)
                 continue
@@ -1104,14 +1255,20 @@ class AudioConverter:
                 pending.append(chapter)
                 continue
 
+            index_label = self._chapter_index_label(chapter, idx)
             pre_tts_path = self._find_pre_tts_path(
-                cache_dir, output_dir, chapter_num, getattr(chapter, "name", None)
+                cache_dir,
+                output_dir,
+                chapter_num,
+                getattr(chapter, "name", None),
+                index_label=index_label,
             )
             pre_tts_hash = None
             if pre_tts_path and pre_tts_path.exists():
                 with contextlib.suppress(Exception):
                     pre_tts_hash = self._hash_text(pre_tts_path.read_text(encoding="utf-8"))
-            entry = cache_index.get(str(chapter_num)) or {}
+            cache_key = index_label
+            entry = cache_index.get(cache_key) or cache_index.get(str(chapter_num)) or {}
             entry_hash = entry.get("pre_tts_hash")
             hash_ok = pre_tts_hash and entry_hash == pre_tts_hash
             hash_missing = pre_tts_hash and not entry_hash
@@ -1135,7 +1292,7 @@ class AudioConverter:
                     entry["path"] = str(candidate)
                     entry["size"] = size
                     entry["pre_tts_hash"] = pre_tts_hash
-                    cache_index[str(chapter_num)] = entry
+                    cache_index[cache_key] = entry
                     self._save_cache_index(cache_dir, cache_index)
             elif allow_index_only and entry_hash and size > 1000:
                 cached_ok = True
@@ -1781,6 +1938,7 @@ class AudioConverter:
 
         # Enable verbose mode if requested
         self.verbose = getattr(config, "verbose", False)
+        self._active_config = config
         # Show TTS output only in verbose mode
         self.show_tts_output = self.verbose
         if not getattr(config, "log_callback", None):
@@ -1806,6 +1964,7 @@ class AudioConverter:
             self._current_book_path = None
 
         output_dir = self._setup_output_directory(config)
+        self._last_output_dir = output_dir
 
         # Honrar --clear-cache/clearCache: remove cache e artefatos do livro antes de continuar
         if getattr(config, "clear_cache", False):
@@ -1866,6 +2025,72 @@ class AudioConverter:
                 )
                 print("💡 Motivo: deduplicação causou perda de capítulos válidos\n")
                 chapters = original_chapters
+
+        # ===== TEXT INTEGRITY VALIDATION =====
+        # Validate text integrity BEFORE audio conversion to detect cache corruption
+        text_validator = TextIntegrityValidator(cache_dir=temp_dir, verbose=self.verbose)
+
+        # Show chapter summary in verbose mode
+        if self.verbose:
+            text_validator.print_chapter_summary(chapters)
+
+        # Refresh text cache before validation to avoid stale mismatches
+        self._generate_all_text_files(chapters, temp_dir, config)
+
+        # Automatic validation before conversion if cache/output already exist
+        self._auto_validate_output(output_dir, stage="initial")
+
+        # Validate all chapters against cache
+        integrity_report = text_validator.validate_all_chapters(chapters, show_progress=True)
+
+        # Hard-stop if chapters are empty or duplicated to avoid bad audio/output naming
+        hard_block_errors = [
+            v
+            for v in integrity_report.chapters_with_issues
+            if v.error_message
+            and (
+                "Texto do capítulo vazio" in v.error_message
+                or "Conteúdo duplicado" in v.error_message
+            )
+        ]
+        if hard_block_errors:
+            print("\n❌ Falha na validação de texto: capítulos vazios ou duplicados detectados.")
+            for v in hard_block_errors:
+                print(f"   - Capítulo {v.chapter_index}: {v.chapter_title} → {v.error_message}")
+            raise RuntimeError("Validação de texto falhou: capítulos vazios/duplicados")
+
+        # If cache corruption detected, offer to clear cache
+        if integrity_report.has_cache_corruption or integrity_report.cache_engine_mismatch:
+            print("\n⚠️  CACHE CORROMPIDO DETECTADO!")
+            print(
+                f"   {integrity_report.invalid_chapters}/{integrity_report.total_chapters} "
+                "capítulos têm texto diferente do EPUB atual."
+            )
+
+            if integrity_report.cache_engine_mismatch:
+                print("\n💡 Possível causa: cache de conversão anterior com engine diferente")
+                print("   (ex: cache do Kokoro sendo usado para conversão com Edge)")
+
+            # Auto-clear cache if corruption detected
+            print("\n🧹 Limpando cache corrompido automaticamente...")
+            try:
+                if self._current_book_path:
+                    self.cache_manager.clear_cache(self._current_book_path, title=reader.title)
+                elif reader.title:
+                    self.cache_manager.clear_cache(title=reader.title)
+
+                # Recreate temp directory
+                temp_dir = self._setup_temp_directory(config)
+                text_validator = TextIntegrityValidator(cache_dir=temp_dir, verbose=self.verbose)
+
+                print("✅ Cache limpo! Prosseguindo com conversão completa.\n")
+            except Exception as exc:
+                print(f"❌ Falha ao limpar cache: {exc}")
+                print("⚠️  Continuando com conversão mas pode haver problemas.\n")
+
+        # Save parsed text for all chapters (creates baseline for validation)
+        text_validator.save_all_chapters_text(chapters, show_progress=not self.verbose)
+
         if getattr(config, "priority_selectors", None):
             chapters = self._prioritize_chapters(chapters, config.priority_selectors)
         total_chapters = len(chapters)
@@ -2639,13 +2864,18 @@ class AudioConverter:
         # Validate and clean cache (once for all chapters)
         self._validate_and_clean_cache(chapters_list, output_dir, config)
 
+        generated_text = False
+        if getattr(config, "auto_validate_output", True):
+            self._generate_all_text_files(chapters_list, output_dir, config)
+            generated_text = True
+
         # Fast-path cache check before generating text (partial-aware)
         cached_audio, pending_chapters = self._split_cached_chapters(
             chapters_list, output_dir, config, allow_index_only=True
         )
 
         # Generate all text files (once for all chapters) if needed
-        if pending_chapters:
+        if pending_chapters and not generated_text:
             self._generate_all_text_files(chapters_list, output_dir, config)
 
             # Retry cache check after text generation (allows hash validation)
@@ -2877,13 +3107,18 @@ class AudioConverter:
         # If MP3 exists but pre-tts.txt doesn't, delete MP3 (cache invalidated)
         self._validate_and_clean_cache(chapters_list, output_dir, config)
 
+        generated_text = False
+        if getattr(config, "auto_validate_output", True):
+            self._generate_all_text_files(chapters_list, output_dir, config)
+            generated_text = True
+
         # **FAST-PATH**: Try cache reuse before generating text (index-only allowed)
         cached_audio, pending_chapters = self._split_cached_chapters(
             chapters_list, output_dir, config, allow_index_only=True
         )
 
         # **NEW**: Generate ALL text files BEFORE starting conversion (if needed)
-        if pending_chapters:
+        if pending_chapters and not generated_text:
             self._generate_all_text_files(chapters_list, output_dir, config)
             # Retry cache after having pre-tts hashes
             cached_audio, pending_chapters = self._split_cached_chapters(
@@ -4386,6 +4621,38 @@ class AudioConverter:
                         print(f"🔍 [VERBOSE] Chapter {index} chunk_text error: {e}")
                     raise
                 self._cache_text(cache_dir, chapter, index, chapter_payload)
+
+                # Spot-check against EPUB to ensure payload still matches source text
+                if not self._spot_check_text_against_epub(
+                    self._speech_text(chapter) or "", chapter_payload
+                ):
+                    status_holder["text"] = "❌ Texto diverge do EPUB (spot-check)"
+                    self._announce_stage(index, chapter_label, status_holder["text"])
+                    outcome = ChapterConversionOutcome(
+                        index=index,
+                        name=chapter_label,
+                        path=None,
+                        error=status_holder["text"],
+                    )
+                    return None if legacy_mode else outcome
+
+                # **TEXT INTEGRITY MONITORING**: Log character counts
+                epub_text = self._speech_text(chapter) or ""
+                epub_char_count = len(re.sub(r"\s+", " ", epub_text).strip())
+                payload_char_count = len(re.sub(r"\s+", " ", chapter_payload).strip())
+                char_diff = epub_char_count - payload_char_count
+                char_diff_percent = (
+                    (abs(char_diff) / max(epub_char_count, 1)) * 100 if epub_char_count > 0 else 0
+                )
+
+                if abs(char_diff) > 50:  # Only log if significant difference
+                    diff_symbol = "⚠️ " if abs(char_diff_percent) > 5.0 else "ℹ️ "
+                    print(
+                        f"{diff_symbol}Chapter {index}: EPUB={epub_char_count:,} chars → "
+                        f"TTS={payload_char_count:,} chars ({char_diff:+,} chars, "
+                        f"{char_diff_percent:+.1f}%)"
+                    )
+
                 status_holder["text"] = self.loc.t("status_synthesizing")
                 self._announce_stage(index, chapter_label, status_holder["text"])
 
@@ -4580,6 +4847,9 @@ class AudioConverter:
                     )
                     return None if legacy_mode else outcome
 
+                # Post-validate output after each chapter
+                self._auto_validate_output(output_dir, stage=f"chapter-{index}")
+
                 truncation_warning = self._detect_short_audio_output(
                     converted,
                     chapter_payload,
@@ -4627,96 +4897,96 @@ class AudioConverter:
                         # Log warning but don't fail - audio may still be usable
                         # Future: could add strict mode to fail on validation errors
 
-                    # **AUTOMATIC RETRY**: Check for failed segments and retry
-                    try:
-                        if hasattr(tts_engine, "get_synthesis_tracker"):
-                            tracker = tts_engine.get_synthesis_tracker()
-                            if tracker:
-                                missing_segments = tracker.get_missing_segments()
-                                if missing_segments:
-                                    if self.verbose:
-                                        print(
-                                            f"🔄 Chapter {index}: Found {len(missing_segments)} failed segments, attempting retry..."
-                                        )
-
-                                    from .retry_manager import RetryManager
-
-                                    retry_manager = RetryManager(max_retries=3)
-                                    temp_retry_dir = converted.parent / f"retry_temp_{index}"
-
-                                    retry_report = await retry_manager.retry_failed_segments(
-                                        engine=tts_engine,
-                                        failed_segments=missing_segments,
-                                        output_path=converted,
-                                        temp_dir=temp_retry_dir,
-                                    )
-
-                                    if self.verbose:
-                                        print(
-                                            f"✓ Retry results: {retry_report.successful}/{retry_report.total_retried} recovered, "
-                                            f"{retry_report.still_failed} still failed"
-                                        )
-
-                                    # Clean up retry temp dir
-                                    try:
-                                        if temp_retry_dir.exists():
-                                            import shutil
-
-                                            shutil.rmtree(temp_retry_dir, ignore_errors=True)
-                                    except Exception:
-                                        pass
-
-                                    # If still have failures, warn but don't fail
-                                    if retry_report.still_failed > 0:
+                        # **AUTOMATIC RETRY**: Check for failed segments and retry
+                        try:
+                            if hasattr(tts_engine, "get_synthesis_tracker"):
+                                tracker = tts_engine.get_synthesis_tracker()
+                                if tracker:
+                                    missing_segments = tracker.get_missing_segments()
+                                    if missing_segments:
                                         if self.verbose:
                                             print(
-                                                f"⚠️ Chapter {index}: {retry_report.still_failed} segments could not be recovered after retries"
+                                                f"🔄 Chapter {index}: Found {len(missing_segments)} failed segments, attempting retry..."
                                             )
-                    except Exception as e:
-                        if self.verbose:
-                            print(f"⚠️ Retry mechanism error: {e}")
 
-                    # Save validation log
-                    if cache_dir:
-                        try:
-                            from .cache_manager import CacheManager
+                                        from .retry_manager import RetryManager
 
-                            cm = CacheManager(cache_dir=cache_dir)
-                            validation_log_path = cm.get_validation_log_path(
-                                self._current_book_path or Path("unknown.epub"), index
-                            )
+                                        retry_manager = RetryManager(max_retries=3)
+                                        temp_retry_dir = converted.parent / f"retry_temp_{index}"
 
-                            # Create simple validation report
-                            import json
-                            from datetime import datetime
+                                        retry_report = await retry_manager.retry_failed_segments(
+                                            engine=tts_engine,
+                                            failed_segments=missing_segments,
+                                            output_path=converted,
+                                            temp_dir=temp_retry_dir,
+                                        )
 
-                            validation_data = {
-                                "chapter_number": index,
-                                "chapter_title": chapter_label,
-                                "validated_at": datetime.utcnow().isoformat(),
-                                "is_valid": validation_result.is_valid,
-                                "expected_duration": validation_result.expected_duration,
-                                "actual_duration": validation_result.actual_duration,
-                                "duration_diff_percent": validation_result.duration_diff_percent,
-                                "error_message": validation_result.error_message,
-                                "text_length": len(chapter_payload),
-                            }
+                                        if self.verbose:
+                                            print(
+                                                f"✓ Retry results: {retry_report.successful}/{retry_report.total_retried} recovered, "
+                                                f"{retry_report.still_failed} still failed"
+                                            )
 
-                            validation_log_path.parent.mkdir(parents=True, exist_ok=True)
-                            with open(validation_log_path, "w", encoding="utf-8") as f:
-                                json.dump(validation_data, f, indent=2, ensure_ascii=False)
+                                        # Clean up retry temp dir
+                                        try:
+                                            if temp_retry_dir.exists():
+                                                import shutil
 
-                            if self.verbose:
-                                print(
-                                    f"✓ Chapter {index} validation: "
-                                    f"{validation_result.actual_duration:.1f}s audio "
-                                    f"(expected {validation_result.expected_duration:.1f}s, "
-                                    f"{validation_result.duration_diff_percent:+.1f}% diff)"
-                                )
+                                                shutil.rmtree(temp_retry_dir, ignore_errors=True)
+                                        except Exception:
+                                            pass
 
+                                        # If still have failures, warn but don't fail
+                                        if retry_report.still_failed > 0:
+                                            if self.verbose:
+                                                print(
+                                                    f"⚠️ Chapter {index}: {retry_report.still_failed} segments could not be recovered after retries"
+                                                )
                         except Exception as e:
                             if self.verbose:
-                                print(f"⚠️ Chapter {index} failed to save validation log: {e}")
+                                print(f"⚠️ Retry mechanism error: {e}")
+
+                        # Save validation log
+                        if cache_dir:
+                            try:
+                                from .cache_manager import CacheManager
+
+                                cm = CacheManager(cache_dir=cache_dir)
+                                validation_log_path = cm.get_validation_log_path(
+                                    self._current_book_path or Path("unknown.epub"), index
+                                )
+
+                                # Create simple validation report
+                                import json
+                                from datetime import datetime
+
+                                validation_data = {
+                                    "chapter_number": index,
+                                    "chapter_title": chapter_label,
+                                    "validated_at": datetime.utcnow().isoformat(),
+                                    "is_valid": validation_result.is_valid,
+                                    "expected_duration": validation_result.expected_duration,
+                                    "actual_duration": validation_result.actual_duration,
+                                    "duration_diff_percent": validation_result.duration_diff_percent,
+                                    "error_message": validation_result.error_message,
+                                    "text_length": len(chapter_payload),
+                                }
+
+                                validation_log_path.parent.mkdir(parents=True, exist_ok=True)
+                                with open(validation_log_path, "w", encoding="utf-8") as f:
+                                    json.dump(validation_data, f, indent=2, ensure_ascii=False)
+
+                                if self.verbose:
+                                    print(
+                                        f"✓ Chapter {index} validation: "
+                                        f"{validation_result.actual_duration:.1f}s audio "
+                                        f"(expected {validation_result.expected_duration:.1f}s, "
+                                        f"{validation_result.duration_diff_percent:+.1f}% diff)"
+                                    )
+
+                            except Exception as e:
+                                if self.verbose:
+                                    print(f"⚠️ Chapter {index} failed to save validation log: {e}")
 
                 except ImportError:
                     # audio_validator not available, skip validation
@@ -4740,10 +5010,14 @@ class AudioConverter:
                 self._cache_audio(
                     cache_dir, converted, chapter, index, config, text_root=output_dir
                 )
+                # Post-validate after each chapter (lightweight, best-effort)
+                self._auto_validate_output(output_dir, stage=f"chapter-{index}")
                 outcome = ChapterConversionOutcome(index=index, name=chapter_label, path=converted)
                 return converted if legacy_mode else outcome
-            finally:
-                semaphore.release()
+            except Exception as inner_exc:
+                if legacy_mode:
+                    raise
+                raise RuntimeError(f"chapter conversion failed: {inner_exc}") from inner_exc
         except Exception as exc:
             if self.verbose:
                 print(f"🔍 [VERBOSE] Chapter {index} exception: {type(exc).__name__}: {exc}")
@@ -4757,6 +5031,7 @@ class AudioConverter:
                 raise
             raise RuntimeError(f"chapter conversion failed: {type(exc).__name__}: {exc}") from exc
         finally:
+            semaphore.release()
             heartbeat_stop.set()
             heartbeat_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
@@ -4781,6 +5056,12 @@ class AudioConverter:
             print(
                 "❌ Conversão incompleta: um ou mais capítulos falharam (reexecute para recuperar)."
             )
+
+        # Final automatic validation
+        final_output = self._last_output_dir or (
+            Path(self._active_config.output_dir) if self._active_config else None
+        )
+        self._auto_validate_output(final_output, stage="final")
 
     def _cleanup_temp_audio(self, temp_dir: Path) -> None:
         temp_dir = Path(temp_dir)
@@ -4833,14 +5114,19 @@ class AudioConverter:
 
             # Update cache index with hash/size if we have pre-tts text
             cache_index = self._load_cache_index(cache_dir)
+            index_label = self._chapter_index_label(chapter, index)
             pre_tts_path = self._find_pre_tts_path(
-                cache_dir, text_root or audio_path.parent, index, chapter_name
+                cache_dir,
+                text_root or audio_path.parent,
+                index,
+                chapter_name,
+                index_label=index_label,
             )
             pre_tts_hash = None
             if pre_tts_path and pre_tts_path.exists():
                 with contextlib.suppress(Exception):
                     pre_tts_hash = self._hash_text(pre_tts_path.read_text(encoding="utf-8"))
-            entry = cache_index.get(str(index), {}) or {}
+            entry = cache_index.get(index_label) or cache_index.get(str(index)) or {}
             entry.update(
                 {
                     "path": str(target_path),
@@ -4848,7 +5134,7 @@ class AudioConverter:
                     "pre_tts_hash": pre_tts_hash,
                 }
             )
-            cache_index[str(index)] = entry
+            cache_index[index_label] = entry
             self._save_cache_index(cache_dir, cache_index)
         except OSError:
             pass

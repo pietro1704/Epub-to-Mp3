@@ -24,6 +24,18 @@ from src.text_formatting import TextFormattingProcessor
 class TestConversionResult(unittest.TestCase):
     """Test cases for ConversionResult dataclass"""
 
+    def setUp(self):
+        self.converter = AudioConverter()
+        self.temp_dir = tempfile.mkdtemp()
+        self.config = ConversionConfig(
+            engine="edge", voice="test-voice", output_dir=self.temp_dir, book_title="Test Book"
+        )
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
     def test_conversion_result_creation(self):
         """Test ConversionResult creation"""
         result = ConversionResult(
@@ -39,6 +51,45 @@ class TestConversionResult(unittest.TestCase):
         self.assertEqual(result.converted_chapters, 4)
         self.assertEqual(len(result.output_files), 2)
         self.assertEqual(len(result.errors), 1)
+
+    def test_auto_validate_output_calls_validate_conversion(self):
+        """Ensure auto validation is triggered with validate_conversion.validate_book"""
+        output_dir = Path(self.temp_dir)
+        epub_file = output_dir / "book.epub"
+        epub_file.write_text("dummy")
+        self.converter._current_book_path = epub_file
+        self.converter._active_config = self.config
+
+        with patch("src.converter.Path") as mock_path:
+            mock_path.return_value = output_dir
+            with patch("validate_conversion.validate_book", return_value=({}, [])) as mock_validate:
+                self.converter._auto_validate_output(output_dir, stage="test")
+                mock_validate.assert_called_once()
+
+    def test_auto_validate_output_triggers_auto_fix_on_issues(self):
+        """Auto-validate should trigger auto-fix when issues are detected."""
+        output_dir = Path(self.temp_dir)
+        epub_file = output_dir / "book.epub"
+        epub_file.write_text("dummy")
+        self.converter._current_book_path = epub_file
+        self.converter._active_config = self.config
+
+        bad_stats = {
+            "missing_cache": 0,
+            "text_mismatch": 1,
+            "parsed_pretts_diff": 0,
+            "missing_mp3": 0,
+            "duration_mismatch": 0,
+        }
+        with patch("src.converter.Path") as mock_path:
+            mock_path.return_value = output_dir
+            with patch(
+                "validate_conversion.validate_book", side_effect=[(bad_stats, ["x"]), ({}, [])]
+            ) as mock_validate:
+                with patch("validate_conversion.auto_fix") as mock_fix:
+                    self.converter._auto_validate_output(output_dir, stage="test")
+                    mock_fix.assert_called_once()
+                    self.assertEqual(mock_validate.call_count, 2)  # before and after auto-fix
 
 
 class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
@@ -67,6 +118,20 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         import shutil
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_spot_check_text_against_epub(self):
+        """Spot-check should ensure snippets from EPUB exist in payload."""
+        epub_text = (
+            "Primeira frase do capítulo. Segunda frase continua o raciocínio. "
+            "Aqui vem uma terceira frase para alongar o texto."
+        )
+        payload_ok = epub_text + " Texto extra opcional."
+        payload_missing_mid = "Primeira frase do capítulo. Conteúdo cortado no meio."
+
+        self.assertTrue(AudioConverter._spot_check_text_against_epub(epub_text, payload_ok))
+        self.assertFalse(
+            AudioConverter._spot_check_text_against_epub(epub_text, payload_missing_mid)
+        )
 
     def test_init(self):
         """Test AudioConverter initialization"""
@@ -984,6 +1049,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         output_mp3 = Path(self.temp_dir) / "output.mp3"
         output_mp3.write_text("dummy mp3")
         self.converter.audio_processor.convert_to_mp3 = AsyncMock(return_value=output_mp3)
+        self.converter._auto_validate_output = Mock()
 
         output_dir = Path(self.temp_dir)
 
@@ -994,6 +1060,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, output_mp3)
         mock_tts_engine.synthesize_async.assert_called_once()
         self.converter.audio_processor.convert_to_mp3.assert_called_once()
+        self.converter._auto_validate_output.assert_called()
 
     async def test_convert_single_chapter_file_exists(self):
         """Test single chapter conversion when file already exists"""
@@ -1003,16 +1070,39 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         # Create existing output file
         output_dir = Path(self.temp_dir)
         existing_file = output_dir / "001 - Test Chapter.mp3"
-        existing_file.write_text("existing content")
+        existing_file.write_bytes(b"\x00" * 2048)  # Non-empty placeholder
+        temp_wav = output_dir / "temp.wav"
+        temp_wav.write_bytes(b"wavdata")
 
-        mock_tts_engine = Mock()
+        mock_tts_engine = AsyncMock()
+        mock_tts_engine.synthesize_async = AsyncMock(return_value=temp_wav)
         # Configure Protocol methods for validation system
         mock_tts_engine.get_synthesis_tracker = Mock(return_value=None)
         mock_tts_engine.get_synthesis_log = Mock(return_value=[])
 
-        result = await self.converter._convert_single_chapter(
-            semaphore, chapter, mock_tts_engine, output_dir, 1
+        valid_result = SimpleNamespace(
+            is_valid=True,
+            expected_duration=1.0,
+            actual_duration=1.0,
+            duration_diff_percent=0.0,
+            error_message=None,
         )
+
+        with patch.object(
+            self.converter.file_manager, "get_temp_output_path", return_value=existing_file
+        ):
+            with patch.object(
+                self.converter.audio_processor,
+                "convert_to_mp3",
+                AsyncMock(return_value=existing_file),
+            ):
+                with patch(
+                    "python_app.src.audio_validator.AudioValidator.validate_duration",
+                    return_value=valid_result,
+                ):
+                    result = await self.converter._convert_single_chapter(
+                        semaphore, chapter, mock_tts_engine, output_dir, 1
+                    )
 
         self.assertEqual(result, existing_file)
 

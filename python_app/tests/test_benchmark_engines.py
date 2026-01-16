@@ -23,11 +23,15 @@ import asyncio
 import os
 import tempfile
 import time
+import unittest
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
 
-import pytest
+try:
+    import pytest  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    raise unittest.SkipTest("pytest not installed; skipping benchmark tests")
 
 # Textos de teste multi-idioma
 SAMPLE_TEXT_PT = """
