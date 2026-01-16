@@ -4410,6 +4410,74 @@ class AudioConverter:
                 except OSError:
                     pass
 
+                # **INTEGRITY VALIDATION**: Verify audio matches text
+                try:
+                    from .audio_validator import AudioValidator
+
+                    validator = AudioValidator()
+                    validation_result = validator.validate_duration(
+                        chapter_payload,
+                        converted,
+                        tolerance=0.20,  # 20% tolerance
+                    )
+
+                    if not validation_result.is_valid:
+                        if self.verbose:
+                            print(
+                                f"⚠️ Chapter {index} validation warning: {validation_result.error_message}"
+                            )
+                        # Log warning but don't fail - audio may still be usable
+                        # Future: could add strict mode to fail on validation errors
+
+                    # Save validation log
+                    if cache_dir:
+                        try:
+                            from .cache_manager import CacheManager
+
+                            cm = CacheManager(cache_dir=cache_dir)
+                            validation_log_path = cm.get_validation_log_path(
+                                self._current_book_path or Path("unknown.epub"), index
+                            )
+
+                            # Create simple validation report
+                            import json
+                            from datetime import datetime
+
+                            validation_data = {
+                                "chapter_number": index,
+                                "chapter_title": chapter_label,
+                                "validated_at": datetime.utcnow().isoformat(),
+                                "is_valid": validation_result.is_valid,
+                                "expected_duration": validation_result.expected_duration,
+                                "actual_duration": validation_result.actual_duration,
+                                "duration_diff_percent": validation_result.duration_diff_percent,
+                                "error_message": validation_result.error_message,
+                                "text_length": len(chapter_payload),
+                            }
+
+                            validation_log_path.parent.mkdir(parents=True, exist_ok=True)
+                            with open(validation_log_path, "w", encoding="utf-8") as f:
+                                json.dump(validation_data, f, indent=2, ensure_ascii=False)
+
+                            if self.verbose:
+                                print(
+                                    f"✓ Chapter {index} validation: "
+                                    f"{validation_result.actual_duration:.1f}s audio "
+                                    f"(expected {validation_result.expected_duration:.1f}s, "
+                                    f"{validation_result.duration_diff_percent:+.1f}% diff)"
+                                )
+
+                        except Exception as e:
+                            if self.verbose:
+                                print(f"⚠️ Chapter {index} failed to save validation log: {e}")
+
+                except ImportError:
+                    # audio_validator not available, skip validation
+                    pass
+                except Exception as e:
+                    if self.verbose:
+                        print(f"⚠️ Chapter {index} validation error: {e}")
+
                 status_holder["text"] = self.loc.t("status_complete")
                 self._announce_stage(index, chapter_label, status_holder["text"])
                 if getattr(config, "listen", False):

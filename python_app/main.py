@@ -2907,6 +2907,14 @@ class ConverterApplication:
         if channels is not None:
             overrides["channels"] = channels
 
+        # Validation settings
+        if getattr(args, "verify_transcription", False):
+            overrides["verify_transcription"] = True
+        if getattr(args, "transcription_model", None):
+            overrides["transcription_model"] = str(args.transcription_model)
+        if getattr(args, "validation_language", None):
+            overrides["validation_language"] = str(args.validation_language)
+
         config = self.config.create_conversion_config(
             engine=args.engine or "edge",
             voice=args.voice,
@@ -3216,6 +3224,21 @@ def _add_conversion_arguments(
         "--clear-cache",
         action="store_true",
         help="Remove cached chapter text before converting",
+    )
+    parser.add_argument(
+        "--verify-transcription",
+        action="store_true",
+        help="Enable deep validation via speech-to-text transcription (slow, requires openai-whisper)",
+    )
+    parser.add_argument(
+        "--transcription-model",
+        default="small",
+        choices=["tiny", "base", "small", "medium", "large"],
+        help="Whisper model for transcription validation (default: small)",
+    )
+    parser.add_argument(
+        "--validation-language",
+        help="Language code for transcription validation (e.g., pt, en, es)",
     )
     parser.add_argument(
         "--chapter",
