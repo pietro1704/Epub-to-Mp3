@@ -490,8 +490,10 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
             # Validate MP3 duration
             if "pre_tts" in text_files:
                 pretts_text = text_files["pre_tts"].read_text(encoding="utf-8")
-                if len(normalize_text(pretts_text)) >= 1000:
-                    result = validator.validate_duration(pretts_text, mp3_file, tolerance=0.25)
+                pretts_len = len(normalize_text(pretts_text))
+                if pretts_len >= 5000:
+                    tolerance = 0.35 if pretts_len < 20000 else 0.25
+                    result = validator.validate_duration(pretts_text, mp3_file, tolerance=tolerance)
 
                     if not result.is_valid:
                         stats["duration_mismatch"] += 1

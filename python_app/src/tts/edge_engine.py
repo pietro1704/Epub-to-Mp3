@@ -1552,6 +1552,39 @@ class EdgeTTSEngine:
             )
             return self._chunk_text(self.voice, fallback)
 
+    def _apply_chunk_prosody(self, text: str, rate_increase: str = "+50%") -> str:
+        """
+        Aplica tags SSML prosody a um chunk individual para compensar pausas do Edge-TTS.
+
+        Edge-TTS insere pausas longas entre frases. Esta função aplica aumento na taxa
+        de fala para compensar as pausas excessivas, reduzindo a duração do áudio.
+
+        Args:
+            text: Texto do chunk
+            rate_increase: Aumento percentual na taxa de fala (default: "+50%")
+
+        Returns:
+            Texto com tags SSML prosody
+        """
+        if not text or not text.strip():
+            return text
+
+        # DEBUG: Log when prosody is applied
+        if self.verbose:
+            self._log(
+                f"🔍 [DEBUG] Applying prosody rate={rate_increase} to chunk ({len(text)} chars)"
+            )
+
+        # Sempre aplica prosody para compensar pausas do Edge-TTS
+        # O Edge insere ~3-4s de pausa a cada ponto final, mesmo sem quebras de linha
+        wrapped = f'<prosody rate="{rate_increase}">{text}</prosody>'
+
+        if self.verbose:
+            has_tag = "<prosody" in wrapped
+            self._log(f"🔍 [DEBUG] Result has prosody tag: {has_tag}")
+
+        return wrapped
+
     def _chunk_text(
         self, voice: str, text: str, chunk_size: Optional[int] = None
     ) -> list[tuple[str, str]]:
@@ -1589,7 +1622,14 @@ class EdgeTTSEngine:
                     refined: List[tuple[str, str]] = []
                     for seg_text in cleaned_segments:
                         refined.extend(self._split_if_needed(voice, seg_text))
-                    return refined
+
+                    # Apply prosody to precomputed segments
+                    prosody_refined: List[tuple[str, str]] = []
+                    for seg_voice, seg_text in refined:
+                        wrapped_text = self._apply_chunk_prosody(seg_text)
+                        prosody_refined.append((seg_voice, wrapped_text))
+
+                    return prosody_refined
 
         try:
             active_chunk_limit = (
@@ -1647,7 +1687,15 @@ class EdgeTTSEngine:
         for chunk_voice, chunk_text in base_chunks:
             refined.extend(self._split_if_needed(chunk_voice, chunk_text))
 
-        return refined
+        # Apply prosody rate to each chunk to compensate for Edge-TTS pauses
+        # This is done per-chunk because Edge-TTS processes each chunk independently
+        prosody_refined: List[tuple[str, str]] = []
+        for chunk_voice, chunk_text in refined:
+            # Wrap chunk in prosody tags if it has high sentence density
+            wrapped_text = self._apply_chunk_prosody(chunk_text)
+            prosody_refined.append((chunk_voice, wrapped_text))
+
+        return prosody_refined
 
     def _split_if_needed(self, voice: str, text: str) -> List[tuple[str, str]]:
         """Ensure each chunk respects the estimated duration limit."""
@@ -1930,6 +1978,14 @@ class EdgeTTSEngine:
                     self._log(f"   ⏸️ Cooldown: {remaining}s restantes")
                 return False
             try:
+                # DEBUG: Log if text has prosody tags before sending to Edge-TTS
+                if self.verbose and text:
+                    has_prosody = "<prosody" in text
+                    preview = text[:200] if len(text) > 200 else text
+                    self._log(
+                        f"🔍 [DEBUG] Sending to Edge-TTS: has_prosody={has_prosody}, preview={preview}"
+                    )
+
                 # SSL bypass já aplicado no topo do módulo via monkeypatch
                 communicator = self._edge_tts.Communicate(text, voice)
 

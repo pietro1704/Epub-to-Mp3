@@ -406,14 +406,162 @@ class TextFormattingProcessor:
         return cleaned.strip()
 
     @classmethod
-    def clean_tts_text(cls, text: str) -> str:
+    def remove_isolated_section_numbers(cls, text: str) -> str:
         """
-        Remove marcadores internos e markdown, preservando pistas de idioma.
+        Remove números de seção isolados que causam pausas longas no TTS.
+
+        Exemplo:
+        "1.\nAlgum texto aqui\n2.\nMais texto"
+        → "Algum texto aqui\nMais texto"
+
+        Números de seção isolados (como "1.", "2.", etc. em linhas sozinhas)
+        causam pausas extremamente longas no Edge-TTS, aumentando a duração
+        do áudio em mais de 100%. Esta função os remove automaticamente.
         """
         if not text:
             return ""
 
-        return cls.strip_inline_markdown(text)
+        # Remove linhas que contêm apenas números seguidos de ponto (seções)
+        # Padrão: início de linha, opcionalmente espaços, dígitos, ponto, opcionalmente espaços, fim de linha
+        lines = text.split("\n")
+        cleaned_lines = []
+
+        for line in lines:
+            # Se a linha é apenas um número seguido de ponto, pula ela
+            if re.match(r"^\s*\d+\.\s*$", line):
+                continue
+            cleaned_lines.append(line)
+
+        return "\n".join(cleaned_lines)
+
+    @classmethod
+    def consolidate_short_lines(cls, text: str, max_line_length: int = 80) -> str:
+        """
+        Consolida linhas curtas consecutivas para evitar pausas excessivas no TTS.
+
+        Edge-TTS insere pausas longas entre linhas, especialmente linhas curtas.
+        Esta função junta linhas curtas consecutivas em parágrafos mais longos,
+        reduzindo drasticamente a duração do áudio.
+
+        Exemplo:
+        "Linha curta 1.\\nLinha curta 2.\\nLinha curta 3.\\n\\nNova seção."
+        → "Linha curta 1. Linha curta 2. Linha curta 3.\\n\\nNova seção."
+
+        Preserva:
+        - Quebras de linha duplas (mudança de seção/parágrafo)
+        - Diálogos com travessão no início da linha
+        - Linhas longas (>max_line_length)
+        """
+        if not text:
+            return ""
+
+        # Split por quebras duplas para preservar seções
+        sections = re.split(r"\n\n+", text)
+        consolidated_sections = []
+
+        for section in sections:
+            if not section.strip():
+                continue
+
+            lines = section.split("\n")
+            consolidated_lines = []
+            buffer = []
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Se a linha começa com travessão (diálogo), trata separadamente
+                is_dialogue = line.startswith("—") or line.startswith("-")
+
+                # Se a linha é longa OU é diálogo, flush buffer e adiciona a linha
+                if len(line) > max_line_length or is_dialogue:
+                    if buffer:
+                        consolidated_lines.append(" ".join(buffer))
+                        buffer = []
+                    consolidated_lines.append(line)
+                else:
+                    # Linha curta - adiciona ao buffer
+                    buffer.append(line)
+
+            # Flush remaining buffer
+            if buffer:
+                consolidated_lines.append(" ".join(buffer))
+
+            # Junta as linhas consolidadas
+            if consolidated_lines:
+                consolidated_sections.append("\n".join(consolidated_lines))
+
+        # Junta as seções com quebra dupla
+        return "\n\n".join(consolidated_sections)
+
+    @classmethod
+    def apply_prosody_for_short_sentences(cls, text: str, rate_increase: str = "+20%") -> str:
+        """
+        Aplica tags SSML prosody para acelerar áudio quando há muitas frases curtas.
+
+        Edge-TTS insere pausas longas entre frases curtas, aumentando drasticamente
+        a duração do áudio. Esta função detecta quando o texto tem alta densidade
+        de pontuação (muitas frases curtas) e aplica um aumento na taxa de fala
+        para compensar as pausas excessivas.
+
+        Args:
+            text: Texto a ser processado
+            rate_increase: Aumento percentual na taxa de fala (ex: "+20%", "+50%")
+
+        Returns:
+            Texto com tags SSML prosody aplicadas se necessário
+        """
+        if not text:
+            return ""
+
+        # Calcula densidade de frases curtas (frases por 1000 caracteres)
+        # Pontuação de fim de frase: . ! ?
+        sentence_endings = text.count(".") + text.count("!") + text.count("?")
+        text_length = len(text)
+
+        if text_length == 0:
+            return text
+
+        # Densidade: quantas frases a cada 1000 caracteres
+        sentence_density = (sentence_endings / text_length) * 1000
+
+        # Se densidade > 10 frases/1000 chars, aplicar prosody
+        # Edge-TTS insere pausas longas mesmo com densidade moderada (10-15)
+        # Capítulos com muito diálogo/narrativa curta podem ter 15-30+
+        if sentence_density > 10:
+            # Aplica prosody rate para acelerar o áudio
+            # Isso compensa as pausas longas do Edge-TTS entre frases
+            return f'<prosody rate="{rate_increase}">{text}</prosody>'
+
+        return text
+
+    @classmethod
+    def clean_tts_text(cls, text: str, apply_prosody: bool = False) -> str:
+        """
+        Remove marcadores internos e markdown, preservando pistas de idioma.
+
+        Args:
+            text: Texto a ser processado
+            apply_prosody: DEPRECATED - prosody agora é aplicado per-chunk no engine TTS
+        """
+        if not text:
+            return ""
+
+        # Remove números de seção isolados que causam pausas longas
+        text = cls.remove_isolated_section_numbers(text)
+
+        # Consolida linhas curtas para reduzir pausas no TTS
+        text = cls.consolidate_short_lines(text)
+
+        # Remove markdown
+        text = cls.strip_inline_markdown(text)
+
+        # NOTE: Prosody application moved to TTS engines (per-chunk)
+        # to ensure tags work correctly with chunked synthesis
+
+        return text
 
     def to_audible_text(
         self,

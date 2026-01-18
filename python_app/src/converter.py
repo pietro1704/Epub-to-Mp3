@@ -2801,8 +2801,21 @@ class AudioConverter:
     def _setup_temp_directory(self, config: ConversionConfig) -> Path:
         """Setup temporary directory for conversion files"""
         custom_cache = getattr(config, "cache_dir", None)
+        engine_suffix = self._build_engine_signature(config)
+
+        # **FIX**: If cache_dir already ends with engine suffix, don't add it again
+        # This prevents edge/edge duplication when _setup_temp_directory is called multiple times
         if custom_cache:
-            base_cache = Path(custom_cache)
+            custom_cache_path = Path(custom_cache)
+            # Check if the last component is already the engine suffix
+            if custom_cache_path.name == engine_suffix:
+                # Already has engine suffix, use as-is
+                temp_dir = self.file_manager.ensure_directory(custom_cache_path)
+                config.cache_dir = temp_dir
+                return temp_dir
+            else:
+                # Custom cache without engine suffix, add it
+                base_cache = custom_cache_path
         else:
             try:
                 base_cache = resolve_cache_root()
@@ -2819,7 +2832,6 @@ class AudioConverter:
                 print("💡 Usando diretório temporário do sistema")
                 base_cache = Path(tempfile.mkdtemp(prefix="epub_to_mp3_"))
 
-        engine_suffix = self._build_engine_signature(config)
         temp_dir = self.file_manager.ensure_directory(base_cache / engine_suffix)
         config.cache_dir = temp_dir
         return temp_dir

@@ -407,19 +407,41 @@ class ConverterApplication:
                     else None
                 )
                 if input_path:
+                    # Limpar cache E output do livro específico
                     display_name = reader.title or input_path.stem
-                    cleared = cache_manager.clear_cache(input_path, title=reader.title)
-                    if cleared:
-                        print(f"🗑️ Cache limpo para: {display_name}")
+                    print()
+                    print(f"🗑️  Removendo cache e output para: {display_name}")
+                    print()
+
+                    # Limpar cache
+                    cleared_cache = cache_manager.clear_cache(input_path, title=reader.title)
+                    if cleared_cache:
+                        print("   ✅ Cache removido")
+
+                    # Limpar output do livro (todos os engines)
+                    output_base = Path(getattr(args, "output_dir", None) or (Path.cwd() / "output"))
+                    sanitized_title = FileManager.sanitize_filename(display_name)
+                    book_output_dir = output_base / sanitized_title
+
+                    if book_output_dir.exists():
+                        try:
+                            shutil.rmtree(book_output_dir, ignore_errors=True)
+                            print("   ✅ Output removido")
+                        except Exception as e:
+                            print(f"   ⚠️  Erro ao limpar output: {e}")
                     else:
-                        print(f"⚠️ Nenhum cache encontrado para: {display_name}")
+                        print("   ℹ️  Nenhum output encontrado")
+
+                    # Limpar checkpoint
                     cache_manager.clear_checkpoint(input_path)
+
+                    print()
+                    print(f"✅ Limpeza concluída para: {display_name}")
+                    print("🔄 Iniciando conversão...")
+                    print()
                 else:
-                    cleared = cache_manager.clear_cache()
-                    if cleared:
-                        print("🗑️ Todo o cache foi limpo")
-                    else:
-                        print("⚠️ Nenhum cache encontrado para remover")
+                    # Sem arquivo especificado - pedir confirmação e remover tudo
+                    return self._handle_clear_cache()
 
             cache_dir = self._resolve_cache_dir(reader)
             cache_dir.mkdir(parents=True, exist_ok=True)
@@ -1843,38 +1865,114 @@ class ConverterApplication:
         return resolve_cache_root() / sanitized
 
     def _handle_clear_cache(self) -> int:
-        """Handle global cache clearing command"""
+        """Handle global cache clearing command with user confirmation"""
         from src.cache_manager import CacheManager
 
         cache_manager = CacheManager(cache_dir=resolve_cache_root())
+        cache_root = resolve_cache_root()
+        output_dir = Path.cwd() / "output"
 
+        # Calcular informações sobre o que será removido
         cache_info = cache_manager.get_cache_info()
-        if cache_info["total_cached_books"] == 0:
-            print("📁 Nenhum cache encontrado.")
-            return 0
+        total_cache_mb = cache_info.get("cache_size_mb", 0)
+        total_books = cache_info.get("total_cached_books", 0)
 
-        print(f"🗑️ Removendo cache de {cache_info['total_cached_books']} livro(s)...")
-        print(f"💾 Tamanho total: {cache_info['cache_size_mb']:.1f} MB")
+        # Calcular tamanho do output
+        output_size_mb = 0.0
+        output_file_count = 0
+        if output_dir.exists():
+            try:
+                for item in output_dir.rglob("*"):
+                    if item.is_file():
+                        output_file_count += 1
+                        output_size_mb += item.stat().st_size / (1024 * 1024)
+            except Exception:
+                pass
 
-        success = cache_manager.clear_cache()
-        if success:
-            print("✅ Cache de livros removido com sucesso (modelos preservados).")
-        else:
-            print("❌ Erro ao remover cache.")
+        # Mostrar o que será removido
+        print("╔══════════════════════════════════════════════════════════╗")
+        print("║  🗑️  LIMPEZA COMPLETA DE CACHE E OUTPUT                 ║")
+        print("╚══════════════════════════════════════════════════════════╝")
+        print()
+        print("📊 O seguinte será removido:")
+        print()
+        print("  📁 Cache (.cache/):")
+        print(f"     • {total_books} livro(s) em cache")
+        print(f"     • {total_cache_mb:.1f} MB")
+        print(f"     • Localização: {cache_root}")
+        print()
+        print("  📁 Output (output/):")
+        print(f"     • {output_file_count} arquivo(s)")
+        print(f"     • {output_size_mb:.1f} MB")
+        print(f"     • Localização: {output_dir}")
+        print()
+        print(f"  📦 Total: {total_cache_mb + output_size_mb:.1f} MB")
+        print()
+        print("⚠️  ATENÇÃO: Esta ação NÃO pode ser desfeita!")
+        print("   • Modelos TTS serão preservados")
+        print("   • Todos os arquivos MP3 convertidos serão removidos")
+        print("   • Todo o cache de processamento será removido")
+        print()
+
+        # Pedir confirmação do usuário
+        try:
+            response = input("Deseja continuar? (digite 'sim' para confirmar): ").strip().lower()
+        except (KeyboardInterrupt, EOFError):
+            print("\n❌ Operação cancelada pelo usuário.")
             return 1
 
-        output_dir = Path.cwd() / "output"
+        if response not in ["sim", "s", "yes", "y"]:
+            print("❌ Operação cancelada.")
+            return 0
+
+        print()
+        print("🧹 Limpando...")
+        print()
+
+        # Remover cache
+        removed_items = 0
+        if total_books > 0:
+            print(f"🗑️  Removendo cache de {total_books} livro(s)...")
+            success = cache_manager.clear_cache()
+            if success:
+                print("   ✅ Cache de livros removido com sucesso")
+                removed_items += 1
+            else:
+                print("   ⚠️  Erro ao remover cache")
+
+        # Remover output
         if output_dir.exists():
-            shutil.rmtree(output_dir, ignore_errors=True)
-            print(f"🧹 Diretório de saída limpo: {output_dir}")
+            print("🗑️  Removendo diretório de saída...")
+            try:
+                shutil.rmtree(output_dir, ignore_errors=True)
+                print(f"   ✅ Diretório de saída removido: {output_dir}")
+                removed_items += 1
+            except Exception as e:
+                print(f"   ⚠️  Erro ao remover output: {e}")
 
-        # Também remover filas/estados persistentes para evitar retomada indevida
-        for residual in (Path.cwd() / ".jobs", Path.cwd() / ".uploads", Path.cwd() / ".job_inputs"):
+        # Remover filas/estados persistentes
+        residual_dirs = [Path.cwd() / ".jobs", Path.cwd() / ".uploads", Path.cwd() / ".job_inputs"]
+        residual_removed = 0
+        for residual in residual_dirs:
             if residual.exists():
-                shutil.rmtree(residual, ignore_errors=True)
-                print(f"🧹 Estado de backend removido: {residual}")
+                try:
+                    shutil.rmtree(residual, ignore_errors=True)
+                    residual_removed += 1
+                except Exception:
+                    pass
 
-        return 0
+        if residual_removed > 0:
+            print(f"🗑️  {residual_removed} diretório(s) auxiliar(es) removido(s)")
+
+        print()
+        if removed_items > 0:
+            print("╔══════════════════════════════════════════════════════════╗")
+            print("║  ✅ LIMPEZA CONCLUÍDA COM SUCESSO                       ║")
+            print("╚══════════════════════════════════════════════════════════╝")
+            return 0
+        else:
+            print("❌ Nenhum item foi removido.")
+            return 1
 
     @staticmethod
     def _normalize_lookup(value: Optional[str]) -> str:
@@ -3237,7 +3335,7 @@ def _add_conversion_arguments(
     parser.add_argument(
         "--clear-cache",
         action="store_true",
-        help="Remove cached chapter text before converting",
+        help="Remove cache and output for this book, then convert. Without a book, removes ALL cache/output (with confirmation)",
     )
     parser.add_argument(
         "--verify-transcription",

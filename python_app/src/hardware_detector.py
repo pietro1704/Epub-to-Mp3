@@ -375,7 +375,17 @@ class HardwareDetector:
         available_budget = profile.ram_available_gb * 0.95
         hard_cap = max(0.25, profile.ram_total_gb - reserve_for_os)
         hard_cap = min(hard_cap, profile.ram_total_gb * 0.98)
-        usable_ram = max(0.25, min(max(raw_budget, available_budget), hard_cap))
+
+        # **FIX**: When available RAM is much lower than total RAM (e.g., <50%),
+        # prioritize available RAM to prevent OOM kills
+        ram_utilization = profile.ram_available_gb / profile.ram_total_gb
+        if ram_utilization < 0.5:
+            # Low available RAM - be conservative and prioritize available budget
+            usable_ram = max(0.25, min(available_budget, hard_cap))
+        else:
+            # Normal situation - use the more aggressive budget
+            usable_ram = max(0.25, min(max(raw_budget, available_budget), hard_cap))
+
         profile.ram_budget_gb = round(usable_ram, 2)
 
         sequential_signals = 0
@@ -422,26 +432,37 @@ class HardwareDetector:
         if profile.force_sequential:
             chapter_parallel = 1
         else:
+            # **FIX**: When available RAM is low, be more conservative with chapter parallelism
+            ram_utilization = profile.ram_available_gb / profile.ram_total_gb
+            memory_pressure_factor = 1.0
+            if ram_utilization < 0.5:
+                # Low available RAM - reduce parallelism more conservatively
+                memory_pressure_factor = 1.5  # Increase RAM per chapter requirement
+
             if profile.performance_tier == "ultra":
-                ram_per_chapter = 0.35  # Mais agressivo: menos RAM por capítulo
+                ram_per_chapter = 0.35 * memory_pressure_factor
                 hard_chapter_cap = 8  # Aumentado de 6 para 8
                 cpu_guardrail = profile.cpu_physical + 2
                 min_parallel = 4  # Aumentado de 3 para 4
             elif profile.performance_tier == "high":
-                ram_per_chapter = 0.4  # Mais agressivo
+                ram_per_chapter = 0.4 * memory_pressure_factor
                 hard_chapter_cap = 6  # Aumentado de 5 para 6
                 cpu_guardrail = profile.cpu_physical + 1
                 min_parallel = 3  # Sempre 3 em vez de 2-3
             elif profile.performance_tier == "medium":
-                ram_per_chapter = 0.55  # Mais agressivo
+                ram_per_chapter = 0.55 * memory_pressure_factor
                 hard_chapter_cap = 5  # Aumentado de 4 para 5
                 cpu_guardrail = max(3, profile.cpu_physical)  # Mínimo 3
                 min_parallel = 2  # Sempre 2 em vez de 1-2
             else:
-                ram_per_chapter = 0.75  # Mais agressivo
+                ram_per_chapter = 0.75 * memory_pressure_factor
                 hard_chapter_cap = 3  # Aumentado de 2 para 3
                 cpu_guardrail = max(2, profile.cpu_physical)  # Mínimo 2
                 min_parallel = 2  # Aumentado de 1 para 2
+
+            # **FIX**: Also reduce min_parallel when memory is tight
+            if ram_utilization < 0.5:
+                min_parallel = max(1, min_parallel - 1)
 
             raw_parallel = max(1, int(usable_ram / ram_per_chapter))
             chapter_parallel = min(hard_chapter_cap, raw_parallel, max(1, cpu_guardrail))
