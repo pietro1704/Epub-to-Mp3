@@ -1556,34 +1556,20 @@ class EdgeTTSEngine:
         """
         Aplica tags SSML prosody a um chunk individual para compensar pausas do Edge-TTS.
 
-        Edge-TTS insere pausas longas entre frases. Esta função aplica aumento na taxa
-        de fala para compensar as pausas excessivas, reduzindo a duração do áudio.
+        NOTA: Função desabilitada - Edge-TTS ignora tags SSML prosody.
+        Mantida para compatibilidade futura se o Edge-TTS passar a suportar.
 
         Args:
             text: Texto do chunk
-            rate_increase: Aumento percentual na taxa de fala (default: "+50%")
+            rate_increase: Aumento percentual na taxa de fala (não utilizado)
 
         Returns:
-            Texto com tags SSML prosody
+            Texto original sem modificações
         """
-        if not text or not text.strip():
-            return text
-
-        # DEBUG: Log when prosody is applied
-        if self.verbose:
-            self._log(
-                f"🔍 [DEBUG] Applying prosody rate={rate_increase} to chunk ({len(text)} chars)"
-            )
-
-        # Sempre aplica prosody para compensar pausas do Edge-TTS
-        # O Edge insere ~3-4s de pausa a cada ponto final, mesmo sem quebras de linha
-        wrapped = f'<prosody rate="{rate_increase}">{text}</prosody>'
-
-        if self.verbose:
-            has_tag = "<prosody" in wrapped
-            self._log(f"🔍 [DEBUG] Result has prosody tag: {has_tag}")
-
-        return wrapped
+        # DISABLED: Edge-TTS não respeita tags SSML prosody
+        # Testes mostraram que as tags não reduzem a duração do áudio
+        # Retorna texto sem modificações
+        return text
 
     def _chunk_text(
         self, voice: str, text: str, chunk_size: Optional[int] = None
@@ -1978,14 +1964,6 @@ class EdgeTTSEngine:
                     self._log(f"   ⏸️ Cooldown: {remaining}s restantes")
                 return False
             try:
-                # DEBUG: Log if text has prosody tags before sending to Edge-TTS
-                if self.verbose and text:
-                    has_prosody = "<prosody" in text
-                    preview = text[:200] if len(text) > 200 else text
-                    self._log(
-                        f"🔍 [DEBUG] Sending to Edge-TTS: has_prosody={has_prosody}, preview={preview}"
-                    )
-
                 # SSL bypass já aplicado no topo do módulo via monkeypatch
                 communicator = self._edge_tts.Communicate(text, voice)
 
