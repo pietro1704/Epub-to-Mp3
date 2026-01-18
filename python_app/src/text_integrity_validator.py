@@ -127,22 +127,44 @@ class TextIntegrityValidator:
         epub_word_count = self.count_words(epub_text_normalized)
         text_hash = self.calculate_text_hash(epub_text)
 
+        # Try to load cached text first to check if text was lost
+        cached_text = self.load_parsed_text(chapter_index, chapter.name)
+
+        # If EPUB has 0 chars, only fail if cache has text (indicating text was lost)
         if epub_char_count == 0:
+            if cached_text is not None:
+                cached_text_normalized = self.normalize_text(cached_text)
+                cached_char_count = len(cached_text_normalized)
+
+                # If cache has text but EPUB doesn't, that's a problem
+                if cached_char_count > 0:
+                    return ChapterTextValidation(
+                        chapter_index=chapter_index,
+                        chapter_title=chapter.name,
+                        epub_char_count=epub_char_count,
+                        cached_char_count=cached_char_count,
+                        epub_word_count=epub_word_count,
+                        cached_word_count=self.count_words(cached_text_normalized),
+                        text_hash=text_hash,
+                        cached_text_hash=self.calculate_text_hash(cached_text),
+                        is_valid=False,
+                        error_message="Texto do capítulo vazio no EPUB mas presente no cache (texto foi perdido)",
+                    )
+
+            # EPUB has 0 chars and cache also has 0 chars (or no cache) - this is valid
+            # (legitimately empty chapters like cover pages)
             return ChapterTextValidation(
                 chapter_index=chapter_index,
                 chapter_title=chapter.name,
                 epub_char_count=epub_char_count,
-                cached_char_count=0,
+                cached_char_count=len(self.normalize_text(cached_text)) if cached_text else 0,
                 epub_word_count=epub_word_count,
-                cached_word_count=0,
+                cached_word_count=self.count_words(cached_text) if cached_text else 0,
                 text_hash=text_hash,
-                is_valid=False,
-                cached_text_hash=None,
-                error_message="Texto do capítulo vazio ou não extraído do EPUB",
+                cached_text_hash=self.calculate_text_hash(cached_text) if cached_text else None,
+                is_valid=True,
+                error_message=None,
             )
-
-        # Try to load cached text
-        cached_text = self.load_parsed_text(chapter_index, chapter.name)
 
         if cached_text is None:
             # No cache yet - this is OK
@@ -247,8 +269,13 @@ class TextIntegrityValidator:
                         )
 
         # Detect duplicated content across chapters (cached or EPUB)
+        # Skip empty chapters - multiple empty chapters are normal (cover pages, etc.)
         hash_to_chapters: Dict[str, List[int]] = {}
         for validation in validations:
+            # Skip empty chapters
+            if validation.epub_char_count == 0 and validation.cached_char_count == 0:
+                continue
+
             effective_hash = validation.cached_text_hash or validation.text_hash
             if not effective_hash:
                 continue

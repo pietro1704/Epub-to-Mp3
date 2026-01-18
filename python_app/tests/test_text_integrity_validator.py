@@ -110,14 +110,29 @@ class TestTextIntegrityValidator(unittest.TestCase):
         self.assertGreater(validation.char_diff_percent, 5.0)
 
     def test_validate_chapter_text_empty(self):
-        """Empty chapter text should be invalid"""
+        """Empty chapter text should be valid if no cache exists (legitimate empty chapters like cover pages)"""
         chapter = Chapter(1, "Empty Chapter", "ch-empty.html", "")
         validation = self.validator.validate_chapter_text(chapter, 1)
 
+        # Empty chapters with no cache are valid (cover pages, blank pages)
+        self.assertTrue(validation.is_valid)
+        self.assertIsNone(validation.error_message)
+
+    def test_validate_chapter_text_empty_with_cached_text(self):
+        """Empty chapter with cached text should be invalid (text was lost)"""
+        chapter = Chapter(1, "Empty Chapter", "ch-empty.html", "")
+        chapter.speech_text = ""
+
+        # First save some text to cache
+        chapter_with_text = Chapter(1, "Empty Chapter", "ch-empty.html", "This is cached text")
+        chapter_with_text.speech_text = "This is cached text"
+        self.validator.save_parsed_text(chapter_with_text, 1)
+
+        # Now validate empty chapter - should fail because cache has text
+        validation = self.validator.validate_chapter_text(chapter, 1)
+
         self.assertFalse(validation.is_valid)
-        self.assertEqual(
-            validation.error_message, "Texto do capítulo vazio ou não extraído do EPUB"
-        )
+        self.assertIn("texto foi perdido", validation.error_message.lower())
 
     def test_validate_all_chapters_no_cache(self):
         """Test validating all chapters when no cache exists"""
