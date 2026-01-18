@@ -449,6 +449,57 @@ class AudioConverter:
                 print(f"⚠️ Validação de áudio falhou com erro: {exc}")
             return True, None
 
+    async def _attempt_segment_retry(
+        self,
+        tts_engine: object,
+        chapter_index: int,
+        chapter_label: str,
+        output_path: Path,
+        *,
+        config: ConversionConfig,
+    ) -> bool:
+        """Try recovering missing chunks/segments after validation failure."""
+        if not getattr(config, "validate_audio", True):
+            return False
+        try:
+            if not hasattr(tts_engine, "get_synthesis_tracker"):
+                return False
+            tracker = tts_engine.get_synthesis_tracker()
+            if not tracker:
+                return False
+            missing_segments = tracker.get_missing_segments()
+            if not missing_segments:
+                return False
+            if self.verbose:
+                print(
+                    f"🔄 Chapter {chapter_label}: {len(missing_segments)} segmento(s) falhando, tentando recuperar..."
+                )
+            from .retry_manager import RetryManager
+
+            retry_manager = RetryManager(max_retries=3)
+            temp_retry_dir = output_path.parent / f"retry_temp_{chapter_index}"
+            retry_report = await retry_manager.retry_failed_segments(
+                engine=tts_engine,
+                failed_segments=missing_segments,
+                output_path=output_path,
+                temp_dir=temp_retry_dir,
+            )
+            if self.verbose:
+                print(
+                    f"✓ Retry segmentos: {retry_report.successful}/{retry_report.total_retried} recuperados, "
+                    f"{retry_report.still_failed} falharam"
+                )
+            try:
+                if temp_retry_dir.exists():
+                    shutil.rmtree(temp_retry_dir, ignore_errors=True)
+            except Exception:
+                pass
+            return retry_report.still_failed == 0
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️ Retry de segmentos falhou: {exc}")
+            return False
+
     def _chapter_number(self, chapter: Chapter, fallback: int) -> int:
         return self._coerce_chapter_index(getattr(chapter, "index", None), fallback)
 
@@ -1158,14 +1209,42 @@ class AudioConverter:
                 files_generated += 2
 
                 if text_validator and getattr(config, "validate_text", True):
-                    self._validate_text_after_save(
+                    strict_validation = getattr(config, "strict_validate", False)
+                    valid_text = self._validate_text_after_save(
                         chapter,
                         chapter_label,
                         parsed_text,
                         pre_tts_text,
                         validator=text_validator,
-                        strict=getattr(config, "strict_validate", False),
+                        strict=False,
                     )
+                    if not valid_text:
+                        max_text_retries = 2
+                        for retry_idx in range(max_text_retries):
+                            if self.verbose:
+                                print(
+                                    f"🔄 Regerando texto do capítulo {chapter_label} "
+                                    f"(tentativa {retry_idx + 1}/{max_text_retries})"
+                                )
+                            _, _, parsed_text, pre_tts_text = _prepare_payload(
+                                chapter_label, chapter
+                            )
+                            parsed_path.write_text(parsed_text, encoding="utf-8")
+                            pre_tts_path.write_text(pre_tts_text, encoding="utf-8")
+                            valid_text = self._validate_text_after_save(
+                                chapter,
+                                chapter_label,
+                                parsed_text,
+                                pre_tts_text,
+                                validator=text_validator,
+                                strict=False,
+                            )
+                            if valid_text:
+                                break
+                    if not valid_text and strict_validation:
+                        raise RuntimeError(
+                            f"Validação pós-parsing falhou após retry ({chapter_label})"
+                        )
 
                 # Save segment plan (text chunks) for future reuse
                 try:
@@ -4149,11 +4228,23 @@ class AudioConverter:
                                 current_payload, output_path, config=config
                             )
                             if not audio_ok:
-                                output_path.unlink(missing_ok=True)
-                                chapter_error = audio_error or "Áudio inválido"
-                                errors.append(f"{chapter.name}: {chapter_error}")
-                                self.progress.complete_chapter(f"❌ {chapter_error}")
-                                continue
+                                retried = await self._attempt_segment_retry(
+                                    tts_engine,
+                                    chapter_num,
+                                    chapter_label,
+                                    output_path,
+                                    config=config,
+                                )
+                                if retried:
+                                    audio_ok, audio_error = self._validate_audio_after_write(
+                                        current_payload, output_path, config=config
+                                    )
+                                if not audio_ok:
+                                    output_path.unlink(missing_ok=True)
+                                    chapter_error = audio_error or "Áudio inválido"
+                                    errors.append(f"{chapter.name}: {chapter_error}")
+                                    self.progress.complete_chapter(f"❌ {chapter_error}")
+                                    continue
 
                         converted_files.append(output_path)
                         self._embed_id3_metadata(
@@ -4318,11 +4409,29 @@ class AudioConverter:
                                             current_payload, output_path, config=config
                                         )
                                         if not audio_ok:
-                                            output_path.unlink(missing_ok=True)
-                                            chapter_error = audio_error or "Áudio inválido"
-                                            errors.append(f"{chapter.name}: {chapter_error}")
-                                            self.progress.complete_chapter(f"❌ {chapter_error}")
-                                            continue
+                                            retried = await self._attempt_segment_retry(
+                                                tts_engine,
+                                                chapter_num,
+                                                chapter_label,
+                                                output_path,
+                                                config=config,
+                                            )
+                                            if retried:
+                                                audio_ok, audio_error = (
+                                                    self._validate_audio_after_write(
+                                                        current_payload,
+                                                        output_path,
+                                                        config=config,
+                                                    )
+                                                )
+                                            if not audio_ok:
+                                                output_path.unlink(missing_ok=True)
+                                                chapter_error = audio_error or "Áudio inválido"
+                                                errors.append(f"{chapter.name}: {chapter_error}")
+                                                self.progress.complete_chapter(
+                                                    f"❌ {chapter_error}"
+                                                )
+                                                continue
 
                                     converted_files.append(output_path)
                                     self._embed_id3_metadata(
@@ -5077,6 +5186,16 @@ class AudioConverter:
                         validator = AudioValidator()
                         file_result = validator.validate_audio_file(converted)
                         if not file_result.is_valid:
+                            recovered = await self._attempt_segment_retry(
+                                tts_engine,
+                                index,
+                                chapter_label,
+                                converted,
+                                config=config,
+                            )
+                            if recovered:
+                                file_result = validator.validate_audio_file(converted)
+                        if not file_result.is_valid:
                             if self.verbose:
                                 print(
                                     f"⚠️ Chapter {index} validation warning: {file_result.error_message}"
@@ -5103,6 +5222,20 @@ class AudioConverter:
                                     converted,
                                     tolerance=tolerance,
                                 )
+                                if not validation_result.is_valid:
+                                    recovered = await self._attempt_segment_retry(
+                                        tts_engine,
+                                        index,
+                                        chapter_label,
+                                        converted,
+                                        config=config,
+                                    )
+                                    if recovered:
+                                        validation_result = validator.validate_duration(
+                                            chapter_payload,
+                                            converted,
+                                            tolerance=tolerance,
+                                        )
                                 if not validation_result.is_valid:
                                     if self.verbose:
                                         print(
