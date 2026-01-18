@@ -217,6 +217,10 @@ class CacheManager:
             # para evitar procurar em múltiplas pastas
             candidates = set()
             candidates.add(self._get_cache_path(ebook_path))
+            if title:
+                safe_title = self._sanitize_filename(str(title))
+                if safe_title:
+                    candidates.add(self.cache_dir / safe_title)
 
             for candidate in candidates:
                 if candidate.exists() and candidate.is_dir():

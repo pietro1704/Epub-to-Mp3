@@ -46,6 +46,9 @@ class ConversionConfig:
     verbose: bool = False
     auto_validate_output: bool = True  # Run post-validation (validate_conversion) automatically
     auto_fix_output: bool = True  # Auto-reconvert (cache clean) if validation fails
+    validate_text: bool = True  # Validate parsed/pre-tts text during conversion
+    validate_audio: bool = True  # Validate MP3 integrity/duration after synthesis
+    strict_validate: bool = False  # Stop conversion when validation fails
     log_callback: Optional[Callable[[str], None]] = None  # Callback for verbose logging
     edge_auto_offline_seconds: int = 0  # disabled: Edge handles large chapters via chunking
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
@@ -118,6 +121,9 @@ class ConversionConfig:
         data["formatting_locale"] = self.formatting_locale
         data["verify_transcription"] = self.verify_transcription
         data["transcription_model"] = self.transcription_model
+        data["validate_text"] = self.validate_text
+        data["validate_audio"] = self.validate_audio
+        data["strict_validate"] = self.strict_validate
         data["validation_language"] = self.validation_language
         return data
 
@@ -651,6 +657,9 @@ class AppConfig:
         verify_transcription = bool(kwargs.pop("verify_transcription", False))
         transcription_model = str(kwargs.pop("transcription_model", "small"))
         validation_language = kwargs.pop("validation_language", None)
+        validate_text = bool(kwargs.pop("validate_text", True))
+        validate_audio = bool(kwargs.pop("validate_audio", True))
+        strict_validate = bool(kwargs.pop("strict_validate", False))
 
         config = ConversionConfig(
             engine=engine,
@@ -691,6 +700,9 @@ class AppConfig:
             verify_transcription=verify_transcription,
             transcription_model=transcription_model,
             validation_language=validation_language,
+            validate_text=validate_text,
+            validate_audio=validate_audio,
+            strict_validate=strict_validate,
         )
 
         if kwargs:

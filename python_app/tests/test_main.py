@@ -418,6 +418,67 @@ class TestArgumentParser(unittest.TestCase):
             self.assertEqual(args.engine, engine)
 
 
+class TestClearCacheFlag(unittest.TestCase):
+    """Test cases for --clear-cache flag"""
+
+    def setUp(self):
+        """Set up test fixtures"""
+        self.temp_dir = tempfile.mkdtemp()
+        self.test_file = os.path.join(self.temp_dir, "test.epub")
+
+        # Create dummy file
+        with open(self.test_file, "w") as f:
+            f.write("dummy content")
+
+        self.app = ConverterApplication()
+
+    def tearDown(self):
+        """Clean up test fixtures"""
+        import shutil
+
+        if os.path.exists(self.temp_dir):
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_output_directory_format(self):
+        """Test that output directory uses book_engine format instead of book/engine"""
+        from src.config import ConversionConfig
+        from src.converter import AudioConverter
+
+        converter = AudioConverter()
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=self.temp_dir,
+            book_title="Test Book",
+        )
+
+        output_dir = converter._setup_output_directory(config)
+
+        # Should be output/Test Book_edge, not output/Test Book/edge
+        # Note: FileManager keeps spaces in sanitized titles
+        self.assertTrue(str(output_dir).endswith("Test Book_edge"))
+        # Verify it's not a nested structure
+        self.assertNotIn(os.path.join("Test Book", "edge"), str(output_dir))
+
+    def test_output_directory_format_with_underscores(self):
+        """Test that output directory handles books with underscores in title"""
+        from src.config import ConversionConfig
+        from src.converter import AudioConverter
+
+        converter = AudioConverter()
+        config = ConversionConfig(
+            engine="coqui",
+            output_dir=self.temp_dir,
+            book_title="My_Test_Book",
+        )
+
+        output_dir = converter._setup_output_directory(config)
+
+        # Should use format book_engine, with engine suffix appended
+        self.assertTrue("My_Test_Book_coqui" in str(output_dir))
+        # Verify it's not a nested structure
+        self.assertNotIn(os.path.join("My_Test_Book", "coqui"), str(output_dir))
+
+
 class TestMainFunction(unittest.TestCase):
     """Test cases for main function"""
 

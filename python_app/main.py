@@ -3026,6 +3026,15 @@ class ConverterApplication:
             overrides["transcription_model"] = str(args.transcription_model)
         if getattr(args, "validation_language", None):
             overrides["validation_language"] = str(args.validation_language)
+        if getattr(args, "validate_during_conversion", False):
+            overrides["validate_text"] = True
+            overrides["validate_audio"] = True
+        if getattr(args, "validate_text", None) is not None:
+            overrides["validate_text"] = bool(getattr(args, "validate_text"))
+        if getattr(args, "validate_audio", None) is not None:
+            overrides["validate_audio"] = bool(getattr(args, "validate_audio"))
+        if getattr(args, "strict_validate", False):
+            overrides["strict_validate"] = True
 
         config = self.config.create_conversion_config(
             engine=args.engine or "edge",
@@ -3341,6 +3350,44 @@ def _add_conversion_arguments(
         "--verify-transcription",
         action="store_true",
         help="Enable deep validation via speech-to-text transcription (slow, requires openai-whisper)",
+    )
+    parser.add_argument(
+        "--validate-during-conversion",
+        action="store_true",
+        help="Validate parsed text and MP3 output during conversion",
+    )
+    parser.add_argument(
+        "--validate-text",
+        dest="validate_text",
+        action="store_true",
+        default=None,
+        help="Validate parsed/pre-tts text during conversion",
+    )
+    parser.add_argument(
+        "--no-validate-text",
+        dest="validate_text",
+        action="store_false",
+        default=None,
+        help="Disable text validation during conversion",
+    )
+    parser.add_argument(
+        "--validate-audio",
+        dest="validate_audio",
+        action="store_true",
+        default=None,
+        help="Validate MP3 integrity and duration during conversion",
+    )
+    parser.add_argument(
+        "--no-validate-audio",
+        dest="validate_audio",
+        action="store_false",
+        default=None,
+        help="Disable MP3 validation during conversion",
+    )
+    parser.add_argument(
+        "--strict-validate",
+        action="store_true",
+        help="Stop conversion when validation fails",
     )
     parser.add_argument(
         "--transcription-model",

@@ -138,6 +138,8 @@ class AudioConverter:
         self._health_state: Dict[str, Any] = {"active": False}
         self._health_watchdog: Optional[asyncio.Task] = None
         self._cover_art: Optional[dict] = None
+        self._text_validation_hashes: Dict[str, int] = {}
+        self._text_validation_errors: List[str] = []
 
     def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
         """
@@ -320,6 +322,132 @@ class AudioConverter:
         first_ok = first_snippet in payload_norm
         mid_ok = mid_snippet in payload_norm
         return first_ok and mid_ok
+
+    @staticmethod
+    def _sample_edges(text: str, size: int = 180) -> tuple[str, str]:
+        normalized = re.sub(r"\s+", " ", text or "").strip()
+        if len(normalized) <= size * 2:
+            return normalized, normalized
+        return normalized[:size], normalized[-size:]
+
+    @staticmethod
+    def _strip_formatting_cues(text: str) -> str:
+        """Remove audible formatting cue phrases from text."""
+        if not text:
+            return ""
+        try:
+            from .text_formatting import TextFormattingProcessor
+
+            phrases: set[str] = set()
+            for locale_map in TextFormattingProcessor.CUE_LABELS.values():
+                for start, end in locale_map.values():
+                    phrases.add(start)
+                    phrases.add(end)
+            phrases.update(TextFormattingProcessor.FOOTNOTE_END_PHRASES)
+        except Exception:
+            return text
+
+        cleaned = text
+        for phrase in sorted(phrases, key=len, reverse=True):
+            cleaned = re.sub(re.escape(phrase), "", cleaned, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    def _validate_text_after_save(
+        self,
+        chapter: Chapter,
+        chapter_label: str,
+        parsed_text: str,
+        pre_tts_text: str,
+        *,
+        validator: "TextIntegrityValidator",
+        strict: bool,
+    ) -> bool:
+        """Validate parsed/pre-tts text against EPUB content."""
+        issues: List[str] = []
+        epub_text = chapter.text or ""
+        parsed_norm = validator.normalize_text(parsed_text)
+        epub_norm = validator.normalize_text(epub_text)
+
+        if not parsed_norm:
+            issues.append("Texto do capítulo vazio ou não extraído do EPUB")
+        if epub_norm:
+            diff = len(epub_norm) - len(parsed_norm)
+            allowed_diff = max(50, int(len(epub_norm) * 0.05))
+            if abs(diff) > allowed_diff:
+                issues.append(f"Texto divergente do EPUB ({diff:+d} chars)")
+            start, end = self._sample_edges(epub_norm)
+            if start and start not in parsed_norm:
+                issues.append("Texto parsed sem início do EPUB")
+            if end and end not in parsed_norm:
+                issues.append("Texto parsed sem final do EPUB")
+
+        if parsed_norm:
+            text_hash = validator.calculate_text_hash(parsed_norm)
+            if text_hash in self._text_validation_hashes:
+                other = self._text_validation_hashes[text_hash]
+                issues.append(f"Conteúdo duplicado (igual ao capítulo {other})")
+            else:
+                try:
+                    chapter_number = int(float(getattr(chapter, "index", 0) or 0))
+                except (TypeError, ValueError):
+                    chapter_number = 0
+                self._text_validation_hashes[text_hash] = chapter_number
+
+            snippet = parsed_norm[:200]
+            if snippet and parsed_norm.count(snippet) > 1:
+                issues.append("Possível duplicação interna (trecho repetido)")
+            if len(parsed_norm) > 400 and parsed_norm[:200] == parsed_norm[-200:]:
+                issues.append("Possível duplicação interna (início = fim)")
+
+        if pre_tts_text:
+            pretts_norm = validator.normalize_text(self._strip_formatting_cues(pre_tts_text))
+            if parsed_norm and parsed_norm[:200] not in pretts_norm:
+                issues.append("Pre-TTS não contém o início do texto parsed")
+            if parsed_norm and parsed_norm[-200:] not in pretts_norm:
+                issues.append("Pre-TTS não contém o final do texto parsed")
+
+        if issues:
+            message = f"Validação pós-parsing falhou ({chapter_label}): {', '.join(issues)}"
+            self._text_validation_errors.append(message)
+            if self.verbose:
+                print(f"❌ {message}")
+            if strict:
+                raise RuntimeError(message)
+            return False
+
+        return True
+
+    def _validate_audio_after_write(
+        self,
+        text_payload: str,
+        output_path: Path,
+        *,
+        config: ConversionConfig,
+    ) -> tuple[bool, Optional[str]]:
+        """Validate MP3 integrity and duration after conversion."""
+        try:
+            from .audio_validator import AudioValidator
+
+            validator = AudioValidator()
+            file_validation = validator.validate_audio_file(output_path)
+            if not file_validation.is_valid:
+                return False, file_validation.error_message or "Áudio inválido"
+
+            normalized_len = len(re.sub(r"\s+", " ", text_payload or "").strip())
+            if normalized_len >= 5000:
+                tolerance = 0.35 if normalized_len < 20000 else 0.25
+                duration_result = validator.validate_duration(
+                    text_payload, output_path, tolerance=tolerance
+                )
+                if not duration_result.is_valid:
+                    return False, duration_result.error_message or "Duração inválida"
+
+            return True, None
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️ Validação de áudio falhou com erro: {exc}")
+            return True, None
 
     def _chapter_number(self, chapter: Chapter, fallback: int) -> int:
         return self._coerce_chapter_index(getattr(chapter, "index", None), fallback)
@@ -937,7 +1065,12 @@ class AudioConverter:
             print(f"🗑️ {deleted_count} arquivo(s) MP3 removido(s) (cache inválido)")
 
     def _generate_all_text_files(
-        self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig
+        self,
+        chapters: List[Chapter],
+        output_dir: Path,
+        config: ConversionConfig,
+        *,
+        text_validator: Optional["TextIntegrityValidator"] = None,
     ) -> None:
         """Generate all text files BEFORE starting TTS conversion"""
         text_dir = Path(output_dir) / "text"
@@ -1023,6 +1156,16 @@ class AudioConverter:
                 parsed_path.write_text(parsed_text, encoding="utf-8")
                 pre_tts_path.write_text(pre_tts_text, encoding="utf-8")
                 files_generated += 2
+
+                if text_validator and getattr(config, "validate_text", True):
+                    self._validate_text_after_save(
+                        chapter,
+                        chapter_label,
+                        parsed_text,
+                        pre_tts_text,
+                        validator=text_validator,
+                        strict=getattr(config, "strict_validate", False),
+                    )
 
                 # Save segment plan (text chunks) for future reuse
                 try:
@@ -1979,7 +2122,10 @@ class AudioConverter:
             try:
                 if output_dir.exists():
                     shutil.rmtree(output_dir, ignore_errors=True)
-                    output_dir = self._setup_output_directory(config)
+                parent_dir = output_dir.parent if output_dir.parent else None
+                if parent_dir and parent_dir.exists():
+                    shutil.rmtree(parent_dir, ignore_errors=True)
+                output_dir = self._setup_output_directory(config)
             except Exception as exc:
                 if self.verbose:
                     print(f"⚠️ Falha ao limpar saída anterior: {exc}")
@@ -2035,7 +2181,18 @@ class AudioConverter:
             text_validator.print_chapter_summary(chapters)
 
         # Refresh text cache before validation to avoid stale mismatches
-        self._generate_all_text_files(chapters, temp_dir, config)
+        self._text_validation_hashes = {}
+        self._text_validation_errors = []
+        self._generate_all_text_files(
+            chapters,
+            temp_dir,
+            config,
+            text_validator=text_validator if getattr(config, "validate_text", True) else None,
+        )
+        if self._text_validation_errors and self.verbose:
+            print(
+                f"⚠️ Validação pós-parsing: {len(self._text_validation_errors)} problema(s) detectado(s)"
+            )
 
         # Automatic validation before conversion if cache/output already exist
         self._auto_validate_output(output_dir, stage="initial")
@@ -2792,7 +2949,7 @@ class AudioConverter:
         engine_suffix = self._build_engine_signature(config)
         if config.book_title:
             book_dir = self.file_manager.sanitize_filename(config.book_title)
-            base_dir = base_dir / book_dir / engine_suffix
+            base_dir = base_dir / f"{book_dir}_{engine_suffix}"
         else:
             # Compat: quando não há título, use padrão "edge__default"
             base_dir = base_dir / f"{engine_suffix}__default"
@@ -3987,6 +4144,17 @@ class AudioConverter:
                             self.progress.complete_chapter(f"❌ {truncation_warning}")
                             continue
 
+                        if getattr(config, "validate_audio", True):
+                            audio_ok, audio_error = self._validate_audio_after_write(
+                                current_payload, output_path, config=config
+                            )
+                            if not audio_ok:
+                                output_path.unlink(missing_ok=True)
+                                chapter_error = audio_error or "Áudio inválido"
+                                errors.append(f"{chapter.name}: {chapter_error}")
+                                self.progress.complete_chapter(f"❌ {chapter_error}")
+                                continue
+
                         converted_files.append(output_path)
                         self._embed_id3_metadata(
                             output_path,
@@ -4144,6 +4312,17 @@ class AudioConverter:
                                         errors.append(f"{chapter.name}: {truncation_warning}")
                                         self.progress.complete_chapter(f"❌ {truncation_warning}")
                                         continue
+
+                                    if getattr(config, "validate_audio", True):
+                                        audio_ok, audio_error = self._validate_audio_after_write(
+                                            current_payload, output_path, config=config
+                                        )
+                                        if not audio_ok:
+                                            output_path.unlink(missing_ok=True)
+                                            chapter_error = audio_error or "Áudio inválido"
+                                            errors.append(f"{chapter.name}: {chapter_error}")
+                                            self.progress.complete_chapter(f"❌ {chapter_error}")
+                                            continue
 
                                     converted_files.append(output_path)
                                     self._embed_id3_metadata(
@@ -4526,7 +4705,7 @@ class AudioConverter:
                 from .audio_validator import AudioValidator
 
                 speech_text = self._speech_text(chapter)
-                if speech_text:
+                if speech_text and getattr(config, "validate_audio", True):
                     validator = AudioValidator()
                     validation_result = validator.validate_duration(
                         speech_text,
@@ -4891,121 +5070,168 @@ class AudioConverter:
                     pass
 
                 # **INTEGRITY VALIDATION**: Verify audio matches text
-                try:
-                    from .audio_validator import AudioValidator
+                if getattr(config, "validate_audio", True):
+                    try:
+                        from .audio_validator import AudioValidator
 
-                    validator = AudioValidator()
-                    validation_result = validator.validate_duration(
-                        chapter_payload,
-                        converted,
-                        tolerance=0.20,  # 20% tolerance
-                    )
+                        validator = AudioValidator()
+                        file_result = validator.validate_audio_file(converted)
+                        if not file_result.is_valid:
+                            if self.verbose:
+                                print(
+                                    f"⚠️ Chapter {index} validation warning: {file_result.error_message}"
+                                )
+                            if getattr(config, "strict_validate", False):
+                                converted.unlink(missing_ok=True)
+                                status_holder["text"] = (
+                                    file_result.error_message or "Áudio inválido"
+                                )
+                                self._announce_stage(index, chapter_label, status_holder["text"])
+                                outcome = ChapterConversionOutcome(
+                                    index=index,
+                                    name=chapter_label,
+                                    path=None,
+                                    error=status_holder["text"],
+                                )
+                                return None if legacy_mode else outcome
+                        else:
+                            normalized_len = len(re.sub(r"\s+", " ", chapter_payload or "").strip())
+                            if normalized_len >= 5000:
+                                tolerance = 0.35 if normalized_len < 20000 else 0.25
+                                validation_result = validator.validate_duration(
+                                    chapter_payload,
+                                    converted,
+                                    tolerance=tolerance,
+                                )
+                                if not validation_result.is_valid:
+                                    if self.verbose:
+                                        print(
+                                            f"⚠️ Chapter {index} validation warning: {validation_result.error_message}"
+                                        )
+                                    if getattr(config, "strict_validate", False):
+                                        converted.unlink(missing_ok=True)
+                                        status_holder["text"] = (
+                                            validation_result.error_message or "Duração inválida"
+                                        )
+                                        self._announce_stage(
+                                            index, chapter_label, status_holder["text"]
+                                        )
+                                        outcome = ChapterConversionOutcome(
+                                            index=index,
+                                            name=chapter_label,
+                                            path=None,
+                                            error=status_holder["text"],
+                                        )
+                                        return None if legacy_mode else outcome
 
-                    if not validation_result.is_valid:
-                        if self.verbose:
-                            print(
-                                f"⚠️ Chapter {index} validation warning: {validation_result.error_message}"
-                            )
-                        # Log warning but don't fail - audio may still be usable
-                        # Future: could add strict mode to fail on validation errors
+                                    # **AUTOMATIC RETRY**: Check for failed segments and retry
+                                    try:
+                                        if hasattr(tts_engine, "get_synthesis_tracker"):
+                                            tracker = tts_engine.get_synthesis_tracker()
+                                            if tracker:
+                                                missing_segments = tracker.get_missing_segments()
+                                                if missing_segments:
+                                                    if self.verbose:
+                                                        print(
+                                                            f"🔄 Chapter {index}: Found {len(missing_segments)} failed segments, attempting retry..."
+                                                        )
 
-                        # **AUTOMATIC RETRY**: Check for failed segments and retry
-                        try:
-                            if hasattr(tts_engine, "get_synthesis_tracker"):
-                                tracker = tts_engine.get_synthesis_tracker()
-                                if tracker:
-                                    missing_segments = tracker.get_missing_segments()
-                                    if missing_segments:
+                                                    from .retry_manager import RetryManager
+
+                                                    retry_manager = RetryManager(max_retries=3)
+                                                    temp_retry_dir = (
+                                                        converted.parent / f"retry_temp_{index}"
+                                                    )
+
+                                                    retry_report = (
+                                                        await retry_manager.retry_failed_segments(
+                                                            engine=tts_engine,
+                                                            failed_segments=missing_segments,
+                                                            output_path=converted,
+                                                            temp_dir=temp_retry_dir,
+                                                        )
+                                                    )
+
+                                                    if self.verbose:
+                                                        print(
+                                                            f"✓ Retry results: {retry_report.successful}/{retry_report.total_retried} recovered, "
+                                                            f"{retry_report.still_failed} still failed"
+                                                        )
+
+                                                    # Clean up retry temp dir
+                                                    try:
+                                                        if temp_retry_dir.exists():
+                                                            import shutil
+
+                                                            shutil.rmtree(
+                                                                temp_retry_dir, ignore_errors=True
+                                                            )
+                                                    except Exception:
+                                                        pass
+
+                                                    if retry_report.still_failed > 0:
+                                                        if self.verbose:
+                                                            print(
+                                                                f"⚠️ Chapter {index}: {retry_report.still_failed} segments could not be recovered after retries"
+                                                            )
+                                    except Exception as e:
                                         if self.verbose:
-                                            print(
-                                                f"🔄 Chapter {index}: Found {len(missing_segments)} failed segments, attempting retry..."
-                                            )
+                                            print(f"⚠️ Retry mechanism error: {e}")
 
-                                        from .retry_manager import RetryManager
+                                # Save validation log
+                                if cache_dir:
+                                    try:
+                                        from .cache_manager import CacheManager
 
-                                        retry_manager = RetryManager(max_retries=3)
-                                        temp_retry_dir = converted.parent / f"retry_temp_{index}"
-
-                                        retry_report = await retry_manager.retry_failed_segments(
-                                            engine=tts_engine,
-                                            failed_segments=missing_segments,
-                                            output_path=converted,
-                                            temp_dir=temp_retry_dir,
+                                        cm = CacheManager(cache_dir=cache_dir)
+                                        validation_log_path = cm.get_validation_log_path(
+                                            self._current_book_path or Path("unknown.epub"), index
                                         )
 
-                                        if self.verbose:
-                                            print(
-                                                f"✓ Retry results: {retry_report.successful}/{retry_report.total_retried} recovered, "
-                                                f"{retry_report.still_failed} still failed"
+                                        # Create simple validation report
+                                        import json
+                                        from datetime import datetime
+
+                                        validation_data = {
+                                            "chapter_number": index,
+                                            "chapter_title": chapter_label,
+                                            "validated_at": datetime.utcnow().isoformat(),
+                                            "is_valid": validation_result.is_valid,
+                                            "expected_duration": validation_result.expected_duration,
+                                            "actual_duration": validation_result.actual_duration,
+                                            "duration_diff_percent": validation_result.duration_diff_percent,
+                                            "error_message": validation_result.error_message,
+                                            "text_length": len(chapter_payload),
+                                        }
+
+                                        validation_log_path.parent.mkdir(
+                                            parents=True, exist_ok=True
+                                        )
+                                        with open(validation_log_path, "w", encoding="utf-8") as f:
+                                            json.dump(
+                                                validation_data, f, indent=2, ensure_ascii=False
                                             )
 
-                                        # Clean up retry temp dir
-                                        try:
-                                            if temp_retry_dir.exists():
-                                                import shutil
+                                        if self.verbose:
+                                            print(
+                                                f"✓ Chapter {index} validation: "
+                                                f"{validation_result.actual_duration:.1f}s audio "
+                                                f"(expected {validation_result.expected_duration:.1f}s, "
+                                                f"{validation_result.duration_diff_percent:+.1f}% diff)"
+                                            )
 
-                                                shutil.rmtree(temp_retry_dir, ignore_errors=True)
-                                        except Exception:
-                                            pass
+                                    except Exception as e:
+                                        if self.verbose:
+                                            print(
+                                                f"⚠️ Chapter {index} failed to save validation log: {e}"
+                                            )
 
-                                        # If still have failures, warn but don't fail
-                                        if retry_report.still_failed > 0:
-                                            if self.verbose:
-                                                print(
-                                                    f"⚠️ Chapter {index}: {retry_report.still_failed} segments could not be recovered after retries"
-                                                )
-                        except Exception as e:
-                            if self.verbose:
-                                print(f"⚠️ Retry mechanism error: {e}")
-
-                        # Save validation log
-                        if cache_dir:
-                            try:
-                                from .cache_manager import CacheManager
-
-                                cm = CacheManager(cache_dir=cache_dir)
-                                validation_log_path = cm.get_validation_log_path(
-                                    self._current_book_path or Path("unknown.epub"), index
-                                )
-
-                                # Create simple validation report
-                                import json
-                                from datetime import datetime
-
-                                validation_data = {
-                                    "chapter_number": index,
-                                    "chapter_title": chapter_label,
-                                    "validated_at": datetime.utcnow().isoformat(),
-                                    "is_valid": validation_result.is_valid,
-                                    "expected_duration": validation_result.expected_duration,
-                                    "actual_duration": validation_result.actual_duration,
-                                    "duration_diff_percent": validation_result.duration_diff_percent,
-                                    "error_message": validation_result.error_message,
-                                    "text_length": len(chapter_payload),
-                                }
-
-                                validation_log_path.parent.mkdir(parents=True, exist_ok=True)
-                                with open(validation_log_path, "w", encoding="utf-8") as f:
-                                    json.dump(validation_data, f, indent=2, ensure_ascii=False)
-
-                                if self.verbose:
-                                    print(
-                                        f"✓ Chapter {index} validation: "
-                                        f"{validation_result.actual_duration:.1f}s audio "
-                                        f"(expected {validation_result.expected_duration:.1f}s, "
-                                        f"{validation_result.duration_diff_percent:+.1f}% diff)"
-                                    )
-
-                            except Exception as e:
-                                if self.verbose:
-                                    print(f"⚠️ Chapter {index} failed to save validation log: {e}")
-
-                except ImportError:
-                    # audio_validator not available, skip validation
-                    pass
-                except Exception as e:
-                    if self.verbose:
-                        print(f"⚠️ Chapter {index} validation error: {e}")
+                    except ImportError:
+                        # audio_validator not available, skip validation
+                        pass
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"⚠️ Chapter {index} validation error: {e}")
 
                 status_holder["text"] = self.loc.t("status_complete")
                 self._announce_stage(index, chapter_label, status_holder["text"])
