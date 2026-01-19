@@ -3808,12 +3808,12 @@ class AudioConverter:
 
                 if self.verbose:
                     print(
-                        f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Iniciando síntese TTS"
+                        f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Starting TTS synthesis"
                     )
-                    print(f"   📝 Texto: {chapter_chars} caracteres (timeout: {timeout_seconds}s)")
+                    print(f"   📝 Text: {chapter_chars} chars (timeout: {timeout_seconds}s)")
 
                 self.progress.tick(
-                    f"🎤 Sintetizando {chapter_chars} chars (timeout: {timeout_seconds}s)..."
+                    f"🎤 Synthesizing {chapter_chars} chars (timeout: {timeout_seconds}s)..."
                 )
 
                 # Heartbeat para mostrar progresso (otimizado: 3s em vez de 1s)
@@ -3830,7 +3830,7 @@ class AudioConverter:
                         elapsed = int(time.time() - start_synthesis)
                         frame = spinner_frames[frame_idx % len(spinner_frames)]
                         self.progress.tick(
-                            f"{frame} Sintetizando... {elapsed}s/{timeout_seconds}s ({chapter_chars} chars)"
+                            f"{frame} Synthesizing... {elapsed}s/{timeout_seconds}s ({chapter_chars} chars)"
                         )
                         self._mark_health_activity(chapter_num, "heartbeat")
                         frame_idx += 1
