@@ -27,8 +27,8 @@ if [ ! -x "$PYTHON_BIN" ]; then
     "$PYTHON_BIN" -m pip install --disable-pip-version-check -r python_app/requirements.txt
 fi
 
-# Check if special flags (--help, -h, --version)
-if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "--version" ]; then
+# Check if special flags or commands (--help, -h, --version, clear-cache)
+if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "--version" ] || [ "$1" = "clear-cache" ] || [ "$1" = "--clear-cache" ]; then
     "$PYTHON_BIN" -m python_app.main "$@"
     exit 0
 fi
@@ -41,6 +41,7 @@ if [ $# -eq 0 ]; then
     echo "  ./convert book.epub"
     echo "  ./convert \"path/to/book.pdf\""
     echo "  ./convert book.epub --chapter 5"
+    echo "  ./convert clear-cache                    # Clear all cache"
     echo ""
     exit 1
 fi
