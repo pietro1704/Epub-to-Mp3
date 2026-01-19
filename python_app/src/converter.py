@@ -158,6 +158,14 @@ class AudioConverter:
                 output_dir = self._last_output_dir
             if not output_dir:
                 return
+
+            # Add project root to sys.path for validate_conversion import
+            import sys
+
+            project_root = Path(__file__).parent.parent.parent
+            if str(project_root) not in sys.path:
+                sys.path.insert(0, str(project_root))
+
             from validate_conversion import auto_fix, validate_book
 
             cache_dir = getattr(config, "cache_dir", None)

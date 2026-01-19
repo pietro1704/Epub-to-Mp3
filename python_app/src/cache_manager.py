@@ -190,13 +190,8 @@ class CacheManager:
 
     def _cleanup_cache(self, cache_path: Path):
         """Remove cache inválido"""
-        for item in cache_path.rglob("*"):
-            if item.is_file():
-                item.unlink()
-        for item in cache_path.rglob("*"):
-            if item.is_dir():
-                item.rmdir()
-        cache_path.rmdir()
+        if cache_path.exists() and cache_path.is_dir():
+            shutil.rmtree(cache_path, ignore_errors=True)
 
     def clear_cache(
         self, ebook_path: Optional[Path] = None, *, title: Optional[str] = None

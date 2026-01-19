@@ -1929,16 +1929,15 @@ class ConverterApplication:
         print("🧹 Limpando...")
         print()
 
-        # Remover cache
+        # Remover cache (sempre tenta, mesmo que metadata não seja encontrado)
         removed_items = 0
-        if total_books > 0:
-            print(f"🗑️  Removendo cache de {total_books} livro(s)...")
-            success = cache_manager.clear_cache()
-            if success:
-                print("   ✅ Cache de livros removido com sucesso")
-                removed_items += 1
-            else:
-                print("   ⚠️  Erro ao remover cache")
+        print("🗑️  Removendo cache de livros...")
+        success = cache_manager.clear_cache()
+        if success:
+            print("   ✅ Cache de livros removido com sucesso")
+            removed_items += 1
+        else:
+            print("   ⚠️  Nenhum cache encontrado ou erro ao remover")
 
         # Remover output
         if output_dir.exists():
