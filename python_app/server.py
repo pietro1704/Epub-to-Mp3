@@ -5271,8 +5271,8 @@ def _detect_short_audio_output(
         return None
 
     return (
-        "Áudio possivelmente truncado "
-        f"({int(duration_seconds)}s, esperado ≈ {int(estimated_seconds)}s)"
+        "Audio possibly truncated "
+        f"({int(duration_seconds)}s, expected ≈ {int(estimated_seconds)}s)"
     )
 
 

@@ -148,7 +148,7 @@ class TextIntegrityValidator:
                         text_hash=text_hash,
                         cached_text_hash=self.calculate_text_hash(cached_text),
                         is_valid=False,
-                        error_message="Texto do capítulo vazio no EPUB mas presente no cache (texto foi perdido)",
+                        error_message="Chapter text empty in EPUB but present in cache (text was lost)",
                     )
 
             # EPUB has 0 chars and cache also has 0 chars (or no cache) - this is valid
@@ -291,10 +291,10 @@ class TextIntegrityValidator:
                 chapter_labels = ", ".join(
                     f"{idx}:{chapters[idx-1].name}" for idx in group if 0 < idx <= len(chapters)
                 )
-                errors.append(f"Conteúdo duplicado detectado entre capítulos: {chapter_labels}")
+                errors.append(f"Duplicate content detected between chapters: {chapter_labels}")
 
             if show_progress:
-                print("\n⚠️  Conteúdo duplicado detectado entre capítulos!")
+                print("\n⚠️  Duplicate content detected between chapters!")
                 for group in duplicate_groups:
                     labels = ", ".join(
                         f"{idx}:{chapters[idx-1].name}" for idx in group if 0 < idx <= len(chapters)
@@ -381,9 +381,9 @@ class TextIntegrityValidator:
     def print_chapter_summary(self, chapters: List[Chapter]) -> None:
         """Print summary of all chapters with character counts"""
         print("\n" + "=" * 100)
-        print("📚 RESUMO DOS CAPÍTULOS")
+        print("📚 CHAPTERS SUMMARY")
         print("=" * 100)
-        print(f"{'#':<4} {'Título':<60} {'Chars':>8} {'Palavras':>10}")
+        print(f"{'#':<4} {'Title':<60} {'Chars':>8} {'Words':>10}")
         print("-" * 100)
 
         total_chars = 0

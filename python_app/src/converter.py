@@ -1686,8 +1686,8 @@ class AudioConverter:
 
         if skipped:
             print(
-                f"⏭️ Auto-skip: {len(skipped)} capítulo(s) de créditos/curtos sem áudio em cache; "
-                f"use AUTO_SKIP_EXTRA=false para desativar"
+                f"⏭️ Auto-skip: {len(skipped)} credits/short chapter(s) without cached audio; "
+                f"use AUTO_SKIP_EXTRA=false to disable"
             )
             if self.verbose:
                 for idx, name, chars in skipped:
@@ -2265,7 +2265,7 @@ class AudioConverter:
         if expected_count > 0 and len(chapters) != expected_count and duplicates_removed > 0:
             if len(chapters) + duplicates_removed == expected_count:
                 print(
-                    f"\n⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {len(chapters)}"
+                    f"\n⚠️  VALIDATION: TOC indicates {expected_count} chapters, but {len(chapters)} were detected"
                 )
                 print(
                     f"🔄 Auto-correction: restoring {duplicates_removed} chapter(s) removed as duplicate"
@@ -2306,10 +2306,7 @@ class AudioConverter:
             v
             for v in integrity_report.chapters_with_issues
             if v.error_message
-            and (
-                "Texto do capítulo vazio" in v.error_message
-                or "Conteúdo duplicado" in v.error_message
-            )
+            and ("Chapter text empty" in v.error_message or "Duplicate content" in v.error_message)
         ]
         if hard_block_errors:
             print("\n❌ Text validation failed: empty or duplicate chapters detected.")
@@ -2319,18 +2316,18 @@ class AudioConverter:
 
         # If cache corruption detected, offer to clear cache
         if integrity_report.has_cache_corruption or integrity_report.cache_engine_mismatch:
-            print("\n⚠️  CACHE CORROMPIDO DETECTADO!")
+            print("\n⚠️  CORRUPTED CACHE DETECTED!")
             print(
                 f"   {integrity_report.invalid_chapters}/{integrity_report.total_chapters} "
-                "capítulos têm texto diferente do EPUB atual."
+                "chapters have text different from current EPUB."
             )
 
             if integrity_report.cache_engine_mismatch:
-                print("\n💡 Possível causa: cache de conversão anterior com engine diferente")
-                print("   (ex: cache do Kokoro sendo usado para conversão com Edge)")
+                print("\n💡 Possible cause: cache from previous conversion with different engine")
+                print("   (e.g., Kokoro cache being used for Edge conversion)")
 
             # Auto-clear cache if corruption detected
-            print("\n🧹 Limpando cache corrompido automaticamente...")
+            print("\n🧹 Cleaning corrupted cache automatically...")
             try:
                 if self._current_book_path:
                     self.cache_manager.clear_cache(self._current_book_path, title=reader.title)
@@ -2341,7 +2338,7 @@ class AudioConverter:
                 temp_dir = self._setup_temp_directory(config)
                 text_validator = TextIntegrityValidator(cache_dir=temp_dir, verbose=self.verbose)
 
-                print("✅ Cache limpo! Prosseguindo com conversão completa.\n")
+                print("✅ Cache cleaned! Proceeding with full conversion.\n")
             except Exception as exc:
                 print(f"❌ Falha ao limpar cache: {exc}")
                 print("⚠️  Continuando com conversão mas pode haver problemas.\n")
@@ -2612,7 +2609,7 @@ class AudioConverter:
                 chapter_parallel_count = parallel_slots_cap
                 self._reset_parallel_state(chapter_parallel_count)
             print(
-                f"🌐 Edge auto-ajuste: limite {parallel_slots_cap} capítulo(s) em paralelo ({edge_network_tier})"
+                f"🌐 Edge auto-adjustment: limit {parallel_slots_cap} chapter(s) in parallel ({edge_network_tier})"
             )
 
         if chapter_parallel_count > 1:
@@ -2711,7 +2708,7 @@ class AudioConverter:
                 for label in fallback_detected:
                     attempts_used.setdefault(label, 1)
                 pending_failures.update(fallback_detected)
-                print(f"\n⚠️ Capítulos sem áudio válido detectados: {len(fallback_detected)}")
+                print(f"\n⚠️ Chapters without valid audio detected: {len(fallback_detected)}")
                 if self.verbose:
                     print("   → " + ", ".join(sorted(fallback_detected.keys())))
 
@@ -2776,7 +2773,7 @@ class AudioConverter:
 
             for chapter_obj, _original_idx, canonical_label in chapters_to_retry_info:
                 failure_message = pending_failures.get(canonical_label, "")
-                if "Áudio possivelmente truncado" in (failure_message or ""):
+                if "Audio possibly truncated" in (failure_message or ""):
                     attempts_so_far = attempts_used.get(canonical_label, 1)
                     self._prepare_truncation_retry_payload(
                         chapter_obj, canonical_label, attempts_so_far
@@ -2787,14 +2784,14 @@ class AudioConverter:
 
             if hasattr(self, "progress"):
                 self.progress.tick(
-                    f"🔁 Retry automático ({retry_round}/{max_retry_rounds}) para {len(chapters_to_retry)} capítulo(s)"
+                    f"🔁 Automatic retry ({retry_round}/{max_retry_rounds}) for {len(chapters_to_retry)} chapter(s)"
                 )
             print(
-                f"\n🔁 Reprocessando {len(chapters_to_retry)} capítulo(s) com falha (tentativa {retry_round}/{max_retry_rounds})"
+                f"\n🔁 Retrying {len(chapters_to_retry)} failed chapter(s) (attempt {retry_round}/{max_retry_rounds})"
             )
             retry_config = replace(config, force_reprocess=True)
             has_truncation = any(
-                "Áudio possivelmente truncado" in (pending_failures.get(label) or "")
+                "Audio possibly truncated" in (pending_failures.get(label) or "")
                 for label in pending_failures
             )
             if rescue_profile:
@@ -2871,7 +2868,7 @@ class AudioConverter:
                     pending_failures[canonical_label] = normalised_retry[canonical_label]
                 else:
                     if canonical_label in pending_failures:
-                        print(f"✅ Capítulo recuperado: {canonical_label}")
+                        print(f"✅ Chapter recovered: {canonical_label}")
                     pending_failures.pop(canonical_label, None)
 
             retry_round += 1
@@ -2897,7 +2894,7 @@ class AudioConverter:
                 chapters_to_retry = [item[0] for item in chapters_to_retry_info]
                 if chapters_to_retry:
                     print(
-                        f"\n🛟 Resgate final: reprocessando {len(chapters_to_retry)} capítulo(s) com {rescue_engine.upper()}"
+                        f"\n🛟 Final rescue: reprocessing {len(chapters_to_retry)} chapter(s) with {rescue_engine.upper()}"
                     )
                     rescue_config = replace(
                         config,
@@ -4044,7 +4041,7 @@ class AudioConverter:
                 except asyncio.TimeoutError:
                     elapsed = int(time.time() - start_synthesis)
                     if self.verbose:
-                        print(f"   ⚠️ TIMEOUT: Capítulo travado após {elapsed}s")
+                        print(f"   ⚠️ TIMEOUT: Chapter stuck after {elapsed}s")
                     self.progress.tick(
                         f"⚠️ TIMEOUT após {elapsed}s - tentando fallback sem idioma..."
                     )
