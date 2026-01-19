@@ -454,7 +454,7 @@ class AudioConverter:
             validator = AudioValidator()
             file_is_valid = validator.validate_audio_file(output_path)
             if not file_is_valid:
-                return False, "Áudio inválido ou corrompido"
+                return False, "Invalid or corrupted audio"
 
             normalized_len = len(re.sub(r"\s+", " ", text_payload or "").strip())
             if normalized_len >= 5000:
@@ -895,7 +895,7 @@ class AudioConverter:
         if short_seconds <= 0:
             short_seconds = max(int((file_size or 1) / 1000), 1)
 
-        return f"Áudio possivelmente truncado ({file_size} bytes ≈ {short_seconds}s, esperado ≈ {expected_display}s)"
+        return f"Audio possibly truncated ({file_size} bytes ≈ {short_seconds}s, expected ≈ {expected_display}s)"
 
     def _load_cached_payload(
         self,
@@ -1115,10 +1115,10 @@ class AudioConverter:
                         shutil.copy2(str(final_mp3_path), str(mp3_path))
                         copied_count += 1
                         if self.verbose:
-                            print(f"   ♻️ Reaproveitando capítulo {chapter_num}: {mp3_path.name}")
+                            print(f"   ♻️ Reusing chapter {chapter_num}: {mp3_path.name}")
                 except OSError as e:
                     if self.verbose:
-                        print(f"   ⚠️ Erro ao copiar capítulo {chapter_num}: {e}")
+                        print(f"   ⚠️ Error copying chapter {chapter_num}: {e}")
 
             # If MP3 exists but pre-tts.txt doesn't → invalidate audio to force fresh synthesis
             if mp3_path.exists() and not pre_tts_file.exists():
@@ -1131,11 +1131,11 @@ class AudioConverter:
                 deleted_count += 1
 
         if copied_count > 0:
-            print(f"♻️ {copied_count} capítulo(s) reaproveitado(s) de conversão anterior")
+            print(f"♻️ {copied_count} chapter(s) reused from previous conversion")
         if regenerated_txt > 0:
-            print(f"♻️ {regenerated_txt} arquivo(s) pre-tts regenerado(s) para reaproveitar cache")
+            print(f"♻️ {regenerated_txt} pre-tts file(s) regenerated to reuse cache")
         if deleted_count > 0:
-            print(f"🗑️ {deleted_count} arquivo(s) MP3 removido(s) (cache inválido)")
+            print(f"🗑️ {deleted_count} MP3 file(s) removed (invalid cache)")
 
     def _generate_all_text_files(
         self,
@@ -2033,7 +2033,7 @@ class AudioConverter:
             if self.progress.seconds_since_activity() >= stall_seconds:
                 stall_event.set()
                 print(
-                    f"\n🛟 Watchdog: capítulo {chapter_index} sem progresso por {int(stall_seconds)}s"
+                    f"\n🛟 Watchdog: chapter {chapter_index} no progress for {int(stall_seconds)}s"
                 )
                 self.progress.tick(
                     f"🛟 Sem progresso há {int(stall_seconds)}s - reiniciando capítulo..."
@@ -2063,7 +2063,7 @@ class AudioConverter:
                 info = f"{int(stalled)}s sem concluir capítulos"
                 if last_chapter:
                     info += f" (último capítulo #{last_chapter})"
-                print(f"\n🩺 Watchdog: {info} – investigando gargalo")
+                print(f"\n🩺 Watchdog: {info} – investigating bottleneck")
                 if not self._apply_watchdog_backpressure():
                     print(
                         "   Sugestão: verifique conexão ou permitir fallback offline (Coqui/Piper)."
@@ -2071,7 +2071,7 @@ class AudioConverter:
             elif stalled >= warning_threshold and not state.get("warn_emitted"):
                 state["warn_emitted"] = True
                 print(
-                    f"\n⚠️ Watchdog: Nenhum capítulo finalizado há {int(stalled)}s – aguardando progresso..."
+                    f"\n⚠️ Watchdog: No chapters completed for {int(stalled)}s – awaiting progress..."
                 )
 
     def _apply_watchdog_backpressure(self) -> bool:
@@ -2084,7 +2084,7 @@ class AudioConverter:
             state["current"] = new_value
             state["ceiling"] = max(1, min(new_value, ceiling))
             self._parallel_state = state
-            print(f"   🧠 Watchdog: reduzindo capítulos simultâneos {current} → {new_value}")
+            print(f"   🧠 Watchdog: reducing concurrent chapters {current} → {new_value}")
             return True
         return False
 
@@ -2268,9 +2268,9 @@ class AudioConverter:
                     f"\n⚠️  VALIDAÇÃO: TOC indica {expected_count} capítulos, mas foram detectados {len(chapters)}"
                 )
                 print(
-                    f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata"
+                    f"🔄 Auto-correction: restoring {duplicates_removed} chapter(s) removed as duplicate"
                 )
-                print("💡 Motivo: deduplicação causou perda de capítulos válidos\n")
+                print("💡 Reason: deduplication caused loss of valid chapters\n")
                 chapters = original_chapters
 
         # ===== TEXT INTEGRITY VALIDATION =====
@@ -2312,10 +2312,10 @@ class AudioConverter:
             )
         ]
         if hard_block_errors:
-            print("\n❌ Falha na validação de texto: capítulos vazios ou duplicados detectados.")
+            print("\n❌ Text validation failed: empty or duplicate chapters detected.")
             for v in hard_block_errors:
-                print(f"   - Capítulo {v.chapter_index}: {v.chapter_title} → {v.error_message}")
-            raise RuntimeError("Validação de texto falhou: capítulos vazios/duplicados")
+                print(f"   - Chapter {v.chapter_index}: {v.chapter_title} → {v.error_message}")
+            raise RuntimeError("Text validation failed: empty/duplicate chapters")
 
         # If cache corruption detected, offer to clear cache
         if integrity_report.has_cache_corruption or integrity_report.cache_engine_mismatch:
@@ -2617,10 +2617,10 @@ class AudioConverter:
 
         if chapter_parallel_count > 1:
             print(
-                f"🚀 Modo paralelo automático: até {chapter_parallel_count} capítulos simultâneos"
+                f"🚀 Parallel mode (automatic): up to {chapter_parallel_count} concurrent chapters"
             )
         else:
-            print("🔄 Modo sequencial automático: processando capítulos um por vez")
+            print("🔄 Sequential mode (automatic): processing chapters one at a time")
 
         edge_cap = 0
         try:
@@ -2715,7 +2715,7 @@ class AudioConverter:
 
         if pending_failures:
             failed_labels = ", ".join(sorted(pending_failures.keys()))
-            print(f"\n⚠️ Capítulos com falha detectados: {len(pending_failures)}")
+            print(f"\n⚠️ Failed chapters detected: {len(pending_failures)}")
             if self.verbose:
                 print(f"   → {failed_labels}")
 
@@ -2744,7 +2744,7 @@ class AudioConverter:
 
             for missing in missing_names:
                 message = pending_failures.pop(missing, "")
-                unresolved_pool[missing] = message or "Motivo desconhecido"
+                unresolved_pool[missing] = message or "Unknown reason"
                 attempts_used.pop(missing, None)
                 print(f"⚠️ Could not locate chapter for retry: {missing}")
 
@@ -2861,7 +2861,7 @@ class AudioConverter:
             )
             for unresolved, message in unresolved_retry.items():
                 print(f"⚠️ Falha retornada sem correspondência: {unresolved}")
-                unresolved_pool[unresolved] = message or "Motivo desconhecido"
+                unresolved_pool[unresolved] = message or "Unknown reason"
 
             for chapter_obj, original_idx, canonical_label in chapters_to_retry_info:
                 attempts_used[canonical_label] = attempts_used.get(canonical_label, 1) + 1
@@ -2922,7 +2922,7 @@ class AudioConverter:
                         retry_error_map, chapter_lookup
                     )
                     for unresolved, message in unresolved_retry.items():
-                        unresolved_pool[unresolved] = message or "Motivo desconhecido"
+                        unresolved_pool[unresolved] = message or "Unknown reason"
                     pending_failures = normalised_retry
 
         if pending_failures and manual_retry_requested:
@@ -2938,7 +2938,7 @@ class AudioConverter:
             chapters_to_retry = [item[0] for item in chapters_to_retry_info]
             if chapters_to_retry:
                 print(
-                    f"\n🔁 Retry manual solicitado: reprocessando {len(chapters_to_retry)} capítulo(s)"
+                    f"\n🔁 Manual retry requested: reprocessing {len(chapters_to_retry)} chapter(s)"
                 )
                 manual_config = replace(config, force_reprocess=True)
                 manual_config.extra = dict(manual_config.extra or {})
@@ -2960,17 +2960,17 @@ class AudioConverter:
                     retry_error_map, chapter_lookup
                 )
                 for unresolved, message in unresolved_retry.items():
-                    unresolved_pool[unresolved] = message or "Motivo desconhecido"
+                    unresolved_pool[unresolved] = message or "Unknown reason"
                 pending_failures = normalised_retry
             else:
-                print("ℹ️ Retry manual solicitado, mas nenhum capítulo restante para reprocessar.")
+                print("ℹ️ Manual retry requested, but no remaining chapters to reprocess.")
 
         if pending_failures:
-            print(f"\n⚠️ Alguns capítulos ainda falharam após {max_retry_rounds} tentativa(s).")
+            print(f"\n⚠️ Some chapters still failed after {max_retry_rounds} attempt(s).")
             if hasattr(self, "progress"):
-                self.progress.tick("❌ Conversão incompleta - capítulos pendentes após retries")
+                self.progress.tick("❌ Incomplete conversion - pending chapters after retries")
         elif attempts_used and any(attempts > 1 for attempts in attempts_used.values()):
-            print("\n✅ Todos os capítulos foram convertidos após tentativas adicionais.")
+            print("\n✅ All chapters were successfully converted after additional attempts.")
 
         unique_outputs: List[Path] = []
         seen_outputs = set()
@@ -3021,12 +3021,12 @@ class AudioConverter:
             if moved_files:
                 result.output_files = moved_files
                 if result.success:
-                    print(f"📁 {len(moved_files)} arquivos movidos para: {output_dir}")
+                    print(f"📁 {len(moved_files)} files moved to: {output_dir}")
                 else:
-                    print(f"📁 {len(moved_files)} capítulos convertidos movidos para: {output_dir}")
-                    print("   💡 Execute novamente para converter os capítulos restantes")
+                    print(f"📁 {len(moved_files)} converted chapters moved to: {output_dir}")
+                    print("   💡 Run again to convert remaining chapters")
             elif self.verbose:
-                print("[DEBUG] Nenhum MP3 para mover (provavelmente reuso total de cache)")
+                print("[DEBUG] No MP3 files to move (likely full cache reuse)")
 
             normalized_outputs = self._normalize_output_numbers(chapters, output_dir, config)
             if normalized_outputs:
@@ -3141,7 +3141,7 @@ class AudioConverter:
             1, min(recommended, int(self._parallel_state.get("current") or recommended))
         )
         print(
-            f"🚀 Modo paralelo: processando {total_chapters} capítulos (atual {self._parallel_state['current']} simultâneos)"
+            f"🚀 Parallel mode: processing {total_chapters} chapters (current {self._parallel_state['current']} concurrent)"
         )
 
         # Validate and clean cache (once for all chapters)
@@ -3384,7 +3384,7 @@ class AudioConverter:
         # Auto-skip credits/very short chapters if not cached
         chapters_list = self._filter_chapters_auto(chapters_list, output_dir, config)
 
-        print(f"🔄 Modo sequencial: processando {len(chapters_list)} capítulos")
+        print(f"🔄 Sequential mode: processing {len(chapters_list)} chapters")
 
         # **NEW**: Check for cache invalidation BEFORE generating text files
         # If MP3 exists but pre-tts.txt doesn't, delete MP3 (cache invalidated)
@@ -3649,7 +3649,7 @@ class AudioConverter:
                 speech_text = speech_text or ""
                 preview = self._chapter_preview(speech_text)
                 if preview:
-                    print(f"   📝 Trecho inicial: {preview}")
+                    print(f"   📝 Initial excerpt: {preview}")
                 current_payload = speech_text
                 estimated_seconds = TextValidator.estimate_duration(speech_text)
                 if estimated_seconds <= 0:
@@ -4685,8 +4685,8 @@ class AudioConverter:
                 )
                 if switch_recommendation:
                     new_engine, reason = switch_recommendation
-                    print(f"🔄 AUTO: Trocando {current} → {new_engine}")
-                    print(f"   Motivo: {reason}")
+                    print(f"🔄 AUTO: Switching {current} → {new_engine}")
+                    print(f"   Reason: {reason}")
                     selected = new_engine
                     self.speed_controller.record_engine_switch(new_engine)
 
