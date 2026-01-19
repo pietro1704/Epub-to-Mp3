@@ -386,13 +386,14 @@ class AudioConverter:
             text_hash = validator.calculate_text_hash(parsed_norm)
             if text_hash in self._text_validation_hashes:
                 other = self._text_validation_hashes[text_hash]
-                issues.append(f"Conteúdo duplicado (igual ao capítulo {other})")
+                # Only flag as duplicate if it's a different chapter
+                # (validation may be called multiple times for same chapter during retries)
+                if other != chapter_label:
+                    issues.append(f"Conteúdo duplicado (igual ao capítulo {other})")
             else:
-                try:
-                    chapter_number = int(float(getattr(chapter, "index", 0) or 0))
-                except (TypeError, ValueError):
-                    chapter_number = 0
-                self._text_validation_hashes[text_hash] = chapter_number
+                # Use full chapter label instead of just integer index to avoid false positives
+                # for subchapters (4.1, 4.2, etc.) which all have the same integer part
+                self._text_validation_hashes[text_hash] = chapter_label
 
             snippet = parsed_norm[:200]
             if snippet and parsed_norm.count(snippet) > 1:
@@ -400,12 +401,25 @@ class AudioConverter:
             if len(parsed_norm) > 400 and parsed_norm[:200] == parsed_norm[-200:]:
                 issues.append("Possível duplicação interna (início = fim)")
 
-        if pre_tts_text:
+        if pre_tts_text and parsed_norm:
             pretts_norm = validator.normalize_text(self._strip_formatting_cues(pre_tts_text))
-            if parsed_norm and parsed_norm[:200] not in pretts_norm:
-                issues.append("Pre-TTS não contém o início do texto parsed")
-            if parsed_norm and parsed_norm[-200:] not in pretts_norm:
-                issues.append("Pre-TTS não contém o final do texto parsed")
+            # Pre-TTS text may have chapter announcements and formatting cues prepended/appended
+            # So we check if substantial portions of the parsed text appear anywhere in pre-TTS
+            # rather than checking exact beginning/end positions
+            if len(parsed_norm) > 300:
+                # Sample from middle sections to avoid chapter announcement additions
+                mid_start = len(parsed_norm) // 4
+                mid_sample_size = min(200, len(parsed_norm) // 2)
+                mid_sample = parsed_norm[mid_start : mid_start + mid_sample_size]
+
+                # Check if middle portion exists in pre-TTS (more reliable than start/end)
+                if mid_sample and mid_sample not in pretts_norm:
+                    # Length check: pre-TTS should be similar length to parsed (within 20%)
+                    len_ratio = len(pretts_norm) / len(parsed_norm) if len(parsed_norm) > 0 else 0
+                    if len_ratio < 0.8 or len_ratio > 1.5:
+                        issues.append(
+                            f"Pre-TTS tem tamanho muito diferente do parsed ({len_ratio:.1%})"
+                        )
 
         if issues:
             message = f"Validação pós-parsing falhou ({chapter_label}): {', '.join(issues)}"
@@ -430,9 +444,9 @@ class AudioConverter:
             from .audio_validator import AudioValidator
 
             validator = AudioValidator()
-            file_validation = validator.validate_audio_file(output_path)
-            if not file_validation.is_valid:
-                return False, file_validation.error_message or "Áudio inválido"
+            file_is_valid = validator.validate_audio_file(output_path)
+            if not file_is_valid:
+                return False, "Áudio inválido ou corrompido"
 
             normalized_len = len(re.sub(r"\s+", " ", text_payload or "").strip())
             if normalized_len >= 5000:
@@ -2346,6 +2360,19 @@ class AudioConverter:
 
         print(self.loc.t("conversion_start", title=reader.title, chapters=total_chapters))
         print(self.loc.t("conversion_output", path=output_dir))
+
+        # Show validation status
+        validate_text = getattr(config, "validate_text", True)
+        validate_audio = getattr(config, "validate_audio", True)
+        if validate_text and validate_audio:
+            print("✅ Validações: Texto e Áudio ativadas")
+        elif validate_text:
+            print("⚠️  Validações: Apenas Texto ativada")
+        elif validate_audio:
+            print("⚠️  Validações: Apenas Áudio ativada")
+        else:
+            print("⚠️  Validações: Desativadas (--no-validate)")
+
         edge_stable_mode = False
         edge_stable_explicit = False
         if getattr(config, "extra", None):

@@ -3357,31 +3357,34 @@ def _add_conversion_arguments(
         help="Validate parsed text and MP3 output during conversion",
     )
     parser.add_argument(
+        "--no-validate",
+        action="store_true",
+        help="Disable all validation (text and audio) during conversion",
+    )
+    parser.add_argument(
         "--validate-text",
         dest="validate_text",
         action="store_true",
-        default=None,
-        help="Validate parsed/pre-tts text during conversion",
+        default=True,
+        help="Validate parsed/pre-tts text during conversion (enabled by default)",
     )
     parser.add_argument(
         "--no-validate-text",
         dest="validate_text",
         action="store_false",
-        default=None,
         help="Disable text validation during conversion",
     )
     parser.add_argument(
         "--validate-audio",
         dest="validate_audio",
         action="store_true",
-        default=None,
-        help="Validate MP3 integrity and duration during conversion",
+        default=True,
+        help="Validate MP3 integrity and duration during conversion (enabled by default)",
     )
     parser.add_argument(
         "--no-validate-audio",
         dest="validate_audio",
         action="store_false",
-        default=None,
         help="Disable MP3 validation during conversion",
     )
     parser.add_argument(
@@ -3763,6 +3766,12 @@ def main() -> int:
         return 0
 
     args = parser.parse_args(argv)
+
+    # Handle --no-validate flag to disable all validations
+    if getattr(args, "no_validate", False):
+        args.validate_text = False
+        args.validate_audio = False
+
     if not hasattr(args, "chapters"):
         args.chapters = []
     if not hasattr(args, "sections"):
