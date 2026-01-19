@@ -844,7 +844,7 @@ class EdgeTTSEngine:
                     existing_chunk = pre_existing_chunks.get(idx)
                     if existing_chunk and existing_chunk.exists():
                         if self.verbose:
-                            self._log(f"♻️ [RESUME] Segmento {idx + 1} já existe, anexando")
+                            self._log(f"♻️ [RESUME] Segment {idx + 1} already exists, appending")
                         if not _append_chunk_file(existing_chunk, total_segments == 0):
                             return None
                         if chunk_callback:
@@ -866,9 +866,9 @@ class EdgeTTSEngine:
                         segment_text[:200] + "..." if len(segment_text) > 200 else segment_text
                     )
                     self._log(
-                        f"\n🎙️ Segmento {idx + 1}/{len(segments_to_process)} ({len(segment_text)} chars, voz: {voice})"
+                        f"\n🎙️ Segment {idx + 1}/{len(segments_to_process)} ({len(segment_text)} chars, voice: {voice})"
                     )
-                    self._log(f"   Texto: {text_preview}")
+                    self._log(f"   Text: {text_preview}")
 
                 # **CRITICAL FIX**: Try to process segment with retries
                 segment_output_path = output_path
@@ -1147,7 +1147,7 @@ class EdgeTTSEngine:
                 if segment_files.get(i) is not None:
                     completed_count += 1
                     if self.verbose:
-                        self._log(f"♻️ [RESUME] Segmento {i + 1} já existe, pulando")
+                        self._log(f"♻️ [RESUME] Segment {i + 1} already exists, skipping")
                     # **INTEGRITY TRACKING**: Mark resumed segment as success
                     if self._synthesis_tracker:
                         try:
@@ -1267,7 +1267,7 @@ class EdgeTTSEngine:
                         if self.verbose:
                             file_size = temp_file.stat().st_size if temp_file.exists() else 0
                             self._log(
-                                f"✅ [PARALLEL] Segmento {segment_num} OK ({file_size} bytes, {completed_count}/{total_segments})"
+                                f"✅ [PARALLEL] Segment {segment_num} OK ({file_size} bytes, {completed_count}/{total_segments})"
                             )
                     else:
                         # **INTEGRITY TRACKING**: Record failed segment
@@ -1284,7 +1284,7 @@ class EdgeTTSEngine:
                                 pass  # Non-critical
 
                         if self.verbose:
-                            self._log(f"⚠️ [PARALLEL] Segmento {segment_num} falhou (sem áudio)")
+                            self._log(f"⚠️ [PARALLEL] Segment {segment_num} failed (no audio)")
                         with suppress(OSError):
                             temp_file.unlink()
 
@@ -1302,7 +1302,7 @@ class EdgeTTSEngine:
 
                     if self.verbose:
                         error_msg = str(exc)[:100]
-                        self._log(f"⚠️ [PARALLEL] Segmento {segment_num} falhou: {error_msg}")
+                        self._log(f"⚠️ [PARALLEL] Segment {segment_num} failed: {error_msg}")
                     with suppress(OSError):
                         temp_file.unlink()
 
@@ -1372,7 +1372,7 @@ class EdgeTTSEngine:
                                 if self.verbose:
                                     self._log(f"⚠️ Chunk callback error (retry): {e}")
                         if self.verbose:
-                            self._log(f"✅ [PARALLEL] Segmento {fail_idx + 1} recuperado no retry")
+                            self._log(f"✅ [PARALLEL] Segment {fail_idx + 1} recovered in retry")
                     else:
                         # **INTEGRITY TRACKING**: Keep failed status (already recorded earlier)
                         with suppress(OSError):
@@ -2053,7 +2053,7 @@ class EdgeTTSEngine:
                                 while True:
                                     await asyncio.sleep(10)
                                     elapsed = asyncio.get_event_loop().time() - synthesis_start
-                                    status = "recebendo" if received_audio else "aguardando"
+                                    status = "receiving" if received_audio else "waiting"
                                     self._log(f"   ... {status} ({elapsed:.0f}s)")
 
                             heartbeat_task = asyncio.create_task(_segment_heartbeat())

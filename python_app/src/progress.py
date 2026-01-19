@@ -140,8 +140,8 @@ class ProgressTracker:
             char_percent = (self.processed_chars / self.total_chars) * 100
             chapter_progress = f" [{char_percent:.1f}% of ch]"
 
-        # Atualizar status
-        status = f'🔊 Processando: "{self.current_sentence}"{chapter_progress}'
+        # Update status
+        status = f'🔊 Processing: "{self.current_sentence}"{chapter_progress}'
         self._render(status)
 
     def set_total_chunks(self, total: int) -> None:
