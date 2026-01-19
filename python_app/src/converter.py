@@ -2366,8 +2366,8 @@ class AudioConverter:
         if chapters:
             self._normalize_output_numbers(chapters, output_dir, config, temp_dir=temp_dir)
 
-        print(self.loc.t("conversion_start", title=reader.title, chapters=total_chapters))
-        print(self.loc.t("conversion_output", path=output_dir))
+        print(f"\n🚀 Starting conversion: {reader.title} ({total_chapters} chapters)")
+        print(f"💾 Output: {output_dir}")
 
         # Show validation status
         validate_text = getattr(config, "validate_text", True)
@@ -2463,7 +2463,7 @@ class AudioConverter:
         pending_total = len(pending_chapters)
         self._start_health_watchdog(pending_total)
         self._assign_progress_indices(pending_chapters)
-        self.progress.start(pending_total, description=self.loc.t("progress_description"))
+        self.progress.start(pending_total, description="Converting chapters")
 
         if pending_total == 0:
             moved_files = self.file_manager.move_files_to_final_output(temp_dir, output_dir)
@@ -2518,9 +2518,9 @@ class AudioConverter:
         else:
             primary_engine = engine_seeds.get((config.engine or "").lower())
             voice_label = getattr(primary_engine, "voice", None) or config.voice or "(auto)"
-        print(self.loc.t("conversion_engine_voice", engine=config.engine, voice=voice_label))
+        print(f"🎙️ Engine: {config.engine} | Voice: {voice_label}")
         if getattr(config, "languages", None):
-            print(self.loc.t("conversion_languages", languages=", ".join(config.languages)))
+            print(f"🌐 Languages: {', '.join(config.languages)}")
 
         if self.verbose:
             if engine_seeds:
@@ -5456,17 +5456,11 @@ class AudioConverter:
             progress.complete_chapter(status_holder["text"])
 
     def _report_results(self, result: ConversionResult) -> None:
-        print(self.loc.t("conversion_results_title"))
-        print(
-            self.loc.t(
-                "conversion_results_success",
-                converted=result.converted_chapters,
-                total=result.total_chapters,
-            )
-        )
-        print(self.loc.t("conversion_results_files", files=len(result.output_files)))
+        print("\n📊 Conversion Results:")
+        print(f"  ✅ Converted: {result.converted_chapters}/{result.total_chapters}")
+        print(f"  📁 Files: {len(result.output_files)}")
         if result.errors:
-            print(self.loc.t("conversion_results_errors", errors=len(result.errors)))
+            print(f"  ❌ Errors: {len(result.errors)}")
             for error in result.errors[:3]:
                 print(f"    • {error}")
         if not result.success:

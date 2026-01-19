@@ -229,9 +229,9 @@ class TextIntegrityValidator:
         """Validate all chapters and detect cache corruption"""
         if show_progress:
             print("\n" + "=" * 70)
-            print("🔍 VALIDAÇÃO DE INTEGRIDADE DE TEXTO")
+            print("🔍 TEXT INTEGRITY VALIDATION")
             print("=" * 70)
-            print("Verificando se o cache corresponde ao EPUB atual...\n")
+            print("Checking if cache matches current EPUB...\n")
 
         validations: List[ChapterTextValidation] = []
         has_cache_corruption = False
@@ -317,11 +317,11 @@ class TextIntegrityValidator:
 
         if show_progress:
             print("\n" + "=" * 70)
-            print("📊 RESUMO DA VALIDAÇÃO")
+            print("📊 VALIDATION SUMMARY")
             print("=" * 70)
-            print(f"Total de capítulos: {len(chapters)}")
-            print(f"✅ Capítulos válidos: {valid_chapters}")
-            print(f"❌ Capítulos com problemas: {invalid_chapters}")
+            print(f"Total chapters: {len(chapters)}")
+            print(f"✅ Valid chapters: {valid_chapters}")
+            print(f"❌ Chapters with issues: {invalid_chapters}")
 
             if has_cache_corruption:
                 print("\n⚠️  ATENÇÃO: Cache corrompido detectado!")
@@ -365,7 +365,7 @@ class TextIntegrityValidator:
     ) -> Dict[int, Path]:
         """Save parsed text for all chapters to cache"""
         if show_progress:
-            print("\n💾 Salvando textos parsed no cache...")
+            print("\n💾 Saving parsed texts to cache...")
 
         saved_files: Dict[int, Path] = {}
 
@@ -374,7 +374,7 @@ class TextIntegrityValidator:
             saved_files[idx] = parsed_path
 
         if show_progress:
-            print(f"   ✅ {len(saved_files)} arquivos de texto salvos\n")
+            print(f"   ✅ {len(saved_files)} text file(s) saved\n")
 
         return saved_files
 
