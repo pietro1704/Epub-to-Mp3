@@ -15,7 +15,7 @@ from .utils import TimeFormatter
 class ProgressTracker:
     """Tracks conversion progress and prints a live ETA/percentage bar."""
 
-    def __init__(self, total_chapters: int = 0, description: str = "Convertendo capítulos"):
+    def __init__(self, total_chapters: int = 0, description: str = "Converting chapters"):
         self.description = description
         self.total_chapters = max(int(total_chapters), 0)
         self.completed_chapters = 0
@@ -76,7 +76,7 @@ class ProgressTracker:
         self._last_progress_pct = -1.0
         self._last_activity_time = time.time()
         if self.total_chapters == 0:
-            self._render("Nenhum capítulo disponível", force=True)
+            self._render("No chapters available", force=True)
 
     def start_chapter(self, chapter_name: str, index: int) -> None:
         """Announce a new chapter conversion."""
@@ -134,11 +134,11 @@ class ProgressTracker:
         # Truncar frase para exibição
         self.current_sentence = text[:60] + "..." if len(text) > 60 else text
 
-        # Calcular progresso do capítulo atual
+        # Calculate current chapter progress
         chapter_progress = ""
         if self.total_chars > 0:
             char_percent = (self.processed_chars / self.total_chars) * 100
-            chapter_progress = f" [{char_percent:.1f}% do cap]"
+            chapter_progress = f" [{char_percent:.1f}% of ch]"
 
         # Atualizar status
         status = f'🔊 Processando: "{self.current_sentence}"{chapter_progress}'
@@ -166,8 +166,8 @@ class ProgressTracker:
                 self.processed_chars, int(self.total_chars * estimated_fraction)
             )
 
-        # Render imediatamente para refletir conclusão do chunk
-        status = f"🎧 Chunk {self.processed_chunks}/{self.total_chunks} pronto"
+        # Render immediately to reflect chunk completion
+        status = f"🎧 Chunk {self.processed_chunks}/{self.total_chunks} ready"
         self._render(status, force=True)
 
     def tick(self, status: str = "") -> None:
@@ -183,9 +183,9 @@ class ProgressTracker:
         # Ensure bar shows as completed
         if self.total_chapters and self.completed_chapters < self.total_chapters:
             self.completed_chapters = self.total_chapters
-            self._render("Finalizando")
+            self._render("Finishing")
         formatted_time = TimeFormatter.format_time(elapsed)
-        print(f"\n✅ Conversão concluída em {formatted_time}")
+        print(f"\n✅ Conversion completed in {formatted_time}")
 
     def mark_phase_start(self) -> None:
         """Reset the timer for the active phase (after waiting slots)."""
@@ -223,17 +223,17 @@ class ProgressTracker:
         message = (
             f"{self.description}: [{bar}] {progress_pct:.2f}% "
             f"({self.completed_chapters}/{total_display}) "
-            f"tempo restante: {eta_str}"
+            f"time remaining: {eta_str}"
         )
         if display_status:
             chapter_elapsed = TimeFormatter.format_time(now - self._chapter_start_time)
             phase_elapsed = TimeFormatter.format_time(now - self._phase_start_time)
             if status.startswith("⌛"):
                 wait_elapsed = TimeFormatter.format_time(now - self._chapter_start_time)
-                message += f" | {display_status} (espera: {wait_elapsed})"
+                message += f" | {display_status} (wait: {wait_elapsed})"
             else:
                 message += (
-                    f" | {display_status} (fase: {phase_elapsed} | capítulo: {chapter_elapsed})"
+                    f" | {display_status} (phase: {phase_elapsed} | chapter: {chapter_elapsed})"
                 )
         self._last_status = status
         self._last_activity_time = now

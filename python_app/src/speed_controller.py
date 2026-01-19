@@ -71,7 +71,7 @@ class AdaptiveSpeedController:
             message = None
             if verbose and timeout_scale not in (None, 1.0):
                 pct = int((timeout_scale - 1.0) * 100)
-                message = f"⚡ {engine.upper()} capítulo {chapter_index}: timeout ajustado em {pct:+d}% ({chapter_chars} chars)"
+                message = f"⚡ {engine.upper()} chapter {chapter_index}: timeout adjusted by {pct:+d}% ({chapter_chars} chars)"
             return ChapterSpeedDecision(timeout_scale=timeout_scale, message=message)
 
         adjustments, note = self._prepare_edge_profile(
@@ -93,7 +93,7 @@ class AdaptiveSpeedController:
         message = note
         if verbose and not message and adjustments:
             message = (
-                f"⚡ EDGE capítulo {chapter_index}: "
+                f"⚡ EDGE chapter {chapter_index}: "
                 f"chunk={adjustments.get('chunk_char_limit')} "
                 f"seg={adjustments.get('max_segment_seconds')} "
                 f"wpm={adjustments.get('words_per_minute')}"
@@ -142,18 +142,18 @@ class AdaptiveSpeedController:
         prefix = "♻️" if from_cache else ("✅" if success else "❌")
         throughput = int(perf.chars / elapsed) if perf.chars else 0
         base = (
-            f"{prefix} [{engine.upper()}] Capítulo {perf.index} "
-            f"→ {int(elapsed)}s para {perf.chars} chars"
+            f"{prefix} [{engine.upper()}] Chapter {perf.index} "
+            f"→ {int(elapsed)}s for {perf.chars} chars"
         )
         if throughput:
             base += f" (~{throughput} chars/s)"
 
         if perf.error and not success:
-            base += f" | erro: {perf.error}"
+            base += f" | error: {perf.error}"
 
         profile_desc = self._describe_profile(engine, tts_engine)
         if profile_desc:
-            base += f" | perfil: {profile_desc}"
+            base += f" | profile: {profile_desc}"
 
         if from_cache:
             return base + " (cache)"
@@ -161,7 +161,7 @@ class AdaptiveSpeedController:
         recent = self._history[engine]
         if len(recent) >= 2:
             avg = sum(item.elapsed for item in recent) / len(recent)
-            base += f" | média {avg:.1f}s (últimos {len(recent)})"
+            base += f" | avg {avg:.1f}s (last {len(recent)})"
 
         return base
 
@@ -264,9 +264,9 @@ class AdaptiveSpeedController:
         message = None
         if changed:
             message = (
-                f"⚡ EDGE capítulo {chapter_index}: "
+                f"⚡ EDGE chapter {chapter_index}: "
                 f"{chapter_chars} chars → chunk {chunk_limit}, "
-                f"segmento {int(max_seconds)}s, {words_per_minute} wpm"
+                f"segment {int(max_seconds)}s, {words_per_minute} wpm"
             )
 
         return (adjustments if changed else {}, message)
@@ -321,12 +321,12 @@ class AdaptiveSpeedController:
 
         if not history:
             # No data - give neutral score
-            return (50.0, "sem histórico")
+            return (50.0, "no history")
 
         # Calculate metrics
         recent_items = list(history)[-3:]  # Last 3 chapters
         if not recent_items:
-            return (50.0, "sem dados recentes")
+            return (50.0, "no recent data")
 
         # Speed (chars/second)
         speeds = [
@@ -334,7 +334,7 @@ class AdaptiveSpeedController:
         ]
 
         if not speeds:
-            return (10.0, "todas falhas recentes")
+            return (10.0, "all recent failures")
 
         avg_speed = sum(speeds) / len(speeds)
 
@@ -361,7 +361,7 @@ class AdaptiveSpeedController:
 
         final_score = speed_score * 0.6 + success_score * 0.3 + consistency_score * 0.1
 
-        reason = f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% sucesso"
+        reason = f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% success"
         return (final_score, reason)
 
     def recommend_engine_switch(
@@ -407,7 +407,7 @@ class AdaptiveSpeedController:
             if score > current_score + 20:
                 return (
                     engine,
-                    f"{engine} mais rápido ({reason}) vs {current_engine} ({current_reason})",
+                    f"{engine} faster ({reason}) vs {current_engine} ({current_reason})",
                 )
 
         return None
