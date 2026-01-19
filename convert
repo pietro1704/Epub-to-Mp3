@@ -59,13 +59,16 @@ echo "║  🚀 EPUB/PDF TO MP3 CONVERTER - TURBO MODE               ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 
-# If the user did not pass --engine, default to edge (do NOT override explicit engines)
+# Check which flags are already present
 ENGINE_PRESENT=0
+VERBOSE_PRESENT=0
 for arg in "$@"; do
     case "$arg" in
         --engine|--engine=*)
             ENGINE_PRESENT=1
-            break
+            ;;
+        --verbose|-v)
+            VERBOSE_PRESENT=1
             ;;
     esac
 done
@@ -74,9 +77,12 @@ EXTRA_ARGS=()
 if [ "$ENGINE_PRESENT" -eq 0 ]; then
     EXTRA_ARGS+=(--engine edge)
 fi
+if [ "$VERBOSE_PRESENT" -eq 0 ]; then
+    EXTRA_ARGS+=(--verbose)
+fi
 
-# Run conversion with optimal settings; append default engine only when absent
-"$PYTHON_BIN" -m python_app.main convert "$@" --verbose "${EXTRA_ARGS[@]}"
+# Run conversion with optimal settings; append defaults only when absent
+"$PYTHON_BIN" -m python_app.main convert "$@" "${EXTRA_ARGS[@]}"
 
 # Print completion
 echo ""
