@@ -3193,6 +3193,9 @@ class AudioConverter:
 
             self._assign_progress_indices(pending_chapters)
             chapters_list = pending_chapters
+        else:
+            # Preprocessing done by caller - no cached files to track here
+            cached_audio = []
 
         all_converted_files: List[Path] = []
         all_errors: List[str] = []
@@ -3440,6 +3443,7 @@ class AudioConverter:
         else:
             # Preprocessing done by caller, just print status
             print(f"🔄 Sequential mode: processing {len(chapters_list)} chapters")
+            cached_audio = []  # No cached files when preprocessing done by caller
 
         converted_files: List[Path] = list(cached_audio)
         errors: List[str] = []
