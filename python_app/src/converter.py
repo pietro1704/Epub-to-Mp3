@@ -2659,6 +2659,7 @@ class AudioConverter:
                 temp_dir,
                 config,
                 max_concurrent_chapters=chapter_parallel_count,
+                skip_preprocessing=True,  # Already done above
                 is_auto_engine=is_auto_engine,
                 auto_engine_pool=auto_engine_pool,
                 book_title=book_title,
@@ -2671,6 +2672,7 @@ class AudioConverter:
                 engine_pool,
                 temp_dir,
                 config,
+                skip_preprocessing=True,  # Already done above
                 is_auto_engine=is_auto_engine,
                 auto_engine_pool=auto_engine_pool,
                 book_title=book_title,
@@ -3119,6 +3121,7 @@ class AudioConverter:
         config: ConversionConfig,
         max_concurrent_chapters: int = 3,
         *,
+        skip_preprocessing: bool = False,
         is_auto_engine: bool = False,
         auto_engine_pool: Optional[Dict[str, tuple[ConversionConfig, object]]] = None,
         book_title: str = "",
@@ -3144,50 +3147,52 @@ class AudioConverter:
             f"🚀 Parallel mode: processing {total_chapters} chapters (current {self._parallel_state['current']} concurrent)"
         )
 
-        # Validate and clean cache (once for all chapters)
-        self._validate_and_clean_cache(chapters_list, output_dir, config)
+        # If preprocessing already done by caller, skip duplicate work
+        if not skip_preprocessing:
+            # Validate and clean cache (once for all chapters)
+            self._validate_and_clean_cache(chapters_list, output_dir, config)
 
-        generated_text = False
-        if getattr(config, "auto_validate_output", True):
-            self._generate_all_text_files(chapters_list, output_dir, config)
-            generated_text = True
+            generated_text = False
+            if getattr(config, "auto_validate_output", True):
+                self._generate_all_text_files(chapters_list, output_dir, config)
+                generated_text = True
 
-        # Fast-path cache check before generating text (partial-aware)
-        cached_audio, pending_chapters = self._split_cached_chapters(
-            chapters_list, output_dir, config, allow_index_only=True
-        )
-
-        # Generate all text files (once for all chapters) if needed
-        if pending_chapters and not generated_text:
-            self._generate_all_text_files(chapters_list, output_dir, config)
-
-            # Retry cache check after text generation (allows hash validation)
+            # Fast-path cache check before generating text (partial-aware)
             cached_audio, pending_chapters = self._split_cached_chapters(
-                chapters_list, output_dir, config, allow_index_only=False
+                chapters_list, output_dir, config, allow_index_only=True
             )
 
-        if cached_audio and not pending_chapters:
-            print(
-                f"♻️ All {len(chapters_list)} chapter(s) already cached (MP3) — skipping synthesis"
-            )
-            for _ in chapters_list:
-                self.progress.tick("✅ Complete (cache)") if hasattr(self, "progress") else None
-            return ConversionResult(
-                success=True,
-                total_chapters=len(chapters_list),
-                converted_chapters=len(chapters_list),
-                output_files=cached_audio,
-                errors=[],
-            )
+            # Generate all text files (once for all chapters) if needed
+            if pending_chapters and not generated_text:
+                self._generate_all_text_files(chapters_list, output_dir, config)
 
-        if cached_audio and pending_chapters:
-            print(
-                f"♻️ Cache detected: {len(cached_audio)} chapter(s) ready; "
-                f"converting {len(pending_chapters)} remaining"
-            )
+                # Retry cache check after text generation (allows hash validation)
+                cached_audio, pending_chapters = self._split_cached_chapters(
+                    chapters_list, output_dir, config, allow_index_only=False
+                )
 
-        self._assign_progress_indices(pending_chapters)
-        chapters_list = pending_chapters
+            if cached_audio and not pending_chapters:
+                print(
+                    f"♻️ All {len(chapters_list)} chapter(s) already cached (MP3) — skipping synthesis"
+                )
+                for _ in chapters_list:
+                    self.progress.tick("✅ Complete (cache)") if hasattr(self, "progress") else None
+                return ConversionResult(
+                    success=True,
+                    total_chapters=len(chapters_list),
+                    converted_chapters=len(chapters_list),
+                    output_files=cached_audio,
+                    errors=[],
+                )
+
+            if cached_audio and pending_chapters:
+                print(
+                    f"♻️ Cache detected: {len(cached_audio)} chapter(s) ready; "
+                    f"converting {len(pending_chapters)} remaining"
+                )
+
+            self._assign_progress_indices(pending_chapters)
+            chapters_list = pending_chapters
 
         all_converted_files: List[Path] = []
         all_errors: List[str] = []
@@ -3327,6 +3332,7 @@ class AudioConverter:
         output_dir: Path,
         config: ConversionConfig,
         *,
+        skip_preprocessing: bool = False,
         is_auto_engine: bool = False,
         auto_engine_pool: Optional[Dict[str, tuple[ConversionConfig, object]]] = None,
         book_title: str = "",
@@ -3381,54 +3387,59 @@ class AudioConverter:
                 allowed = kwargs
             return await engine_obj.synthesize_async(text, output_path, **allowed)
 
-        # Auto-skip credits/very short chapters if not cached
-        chapters_list = self._filter_chapters_auto(chapters_list, output_dir, config)
+        # If preprocessing already done by caller, skip duplicate work
+        if not skip_preprocessing:
+            # Auto-skip credits/very short chapters if not cached
+            chapters_list = self._filter_chapters_auto(chapters_list, output_dir, config)
 
-        print(f"🔄 Sequential mode: processing {len(chapters_list)} chapters")
+            print(f"🔄 Sequential mode: processing {len(chapters_list)} chapters")
 
-        # **NEW**: Check for cache invalidation BEFORE generating text files
-        # If MP3 exists but pre-tts.txt doesn't, delete MP3 (cache invalidated)
-        self._validate_and_clean_cache(chapters_list, output_dir, config)
+            # **NEW**: Check for cache invalidation BEFORE generating text files
+            # If MP3 exists but pre-tts.txt doesn't, delete MP3 (cache invalidated)
+            self._validate_and_clean_cache(chapters_list, output_dir, config)
 
-        generated_text = False
-        if getattr(config, "auto_validate_output", True):
-            self._generate_all_text_files(chapters_list, output_dir, config)
-            generated_text = True
+            generated_text = False
+            if getattr(config, "auto_validate_output", True):
+                self._generate_all_text_files(chapters_list, output_dir, config)
+                generated_text = True
 
-        # **FAST-PATH**: Try cache reuse before generating text (index-only allowed)
-        cached_audio, pending_chapters = self._split_cached_chapters(
-            chapters_list, output_dir, config, allow_index_only=True
-        )
-
-        # **NEW**: Generate ALL text files BEFORE starting conversion (if needed)
-        if pending_chapters and not generated_text:
-            self._generate_all_text_files(chapters_list, output_dir, config)
-            # Retry cache after having pre-tts hashes
+            # **FAST-PATH**: Try cache reuse before generating text (index-only allowed)
             cached_audio, pending_chapters = self._split_cached_chapters(
-                chapters_list, output_dir, config, allow_index_only=False
+                chapters_list, output_dir, config, allow_index_only=True
             )
 
-        # **FAST-PATH**: If all MP3s already exist, skip synthesis and return.
-        if cached_audio and not pending_chapters:
-            print(
-                f"♻️ All {len(chapters_list)} chapter(s) already cached (MP3) — skipping synthesis"
-            )
-            for chap in chapters_list:
-                self.progress.tick("✅ Complete (cache)") if hasattr(self, "progress") else None
-            return ConversionResult(
-                success=True,
-                total_chapters=original_total,
-                converted_chapters=original_total,
-                output_files=cached_audio,
-                errors=[],
-            )
-        if cached_audio and pending_chapters:
-            print(
-                f"♻️ Cache detected: {len(cached_audio)} chapter(s) ready; "
-                f"converting {len(pending_chapters)} remaining"
-            )
-        self._assign_progress_indices(pending_chapters)
-        chapters_list = pending_chapters
+            # **NEW**: Generate ALL text files BEFORE starting conversion (if needed)
+            if pending_chapters and not generated_text:
+                self._generate_all_text_files(chapters_list, output_dir, config)
+                # Retry cache after having pre-tts hashes
+                cached_audio, pending_chapters = self._split_cached_chapters(
+                    chapters_list, output_dir, config, allow_index_only=False
+                )
+
+            # **FAST-PATH**: If all MP3s already exist, skip synthesis and return.
+            if cached_audio and not pending_chapters:
+                print(
+                    f"♻️ All {len(chapters_list)} chapter(s) already cached (MP3) — skipping synthesis"
+                )
+                for chap in chapters_list:
+                    self.progress.tick("✅ Complete (cache)") if hasattr(self, "progress") else None
+                return ConversionResult(
+                    success=True,
+                    total_chapters=original_total,
+                    converted_chapters=original_total,
+                    output_files=cached_audio,
+                    errors=[],
+                )
+            if cached_audio and pending_chapters:
+                print(
+                    f"♻️ Cache detected: {len(cached_audio)} chapter(s) ready; "
+                    f"converting {len(pending_chapters)} remaining"
+                )
+            self._assign_progress_indices(pending_chapters)
+            chapters_list = pending_chapters
+        else:
+            # Preprocessing done by caller, just print status
+            print(f"🔄 Sequential mode: processing {len(chapters_list)} chapters")
 
         converted_files: List[Path] = list(cached_audio)
         errors: List[str] = []
