@@ -192,10 +192,13 @@ class AudioConverter:
                     )
                 )
             )
+            # Skip auto-fix during initial stage (validation before conversion starts)
+            # or if validation/auto-fix is disabled
             if (
                 has_problems
                 and getattr(config, "auto_fix_output", True)
                 and not self._auto_fix_guard
+                and stage != "initial"
             ):
                 # Avoid auto-fix inside an active event loop (e.g., during async conversion)
                 in_loop = False
