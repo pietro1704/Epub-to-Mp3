@@ -1124,7 +1124,7 @@ class AudioConverter:
             if mp3_path.exists() and not pre_tts_file.exists():
                 if self.verbose:
                     print(
-                        f"   🗑️ Cache incompleto (sem pre-tts.txt) para capítulo {chapter_num}: removendo MP3"
+                        f"   🗑️ Incomplete cache (missing pre-tts.txt) for chapter {chapter_num}: removing MP3"
                     )
                 mp3_path.unlink(missing_ok=True)
                 mp3_path.with_suffix(".wav").unlink(missing_ok=True)
@@ -3168,10 +3168,10 @@ class AudioConverter:
 
         if cached_audio and not pending_chapters:
             print(
-                f"♻️ Todos os {len(chapters_list)} capítulos já estão em cache (MP3) — pulando síntese"
+                f"♻️ All {len(chapters_list)} chapter(s) already cached (MP3) — skipping synthesis"
             )
             for _ in chapters_list:
-                self.progress.tick("✅ Completo (cache)") if hasattr(self, "progress") else None
+                self.progress.tick("✅ Complete (cache)") if hasattr(self, "progress") else None
             return ConversionResult(
                 success=True,
                 total_chapters=len(chapters_list),
@@ -3182,8 +3182,8 @@ class AudioConverter:
 
         if cached_audio and pending_chapters:
             print(
-                f"♻️ Cache detectado: {len(cached_audio)} capítulo(s) pronto(s); "
-                f"convertendo {len(pending_chapters)} restante(s)"
+                f"♻️ Cache detected: {len(cached_audio)} chapter(s) ready; "
+                f"converting {len(pending_chapters)} remaining"
             )
 
         self._assign_progress_indices(pending_chapters)
@@ -3411,10 +3411,10 @@ class AudioConverter:
         # **FAST-PATH**: If all MP3s already exist, skip synthesis and return.
         if cached_audio and not pending_chapters:
             print(
-                f"♻️ Todos os {len(chapters_list)} capítulos já estão em cache (MP3) — pulando síntese"
+                f"♻️ All {len(chapters_list)} chapter(s) already cached (MP3) — skipping synthesis"
             )
             for chap in chapters_list:
-                self.progress.tick("✅ Completo (cache)") if hasattr(self, "progress") else None
+                self.progress.tick("✅ Complete (cache)") if hasattr(self, "progress") else None
             return ConversionResult(
                 success=True,
                 total_chapters=original_total,
@@ -3424,8 +3424,8 @@ class AudioConverter:
             )
         if cached_audio and pending_chapters:
             print(
-                f"♻️ Cache detectado: {len(cached_audio)} capítulo(s) pronto(s); "
-                f"convertendo {len(pending_chapters)} restante(s)"
+                f"♻️ Cache detected: {len(cached_audio)} chapter(s) ready; "
+                f"converting {len(pending_chapters)} remaining"
             )
         self._assign_progress_indices(pending_chapters)
         chapters_list = pending_chapters
@@ -3687,9 +3687,9 @@ class AudioConverter:
                     if threshold_chars and chapter_chars >= threshold_chars:
                         edge_reason = f"Capítulo muito grande ({chapter_chars} caracteres)"
                     elif threshold_seconds and estimated_seconds >= threshold_seconds:
-                        edge_reason = f"Capítulo estimado em {int(estimated_seconds)}s"
+                        edge_reason = f"Chapter estimated at {int(estimated_seconds)}s"
                     if edge_reason and self.verbose:
-                        print(f"   ℹ️ Edge mantém engine mesmo em capítulo grande: {edge_reason}")
+                        print(f"   ℹ️ Edge keeps engine even for large chapter: {edge_reason}")
                     elif edge_force_offline:
                         if self.verbose:
                             print("   ℹ️ Edge marcado como instável, mantendo engine (sem fallback)")
@@ -4008,10 +4008,10 @@ class AudioConverter:
                             break
 
                     if synthesis_result and last_needs_transcode:
-                        self.progress.tick("🎼 Convertendo WAV→MP3...")
+                        self.progress.tick("🎼 Converting WAV→MP3...")
                         if self.verbose:
                             print(
-                                f"[DEBUG] Convertendo WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                f"[DEBUG] Converting WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
                             )
                         converted = await self.audio_processor.convert_to_mp3(
                             last_tts_output_path,
@@ -4112,10 +4112,10 @@ class AudioConverter:
                                 timeout=fallback_timeout,
                             )
                             if synthesis_result and needs_mp3_transcode:
-                                self.progress.tick("🎼 Convertendo WAV→MP3 (fallback)...")
+                                self.progress.tick("🎼 Converting WAV→MP3 (fallback)...")
                                 if self.verbose:
                                     print(
-                                        f"[DEBUG] Convertendo WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                        f"[DEBUG] Converting WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
                                     )
                                 converted = await self.audio_processor.convert_to_mp3(
                                     tts_output_path,
@@ -4177,10 +4177,10 @@ class AudioConverter:
                                         timeout=emergency_timeout,
                                     )
                                     if synthesis_result and needs_mp3_transcode:
-                                        self.progress.tick("🎼 Convertendo WAV→MP3 (emergência)...")
+                                        self.progress.tick("🎼 Converting WAV→MP3 (emergency)...")
                                         if self.verbose:
                                             print(
-                                                f"[DEBUG] Convertendo WAV→MP3 (emergência): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                                f"[DEBUG] Converting WAV→MP3 (emergency): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
                                             )
                                         converted = await self.audio_processor.convert_to_mp3(
                                             tts_output_path,
