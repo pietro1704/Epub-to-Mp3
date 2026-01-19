@@ -1891,63 +1891,63 @@ class ConverterApplication:
 
         # Mostrar o que será removido
         print("╔══════════════════════════════════════════════════════════╗")
-        print("║  🗑️  LIMPEZA COMPLETA DE CACHE E OUTPUT                 ║")
+        print("║  🗑️  Complete Cache and Output Cleanup                 ║")
         print("╚══════════════════════════════════════════════════════════╝")
         print()
-        print("📊 O seguinte será removido:")
+        print("📊 The following will be removed:")
         print()
         print("  📁 Cache (.cache/):")
-        print(f"     • {total_books} livro(s) em cache")
+        print(f"     • {total_books} cached book(s)")
         print(f"     • {total_cache_mb:.1f} MB")
-        print(f"     • Localização: {cache_root}")
+        print(f"     • Location: {cache_root}")
         print()
         print("  📁 Output (output/):")
-        print(f"     • {output_file_count} arquivo(s)")
+        print(f"     • {output_file_count} file(s)")
         print(f"     • {output_size_mb:.1f} MB")
-        print(f"     • Localização: {output_dir}")
+        print(f"     • Location: {output_dir}")
         print()
         print(f"  📦 Total: {total_cache_mb + output_size_mb:.1f} MB")
         print()
-        print("⚠️  ATENÇÃO: Esta ação NÃO pode ser desfeita!")
-        print("   • Modelos TTS serão preservados")
-        print("   • Todos os arquivos MP3 convertidos serão removidos")
-        print("   • Todo o cache de processamento será removido")
+        print("⚠️ WARNING: This action CANNOT be undone!")
+        print("   • TTS models will be preserved")
+        print("   • All converted MP3 files will be removed")
+        print("   • All processing cache will be removed")
         print()
 
-        # Pedir confirmação do usuário
+        # Request user confirmation
         try:
-            response = input("Deseja continuar? (digite 'sim' para confirmar): ").strip().lower()
+            response = input("Continue? (type 'yes' to confirm): ").strip().lower()
         except (KeyboardInterrupt, EOFError):
-            print("\n❌ Operação cancelada pelo usuário.")
+            print("\n❌ Operation cancelled by user.")
             return 1
 
         if response not in ["sim", "s", "yes", "y"]:
-            print("❌ Operação cancelada.")
+            print("❌ Operation cancelled.")
             return 0
 
         print()
-        print("🧹 Limpando...")
+        print("🧹 Cleaning...")
         print()
 
-        # Remover cache (sempre tenta, mesmo que metadata não seja encontrado)
+        # Remove cache (always attempt, even if no metadata found)
         removed_items = 0
-        print("🗑️  Removendo cache de livros...")
+        print("🗑️ Removing book cache...")
         success = cache_manager.clear_cache()
         if success:
-            print("   ✅ Cache de livros removido com sucesso")
+            print("   ✅ Book cache removed successfully")
             removed_items += 1
         else:
-            print("   ⚠️  Nenhum cache encontrado ou erro ao remover")
+            print("   ⚠️ No cache found or error removing it")
 
-        # Remover output
+        # Remove output
         if output_dir.exists():
-            print("🗑️  Removendo diretório de saída...")
+            print("🗑️ Removing output directory...")
             try:
                 shutil.rmtree(output_dir, ignore_errors=True)
-                print(f"   ✅ Diretório de saída removido: {output_dir}")
+                print(f"   ✅ Output directory removed: {output_dir}")
                 removed_items += 1
             except Exception as e:
-                print(f"   ⚠️  Erro ao remover output: {e}")
+                print(f"   ⚠️ Error removing output: {e}")
 
         # Remover filas/estados persistentes
         residual_dirs = [Path.cwd() / ".jobs", Path.cwd() / ".uploads", Path.cwd() / ".job_inputs"]
@@ -1961,16 +1961,16 @@ class ConverterApplication:
                     pass
 
         if residual_removed > 0:
-            print(f"🗑️  {residual_removed} diretório(s) auxiliar(es) removido(s)")
+            print(f"🗑️ {residual_removed} auxiliary director(y/ies) removed")
 
         print()
         if removed_items > 0:
             print("╔══════════════════════════════════════════════════════════╗")
-            print("║  ✅ LIMPEZA CONCLUÍDA COM SUCESSO                       ║")
+            print("║  ✅ Cleanup Completed Successfully                     ║")
             print("╚══════════════════════════════════════════════════════════╝")
             return 0
         else:
-            print("❌ Nenhum item foi removido.")
+            print("❌ No items were removed.")
             return 1
 
     @staticmethod

@@ -206,7 +206,7 @@ class AudioConverter:
                     in_loop = False
                 if in_loop:
                     if self.verbose:
-                        print(f"⚠️ Auto-fix em background ({stage}) - event loop em execução")
+                        print(f"[DEBUG] Auto-fix in background ({stage}) - event loop running")
 
                     def _background_fix() -> None:
                         try:
@@ -235,10 +235,10 @@ class AudioConverter:
                 finally:
                     self._auto_fix_guard = False
             if self.verbose and (issues or has_problems):
-                print(f"⚠️ Auto-validate ({stage}): {len(issues)} issues, stats={stats}")
+                print(f"[DEBUG] Auto-validate ({stage}): {len(issues)} issues, stats={stats}")
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️ Auto-validate ({stage}) falhou: {exc}")
+                print(f"[DEBUG] Auto-validate ({stage}) failed: {exc}")
 
     @staticmethod
     def _speech_text(chapter: Chapter) -> str:
@@ -468,7 +468,7 @@ class AudioConverter:
             return True, None
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️ Validação de áudio falhou com erro: {exc}")
+                print(f"⚠️ Audio validation failed with error: {exc}")
             return True, None
 
     async def _attempt_segment_retry(
@@ -519,7 +519,7 @@ class AudioConverter:
             return retry_report.still_failed == 0
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️ Retry de segmentos falhou: {exc}")
+                print(f"⚠️ Segment retry failed: {exc}")
             return False
 
     def _chapter_number(self, chapter: Chapter, fallback: int) -> int:
@@ -617,11 +617,11 @@ class AudioConverter:
                         leftover.rename(dup_path)
                     except OSError:
                         if self.verbose:
-                            print(f"⚠️ Falha ao mover duplicado: {leftover.name} → {dup_name}")
+                            print(f"⚠️ Failed to move duplicate: {leftover.name} → {dup_name}")
             return expected
         except OSError:
             if self.verbose:
-                print(f"⚠️ Falha ao renomear cache: {candidate.name} → {expected.name}")
+                print(f"⚠️ Failed to rename cache: {candidate.name} → {expected.name}")
             return candidate
 
     def _normalize_output_numbers(
@@ -1152,7 +1152,7 @@ class AudioConverter:
             for txt_file in text_dir.glob("*.txt"):
                 txt_file.unlink(missing_ok=True)
             if self.verbose:
-                print("🧹 Arquivos de texto antigos removidos")
+                print("  🧹 Cleaned up old text files")
 
         # Import TextFormattingProcessor to apply the same processing as TTS
         try:
@@ -1285,10 +1285,10 @@ class AudioConverter:
                     print(f"      → {pre_tts_path.name}")
                     if formatter and parsed_text != pre_tts_text:
                         chars_added = len(pre_tts_text) - len(parsed_text)
-                        print(f"      ℹ️  Formatação adicionou {chars_added} chars (cues audíveis)")
+                        print(f"      ℹ️ Formatting added {chars_added} chars (audio cues)")
 
         if files_generated == 0 and self.verbose:
-            print("   ♻️ Todos os arquivos .txt já existem (usando cache)")
+            print("   ♻️ All .txt files already exist (using cache)")
 
     @staticmethod
     def _hash_text(value: str) -> str:
@@ -2108,9 +2108,9 @@ class AudioConverter:
         if not chapters:
             return
 
-        print("\n" + "=" * 70)
-        print("📊 RELATÓRIO DE VALIDAÇÃO DE INTEGRIDADE")
-        print("=" * 70)
+        print("\n" + "=" * 60)
+        print("📊 Integrity Validation Report")
+        print("=" * 60)
 
         # Count chapters
         total_chapters = len(chapters)
@@ -2119,14 +2119,14 @@ class AudioConverter:
         missing_chapters = total_chapters - successful_chapters
 
         # Basic stats
-        print(f"\n📚 CAPÍTULOS DO EPUB ORIGINAL: {total_chapters}")
-        print(f"✅ ÁUDIOS GERADOS COM SUCESSO: {successful_chapters}")
+        print(f"\n📚 Original EPUB chapters: {total_chapters}")
+        print(f"✅ Successfully generated: {successful_chapters} chapter(s)")
 
         if missing_chapters > 0:
-            print(f"❌ CAPÍTULOS FALTANTES: {missing_chapters}")
+            print(f"❌ Missing chapters: {missing_chapters}")
 
         if failed_chapters > 0:
-            print(f"⚠️  ERROS DURANTE CONVERSÃO: {failed_chapters}")
+            print(f"⚠️ Conversion errors: {failed_chapters}")
 
         # Check for duplicates by comparing file names
         file_names = [f.name for f in converted_files]
@@ -2134,7 +2134,7 @@ class AudioConverter:
         duplicate_count = len(file_names) - len(unique_names)
 
         if duplicate_count > 0:
-            print(f"🔄 ARQUIVOS DUPLICADOS DETECTADOS: {duplicate_count}")
+            print(f"🔄 Duplicate files detected: {duplicate_count}")
             if verbose:
                 # Find and print duplicate names
                 seen = set()
@@ -2144,15 +2144,15 @@ class AudioConverter:
                         duplicates.append(name)
                     seen.add(name)
                 if duplicates:
-                    print("   Duplicatas:")
+                    print("   Duplicates:")
                     for dup in duplicates[:5]:  # Show first 5
                         print(f"   - {dup}")
                     if len(duplicates) > 5:
-                        print(f"   ... e mais {len(duplicates) - 5}")
+                        print(f"   ... and {len(duplicates) - 5} more")
 
         # Check for missing chapters by comparing titles
         if missing_chapters > 0 and verbose:
-            print("\n⚠️  Capítulos potencialmente faltantes:")
+            print("\n⚠️ Potentially missing chapters:")
             converted_titles = {self._normalize_title_match(f.stem) for f in converted_files}
             for idx, chapter in enumerate(chapters, start=1):
                 chapter_title = getattr(chapter, "name", f"Chapter {idx}")
@@ -2160,22 +2160,22 @@ class AudioConverter:
                 # Check if any converted file matches this chapter
                 found = any(normalized_title in title for title in converted_titles)
                 if not found:
-                    print(f"   - Capítulo {idx}: {chapter_title[:60]}")
+                    print(f"   - Chapter {idx}: {chapter_title[:60]}")
 
         # Overall validation status
-        print("\n" + "-" * 70)
+        print("\n" + "─" * 60)
         if successful_chapters == total_chapters and duplicate_count == 0:
-            print("✅ VALIDAÇÃO: COMPLETA E ÍNTEGRA")
-            print("   Todos os capítulos do EPUB original foram convertidos com sucesso.")
+            print("✅ VALIDATION: COMPLETE AND INTACT")
+            print("   All chapters from the original EPUB were successfully converted.")
         elif successful_chapters == total_chapters:
-            print("✅ VALIDAÇÃO: COMPLETA (com advertências)")
-            print("   Todos os capítulos foram convertidos, mas há duplicatas.")
+            print("✅ VALIDATION: COMPLETE (with warnings)")
+            print("   All chapters were converted, but there are duplicates.")
         elif missing_chapters > 0:
-            print("⚠️  VALIDAÇÃO: INCOMPLETA")
-            print(f"   {missing_chapters} capítulo(s) não foram convertidos ou falharam.")
+            print("⚠️ VALIDATION: INCOMPLETE")
+            print(f"   {missing_chapters} chapter(s) were not converted or failed.")
             if errors:
-                print("   Verifique os logs de erro acima para mais detalhes.")
-        print("=" * 70 + "\n")
+                print("   Check the error logs above for more details.")
+        print("=" * 60 + "\n")
 
     async def convert(self, reader: EbookReader, config: ConversionConfig) -> ConversionResult:
         """Convert all chapters in ``reader`` according to ``config``."""
@@ -2195,9 +2195,9 @@ class AudioConverter:
             config.log_callback = _log_to_progress
 
         if self.verbose:
-            print("🔍 [VERBOSE] AudioConverter.convert() iniciado")
+            print("[DEBUG] AudioConverter.convert() iniciado")
             print(
-                f"🔍 [VERBOSE] Configuração: engine={getattr(config, 'engine', 'unknown')}, mode=sequential"
+                f"[DEBUG] Configuração: engine={getattr(config, 'engine', 'unknown')}, mode=sequential"
             )
 
         # Setup paths
@@ -2258,7 +2258,7 @@ class AudioConverter:
 
         chapters, duplicates_removed = deduplicate_chapters_by_content(chapters)
         if duplicates_removed:
-            print(f"🧹 Capítulos duplicados removidos automaticamente: {duplicates_removed}")
+            print(f"  🧹 Removed {duplicates_removed} duplicate chapter(s) automatically")
 
         # Validate chapter count against TOC (if available from CLI flow)
         expected_count = getattr(reader, "_toc_expected_chapters", 0)
@@ -2359,9 +2359,9 @@ class AudioConverter:
             self._register_chapter_lookup(chapter_lookup, label, chapter, chapter_num)
 
         if self.verbose:
-            print(f"🔍 [VERBOSE] Total de capítulos: {total_chapters}")
-            print(f"🔍 [VERBOSE] Diretório de saída: {output_dir}")
-            print(f"🔍 [VERBOSE] Diretório temporário: {temp_dir}")
+            print(f"[DEBUG] Total chapters: {total_chapters}")
+            print(f"[DEBUG] Output directory: {output_dir}")
+            print(f"[DEBUG] Temporary directory: {temp_dir}")
 
         if chapters:
             self._normalize_output_numbers(chapters, output_dir, config, temp_dir=temp_dir)
@@ -2373,13 +2373,13 @@ class AudioConverter:
         validate_text = getattr(config, "validate_text", True)
         validate_audio = getattr(config, "validate_audio", True)
         if validate_text and validate_audio:
-            print("✅ Validações: Texto e Áudio ativadas")
+            print("  ✅ Validations: Text and audio enabled")
         elif validate_text:
-            print("⚠️  Validações: Apenas Texto ativada")
+            print("  ⚠️ Validations: Text only")
         elif validate_audio:
-            print("⚠️  Validações: Apenas Áudio ativada")
+            print("  ⚠️ Validations: Audio only")
         else:
-            print("⚠️  Validações: Desativadas (--no-validate)")
+            print("  ⚠️ Validations: Disabled (--no-validate)")
 
         edge_stable_mode = False
         edge_stable_explicit = False
@@ -2438,9 +2438,9 @@ class AudioConverter:
 
         # **NEW**: Generate ALL .txt files BEFORE starting TTS conversion (unless fully cached)
         if pending_chapters:
-            print("\n📝 Gerando arquivos de texto...")
+            print("\n📝 Generating text files...")
             self._generate_all_text_files(chapters, temp_dir, config)
-            print(f"✅ {total_chapters} arquivos de texto gerados\n")
+            print(f"  ✅ Generated {total_chapters} text file(s)\n")
             cached_paths, pending_chapters = self._split_cached_chapters(
                 chapters, temp_dir, config, allow_index_only=False
             )
@@ -2454,11 +2454,11 @@ class AudioConverter:
         book_author = getattr(reader, "author", "") or ""
         if cached_paths and pending_chapters:
             print(
-                f"♻️ Cache detectado: {len(cached_paths)} capítulo(s) pronto(s); "
-                f"convertendo {len(pending_chapters)} restante(s)"
+                f"  ♻️ Cache detected: {len(cached_paths)} chapter(s) ready; "
+                f"converting {len(pending_chapters)} remaining"
             )
         elif cached_paths and not pending_chapters:
-            print(f"♻️ Todos os {len(cached_paths)} capítulos já estão em cache (MP3)")
+            print(f"  ♻️ All {len(cached_paths)} chapter(s) already cached (MP3)")
 
         pending_total = len(pending_chapters)
         self._start_health_watchdog(pending_total)
@@ -2525,9 +2525,9 @@ class AudioConverter:
         if self.verbose:
             if engine_seeds:
                 sample_engine = next(iter(engine_seeds.values()))
-                print(f"🔍 [VERBOSE] Engine configurado: {type(sample_engine).__name__}")
+                print(f"[DEBUG] Engine configurado: {type(sample_engine).__name__}")
             else:
-                print("🔍 [VERBOSE] Engine configurado: AUTO")
+                print("[DEBUG] Engine configurado: AUTO")
 
         has_edge_engine = (config.engine or "").lower() == "edge"
         if is_auto_engine and auto_engine_pool:
@@ -2686,7 +2686,7 @@ class AudioConverter:
         attempts_used: Dict[str, int] = {label: 1 for label in pending_failures}
 
         for unresolved in unresolved_failures:
-            print(f"⚠️ Não foi possível correlacionar capítulo com falha: {unresolved}")
+            print(f"⚠️ Could not correlate failed chapter: {unresolved}")
 
         max_retry_rounds = 2
         extra_retry_value = None
@@ -2746,7 +2746,7 @@ class AudioConverter:
                 message = pending_failures.pop(missing, "")
                 unresolved_pool[missing] = message or "Motivo desconhecido"
                 attempts_used.pop(missing, None)
-                print(f"⚠️ Não foi possível localizar capítulo para retry: {missing}")
+                print(f"⚠️ Could not locate chapter for retry: {missing}")
 
             if not chapters_to_retry_info:
                 break
@@ -3011,7 +3011,7 @@ class AudioConverter:
         if result.converted_chapters > 0:
             if self.verbose:
                 print(
-                    f"🔍 [VERBOSE] Movendo {len(result.output_files)} arquivos para diretório final..."
+                    f"[DEBUG] Movendo {len(result.output_files)} arquivos para diretório final..."
                 )
 
             temp_mp3s = list(Path(temp_dir).glob("*.mp3"))
@@ -3026,7 +3026,7 @@ class AudioConverter:
                     print(f"📁 {len(moved_files)} capítulos convertidos movidos para: {output_dir}")
                     print("   💡 Execute novamente para converter os capítulos restantes")
             elif self.verbose:
-                print("🔍 [VERBOSE] Nenhum MP3 para mover (provavelmente reuso total de cache)")
+                print("[DEBUG] Nenhum MP3 para mover (provavelmente reuso total de cache)")
 
             normalized_outputs = self._normalize_output_numbers(chapters, output_dir, config)
             if normalized_outputs:
@@ -3049,9 +3049,9 @@ class AudioConverter:
 
         if not result.success:
             if result.converted_chapters > 0:
-                print(f"⚠️ Conversão parcial - {len(pending_failures)} capítulo(s) falharam")
+                print(f"⚠️ Partial conversion - {len(pending_failures)} chapter(s) failed")
             else:
-                print("❌ Conversão falhou - nenhum capítulo convertido")
+                print("❌ Conversion failed - no chapters converted")
 
         await self._stop_health_watchdog()
         self.progress.finish()
@@ -3099,8 +3099,8 @@ class AudioConverter:
                 # Fallback para diretório temporário do sistema
                 import tempfile
 
-                print(f"⚠️ Cache indisponível: {e}")
-                print("💡 Usando diretório temporário do sistema")
+                print(f"⚠️ Cache unavailable: {e}")
+                print("💡 Using system temporary directory")
                 base_cache = Path(tempfile.mkdtemp(prefix="epub_to_mp3_"))
 
         temp_dir = self.file_manager.ensure_directory(base_cache / engine_suffix)
@@ -4011,7 +4011,7 @@ class AudioConverter:
                         self.progress.tick("🎼 Convertendo WAV→MP3...")
                         if self.verbose:
                             print(
-                                f"🔍 [VERBOSE] Convertendo WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                f"[DEBUG] Convertendo WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
                             )
                         converted = await self.audio_processor.convert_to_mp3(
                             last_tts_output_path,
@@ -4019,7 +4019,7 @@ class AudioConverter:
                             bitrate=config.bitrate,
                         )
                         if self.verbose and converted is None:
-                            print("🔍 [VERBOSE] Falha ao converter WAV→MP3 (ffmpeg)")
+                            print("[DEBUG] Falha ao converter WAV→MP3 (ffmpeg)")
                         synthesis_result = converted
                         with contextlib.suppress(OSError):
                             last_tts_output_path.unlink(missing_ok=True)
@@ -4115,7 +4115,7 @@ class AudioConverter:
                                 self.progress.tick("🎼 Convertendo WAV→MP3 (fallback)...")
                                 if self.verbose:
                                     print(
-                                        f"🔍 [VERBOSE] Convertendo WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                        f"[DEBUG] Convertendo WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
                                     )
                                 converted = await self.audio_processor.convert_to_mp3(
                                     tts_output_path,
@@ -4123,7 +4123,7 @@ class AudioConverter:
                                     bitrate=config.bitrate,
                                 )
                                 if self.verbose and converted is None:
-                                    print("🔍 [VERBOSE] Falha ao converter WAV→MP3 (fallback)")
+                                    print("[DEBUG] Falha ao converter WAV→MP3 (fallback)")
                                 synthesis_result = converted
                                 with contextlib.suppress(OSError):
                                     tts_output_path.unlink(missing_ok=True)
@@ -4180,7 +4180,7 @@ class AudioConverter:
                                         self.progress.tick("🎼 Convertendo WAV→MP3 (emergência)...")
                                         if self.verbose:
                                             print(
-                                                f"🔍 [VERBOSE] Convertendo WAV→MP3 (emergência): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                                f"[DEBUG] Convertendo WAV→MP3 (emergência): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
                                             )
                                         converted = await self.audio_processor.convert_to_mp3(
                                             tts_output_path,
@@ -4188,9 +4188,7 @@ class AudioConverter:
                                             bitrate=config.bitrate,
                                         )
                                         if self.verbose and converted is None:
-                                            print(
-                                                "🔍 [VERBOSE] Falha ao converter WAV→MP3 (emergência)"
-                                            )
+                                            print("[DEBUG] Falha ao converter WAV→MP3 (emergência)")
                                         synthesis_result = converted
                                         with contextlib.suppress(OSError):
                                             tts_output_path.unlink(missing_ok=True)
@@ -4928,9 +4926,9 @@ class AudioConverter:
                 if self.verbose:
                     chapter_text = chapter.text
                     text_info = "None" if chapter_text is None else f"{len(chapter_text)} chars"
-                    print(f"🔍 [VERBOSE] Chapter {index} text: {text_info}")
+                    print(f"[DEBUG] Chapter {index} text: {text_info}")
                     if chapter_text:
-                        print(f"🔍 [VERBOSE] Chapter {index} preview: {str(chapter_text)[:100]}")
+                        print(f"[DEBUG] Chapter {index} preview: {str(chapter_text)[:100]}")
 
                 if not TextValidator.is_valid_text(self._speech_text(chapter) or " "):
                     status_holder["text"] = self.loc.t("status_insufficient_text")
@@ -4948,12 +4946,12 @@ class AudioConverter:
                     chapter_payload = "\n".join(chunks)
                     if self.verbose:
                         print(
-                            f"🔍 [VERBOSE] Chapter {index} chunks: {len(chunks)}, payload: {len(chapter_payload)} chars"
+                            f"[DEBUG] Chapter {index} chunks: {len(chunks)}, payload: {len(chapter_payload)} chars"
                         )
 
                 except Exception as e:
                     if self.verbose:
-                        print(f"🔍 [VERBOSE] Chapter {index} chunk_text error: {e}")
+                        print(f"[DEBUG] Chapter {index} chunk_text error: {e}")
                     raise
                 self._cache_text(cache_dir, chapter, index, chapter_payload)
 
@@ -5002,7 +5000,7 @@ class AudioConverter:
                 if use_immediate_fallback:
                     if self.verbose:
                         print(
-                            f"🔍 [VERBOSE] Chapter {index} muito complexo "
+                            f"[DEBUG] Chapter {index} muito complexo "
                             f"({lang_tag_count} tags, {char_count} chars) - usando fallback imediato"
                         )
                     try:
@@ -5015,7 +5013,7 @@ class AudioConverter:
                         )
                         if self.verbose:
                             print(
-                                f"🔍 [VERBOSE] Chapter {index} FALLBACK IMEDIATO: "
+                                f"[DEBUG] Chapter {index} FALLBACK IMEDIATO: "
                                 f"{char_count} → {len(simplified)} chars"
                             )
                         status_holder["text"] = (
@@ -5026,7 +5024,7 @@ class AudioConverter:
                     except ImportError:
                         if self.verbose:
                             print(
-                                f"🔍 [VERBOSE] Chapter {index} FALLBACK: LanguageMarkup não disponível"
+                                f"[DEBUG] Chapter {index} FALLBACK: LanguageMarkup não disponível"
                             )
 
                 # Recalcular métricas após fallback
@@ -5048,7 +5046,7 @@ class AudioConverter:
 
                 if self.verbose:
                     print(
-                        f"🔍 [VERBOSE] Chapter {index} timeout: {chapter_timeout:.0f}s "
+                        f"[DEBUG] Chapter {index} timeout: {chapter_timeout:.0f}s "
                         f"(estimado {estimated_seconds:.0f}s, {char_count} chars, {lang_tag_count} tags)"
                     )
 
@@ -5072,10 +5070,10 @@ class AudioConverter:
                             original_count = chapter_payload.lower().count("[[lang:")
                             if self.verbose:
                                 print(
-                                    f"🔍 [VERBOSE] Chapter {index} FALLBACK: removendo {original_count} tags [[lang:]]"
+                                    f"[DEBUG] Chapter {index} FALLBACK: removendo {original_count} tags [[lang:]]"
                                 )
                                 print(
-                                    f"🔍 [VERBOSE] Chapter {index} FALLBACK: {len(chapter_payload)} → {len(simplified_payload)} chars"
+                                    f"[DEBUG] Chapter {index} FALLBACK: {len(chapter_payload)} → {len(simplified_payload)} chars"
                                 )
                             status_holder["text"] = (
                                 f"🔄 Tentativa 2: removendo {original_count} tags de idioma"
@@ -5085,14 +5083,12 @@ class AudioConverter:
                         except ImportError:
                             if self.verbose:
                                 print(
-                                    f"🔍 [VERBOSE] Chapter {index} FALLBACK: LanguageMarkup não disponível"
+                                    f"[DEBUG] Chapter {index} FALLBACK: LanguageMarkup não disponível"
                                 )
 
                     try:
                         if self.verbose:
-                            print(
-                                f"🔍 [VERBOSE] Chapter {index} tentativa {attempt}/{max_attempts}"
-                            )
+                            print(f"[DEBUG] Chapter {index} tentativa {attempt}/{max_attempts}")
 
                         # Pass formatting segments only on first attempt with original payload
                         speech_text = self._speech_text(chapter)
@@ -5113,12 +5109,12 @@ class AudioConverter:
 
                         if temp_wav and (attempt == 2 or use_immediate_fallback):
                             if self.verbose:
-                                print(f"🔍 [VERBOSE] Chapter {index} SUCESSO no fallback!")
+                                print(f"[DEBUG] Chapter {index} SUCESSO no fallback!")
 
                     except asyncio.TimeoutError:
                         if self.verbose:
                             print(
-                                f"🔍 [VERBOSE] Chapter {index} tentativa {attempt} timeout após {chapter_timeout}s"
+                                f"[DEBUG] Chapter {index} tentativa {attempt} timeout após {chapter_timeout}s"
                             )
                         if synthesis_task and not synthesis_task.done():
                             synthesis_task.cancel()
@@ -5136,7 +5132,7 @@ class AudioConverter:
                         if legacy_mode:
                             raise
                         if self.verbose:
-                            print(f"🔍 [VERBOSE] Chapter {index} tentativa {attempt} erro: {e}")
+                            print(f"[DEBUG] Chapter {index} tentativa {attempt} erro: {e}")
                         if synthesis_task and not synthesis_task.done():
                             synthesis_task.cancel()
 
@@ -5426,7 +5422,7 @@ class AudioConverter:
                 raise RuntimeError(f"chapter conversion failed: {inner_exc}") from inner_exc
         except Exception as exc:
             if self.verbose:
-                print(f"🔍 [VERBOSE] Chapter {index} exception: {type(exc).__name__}: {exc}")
+                print(f"[DEBUG] Chapter {index} exception: {type(exc).__name__}: {exc}")
                 import traceback
 
                 traceback.print_exc()
@@ -5483,7 +5479,7 @@ class AudioConverter:
                     continue
                 except OSError:
                     if self.verbose:
-                        print(f"⚠️ Não foi possível remover arquivo temporário: {candidate}")
+                        print(f"⚠️ Could not remove temporary file: {candidate}")
 
         audio_cache = temp_dir / "audio"
         if audio_cache.exists():
@@ -5491,7 +5487,7 @@ class AudioConverter:
                 shutil.rmtree(audio_cache, ignore_errors=True)
             except OSError:
                 if self.verbose:
-                    print(f"⚠️ Não foi possível limpar cache de áudio: {audio_cache}")
+                    print(f"⚠️ Could not clean audio cache: {audio_cache}")
 
     def _cache_audio(
         self,
