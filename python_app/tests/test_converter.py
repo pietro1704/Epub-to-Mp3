@@ -28,7 +28,12 @@ class TestConversionResult(unittest.TestCase):
         self.converter = AudioConverter()
         self.temp_dir = tempfile.mkdtemp()
         self.config = ConversionConfig(
-            engine="edge", voice="test-voice", output_dir=self.temp_dir, book_title="Test Book"
+            engine="edge",
+            voice="test-voice",
+            output_dir=self.temp_dir,
+            book_title="Test Book",
+            validate_audio=False,  # Disable audio validation for mock testing
+            validate_text=False,  # Disable text validation for mock testing
         )
 
     def tearDown(self):
@@ -110,7 +115,12 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         ]
 
         self.config = ConversionConfig(
-            engine="edge", voice="test-voice", output_dir=self.temp_dir, book_title="Test Book"
+            engine="edge",
+            voice="test-voice",
+            output_dir=self.temp_dir,
+            book_title="Test Book",
+            validate_audio=False,
+            validate_text=False,
         )
 
     def tearDown(self):
@@ -150,7 +160,13 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
     def test_setup_output_directory_no_title(self):
         """Test output directory setup without book title"""
-        config = ConversionConfig(engine="edge", output_dir=self.temp_dir, book_title="")
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=self.temp_dir,
+            book_title="",
+            validate_audio=False,
+            validate_text=False,
+        )
         output_dir = self.converter._setup_output_directory(config)
 
         expected = Path(self.temp_dir) / "edge__default"
@@ -385,7 +401,13 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         # Run conversion
         chapters = [chapter]
-        config = ConversionConfig(engine="edge", output_dir=str(cache_dir), book_title="Test Book")
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Test Book",
+        )
 
         result = await self.converter._convert_chapters_sequential(
             chapters, mock_engine, cache_dir, config
@@ -458,7 +480,11 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         # Run conversion
         config = ConversionConfig(
-            engine="edge", output_dir=str(cache_dir), book_title="Integration_Test"
+            engine="edge",
+            output_dir=str(cache_dir),
+            book_title="Integration_Test",
+            validate_audio=False,
+            validate_text=False,
         )
 
         result = await self.converter._convert_chapters_sequential(
@@ -540,6 +566,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         config = ConversionConfig(
             engine="edge",
             output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
             book_title="Long_Book",
             edge_auto_offline_chars=0,
             edge_auto_offline_seconds=0,
@@ -600,7 +628,11 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         engine = DummyTTSEngine()
         config = ConversionConfig(
-            engine="edge", output_dir=str(cache_dir), book_title="Multilingual_Test"
+            engine="edge",
+            output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Multilingual_Test",
         )
 
         # Run conversion
@@ -688,7 +720,11 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         engine = TrackingTTSEngine()
         config = ConversionConfig(
-            engine="edge", output_dir=str(cache_dir), book_title="Emphasis_Test"
+            engine="edge",
+            output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Emphasis_Test",
         )
 
         # Run conversion
@@ -768,7 +804,11 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         engine = ExactTrackingTTSEngine()
         config = ConversionConfig(
-            engine="edge", output_dir=str(cache_dir), book_title="Exact_Match_Test"
+            engine="edge",
+            output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Exact_Match_Test",
         )
 
         # Run conversion
@@ -832,7 +872,13 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 return output_path
 
         engine = CountingTTSEngine()
-        config = ConversionConfig(engine="edge", output_dir=str(cache_dir), book_title="Cache_Test")
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Cache_Test",
+        )
 
         # First conversion
         result1 = await self.converter._convert_chapters_sequential(
@@ -918,7 +964,13 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         spy_engine = SpyTTSEngine()
 
         # Run conversion
-        config = ConversionConfig(engine="edge", output_dir=str(cache_dir), book_title="Messias")
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Messias",
+        )
 
         result = await self.converter._convert_chapters_sequential(
             [chapter], spy_engine, cache_dir, config
@@ -1261,6 +1313,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         config = ConversionConfig(
             engine="piper",
             output_dir=str(output_root),
+            validate_audio=False,
+            validate_text=False,
             book_title="Livro Retry",
             extra={"max_auto_retries": 3},
             edge_auto_offline_chars=0,
@@ -1325,6 +1379,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         config = ConversionConfig(
             engine="edge",
             output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
             book_title="Complete_Test",
             edge_auto_offline_chars=0,
             edge_auto_offline_seconds=0,
@@ -1402,7 +1458,11 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         engine = CapturingTTSEngine()
         config = ConversionConfig(
-            engine="edge", output_dir=str(cache_dir), book_title="Structure_Test"
+            engine="edge",
+            output_dir=str(cache_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Structure_Test",
         )
 
         # Run conversion

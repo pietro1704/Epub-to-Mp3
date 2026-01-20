@@ -132,7 +132,7 @@ class TestTextIntegrityValidator(unittest.TestCase):
         validation = self.validator.validate_chapter_text(chapter, 1)
 
         self.assertFalse(validation.is_valid)
-        self.assertIn("texto foi perdido", validation.error_message.lower())
+        self.assertIn("text was lost", validation.error_message.lower())
 
     def test_validate_all_chapters_no_cache(self):
         """Test validating all chapters when no cache exists"""
@@ -193,7 +193,7 @@ class TestTextIntegrityValidator(unittest.TestCase):
 
         self.assertTrue(report.has_cache_corruption)
         self.assertGreaterEqual(report.invalid_chapters, 2)
-        self.assertTrue(any("Conteúdo duplicado" in err for err in report.errors))
+        self.assertTrue(any("Duplicate content" in err for err in report.errors))
 
     def test_save_all_chapters_text(self):
         """Test saving text for all chapters"""
