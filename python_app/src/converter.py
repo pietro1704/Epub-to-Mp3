@@ -192,13 +192,19 @@ class AudioConverter:
                     )
                 )
             )
-            # Skip auto-fix during initial stage (validation before conversion starts)
-            # or if validation/auto-fix is disabled
+            # Skip auto-fix:
+            # - During "initial" stage (before conversion)
+            # - During "chapter-X" stages (while converting)
+            # - During "final" stage if conversion just completed (cache may still be writing)
+            # Only run auto-fix for persistent issues, not transient ones during conversion
+            is_during_conversion = (
+                stage == "initial" or stage.startswith("chapter-") or stage == "final"
+            )
             if (
                 has_problems
                 and getattr(config, "auto_fix_output", True)
                 and not self._auto_fix_guard
-                and stage != "initial"
+                and not is_during_conversion
             ):
                 # Avoid auto-fix inside an active event loop (e.g., during async conversion)
                 in_loop = False
@@ -3220,6 +3226,7 @@ class AudioConverter:
                     book_title=book_title,
                     book_author=book_author,
                     cover_art=cover_art,
+                    skip_preprocessing=True,  # Preprocessing already done by parallel caller
                 )
             )
 
