@@ -476,7 +476,13 @@ class SparkTTSEngine:
 
                     if chunk_callback:
                         try:
-                            chunk_callback(i, result)
+                            chunk_callback(i, result, chunk)
+                        except TypeError:
+                            # Fallback for callbacks that don't accept text parameter
+                            try:
+                                chunk_callback(i, result)
+                            except Exception:
+                                pass
                         except Exception:
                             pass
 

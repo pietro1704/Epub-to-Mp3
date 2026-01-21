@@ -1,4 +1,4 @@
-import { useMemo, useRef } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   ConversionState,
   StatusEntry,
@@ -57,6 +57,10 @@ export default function StatusPanel({
   const { locale } = useI18n();
   const rawLogRef = useRef<HTMLPreElement>(null);
   const showError = (phase === "error" || phase === "cancelled") && error;
+  const [playingSegment, setPlayingSegment] = useState<{
+    chapterIndex: number;
+    segmentIndex: number;
+  } | null>(null);
 
   const errorText = showError
     ? t.status.errorPrefix.replace("{message}", error)
@@ -249,9 +253,16 @@ export default function StatusPanel({
         bookTitle={bookTitle}
         bookAuthor={bookAuthor}
         coverUrl={coverUrl}
+        onPlayingSegment={(chapterIndex, segmentIndex) =>
+          setPlayingSegment({ chapterIndex, segmentIndex })
+        }
       />
       {chapterProgress && chapterProgress.length > 0 && (
-        <ChapterProgressList entries={chapterProgress} jobId={jobId} />
+        <ChapterProgressList
+          entries={chapterProgress}
+          jobId={jobId}
+          playingSegment={playingSegment}
+        />
       )}
 
       {showRawLog && (

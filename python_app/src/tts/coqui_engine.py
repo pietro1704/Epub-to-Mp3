@@ -857,7 +857,13 @@ class CoquiTTSEngine:
                 _notify_progress(segment_text)
                 if chunk_callback:
                     try:
-                        chunk_callback(0, output_path)
+                        chunk_callback(0, output_path, segment_text)
+                    except TypeError:
+                        # Fallback for callbacks that don't accept text parameter
+                        try:
+                            chunk_callback(0, output_path)
+                        except Exception:
+                            pass
                     except Exception:
                         pass
                 if self.verbose:
@@ -977,7 +983,13 @@ class CoquiTTSEngine:
                     _notify_progress(text_value)
                     if chunk_callback:
                         try:
-                            chunk_callback(segment_index, target_path)
+                            chunk_callback(segment_index, target_path, text_value)
+                        except TypeError:
+                            # Fallback for callbacks that don't accept text parameter
+                            try:
+                                chunk_callback(segment_index, target_path)
+                            except Exception:
+                                pass
                         except Exception:
                             pass
 
@@ -1039,7 +1051,13 @@ class CoquiTTSEngine:
                     _notify_progress(segment_text)
                     if chunk_callback:
                         try:
-                            chunk_callback(idx, temp_path)
+                            chunk_callback(idx, temp_path, segment_text)
+                        except TypeError:
+                            # Fallback for callbacks that don't accept text parameter
+                            try:
+                                chunk_callback(idx, temp_path)
+                            except Exception:
+                                pass
                         except Exception:
                             pass
 

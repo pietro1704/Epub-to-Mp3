@@ -73,3 +73,127 @@ class TestValidateBook(unittest.TestCase):
             self.assertEqual(stats["missing_cache"], 0)
             self.assertEqual(stats["missing_mp3"], 0)
             self.assertEqual(issues, [])
+
+    def test_validate_book_rejects_mismatched_names_and_html(self):
+        with (
+            tempfile.TemporaryDirectory() as output_dir,
+            tempfile.TemporaryDirectory() as cache_dir,
+        ):
+            output_path = Path(output_dir)
+            text_dir = output_path / "text"
+            text_dir.mkdir()
+
+            parsed_path = text_dir / "1 - Outro titulo-parsed.txt"
+            pretts_path = text_dir / "1 - Outro titulo-pre-tts.txt"
+            html_text = "<p>Capítulo 1 - Raiz</p> Começo limpo e sem lixo."
+            parsed_path.write_text(html_text, encoding="utf-8")
+            pretts_path.write_text(html_text, encoding="utf-8")
+
+            mp3_path = output_path / "1 - Nome Errado.mp3"
+            mp3_path.write_bytes(b"fake mp3 data" * 200)
+
+            fake_result = SimpleNamespace(is_valid=True, duration_diff_percent=0)
+
+            with patch("validate_conversion.AudioValidator") as mock_validator:
+                mock_validator.return_value.validate_duration.return_value = fake_result
+                with patch(
+                    "validate_conversion.load_epub_chapters",
+                    return_value=[(1, "Capítulo 1 - Raiz", "Capítulo 1 - Raiz começa aqui.")],
+                ):
+                    stats, issues = vc.validate_book(
+                        Path("book.epub"),
+                        output_dir=output_path,
+                        cache_dir=Path(cache_dir),
+                    )
+
+            self.assertGreater(stats["text_mismatch"], 0)
+            self.assertTrue(
+                any("HTML" in issue or "tag" in issue.lower() for issue in issues),
+                "HTML tags in cached text should be reported",
+            )
+            self.assertTrue(
+                any("filename" in issue.lower() or "nome" in issue.lower() for issue in issues),
+                "Mismatched TXT/MP3 names should be reported",
+            )
+
+    def test_validate_book_flags_even_small_truncation(self):
+        with (
+            tempfile.TemporaryDirectory() as output_dir,
+            tempfile.TemporaryDirectory() as cache_dir,
+        ):
+            output_path = Path(output_dir)
+            text_dir = output_path / "text"
+            text_dir.mkdir()
+
+            original_text = "Capítulo 2 - Trecho original com final completo."
+            truncated_text = "Capítulo 2 - Trecho original com final complet"
+
+            parsed_path = text_dir / "1 - Capítulo 2 - Trecho original-parsed.txt"
+            pretts_path = text_dir / "1 - Capítulo 2 - Trecho original-pre-tts.txt"
+            parsed_path.write_text(truncated_text, encoding="utf-8")
+            pretts_path.write_text(truncated_text, encoding="utf-8")
+
+            mp3_path = output_path / "1 - Capítulo 2 - Trecho original.mp3"
+            mp3_path.write_bytes(b"fake mp3 data" * 200)
+
+            fake_result = SimpleNamespace(is_valid=True, duration_diff_percent=0)
+
+            with patch("validate_conversion.AudioValidator") as mock_validator:
+                mock_validator.return_value.validate_duration.return_value = fake_result
+                with patch(
+                    "validate_conversion.load_epub_chapters",
+                    return_value=[(1, "Capítulo 2 - Trecho original", original_text)],
+                ):
+                    stats, issues = vc.validate_book(
+                        Path("book.epub"),
+                        output_dir=output_path,
+                        cache_dir=Path(cache_dir),
+                    )
+
+            self.assertEqual(stats["text_mismatch"], 1)
+            self.assertTrue(
+                any("difer" in issue.lower() or "trunc" in issue.lower() for issue in issues),
+                "Even small text truncations must be reported as issues",
+            )
+
+    def test_validate_book_detects_duplicate_outputs(self):
+        with (
+            tempfile.TemporaryDirectory() as output_dir,
+            tempfile.TemporaryDirectory() as cache_dir,
+        ):
+            output_path = Path(output_dir)
+            text_dir = output_path / "text"
+            text_dir.mkdir()
+
+            duplicate_text = "Capítulo único renderizado duas vezes."
+
+            for idx in (1, 2):
+                parsed = text_dir / f"{idx} - Capítulo {idx}-parsed.txt"
+                pretts = text_dir / f"{idx} - Capítulo {idx}-pre-tts.txt"
+                parsed.write_text(duplicate_text, encoding="utf-8")
+                pretts.write_text(duplicate_text, encoding="utf-8")
+                mp3 = output_path / f"{idx} - Capítulo {idx}.mp3"
+                mp3.write_bytes(b"fake mp3 data" * 200)
+
+            fake_result = SimpleNamespace(is_valid=True, duration_diff_percent=0)
+
+            with patch("validate_conversion.AudioValidator") as mock_validator:
+                mock_validator.return_value.validate_duration.return_value = fake_result
+                with patch(
+                    "validate_conversion.load_epub_chapters",
+                    return_value=[
+                        (1, "Capítulo 1", duplicate_text),
+                        (2, "Capítulo 2", "Conteúdo diferente que foi sobrescrito."),
+                    ],
+                ):
+                    stats, issues = vc.validate_book(
+                        Path("book.epub"),
+                        output_dir=output_path,
+                        cache_dir=Path(cache_dir),
+                    )
+
+            self.assertGreaterEqual(stats["text_mismatch"], 1)
+            self.assertTrue(
+                any("duplicad" in issue.lower() for issue in issues),
+                "Duplicate chapter outputs should be reported as critical issues",
+            )

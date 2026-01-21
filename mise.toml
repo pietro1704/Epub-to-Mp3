@@ -95,3 +95,55 @@ echo "🔍 Instalando ferramentas de lint/format..."
 echo "🌐 Instalando dependências web..."
 (cd web && mise exec -- npm install)
 """
+
+[tasks.test]
+description = "Run unit + integration + web tests"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+mise run test:unit
+mise run test:integration
+mise run test:web
+"""
+
+[tasks."test:unit"]
+description = "Run Python unit tests (excluding benchmarks)"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+if [ ! -x ".venv/bin/python" ]; then
+  mise run install
+fi
+
+.venv/bin/python -m pytest python_app/tests test_ambiguous_languages.py test_new_features.py -k "not benchmark"
+"""
+
+[tasks."test:integration"]
+description = "Run Python integration/benchmark-style tests"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+if [ ! -x ".venv/bin/python" ]; then
+  mise run install
+fi
+
+.venv/bin/python -m pytest python_app/tests -k "benchmark"
+"""
+
+[tasks."test:web"]
+description = "Run web lint + test + build"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+if [ ! -x ".venv/bin/python" ]; then
+  mise run install
+fi
+
+(cd web && mise exec -- npm run lint)
+(cd web && mise exec -- npm run test)
+(cd web && mise exec -- npm run build)
+"""

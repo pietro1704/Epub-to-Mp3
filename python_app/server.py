@@ -2345,6 +2345,52 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     return FileResponse(path=file_path, media_type=_guess_media_type(file_path.name))
 
 
+@app.get("/api/jobs/{job_id}/fulltext")
+async def get_job_fulltext(job_id: str) -> dict:
+    """Return full text of all chapters before audio conversion starts.
+
+    This allows the UI to display chapter text immediately, even before
+    any audio segments are ready.
+    """
+    job_data = jobs.get(job_id) or job_manager.load_job(job_id)
+    if not job_data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # Get the source file path
+    input_file = job_data.get("inputFile")
+    if not input_file or not Path(input_file).exists():
+        raise HTTPException(status_code=404, detail="Source file not found")
+
+    try:
+        # Read the ebook and extract chapter structure
+        reader = EbookReader(input_file)
+        book_chapters = reader.get_chapter_structure(preserve_all=True)
+
+        # Build response with chapter text
+        chapters = []
+        for idx, chapter in enumerate(book_chapters):
+            chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
+            clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
+
+            chapters.append(
+                {
+                    "index": idx,
+                    "name": chapter.name or f"Chapter {idx}",
+                    "text": clean_text,
+                    "charCount": len(clean_text),
+                }
+            )
+
+        return {
+            "jobId": job_id,
+            "bookTitle": job_data.get("bookTitle", ""),
+            "bookAuthor": job_data.get("bookAuthor", ""),
+            "chapters": chapters,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract text: {str(e)}")
+
+
 @app.post("/api/cleanup")
 async def cleanup_old_files(max_age_hours: int = 48) -> dict:
     """

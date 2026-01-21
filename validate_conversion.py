@@ -267,6 +267,43 @@ def normalize_title_key(text: str, limit: int = 80) -> str:
     return normalized
 
 
+HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+
+
+def contains_html_markup(text: str | None) -> bool:
+    """Detect if text still contains HTML tags or markup."""
+    if not text:
+        return False
+    return bool(HTML_TAG_PATTERN.search(text))
+
+
+def normalized_file_title(path: Path) -> str:
+    """Normalize a filename (mp3/txt) to compare with chapter titles."""
+    stem = _strip_text_suffix(_strip_numeric_prefix(path.stem))
+    return normalize_title_key(stem)
+
+
+def normalized_leading_text(text: str, limit: int = 120) -> str:
+    """Normalize the leading portion of chapter text to validate filename alignment."""
+    cleaned = HTML_TAG_PATTERN.sub(" ", text or "")
+    cleaned = normalize_text(cleaned)
+    if not cleaned:
+        return ""
+    return normalize_title_key(cleaned[:limit])
+
+
+def titles_align(expected: str, candidate: str) -> bool:
+    """Check if two normalized title fragments refer to the same chapter."""
+    if not expected or not candidate:
+        return False
+    return (
+        expected.startswith(candidate)
+        or candidate.startswith(expected)
+        or expected in candidate
+        or candidate in expected
+    )
+
+
 def _sample_edges(text: str, size: int = 180) -> Tuple[str, str]:
     """Return normalized start/end samples for integrity checks."""
     normalized = normalize_text(text)
@@ -315,10 +352,13 @@ def compare_texts(original: str, cached: str) -> Tuple[bool, int, str]:
 
     diff_chars = len(norm_orig) - len(norm_cached)
 
+    if diff_chars == 0:
+        return False, diff_chars, "Content differs (same length)"
+
     # Find what's different
     if len(norm_cached) < len(norm_orig):
         # Text was removed
-        return False, diff_chars, f"Missing {diff_chars} chars from cached"
+        return False, diff_chars, f"Missing {diff_chars} chars from cached (truncation)"
     else:
         # Text was added
         return False, diff_chars, f"Added {-diff_chars} chars to cached"
@@ -394,9 +434,19 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
             continue
         status = "✅"
         issue_desc = ""
+        norm_title = normalize_title_key(_strip_numeric_prefix(chapter_title))
+        leading_title = normalized_leading_text(epub_text)
+        expected_titles = [t for t in (norm_title, leading_title) if t]
+
+        if contains_html_markup(chapter_title):
+            stats["text_mismatch"] += 1
+            status = "❌"
+            issue_desc = "HTML in title"
+            issues.append(
+                f"Chapter {chapter_num}: Chapter title contains HTML/markup: {chapter_title}"
+            )
 
         # Find cached text files (prefer title-based mapping to avoid index mismatch)
-        norm_title = normalize_title_key(_strip_numeric_prefix(chapter_title))
         text_files = cache_index.get(norm_title, {})
         if not text_files:
             text_files = find_text_files_by_title(text_dirs, chapter_title)
@@ -409,38 +459,75 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
             issue_desc = "No cache files"
             issues.append(f"Chapter {chapter_num}: Missing cache files")
         else:
+            # Validate filenames align with EPUB titles/heading text
+            for label, path in text_files.items():
+                file_norm = normalized_file_title(path)
+                if expected_titles and not any(titles_align(t, file_norm) for t in expected_titles):
+                    stats["text_mismatch"] += 1
+                    status = "❌"
+                    issue_desc = (issue_desc + " Filename mismatch").strip()
+                    issues.append(
+                        f"Chapter {chapter_num} '{chapter_title}': {label} filename '{path.name}' does not match EPUB heading"
+                    )
+                if contains_html_markup(path.stem):
+                    stats["text_mismatch"] += 1
+                    status = "❌"
+                    issue_desc = (issue_desc + " HTML in filename").strip()
+                    issues.append(
+                        f"Chapter {chapter_num}: {label} filename has HTML-like markup: {path.name}"
+                    )
+
             # Check parsed.txt vs EPUB
             if "parsed" in text_files:
                 parsed_text = text_files["parsed"].read_text(encoding="utf-8")
-                is_equal, diff, desc = compare_texts(epub_text, parsed_text)
+                parsed_norm = normalize_text(parsed_text)
 
-                if not is_equal and abs(diff) > 50:  # Allow small diffs
+                if contains_html_markup(parsed_text):
                     stats["text_mismatch"] += 1
                     status = "❌"
-                    issue_desc = f"EPUB≠Parsed ({diff:+d})"
+                    issue_desc = (issue_desc + " HTML in parsed").strip()
                     issues.append(
-                        f"Chapter {chapter_num}: EPUB text differs from parsed by {diff} chars"
+                        f"Chapter {chapter_num}: Parsed text still contains HTML tags or markup"
                     )
-                else:
-                    epub_start, epub_end = _sample_edges(epub_text)
-                    parsed_norm = normalize_text(parsed_text)
-                    if epub_start and epub_start not in parsed_norm:
+
+                is_equal, diff, desc = compare_texts(epub_text, parsed_text)
+
+                parsed_mismatch_recorded = False
+                if not is_equal:
+                    stats["text_mismatch"] += 1
+                    status = "❌"
+                    issue_desc = (issue_desc + f" EPUB≠Parsed ({diff:+d})").strip()
+                    parsed_mismatch_recorded = True
+                    issues.append(f"Chapter {chapter_num}: EPUB text differs from parsed ({desc})")
+
+                epub_start, epub_end = _sample_edges(epub_text)
+                if epub_start and epub_start not in parsed_norm:
+                    if not parsed_mismatch_recorded:
                         stats["text_mismatch"] += 1
-                        status = "❌"
-                        issue_desc = "EPUB≠Parsed (start mismatch)"
-                        issues.append(
-                            f"Chapter {chapter_num}: Parsed missing start sample from EPUB"
-                        )
-                    if epub_end and epub_end not in parsed_norm:
+                        parsed_mismatch_recorded = True
+                    status = "❌"
+                    issue_desc = (issue_desc + " EPUB≠Parsed (start mismatch)").strip()
+                    issues.append(f"Chapter {chapter_num}: Parsed missing start sample from EPUB")
+                if epub_end and epub_end not in parsed_norm:
+                    if not parsed_mismatch_recorded:
                         stats["text_mismatch"] += 1
-                        status = "❌"
-                        issue_desc = "EPUB≠Parsed (end mismatch)"
-                        issues.append(f"Chapter {chapter_num}: Parsed missing end sample from EPUB")
+                        parsed_mismatch_recorded = True
+                    status = "❌"
+                    issue_desc = (issue_desc + " EPUB≠Parsed (end mismatch)").strip()
+                    issues.append(f"Chapter {chapter_num}: Parsed missing end sample from EPUB")
 
             # Check parsed.txt vs pre-tts.txt
             if "parsed" in text_files and "pre_tts" in text_files:
                 parsed_text = text_files["parsed"].read_text(encoding="utf-8")
                 pretts_text = text_files["pre_tts"].read_text(encoding="utf-8")
+                if contains_html_markup(pretts_text):
+                    stats["text_mismatch"] += 1
+                    status = "❌"
+                    issue_desc = (issue_desc + " HTML in pre-TTS").strip()
+                    issues.append(
+                        f"Chapter {chapter_num}: PreTTS text still contains HTML tags or markup"
+                    )
+
                 pretts_for_compare = strip_formatting_cues(pretts_text)
                 parsed_norm = normalize_text(parsed_text)
                 pretts_norm = normalize_text(pretts_for_compare)
@@ -449,20 +536,19 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
 
                 if abs(diff) > allowed_diff:
                     stats["parsed_pretts_diff"] += 1
-                    if status == "✅":
-                        status = "⚠️ "
-                    issue_desc += f" Parsed≠PreTTS ({diff:+d})"
+                    status = "❌" if status == "✅" else status
+                    issue_desc = (issue_desc + f" Parsed≠PreTTS ({diff:+d})").strip()
                     issues.append(
                         f"Chapter {chapter_num} '{chapter_title}': Parsed differs from PreTTS by {diff} chars - TEXT WAS MODIFIED BEFORE TTS!"
                     )
                     parsed_start, parsed_end = _sample_edges(parsed_text)
                     if parsed_start and parsed_start not in pretts_norm:
-                        issue_desc += " Parsed≠PreTTS (start mismatch)"
+                        issue_desc = (issue_desc + " Parsed≠PreTTS (start mismatch)").strip()
                         issues.append(
                             f"Chapter {chapter_num}: PreTTS missing start sample from parsed"
                         )
                     if parsed_end and parsed_end not in pretts_norm:
-                        issue_desc += " Parsed≠PreTTS (end mismatch)"
+                        issue_desc = (issue_desc + " Parsed≠PreTTS (end mismatch)").strip()
                         issues.append(
                             f"Chapter {chapter_num}: PreTTS missing end sample from parsed"
                         )
@@ -484,9 +570,29 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
             stats["missing_mp3"] += 1
             if status == "✅":
                 status = "❌"
-            issue_desc += " No MP3"
+            issue_desc = (issue_desc + " No MP3").strip()
             issues.append(f"Chapter {chapter_num}: Missing MP3 file")
         else:
+            mp3_norm_title = normalized_file_title(mp3_file)
+            if expected_titles and not any(
+                titles_align(t, mp3_norm_title) for t in expected_titles
+            ):
+                stats["text_mismatch"] += 1
+                if status == "✅":
+                    status = "❌"
+                issue_desc = (issue_desc + " MP3 name mismatch").strip()
+                issues.append(
+                    f"Chapter {chapter_num} '{chapter_title}': MP3 filename '{mp3_file.name}' does not match EPUB heading"
+                )
+            if contains_html_markup(mp3_file.stem):
+                stats["text_mismatch"] += 1
+                if status == "✅":
+                    status = "❌"
+                issue_desc = (issue_desc + " MP3 filename has HTML").strip()
+                issues.append(
+                    f"Chapter {chapter_num}: MP3 filename contains HTML/markup: {mp3_file.name}"
+                )
+
             # Validate MP3 duration
             if "pre_tts" in text_files:
                 pretts_text = text_files["pre_tts"].read_text(encoding="utf-8")
@@ -499,7 +605,9 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
                         stats["duration_mismatch"] += 1
                         if status == "✅":
                             status = "⚠️ "
-                        issue_desc += f" Duration({result.duration_diff_percent:+.0f}%)"
+                        issue_desc = (
+                            issue_desc + f" Duration({result.duration_diff_percent:+.0f}%)"
+                        ).strip()
 
         if status == "✅":
             stats["perfect"] += 1

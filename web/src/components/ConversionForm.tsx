@@ -398,10 +398,6 @@ export default function ConversionForm({
     );
   }, [voiceSuggestions, voice]);
 
-  const usableEntries = useMemo(
-    () => fileQueue.filter((entry) => entry.status !== "error"),
-    [fileQueue],
-  );
   const disableSubmit = isSubmitting || pendingUploads > 0;
   const END_DROP_ID = "__queue_end__";
 

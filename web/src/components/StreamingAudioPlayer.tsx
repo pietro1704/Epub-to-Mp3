@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { conversionClient } from "../services/ConversionService";
 import {
   ChapterProgressEntry,
   ChapterStreamManifest,
+  AudioChunkEntry,
 } from "../types/conversion";
 
 interface StreamingAudioPlayerProps {
@@ -11,21 +12,10 @@ interface StreamingAudioPlayerProps {
   bookTitle?: string;
   bookAuthor?: string;
   coverUrl?: string;
+  onPlayingSegment?: (chapterIndex: number, segmentIndex: number) => void;
 }
 
-const POLL_INTERVAL_MS = 2000;
-
-function selectInitialChapter(
-  chapters?: ChapterProgressEntry[] | null,
-): number | null {
-  if (!chapters || chapters.length === 0) return null;
-  const active = chapters.find(
-    (chapter) =>
-      chapter.status === "processing" || chapter.status === "retrying",
-  );
-  if (active) return active.index;
-  return chapters[0]?.index ?? null;
-}
+const POLL_INTERVAL_MS = 1500;
 
 export default function StreamingAudioPlayer({
   jobId,
@@ -33,28 +23,36 @@ export default function StreamingAudioPlayer({
   bookTitle,
   bookAuthor,
   coverUrl,
+  onPlayingSegment,
 }: StreamingAudioPlayerProps): JSX.Element | null {
   const [started, setStarted] = useState(false);
-  const [currentChapter, setCurrentChapter] = useState<number | null>(
-    selectInitialChapter(chapters),
-  );
-  const [currentChunk, setCurrentChunk] = useState(0);
+  const [currentChapter, setCurrentChapter] = useState<number>(0);
+  const [currentSegment, setCurrentSegment] = useState(0);
   const [manifest, setManifest] = useState<ChapterStreamManifest | null>(null);
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const [src, setSrc] = useState<string | null>(null);
+  const [currentSegmentText, setCurrentSegmentText] = useState<string>("");
+  const pollTimeoutRef = useRef<number>();
 
-  useEffect(() => {
-    setCurrentChapter(selectInitialChapter(chapters));
+  // Get sorted chapters
+  const sortedChapters = useMemo(() => {
+    if (!chapters) return [];
+    return [...chapters].sort((a, b) => a.index - b.index);
   }, [chapters]);
 
-  const currentChapterLabel = useMemo(() => {
-    if (!chapters || currentChapter === null) return "";
-    const entry = chapters.find((item) => item.index === currentChapter);
-    return entry ? `${entry.index}. ${entry.name}` : "";
-  }, [chapters, currentChapter]);
+  const currentChapterEntry = useMemo(() => {
+    return sortedChapters.find((ch) => ch.index === currentChapter);
+  }, [sortedChapters, currentChapter]);
 
+  const currentChapterLabel = useMemo(() => {
+    if (!currentChapterEntry) return "";
+    return `${currentChapterEntry.index}. ${currentChapterEntry.name}`;
+  }, [currentChapterEntry]);
+
+  // Update MediaSession API
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
     const title = bookTitle || "Audiobook";
@@ -80,110 +78,188 @@ export default function StreamingAudioPlayer({
     }
   }, [bookTitle, bookAuthor, coverUrl, currentChapterLabel]);
 
+  // Notify parent about current playing segment
   useEffect(() => {
-    if (!jobId || !started || currentChapter === null) {
-      return;
+    if (isPlaying && onPlayingSegment) {
+      onPlayingSegment(currentChapter, currentSegment);
     }
-    let cancelled = false;
-    let timeoutId: number | undefined;
+  }, [isPlaying, currentChapter, currentSegment, onPlayingSegment]);
 
-    const poll = async () => {
-      if (cancelled) return;
-      try {
-        const data = await conversionClient.getChapterManifest?.(
-          jobId,
-          currentChapter,
-        );
-        if (cancelled) return;
-        if (!data) {
-          setWaiting(true);
-          timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS);
-          return;
-        }
-        const sortedChunks = (data.chunks || []).slice().sort((a, b) => {
-          if (typeof a.index !== "number") return -1;
-          if (typeof b.index !== "number") return 1;
-          return a.index - b.index;
-        });
-        const normalizedManifest = { ...data, chunks: sortedChunks };
-        setManifest(normalizedManifest);
-        const nextChunk = sortedChunks.find(
-          (chunk) =>
-            typeof chunk.index === "number" && chunk.index >= currentChunk,
-        );
-        if (nextChunk && nextChunk.url) {
-          if (nextChunk.index !== currentChunk) {
-            setCurrentChunk(nextChunk.index);
-          }
-          setSrc(nextChunk.url);
-          setWaiting(false);
-        } else {
-          setWaiting(true);
-          timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS);
-        }
-      } catch (fetchErr) {
-        console.warn("[StreamingAudio] manifest fetch failed", fetchErr);
+  // Poll for next chunk
+  const pollForChunk = useCallback(async () => {
+    if (!jobId || !started) return;
+
+    try {
+      const data = await conversionClient.getChapterManifest?.(
+        jobId,
+        currentChapter,
+      );
+
+      if (!data) {
         setWaiting(true);
-        timeoutId = window.setTimeout(poll, POLL_INTERVAL_MS);
+        pollTimeoutRef.current = window.setTimeout(
+          pollForChunk,
+          POLL_INTERVAL_MS,
+        );
+        return;
       }
-    };
 
-    poll();
+      const sortedChunks = (data.chunks || [])
+        .slice()
+        .sort((a, b) => a.index - b.index);
+      const normalizedManifest = { ...data, chunks: sortedChunks };
+      setManifest(normalizedManifest);
+
+      const nextChunk = sortedChunks.find(
+        (chunk) => chunk.index >= currentSegment,
+      );
+
+      if (nextChunk && nextChunk.url) {
+        setSrc(nextChunk.url);
+        setCurrentSegmentText(nextChunk.text || "");
+        setCurrentSegment(nextChunk.index);
+        setWaiting(false);
+      } else {
+        setWaiting(true);
+        pollTimeoutRef.current = window.setTimeout(
+          pollForChunk,
+          POLL_INTERVAL_MS,
+        );
+      }
+    } catch (fetchErr) {
+      console.warn("[StreamingAudio] manifest fetch failed", fetchErr);
+      setWaiting(true);
+      pollTimeoutRef.current = window.setTimeout(
+        pollForChunk,
+        POLL_INTERVAL_MS,
+      );
+    }
+  }, [jobId, started, currentChapter, currentSegment]);
+
+  useEffect(() => {
+    if (pollTimeoutRef.current) {
+      window.clearTimeout(pollTimeoutRef.current);
+    }
+    if (started && jobId) {
+      pollForChunk();
+    }
     return () => {
-      cancelled = true;
-      if (timeoutId) {
-        window.clearTimeout(timeoutId);
+      if (pollTimeoutRef.current) {
+        window.clearTimeout(pollTimeoutRef.current);
       }
     };
-  }, [jobId, started, currentChapter, currentChunk]);
+  }, [jobId, started, currentChapter, currentSegment, pollForChunk]);
 
+  // Auto-play when src changes
   useEffect(() => {
     if (!started || !src) return;
     const audio = audioRef.current;
     if (!audio) return;
+
     audio.src = src;
     audio.play().catch((err) => {
+      console.error("[StreamingPlayer] Playback failed:", err);
       setError(err?.message || "Playback failed");
     });
   }, [src, started]);
 
-  const handleStart = async () => {
+  const handleStart = () => {
     setError(null);
     setWaiting(true);
     setStarted(true);
+    setCurrentChapter(sortedChapters[0]?.index ?? 0);
+    setCurrentSegment(0);
+  };
+
+  const handlePause = () => {
+    setIsPlaying(false);
+  };
+
+  const handlePlay = () => {
+    setIsPlaying(true);
   };
 
   const handleEnded = () => {
-    setCurrentChunk((prev) => prev + 1);
-  };
+    // Try next segment in current chapter
+    if (manifest && manifest.chunks) {
+      const nextSegment = manifest.chunks.find(
+        (chunk) => chunk.index > currentSegment,
+      );
+      if (nextSegment) {
+        setCurrentSegment(nextSegment.index);
+        return;
+      }
+    }
 
-  const handleNextChapter = () => {
-    if (!chapters || currentChapter === null) return;
-    const next = chapters
-      .filter(
-        (entry) => entry.index > currentChapter && entry.status !== "failed",
-      )
-      .sort((a, b) => a.index - b.index)[0];
-    if (next) {
-      setCurrentChapter(next.index);
-      setCurrentChunk(0);
+    // No more segments in current chapter, try next chapter
+    const currentChapterIdx = sortedChapters.findIndex(
+      (ch) => ch.index === currentChapter,
+    );
+    if (
+      currentChapterIdx >= 0 &&
+      currentChapterIdx < sortedChapters.length - 1
+    ) {
+      const nextChapter = sortedChapters[currentChapterIdx + 1];
+      setCurrentChapter(nextChapter.index);
+      setCurrentSegment(0);
       setManifest(null);
       setSrc(null);
+      setCurrentSegmentText("");
+    } else {
+      // Reached the end of the book
+      setStarted(false);
+      setIsPlaying(false);
+      setWaiting(false);
     }
   };
 
-  const isActive = started && jobId && currentChapter !== null;
+  const handleNextChapter = () => {
+    const currentIdx = sortedChapters.findIndex(
+      (ch) => ch.index === currentChapter,
+    );
+    if (currentIdx >= 0 && currentIdx < sortedChapters.length - 1) {
+      const nextChapter = sortedChapters[currentIdx + 1];
+      setCurrentChapter(nextChapter.index);
+      setCurrentSegment(0);
+      setManifest(null);
+      setSrc(null);
+      setCurrentSegmentText("");
+    }
+  };
+
+  const handlePrevChapter = () => {
+    const currentIdx = sortedChapters.findIndex(
+      (ch) => ch.index === currentChapter,
+    );
+    if (currentIdx > 0) {
+      const prevChapter = sortedChapters[currentIdx - 1];
+      setCurrentChapter(prevChapter.index);
+      setCurrentSegment(0);
+      setManifest(null);
+      setSrc(null);
+      setCurrentSegmentText("");
+    }
+  };
+
   if (!jobId || !chapters || chapters.length === 0) {
     return null;
   }
+
+  const currentProgress = manifest?.chunks
+    ? `${currentSegment + 1} / ${manifest.chunks.length}`
+    : waiting
+      ? "Aguardando..."
+      : "Pronto";
 
   return (
     <div className="streaming-player">
       <div className="streaming-player__header">
         <div>
-          <div className="streaming-player__title">Streaming Player</div>
+          <div className="streaming-player__title">
+            {isPlaying ? "▶️" : "⏸️"} Player Sequencial
+          </div>
           <div className="streaming-player__chapter">
-            {currentChapterLabel || "Select a chapter"}
+            {currentChapterLabel || "Selecione um capítulo"}
           </div>
         </div>
         {!started ? (
@@ -191,19 +267,32 @@ export default function StreamingAudioPlayer({
             type="button"
             className="button"
             onClick={handleStart}
-            disabled={!jobId}
+            disabled={!jobId || sortedChapters.length === 0}
           >
-            ▶️ Start listening
+            ▶️ Ouvir agora (streaming em sequência)
           </button>
         ) : (
-          <button
-            type="button"
-            className="button-secondary"
-            onClick={handleNextChapter}
-            disabled={!isActive}
-          >
-            Skip chapter →
-          </button>
+          <div className="streaming-player__controls">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={handlePrevChapter}
+              disabled={currentChapter === sortedChapters[0]?.index}
+            >
+              ⏮️ Cap. anterior
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={handleNextChapter}
+              disabled={
+                currentChapter ===
+                sortedChapters[sortedChapters.length - 1]?.index
+              }
+            >
+              Cap. próximo ⏭️
+            </button>
+          </div>
         )}
       </div>
 
@@ -211,36 +300,53 @@ export default function StreamingAudioPlayer({
         <audio
           ref={audioRef}
           controls
-          playsInline
           onEnded={handleEnded}
+          onPlay={handlePlay}
+          onPause={handlePause}
           style={{ width: "100%" }}
         />
         <div className="streaming-player__meta">
           <span>
             {waiting
-              ? "Waiting for next chunk…"
+              ? "⏳ Aguardando próximo segmento..."
               : src
-                ? `Playing chunk ${currentChunk + 1}`
-                : "Ready"}
+                ? `🎧 Segmento ${currentProgress}`
+                : "Pronto para iniciar"}
           </span>
           {error && <span className="streaming-player__error">⚠️ {error}</span>}
         </div>
+
+        {currentSegmentText && (
+          <div className="streaming-player__text">
+            <div className="streaming-player__text-label">
+              📖 Texto do segmento atual:
+            </div>
+            <div className="streaming-player__text-content">
+              {currentSegmentText}
+            </div>
+          </div>
+        )}
       </div>
 
-      {manifest?.chunks?.length ? (
+      {manifest?.chunks && manifest.chunks.length > 0 && (
         <div className="streaming-player__chunks">
-          {manifest.chunks.slice(0, 6).map((chunk) => (
-            <span
-              key={`chunk-${chunk.index}`}
-              className={`streaming-player__chip ${
-                chunk.index === currentChunk ? "is-active" : ""
-              }`}
-            >
-              #{chunk.index}
-            </span>
-          ))}
+          <div className="streaming-player__chunks-label">
+            Segmentos do capítulo atual:
+          </div>
+          <div className="streaming-player__chunks-list">
+            {manifest.chunks.map((chunk: AudioChunkEntry) => (
+              <span
+                key={`chunk-${chunk.index}`}
+                className={`streaming-player__chip ${
+                  chunk.index === currentSegment ? "is-active" : ""
+                } ${chunk.index < currentSegment ? "is-completed" : ""}`}
+              >
+                #{chunk.index + 1}
+              </span>
+            ))}
+          </div>
         </div>
-      ) : null}
+      )}
     </div>
   );
 }

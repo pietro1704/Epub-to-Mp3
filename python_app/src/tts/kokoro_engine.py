@@ -369,7 +369,13 @@ class KokoroTTSEngine:
 
                     if chunk_callback:
                         try:
-                            chunk_callback(i, None)
+                            chunk_callback(i, None, chunk)
+                        except TypeError:
+                            # Fallback for callbacks that don't accept text parameter
+                            try:
+                                chunk_callback(i, None)
+                            except Exception:
+                                pass
                         except Exception:
                             pass
 

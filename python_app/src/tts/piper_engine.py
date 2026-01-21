@@ -213,7 +213,13 @@ class PiperTTSEngine:
                 _notify_progress(segment_text)
                 if chunk_callback:
                     try:
-                        chunk_callback(idx, temp_path)
+                        chunk_callback(idx, temp_path, segment_text)
+                    except TypeError:
+                        # Fallback for callbacks that don't accept text parameter
+                        try:
+                            chunk_callback(idx, temp_path)
+                        except Exception:
+                            pass
                     except Exception:
                         pass
 

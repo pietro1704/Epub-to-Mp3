@@ -10,6 +10,7 @@ import { useI18n, useTranslations } from "../i18n/I18nProvider";
 interface ChapterProgressListProps {
   entries: ChapterProgressEntry[];
   jobId?: string;
+  playingSegment?: { chapterIndex: number; segmentIndex: number } | null;
 }
 
 const STATUS_ICONS: Record<ChapterProgressEntry["status"], string> = {
@@ -27,6 +28,7 @@ const STREAM_REFRESH_MS = 1500;
 export default function ChapterProgressList({
   entries,
   jobId,
+  playingSegment,
 }: ChapterProgressListProps): JSX.Element | null {
   const t = useTranslations();
   const { locale } = useI18n();
@@ -387,6 +389,37 @@ export default function ChapterProgressList({
     }
   }, [jobId, entries]);
 
+  // Auto-expand and scroll to playing segment
+  useEffect(() => {
+    if (!playingSegment) return;
+    const { chapterIndex, segmentIndex } = playingSegment;
+
+    // Auto-expand the chapter being played
+    setExpanded((prev) => {
+      if (prev[chapterIndex]) return prev;
+      return { ...prev, [chapterIndex]: true };
+    });
+
+    // Scroll to the playing segment after a short delay (to allow expansion animation)
+    const timer = window.setTimeout(() => {
+      const container = containerRef.current;
+      if (!container) return;
+
+      const segmentElement = container.querySelector(
+        `[data-segment-key="${chapterIndex}-${segmentIndex}"]`,
+      );
+
+      if (segmentElement) {
+        segmentElement.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    }, 300);
+
+    return () => window.clearTimeout(timer);
+  }, [playingSegment]);
+
   useEffect(() => {
     if (!expandAllChapters) return;
     setExpanded((prev) => {
@@ -673,10 +706,18 @@ export default function ChapterProgressList({
                             expandAllTexts || expandedTexts[textKey],
                           );
                           const hasText = Boolean(segment.text?.trim());
+                          const isPlaying =
+                            playingSegment?.chapterIndex === entry.index &&
+                            playingSegment?.segmentIndex === segment.index;
                           return (
                             <li
                               key={`segment-${entry.index}-${segment.index}`}
-                              className="chapter-progress__segment"
+                              className={`chapter-progress__segment ${
+                                isPlaying
+                                  ? "chapter-progress__segment--playing"
+                                  : ""
+                              }`}
+                              data-segment-key={`${entry.index}-${segment.index}`}
                             >
                               <div className="chapter-progress__segment-header">
                                 <div className="chapter-progress__segment-meta">
