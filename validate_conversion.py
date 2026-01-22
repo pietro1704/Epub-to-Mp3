@@ -28,6 +28,7 @@ from python_app.src.audio_validator import AudioValidator
 from python_app.src.config import ConversionConfig
 from python_app.src.converter import AudioConverter
 from python_app.src.ebook_reader import EbookReader
+from python_app.src.utils import FileManager, resolve_cache_root
 
 
 def find_cache_dir(book_path: Path) -> Path:
@@ -732,16 +733,26 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
     return stats, issues
 
 
-def auto_fix(epub_path: Path, output_dir: Path, engine: str = "edge", voice: str | None = None):
+def auto_fix(
+    epub_path: Path,
+    output_dir: Path,
+    engine: str = "edge",
+    voice: str | None = None,
+    cache_dir: Path | None = None,
+):
     """
     Reprocessa o livro inteiro com cache limpo para corrigir capítulos faltantes/divergentes.
     """
     print("\n🔄 AUTO-FIX: limpando cache e reconvertendo livro completo...")
+    if cache_dir is None:
+        safe_name = FileManager.sanitize_filename(epub_path.stem) or "livro"
+        cache_dir = resolve_cache_root() / safe_name
     reader = EbookReader(str(epub_path))
     config = ConversionConfig(
         engine=engine,
         voice=voice or "",
         output_dir=output_dir,
+        cache_dir=cache_dir,
         book_title=epub_path.stem,
         preserve_all_chapters=True,
         force_reprocess=True,

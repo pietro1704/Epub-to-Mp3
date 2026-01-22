@@ -3034,6 +3034,10 @@ class ConverterApplication:
             overrides["validate_audio"] = bool(getattr(args, "validate_audio"))
         if getattr(args, "strict_validate", False):
             overrides["strict_validate"] = True
+        if getattr(args, "auto_validate_output", None) is not None:
+            overrides["auto_validate_output"] = bool(getattr(args, "auto_validate_output"))
+        if getattr(args, "auto_fix_output", None) is not None:
+            overrides["auto_fix_output"] = bool(getattr(args, "auto_fix_output"))
 
         config = self.config.create_conversion_config(
             engine=args.engine or "edge",
@@ -3134,6 +3138,11 @@ class ConverterApplication:
         bitrate = getattr(args, "bitrate", None)
         if bitrate:
             config.bitrate = str(bitrate)
+
+        if getattr(args, "auto_validate_output", None) is not None:
+            config.auto_validate_output = bool(getattr(args, "auto_validate_output"))
+        if getattr(args, "auto_fix_output", None) is not None:
+            config.auto_fix_output = bool(getattr(args, "auto_fix_output"))
         sample_rate = self._clamp_int(
             getattr(args, "sample_rate", None), min_value=8000, max_value=96000
         )
@@ -3354,6 +3363,34 @@ def _add_conversion_arguments(
         "--validate-during-conversion",
         action="store_true",
         help="Validate parsed text and MP3 output during conversion",
+    )
+    parser.add_argument(
+        "--auto-validate-output",
+        dest="auto_validate_output",
+        action="store_true",
+        default=None,
+        help="Always run post-validation (enabled by default)",
+    )
+    parser.add_argument(
+        "--no-auto-validate-output",
+        dest="auto_validate_output",
+        action="store_false",
+        default=None,
+        help="Disable automatic post-validation",
+    )
+    parser.add_argument(
+        "--auto-fix-output",
+        dest="auto_fix_output",
+        action="store_true",
+        default=None,
+        help="Always auto-fix on validation errors (enabled by default)",
+    )
+    parser.add_argument(
+        "--no-auto-fix-output",
+        dest="auto_fix_output",
+        action="store_false",
+        default=None,
+        help="Disable automatic auto-fix",
     )
     parser.add_argument(
         "--no-validate",

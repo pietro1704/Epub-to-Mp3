@@ -192,19 +192,11 @@ class AudioConverter:
                     )
                 )
             )
-            # Skip auto-fix:
-            # - During "initial" stage (before conversion)
-            # - During "chapter-X" stages (while converting)
-            # - During "final" stage if conversion just completed (cache may still be writing)
-            # Only run auto-fix for persistent issues, not transient ones during conversion
-            is_during_conversion = (
-                stage == "initial" or stage.startswith("chapter-") or stage == "final"
-            )
+            # Auto-fix should run whenever issues are detected (user-requested).
             if (
                 has_problems
                 and getattr(config, "auto_fix_output", True)
                 and not self._auto_fix_guard
-                and not is_during_conversion
             ):
                 # Avoid auto-fix inside an active event loop (e.g., during async conversion)
                 in_loop = False
@@ -239,6 +231,7 @@ class AudioConverter:
                         Path(output_dir),
                         engine=config.engine,
                         voice=config.voice,
+                        cache_dir=cache_dir if cache_dir else None,
                     )
                     stats, issues = validate_book(Path(epub_path), Path(output_dir))
                 finally:
@@ -2483,6 +2476,7 @@ class AudioConverter:
             normalized_outputs = self._normalize_output_numbers(chapters, output_dir, config)
             if normalized_outputs:
                 result.output_files = normalized_outputs
+            self._sync_text_cache_to_output(temp_dir, output_dir)
             self.progress.finish()
             self._report_results(result)
             return result
@@ -3062,9 +3056,29 @@ class AudioConverter:
                 print("❌ Conversion failed - no chapters converted")
 
         await self._stop_health_watchdog()
+        self._sync_text_cache_to_output(temp_dir, output_dir)
         self.progress.finish()
         self._report_results(result)
         return result
+
+    def _sync_text_cache_to_output(self, temp_dir: Path, output_dir: Path) -> int:
+        """Copy cached .txt artifacts into output/text for validation."""
+        text_dir = Path(temp_dir) / "text"
+        if not text_dir.exists():
+            return 0
+        target_dir = Path(output_dir) / "text"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        copied = 0
+        for txt_file in text_dir.glob("*.txt"):
+            target_path = target_dir / txt_file.name
+            try:
+                shutil.copy2(txt_file, target_path)
+                copied += 1
+            except OSError:
+                continue
+        if self.verbose and copied:
+            print(f"[DEBUG] Synced {copied} text file(s) to output/text")
+        return copied
 
     def _setup_output_directory(self, config: ConversionConfig) -> Path:
         base_dir = Path(config.output_dir)
@@ -4905,6 +4919,15 @@ class AudioConverter:
 
             if cache_valid:
                 progress.start_chapter(chapter_label, index)
+                if cache_dir:
+                    try:
+                        cached_chunks = ChapterProcessor.chunk_text(
+                            self._speech_text(chapter) or ""
+                        )
+                        cached_payload = "\n".join(cached_chunks)
+                        self._cache_text(cache_dir, chapter, index, cached_payload)
+                    except Exception:
+                        pass
                 self._cache_audio(
                     cache_dir, output_path, chapter, index, config, text_root=output_dir
                 )
@@ -5600,8 +5623,14 @@ class AudioConverter:
             target_dir.mkdir(parents=True, exist_ok=True)
             chapter_name = getattr(chapter, "name", None) or f"Chapter {index}"
             safe_name = FileManager.sanitize_filename(chapter_name)
-            target_path = target_dir / f"{index:03d} - {safe_name}.txt"
+            base_name = f"{index:03d} - {safe_name}"
+            target_path = target_dir / f"{base_name}.txt"
+            pre_tts_path = target_dir / f"{base_name}-pre-tts.txt"
+            parsed_path = target_dir / f"{base_name}-parsed.txt"
+            parsed_text = getattr(chapter, "text", None) or ""
             target_path.write_text(text, encoding="utf-8")
+            pre_tts_path.write_text(text, encoding="utf-8")
+            parsed_path.write_text(parsed_text, encoding="utf-8")
         except OSError:
             pass
 

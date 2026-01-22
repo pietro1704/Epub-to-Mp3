@@ -660,6 +660,8 @@ class AppConfig:
         validate_text = bool(kwargs.pop("validate_text", True))
         validate_audio = bool(kwargs.pop("validate_audio", True))
         strict_validate = bool(kwargs.pop("strict_validate", False))
+        auto_validate_output = bool(kwargs.pop("auto_validate_output", True))
+        auto_fix_output = bool(kwargs.pop("auto_fix_output", True))
 
         config = ConversionConfig(
             engine=engine,
@@ -703,6 +705,8 @@ class AppConfig:
             validate_text=validate_text,
             validate_audio=validate_audio,
             strict_validate=strict_validate,
+            auto_validate_output=auto_validate_output,
+            auto_fix_output=auto_fix_output,
         )
 
         if kwargs:
