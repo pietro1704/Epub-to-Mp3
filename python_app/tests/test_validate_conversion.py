@@ -197,3 +197,67 @@ class TestValidateBook(unittest.TestCase):
                 any("duplicad" in issue.lower() for issue in issues),
                 "Duplicate chapter outputs should be reported as critical issues",
             )
+
+    def test_validate_book_detects_duplicate_audio(self):
+        with (
+            tempfile.TemporaryDirectory() as output_dir,
+            tempfile.TemporaryDirectory() as cache_dir,
+        ):
+            output_path = Path(output_dir)
+            text_dir = output_path / "text"
+            text_dir.mkdir()
+
+            chapter_text_a = "A" * 500
+            chapter_text_b = "B" * 500
+
+            for idx, payload in ((1, chapter_text_a), (2, chapter_text_b)):
+                parsed = text_dir / f"{idx} - Capítulo {idx}-parsed.txt"
+                pretts = text_dir / f"{idx} - Capítulo {idx}-pre-tts.txt"
+                parsed.write_text(payload, encoding="utf-8")
+                pretts.write_text(payload, encoding="utf-8")
+                mp3 = output_path / f"{idx} - Capítulo {idx}.mp3"
+                mp3.write_bytes(b"same-audio" * 200)
+
+            fake_result = SimpleNamespace(is_valid=True, duration_diff_percent=0)
+
+            with patch("validate_conversion.AudioValidator") as mock_validator:
+                mock_validator.return_value.validate_duration.return_value = fake_result
+                with patch(
+                    "validate_conversion.load_epub_chapters",
+                    return_value=[
+                        (1, "Capítulo 1", chapter_text_a),
+                        (2, "Capítulo 2", chapter_text_b),
+                    ],
+                ):
+                    stats, issues = vc.validate_book(
+                        Path("book.epub"),
+                        output_dir=output_path,
+                        cache_dir=Path(cache_dir),
+                    )
+
+            self.assertGreaterEqual(stats["audio_duplicate"], 1)
+            self.assertTrue(
+                any(
+                    "duplicate audio" in issue.lower() or "audio" in issue.lower()
+                    for issue in issues
+                ),
+                "Duplicate audio should be reported as critical issues",
+            )
+
+    def test_detect_duplicate_audio_files(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            output_path = Path(output_dir)
+            first = output_path / "1 - Capitulo 1.mp3"
+            second = output_path / "2 - Capitulo 2.mp3"
+            third = output_path / "3 - Capitulo 3.mp3"
+
+            payload = b"same-audio" * 200
+            first.write_bytes(payload)
+            second.write_bytes(payload)
+            third.write_bytes(b"unique-audio" * 200)
+
+            groups = vc.detect_duplicate_audio_files(output_path)
+
+            self.assertEqual(len(groups), 1)
+            names = sorted(p.name for p in groups[0])
+            self.assertEqual(names, sorted([first.name, second.name]))

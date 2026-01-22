@@ -340,6 +340,28 @@ def hash_text(text: str) -> str:
     return hashlib.md5(normalize_text(text).encode("utf-8")).hexdigest()
 
 
+def hash_file(path: Path) -> str:
+    """Return stable hash for audio duplication detection."""
+    hasher = hashlib.sha1()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def detect_duplicate_audio_files(output_dir: Path, min_size_bytes: int = 1024) -> List[List[Path]]:
+    """Detect duplicated audio files by hashing MP3 payloads."""
+    groups: Dict[str, List[Path]] = {}
+    for mp3 in sorted(output_dir.glob("*.mp3")):
+        try:
+            if mp3.stat().st_size < min_size_bytes:
+                continue
+        except OSError:
+            continue
+        groups.setdefault(hash_file(mp3), []).append(mp3)
+    return [paths for paths in groups.values() if len(paths) > 1]
+
+
 def compare_texts(original: str, cached: str) -> Tuple[bool, int, str]:
     """
     Compare two texts and return (is_equal, diff_chars, description).
@@ -418,12 +440,15 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
         "parsed_pretts_diff": 0,
         "missing_mp3": 0,
         "duration_mismatch": 0,
+        "audio_duplicate": 0,
         "perfect": 0,
     }
 
     issues = []
     validator = AudioValidator()
     text_hashes: Dict[str, List[int]] = {}
+    chapter_text_hash: Dict[int, str] = {}
+    audio_hashes: Dict[str, Dict[str, object]] = {}
 
     print(f"{'Ch':<4} {'Status':<12} {'EPUB':<8} {'Parsed':<8} {'PreTTS':<8} {'MP3':<8} {'Issue'}")
     print("-" * 70)
@@ -558,6 +583,7 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
             if base_text and base_text.exists():
                 h = hash_text(base_text.read_text(encoding="utf-8"))
                 text_hashes.setdefault(h, []).append(chapter_num)
+                chapter_text_hash[chapter_num] = h
 
         # Find MP3
         mp3_file = (
@@ -609,6 +635,29 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
                             issue_desc + f" Duration({result.duration_diff_percent:+.0f}%)"
                         ).strip()
 
+            try:
+                base_hash = chapter_text_hash.get(chapter_num)
+                if base_hash and len(normalize_text(epub_text)) >= 400:
+                    audio_hash = hash_file(mp3_file)
+                    existing = audio_hashes.get(audio_hash)
+                    if existing and existing.get("text_hash") != base_hash:
+                        stats["audio_duplicate"] += 1
+                        stats["text_mismatch"] += 1
+                        if status == "✅":
+                            status = "❌"
+                        issue_desc = (issue_desc + " MP3 duplicado").strip()
+                        issues.append(
+                            "Duplicate audio detected between chapters: "
+                            f"{existing.get('chapter')} and {chapter_num}"
+                        )
+                    else:
+                        audio_hashes[audio_hash] = {
+                            "chapter": chapter_num,
+                            "text_hash": base_hash,
+                        }
+            except Exception as exc:
+                issues.append(f"Chapter {chapter_num}: audio hash check failed ({exc})")
+
         if status == "✅":
             stats["perfect"] += 1
 
@@ -641,6 +690,7 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
     print(f"⚠️  Parsed ≠ PreTTS: {stats['parsed_pretts_diff']}")
     print(f"❌ MP3 faltando: {stats['missing_mp3']}")
     print(f"⚠️  Duração incorreta: {stats['duration_mismatch']}")
+    print(f"❌ Áudio duplicado: {stats['audio_duplicate']}")
 
     if issues:
         print("\n" + "=" * 70)
@@ -657,6 +707,15 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
             print(f"  • Capítulos: {', '.join(map(str, group))}")
         stats["text_mismatch"] += len(dup_groups)
         issues.append("Conteúdo duplicado detectado entre capítulos")
+
+    audio_dupes = detect_duplicate_audio_files(output_dir)
+    if audio_dupes:
+        print("\n⚠️  ÁUDIO DUPLICADO DETECTADO ENTRE ARQUIVOS")
+        for group in audio_dupes:
+            labels = ", ".join(path.name for path in group)
+            print(f"  • Arquivos: {labels}")
+        stats["audio_duplicate"] += len(audio_dupes)
+        issues.append("Arquivos de áudio duplicados detectados (hash match)")
 
     print("\n" + "=" * 70)
     if stats["parsed_pretts_diff"] > 0 or stats["text_mismatch"] > 0:

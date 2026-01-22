@@ -3183,6 +3183,8 @@ class AudioConverter:
                 )
                 for _ in chapters_list:
                     self.progress.tick("✅ Complete (cache)") if hasattr(self, "progress") else None
+                if getattr(config, "auto_validate_output", True):
+                    self._auto_validate_output(output_dir, stage="cache-only")
                 return ConversionResult(
                     success=True,
                     total_chapters=len(chapters_list),

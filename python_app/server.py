@@ -45,7 +45,7 @@ from main import ConverterApplication
 from pydantic import BaseModel
 from src.benchmark_profile import recommend_parallel_slots
 from src.cache_manager import CacheManager
-from src.chapter_utils import deduplicate_chapters_by_content
+from src.chapter_utils import MIN_DUPLICATE_CHARS, deduplicate_chapters_by_content
 from src.config import CACHE_DIR, ConversionConfig
 from src.ebook_reader import EbookReader
 from src.engine_pool import JobEnginePool, ResourceSnapshot
@@ -4042,6 +4042,8 @@ async def process_conversion(job_id: str) -> None:
                     edge_configs.append(cfg)
                     _edge_cfg_seen.add(id(cfg))
 
+        audio_duplicate_tracker = AudioDuplicateTracker()
+
         def _apply_edge_slow_mode(reason: str) -> None:
             nonlocal parallel_slots, requested_slots, parallel_slots_cap, edge_slow_mode
             if not edge_auto_tune or edge_slow_mode:
@@ -4771,6 +4773,63 @@ async def process_conversion(job_id: str) -> None:
                         ):
                             job_failed["value"] = True
                         return
+                    duplicate_entry = None
+                    try:
+                        duplicate_entry = await audio_duplicate_tracker.check_duplicate(
+                            output_file, clean_text, idx, chapter_name
+                        )
+                    except Exception as exc:
+                        _append_event(
+                            job,
+                            f"⚠️ Falha ao validar duplicidade de áudio: {exc}",
+                        )
+
+                    if duplicate_entry:
+                        duplicate_msg = (
+                            "Áudio duplicado detectado: "
+                            f"mesmo conteúdo do capítulo {duplicate_entry.get('index')} "
+                            f"({duplicate_entry.get('name')})"
+                        )
+                        _append_event(job, f"⚠️ {duplicate_msg}")
+                        with contextlib.suppress(OSError):
+                            output_file.unlink(missing_ok=True)
+                        if await _maybe_retry(
+                            reason="áudio duplicado",
+                            engine_label=engine_label,
+                            engine_obj=engine_obj,
+                            engine_config=engine_config,
+                        ):
+                            continue
+                        if auto_mode:
+                            available_auto = _available_auto_pool()
+                            next_engine = _next_auto_engine(
+                                auto_order, attempted_auto, available_auto
+                            )
+                            if next_engine:
+                                attempted_auto.add(next_engine)
+                                local_engine_name = next_engine
+                                local_active_config = available_auto[next_engine]
+                                _append_event(
+                                    job,
+                                    "   ↳ AUTO: áudio duplicado; tentando outra engine",
+                                )
+                                continue
+                        if _switch_to_next_engine("Áudio duplicado detectado"):
+                            local_active_config = active_config
+                            local_engine_name = (
+                                active_config.engine if active_config else config.engine
+                            ) or "auto"
+                            continue
+                        if _record_chapter_failure(
+                            job,
+                            engine_obj,
+                            chapter_name,
+                            duplicate_msg,
+                            chapter_index=idx,
+                            fatal=False,
+                        ):
+                            job_failed["value"] = True
+                        return
                     break
 
                 engine_runtime = max((last_stage_timestamp - synth_started), 0.001)
@@ -5250,6 +5309,52 @@ def _guess_media_type(filename: str) -> str:
     if lowered.endswith(".zip"):
         return "application/zip"
     return "application/octet-stream"
+
+
+def _hash_audio_file(path: Path) -> str:
+    hasher = hashlib.sha1()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _hash_text_payload(text: str) -> str:
+    return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()
+
+
+class AudioDuplicateTracker:
+    def __init__(self) -> None:
+        self._hashes: dict[str, dict] = {}
+        self._lock = asyncio.Lock()
+
+    async def check_duplicate(
+        self,
+        audio_path: Path,
+        text: str,
+        chapter_index: int,
+        chapter_name: str,
+    ) -> Optional[dict]:
+        text_len = len(text or "")
+        if text_len < MIN_DUPLICATE_CHARS:
+            return None
+        text_hash = _hash_text_payload(text)
+        audio_hash = _hash_audio_file(audio_path)
+        async with self._lock:
+            existing = self._hashes.get(audio_hash)
+            if (
+                existing
+                and existing.get("text_hash") != text_hash
+                and existing.get("text_len", 0) >= MIN_DUPLICATE_CHARS
+            ):
+                return existing
+            self._hashes[audio_hash] = {
+                "index": chapter_index,
+                "name": chapter_name,
+                "text_hash": text_hash,
+                "text_len": text_len,
+            }
+        return None
 
 
 async def _get_audio_duration(file_path: Path) -> float:
