@@ -148,6 +148,8 @@ class AudioConverter:
         Best-effort: failures are logged only in verbose mode.
         """
         try:
+            if stage not in {"final", "cache-only"}:
+                return
             config = self._active_config
             if not config or getattr(config, "auto_validate_output", True) is False:
                 return
