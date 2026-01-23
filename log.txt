@@ -1,0 +1,36 @@
+╔════════════════════════════════════════════════════════════╗
+║  🚀 EPUB/PDF TO MP3 CONVERTER - TURBO MODE               ║
+╚════════════════════════════════════════════════════════════╝
+
+============================================================
+🖥️  HARDWARE PROFILE & AUTO-OPTIMIZATION
+============================================================
+
+💻 CPU:
+   Model: Intel(R) Core(TM) i5-8259U CPU @ 2.30GHz
+   Cores: 4 physical, 8 logical
+   Frequency: 2300 MHz
+
+🧠 RAM:
+   Total: 8.0 GB
+   Available: 1.7 GB
+   Conversion Budget: 1.6 GB (auto target)
+
+🎮 GPU:
+   Type: Intel Iris Plus Graphics 655
+   Status: ❌ No dedicated GPU
+
+🌐 Platform:
+   OS: Darwin
+   Network: Ultra
+
+⚡ Performance Tier: High (Enthusiast)
+
+⚙️  OPTIMIZATIONS:
+   Segment Concurrency: 8
+   Chapter Concurrency: 2
+   Parallel Processing: ✅ Enabled
+   Chapter Strategy: 🚀 Parallel chapters (max priority)
+   Strategy: Balanced aggressive for high performance
+
+============================================================

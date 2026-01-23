@@ -140,6 +140,7 @@ class AudioConverter:
         self._cover_art: Optional[dict] = None
         self._text_validation_hashes: Dict[str, int] = {}
         self._text_validation_errors: List[str] = []
+        self._last_chapters_for_text: Optional[List[Chapter]] = None
 
     def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
         """
@@ -148,7 +149,7 @@ class AudioConverter:
         Best-effort: failures are logged only in verbose mode.
         """
         try:
-            if stage not in {"final", "cache-only"}:
+            if stage not in {"final", "cache-only", "test"}:
                 return
             config = self._active_config
             if not config or getattr(config, "auto_validate_output", True) is False:
@@ -169,6 +170,7 @@ class AudioConverter:
                 sys.path.insert(0, str(project_root))
 
             from validate_conversion import (
+                auto_fix,
                 auto_fix_partial,
                 extract_problem_chapters,
                 validate_book,
@@ -218,14 +220,23 @@ class AudioConverter:
                     def _background_fix() -> None:
                         try:
                             issue_chapters = extract_problem_chapters(issues)
-                            auto_fix_partial(
-                                Path(epub_path),
-                                Path(output_dir),
-                                issue_chapters,
-                                engine=config.engine,
-                                voice=config.voice,
-                                cache_dir=cache_dir if cache_dir else None,
-                            )
+                            if stage == "test":
+                                auto_fix(
+                                    Path(epub_path),
+                                    Path(output_dir),
+                                    engine=config.engine,
+                                    voice=config.voice,
+                                    cache_dir=cache_dir if cache_dir else None,
+                                )
+                            else:
+                                auto_fix_partial(
+                                    Path(epub_path),
+                                    Path(output_dir),
+                                    issue_chapters,
+                                    engine=config.engine,
+                                    voice=config.voice,
+                                    cache_dir=cache_dir if cache_dir else None,
+                                )
                             validate_book(Path(epub_path), Path(output_dir))
                         finally:
                             self._auto_fix_guard = False
@@ -236,14 +247,23 @@ class AudioConverter:
                 self._auto_fix_guard = True
                 try:
                     issue_chapters = extract_problem_chapters(issues)
-                    auto_fix_partial(
-                        Path(epub_path),
-                        Path(output_dir),
-                        issue_chapters,
-                        engine=config.engine,
-                        voice=config.voice,
-                        cache_dir=cache_dir if cache_dir else None,
-                    )
+                    if stage == "test":
+                        auto_fix(
+                            Path(epub_path),
+                            Path(output_dir),
+                            engine=config.engine,
+                            voice=config.voice,
+                            cache_dir=cache_dir if cache_dir else None,
+                        )
+                    else:
+                        auto_fix_partial(
+                            Path(epub_path),
+                            Path(output_dir),
+                            issue_chapters,
+                            engine=config.engine,
+                            voice=config.voice,
+                            cache_dir=cache_dir if cache_dir else None,
+                        )
                     stats, issues = validate_book(Path(epub_path), Path(output_dir))
                 finally:
                     self._auto_fix_guard = False
@@ -1157,11 +1177,12 @@ class AudioConverter:
         config: ConversionConfig,
         *,
         text_validator: Optional["TextIntegrityValidator"] = None,
+        cleanup_existing: bool = True,
     ) -> None:
         """Generate all text files BEFORE starting TTS conversion"""
         text_dir = Path(output_dir) / "text"
         text_dir.mkdir(parents=True, exist_ok=True)
-        if any(text_dir.glob("*.txt")):
+        if cleanup_existing and any(text_dir.glob("*.txt")):
             for txt_file in text_dir.glob("*.txt"):
                 txt_file.unlink(missing_ok=True)
             if self.verbose:
@@ -1204,8 +1225,8 @@ class AudioConverter:
                     formatter.to_audible_text(self._speech_text(chapter), formatting_segments_local)
                 futures.append(executor.submit(_prepare_payload, chapter_label, chapter))
 
-            for idx, future in enumerate(futures):
-                chapter_label, chapter_num, chapter = chapter_entries[idx]
+            for idx, future in enumerate(futures, start=1):
+                chapter_label, chapter_num, chapter = chapter_entries[idx - 1]
                 max_retries = 3
                 retry_count = 0
                 result_data = None
@@ -1235,10 +1256,17 @@ class AudioConverter:
                 safe_name = self.file_manager.sanitize_filename(chapter_name, max_length=96)
                 label_variants = [chapter_label]
                 sequential_label = str(idx)
-                numeric_label = str(chapter_num)
-                for candidate in (sequential_label, numeric_label):
-                    if candidate not in label_variants:
-                        label_variants.append(candidate)
+                if sequential_label not in label_variants:
+                    label_variants.append(sequential_label)
+                label_is_integer = False
+                if isinstance(chapter_label, int):
+                    label_is_integer = True
+                elif isinstance(chapter_label, str):
+                    label_is_integer = chapter_label.strip().isdigit()
+                if label_is_integer:
+                    numeric_label = str(chapter_num)
+                    if numeric_label not in label_variants:
+                        label_variants.append(numeric_label)
 
                 paths_written = []
                 for label in label_variants:
@@ -2309,6 +2337,8 @@ class AudioConverter:
         chapters = list(
             reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or []
         )
+        chapters_for_text = chapters
+        self._last_chapters_for_text = list(chapters_for_text)
 
         # Store original before deduplication for potential restoration
         original_chapters = chapters.copy()
@@ -2332,6 +2362,7 @@ class AudioConverter:
 
         chapter_whitelist = self._parse_chapter_whitelist(config)
         if chapter_whitelist:
+            chapters_for_text = chapters
             chapters = self._apply_chapter_whitelist(chapters, chapter_whitelist)
             if not chapters:
                 empty_result = ConversionResult(True, 0, 0, [], [])
@@ -2350,7 +2381,7 @@ class AudioConverter:
         self._text_validation_hashes = {}
         self._text_validation_errors = []
         self._generate_all_text_files(
-            chapters,
+            chapters_for_text,
             temp_dir,
             config,
             text_validator=text_validator if getattr(config, "validate_text", True) else None,
@@ -2364,7 +2395,9 @@ class AudioConverter:
         self._auto_validate_output(output_dir, stage="initial")
 
         # Validate all chapters against cache
-        integrity_report = text_validator.validate_all_chapters(chapters, show_progress=True)
+        integrity_report = text_validator.validate_all_chapters(
+            chapters_for_text, show_progress=True
+        )
 
         # Hard-stop if chapters are empty or duplicated to avoid bad audio/output naming
         hard_block_errors = [
@@ -2403,13 +2436,22 @@ class AudioConverter:
                 temp_dir = self._setup_temp_directory(config)
                 text_validator = TextIntegrityValidator(cache_dir=temp_dir, verbose=self.verbose)
 
+                self._generate_all_text_files(
+                    chapters_for_text,
+                    temp_dir,
+                    config,
+                    text_validator=text_validator
+                    if getattr(config, "validate_text", True)
+                    else None,
+                )
+
                 print("✅ Cache cleaned! Proceeding with full conversion.\n")
             except Exception as exc:
                 print(f"❌ Falha ao limpar cache: {exc}")
                 print("⚠️  Continuando com conversão mas pode haver problemas.\n")
 
         # Save parsed text for all chapters (creates baseline for validation)
-        text_validator.save_all_chapters_text(chapters, show_progress=not self.verbose)
+        text_validator.save_all_chapters_text(chapters_for_text, show_progress=not self.verbose)
 
         if getattr(config, "priority_selectors", None):
             chapters = self._prioritize_chapters(chapters, config.priority_selectors)
@@ -2501,7 +2543,7 @@ class AudioConverter:
         # **NEW**: Generate ALL .txt files BEFORE starting TTS conversion (unless fully cached)
         if pending_chapters:
             print("\n📝 Generating text files...")
-            self._generate_all_text_files(chapters, temp_dir, config)
+            self._generate_all_text_files(chapters, temp_dir, config, cleanup_existing=False)
             print(f"  ✅ Generated {total_chapters} text file(s)\n")
             cached_paths, pending_chapters = self._split_cached_chapters(
                 chapters, temp_dir, config, allow_index_only=False
@@ -3216,10 +3258,12 @@ class AudioConverter:
         if not chapters_list:
             return ConversionResult(True, 0, 0, [], [])
 
-        # Bucketize by size (largest first) to reduce tail latency and lock contention
-        chapters_list.sort(key=self._estimate_chapter_chars, reverse=True)
+        chapters_for_text = list(chapters_list)
 
-        total_chapters = len(chapters_list)
+        # Bucketize by size (largest first) to reduce tail latency and lock contention
+        chapters_sorted = sorted(chapters_list, key=self._estimate_chapter_chars, reverse=True)
+
+        total_chapters = len(chapters_sorted)
         recommended = max(1, int(max_concurrent_chapters or 1))
         self._parallel_state.setdefault("ceiling", recommended)
         self._parallel_state["ceiling"] = recommended
@@ -3233,25 +3277,30 @@ class AudioConverter:
         # If preprocessing already done by caller, skip duplicate work
         if not skip_preprocessing:
             # Validate and clean cache (once for all chapters)
-            self._validate_and_clean_cache(chapters_list, output_dir, config)
+            self._validate_and_clean_cache(chapters_for_text, output_dir, config)
 
             generated_text = False
+            cleanup_existing = not self._parse_chapter_whitelist(config)
             if getattr(config, "auto_validate_output", True):
-                self._generate_all_text_files(chapters_list, output_dir, config)
+                self._generate_all_text_files(
+                    chapters_for_text, output_dir, config, cleanup_existing=cleanup_existing
+                )
                 generated_text = True
 
             # Fast-path cache check before generating text (partial-aware)
             cached_audio, pending_chapters = self._split_cached_chapters(
-                chapters_list, output_dir, config, allow_index_only=True
+                chapters_for_text, output_dir, config, allow_index_only=True
             )
 
             # Generate all text files (once for all chapters) if needed
             if pending_chapters and not generated_text:
-                self._generate_all_text_files(chapters_list, output_dir, config)
+                self._generate_all_text_files(
+                    chapters_for_text, output_dir, config, cleanup_existing=cleanup_existing
+                )
 
                 # Retry cache check after text generation (allows hash validation)
                 cached_audio, pending_chapters = self._split_cached_chapters(
-                    chapters_list, output_dir, config, allow_index_only=False
+                    chapters_for_text, output_dir, config, allow_index_only=False
                 )
 
             if cached_audio and not pending_chapters:
@@ -3264,8 +3313,8 @@ class AudioConverter:
                     self._auto_validate_output(output_dir, stage="cache-only")
                 return ConversionResult(
                     success=True,
-                    total_chapters=len(chapters_list),
-                    converted_chapters=len(chapters_list),
+                    total_chapters=len(chapters_for_text),
+                    converted_chapters=len(chapters_for_text),
                     output_files=cached_audio,
                     errors=[],
                 )
@@ -3275,6 +3324,12 @@ class AudioConverter:
                     f"♻️ Cache detected: {len(cached_audio)} chapter(s) ready; "
                     f"converting {len(pending_chapters)} remaining"
                 )
+
+            pending_chapters = sorted(
+                pending_chapters,
+                key=self._estimate_chapter_chars,
+                reverse=True,
+            )
 
             self._assign_progress_indices(pending_chapters)
             chapters_list = pending_chapters
@@ -3488,8 +3543,11 @@ class AudioConverter:
             self._validate_and_clean_cache(chapters_list, output_dir, config)
 
             generated_text = False
+            cleanup_existing = not self._parse_chapter_whitelist(config)
             if getattr(config, "auto_validate_output", True):
-                self._generate_all_text_files(chapters_list, output_dir, config)
+                self._generate_all_text_files(
+                    chapters_list, output_dir, config, cleanup_existing=cleanup_existing
+                )
                 generated_text = True
 
             # **FAST-PATH**: Try cache reuse before generating text (index-only allowed)
@@ -3499,7 +3557,9 @@ class AudioConverter:
 
             # **NEW**: Generate ALL text files BEFORE starting conversion (if needed)
             if pending_chapters and not generated_text:
-                self._generate_all_text_files(chapters_list, output_dir, config)
+                self._generate_all_text_files(
+                    chapters_list, output_dir, config, cleanup_existing=cleanup_existing
+                )
                 # Retry cache after having pre-tts hashes
                 cached_audio, pending_chapters = self._split_cached_chapters(
                     chapters_list, output_dir, config, allow_index_only=False
@@ -5567,6 +5627,18 @@ class AudioConverter:
         final_output = self._last_output_dir or (
             Path(self._active_config.output_dir) if self._active_config else None
         )
+        if (
+            final_output
+            and self._active_config
+            and self._last_chapters_for_text
+            and getattr(self._active_config, "auto_validate_output", True)
+        ):
+            self._generate_all_text_files(
+                self._last_chapters_for_text,
+                final_output,
+                self._active_config,
+                cleanup_existing=True,
+            )
         self._auto_validate_output(final_output, stage="final")
 
     def _cleanup_temp_audio(self, temp_dir: Path) -> None:

@@ -85,6 +85,16 @@ class TextProcessor:
     """Utility helpers for dealing with HTML text inside EPUB files."""
 
     @staticmethod
+    def clean_chapter_title(title: str) -> str:
+        """Remove common EPUB export prefixes like 'part0001' from chapter titles."""
+        if not title:
+            return title
+        cleaned = TextProcessor.normalise_whitespace(title)
+        cleaned = re.sub(r"^(?:part\d{3,})(?:\s*[-–:]\s*|\s+)", "", cleaned, flags=re.IGNORECASE)
+        cleaned = cleaned.strip()
+        return cleaned or title.strip()
+
+    @staticmethod
     def html_to_plain_text_with_formatting(
         content: Optional[str],
     ) -> Tuple[str, List[FormattingSegment]]:
@@ -1046,7 +1056,8 @@ class EpubParser:
             text = TextProcessor.add_pause_before_dash(text_with_footnotes)
 
             # Usar título do TOC
-            chapter_title = item.title.strip() if item.title else f"Capítulo {index_counter}"
+            raw_title = item.title.strip() if item.title else f"Capítulo {index_counter}"
+            chapter_title = TextProcessor.clean_chapter_title(raw_title)
 
             # Preparar speech text
             speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
@@ -1137,11 +1148,12 @@ class EpubParser:
             else:
                 text_with_footnotes = text_with_formatting
             text = TextProcessor.add_pause_before_dash(text_with_footnotes)
-            title = (
+            raw_title = (
                 TextProcessor.extract_title(raw_content, f"Capítulo {index_counter}")
                 if text
                 else f"Capítulo {index_counter}"
             )
+            title = TextProcessor.clean_chapter_title(raw_title)
 
             # Adicionar todos os capítulos, mesmo que estejam vazios
             # IMPORTANTE: speech_text deve ser o que será enviado ao TTS
