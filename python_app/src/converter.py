@@ -1221,7 +1221,7 @@ class AudioConverter:
                     raise Exception(f"Capítulo {chapter_label} retornou dados nulos")
 
                 chapter_label, chapter_name, parsed_text, pre_tts_text = result_data
-                safe_name = self.file_manager.sanitize_filename(chapter_name)
+                safe_name = self.file_manager.sanitize_filename(chapter_name, max_length=96)
                 parsed_path = text_dir / f"{chapter_label} - {safe_name}-parsed.txt"
                 pre_tts_path = text_dir / f"{chapter_label} - {safe_name}-pre-tts.txt"
 
