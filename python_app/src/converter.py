@@ -1223,9 +1223,11 @@ class AudioConverter:
                 chapter_label, chapter_name, parsed_text, pre_tts_text = result_data
                 safe_name = self.file_manager.sanitize_filename(chapter_name, max_length=96)
                 label_variants = [chapter_label]
+                sequential_label = str(idx)
                 numeric_label = str(chapter_num)
-                if chapter_label != numeric_label:
-                    label_variants.append(numeric_label)
+                for candidate in (sequential_label, numeric_label):
+                    if candidate not in label_variants:
+                        label_variants.append(candidate)
 
                 paths_written = []
                 for label in label_variants:
