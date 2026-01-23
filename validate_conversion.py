@@ -764,6 +764,59 @@ def auto_fix(
     asyncio.run(converter.convert(reader, config))
 
 
+def extract_problem_chapters(issues: List[str]) -> List[int]:
+    """Extract chapter numbers from validation issues."""
+    chapters: set[int] = set()
+    for issue in issues:
+        match = re.search(r"\bChapter\s+(\d+)\b", issue)
+        if match:
+            chapters.add(int(match.group(1)))
+            continue
+        cap_match = re.search(r"\bCapítulos?:\s*([0-9,\s]+)", issue)
+        if cap_match:
+            for part in cap_match.group(1).split(","):
+                part = part.strip()
+                if part.isdigit():
+                    chapters.add(int(part))
+    return sorted(chapters)
+
+
+def auto_fix_partial(
+    epub_path: Path,
+    output_dir: Path,
+    chapters: List[int],
+    *,
+    engine: str = "edge",
+    voice: str | None = None,
+    cache_dir: Path | None = None,
+) -> None:
+    """Reprocess only the specified chapters."""
+    if not chapters:
+        auto_fix(epub_path, output_dir, engine=engine, voice=voice, cache_dir=cache_dir)
+        return
+
+    print(f"\n🔄 AUTO-FIX: reconvertendo {len(chapters)} capítulo(s)...")
+    if cache_dir is None:
+        safe_name = FileManager.sanitize_filename(epub_path.stem) or "livro"
+        cache_dir = resolve_cache_root() / safe_name
+    reader = EbookReader(str(epub_path))
+    config = ConversionConfig(
+        engine=engine,
+        voice=voice or "",
+        output_dir=output_dir,
+        cache_dir=cache_dir,
+        book_title=epub_path.stem,
+        preserve_all_chapters=True,
+        force_reprocess=True,
+        clear_cache=False,
+        auto_validate_output=False,  # evita loops
+        auto_fix_output=False,  # evita loops
+    )
+    config.extra["chapter_whitelist"] = ",".join(str(ch) for ch in chapters)
+    converter = AudioConverter()
+    asyncio.run(converter.convert(reader, config))
+
+
 if __name__ == "__main__":
     import argparse
 

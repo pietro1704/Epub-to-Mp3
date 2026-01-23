@@ -168,7 +168,11 @@ class AudioConverter:
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
 
-            from validate_conversion import auto_fix, validate_book
+            from validate_conversion import (
+                auto_fix_partial,
+                extract_problem_chapters,
+                validate_book,
+            )
 
             cache_dir = getattr(config, "cache_dir", None)
             if cache_dir:
@@ -213,11 +217,14 @@ class AudioConverter:
 
                     def _background_fix() -> None:
                         try:
-                            auto_fix(
+                            issue_chapters = extract_problem_chapters(issues)
+                            auto_fix_partial(
                                 Path(epub_path),
                                 Path(output_dir),
+                                issue_chapters,
                                 engine=config.engine,
                                 voice=config.voice,
+                                cache_dir=cache_dir if cache_dir else None,
                             )
                             validate_book(Path(epub_path), Path(output_dir))
                         finally:
@@ -228,9 +235,11 @@ class AudioConverter:
                     return
                 self._auto_fix_guard = True
                 try:
-                    auto_fix(
+                    issue_chapters = extract_problem_chapters(issues)
+                    auto_fix_partial(
                         Path(epub_path),
                         Path(output_dir),
+                        issue_chapters,
                         engine=config.engine,
                         voice=config.voice,
                         cache_dir=cache_dir if cache_dir else None,
@@ -1655,6 +1664,39 @@ class AudioConverter:
             text = getattr(chapter, "text", "") or ""
         return len(text or "")
 
+    def _parse_chapter_whitelist(self, config: Optional[ConversionConfig]) -> List[str]:
+        if not config or not getattr(config, "extra", None):
+            return []
+        raw = config.extra.get("chapter_whitelist") or config.extra.get("chapters_only")
+        if not raw:
+            return []
+        if isinstance(raw, (list, tuple, set)):
+            items = [str(item).strip() for item in raw]
+        else:
+            items = [part.strip() for part in str(raw).split(",")]
+        return [item for item in items if item]
+
+    def _apply_chapter_whitelist(
+        self, chapters: List[Chapter], whitelist: List[str]
+    ) -> List[Chapter]:
+        if not whitelist:
+            return chapters
+        allowed = {str(item).strip() for item in whitelist if str(item).strip()}
+        if not allowed:
+            return chapters
+
+        filtered: List[Chapter] = []
+        for idx, chapter in enumerate(chapters, start=1):
+            label = self._chapter_index_label(chapter, idx)
+            numeric = str(self._chapter_number(chapter, idx))
+            sequential = str(idx)
+            if label in allowed or numeric in allowed or sequential in allowed:
+                filtered.append(chapter)
+
+        if self.verbose:
+            print(f"🎯 Chapter whitelist active: {len(filtered)}/{len(chapters)} selected")
+        return filtered
+
     def _filter_chapters_auto(
         self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig
     ) -> List[Chapter]:
@@ -2287,6 +2329,14 @@ class AudioConverter:
                 )
                 print("💡 Reason: deduplication caused loss of valid chapters\n")
                 chapters = original_chapters
+
+        chapter_whitelist = self._parse_chapter_whitelist(config)
+        if chapter_whitelist:
+            chapters = self._apply_chapter_whitelist(chapters, chapter_whitelist)
+            if not chapters:
+                empty_result = ConversionResult(True, 0, 0, [], [])
+                self._report_results(empty_result)
+                return empty_result
 
         # ===== TEXT INTEGRITY VALIDATION =====
         # Validate text integrity BEFORE audio conversion to detect cache corruption
