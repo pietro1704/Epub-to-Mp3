@@ -1222,14 +1222,23 @@ class AudioConverter:
 
                 chapter_label, chapter_name, parsed_text, pre_tts_text = result_data
                 safe_name = self.file_manager.sanitize_filename(chapter_name, max_length=96)
-                parsed_path = text_dir / f"{chapter_label} - {safe_name}-parsed.txt"
-                pre_tts_path = text_dir / f"{chapter_label} - {safe_name}-pre-tts.txt"
+                label_variants = [chapter_label]
+                numeric_label = str(chapter_num)
+                if chapter_label != numeric_label:
+                    label_variants.append(numeric_label)
 
-                if parsed_path.exists() and pre_tts_path.exists():
+                paths_written = []
+                for label in label_variants:
+                    parsed_path = text_dir / f"{label} - {safe_name}-parsed.txt"
+                    pre_tts_path = text_dir / f"{label} - {safe_name}-pre-tts.txt"
+                    if parsed_path.exists() and pre_tts_path.exists():
+                        continue
+                    parsed_path.write_text(parsed_text, encoding="utf-8")
+                    pre_tts_path.write_text(pre_tts_text, encoding="utf-8")
+                    paths_written.append((parsed_path, pre_tts_path))
+
+                if not paths_written:
                     continue
-
-                parsed_path.write_text(parsed_text, encoding="utf-8")
-                pre_tts_path.write_text(pre_tts_text, encoding="utf-8")
                 files_generated += 2
 
                 if text_validator and getattr(config, "validate_text", True):
