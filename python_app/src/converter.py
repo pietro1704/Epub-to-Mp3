@@ -5610,6 +5610,68 @@ class AudioConverter:
                 await heartbeat_task
             progress.complete_chapter(status_holder["text"])
 
+    def _generate_full_book_text(self, output_dir: Path, chapters: List[Chapter]) -> Optional[Path]:
+        """Generate a single TXT file with the complete book text."""
+        try:
+            if not chapters:
+                return None
+
+            text_dir = output_dir / "text"
+            if not text_dir.exists():
+                text_dir.mkdir(parents=True, exist_ok=True)
+
+            # Use book title from config or first chapter
+            book_title = "livro_completo"
+            if self._active_config:
+                book_title = getattr(self._active_config, "book_title", None) or book_title
+
+            safe_title = self.file_manager.sanitize_filename(book_title)
+            full_book_file = output_dir / f"{safe_title}_completo.txt"
+
+            # Collect all chapter texts in order
+            full_text_parts = []
+            for idx, chapter in enumerate(chapters, start=1):
+                self._chapter_number(chapter, idx)
+                chapter_label = self._chapter_index_label(chapter, idx)
+                chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_label}"
+
+                # Add chapter header
+                full_text_parts.append(f"\n{'='*70}\n")
+                full_text_parts.append(f"CAPÍTULO {chapter_label}: {chapter_name}\n")
+                full_text_parts.append(f"{'='*70}\n\n")
+
+                # Try to find pre-tts.txt first (final processed text)
+                safe_name = self.file_manager.sanitize_filename(chapter_name)
+                pre_tts_file = text_dir / f"{chapter_label} - {safe_name}-pre-tts.txt"
+                parsed_file = text_dir / f"{chapter_label} - {safe_name}-parsed.txt"
+
+                text_content = None
+                if pre_tts_file.exists():
+                    text_content = pre_tts_file.read_text(encoding="utf-8")
+                elif parsed_file.exists():
+                    text_content = parsed_file.read_text(encoding="utf-8")
+                else:
+                    # Fallback to chapter text
+                    text_content = self._speech_text(chapter)
+
+                if text_content:
+                    full_text_parts.append(text_content.strip())
+                    full_text_parts.append("\n\n")
+
+            # Write complete book text
+            full_book_file.write_text("".join(full_text_parts), encoding="utf-8")
+
+            if self.verbose:
+                print(f"\n📖 Texto completo do livro gerado: {full_book_file.name}")
+                print(f"   Total: {len(''.join(full_text_parts)):,} caracteres")
+
+            return full_book_file
+
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️ Falha ao gerar texto completo do livro: {exc}")
+            return None
+
     def _report_results(self, result: ConversionResult) -> None:
         print("\n📊 Conversion Results:")
         print(f"  ✅ Converted: {result.converted_chapters}/{result.total_chapters}")
@@ -5639,6 +5701,9 @@ class AudioConverter:
                 self._active_config,
                 cleanup_existing=True,
             )
+            # Generate complete book text file
+            self._generate_full_book_text(final_output, self._last_chapters_for_text)
+
         self._auto_validate_output(final_output, stage="final")
 
     def _cleanup_temp_audio(self, temp_dir: Path) -> None:

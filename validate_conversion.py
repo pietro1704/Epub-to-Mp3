@@ -269,13 +269,24 @@ def normalize_title_key(text: str, limit: int = 80) -> str:
 
 
 HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
+HTML_ENTITY_PATTERN = re.compile(r"&[a-zA-Z]+;|&#\d+;|&#x[0-9a-fA-F]+;")
 
 
 def contains_html_markup(text: str | None) -> bool:
     """Detect if text still contains HTML tags or markup."""
     if not text:
         return False
-    return bool(HTML_TAG_PATTERN.search(text))
+    # Check for HTML tags
+    if HTML_TAG_PATTERN.search(text):
+        return True
+    # Check for HTML entities (except common safe ones)
+    entities = HTML_ENTITY_PATTERN.findall(text)
+    # Allow common safe entities that might be intentional
+    safe_entities = {"&amp;", "&lt;", "&gt;", "&quot;", "&apos;", "&#39;", "&#34;"}
+    for entity in entities:
+        if entity not in safe_entities:
+            return True
+    return False
 
 
 def normalized_file_title(path: Path) -> str:
@@ -454,10 +465,14 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
     print(f"{'Ch':<4} {'Status':<12} {'EPUB':<8} {'Parsed':<8} {'PreTTS':<8} {'MP3':<8} {'Issue'}")
     print("-" * 70)
 
-    for chapter_num, chapter_title, epub_text in epub_chapters:
-        # Skip empty chapters (e.g., cover/blank pages) to align with cached numbering
+    sequential_num = 0  # Track sequential non-empty chapter number
+    for epub_index, (chapter_num, chapter_title, epub_text) in enumerate(epub_chapters, 1):
+        # Skip empty chapters (e.g., cover/blank pages) but keep index
         if not epub_text or not normalize_text(epub_text):
             continue
+        sequential_num += 1
+        # Use epub_index (original position) for chapter identification
+        chapter_num = epub_index
         status = "✅"
         issue_desc = ""
         norm_title = normalize_title_key(_strip_numeric_prefix(chapter_title))
@@ -586,11 +601,12 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
                 text_hashes.setdefault(h, []).append(chapter_num)
                 chapter_text_hash[chapter_num] = h
 
-        # Find MP3
+        # Find MP3 - try multiple strategies
         mp3_file = (
             mp3_index.get(norm_title)
             or find_mp3_by_title(output_dir, chapter_title)
             or find_mp3_file(output_dir, chapter_num)
+            or find_mp3_file(output_dir, sequential_num)  # Try sequential number too
         )
 
         if mp3_file is None:
@@ -718,7 +734,46 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
         stats["audio_duplicate"] += len(audio_dupes)
         issues.append("Arquivos de áudio duplicados detectados (hash match)")
 
+    # Validate full book text file
     print("\n" + "=" * 70)
+    print("📖 VALIDAÇÃO DO TXT COMPLETO DO LIVRO")
+    print("=" * 70)
+
+    full_book_files = list(output_dir.glob("*_completo.txt"))
+    if not full_book_files:
+        print("⚠️  TXT completo do livro não encontrado")
+        issues.append("Missing complete book text file")
+    else:
+        full_book_file = full_book_files[0]
+        full_text = full_book_file.read_text(encoding="utf-8")
+        full_text_norm = normalize_text(full_text)
+
+        # Calculate expected total from all chapters
+        total_epub_chars = sum(len(normalize_text(text)) for _, _, text in epub_chapters if text)
+        full_book_chars = len(full_text_norm)
+
+        print(f"📄 Arquivo: {full_book_file.name}")
+        print(f"📊 Tamanho: {len(full_text):,} caracteres ({len(full_text_norm):,} normalizados)")
+        print(f"📖 EPUB total: {total_epub_chars:,} caracteres normalizados")
+
+        # Check if full text contains HTML
+        if contains_html_markup(full_text):
+            print("❌ TXT completo contém tags HTML!")
+            issues.append("Complete book text contains HTML markup")
+            stats["text_mismatch"] += 1
+
+        # Check if size is reasonable (should be close to total)
+        size_diff = abs(full_book_chars - total_epub_chars)
+        tolerance = max(500, int(total_epub_chars * 0.05))  # 5% or 500 chars
+        if size_diff > tolerance:
+            print(
+                f"⚠️  Diferença de tamanho: {size_diff:,} caracteres ({size_diff / total_epub_chars * 100:.1f}%)"
+            )
+            issues.append(f"Complete book text size differs by {size_diff} chars from EPUB total")
+        else:
+            print("✅ TXT completo válido e completo")
+
+    print("=" * 70)
     if stats["parsed_pretts_diff"] > 0 or stats["text_mismatch"] > 0:
         print("❌ VALIDAÇÃO FALHOU: Texto foi modificado durante conversão!")
         print("   O áudio NÃO contém o texto completo do EPUB original.")
@@ -768,16 +823,33 @@ def extract_problem_chapters(issues: List[str]) -> List[int]:
     """Extract chapter numbers from validation issues."""
     chapters: set[int] = set()
     for issue in issues:
-        match = re.search(r"\bChapter\s+(\d+)\b", issue)
-        if match:
+        # Match "Chapter 9", "Chapter 43", etc.
+        for match in re.finditer(r"\bChapter\s+(\d+)\b", issue):
             chapters.add(int(match.group(1)))
-            continue
+
+        # Match "Capítulo 9", "Capítulos: 1, 2, 3", etc.
         cap_match = re.search(r"\bCapítulos?:\s*([0-9,\s]+)", issue)
         if cap_match:
             for part in cap_match.group(1).split(","):
                 part = part.strip()
                 if part.isdigit():
                     chapters.add(int(part))
+
+        # Match duplicates: "between chapters: 9 and 43"
+        dup_match = re.search(r"between chapters:\s*(\d+)\s+and\s+(\d+)", issue)
+        if dup_match:
+            chapters.add(int(dup_match.group(1)))
+            chapters.add(int(dup_match.group(2)))
+
+        # Match standalone numbers in critical messages
+        if any(keyword in issue.lower() for keyword in ["missing mp3", "duplicado", "duplicate"]):
+            # Extract all numbers that could be chapter references
+            for num_match in re.finditer(r"(?:^|\s)(\d+)(?:\s|:|$)", issue):
+                num = int(num_match.group(1))
+                # Only add if it's a reasonable chapter number (1-999)
+                if 1 <= num <= 999:
+                    chapters.add(num)
+
     return sorted(chapters)
 
 
@@ -799,7 +871,47 @@ def auto_fix_partial(
     if cache_dir is None:
         safe_name = FileManager.sanitize_filename(epub_path.stem) or "livro"
         cache_dir = resolve_cache_root() / safe_name
+
+    # Read EPUB to map chapter numbers to indices
     reader = EbookReader(str(epub_path))
+    try:
+        from python_app.main import ConverterApplication
+
+        app = ConverterApplication()
+        preview_config = app.config.create_conversion_config(
+            engine=engine,
+            output_dir=str(output_dir),
+            book_title=reader.title,
+            preserve_all_chapters=True,
+        )
+        preview_config.footnote_mode = "inline"
+        preview_config.footnote_context_words = app.FOOTNOTE_CONTEXT_WORDS
+        structure_items = app._generate_structure_items(reader, filter_chapters=False)
+        structure_items = app._apply_text_transforms(structure_items, preview_config, reader)
+        app._apply_structure_to_reader(reader, structure_items)
+    except Exception as exc:
+        print(f"⚠️  Auto-fix: failed to apply structure transforms ({exc})")
+
+    all_chapters = reader.get_chapter_structure(preserve_all=True)
+
+    # Map epub_index (1-based position) to chapter indices
+    chapter_indices = []
+    sequential_num = 0
+    for epub_idx, chapter in enumerate(all_chapters, 1):
+        text = chapter.text or ""
+        if not text or not normalize_text(text):
+            continue
+        sequential_num += 1
+        if epub_idx in chapters:
+            # Use chapter.index (structured index like "4.1") or sequential number
+            idx = getattr(chapter, "index", sequential_num)
+            chapter_indices.append(str(idx))
+            print(f"   → Capítulo {epub_idx} (índice {idx}): {chapter.name[:60]}")
+
+    if not chapter_indices:
+        print("⚠️  Nenhum capítulo válido encontrado para reconverter")
+        return
+
     config = ConversionConfig(
         engine=engine,
         voice=voice or "",
@@ -812,7 +924,7 @@ def auto_fix_partial(
         auto_validate_output=False,  # evita loops
         auto_fix_output=False,  # evita loops
     )
-    config.extra["chapter_whitelist"] = ",".join(str(ch) for ch in chapters)
+    config.extra["chapter_whitelist"] = ",".join(chapter_indices)
     converter = AudioConverter()
     asyncio.run(converter.convert(reader, config))
 
