@@ -56,14 +56,14 @@ class HealthMonitor:
     - Tracking de performance degradation
     """
 
-    def __init__(self, interval_seconds: float = 2.0):
+    def __init__(self, interval_seconds: float = 10.0):
         self.interval = interval_seconds
         self.running = False
         self._thread: Optional[threading.Thread] = None
         self._snapshots: List[HealthSnapshot] = []
         self._alerts: List[HealthAlert] = []
-        self._max_snapshots = 1000  # Últimos ~30min com interval=2s
-        self._max_alerts = 500
+        self._max_snapshots = 180  # Últimos ~30min com interval=10s (reduzido de 1000)
+        self._max_alerts = 100  # Reduzido de 500
         self._start_time = time.time()
         self._last_leak_alert_ts: Optional[float] = None
 
@@ -150,7 +150,7 @@ class HealthMonitor:
 
             process = psutil.Process()
 
-            cpu_percent = process.cpu_percent(interval=0.1)
+            cpu_percent = process.cpu_percent(interval=None)  # Non-blocking
             mem_info = process.memory_info()
             memory_mb = mem_info.rss / (1024 * 1024)
             memory_percent = process.memory_percent()

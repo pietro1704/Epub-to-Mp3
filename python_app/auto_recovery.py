@@ -60,7 +60,7 @@ class AutoRecoverySystem:
     - GC thrashing (garbage collector sobrecarregado)
     """
 
-    def __init__(self, check_interval: float = 5.0):
+    def __init__(self, check_interval: float = 30.0):  # Reduced from 5s to 30s
         self.check_interval = check_interval
         self.running = False
         self._thread: Optional[threading.Thread] = None

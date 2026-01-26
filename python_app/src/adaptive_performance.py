@@ -139,8 +139,7 @@ class AdaptivePerformanceController:
         chars_per_sec = self._total_chars_processed / elapsed if elapsed > 0 else 0
         chapters_per_min = (self._total_chapters_completed / elapsed) * 60 if elapsed > 0 else 0
 
-        # Obtém métricas de sistema
-        self.system_monitor.detect_hardware()
+        # Hardware não muda durante conversão - removido detect_hardware() para performance
 
         metrics = ConversionMetrics(
             timestamp=time.time(),

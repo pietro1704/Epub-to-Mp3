@@ -141,7 +141,9 @@ class AudioConverter:
         self._auto_tuning_enabled = _env_bool("ENABLE_AUTO_TUNING", True)
         self._auto_tuning_initialized = False
         self._adaptive_controller: Optional[AdaptivePerformanceController] = None
-        self._adaptive_enabled = _env_bool("ENABLE_ADAPTIVE_PERFORMANCE", True)
+        self._adaptive_enabled = _env_bool(
+            "ENABLE_ADAPTIVE_PERFORMANCE", False
+        )  # Disabled by default for performance
         self._health_watchdog: Optional[asyncio.Task] = None
         self._cover_art: Optional[dict] = None
         self._text_validation_hashes: Dict[str, int] = {}
@@ -216,7 +218,7 @@ class AudioConverter:
             if self.verbose:
                 print(f"⚠️  Erro ao registrar progresso adaptativo: {exc}")
 
-    def _auto_validate_and_retry(
+    async def _auto_validate_and_retry_async(
         self, output_dir: Path, epub_path: Path, cache_dir: Optional[Path], max_retries: int = 5
     ) -> bool:
         """
@@ -231,7 +233,9 @@ class AudioConverter:
         if str(project_root) not in sys.path:
             sys.path.insert(0, str(project_root))
 
-        from validate_conversion import auto_fix_partial, extract_problem_chapters, validate_book
+        from validate_conversion import extract_problem_chapters, validate_book
+
+        from .ebook_reader import EbookReader
 
         config = self._active_config
         if not config:
@@ -279,24 +283,48 @@ class AudioConverter:
                     print(f"❌ Limite de {max_retries} tentativas atingido. Conversão incompleta.")
                 return False
 
-            # Reconverte apenas os capítulos problemáticos
+            # Reconverte apenas os capítulos problemáticos usando converter diretamente
             try:
-                auto_fix_partial(
-                    epub_path,
-                    output_dir,
-                    problem_chapters,
+                reader = EbookReader(str(epub_path))
+                chapters_list = reader.get_chapter_structure()
+
+                # Map problem chapter numbers to indices (assuming 1-indexed)
+                chapter_indices = [
+                    str(ch - 1) for ch in problem_chapters if 0 < ch <= len(chapters_list)
+                ]
+
+                if not chapter_indices:
+                    if self.verbose:
+                        print("⚠️  Não foi possível mapear capítulos problemáticos")
+                    return False
+
+                # Create config for partial reconversion
+                retry_config = ConversionConfig(
                     engine=config.engine,
                     voice=config.voice,
-                    cache_dir=cache_dir,
+                    output_dir=str(output_dir),
+                    book_title=reader.title,
+                    preserve_all_chapters=True,
+                    clear_cache=False,  # Keep existing cache
+                    auto_validate_output=False,  # Prevent recursion
+                    auto_fix_output=False,  # Prevent recursion
                 )
+                retry_config.extra["chapter_whitelist"] = ",".join(chapter_indices)
+
+                # Reconvert using existing converter instance
+                await self.convert(reader, retry_config)
+
             except Exception as exc:
                 if self.verbose:
                     print(f"⚠️  Erro ao reconverter: {exc}")
+                    import traceback
+
+                    traceback.print_exc()
                 return False
 
         return False
 
-    def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
+    async def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
         """
         Run validate_conversion.validate_book to cross-check EPUB, cache and MP3.
 
@@ -323,9 +351,7 @@ class AudioConverter:
             if str(project_root) not in sys.path:
                 sys.path.insert(0, str(project_root))
 
-            from validate_conversion import (
-                validate_book,
-            )
+            from validate_conversion import validate_book
 
             cache_dir = getattr(config, "cache_dir", None)
             if cache_dir:
@@ -348,7 +374,7 @@ class AudioConverter:
             if getattr(config, "auto_fix_output", True) and not self._auto_fix_guard:
                 self._auto_fix_guard = True
                 try:
-                    success = self._auto_validate_and_retry(
+                    success = await self._auto_validate_and_retry_async(
                         Path(output_dir), Path(epub_path), cache_dir, max_retries=max_retries
                     )
                     if not success and self.verbose:
@@ -2481,7 +2507,7 @@ class AudioConverter:
             chapters = self._apply_chapter_whitelist(chapters, chapter_whitelist)
             if not chapters:
                 empty_result = ConversionResult(True, 0, 0, [], [])
-                self._report_results(empty_result)
+                await self._report_results(empty_result)
                 return empty_result
 
         # ===== TEXT INTEGRITY VALIDATION =====
@@ -2507,7 +2533,7 @@ class AudioConverter:
             )
 
         # Automatic validation before conversion if cache/output already exist
-        self._auto_validate_output(output_dir, stage="initial")
+        await self._auto_validate_output(output_dir, stage="initial")
 
         # Validate all chapters against cache
         integrity_report = text_validator.validate_all_chapters(
@@ -2698,7 +2724,7 @@ class AudioConverter:
                 result.output_files = normalized_outputs
             self._sync_text_cache_to_output(temp_dir, output_dir)
             self.progress.finish()
-            self._report_results(result)
+            await self._report_results(result)
             return result
 
         is_auto_engine = (config.engine or "").lower() == "auto"
@@ -3278,7 +3304,7 @@ class AudioConverter:
         await self._stop_health_watchdog()
         self._sync_text_cache_to_output(temp_dir, output_dir)
         self.progress.finish()
-        self._report_results(result)
+        await self._report_results(result)
         return result
 
     def _sync_text_cache_to_output(self, temp_dir: Path, output_dir: Path) -> int:
@@ -3425,7 +3451,7 @@ class AudioConverter:
                 for _ in chapters_list:
                     self.progress.tick("✅ Complete (cache)") if hasattr(self, "progress") else None
                 if getattr(config, "auto_validate_output", True):
-                    self._auto_validate_output(output_dir, stage="cache-only")
+                    await self._auto_validate_output(output_dir, stage="cache-only")
                 return ConversionResult(
                     success=True,
                     total_chapters=len(chapters_for_text),
@@ -5464,7 +5490,7 @@ class AudioConverter:
                     return None if legacy_mode else outcome
 
                 # Post-validate output after each chapter
-                self._auto_validate_output(output_dir, stage=f"chapter-{index}")
+                await self._auto_validate_output(output_dir, stage=f"chapter-{index}")
 
                 truncation_warning = self._detect_short_audio_output(
                     converted,
@@ -5698,7 +5724,7 @@ class AudioConverter:
                     cache_dir, converted, chapter, index, config, text_root=output_dir
                 )
                 # Post-validate after each chapter (lightweight, best-effort)
-                self._auto_validate_output(output_dir, stage=f"chapter-{index}")
+                await self._auto_validate_output(output_dir, stage=f"chapter-{index}")
                 outcome = ChapterConversionOutcome(index=index, name=chapter_label, path=converted)
                 return converted if legacy_mode else outcome
             except Exception as inner_exc:
@@ -5787,7 +5813,7 @@ class AudioConverter:
                 print(f"⚠️ Falha ao gerar texto completo do livro: {exc}")
             return None
 
-    def _report_results(self, result: ConversionResult) -> None:
+    async def _report_results(self, result: ConversionResult) -> None:
         print("\n📊 Conversion Results:")
         print(f"  ✅ Converted: {result.converted_chapters}/{result.total_chapters}")
         print(f"  📁 Files: {len(result.output_files)}")
@@ -5823,7 +5849,7 @@ class AudioConverter:
             # Generate complete book text file
             self._generate_full_book_text(final_output, self._last_chapters_for_text)
 
-        self._auto_validate_output(final_output, stage="final")
+        await self._auto_validate_output(final_output, stage="final")
 
     def _cleanup_temp_audio(self, temp_dir: Path) -> None:
         temp_dir = Path(temp_dir)

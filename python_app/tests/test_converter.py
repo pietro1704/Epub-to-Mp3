@@ -21,7 +21,7 @@ from src.ebook_reader import Chapter
 from src.text_formatting import TextFormattingProcessor
 
 
-class TestConversionResult(unittest.TestCase):
+class TestConversionResult(unittest.IsolatedAsyncioTestCase):
     """Test cases for ConversionResult dataclass"""
 
     def setUp(self):
@@ -57,7 +57,7 @@ class TestConversionResult(unittest.TestCase):
         self.assertEqual(len(result.output_files), 2)
         self.assertEqual(len(result.errors), 1)
 
-    def test_auto_validate_output_calls_validate_conversion(self):
+    async def test_auto_validate_output_calls_validate_conversion(self):
         """Ensure auto validation is triggered with validate_conversion.validate_book"""
         output_dir = Path(self.temp_dir)
         epub_file = output_dir / "book.epub"
@@ -68,10 +68,10 @@ class TestConversionResult(unittest.TestCase):
         with patch("src.converter.Path") as mock_path:
             mock_path.return_value = output_dir
             with patch("validate_conversion.validate_book", return_value=({}, [])) as mock_validate:
-                self.converter._auto_validate_output(output_dir, stage="test")
+                await self.converter._auto_validate_output(output_dir, stage="test")
                 mock_validate.assert_called_once()
 
-    def test_auto_validate_output_triggers_auto_fix_on_issues(self):
+    async def test_auto_validate_output_triggers_auto_fix_on_issues(self):
         """Auto-validate should trigger auto-fix when issues are detected."""
         output_dir = Path(self.temp_dir)
         epub_file = output_dir / "book.epub"
@@ -86,6 +86,11 @@ class TestConversionResult(unittest.TestCase):
             "missing_mp3": 0,
             "duration_mismatch": 0,
         }
+        # Mock EbookReader for retry logic
+        mock_reader = Mock()
+        mock_reader.title = "Test Book"
+        mock_reader.get_chapter_structure.return_value = [Mock(), Mock()]  # 2 chapters
+
         with patch("src.converter.Path") as mock_path:
             mock_path.return_value = output_dir
             with patch(
@@ -94,10 +99,16 @@ class TestConversionResult(unittest.TestCase):
                 with patch(
                     "validate_conversion.extract_problem_chapters", return_value=[1]
                 ) as mock_extract:
-                    with patch("validate_conversion.auto_fix_partial") as mock_fix_partial:
-                        self.converter._auto_validate_output(output_dir, stage="test")
-                        mock_fix_partial.assert_called_once()
-                        self.assertEqual(mock_validate.call_count, 2)  # before and after auto-fix
+                    with patch("src.converter.EbookReader", return_value=mock_reader):
+                        # Mock the convert call to avoid actual conversion
+                        original_convert = self.converter.convert
+                        self.converter.convert = AsyncMock()
+                        try:
+                            await self.converter._auto_validate_output(output_dir, stage="test")
+                            self.converter.convert.assert_called_once()
+                            self.assertEqual(mock_validate.call_count, 2)  # before and after retry
+                        finally:
+                            self.converter.convert = original_convert
 
 
 class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
