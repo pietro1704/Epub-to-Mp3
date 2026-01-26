@@ -25,6 +25,7 @@ import psutil
 from mutagen.id3 import APIC, ID3, TALB, TIT2, TPE1
 from mutagen.mp3 import MP3
 
+from .adaptive_performance import AdaptivePerformanceController
 from .auto_tuner import AutoTuner
 from .cache_manager import CacheManager
 from .chapter_utils import deduplicate_chapters_by_content
@@ -140,6 +141,8 @@ class AudioConverter:
         self._auto_tuner: Optional[AutoTuner] = None
         self._auto_tuning_enabled = _env_bool("ENABLE_AUTO_TUNING", True)
         self._auto_tuning_initialized = False
+        self._adaptive_controller: Optional[AdaptivePerformanceController] = None
+        self._adaptive_enabled = _env_bool("ENABLE_ADAPTIVE_PERFORMANCE", True)
         self._health_watchdog: Optional[asyncio.Task] = None
         self._cover_art: Optional[dict] = None
         self._text_validation_hashes: Dict[str, int] = {}
@@ -165,6 +168,54 @@ class AudioConverter:
         except Exception as exc:
             if self.verbose:
                 print(f"⚠️  Auto-tuning falhou (usando configs padrão): {exc}")
+
+    def _initialize_adaptive_performance(self) -> None:
+        """Inicializa controlador de performance adaptativa."""
+        if not self._adaptive_enabled:
+            return
+
+        try:
+            self._adaptive_controller = AdaptivePerformanceController(verbose=self.verbose)
+            self._adaptive_controller.start_conversion()
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️  Adaptive Performance falhou (continuando sem ajustes): {exc}")
+            self._adaptive_controller = None
+
+    def _record_chapter_progress(
+        self, chapter: Chapter, success: bool, error: Optional[str] = None
+    ):
+        """Registra progresso de um capítulo para ajuste adaptativo."""
+        if not self._adaptive_controller:
+            return
+
+        try:
+            # Estima caracteres do capítulo
+            text = self._speech_text(chapter)
+            chars_processed = len(text) if text else 0
+
+            # Detecta throttling por palavra-chave no erro
+            throttled = (
+                error and ("throttl" in error.lower() or "rate limit" in error.lower())
+                if error
+                else False
+            )
+
+            self._adaptive_controller.record_chapter_completion(
+                chars_processed=chars_processed,
+                success=success,
+                error=error,
+                throttled=throttled,
+            )
+
+            # Verifica se deve ajustar
+            adjustment = self._adaptive_controller.calculate_adjustment()
+            if adjustment.action != "no_change":
+                self._adaptive_controller.apply_adjustment(adjustment)
+
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️  Erro ao registrar progresso adaptativo: {exc}")
 
     def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
         """
@@ -2305,6 +2356,9 @@ class AudioConverter:
 
         # Initialize auto-tuning (detecta HW e rede, configura flags automaticamente)
         await self._initialize_auto_tuning()
+
+        # Initialize adaptive performance controller
+        self._initialize_adaptive_performance()
 
         if self.verbose:
             print("[DEBUG] AudioConverter.convert() iniciado")
@@ -5711,6 +5765,10 @@ class AudioConverter:
             print(
                 "❌ Conversão incompleta: um ou mais capítulos falharam (reexecute para recuperar)."
             )
+
+        # Print adaptive performance summary
+        if self._adaptive_controller and self.verbose:
+            self._adaptive_controller.print_summary()
 
         # Final automatic validation
         final_output = self._last_output_dir or (
