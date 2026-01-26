@@ -286,12 +286,49 @@ class AudioConverter:
             # Reconverte apenas os capítulos problemáticos usando converter diretamente
             try:
                 reader = EbookReader(str(epub_path))
-                chapters_list = reader.get_chapter_structure()
 
-                # Map problem chapter numbers to indices (assuming 1-indexed)
-                chapter_indices = [
-                    str(ch - 1) for ch in problem_chapters if 0 < ch <= len(chapters_list)
-                ]
+                # Apply same transforms as validation to ensure consistent chapter mapping
+                try:
+                    from python_app.main import ConverterApplication
+
+                    app = ConverterApplication()
+                    preview_config = app.config.create_conversion_config(
+                        engine=config.engine,
+                        output_dir=str(output_dir),
+                        book_title=reader.title,
+                        preserve_all_chapters=True,
+                    )
+                    preview_config.footnote_mode = "inline"
+                    preview_config.footnote_context_words = app.FOOTNOTE_CONTEXT_WORDS
+                    structure_items = app._generate_structure_items(reader, filter_chapters=False)
+                    structure_items = app._apply_text_transforms(
+                        structure_items, preview_config, reader
+                    )
+                    app._apply_structure_to_reader(reader, structure_items)
+                except Exception as exc:
+                    if self.verbose:
+                        print(f"⚠️  Aviso: falha ao aplicar transforms ({exc})")
+
+                all_chapters = reader.get_chapter_structure(preserve_all=True)
+
+                # Map epub_index (1-based position) to chapter indices - same logic as auto_fix_partial()
+                from validate_conversion import normalize_text
+
+                chapter_indices = []
+                sequential_num = 0
+                for epub_idx, chapter in enumerate(all_chapters, 1):
+                    text = chapter.text or ""
+                    if not text or not normalize_text(text):
+                        continue
+                    sequential_num += 1
+                    if epub_idx in problem_chapters:
+                        # Use chapter.index (structured index like "4.1" or "10.0") or sequential number
+                        idx = getattr(chapter, "index", sequential_num)
+                        chapter_indices.append(str(idx))
+                        if self.verbose:
+                            print(
+                                f"   → Capítulo {epub_idx} mapeado para índice {idx}: {chapter.name[:60]}"
+                            )
 
                 if not chapter_indices:
                     if self.verbose:
