@@ -294,7 +294,7 @@ class AudioConverter:
                     app = ConverterApplication()
                     preview_config = app.config.create_conversion_config(
                         engine=config.engine,
-                        output_dir=str(output_dir),
+                        output_dir=str(output_dir.parent),
                         book_title=reader.title,
                         preserve_all_chapters=True,
                     )
@@ -336,10 +336,13 @@ class AudioConverter:
                     return False
 
                 # Create config for partial reconversion
+                # IMPORTANT: Use output_dir.parent to avoid path duplication
+                # _setup_output_directory adds {book_title}_{engine} to the base path
+                # Since output_dir already has this, we need to use its parent
                 retry_config = ConversionConfig(
                     engine=config.engine,
                     voice=config.voice,
-                    output_dir=str(output_dir),
+                    output_dir=str(output_dir.parent),
                     book_title=reader.title,
                     preserve_all_chapters=True,
                     clear_cache=False,  # Keep existing cache
