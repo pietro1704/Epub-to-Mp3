@@ -13,7 +13,6 @@ import re
 import shutil
 import subprocess
 import sys
-import threading
 import time
 import unicodedata
 from concurrent.futures import ThreadPoolExecutor
@@ -217,6 +216,86 @@ class AudioConverter:
             if self.verbose:
                 print(f"⚠️  Erro ao registrar progresso adaptativo: {exc}")
 
+    def _auto_validate_and_retry(
+        self, output_dir: Path, epub_path: Path, cache_dir: Optional[Path], max_retries: int = 5
+    ) -> bool:
+        """
+        Valida e reconverte capítulos problemáticos até 100% correto.
+
+        Returns:
+            True se passou na validação, False se esgotou tentativas
+        """
+        import sys
+
+        project_root = Path(__file__).parent.parent.parent
+        if str(project_root) not in sys.path:
+            sys.path.insert(0, str(project_root))
+
+        from validate_conversion import auto_fix_partial, extract_problem_chapters, validate_book
+
+        config = self._active_config
+        if not config:
+            return False
+
+        for attempt in range(1, max_retries + 1):
+            if self.verbose:
+                print(f"\n🔍 Validação (tentativa {attempt}/{max_retries})...")
+
+            stats, issues = validate_book(epub_path, output_dir, cache_dir=cache_dir)
+
+            # Verifica se passou
+            has_critical_problems = bool(
+                any(
+                    stats.get(key, 0) > 0
+                    for key in ("text_mismatch", "parsed_pretts_diff", "missing_mp3")
+                )
+            )
+
+            if not has_critical_problems:
+                if self.verbose:
+                    print("✅ Validação passou! Conversão 100% correta.")
+                return True
+
+            # Extrai capítulos com problemas
+            problem_chapters = extract_problem_chapters(issues)
+
+            if not problem_chapters:
+                # Tem problemas mas não conseguiu identificar capítulos
+                if self.verbose:
+                    print(
+                        "⚠️  Problemas detectados mas não foi possível identificar capítulos específicos"
+                    )
+                return False
+
+            if self.verbose:
+                print(f"❌ Validação falhou: {len(problem_chapters)} capítulo(s) com problemas")
+                print(f"   Capítulos problemáticos: {', '.join(map(str, problem_chapters[:10]))}")
+                if attempt < max_retries:
+                    print("   🔄 Reconvertendo capítulos problemáticos...")
+
+            # Se é a última tentativa, não reconverte
+            if attempt >= max_retries:
+                if self.verbose:
+                    print(f"❌ Limite de {max_retries} tentativas atingido. Conversão incompleta.")
+                return False
+
+            # Reconverte apenas os capítulos problemáticos
+            try:
+                auto_fix_partial(
+                    epub_path,
+                    output_dir,
+                    problem_chapters,
+                    engine=config.engine,
+                    voice=config.voice,
+                    cache_dir=cache_dir,
+                )
+            except Exception as exc:
+                if self.verbose:
+                    print(f"⚠️  Erro ao reconverter: {exc}")
+                return False
+
+        return False
+
     def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
         """
         Run validate_conversion.validate_book to cross-check EPUB, cache and MP3.
@@ -245,9 +324,6 @@ class AudioConverter:
                 sys.path.insert(0, str(project_root))
 
             from validate_conversion import (
-                auto_fix,
-                auto_fix_partial,
-                extract_problem_chapters,
                 validate_book,
             )
 
@@ -261,6 +337,27 @@ class AudioConverter:
                 except Exception:
                     cache_dir = None
 
+            # Get max retries from config or environment
+            max_retries = getattr(config, "max_validation_retries", None)
+            if max_retries is None:
+                import os
+
+                max_retries = int(os.getenv("MAX_VALIDATION_RETRIES", "5"))
+
+            # Use retry-based validation if auto_fix is enabled
+            if getattr(config, "auto_fix_output", True) and not self._auto_fix_guard:
+                self._auto_fix_guard = True
+                try:
+                    success = self._auto_validate_and_retry(
+                        Path(output_dir), Path(epub_path), cache_dir, max_retries=max_retries
+                    )
+                    if not success and self.verbose:
+                        print("\n⚠️  Conversão concluída mas com problemas na validação")
+                finally:
+                    self._auto_fix_guard = False
+                return
+
+            # Fallback to simple validation without auto-fix
             stats, issues = validate_book(Path(epub_path), Path(output_dir), cache_dir=cache_dir)
             has_problems = bool(
                 issues
@@ -275,75 +372,12 @@ class AudioConverter:
                     )
                 )
             )
-            # Auto-fix should run whenever issues are detected (user-requested).
-            if (
-                has_problems
-                and getattr(config, "auto_fix_output", True)
-                and not self._auto_fix_guard
-            ):
-                # Avoid auto-fix inside an active event loop (e.g., during async conversion)
-                in_loop = False
-                try:
-                    loop = asyncio.get_running_loop()
-                    in_loop = loop.is_running()
-                except RuntimeError:
-                    in_loop = False
-                if in_loop:
-                    if self.verbose:
-                        print(f"[DEBUG] Auto-fix in background ({stage}) - event loop running")
 
-                    def _background_fix() -> None:
-                        try:
-                            issue_chapters = extract_problem_chapters(issues)
-                            if stage == "test":
-                                auto_fix(
-                                    Path(epub_path),
-                                    Path(output_dir),
-                                    engine=config.engine,
-                                    voice=config.voice,
-                                    cache_dir=cache_dir if cache_dir else None,
-                                )
-                            else:
-                                auto_fix_partial(
-                                    Path(epub_path),
-                                    Path(output_dir),
-                                    issue_chapters,
-                                    engine=config.engine,
-                                    voice=config.voice,
-                                    cache_dir=cache_dir if cache_dir else None,
-                                )
-                            validate_book(Path(epub_path), Path(output_dir))
-                        finally:
-                            self._auto_fix_guard = False
-
-                    self._auto_fix_guard = True
-                    threading.Thread(target=_background_fix, daemon=True).start()
-                    return
-                self._auto_fix_guard = True
-                try:
-                    issue_chapters = extract_problem_chapters(issues)
-                    if stage == "test":
-                        auto_fix(
-                            Path(epub_path),
-                            Path(output_dir),
-                            engine=config.engine,
-                            voice=config.voice,
-                            cache_dir=cache_dir if cache_dir else None,
-                        )
-                    else:
-                        auto_fix_partial(
-                            Path(epub_path),
-                            Path(output_dir),
-                            issue_chapters,
-                            engine=config.engine,
-                            voice=config.voice,
-                            cache_dir=cache_dir if cache_dir else None,
-                        )
-                    stats, issues = validate_book(Path(epub_path), Path(output_dir))
-                finally:
-                    self._auto_fix_guard = False
-            if self.verbose and (issues or has_problems):
-                print(f"[DEBUG] Auto-validate ({stage}): {len(issues)} issues, stats={stats}")
+            # Just report validation results (no auto-fix when it's disabled)
+            if self.verbose and has_problems:
+                print(
+                    f"[DEBUG] Auto-validate ({stage}): validação com problemas mas auto-fix desabilitado"
+                )
         except Exception as exc:
             if self.verbose:
                 print(f"[DEBUG] Auto-validate ({stage}) failed: {exc}")

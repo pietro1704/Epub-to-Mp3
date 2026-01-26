@@ -91,10 +91,13 @@ class TestConversionResult(unittest.TestCase):
             with patch(
                 "validate_conversion.validate_book", side_effect=[(bad_stats, ["x"]), ({}, [])]
             ) as mock_validate:
-                with patch("validate_conversion.auto_fix") as mock_fix:
-                    self.converter._auto_validate_output(output_dir, stage="test")
-                    mock_fix.assert_called_once()
-                    self.assertEqual(mock_validate.call_count, 2)  # before and after auto-fix
+                with patch(
+                    "validate_conversion.extract_problem_chapters", return_value=[1]
+                ) as mock_extract:
+                    with patch("validate_conversion.auto_fix_partial") as mock_fix_partial:
+                        self.converter._auto_validate_output(output_dir, stage="test")
+                        mock_fix_partial.assert_called_once()
+                        self.assertEqual(mock_validate.call_count, 2)  # before and after auto-fix
 
 
 class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
