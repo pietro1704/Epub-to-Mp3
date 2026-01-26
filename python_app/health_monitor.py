@@ -423,3 +423,42 @@ if __name__ == "__main__":
         report_path = Path("health_report.json")
         monitor.export_report(report_path)
         print(f"✅ Relatório salvo em: {report_path}")
+
+
+# Compatibility adapter for server.py
+class SystemMonitorAdapter:
+    """Adapter to make HealthMonitor compatible with old system_monitor API."""
+
+    def __init__(self, health_monitor):
+        self._health_monitor = health_monitor
+
+    def latest(self):
+        """Compatibility method that returns snapshot in old format."""
+        snapshot = self._health_monitor.get_latest_snapshot()
+        if not snapshot:
+            return {}
+
+        # Convert to old format
+        return {
+            "cpu": {
+                "percent": snapshot.cpu_percent,
+                "count": snapshot.cpu_count,
+            },
+            "memory": {
+                "percent": snapshot.memory_percent,
+                "available": snapshot.memory_available_gb * 1024 * 1024 * 1024,  # Convert to bytes
+                "total": snapshot.memory_total_gb * 1024 * 1024 * 1024,
+            },
+            "disk": {
+                "percent": getattr(snapshot, "disk_percent", 0),
+            },
+        }
+
+    def start(self):
+        """Start monitoring."""
+        self._health_monitor.start()
+
+
+def get_system_monitor_adapter():
+    """Get adapter for backwards compatibility."""
+    return SystemMonitorAdapter(get_health_monitor())

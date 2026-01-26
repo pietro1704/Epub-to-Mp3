@@ -25,6 +25,7 @@ import psutil
 from mutagen.id3 import APIC, ID3, TALB, TIT2, TPE1
 from mutagen.mp3 import MP3
 
+from .auto_tuner import AutoTuner
 from .cache_manager import CacheManager
 from .chapter_utils import deduplicate_chapters_by_content
 from .config import ConversionConfig
@@ -136,11 +137,34 @@ class AudioConverter:
         self._edge_auto_state: Dict[str, Any] = {}
         self.hardware_profile: Optional[HardwareProfile] = None
         self._health_state: Dict[str, Any] = {"active": False}
+        self._auto_tuner: Optional[AutoTuner] = None
+        self._auto_tuning_enabled = _env_bool("ENABLE_AUTO_TUNING", True)
+        self._auto_tuning_initialized = False
         self._health_watchdog: Optional[asyncio.Task] = None
         self._cover_art: Optional[dict] = None
         self._text_validation_hashes: Dict[str, int] = {}
         self._text_validation_errors: List[str] = []
         self._last_chapters_for_text: Optional[List[Chapter]] = None
+
+    async def _initialize_auto_tuning(self) -> None:
+        """Inicializa auto-tuning de performance baseado em HW e rede."""
+        if self._auto_tuning_initialized or not self._auto_tuning_enabled:
+            return
+
+        try:
+            self._auto_tuner = AutoTuner(verbose=self.verbose)
+
+            # Medir rede apenas se não estiver em modo batch/silencioso
+            measure_network = self.verbose and _env_bool("AUTO_TUNE_MEASURE_NETWORK", True)
+
+            # Auto-configura (não sobrescreve vars já setadas manualmente)
+            await self._auto_tuner.auto_configure(force=False, measure_network=measure_network)
+
+            self._auto_tuning_initialized = True
+
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️  Auto-tuning falhou (usando configs padrão): {exc}")
 
     def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
         """
@@ -2278,6 +2302,9 @@ class AudioConverter:
                     print(message)
 
             config.log_callback = _log_to_progress
+
+        # Initialize auto-tuning (detecta HW e rede, configura flags automaticamente)
+        await self._initialize_auto_tuning()
 
         if self.verbose:
             print("[DEBUG] AudioConverter.convert() iniciado")

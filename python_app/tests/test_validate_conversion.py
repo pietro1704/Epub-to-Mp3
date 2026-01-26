@@ -56,6 +56,10 @@ class TestValidateBook(unittest.TestCase):
             mp3_path = output_path / "1 - Derry_ Segundo interlúdio.mp3"
             mp3_path.write_bytes(b"fake mp3 data" * 200)
 
+            # Create complete book text file (expected by validation)
+            full_book_path = output_path / "book_completo.txt"
+            full_book_path.write_text("texto base do capitulo", encoding="utf-8")
+
             fake_result = SimpleNamespace(is_valid=True, duration_diff_percent=0)
 
             with patch("validate_conversion.AudioValidator") as mock_validator:

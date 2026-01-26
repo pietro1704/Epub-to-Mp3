@@ -43,6 +43,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from main import ConverterApplication
 from pydantic import BaseModel
+from src.auto_tuner import AutoTuner
 from src.benchmark_profile import recommend_parallel_slots
 from src.cache_manager import CacheManager
 from src.chapter_utils import MIN_DUPLICATE_CHARS, deduplicate_chapters_by_content
@@ -53,7 +54,6 @@ from src.hardware_detector import HardwareDetector, HardwareProfile
 from src.job_manager import JobManager
 from src.language import LanguageProfile
 from src.paths import OUTPUT_DIR
-from src.system_monitor import SystemMonitor
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.edge_engine import reset_adaptive_settings
@@ -95,14 +95,26 @@ async def _lifespan(app: FastAPI):
         _clear_restart_marker()
     else:
         asyncio.create_task(_resume_pending_jobs())
-    system_monitor.start()
+
+    # Initialize auto-tuner (detecta HW e rede, configura flags automaticamente)
+    global _auto_tuner
+    if os.getenv("ENABLE_AUTO_TUNING", "1").lower() in ("1", "true", "yes"):
+        _auto_tuner = AutoTuner(verbose=True)
+        try:
+            # Não medir rede no server startup (pode travar por timeout)
+            await _auto_tuner.auto_configure(force=False, measure_network=False)
+        except Exception as exc:
+            logger.warning(f"Auto-tuning failed (using defaults): {exc}")
+
     if not _job_watchdog_task:
         _job_watchdog_task = asyncio.create_task(_job_watchdog())
 
     try:
-        from health_monitor import start_monitoring
+        from health_monitor import get_system_monitor_adapter
 
-        start_monitoring()
+        global system_monitor
+        system_monitor = get_system_monitor_adapter()
+        system_monitor.start()
         logger.info("✅ Health Monitor iniciado")
     except Exception as e:
         logger.warning(f"⚠️ Falha ao iniciar Health Monitor: {e}")
@@ -1193,7 +1205,27 @@ elif _perf_profile == "cli":
 # Background task for periodic job cleanup
 _cleanup_task: Optional[asyncio.Task] = None
 _job_watchdog_task: Optional[asyncio.Task] = None
-system_monitor = SystemMonitor(float(os.getenv("SYSTEM_MONITOR_INTERVAL", "2.0")))
+_auto_tuner: Optional[AutoTuner] = None  # Will be initialized on startup
+
+
+# Fallback mock for system_monitor when health_monitor is not available
+class _FallbackSystemMonitor:
+    """Fallback system monitor for tests or when health_monitor fails to load."""
+
+    def latest(self):
+        """Return empty stats."""
+        return {}
+
+    def start(self):
+        """No-op start."""
+        pass
+
+    def stop(self):
+        """No-op stop."""
+        pass
+
+
+system_monitor = _FallbackSystemMonitor()  # Will be replaced with real monitor on startup
 
 if FORCE_TURBO:
     desired_workers = max(2, _hardware_profile.cpu_physical or 1)
@@ -1314,7 +1346,7 @@ def _estimate_recommendations(stats: Optional[dict]) -> dict:
 
 
 def _determine_parallel_slots(requested: int) -> int:
-    stats = system_monitor.latest()
+    stats = system_monitor.latest() if system_monitor else {}
     recommendation = _estimate_recommendations(stats)
     target = recommendation["parallelSlots"]
     if FORCE_TURBO:
@@ -1439,7 +1471,7 @@ async def _job_watchdog():
                     continue
                 _enqueue_job(job_id)
 
-            stats = system_monitor.latest()
+            stats = system_monitor.latest() if system_monitor else {}
             recommendation = _estimate_recommendations(stats)
             queue_depth = _job_queue.qsize()
             target_workers = recommendation["jobWorkers"]
