@@ -587,7 +587,8 @@ class TextFormattingProcessor:
 
         # Add small pause after dialog markers for clarity
         # Em-dash dialog (—): common in Portuguese and English literature
-        text = re.sub(r"(—\s*[^—\n]{10,}?[.!?])\s+", r"\1, ", text)
+        # Only if followed by another sentence (at least 20 chars)
+        text = re.sub(r"(—\s*[^—\n]{20,}?[.!?])\s+([A-Z])", r"\1, \2", text)
 
         # Add pause after chapter/section numbers for separation
         text = re.sub(r"(Capítulo\s+\d+[.:]\s*[^\n]{1,50}?)\n", r"\1.\n", text, flags=re.IGNORECASE)
@@ -597,9 +598,14 @@ class TextFormattingProcessor:
         # If paragraph ends without punctuation, add period
         text = re.sub(r"([^\n.!?])\n\n", r"\1.\n\n", text)
 
-        # Add comma after short introductory phrases for natural pacing
+        # Add comma after introductory phrases (more conservative)
+        # Only for common Portuguese/English discourse markers, not simple words
+        introductory_phrases = r"(Então|Agora|Assim|Portanto|Entretanto|Contudo|Todavia|However|Therefore|Thus|Meanwhile|Moreover|Furthermore)"
         text = re.sub(
-            r"^([A-Z][a-záàâãéèêíïóôõöúçñ]{1,15})\s+([a-z])", r"\1, \2", text, flags=re.MULTILINE
+            rf"^{introductory_phrases}\s+([a-z])",
+            r"\1, \2",
+            text,
+            flags=re.MULTILINE | re.IGNORECASE,
         )
 
         # Ensure proper spacing around ellipsis for natural pauses

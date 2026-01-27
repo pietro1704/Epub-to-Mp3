@@ -202,7 +202,9 @@ class TextProcessor:
                 result_lines.append(line)
                 prev_empty = False
 
-        return "\n".join(result_lines)
+        # Join and strip trailing newlines
+        result = "\n".join(result_lines)
+        return result.rstrip("\n")
 
     @staticmethod
     def inject_footnotes(
