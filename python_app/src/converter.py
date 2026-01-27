@@ -1357,6 +1357,38 @@ class AudioConverter:
         """Generate all text files BEFORE starting TTS conversion"""
         text_dir = Path(output_dir) / "text"
         text_dir.mkdir(parents=True, exist_ok=True)
+
+        # **NEW**: Clean up duplicate files before generating new ones
+        # Remove files with pattern "N - M - filename" (duplicate variants)
+        if text_dir.exists():
+            duplicates_removed = 0
+            seen_files = {}
+
+            for txt_file in text_dir.glob("*-parsed.txt"):
+                # Normalize filename by removing leading number variants
+                # e.g., "1 - 4.1 - Chapter.txt" -> "4.1 - Chapter.txt"
+                parts = txt_file.name.split(" - ", 2)
+                if len(parts) >= 3:
+                    # Has duplicate prefix (e.g., "1 - 4.1 - ...")
+                    canonical = " - ".join(parts[1:])
+                    if canonical in seen_files:
+                        # Duplicate found, remove it
+                        txt_file.unlink(missing_ok=True)
+                        # Also remove corresponding pre-tts file
+                        pre_tts = txt_file.parent / txt_file.name.replace(
+                            "-parsed.txt", "-pre-tts.txt"
+                        )
+                        pre_tts.unlink(missing_ok=True)
+                        duplicates_removed += 1
+                    else:
+                        seen_files[canonical] = txt_file
+                else:
+                    # Normal file, keep track of it
+                    seen_files[txt_file.name] = txt_file
+
+            if duplicates_removed > 0 and not self.verbose:
+                print(f"  🧹 Removed {duplicates_removed} duplicate cached file(s)")
+
         if cleanup_existing and any(text_dir.glob("*.txt")):
             for txt_file in text_dir.glob("*.txt"):
                 txt_file.unlink(missing_ok=True)
@@ -1429,19 +1461,11 @@ class AudioConverter:
 
                 chapter_label, chapter_name, parsed_text, pre_tts_text = result_data
                 safe_name = self.file_manager.sanitize_filename(chapter_name, max_length=96)
-                label_variants = [chapter_label]
-                sequential_label = str(idx)
-                if sequential_label not in label_variants:
-                    label_variants.append(sequential_label)
-                label_is_integer = False
-                if isinstance(chapter_label, int):
-                    label_is_integer = True
-                elif isinstance(chapter_label, str):
-                    label_is_integer = chapter_label.strip().isdigit()
-                if label_is_integer:
-                    numeric_label = str(chapter_num)
-                    if numeric_label not in label_variants:
-                        label_variants.append(numeric_label)
+
+                # **FIX**: Use ONLY canonical chapter_label to prevent duplicates
+                # Previously created multiple variants (label, sequential, numeric) which
+                # caused duplicate files with same content but different names
+                label_variants = [chapter_label]  # Only use canonical label
 
                 paths_written = []
                 for label in label_variants:
@@ -2518,9 +2542,6 @@ class AudioConverter:
         chapters = list(
             reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or []
         )
-        chapters_for_text = chapters
-        self._last_chapters_for_text = list(chapters_for_text)
-
         # Store original before deduplication for potential restoration
         original_chapters = chapters.copy()
 
@@ -2543,12 +2564,15 @@ class AudioConverter:
 
         chapter_whitelist = self._parse_chapter_whitelist(config)
         if chapter_whitelist:
-            chapters_for_text = chapters
             chapters = self._apply_chapter_whitelist(chapters, chapter_whitelist)
             if not chapters:
                 empty_result = ConversionResult(True, 0, 0, [], [])
                 await self._report_results(empty_result)
                 return empty_result
+
+        # Set chapters_for_text AFTER filtering
+        chapters_for_text = chapters
+        self._last_chapters_for_text = list(chapters_for_text)
 
         # ===== TEXT INTEGRITY VALIDATION =====
         # Validate text integrity BEFORE audio conversion to detect cache corruption
@@ -3641,6 +3665,27 @@ class AudioConverter:
             output_dir=output_dir,
             verbose=self.verbose,
         )
+
+        # **DEEP VALIDATION**: Automatic comprehensive validation
+        # Verifies duplicates, start/middle/end content, and character counts
+        # Skip when chapter filter is active (only validate requested chapters)
+        chapter_filter_active = bool(self._parse_chapter_whitelist(config))
+        if self._current_book_path and len(all_errors) == 0 and not chapter_filter_active:
+            try:
+                from .deep_validator import run_deep_validation
+
+                cache_path = output_dir
+                deep_validation_passed = run_deep_validation(
+                    str(self._current_book_path), str(cache_path)
+                )
+
+                if not deep_validation_passed and self.verbose:
+                    print(
+                        "⚠️  Deep validation detected issues, but conversion completed successfully."
+                    )
+            except Exception as e:
+                if self.verbose:
+                    print(f"⚠️  Deep validation failed to run: {e}")
 
         return ConversionResult(
             success=len(all_errors) == 0,
