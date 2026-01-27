@@ -84,7 +84,12 @@ class AdaptivePerformanceController:
         self._consecutive_successes = 0
         self._consecutive_failures = 0
         self._last_adjustment_time = 0.0
-        self._adjustment_cooldown = 30.0  # segundos entre ajustes
+        self._adjustment_cooldown = (
+            15.0  # segundos entre ajustes (reduzido de 30 para mais responsividade)
+        )
+        self._fast_adjustment_threshold = (
+            5  # Ajustes rápidos após 5 sucessos (antes era implícito em 10)
+        )
 
         # Melhor configuração encontrada
         self._best_throughput = 0.0
@@ -176,11 +181,19 @@ class AdaptivePerformanceController:
 
     def should_adjust(self) -> bool:
         """Verifica se deve fazer ajuste agora."""
-        # Precisa de pelo menos 3 capítulos para tomar decisões
-        if self._total_chapters_completed < 3:
+        # Precisa de pelo menos 2 capítulos para tomar decisões (reduzido de 3 para mais responsividade)
+        if self._total_chapters_completed < 2:
             return False
 
-        # Respeita cooldown entre ajustes
+        # Se há muitos sucessos consecutivos, permite ajuste rápido (ignorar cooldown)
+        if self._consecutive_successes >= self._fast_adjustment_threshold:
+            return True
+
+        # Se há erros ou throttling, permite ajuste imediato
+        if self._consecutive_failures >= 2 or self._total_throttles > 0:
+            return True
+
+        # Respeita cooldown entre ajustes normais
         time_since_last = time.time() - self._last_adjustment_time
         if time_since_last < self._adjustment_cooldown:
             return False
@@ -230,13 +243,15 @@ class AdaptivePerformanceController:
                 )
 
         # DECISÃO 3: Se indo bem, tentar AUMENTAR concurrency gradualmente
-        if self._consecutive_successes >= 5 and error_rate < 0.05 and throttle_rate < 0.1:
+        # Mais agressivo: requer menos sucessos e aumenta mais rápido
+        if self._consecutive_successes >= 3 and error_rate < 0.05 and throttle_rate < 0.1:
             if current_concurrency < self._max_concurrency:
-                # Testa aumento conservador
-                new_concurrency = min(self._max_concurrency, current_concurrency + 2)
+                # Aumento mais agressivo quando performance é excelente
+                increment = 3 if self._consecutive_successes >= 5 else 2
+                new_concurrency = min(self._max_concurrency, current_concurrency + increment)
                 return PerformanceAdjustment(
                     action="increase_concurrency",
-                    reason=f"Performance estável ({self._consecutive_successes} sucessos consecutivos)",
+                    reason=f"Performance estável ({self._consecutive_successes} sucessos, taxa erro {error_rate:.1%})",
                     edge_max_concurrency=new_concurrency,
                 )
 

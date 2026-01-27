@@ -146,20 +146,63 @@ class TextProcessor:
             return ""
 
         text = str(content)
+
+        # Remove style and script tags first (preserve content order)
         text = STYLE_RE.sub("", text)
         text = SCRIPT_RE.sub("", text)
-        text = NBSP_RE.sub(" ", text)
-        text = ARTIFACT_RE.sub(" ", text)
         text = re.sub(r"(?is)<head.*?>.*?</head>", "", text)
-        text = text.replace("\r", "\n")
-        text = PARA_BLOCK_RE.sub("\n", text)
-        text = TAG_RE.sub("", text)
-        text = WHITESPACE_RE.sub(" ", text)
-        text = re.sub(r"\n{3,}", "\n\n", text)
 
-        lines = [line.strip() for line in text.split("\n")]
-        lines = [line for line in lines if line]
-        return "\n".join(lines)
+        # Preserve dialog structure - add extra newline before dialog markers
+        text = re.sub(r"([.!?])\s*([—–-]\s*)", r"\1\n\2", text)
+
+        # Convert common entities and special chars
+        text = NBSP_RE.sub(" ", text)
+        text = text.replace("&mdash;", "—")
+        text = text.replace("&ndash;", "–")
+        text = text.replace("&ldquo;", '"')
+        text = text.replace("&rdquo;", '"')
+        text = text.replace("&lsquo;", "'")
+        text = text.replace("&rsquo;", "'")
+        text = text.replace("&hellip;", "…")
+
+        # Clean artifacts but preserve important separators
+        text = ARTIFACT_RE.sub(" ", text)
+        text = text.replace("\r", "\n")
+
+        # Convert block-level tags to newlines (preserve paragraph structure)
+        text = PARA_BLOCK_RE.sub("\n", text)
+
+        # Remove remaining HTML tags
+        text = TAG_RE.sub("", text)
+
+        # Normalize whitespace within lines but preserve paragraph breaks
+        text = WHITESPACE_RE.sub(" ", text)
+
+        # Preserve double newlines (paragraph breaks) but remove excessive ones
+        text = re.sub(r"\n{4,}", "\n\n\n", text)  # Max 3 newlines for section breaks
+
+        # Process lines: strip but preserve empty lines for paragraph breaks
+        lines = []
+        for line in text.split("\n"):
+            stripped = line.strip()
+            if stripped:
+                lines.append(stripped)
+            elif lines and lines[-1] != "":  # Add single empty line for paragraph break
+                lines.append("")
+
+        # Remove duplicate empty lines
+        result_lines = []
+        prev_empty = False
+        for line in lines:
+            if line == "":
+                if not prev_empty:
+                    result_lines.append(line)
+                prev_empty = True
+            else:
+                result_lines.append(line)
+                prev_empty = False
+
+        return "\n".join(result_lines)
 
     @staticmethod
     def inject_footnotes(

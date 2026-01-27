@@ -549,6 +549,9 @@ class TextFormattingProcessor:
         if not text:
             return ""
 
+        # Enhance natural pauses for better listening experience
+        text = cls.enhance_natural_pauses(text)
+
         # Remove números de seção isolados que causam pausas longas
         text = cls.remove_isolated_section_numbers(text)
 
@@ -560,6 +563,48 @@ class TextFormattingProcessor:
 
         # NOTE: Prosody application moved to TTS engines (per-chunk)
         # to ensure tags work correctly with chunked synthesis
+
+        return text
+
+    @classmethod
+    def enhance_natural_pauses(cls, text: str) -> str:
+        """
+        Enhance text with natural pauses for better listening experience.
+
+        Adds appropriate pauses after:
+        - Dialog markers (em-dash, quotes)
+        - Section transitions
+        - Important punctuation
+
+        Args:
+            text: Text to process
+
+        Returns:
+            Text with enhanced natural pauses
+        """
+        if not text:
+            return ""
+
+        # Add small pause after dialog markers for clarity
+        # Em-dash dialog (—): common in Portuguese and English literature
+        text = re.sub(r"(—\s*[^—\n]{10,}?[.!?])\s+", r"\1, ", text)
+
+        # Add pause after chapter/section numbers for separation
+        text = re.sub(r"(Capítulo\s+\d+[.:]\s*[^\n]{1,50}?)\n", r"\1.\n", text, flags=re.IGNORECASE)
+        text = re.sub(r"(Chapter\s+\d+[.:]\s*[^\n]{1,50}?)\n", r"\1.\n", text, flags=re.IGNORECASE)
+
+        # Enhance paragraph breaks with proper punctuation
+        # If paragraph ends without punctuation, add period
+        text = re.sub(r"([^\n.!?])\n\n", r"\1.\n\n", text)
+
+        # Add comma after short introductory phrases for natural pacing
+        text = re.sub(
+            r"^([A-Z][a-záàâãéèêíïóôõöúçñ]{1,15})\s+([a-z])", r"\1, \2", text, flags=re.MULTILINE
+        )
+
+        # Ensure proper spacing around ellipsis for natural pauses
+        text = re.sub(r"\.{3,}", "...", text)
+        text = re.sub(r"\s*\.\.\.\s*", "... ", text)
 
         return text
 

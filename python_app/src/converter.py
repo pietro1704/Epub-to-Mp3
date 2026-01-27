@@ -5,16 +5,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import gc
 import hashlib
 import inspect
 import json
 import os
 import re
+import resource
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import unicodedata
+import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -149,6 +153,101 @@ class AudioConverter:
         self._text_validation_hashes: Dict[str, int] = {}
         self._text_validation_errors: List[str] = []
         self._last_chapters_for_text: Optional[List[Chapter]] = None
+        self._memory_optimized = False
+        self._thread_pools: List[weakref.ref] = []
+
+    def _optimize_memory_settings(self) -> None:
+        """
+        Optimize memory settings for better performance.
+
+        - Enables aggressive garbage collection
+        - Sets memory limits on macOS/Linux
+        - Optimizes thread stack size
+        """
+        if self._memory_optimized:
+            return
+
+        try:
+            # Enable aggressive garbage collection to reduce memory peaks
+            gc.set_threshold(700, 10, 5)  # More aggressive than default (700, 10, 10)
+
+            # On Unix systems, limit memory growth
+            if hasattr(resource, "RLIMIT_AS"):
+                try:
+                    # Get available memory
+                    available_mem = psutil.virtual_memory().available
+                    # Set soft limit to 80% of available memory
+                    mem_limit = int(available_mem * 0.8)
+                    resource.setrlimit(resource.RLIMIT_AS, (mem_limit, mem_limit))
+                except (ValueError, OSError):
+                    pass  # Ignore if we can't set limits
+
+            # Reduce thread stack size for better memory efficiency
+            try:
+                threading.stack_size(1024 * 1024)  # 1MB stack (default is often 8MB)
+            except ValueError:
+                pass  # Some systems don't allow changing stack size
+
+            self._memory_optimized = True
+
+            if self.verbose:
+                print("✅ Memory optimizations enabled")
+
+        except Exception as e:
+            if self.verbose:
+                print(f"⚠️  Memory optimization failed: {e}")
+
+    def _cleanup_resources(self, force_gc: bool = False) -> None:
+        """
+        Clean up unused resources and free memory.
+
+        Args:
+            force_gc: Force immediate garbage collection
+        """
+        try:
+            # Clean up dead thread pool references
+            self._thread_pools = [ref for ref in self._thread_pools if ref() is not None]
+
+            # Clear temporary validation data
+            if hasattr(self, "_text_validation_hashes"):
+                if len(self._text_validation_hashes) > 100:  # Clear if too large
+                    self._text_validation_hashes.clear()
+
+            # Force garbage collection if requested or if memory usage is high
+            if force_gc:
+                gc.collect(generation=2)  # Full collection
+            else:
+                # Check memory usage and collect if high
+                mem = psutil.virtual_memory()
+                if mem.percent > 80:  # If using more than 80% of RAM
+                    gc.collect(generation=1)  # Collect generations 0 and 1
+
+        except Exception:
+            pass  # Ignore cleanup errors
+
+    def _create_optimized_thread_pool(self, max_workers: int) -> ThreadPoolExecutor:
+        """
+        Create a thread pool with optimized settings.
+
+        Args:
+            max_workers: Maximum number of worker threads
+
+        Returns:
+            Optimized ThreadPoolExecutor
+        """
+        # Limit max workers based on available resources
+        cpu_count = os.cpu_count() or 4
+        max_workers = min(max_workers, cpu_count * 2)  # Don't exceed 2x CPU count
+
+        # Create thread pool with smaller stack size for memory efficiency
+        executor = ThreadPoolExecutor(
+            max_workers=max_workers, thread_name_prefix="converter_worker"
+        )
+
+        # Track thread pool for cleanup
+        self._thread_pools.append(weakref.ref(executor))
+
+        return executor
 
     async def _initialize_auto_tuning(self) -> None:
         """Inicializa auto-tuning de performance baseado em HW e rede."""
@@ -2484,6 +2583,9 @@ class AudioConverter:
         # Initialize adaptive performance controller
         self._initialize_adaptive_performance()
 
+        # Optimize memory and threading settings
+        self._optimize_memory_settings()
+
         if self.verbose:
             print("[DEBUG] AudioConverter.convert() iniciado")
             print(
@@ -3640,6 +3742,10 @@ class AudioConverter:
                 batch_chars = 0
                 batch_errors = 0
                 completed_since_tune = 0
+
+                # Clean up resources periodically to reduce memory usage
+                if converted_total % 10 == 0:  # Every 10 chapters
+                    self._cleanup_resources(force_gc=False)
 
         batch_elapsed = max(time.time() - overall_start, 0.001)
 
@@ -5914,6 +6020,9 @@ class AudioConverter:
         # Print adaptive performance summary
         if self._adaptive_controller and self.verbose:
             self._adaptive_controller.print_summary()
+
+        # Final cleanup of resources before validation
+        self._cleanup_resources(force_gc=True)
 
         # Final automatic validation
         final_output = self._last_output_dir or (
