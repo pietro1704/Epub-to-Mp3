@@ -2580,7 +2580,7 @@ class AudioConverter:
 
         # Show chapter summary in verbose mode
         if self.verbose:
-            text_validator.print_chapter_summary(chapters)
+            text_validator.print_chapter_summary(chapters_for_text)
 
         # Refresh text cache before validation to avoid stale mismatches
         self._text_validation_hashes = {}
