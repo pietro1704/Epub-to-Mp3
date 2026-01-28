@@ -656,7 +656,7 @@ class AudioConverter:
         Best-effort: failures are logged only in verbose mode.
         """
         try:
-            if stage not in {"final", "cache-only", "test"}:
+            if stage not in {"final", "cache-only", "test", "initial"}:
                 return
             config = self._active_config
             if not config or getattr(config, "auto_validate_output", True) is False:
@@ -668,6 +668,19 @@ class AudioConverter:
                 output_dir = self._last_output_dir
             if not output_dir:
                 return
+
+            # For "initial" stage, only run if there are existing MP3s to validate
+            if stage == "initial":
+                if not output_dir.exists():
+                    return
+                mp3_files = list(output_dir.glob("*.mp3"))
+                if not mp3_files:
+                    # No existing MP3s, skip initial validation (first conversion)
+                    return
+                if self.verbose:
+                    print(
+                        f"\n🔍 Detectada conversão anterior com {len(mp3_files)} MP3(s). Validando antes de reconverter..."
+                    )
 
             # Add project root to sys.path for validate_conversion import
             import sys
