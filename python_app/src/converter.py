@@ -318,13 +318,18 @@ class AudioConverter:
                 print(f"⚠️  Erro ao registrar progresso adaptativo: {exc}")
 
     async def _auto_validate_and_retry_async(
-        self, output_dir: Path, epub_path: Path, cache_dir: Optional[Path], max_retries: int = 5
+        self, output_dir: Path, epub_path: Path, cache_dir: Optional[Path], max_retries: int = 10
     ) -> bool:
         """
-        Valida e reconverte capítulos problemáticos até 100% correto.
+        Valida e reconverte APENAS segmentos problemáticos até 100% correto.
+
+        Retry inteligente:
+        - MP3 faltante: reconverte apenas o MP3 (usa texto cached)
+        - Texto modificado: reconverte o capítulo completo
+        - Loop até sucesso ou erro crítico de travamento
 
         Returns:
-            True se passou na validação, False se esgotou tentativas
+            True se passou na validação, False se erro crítico
         """
         import sys
 
@@ -340,11 +345,23 @@ class AudioConverter:
         if not config:
             return False
 
+        consecutive_failures = 0
+        last_problem_count = float("inf")
+
         for attempt in range(1, max_retries + 1):
             if self.verbose:
                 print(f"\n🔍 Validação (tentativa {attempt}/{max_retries})...")
 
-            stats, issues = validate_book(epub_path, output_dir, cache_dir=cache_dir)
+            # Suprimir mensagens de erro durante auto-fix
+            import os
+
+            old_verbose = os.environ.get("SUPPRESS_VALIDATION_ERRORS", "0")
+            os.environ["SUPPRESS_VALIDATION_ERRORS"] = "1"
+
+            try:
+                stats, issues = validate_book(epub_path, output_dir, cache_dir=cache_dir)
+            finally:
+                os.environ["SUPPRESS_VALIDATION_ERRORS"] = old_verbose
 
             # Verifica se passou
             has_critical_problems = bool(
@@ -368,22 +385,57 @@ class AudioConverter:
                     print(
                         "⚠️  Problemas detectados mas não foi possível identificar capítulos específicos"
                     )
-                return False
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    print("❌ Erro crítico: não é possível identificar problemas. Abortando.")
+                    return False
+                continue
+
+            # Detectar se estamos travados (mesmo número de problemas)
+            current_problem_count = len(problem_chapters)
+            if current_problem_count >= last_problem_count:
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    if self.verbose:
+                        print(
+                            f"❌ Erro crítico: travado com {current_problem_count} problemas após 3 tentativas. Abortando."
+                        )
+                    return False
+            else:
+                consecutive_failures = 0
+
+            last_problem_count = current_problem_count
 
             if self.verbose:
-                print(f"❌ Validação falhou: {len(problem_chapters)} capítulo(s) com problemas")
-                print(f"   Capítulos problemáticos: {', '.join(map(str, problem_chapters[:10]))}")
-                if attempt < max_retries:
-                    print("   🔄 Reconvertendo capítulos problemáticos...")
+                print(f"🔄 {len(problem_chapters)} capítulo(s) com problemas - reconvertendo...")
+                print(f"   Capítulos: {', '.join(map(str, problem_chapters[:10]))}")
 
-            # Se é a última tentativa, não reconverte
-            if attempt >= max_retries:
-                if self.verbose:
-                    print(f"❌ Limite de {max_retries} tentativas atingido. Conversão incompleta.")
-                return False
+            # Categorizar problemas por tipo
+            missing_mp3_only = self._categorize_problems(issues, problem_chapters)
 
-            # Reconverte apenas os capítulos problemáticos usando converter diretamente
+            if missing_mp3_only and self.verbose:
+                print(
+                    f"   💡 {len(missing_mp3_only)} capítulo(s) apenas com MP3 faltante - síntese rápida"
+                )
+
+            # Reconverte os capítulos problemáticos
             try:
+                # Para MP3s faltantes, tentar síntese rápida primeiro
+                if missing_mp3_only:
+                    success = await self._reconvert_missing_mp3s(
+                        output_dir, cache_dir, missing_mp3_only, issues
+                    )
+                    if success and self.verbose:
+                        print(f"   ✅ {len(missing_mp3_only)} MP3(s) gerado(s) com sucesso")
+
+                # Para os demais, reconverter capítulo completo
+                chapters_to_reconvert = [
+                    ch for ch in problem_chapters if ch not in missing_mp3_only
+                ]
+
+                if not chapters_to_reconvert:
+                    continue  # Apenas MP3s faltantes, já tratados
+
                 reader = EbookReader(str(epub_path))
 
                 # Apply same transforms as validation to ensure consistent chapter mapping
@@ -410,7 +462,7 @@ class AudioConverter:
 
                 all_chapters = reader.get_chapter_structure(preserve_all=True)
 
-                # Map epub_index (1-based position) to chapter indices - same logic as auto_fix_partial()
+                # Map epub_index (1-based position) to chapter indices
                 from validate_conversion import normalize_text
 
                 chapter_indices = []
@@ -420,8 +472,7 @@ class AudioConverter:
                     if not text or not normalize_text(text):
                         continue
                     sequential_num += 1
-                    if epub_idx in problem_chapters:
-                        # Use chapter.index (structured index like "4.1" or "10.0") or sequential number
+                    if epub_idx in chapters_to_reconvert:
                         idx = getattr(chapter, "index", sequential_num)
                         chapter_indices.append(str(idx))
                         if self.verbose:
@@ -432,12 +483,10 @@ class AudioConverter:
                 if not chapter_indices:
                     if self.verbose:
                         print("⚠️  Não foi possível mapear capítulos problemáticos")
-                    return False
+                    consecutive_failures += 1
+                    continue
 
                 # Create config for partial reconversion
-                # IMPORTANT: Use output_dir.parent to avoid path duplication
-                # _setup_output_directory adds {book_title}_{engine} to the base path
-                # Since output_dir already has this, we need to use its parent
                 retry_config = ConversionConfig(
                     engine=config.engine,
                     voice=config.voice,
@@ -459,9 +508,146 @@ class AudioConverter:
                     import traceback
 
                     traceback.print_exc()
+                consecutive_failures += 1
+                if consecutive_failures >= 3:
+                    return False
+                continue
+
+        # Se chegou aqui, esgotou tentativas mas pode ter progredido
+        if self.verbose:
+            print(
+                f"⚠️  Atingido limite de {max_retries} tentativas. Alguns problemas podem persistir."
+            )
+        return False
+
+    def _categorize_problems(self, issues: list, problem_chapters: list) -> list:
+        """
+        Categoriza problemas para decidir estratégia de reconversão.
+
+        Returns:
+            Lista de capítulos que têm APENAS MP3 faltante (texto OK)
+        """
+        missing_mp3_only = []
+
+        for chapter_num in problem_chapters:
+            # Verificar se tem apenas MP3 faltante
+            chapter_issues = [issue for issue in issues if f"Chapter {chapter_num}" in issue]
+
+            has_missing_mp3 = any("Missing MP3" in issue for issue in chapter_issues)
+            has_text_issues = any(
+                any(
+                    keyword in issue
+                    for keyword in ["differs", "missing start", "missing end", "HTML"]
+                )
+                for issue in chapter_issues
+            )
+
+            if has_missing_mp3 and not has_text_issues:
+                missing_mp3_only.append(chapter_num)
+
+        return missing_mp3_only
+
+    async def _reconvert_missing_mp3s(
+        self, output_dir: Path, cache_dir: Optional[Path], chapter_nums: list, issues: list
+    ) -> bool:
+        """
+        Reconverte apenas os MP3s faltantes usando texto cached.
+
+        Returns:
+            True se todos os MP3s foram gerados com sucesso
+        """
+        if not cache_dir or not cache_dir.exists():
+            return False
+
+        try:
+            from .audio_processor import AudioProcessor
+            from .tts.factory import TTSFactory
+
+            config = self._active_config
+            if not config:
                 return False
 
-        return False
+            # Criar engine TTS
+            tts_engine = TTSFactory.create_engine(config.engine, config.voice)
+
+            # Criar audio processor
+            audio_processor = AudioProcessor()
+
+            success_count = 0
+
+            for chapter_num in chapter_nums:
+                try:
+                    # Encontrar arquivo pre-tts.txt no cache
+                    text_dir = cache_dir / "text"
+                    if not text_dir.exists():
+                        text_dir = cache_dir
+
+                    # Procurar arquivo pre-tts correspondente
+                    pre_tts_files = list(text_dir.glob("*-pre-tts.txt"))
+
+                    # Encontrar o arquivo correto por número de capítulo
+                    target_file = None
+                    for f in pre_tts_files:
+                        if f.name.startswith(f"{chapter_num} -") or f.name.startswith(
+                            f"{chapter_num:03d} -"
+                        ):
+                            target_file = f
+                            break
+
+                    if not target_file or not target_file.exists():
+                        if self.verbose:
+                            print(f"   ⚠️  Capítulo {chapter_num}: pre-tts.txt não encontrado")
+                        continue
+
+                    # Ler texto
+                    text = target_file.read_text(encoding="utf-8")
+                    if not text:
+                        if self.verbose:
+                            print(f"   ⚠️  Capítulo {chapter_num}: texto vazio")
+                        continue
+
+                    # Extrair nome do capítulo do filename
+                    chapter_name = target_file.stem.replace("-pre-tts", "")
+
+                    if self.verbose:
+                        print(f"   🎙️  Capítulo {chapter_num}: sintetizando MP3...")
+
+                    # Sintetizar áudio
+                    wav_file = await tts_engine.synthesize_async(
+                        text, str(target_file.parent / f"temp_{chapter_num}.wav")
+                    )
+
+                    if not wav_file or not Path(wav_file).exists():
+                        if self.verbose:
+                            print(f"   ❌ Capítulo {chapter_num}: síntese falhou")
+                        continue
+
+                    # Converter para MP3
+                    mp3_path = output_dir / f"{chapter_name}.mp3"
+                    await audio_processor.convert_to_mp3(Path(wav_file), mp3_path)
+
+                    # Limpar WAV temporário
+                    Path(wav_file).unlink(missing_ok=True)
+
+                    if mp3_path.exists():
+                        success_count += 1
+                        if self.verbose:
+                            print(f"   ✅ Capítulo {chapter_num}: MP3 gerado")
+                    else:
+                        if self.verbose:
+                            print(f"   ❌ Capítulo {chapter_num}: conversão MP3 falhou")
+
+                except Exception as exc:
+                    if self.verbose:
+                        print(f"   ⚠️  Capítulo {chapter_num}: erro - {exc}")
+                    continue
+
+            return success_count > 0
+
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️  Erro ao reconverter MP3s: {exc}")
+            return False
 
     async def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
         """

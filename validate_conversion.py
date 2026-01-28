@@ -15,6 +15,7 @@ Opcional (--auto-fix):
 
 import asyncio
 import hashlib
+import os
 import re
 import sys
 import unicodedata
@@ -709,7 +710,10 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
     print(f"⚠️  Duração incorreta: {stats['duration_mismatch']}")
     print(f"❌ Áudio duplicado: {stats['audio_duplicate']}")
 
-    if issues:
+    # Check if we should suppress error messages (during auto-fix)
+    suppress_errors = os.environ.get("SUPPRESS_VALIDATION_ERRORS", "").lower() == "true"
+
+    if issues and not suppress_errors:
         print("\n" + "=" * 70)
         print("🔥 PROBLEMAS CRÍTICOS ENCONTRADOS")
         print("=" * 70)
@@ -719,18 +723,20 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
     # Duplicate detection
     dup_groups = [ch_list for ch_list in text_hashes.values() if len(ch_list) > 1]
     if dup_groups:
-        print("\n⚠️  CONTEÚDO DUPLICADO DETECTADO ENTRE CAPÍTULOS")
-        for group in dup_groups:
-            print(f"  • Capítulos: {', '.join(map(str, group))}")
+        if not suppress_errors:
+            print("\n⚠️  CONTEÚDO DUPLICADO DETECTADO ENTRE CAPÍTULOS")
+            for group in dup_groups:
+                print(f"  • Capítulos: {', '.join(map(str, group))}")
         stats["text_mismatch"] += len(dup_groups)
         issues.append("Conteúdo duplicado detectado entre capítulos")
 
     audio_dupes = detect_duplicate_audio_files(output_dir)
     if audio_dupes:
-        print("\n⚠️  ÁUDIO DUPLICADO DETECTADO ENTRE ARQUIVOS")
-        for group in audio_dupes:
-            labels = ", ".join(path.name for path in group)
-            print(f"  • Arquivos: {labels}")
+        if not suppress_errors:
+            print("\n⚠️  ÁUDIO DUPLICADO DETECTADO ENTRE ARQUIVOS")
+            for group in audio_dupes:
+                labels = ", ".join(path.name for path in group)
+                print(f"  • Arquivos: {labels}")
         stats["audio_duplicate"] += len(audio_dupes)
         issues.append("Arquivos de áudio duplicados detectados (hash match)")
 
@@ -773,17 +779,18 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
         else:
             print("✅ TXT completo válido e completo")
 
-    print("=" * 70)
-    if stats["parsed_pretts_diff"] > 0 or stats["text_mismatch"] > 0:
-        print("❌ VALIDAÇÃO FALHOU: Texto foi modificado durante conversão!")
-        print("   O áudio NÃO contém o texto completo do EPUB original.")
-    elif stats["missing_mp3"] > 0:
-        print("⚠️  VALIDAÇÃO INCOMPLETA: Alguns MP3s faltando")
-    elif stats["perfect"] == stats["total_chapters"]:
-        print("✅ VALIDAÇÃO PASSOU: Todos os capítulos estão íntegros!")
-    else:
-        print("⚠️  VALIDAÇÃO COM AVISOS: Verifique os detalhes acima")
-    print("=" * 70 + "\n")
+    if not suppress_errors:
+        print("=" * 70)
+        if stats["parsed_pretts_diff"] > 0 or stats["text_mismatch"] > 0:
+            print("❌ VALIDAÇÃO FALHOU: Texto foi modificado durante conversão!")
+            print("   O áudio NÃO contém o texto completo do EPUB original.")
+        elif stats["missing_mp3"] > 0:
+            print("⚠️  VALIDAÇÃO INCOMPLETA: Alguns MP3s faltando")
+        elif stats["perfect"] == stats["total_chapters"]:
+            print("✅ VALIDAÇÃO PASSOU: Todos os capítulos estão íntegros!")
+        else:
+            print("⚠️  VALIDAÇÃO COM AVISOS: Verifique os detalhes acima")
+        print("=" * 70 + "\n")
 
     return stats, issues
 
