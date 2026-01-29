@@ -2801,6 +2801,10 @@ class AudioConverter:
         output_dir = self._setup_output_directory(config)
         self._last_output_dir = output_dir
 
+        # **EARLY VALIDATION**: Check if previous conversion exists and validate before reconverting
+        # This must happen BEFORE clearing cache and BEFORE processing chapters
+        await self._auto_validate_output(output_dir, stage="initial")
+
         # Honrar --clear-cache/clearCache: remove cache e artefatos do livro antes de continuar
         if getattr(config, "clear_cache", False):
             try:
@@ -2896,9 +2900,6 @@ class AudioConverter:
             print(
                 f"⚠️ Validação pós-parsing: {len(self._text_validation_errors)} problema(s) detectado(s)"
             )
-
-        # Automatic validation before conversion if cache/output already exist
-        await self._auto_validate_output(output_dir, stage="initial")
 
         # Validate all chapters against cache
         integrity_report = text_validator.validate_all_chapters(
