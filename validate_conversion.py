@@ -463,8 +463,10 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
     chapter_text_hash: Dict[int, str] = {}
     audio_hashes: Dict[str, Dict[str, object]] = {}
 
-    print(f"{'Ch':<4} {'Status':<12} {'EPUB':<8} {'Parsed':<8} {'PreTTS':<8} {'MP3':<8} {'Issue'}")
-    print("-" * 70)
+    print(
+        f"{'Ch':<4} {'Status':<8} {'I/M/F':<7} {'%Text':<6} {'EPUB':<7} {'Parsed':<7} {'PreTTS':<7} {'MP3':<7} {'Issue'}"
+    )
+    print("-" * 90)
 
     sequential_num = 0  # Track sequential non-empty chapter number
     for epub_index, (chapter_num, chapter_title, epub_text) in enumerate(epub_chapters, 1):
@@ -476,6 +478,11 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
         chapter_num = epub_index
         status = "✅"
         issue_desc = ""
+        # Track start/middle/end validation
+        start_ok = True
+        middle_ok = True
+        end_ok = True
+        text_pct = 100.0
         norm_title = normalize_title_key(_strip_numeric_prefix(chapter_title))
         leading_title = normalized_leading_text(epub_text)
         expected_titles = [t for t in (norm_title, leading_title) if t]
@@ -534,6 +541,31 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
 
                 is_equal, diff, desc = compare_texts(epub_text, parsed_text)
 
+                # Calculate text percentage
+                epub_len = len(normalize_text(epub_text))
+                parsed_len = len(parsed_norm)
+                if epub_len > 0:
+                    text_pct = (parsed_len / epub_len) * 100.0
+
+                # Check middle section
+                if epub_len > 400:  # Only check middle for long chapters
+                    epub_middle_pos = epub_len // 2
+                    parsed_middle_pos = parsed_len // 2
+                    epub_middle = normalize_text(epub_text)[
+                        max(0, epub_middle_pos - 90) : epub_middle_pos + 90
+                    ]
+                    parsed_middle = parsed_norm[
+                        max(0, parsed_middle_pos - 90) : parsed_middle_pos + 90
+                    ]
+                    # Check if at least 50% of middle section words match
+                    epub_middle_words = set(epub_middle.split())
+                    parsed_middle_words = set(parsed_middle.split())
+                    if epub_middle_words and parsed_middle_words:
+                        overlap = len(epub_middle_words & parsed_middle_words)
+                        total = max(len(epub_middle_words), len(parsed_middle_words))
+                        if (overlap / total) < 0.5:
+                            middle_ok = False
+
                 parsed_mismatch_recorded = False
                 if not is_equal:
                     stats["text_mismatch"] += 1
@@ -544,6 +576,7 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
 
                 epub_start, epub_end = _sample_edges(epub_text)
                 if epub_start and epub_start not in parsed_norm:
+                    start_ok = False
                     if not parsed_mismatch_recorded:
                         stats["text_mismatch"] += 1
                         parsed_mismatch_recorded = True
@@ -551,6 +584,7 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
                     issue_desc = (issue_desc + " EPUB≠Parsed (start mismatch)").strip()
                     issues.append(f"Chapter {chapter_num}: Parsed missing start sample from EPUB")
                 if epub_end and epub_end not in parsed_norm:
+                    end_ok = False
                     if not parsed_mismatch_recorded:
                         stats["text_mismatch"] += 1
                         parsed_mismatch_recorded = True
@@ -679,6 +713,11 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
         if status == "✅":
             stats["perfect"] += 1
 
+        # Build I/M/F status string
+        imf_status = (
+            f"{'✓' if start_ok else '✗'}/{'✓' if middle_ok else '✗'}/{'✓' if end_ok else '✗'}"
+        )
+
         # Print row
         epub_len = len(epub_text) if epub_text else 0
         parsed_len = (
@@ -694,7 +733,7 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
         mp3_size = mp3_file.stat().st_size // 1024 if mp3_file else 0
 
         print(
-            f"{chapter_num:<4} {status:<12} {epub_len:<8} {parsed_len:<8} {pretts_len:<8} {mp3_size:<8} {issue_desc}"
+            f"{chapter_num:<4} {status:<8} {imf_status:<7} {text_pct:>5.1f}% {epub_len:<7} {parsed_len:<7} {pretts_len:<7} {mp3_size:<7} {issue_desc}"
         )
 
     # Summary
@@ -703,6 +742,8 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
     print("=" * 70)
     print(f"Total de capítulos no EPUB: {stats['total_chapters']}")
     print(f"✅ Capítulos perfeitos: {stats['perfect']}")
+    if stats["perfect"] > 0:
+        print("   → Todos com Início/Meio/Fim ✓✓✓ e 100% do texto (nenhuma letra faltando)")
     print(f"⚠️  Cache faltando: {stats['missing_cache']}")
     print(f"❌ EPUB ≠ Parsed: {stats['text_mismatch']}")
     print(f"⚠️  Parsed ≠ PreTTS: {stats['parsed_pretts_diff']}")
