@@ -560,8 +560,8 @@ class AudioConverter:
             return False
 
         try:
-            from .audio_processor import AudioProcessor
             from .tts.factory import TTSFactory
+            from .utils import AudioProcessor
 
             config = self._active_config
             if not config:
