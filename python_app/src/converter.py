@@ -4391,10 +4391,56 @@ class AudioConverter:
         edge_consecutive_failures = 0
         base_delay = 0.5  # Start with 0.5s delay
         max_delay = 30.0  # Cap at 30s
+        edge_switched_to_piper = False  # Track if we already switched to Piper
+        EDGE_FAILURE_THRESHOLD = 20  # Switch to Piper after this many consecutive failures
 
         for idx, chapter in enumerate(chapters_list):
             # Adaptive delay between chapters for Edge-TTS
             if (config.engine or "").lower() == "edge" and idx > 0:
+                # Check if we should switch to Piper due to too many failures
+                if (
+                    not edge_switched_to_piper
+                    and edge_consecutive_failures >= EDGE_FAILURE_THRESHOLD
+                ):
+                    if shutil.which("piper") is not None:
+                        print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
+                        print(
+                            f"   🛟 Mudando automaticamente para Piper (offline) com idioma: {config.primary_language}"
+                        )
+                        # Get appropriate Piper model for detected language
+                        from .config import VoiceConfigProvider
+
+                        voice_provider = VoiceConfigProvider()
+                        piper_model = voice_provider.get_voice("piper", config.primary_language)
+                        if piper_model:
+                            # Switch to Piper for remaining chapters
+                            config = replace(
+                                config,
+                                engine="piper",
+                                model_path=Path(piper_model) if piper_model else None,
+                            )
+                            # Update engine pool
+                            try:
+                                _, piper_engine = await engine_pool.acquire("piper")
+                                if piper_engine:
+                                    print(
+                                        f"   ✅ Piper carregado: {Path(piper_model).name if piper_model else 'modelo padrão'}"
+                                    )
+                                    engine_pool.release("piper", piper_engine)
+                            except Exception as e:
+                                print(f"   ⚠️ Erro ao carregar Piper: {e}")
+                                print("   ⏩ Continuando com Edge-TTS")
+                            else:
+                                edge_switched_to_piper = True
+                                edge_consecutive_failures = 0  # Reset counter after switch
+                        else:
+                            print("   ⚠️ Modelo Piper não encontrado para este idioma")
+                            print("   ⏩ Continuando com Edge-TTS")
+                    else:
+                        print(f"\n⚠️ Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
+                        print("   ⚠️ Piper não instalado - não é possível fazer fallback")
+                        print("   ⏩ Continuando com Edge-TTS")
+
                 # Calculate delay based on failure rate
                 if edge_consecutive_failures > 0:
                     # Exponential backoff: double delay for each consecutive failure
