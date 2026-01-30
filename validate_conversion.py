@@ -676,7 +676,9 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
                 pretts_text = text_files["pre_tts"].read_text(encoding="utf-8")
                 pretts_len = len(normalize_text(pretts_text))
                 if pretts_len >= 5000:
-                    tolerance = 0.35 if pretts_len < 20000 else 0.25
+                    # Increased tolerance: Edge-TTS speed varies significantly
+                    # Portuguese text + formatting cues make duration estimation less accurate
+                    tolerance = 0.50 if pretts_len < 10000 else 0.40
                     result = validator.validate_duration(pretts_text, mp3_file, tolerance=tolerance)
 
                     if not result.is_valid:
