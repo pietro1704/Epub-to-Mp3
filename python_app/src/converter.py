@@ -5080,6 +5080,14 @@ class AudioConverter:
                             if hasattr(tts_engine, "last_error"):
                                 setattr(tts_engine, "last_error", "short_output")
                             if (engine_tracker.get("label") or "").lower() == "edge":
+                                # Track Edge truncation failures for adaptive delay
+                                edge_failure_count += 1
+                                edge_consecutive_failures += 1
+                                if self.verbose and edge_consecutive_failures > 1:
+                                    print(
+                                        f"   ⚠️  Edge-TTS truncation #{edge_failure_count} "
+                                        f"({edge_consecutive_failures} consecutive)"
+                                    )
                                 _maybe_apply_edge_slow_mode("Áudio truncado", engine_obj=tts_engine)
                                 # Forçar fallback offline após truncamento
                                 edge_state = self._edge_auto_state or {}
@@ -5110,6 +5118,14 @@ class AudioConverter:
                                 if not audio_ok:
                                     output_path.unlink(missing_ok=True)
                                     chapter_error = audio_error or "Áudio inválido"
+                                    # Track Edge validation failures for adaptive delay
+                                    if (engine_tracker.get("label") or "").lower() == "edge":
+                                        edge_failure_count += 1
+                                        edge_consecutive_failures += 1
+                                        if self.verbose:
+                                            print(
+                                                f"   ⚠️  Edge-TTS validation failure #{edge_failure_count}"
+                                            )
                                     errors.append(f"{chapter.name}: {chapter_error}")
                                     self.progress.complete_chapter(f"❌ {chapter_error}")
                                     continue
