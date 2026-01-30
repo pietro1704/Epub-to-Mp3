@@ -5171,14 +5171,8 @@ class AudioConverter:
                         synthesis_result = None  # Forçar retry
                 else:
                     # **RETRY**: Tentar com idioma padrão em caso de falha
-                    if payload_locked:
-                        error_msg = "Falha na síntese (payload bloqueado; sem fallback)"
-                        if self.verbose:
-                            print(f"   ❌ ERRO FINAL: {error_msg}")
-                        chapter_error = error_msg
-                        errors.append(f"{chapter.name}: {error_msg}")
-                        self.progress.complete_chapter(f"❌ {error_msg}")
-                        continue
+                    # Note: Don't block retry just because payload is locked - the cached text
+                    # may still be correct, and blocking prevents recovery from transient failures
                     if current_engine_label == "edge":
                         last_err = getattr(tts_engine, "last_error", None)
                         reason = _edge_error_reason(last_err)
