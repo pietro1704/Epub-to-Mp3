@@ -4386,7 +4386,28 @@ class AudioConverter:
                 return final_mp3_path.with_suffix(".wav"), True
             return final_mp3_path, False
 
+        # Edge-TTS adaptive delay system to prevent rate limiting
+        edge_failure_count = 0
+        edge_consecutive_failures = 0
+        base_delay = 0.5  # Start with 0.5s delay
+        max_delay = 30.0  # Cap at 30s
+
         for idx, chapter in enumerate(chapters_list):
+            # Adaptive delay between chapters for Edge-TTS
+            if (config.engine or "").lower() == "edge" and idx > 0:
+                # Calculate delay based on failure rate
+                if edge_consecutive_failures > 0:
+                    # Exponential backoff: double delay for each consecutive failure
+                    delay = min(base_delay * (2**edge_consecutive_failures), max_delay)
+                    if self.verbose:
+                        print(
+                            f"   ⏱️  Edge-TTS adaptive delay: {delay:.1f}s (failures: {edge_consecutive_failures})"
+                        )
+                    await asyncio.sleep(delay)
+                elif edge_failure_count > 5:
+                    # If we've had failures (but not consecutive), use small delay
+                    await asyncio.sleep(base_delay * 2)
+
             # Use chapter's original index if available (important for parallel mode)
             # where each task receives a single-chapter list
             chapter_num = self._chapter_number(chapter, idx + 1)
@@ -5161,6 +5182,9 @@ class AudioConverter:
                                     engine_obj=tts_engine,
                                 )
                         self._retry_original_texts.pop(chapter_label, None)
+                        # Reset Edge failure counters on success
+                        if current_engine_label == "edge":
+                            edge_consecutive_failures = 0
                     else:
                         # Arquivo muito pequeno - provavelmente corrompido
                         if self.verbose:
@@ -5183,6 +5207,14 @@ class AudioConverter:
                             "timeout",
                             "network",
                         }:
+                            # Track Edge failures for adaptive delay
+                            edge_failure_count += 1
+                            edge_consecutive_failures += 1
+                            if self.verbose and edge_consecutive_failures > 1:
+                                print(
+                                    f"   ⚠️  Edge-TTS failure #{edge_failure_count} "
+                                    f"({edge_consecutive_failures} consecutive)"
+                                )
                             _maybe_apply_edge_slow_mode(
                                 f"falha Edge ({reason})", engine_obj=tts_engine
                             )
