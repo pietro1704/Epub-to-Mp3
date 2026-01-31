@@ -4432,6 +4432,8 @@ class AudioConverter:
                                 engine="piper",
                                 model_path=Path(piper_model) if piper_model else None,
                             )
+                            # Register Piper in engine pool before acquiring
+                            engine_pool.register_engine("piper", config)
                             # Update engine pool
                             try:
                                 _, piper_engine = await engine_pool.acquire("piper")

@@ -6,6 +6,8 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import shutil
+import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -48,6 +50,30 @@ def _get_piper_semaphore():
             max_procs = max(1, min(3, cpu_count))
         _piper_semaphore = asyncio.Semaphore(max_procs)
     return _piper_semaphore
+
+
+def _find_piper_binary() -> str:
+    """Find piper binary, checking venv first if running in one."""
+    # Check if we're in a venv
+    venv_path = getattr(sys, "prefix", None)
+    if venv_path and venv_path != getattr(sys, "base_prefix", venv_path):
+        # We're in a venv, check venv/bin first
+        venv_piper = Path(venv_path) / "bin" / "piper"
+        if venv_piper.exists():
+            return str(venv_piper)
+
+    # Fall back to system PATH
+    piper_path = shutil.which("piper")
+    if piper_path:
+        return piper_path
+
+    # Last resort: try common locations
+    for location in ["/usr/local/bin/piper", "/usr/bin/piper"]:
+        if Path(location).exists():
+            return location
+
+    # If not found, return "piper" and let it fail with clear error
+    return "piper"
 
 
 class PiperTTSEngine:
@@ -255,8 +281,9 @@ class PiperTTSEngine:
     async def _synthesize_single(
         self, text: str, output_path: Path, model_path: Path
     ) -> Optional[Path]:
+        piper_bin = _find_piper_binary()
         command = (
-            "piper",
+            piper_bin,
             "--model",
             str(model_path),
             "--output_file",
