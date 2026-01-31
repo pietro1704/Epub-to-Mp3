@@ -4294,6 +4294,17 @@ class AudioConverter:
             }
 
         def can_use_piper() -> bool:
+            """Check if piper is available in venv or system PATH."""
+            # Check venv first (common locations)
+            venv_locations = [
+                Path(".venv/bin/piper"),
+                Path("venv/bin/piper"),
+                Path(sys.executable).parent / "piper",
+            ]
+            for piper_path in venv_locations:
+                if piper_path.exists() and piper_path.is_file():
+                    return True
+            # Fallback to system PATH
             return shutil.which("piper") is not None
 
         def build_best_offline_engine(
@@ -4402,7 +4413,7 @@ class AudioConverter:
                     not edge_switched_to_piper
                     and edge_consecutive_failures >= EDGE_FAILURE_THRESHOLD
                 ):
-                    if shutil.which("piper") is not None:
+                    if can_use_piper():
                         print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
                         print(
                             f"   🛟 Mudando automaticamente para Piper (offline) com idioma: {config.primary_language}"
