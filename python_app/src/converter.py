@@ -78,6 +78,9 @@ EDGE_SAFE_CHUNK_CHARS = _env_int("EDGE_SAFE_CHUNK_CHARS", 4000)
 EDGE_SAFE_MAX_SEGMENT_SECONDS = _env_float("EDGE_SAFE_MAX_SEGMENT_SECONDS", 300.0)
 EDGE_SAFE_CHAPTER_PARALLEL = _env_int("EDGE_SAFE_CHAPTER_PARALLEL", 1)
 EDGE_SAFE_TIMEOUT_MAX = _env_float("EDGE_SAFE_TIMEOUT_MAX", 900.0)  # Safer for long Edge chapters
+EDGE_FAILURE_THRESHOLD = _env_int(
+    "EDGE_FAILURE_THRESHOLD", 20
+)  # Auto-switch to Piper after N consecutive failures
 EDGE_FORCE_SAFE_CHARS = _env_int("EDGE_FORCE_SAFE_CHARS", 60000)
 EDGE_AUTO_STABLE = _env_bool("EDGE_AUTO_STABLE", True)
 EDGE_AUTO_PARALLEL_CAPS = {
@@ -4403,7 +4406,6 @@ class AudioConverter:
         base_delay = 0.5  # Start with 0.5s delay
         max_delay = 30.0  # Cap at 30s
         edge_switched_to_piper = False  # Track if we already switched to Piper
-        EDGE_FAILURE_THRESHOLD = 20  # Switch to Piper after this many consecutive failures
 
         for idx, chapter in enumerate(chapters_list):
             # Adaptive delay between chapters for Edge-TTS
@@ -4438,12 +4440,15 @@ class AudioConverter:
                                         f"   ✅ Piper carregado: {Path(piper_model).name if piper_model else 'modelo padrão'}"
                                     )
                                     engine_pool.release("piper", piper_engine)
+                                    # Only mark as switched if Piper was successfully loaded
+                                    edge_switched_to_piper = True
+                                    edge_consecutive_failures = 0  # Reset counter after switch
+                                else:
+                                    print("   ⚠️ Piper engine não pôde ser carregado")
+                                    print("   ⏩ Continuando com Edge-TTS")
                             except Exception as e:
                                 print(f"   ⚠️ Erro ao carregar Piper: {e}")
                                 print("   ⏩ Continuando com Edge-TTS")
-                            else:
-                                edge_switched_to_piper = True
-                                edge_consecutive_failures = 0  # Reset counter after switch
                         else:
                             print("   ⚠️ Modelo Piper não encontrado para este idioma")
                             print("   ⏩ Continuando com Edge-TTS")
@@ -5500,6 +5505,24 @@ class AudioConverter:
                     engine_name_used = None
 
         success = len(errors) == 0
+
+        # Log Edge-TTS failure statistics if any failures occurred
+        if (config.engine or "").lower() == "edge" and (
+            edge_failure_count > 0 or edge_switched_to_piper
+        ):
+            print("\n" + "─" * 60)
+            print("📊 Edge-TTS Failure Statistics")
+            print("─" * 60)
+            print(f"   Total failures: {edge_failure_count}")
+            print(f"   Final consecutive failures: {edge_consecutive_failures}")
+            if edge_switched_to_piper:
+                print("   ✅ Successfully switched to Piper fallback")
+            elif edge_consecutive_failures >= EDGE_FAILURE_THRESHOLD:
+                print(
+                    f"   ⚠️  Reached failure threshold ({EDGE_FAILURE_THRESHOLD}) but Piper unavailable"
+                )
+            print("─" * 60 + "\n")
+
         return ConversionResult(
             success=success,
             total_chapters=original_total,

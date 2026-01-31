@@ -115,6 +115,7 @@ EDGE_CHUNK_CHARS=10000          # Chars per request (default 10K, max 15K)
 EDGE_MAX_CONCURRENCY=8          # Parallel requests (optimal)
 EDGE_MAX_SEGMENT_SECONDS=85     # Max audio segment duration
 EDGE_SAFE_CHAPTER_PARALLEL=8    # Parallel chapters
+EDGE_FAILURE_THRESHOLD=20       # Auto-switch to Piper after N consecutive failures (default 20)
 ```
 
 ### Kokoro Tuning
@@ -145,12 +146,13 @@ When using Edge-TTS, the system automatically handles rate limiting and service 
    - Failure 6 → 16s delay
    - Failure 7+ → 30s delay (capped)
 
-2. **Automatic Piper Fallback** (after 20 consecutive failures):
+2. **Automatic Piper Fallback** (after N consecutive failures, default 20):
    ```
    🔄 Edge-TTS com 20 falhas consecutivas
    🛟 Mudando automaticamente para Piper (offline) com idioma: <detected_language>
    ✅ Piper carregado: <model_name>.onnx
    ```
+   - Threshold configurable via `EDGE_FAILURE_THRESHOLD` env var (default 20)
    - Uses detected book language (from `config.primary_language`)
    - Switches to appropriate Piper model (e.g., `en_US-lessac-medium.onnx` for English)
    - Continues conversion with offline engine
