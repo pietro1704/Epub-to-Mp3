@@ -13,18 +13,26 @@ Full-stack EPUB/PDF to MP3 audiobook converter. Python backend with FastAPI serv
 ### Python Setup
 ```bash
 # Requires Python 3.11 (Coqui TTS compatibility)
+# Use mise for automatic env setup (recommended):
+mise run install
+
+# Or manually:
 pip install -r requirements.txt
 # FFmpeg required: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)
 ```
 
 ### CLI Usage
+**IMPORTANT**: Always activate venv before running conversions to ensure Piper fallback works:
 ```bash
-python -m python_app.main book.epub                    # Basic conversion
-python -m python_app.main book.epub --menu             # Interactive engine/voice selection
-python -m python_app.main book.epub --engine edge      # Force Edge-TTS
-python -m python_app.main book.epub --chapter 3        # Single chapter
-python -m python_app.main book.epub --show-structure   # Preview chapters
-python -m python_app.main book.epub --clear-cache      # Reprocess from scratch
+source .venv/bin/activate
+
+# Then run commands:
+python -m python_app.main convert book.epub                    # Basic conversion
+python -m python_app.main convert book.epub --menu             # Interactive engine/voice selection
+python -m python_app.main convert book.epub --engine edge      # Force Edge-TTS
+python -m python_app.main convert book.epub --chapter 3        # Single chapter
+python -m python_app.main convert book.epub --show-structure   # Preview chapters
+python -m python_app.main convert book.epub --clear-cache      # Reprocess from scratch
 # Batch conversion
 python -m python_app.main convert book1.epub book2.pdf --batch ~/folder/
 ```
@@ -122,13 +130,46 @@ SPARK_CHUNK_CHARS=1500          # Chars per chunk
 SPARK_MAX_WORKERS=1             # Workers (GPU-bound)
 ```
 
+## Adaptive Delays & Automatic Piper Fallback
+
+**Edge-TTS Resilience System** (implemented Jan 2026):
+
+When using Edge-TTS, the system automatically handles rate limiting and service degradation:
+
+1. **Adaptive Delays** (exponential backoff):
+   - Failure 1 → 0.5s delay
+   - Failure 2 → 1s delay
+   - Failure 3 → 2s delay
+   - Failure 4 → 4s delay
+   - Failure 5 → 8s delay
+   - Failure 6 → 16s delay
+   - Failure 7+ → 30s delay (capped)
+
+2. **Automatic Piper Fallback** (after 20 consecutive failures):
+   ```
+   🔄 Edge-TTS com 20 falhas consecutivas
+   🛟 Mudando automaticamente para Piper (offline) com idioma: <detected_language>
+   ✅ Piper carregado: <model_name>.onnx
+   ```
+   - Uses detected book language (from `config.primary_language`)
+   - Switches to appropriate Piper model (e.g., `en_US-lessac-medium.onnx` for English)
+   - Continues conversion with offline engine
+   - Requires venv activation for Piper to be found in PATH
+
+3. **Failure Tracking**:
+   - Counts consecutive failures (truncation, validation errors)
+   - Resets counter on successful chapter conversion
+   - Logs detailed failure metrics for debugging
+
 ## Design Patterns
 - **Factory**: TTSFactory creates engine instances by name
 - **Job Queue**: JobManager handles async conversion with progress callbacks
 - **Caching**: CacheManager stores parsed text per chapter for resume
+- **Adaptive Resilience**: Exponential backoff + automatic fallback for service degradation
 
 ## Guidelines
 - Follow existing factory pattern for new TTS engines
 - Preserve chapter structure from EPUB navigation (NCX/nav)
 - Validate engine dependencies before use (ffmpeg, model files)
+- **Always activate venv** before running conversions (required for Piper fallback)
 - Keep changes minimal and focused
