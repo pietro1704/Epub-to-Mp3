@@ -571,7 +571,8 @@ class AudioConverter:
                 return False
 
             # Criar engine TTS
-            tts_engine = TTSFactory.create_engine(config.engine, config.voice)
+            factory = TTSFactory()
+            tts_engine = factory.create_engine(config)
 
             # Criar audio processor
             audio_processor = AudioProcessor()
