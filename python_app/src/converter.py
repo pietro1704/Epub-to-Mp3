@@ -90,6 +90,53 @@ EDGE_AUTO_PARALLEL_CAPS = {
     "ultra": _env_int("EDGE_AUTO_PARALLEL_CAP_ULTRA", 6),  # Increased from 4
 }
 
+# Validation thresholds
+TRUNCATION_THRESHOLD_PERCENT = _env_float(
+    "TRUNCATION_THRESHOLD_PERCENT", 10.0
+)  # Consider truncated if >10% missing
+EXPECTED_WPM = _env_int("EXPECTED_WPM", 160)  # Expected words per minute for TTS
+CHARS_PER_WORD = _env_float("CHARS_PER_WORD", 5.0)  # Average characters per word
+
+
+def validate_audio_completeness(mp3_path: Path, text_length: int) -> tuple[bool, float]:
+    """
+    Validate if MP3 contains the full text or was truncated.
+
+    Args:
+        mp3_path: Path to MP3 file
+        text_length: Number of characters in source text
+
+    Returns:
+        Tuple of (is_complete, coverage_percent)
+        - is_complete: True if audio appears complete (< TRUNCATION_THRESHOLD_PERCENT missing)
+        - coverage_percent: Estimated percentage of text covered by audio
+    """
+    if not mp3_path.exists():
+        return False, 0.0
+
+    try:
+        # Get MP3 duration
+        audio = MP3(str(mp3_path))
+        duration_seconds = audio.info.length
+        duration_minutes = duration_seconds / 60.0
+
+        # Estimate characters that should fit in this duration
+        words_in_audio = duration_minutes * EXPECTED_WPM
+        chars_in_audio = words_in_audio * CHARS_PER_WORD
+
+        # Calculate coverage percentage
+        coverage_percent = (chars_in_audio / text_length) * 100.0 if text_length > 0 else 0.0
+
+        # Check if truncation threshold exceeded
+        missing_percent = 100.0 - coverage_percent
+        is_complete = missing_percent <= TRUNCATION_THRESHOLD_PERCENT
+
+        return is_complete, coverage_percent
+
+    except Exception:
+        # If we can't validate, assume it's incomplete to be safe
+        return False, 0.0
+
 
 @dataclass
 class ConversionResult:
@@ -5263,9 +5310,45 @@ class AudioConverter:
                                     engine_obj=tts_engine,
                                 )
                         self._retry_original_texts.pop(chapter_label, None)
-                        # Reset Edge failure counters on success
+
+                        # Validate audio completeness (detect truncations)
                         if current_engine_label == "edge":
-                            edge_consecutive_failures = 0
+                            is_complete, coverage_percent = validate_audio_completeness(
+                                output_path, chapter_chars
+                            )
+
+                            if not is_complete:
+                                # Audio was truncated - treat as failure
+                                missing_percent = 100.0 - coverage_percent
+                                if self.verbose:
+                                    print(
+                                        f"   ⚠️ Áudio truncado: {coverage_percent:.1f}% do texto "
+                                        f"({missing_percent:.1f}% faltando)"
+                                    )
+
+                                # Increment failure counters
+                                edge_failure_count += 1
+                                edge_consecutive_failures += 1
+
+                                # Mark for retry
+                                output_path.unlink(missing_ok=True)
+                                synthesis_result = None
+
+                                # Log failure stats
+                                if self.verbose:
+                                    print(
+                                        f"   📊 Falhas Edge: {edge_failure_count} total, "
+                                        f"{edge_consecutive_failures} consecutivas"
+                                    )
+                            else:
+                                # Audio is complete - reset consecutive failures counter
+                                # (but keep total failure count for statistics)
+                                if edge_consecutive_failures > 0 and self.verbose:
+                                    print(
+                                        f"   ✅ Áudio completo ({coverage_percent:.1f}% do texto) - "
+                                        f"resetando contador de falhas consecutivas"
+                                    )
+                                edge_consecutive_failures = 0
                     else:
                         # Arquivo muito pequeno - provavelmente corrompido
                         if self.verbose:
