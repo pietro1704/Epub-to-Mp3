@@ -421,14 +421,24 @@ class ConverterApplication:
                     # Limpar output do livro (todos os engines)
                     output_base = Path(getattr(args, "output_dir", None) or (Path.cwd() / "output"))
                     sanitized_title = FileManager.sanitize_filename(display_name)
-                    book_output_dir = output_base / sanitized_title
 
-                    if book_output_dir.exists():
-                        try:
-                            shutil.rmtree(book_output_dir, ignore_errors=True)
-                            print("   ✅ Output removido")
-                        except Exception as e:
-                            print(f"   ⚠️  Erro ao limpar output: {e}")
+                    # Procurar por todos os diretórios que começam com o título do livro
+                    # (ex: "Book_edge", "Book_piper", "Book_coqui")
+                    removed_count = 0
+                    if output_base.exists():
+                        for output_dir in output_base.iterdir():
+                            if output_dir.is_dir() and (
+                                output_dir.name == sanitized_title
+                                or output_dir.name.startswith(f"{sanitized_title}_")
+                            ):
+                                try:
+                                    shutil.rmtree(output_dir, ignore_errors=True)
+                                    removed_count += 1
+                                except Exception as e:
+                                    print(f"   ⚠️  Erro ao limpar {output_dir.name}: {e}")
+
+                    if removed_count > 0:
+                        print(f"   ✅ Output removido ({removed_count} diretório(s))")
                     else:
                         print("   ℹ️  Nenhum output encontrado")
 
