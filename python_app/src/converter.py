@@ -784,8 +784,103 @@ class AudioConverter:
                     success = await self._auto_validate_and_retry_async(
                         Path(output_dir), Path(epub_path), cache_dir, max_retries=max_retries
                     )
-                    if not success and self.verbose:
-                        print("\n⚠️  Conversão concluída mas com problemas na validação")
+                    if not success:
+                        if self.verbose:
+                            print("\n⚠️  Conversão concluída mas com problemas na validação")
+
+                        # Tentativa de fallback automático para Piper se Edge-TTS falhou
+                        current_engine = getattr(config, "engine", "").lower()
+                        if current_engine == "edge" and stage == "final":
+                            if self.verbose:
+                                print("\n🔄 Tentando fallback automático para Piper...")
+
+                            # Verificar se Piper está disponível
+                            try:
+                                from .tts.factory import TTSFactory
+
+                                factory = TTSFactory()
+                                available_engines = factory.available_engines()
+
+                                if "piper" in available_engines:
+                                    # Obter capítulos com problemas
+                                    from validate_conversion import validate_book
+
+                                    stats, issues = validate_book(
+                                        Path(epub_path), Path(output_dir), cache_dir=cache_dir
+                                    )
+
+                                    missing_chapters = []
+                                    for issue in issues:
+                                        if "Missing MP3" in issue:
+                                            # Extrair número do capítulo
+                                            import re
+
+                                            match = re.search(r"Chapter (\d+)", issue)
+                                            if match:
+                                                missing_chapters.append(int(match.group(1)))
+
+                                    if missing_chapters and self.verbose:
+                                        print(
+                                            f"   🎯 {len(missing_chapters)} capítulo(s) faltando - reconvertendo com Piper"
+                                        )
+                                        print(
+                                            f"   Capítulos: {', '.join(map(str, missing_chapters[:10]))}"
+                                        )
+
+                                    # Mudar temporariamente para Piper
+                                    original_engine = config.engine
+                                    config.engine = "piper"
+
+                                    try:
+                                        # Reconverter capítulos faltando com Piper
+                                        piper_success = await self._reconvert_missing_mp3s(
+                                            Path(output_dir), cache_dir, missing_chapters, issues
+                                        )
+
+                                        if piper_success:
+                                            # Validar novamente
+                                            stats_after, issues_after = validate_book(
+                                                Path(epub_path),
+                                                Path(output_dir),
+                                                cache_dir=cache_dir,
+                                            )
+                                            has_critical = any(
+                                                stats_after.get(key, 0) > 0
+                                                for key in (
+                                                    "text_mismatch",
+                                                    "parsed_pretts_diff",
+                                                    "missing_mp3",
+                                                )
+                                            )
+
+                                            if not has_critical:
+                                                if self.verbose:
+                                                    print(
+                                                        "   ✅ Fallback para Piper bem-sucedido! Todos os capítulos convertidos."
+                                                    )
+                                                success = True
+                                            elif self.verbose:
+                                                print(
+                                                    f"   ⚠️  Fallback parcial: {stats_after.get('missing_mp3', 0)} capítulo(s) ainda faltando"
+                                                )
+                                    finally:
+                                        # Restaurar engine original
+                                        config.engine = original_engine
+                                else:
+                                    if self.verbose:
+                                        print("   ⚠️  Piper não disponível para fallback")
+                            except Exception as fallback_exc:
+                                if self.verbose:
+                                    print(f"   ⚠️  Erro no fallback: {fallback_exc}")
+
+                        # Se ainda há problemas após fallback, exibir erro claro
+                        if not success and self.verbose:
+                            print(
+                                "\n❌ CONVERSÃO INCOMPLETA: Alguns capítulos não foram convertidos"
+                            )
+                            print("   Tente:")
+                            print("   1. Converter novamente com --engine piper")
+                            print("   2. Converter capítulos específicos com --chapter N")
                 finally:
                     self._auto_fix_guard = False
                 return
