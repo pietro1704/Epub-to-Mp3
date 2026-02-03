@@ -643,11 +643,20 @@ class AudioConverter:
 
                     for f in pre_tts_files:
                         # Try exact match with various formats
-                        if (
-                            f.name.startswith(f"{chapter_str} -")
-                            or f.name.startswith(f"{chapter_str:03d} -")
-                            or f.name.startswith(f"{chapter_str}.")
-                        ):  # For subchapters like "4.5"
+                        # Support: "4 -", "4.5 -", "004 -", etc.
+                        matches = f.name.startswith(f"{chapter_str} -") or f.name.startswith(
+                            f"{chapter_str}."
+                        )
+
+                        # Try zero-padded format only if chapter_num is an integer
+                        if not matches:
+                            try:
+                                chapter_int = int(float(chapter_num))
+                                matches = f.name.startswith(f"{chapter_int:03d} -")
+                            except (ValueError, TypeError):
+                                pass
+
+                        if matches:
                             target_file = f
                             break
 
