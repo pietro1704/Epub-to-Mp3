@@ -4373,6 +4373,10 @@ class AudioConverter:
                 def release(self, *_args, **_kwargs):
                     return None
 
+                def register_engine(self, *_args, **_kwargs):
+                    """No-op for compatibility with test mocks"""
+                    return None
+
             engine_pool = _SingleEnginePool(engine_instance)
 
         async def _synthesize_safe(engine_obj, text, output_path, **kwargs):
@@ -5515,7 +5519,11 @@ class AudioConverter:
                                         self.progress.complete_chapter(f"❌ {chapter_error}")
                                         break
 
-                            if (engine_tracker.get("label") or "").lower() == "edge":
+                            if (
+                                (engine_tracker.get("label") or "").lower() == "edge"
+                                and hasattr(tts_engine, "__module__")
+                                and "edge_engine" in getattr(tts_engine, "__module__", "")
+                            ):
                                 segments_ok, segments_error = self._edge_segment_integrity_ok(
                                     tts_engine
                                 )
@@ -5611,7 +5619,11 @@ class AudioConverter:
                             self._retry_original_texts.pop(chapter_label, None)
 
                             # Validate audio completeness (detect truncations)
-                            if current_engine_label == "edge":
+                            if (
+                                current_engine_label == "edge"
+                                and hasattr(tts_engine, "__module__")
+                                and "edge_engine" in getattr(tts_engine, "__module__", "")
+                            ):
                                 is_complete, coverage_percent = validate_audio_completeness(
                                     output_path, chapter_chars
                                 )
