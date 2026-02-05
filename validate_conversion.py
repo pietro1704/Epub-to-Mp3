@@ -869,38 +869,44 @@ def auto_fix(
     asyncio.run(converter.convert(reader, config))
 
 
-def extract_problem_chapters(issues: List[str]) -> List[int]:
-    """Extract chapter numbers from validation issues."""
-    chapters: set[int] = set()
+def extract_problem_chapters(issues: List[str]) -> List[str]:
+    """Extract chapter numbers from validation issues (supports decimals like 1.1, 1.2)."""
+    chapters: set[str] = set()
     for issue in issues:
-        # Match "Chapter 9", "Chapter 43", etc.
-        for match in re.finditer(r"\bChapter\s+(\d+)\b", issue):
-            chapters.add(int(match.group(1)))
+        # Match "Chapter 9", "Chapter 43", "Chapter 1.1", "Chapter 1.2", etc.
+        for match in re.finditer(r"\bChapter\s+(\d+(?:\.\d+)?)\b", issue):
+            chapters.add(match.group(1))
 
-        # Match "Capítulo 9", "Capítulos: 1, 2, 3", etc.
-        cap_match = re.search(r"\bCapítulos?:\s*([0-9,\s]+)", issue)
+        # Match "Capítulo 9", "Capítulo 1.1", "Capítulos: 1, 2, 3", etc.
+        cap_match = re.search(r"\bCapítulos?:\s*([0-9.,\s]+)", issue)
         if cap_match:
             for part in cap_match.group(1).split(","):
                 part = part.strip()
-                if part.isdigit():
-                    chapters.add(int(part))
+                # Accept integers and decimals
+                if re.match(r"^\d+(?:\.\d+)?$", part):
+                    chapters.add(part)
 
-        # Match duplicates: "between chapters: 9 and 43"
-        dup_match = re.search(r"between chapters:\s*(\d+)\s+and\s+(\d+)", issue)
+        # Match duplicates: "between chapters: 9 and 43" or "between chapters: 1.1 and 1.2"
+        dup_match = re.search(r"between chapters:\s*(\d+(?:\.\d+)?)\s+and\s+(\d+(?:\.\d+)?)", issue)
         if dup_match:
-            chapters.add(int(dup_match.group(1)))
-            chapters.add(int(dup_match.group(2)))
+            chapters.add(dup_match.group(1))
+            chapters.add(dup_match.group(2))
 
-        # Match standalone numbers in critical messages
+        # Match standalone numbers in critical messages (support decimals)
         if any(keyword in issue.lower() for keyword in ["missing mp3", "duplicado", "duplicate"]):
-            # Extract all numbers that could be chapter references
-            for num_match in re.finditer(r"(?:^|\s)(\d+)(?:\s|:|$)", issue):
-                num = int(num_match.group(1))
-                # Only add if it's a reasonable chapter number (1-999)
-                if 1 <= num <= 999:
-                    chapters.add(num)
+            # Extract all numbers that could be chapter references (integers or decimals)
+            for num_match in re.finditer(r"(?:^|\s)(\d+(?:\.\d+)?)(?:\s|:|$)", issue):
+                num_str = num_match.group(1)
+                try:
+                    num_val = float(num_str)
+                    # Only add if it's a reasonable chapter number (1-999)
+                    if 1 <= num_val <= 999:
+                        chapters.add(num_str)
+                except ValueError:
+                    pass
 
-    return sorted(chapters)
+    # Sort by converting to float for proper ordering (1, 1.1, 1.2, 2, 2.1, etc.)
+    return sorted(chapters, key=lambda x: float(x))
 
 
 def auto_fix_partial(
