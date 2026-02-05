@@ -54,12 +54,19 @@ class TTSFactory:
         if importlib.util.find_spec("TTS") is not None:
             engines.append("coqui")
 
-        # Check Piper (needs to be in venv or PATH)
+        # Check Piper (needs to be in venv or PATH AND have models)
         import shutil
         import sys
 
-        if shutil.which("piper") or (Path(sys.executable).parent / "piper").exists():
-            engines.append("piper")
+        piper_available = shutil.which("piper") or (Path(sys.executable).parent / "piper").exists()
+        if piper_available:
+            # Also check if there are any Piper models available
+            try:
+                piper_models = self.get_piper_models()
+                if piper_models:
+                    engines.append("piper")
+            except Exception:
+                pass  # No models available, don't add piper to available engines
 
         # Check Kokoro
         if importlib.util.find_spec("kokoro") is not None:
