@@ -797,9 +797,43 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
         full_text = full_book_file.read_text(encoding="utf-8")
         full_text_norm = normalize_text(full_text)
 
-        # Calculate expected total from all chapters
-        total_epub_chars = sum(len(normalize_text(text)) for _, _, text in epub_chapters if text)
-        full_book_chars = len(full_text_norm)
+        # Parse chapter titles from completo.txt to only count converted chapters
+        # Format: "CAPÍTULO 1.0: 1.0 - Capítulo 1 - Começo - ..."
+        converted_titles = set()
+        for match in re.finditer(
+            r"^CAPÍTULO\s+\d+(?:\.\d+)?\s*:\s*(.+?)$", full_text, re.MULTILINE
+        ):
+            title = match.group(1).strip()
+            # Normalize title for matching
+            converted_titles.add(normalize_title_key(title))
+
+        # Calculate expected total ONLY from chapters that were actually converted
+        if converted_titles:
+            total_epub_chars = 0
+            for _, chapter_title, text in epub_chapters:
+                if not text:
+                    continue
+                # Check if this chapter's title matches any converted chapter
+                norm_title = normalize_title_key(chapter_title)
+                if any(
+                    norm_title in conv_title or conv_title in norm_title
+                    for conv_title in converted_titles
+                ):
+                    total_epub_chars += len(normalize_text(text))
+        else:
+            # Fallback if no chapter headers found - use all chapters (old behavior)
+            total_epub_chars = sum(
+                len(normalize_text(text)) for _, _, text in epub_chapters if text
+            )
+
+        # Strip chapter headers from completo.txt for fair comparison
+        # Headers are formatting added by converter, not EPUB content
+        full_text_without_headers = "\n".join(
+            line
+            for line in full_text.split("\n")
+            if not (line.strip().startswith("===") or line.strip().startswith("CAPÍTULO"))
+        )
+        full_book_chars = len(normalize_text(full_text_without_headers))
 
         print(f"📄 Arquivo: {full_book_file.name}")
         print(f"📊 Tamanho: {len(full_text):,} caracteres ({len(full_text_norm):,} normalizados)")
