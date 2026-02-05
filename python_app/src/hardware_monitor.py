@@ -27,12 +27,31 @@ try:
 except ImportError:
     PSUTIL_AVAILABLE = False
 
-try:
-    import torch
+_disable_torch = str(os.getenv("DISABLE_TORCH", "")).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+if platform.system().lower() == "darwin":
+    _disable_torch = True
+_allow_no_shm = str(os.getenv("ALLOW_TORCH_NO_SHM", "")).strip().lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+_shm_available = Path("/dev/shm").exists()
 
-    TORCH_AVAILABLE = True
-except ImportError:
+if _disable_torch or (not _shm_available and not _allow_no_shm):
     TORCH_AVAILABLE = False
+else:
+    try:
+        import torch
+
+        TORCH_AVAILABLE = True
+    except ImportError:
+        TORCH_AVAILABLE = False
 
 
 @dataclass

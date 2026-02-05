@@ -37,6 +37,28 @@ def configure_numpy_performance():
 def configure_torch_performance():
     """Configure PyTorch para máxima performance em GPU/CPU."""
     try:
+        disable_torch = str(os.getenv("DISABLE_TORCH", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if sys.platform == "darwin":
+            disable_torch = True
+        allow_no_shm = str(os.getenv("ALLOW_TORCH_NO_SHM", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if disable_torch:
+            print("⚠️ [Torch] Desativado automaticamente (macOS ou DISABLE_TORCH=1)")
+            return
+        if not os.path.exists("/dev/shm") and not allow_no_shm:
+            print("⚠️ [Torch] /dev/shm ausente - pulando init para evitar crash do OpenMP")
+            print("   Defina ALLOW_TORCH_NO_SHM=1 para forçar.")
+            return
+
         import torch
 
         # **GPU ACCELERATION**: Configurar CUDA

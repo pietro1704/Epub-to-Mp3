@@ -78,9 +78,15 @@ EDGE_SAFE_CHUNK_CHARS = _env_int("EDGE_SAFE_CHUNK_CHARS", 4000)
 EDGE_SAFE_MAX_SEGMENT_SECONDS = _env_float("EDGE_SAFE_MAX_SEGMENT_SECONDS", 300.0)
 EDGE_SAFE_CHAPTER_PARALLEL = _env_int("EDGE_SAFE_CHAPTER_PARALLEL", 1)
 EDGE_SAFE_TIMEOUT_MAX = _env_float("EDGE_SAFE_TIMEOUT_MAX", 900.0)  # Safer for long Edge chapters
-EDGE_FAILURE_THRESHOLD = _env_int(
-    "EDGE_FAILURE_THRESHOLD", 20
-)  # Auto-switch to Piper after N consecutive failures
+# Three-tier fallback system: Edge multilingual → Edge monolingual → Piper
+EDGE_MONOLINGUAL_THRESHOLD = _env_int(
+    "EDGE_MONOLINGUAL_THRESHOLD", 3
+)  # Switch to monolingual Edge after N consecutive failures
+EDGE_PIPER_THRESHOLD = _env_int(
+    "EDGE_PIPER_THRESHOLD", 3
+)  # Switch to Piper after N consecutive failures
+# Legacy env var for backwards compatibility (maps to PIPER threshold)
+EDGE_FAILURE_THRESHOLD = _env_int("EDGE_FAILURE_THRESHOLD", EDGE_PIPER_THRESHOLD)
 EDGE_FORCE_SAFE_CHARS = _env_int("EDGE_FORCE_SAFE_CHARS", 60000)
 EDGE_AUTO_STABLE = _env_bool("EDGE_AUTO_STABLE", True)
 EDGE_AUTO_PARALLEL_CAPS = {
@@ -1146,6 +1152,48 @@ class AudioConverter:
             if self.verbose:
                 print(f"⚠️ Audio validation failed with error: {exc}")
             return True, None
+
+    def _edge_segment_integrity_ok(self, tts_engine: object) -> tuple[bool, Optional[str]]:
+        """Ensure Edge produced all segments (100% completeness)."""
+        report = getattr(tts_engine, "last_segment_report", None)
+        expected = 0
+        generated = 0
+        failed = 0
+        if isinstance(report, dict):
+            try:
+                expected = int(report.get("expected") or 0)
+                generated = int(report.get("generated") or 0)
+                failed = int(report.get("failed") or 0)
+            except (TypeError, ValueError):
+                expected = 0
+                generated = 0
+                failed = 0
+
+        tracker_missing = 0
+        if hasattr(tts_engine, "get_synthesis_tracker"):
+            tracker = tts_engine.get_synthesis_tracker()
+            if tracker:
+                try:
+                    tracker_missing = len(tracker.get_missing_segments() or [])
+                except Exception:
+                    tracker_missing = 0
+
+        if getattr(tts_engine, "partial_failure_detected", False):
+            return False, "Falha parcial detectada na síntese Edge"
+
+        if failed > 0 or tracker_missing > 0:
+            total_failed = failed if failed > 0 else tracker_missing
+            if expected and generated:
+                return (
+                    False,
+                    f"Segmentos faltando: {generated}/{expected} (falharam {total_failed})",
+                )
+            return False, f"Segmentos faltando: {total_failed}"
+
+        if expected and generated and expected != generated:
+            return False, f"Segmentos incompletos: {generated}/{expected}"
+
+        return True, None
 
     async def _attempt_segment_retry(
         self,
@@ -4025,6 +4073,11 @@ class AudioConverter:
     ) -> ConversionResult:
         """Converte múltiplos capítulos em paralelo para máxima velocidade."""
         chapters_list = list(chapters)
+        selected_indices_raw = (config.extra.get("selected_indices") or "").strip()
+        if selected_indices_raw:
+            allowed = {item.strip() for item in selected_indices_raw.split(",") if item.strip()}
+            if allowed:
+                chapters_list = [ch for ch in chapters_list if str(ch.index) in allowed]
         if not chapters_list:
             return ConversionResult(True, 0, 0, [], [])
 
@@ -4280,6 +4333,11 @@ class AudioConverter:
     ) -> ConversionResult:
         """Converte capítulos sequencialmente, SEM sistema de paralelismo."""
         chapters_list = list(chapters)
+        selected_indices_raw = (config.extra.get("selected_indices") or "").strip()
+        if selected_indices_raw:
+            allowed = {item.strip() for item in selected_indices_raw.split(",") if item.strip()}
+            if allowed:
+                chapters_list = [ch for ch in chapters_list if str(ch.index) in allowed]
         if not chapters_list:
             return ConversionResult(True, 0, 0, [], [])
         original_total = len(chapters_list)
@@ -4400,7 +4458,13 @@ class AudioConverter:
                 return "service_unavailable"
             if "timeout" in text:
                 return "timeout"
-            if "ssl" in text or "certificate" in text or "connection" in text:
+            if (
+                "ssl" in text
+                or "certificate" in text
+                or "connection" in text
+                or "dns" in text
+                or "connector" in text
+            ):
                 return "network"
             return "unknown"
 
@@ -4529,6 +4593,8 @@ class AudioConverter:
                     print(f"   ⚠️ Edge indisponível ({context}) - erro: {last_error}")
                 nonlocal edge_unavailable_hits
                 edge_unavailable_hits += 1
+                if edge_unavailable_hits >= EDGE_MONOLINGUAL_THRESHOLD:
+                    raise RuntimeError("edge_unavailable_threshold")
                 _maybe_apply_edge_slow_mode(f"Edge indisponível ({reason})", engine_obj=engine_obj)
 
                 max_wait = min(seconds, 25)
@@ -4552,64 +4618,107 @@ class AudioConverter:
                 return final_mp3_path.with_suffix(".wav"), True
             return final_mp3_path, False
 
-        # Edge-TTS adaptive delay system to prevent rate limiting
+        class _RetryChapter(Exception):
+            pass
+
+        async def _maybe_apply_edge_fallback() -> None:
+            nonlocal edge_switched_to_monolingual
+            nonlocal edge_switched_to_piper
+            nonlocal edge_consecutive_failures
+            nonlocal config
+
+            if (config.engine or "").lower() != "edge":
+                return
+
+            # TIER 2: Switch to monolingual Edge after MONOLINGUAL_THRESHOLD failures
+            if (
+                not edge_switched_to_monolingual
+                and edge_consecutive_failures >= EDGE_MONOLINGUAL_THRESHOLD
+                and edge_consecutive_failures < EDGE_PIPER_THRESHOLD
+            ):
+                from .config import VoiceConfigProvider
+
+                voice_provider = VoiceConfigProvider()
+                monolingual_voice = voice_provider.get_monolingual_voice(config.primary_language)
+
+                if monolingual_voice and monolingual_voice != config.voice:
+                    print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
+                    print(
+                        f"   🔀 Mudando para Edge monolíngue (idioma fixo): {config.primary_language}"
+                    )
+                    print(f"   🎤 Nova voz: {monolingual_voice}")
+
+                    # Switch to monolingual voice
+                    config = replace(config, voice=monolingual_voice)
+                    # Update engine pool with new voice
+                    engine_pool.register_engine("edge", config)
+                    edge_switched_to_monolingual = True
+                    # Reset consecutive failures to measure monolingual stability
+                    edge_consecutive_failures = 0
+                else:
+                    if self.verbose:
+                        print(f"\n⚠️ Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
+                        print("   ⚠️ Voz monolíngue não disponível - continuando com voz atual")
+
+            # TIER 3: Switch to Piper after PIPER_THRESHOLD failures
+            elif not edge_switched_to_piper and edge_consecutive_failures >= EDGE_PIPER_THRESHOLD:
+                if can_use_piper():
+                    print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
+                    print(
+                        f"   🛟 Mudando automaticamente para Piper (offline) com idioma: {config.primary_language}"
+                    )
+                    # Get appropriate Piper model for detected language
+                    from .config import VoiceConfigProvider
+
+                    voice_provider = VoiceConfigProvider()
+                    piper_model = voice_provider.get_voice("piper", config.primary_language)
+                    if piper_model:
+                        # Switch to Piper for remaining chapters
+                        config = replace(
+                            config,
+                            engine="piper",
+                            model_path=Path(piper_model) if piper_model else None,
+                        )
+                        # Register Piper in engine pool before acquiring
+                        engine_pool.register_engine("piper", config)
+                        # Update engine pool
+                        try:
+                            _, piper_engine = await engine_pool.acquire("piper")
+                            if piper_engine:
+                                print(
+                                    f"   ✅ Piper carregado: {Path(piper_model).name if piper_model else 'modelo padrão'}"
+                                )
+                                engine_pool.release("piper", piper_engine)
+                                # Only mark as switched if Piper was successfully loaded
+                                edge_switched_to_piper = True
+                                edge_consecutive_failures = 0  # Reset counter after switch
+                            else:
+                                print("   ⚠️ Piper engine não pôde ser carregado")
+                                print("   ⏩ Continuando com Edge-TTS")
+                        except Exception as e:
+                            print(f"   ⚠️ Erro ao carregar Piper: {e}")
+                            print("   ⏩ Continuando com Edge-TTS")
+                    else:
+                        print("   ⚠️ Modelo Piper não encontrado para este idioma")
+                        print("   ⏩ Continuando com Edge-TTS")
+                else:
+                    print(f"\n⚠️ Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
+                    print("   ⚠️ Piper não instalado - não é possível fazer fallback")
+                    print("   ⏩ Continuando com Edge-TTS")
+
+        # Three-tier fallback system: Edge multilingual → Edge monolingual → Piper
         edge_failure_count = 0
         edge_consecutive_failures = 0
         base_delay = 0.5  # Start with 0.5s delay
         max_delay = 30.0  # Cap at 30s
+        edge_switched_to_monolingual = False  # Track if switched to monolingual Edge
         edge_switched_to_piper = False  # Track if we already switched to Piper
+        config.voice if (config.engine or "").lower() == "edge" else None
 
         for idx, chapter in enumerate(chapters_list):
-            # Adaptive delay between chapters for Edge-TTS
+            # Adaptive delay and fallback logic for Edge-TTS
             if (config.engine or "").lower() == "edge" and idx > 0:
-                # Check if we should switch to Piper due to too many failures
-                if (
-                    not edge_switched_to_piper
-                    and edge_consecutive_failures >= EDGE_FAILURE_THRESHOLD
-                ):
-                    if can_use_piper():
-                        print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
-                        print(
-                            f"   🛟 Mudando automaticamente para Piper (offline) com idioma: {config.primary_language}"
-                        )
-                        # Get appropriate Piper model for detected language
-                        from .config import VoiceConfigProvider
-
-                        voice_provider = VoiceConfigProvider()
-                        piper_model = voice_provider.get_voice("piper", config.primary_language)
-                        if piper_model:
-                            # Switch to Piper for remaining chapters
-                            config = replace(
-                                config,
-                                engine="piper",
-                                model_path=Path(piper_model) if piper_model else None,
-                            )
-                            # Register Piper in engine pool before acquiring
-                            engine_pool.register_engine("piper", config)
-                            # Update engine pool
-                            try:
-                                _, piper_engine = await engine_pool.acquire("piper")
-                                if piper_engine:
-                                    print(
-                                        f"   ✅ Piper carregado: {Path(piper_model).name if piper_model else 'modelo padrão'}"
-                                    )
-                                    engine_pool.release("piper", piper_engine)
-                                    # Only mark as switched if Piper was successfully loaded
-                                    edge_switched_to_piper = True
-                                    edge_consecutive_failures = 0  # Reset counter after switch
-                                else:
-                                    print("   ⚠️ Piper engine não pôde ser carregado")
-                                    print("   ⏩ Continuando com Edge-TTS")
-                            except Exception as e:
-                                print(f"   ⚠️ Erro ao carregar Piper: {e}")
-                                print("   ⏩ Continuando com Edge-TTS")
-                        else:
-                            print("   ⚠️ Modelo Piper não encontrado para este idioma")
-                            print("   ⏩ Continuando com Edge-TTS")
-                    else:
-                        print(f"\n⚠️ Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
-                        print("   ⚠️ Piper não instalado - não é possível fazer fallback")
-                        print("   ⏩ Continuando com Edge-TTS")
+                await _maybe_apply_edge_fallback()
 
                 # Calculate delay based on failure rate
                 if edge_consecutive_failures > 0:
@@ -4628,853 +4737,932 @@ class AudioConverter:
             # where each task receives a single-chapter list
             chapter_num = self._chapter_number(chapter, idx + 1)
             progress_index = getattr(chapter, "_progress_index", None) or (idx + 1)
-            start_time = time.time()
-
-            # **RESTORED**: Usar progress tracker
-            self.progress.start_chapter(chapter.name, progress_index)
             chapter_label = self._chapter_display_name(chapter, chapter_num)
             speech_text, pre_tts_path, payload_locked = self._resolve_pre_tts_payload(
                 chapter, chapter_num, output_dir, config
             )
             current_payload: Optional[str] = speech_text
             chapter_chars = len(speech_text or "")
-            chapter_success = False
-            chapter_error: Optional[str] = None
-            chapter_cached = False
-            engine_tracker = {"label": (config.engine or "").lower()}
-            engine_instance = {"object": None}
-            engine_name_used: Optional[str] = None
-            engine_obj: Optional[object] = None
+            progress_started = False
+            chapter_attempt = 0
+            max_chapter_attempts = 6
 
-            try:
-                # Conversão para diretório temporário
-                output_path = self._expected_output_path(chapter, chapter_num, output_dir)
+            while True:
+                chapter_attempt += 1
+                chapter_retry = False
+                start_time = time.time()
 
-                # Check if MP3 already exists and is valid (size > 1KB)
-                # Note: Cache validation already done by _validate_and_clean_cache()
-                if output_path.exists() and not config.force_reprocess:
-                    file_size = output_path.stat().st_size
-                    if file_size > 1000:  # Mínimo 1KB para áudio válido
-                        cached_payload = (
-                            self._load_cached_payload(chapter, chapter_num, output_dir)
-                            or speech_text
-                        )
-                        truncation_warning = self._detect_short_audio_output(
-                            output_path,
-                            cached_payload,
-                            config,
-                            engine_label=engine_tracker.get("label"),
-                        )
-                        if truncation_warning:
-                            if self.verbose:
-                                print(f"   ⚠️ Cache inválido detectado: {truncation_warning}")
-                            output_path.unlink(missing_ok=True)
+                def _edge_retry(reason: str, *, count_failure: bool = True) -> None:
+                    nonlocal chapter_retry
+                    nonlocal edge_failure_count
+                    nonlocal edge_consecutive_failures
+                    if count_failure:
+                        edge_failure_count += 1
+                        edge_consecutive_failures += 1
+                    chapter_retry = True
+                    raise _RetryChapter(reason)
+
+                def _error_text(message: Optional[str]) -> str:
+                    return message or "Falha na síntese"
+
+                # **RESTORED**: Usar progress tracker (apenas uma vez por capítulo)
+                if not progress_started:
+                    self.progress.start_chapter(chapter.name, progress_index)
+                    progress_started = True
+
+                chapter_success = False
+                chapter_error: Optional[str] = None
+                chapter_cached = False
+                engine_tracker = {"label": (config.engine or "").lower()}
+                engine_instance = {"object": None}
+                engine_name_used: Optional[str] = None
+                engine_obj: Optional[object] = None
+
+                try:
+                    # Conversão para diretório temporário
+                    output_path = self._expected_output_path(chapter, chapter_num, output_dir)
+
+                    # Check if MP3 already exists and is valid (size > 1KB)
+                    # Note: Cache validation already done by _validate_and_clean_cache()
+                    if output_path.exists() and not config.force_reprocess:
+                        file_size = output_path.stat().st_size
+                        if file_size > 1000:  # Mínimo 1KB para áudio válido
+                            cached_payload = (
+                                self._load_cached_payload(chapter, chapter_num, output_dir)
+                                or speech_text
+                            )
+                            truncation_warning = self._detect_short_audio_output(
+                                output_path,
+                                cached_payload,
+                                config,
+                                engine_label=engine_tracker.get("label"),
+                            )
+                            if truncation_warning:
+                                if self.verbose:
+                                    print(f"   ⚠️ Cache inválido detectado: {truncation_warning}")
+                                output_path.unlink(missing_ok=True)
+                            else:
+                                converted_files.append(output_path)
+                                chapter_success = True
+                                chapter_cached = True
+                                self.progress.tick(f"✅ Arquivo já existe ({file_size} bytes)")
+                                self.progress.complete_chapter("✅ Completo (cache)")
+                                self._retry_original_texts.pop(chapter_label, None)
+                                break
                         else:
-                            converted_files.append(output_path)
-                            chapter_success = True
-                            chapter_cached = True
-                            self.progress.tick(f"✅ Arquivo já existe ({file_size} bytes)")
-                            self.progress.complete_chapter("✅ Completo (cache)")
-                            self._retry_original_texts.pop(chapter_label, None)
-                            continue
-                    else:
-                        # Arquivo vazio ou corrompido - remover e reconverter
-                        if self.verbose:
-                            print(
-                                f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}"
-                            )
-                        output_path.unlink(missing_ok=True)
-                        output_path.with_suffix(".wav").unlink(missing_ok=True)
+                            # Arquivo vazio ou corrompido - remover e reconverter
+                            if self.verbose:
+                                print(
+                                    f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}"
+                                )
+                            output_path.unlink(missing_ok=True)
+                            output_path.with_suffix(".wav").unlink(missing_ok=True)
 
-                # Sintetizar com heartbeat e timeout (otimizado)
-                speech_text = speech_text or ""
-                preview = self._chapter_preview(speech_text)
-                if preview:
-                    print(f"   📝 Initial excerpt: {preview}")
-                current_payload = speech_text
-                estimated_seconds = TextValidator.estimate_duration(speech_text)
-                if estimated_seconds <= 0:
-                    estimated_seconds = max(chapter_chars / 15.0, 30.0)
-                switched_for_size = False
-                auto_order: Optional[List[str]] = None
-                attempted_auto: Set[str] = set()
-                if is_auto_engine:
-                    pool_view = available_auto_pool()
-                    if not pool_view:
-                        chapter_error = "Nenhuma engine disponível no modo automático"
-                        errors.append(f"{chapter.name}: {chapter_error}")
-                        self.progress.complete_chapter(f"❌ {chapter_error}")
-                        continue
-                    picked_engine, auto_order = self._pick_auto_engine(
-                        chapter_chars, estimated_seconds, pool_view
-                    )
-                    attempted_auto.add(picked_engine)
-                    engine_tracker["label"] = picked_engine
-                    # Record engine selection for future ranking
-                    if not self.speed_controller._current_engine:
-                        self.speed_controller.record_engine_switch(picked_engine)
-                else:
-                    engine_tracker["label"] = (config.engine or "").lower()
-
-                current_engine_label = engine_tracker.get("label") or (config.engine or "").lower()
-                tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
-                    output_path, current_engine_label
-                )
-
-                if current_engine_label == "edge" and not is_auto_engine:
-                    threshold_chars = max(getattr(config, "edge_auto_offline_chars", 0), 0)
-                    threshold_seconds = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
-                    edge_reason = None
-                    if threshold_chars and chapter_chars >= threshold_chars:
-                        edge_reason = f"Capítulo muito grande ({chapter_chars} caracteres)"
-                    elif threshold_seconds and estimated_seconds >= threshold_seconds:
-                        edge_reason = f"Chapter estimated at {int(estimated_seconds)}s"
-                    if edge_reason and self.verbose:
-                        print(f"   ℹ️ Edge keeps engine even for large chapter: {edge_reason}")
-                    elif edge_force_offline:
-                        if self.verbose:
-                            print("   ℹ️ Edge marcado como instável, mantendo engine (sem fallback)")
-                        edge_force_offline = False
-                        edge_state["force_offline_after_trunc"] = False
-
-                while True:
-                    try:
-                        engine_config, engine_obj = await engine_pool.acquire(current_engine_label)
-                        engine_instance["object"] = engine_obj
-                        engine_name_used = current_engine_label
-                        if engine_config and engine_config.engine:
-                            engine_tracker["label"] = (
-                                engine_config.engine or current_engine_label
-                            ).lower()
-                            current_engine_label = engine_tracker["label"]
-                        break
-                    except Exception as exc:
-                        unavailable_engines.add(current_engine_label)
-                        if is_auto_engine and auto_order:
-                            next_engine = self._next_auto_engine(auto_order, attempted_auto)
-                            if next_engine:
-                                attempted_auto.add(next_engine)
-                                engine_tracker["label"] = next_engine
-                                current_engine_label = next_engine
-                                continue
-                        chapter_error = f"Engine {current_engine_label} indisponível: {exc}"
-                        errors.append(f"{chapter.name}: {chapter_error}")
-                        self.progress.complete_chapter(f"❌ {chapter_error}")
-                        engine_obj = None
-                        break
-
-                if engine_obj is None:
-                    continue
-
-                tts_engine = engine_obj
-                try:
-                    if current_engine_label == "edge":
-                        plan_segments = self._load_segment_plan(
-                            getattr(engine_config, "cache_dir", getattr(config, "cache_dir", None)),
-                            chapter_num,
-                            chunk_chars=getattr(engine_config, "edge_chunk_chars", None),
-                        )
-                        setattr(tts_engine, "_precomputed_segments", plan_segments or None)
-                        if self.verbose and plan_segments:
-                            print(
-                                f"   ♻️ Plano de segmentos reutilizado: {len(plan_segments)} blocos"
-                            )
-                    elif hasattr(tts_engine, "_precomputed_segments"):
-                        setattr(tts_engine, "_precomputed_segments", None)
-                except Exception:
-                    pass
-
-                decision = self.speed_controller.before_chapter(
-                    engine_tracker["label"],
-                    chapter_index=chapter_num,
-                    chapter_name=chapter_label,
-                    chapter_chars=chapter_chars,
-                    tts_engine=engine_instance["object"],
-                    config=config,
-                    verbose=self.verbose,
-                )
-                if decision.message:
-                    print(decision.message)
-                if (
-                    edge_auto_enabled
-                    and edge_state.get("slow_mode")
-                    and current_engine_label == "edge"
-                ):
-                    self._apply_edge_slow_mode(
-                        "modo seguro ativo",
-                        engine_pool=engine_pool,
-                        engine_obj=tts_engine,
-                    )
-                elif current_engine_label == "edge" and chapter_chars >= EDGE_FORCE_SAFE_CHARS:
-                    self._apply_edge_slow_mode(
-                        f"capítulo muito grande ({chapter_chars} chars)",
-                        engine_pool=engine_pool,
-                        engine_obj=tts_engine,
-                    )
-                    with contextlib.suppress(Exception):
-                        setattr(tts_engine, "_auto_tune_enabled", False)
-
-                # Timeout otimizado: agressivo, mas com teto maior para capítulos longos no Edge
-                # Base: duração estimada * 1.5 + 30s buffer
-                base_timeout = estimated_seconds * 1.5 + 30.0
-                timeout_seconds = max(base_timeout, 60.0)  # Mínimo 60s
-                max_timeout = 600.0  # Padrão: até 10 min
-                if current_engine_label == "edge":
-                    if chapter_chars >= 80000:
-                        max_timeout = 2400.0
-                    elif chapter_chars >= 50000:
-                        max_timeout = 1800.0
-                    elif chapter_chars >= 30000:
-                        max_timeout = 1200.0
-                    if edge_stable_mode:
-                        max_timeout = max(max_timeout, 3600.0)
-                timeout_seconds = min(timeout_seconds, max_timeout)
-                if decision.timeout_scale:
-                    timeout_seconds = timeout_seconds * decision.timeout_scale
-                if current_engine_label == "coqui":
-                    coqui_min_timeout = int(os.getenv("COQUI_TIMEOUT_MIN", "180") or "180")
-                    timeout_seconds = max(timeout_seconds, coqui_min_timeout)
-                if (
-                    edge_auto_enabled
-                    and edge_state.get("slow_mode")
-                    and current_engine_label == "edge"
-                ):
-                    safe_timeout = (edge_state.get("safe_profile") or {}).get("timeout_max")
-                    if safe_timeout:
-                        timeout_seconds = min(timeout_seconds, int(safe_timeout))
-                timeout_seconds = int(timeout_seconds)
-                stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "60") or "60")
-                if stall_seconds < 0:
-                    stall_seconds = 0.0
-
-                if self.verbose:
-                    print(
-                        f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Starting TTS synthesis"
-                    )
-                    print(f"   📝 Text: {chapter_chars} chars (timeout: {timeout_seconds}s)")
-
-                self.progress.tick(
-                    f"🎤 Synthesizing {chapter_chars} chars (timeout: {timeout_seconds}s)..."
-                )
-
-                # Heartbeat para mostrar progresso (otimizado: 3s em vez de 1s)
-                heartbeat_active = True
-                start_synthesis = time.time()
-
-                async def synthesis_heartbeat():
-                    spinner_frames = ["⚙️", "🔧"]
-                    frame_idx = 0
-                    while heartbeat_active:
-                        await asyncio.sleep(5)  # Atualizar a cada 5 segundos (reduz overhead)
-                        if not heartbeat_active:
+                    # Sintetizar com heartbeat e timeout (otimizado)
+                    speech_text = speech_text or ""
+                    preview = self._chapter_preview(speech_text)
+                    if preview:
+                        print(f"   📝 Initial excerpt: {preview}")
+                    current_payload = speech_text
+                    estimated_seconds = TextValidator.estimate_duration(speech_text)
+                    if estimated_seconds <= 0:
+                        estimated_seconds = max(chapter_chars / 15.0, 30.0)
+                    switched_for_size = False
+                    auto_order: Optional[List[str]] = None
+                    attempted_auto: Set[str] = set()
+                    if is_auto_engine:
+                        pool_view = available_auto_pool()
+                        if not pool_view:
+                            chapter_error = "Nenhuma engine disponível no modo automático"
+                            errors.append(f"{chapter.name}: {chapter_error}")
+                            chapter_error = _error_text(chapter_error)
+                            self.progress.complete_chapter(f"❌ {chapter_error}")
                             break
-                        elapsed = int(time.time() - start_synthesis)
-                        frame = spinner_frames[frame_idx % len(spinner_frames)]
-                        self.progress.tick(
-                            f"{frame} Synthesizing... {elapsed}s/{timeout_seconds}s ({chapter_chars} chars)"
+                        picked_engine, auto_order = self._pick_auto_engine(
+                            chapter_chars, estimated_seconds, pool_view
                         )
-                        self._mark_health_activity(chapter_num, "heartbeat")
-                        frame_idx += 1
+                        attempted_auto.add(picked_engine)
+                        engine_tracker["label"] = picked_engine
+                        # Record engine selection for future ranking
+                        if not self.speed_controller._current_engine:
+                            self.speed_controller.record_engine_switch(picked_engine)
+                    else:
+                        engine_tracker["label"] = (config.engine or "").lower()
 
-                heartbeat_task = asyncio.create_task(synthesis_heartbeat())
+                    current_engine_label = (
+                        engine_tracker.get("label") or (config.engine or "").lower()
+                    )
+                    tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                        output_path, current_engine_label
+                    )
 
-                try:
+                    if current_engine_label == "edge" and not is_auto_engine:
+                        threshold_chars = max(getattr(config, "edge_auto_offline_chars", 0), 0)
+                        threshold_seconds = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
+                        edge_reason = None
+                        if threshold_chars and chapter_chars >= threshold_chars:
+                            edge_reason = f"Capítulo muito grande ({chapter_chars} caracteres)"
+                        elif threshold_seconds and estimated_seconds >= threshold_seconds:
+                            edge_reason = f"Chapter estimated at {int(estimated_seconds)}s"
+                        if edge_reason and self.verbose:
+                            print(f"   ℹ️ Edge keeps engine even for large chapter: {edge_reason}")
+                        elif edge_force_offline:
+                            if self.verbose:
+                                print(
+                                    "   ℹ️ Edge marcado como instável, mantendo engine (sem fallback)"
+                                )
+                            edge_force_offline = False
+                            edge_state["force_offline_after_trunc"] = False
+
+                    while True:
+                        try:
+                            engine_config, engine_obj = await engine_pool.acquire(
+                                current_engine_label
+                            )
+                            engine_instance["object"] = engine_obj
+                            engine_name_used = current_engine_label
+                            if engine_config and engine_config.engine:
+                                engine_tracker["label"] = (
+                                    engine_config.engine or current_engine_label
+                                ).lower()
+                                current_engine_label = engine_tracker["label"]
+                            break
+                        except Exception as exc:
+                            unavailable_engines.add(current_engine_label)
+                            if is_auto_engine and auto_order:
+                                next_engine = self._next_auto_engine(auto_order, attempted_auto)
+                                if next_engine:
+                                    attempted_auto.add(next_engine)
+                                    engine_tracker["label"] = next_engine
+                                    current_engine_label = next_engine
+                                    continue
+                            chapter_error = f"Engine {current_engine_label} indisponível: {exc}"
+                            errors.append(f"{chapter.name}: {chapter_error}")
+                            chapter_error = _error_text(chapter_error)
+                            self.progress.complete_chapter(f"❌ {chapter_error}")
+                            engine_obj = None
+                            break
+
+                    if engine_obj is None:
+                        break
+
+                    tts_engine = engine_obj
+                    try:
+                        if current_engine_label == "edge":
+                            plan_segments = self._load_segment_plan(
+                                getattr(
+                                    engine_config, "cache_dir", getattr(config, "cache_dir", None)
+                                ),
+                                chapter_num,
+                                chunk_chars=getattr(engine_config, "edge_chunk_chars", None),
+                            )
+                            setattr(tts_engine, "_precomputed_segments", plan_segments or None)
+                            if self.verbose and plan_segments:
+                                print(
+                                    f"   ♻️ Plano de segmentos reutilizado: {len(plan_segments)} blocos"
+                                )
+                        elif hasattr(tts_engine, "_precomputed_segments"):
+                            setattr(tts_engine, "_precomputed_segments", None)
+                    except Exception:
+                        pass
+
+                    decision = self.speed_controller.before_chapter(
+                        engine_tracker["label"],
+                        chapter_index=chapter_num,
+                        chapter_name=chapter_label,
+                        chapter_chars=chapter_chars,
+                        tts_engine=engine_instance["object"],
+                        config=config,
+                        verbose=self.verbose,
+                    )
+                    if decision.message:
+                        print(decision.message)
+                    if (
+                        edge_auto_enabled
+                        and edge_state.get("slow_mode")
+                        and current_engine_label == "edge"
+                    ):
+                        self._apply_edge_slow_mode(
+                            "modo seguro ativo",
+                            engine_pool=engine_pool,
+                            engine_obj=tts_engine,
+                        )
+                    elif current_engine_label == "edge" and chapter_chars >= EDGE_FORCE_SAFE_CHARS:
+                        self._apply_edge_slow_mode(
+                            f"capítulo muito grande ({chapter_chars} chars)",
+                            engine_pool=engine_pool,
+                            engine_obj=tts_engine,
+                        )
+                        with contextlib.suppress(Exception):
+                            setattr(tts_engine, "_auto_tune_enabled", False)
+
+                    # Timeout otimizado: agressivo, mas com teto maior para capítulos longos no Edge
+                    # Base: duração estimada * 1.5 + 30s buffer
+                    base_timeout = estimated_seconds * 1.5 + 30.0
+                    timeout_seconds = max(base_timeout, 60.0)  # Mínimo 60s
+                    max_timeout = 600.0  # Padrão: até 10 min
+                    if current_engine_label == "edge":
+                        if chapter_chars >= 80000:
+                            max_timeout = 2400.0
+                        elif chapter_chars >= 50000:
+                            max_timeout = 1800.0
+                        elif chapter_chars >= 30000:
+                            max_timeout = 1200.0
+                        if edge_stable_mode:
+                            max_timeout = max(max_timeout, 3600.0)
+                    timeout_seconds = min(timeout_seconds, max_timeout)
+                    if decision.timeout_scale:
+                        timeout_seconds = timeout_seconds * decision.timeout_scale
+                    if current_engine_label == "coqui":
+                        coqui_min_timeout = int(os.getenv("COQUI_TIMEOUT_MIN", "180") or "180")
+                        timeout_seconds = max(timeout_seconds, coqui_min_timeout)
+                    if (
+                        edge_auto_enabled
+                        and edge_state.get("slow_mode")
+                        and current_engine_label == "edge"
+                    ):
+                        safe_timeout = (edge_state.get("safe_profile") or {}).get("timeout_max")
+                        if safe_timeout:
+                            timeout_seconds = min(timeout_seconds, int(safe_timeout))
+                    timeout_seconds = int(timeout_seconds)
+                    stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "60") or "60")
+                    if stall_seconds < 0:
+                        stall_seconds = 0.0
+
                     if self.verbose:
-                        print(f"   🔄 Executando comando TTS: {type(tts_engine).__name__}")
+                        print(
+                            f"🎤 [{chapter_num}/{len(chapters_list)}] {chapter.name}: Starting TTS synthesis"
+                        )
+                        print(f"   📝 Text: {chapter_chars} chars (timeout: {timeout_seconds}s)")
 
-                    synthesis_result = None
-                    max_attempts = 1 if current_engine_label == "edge" else 2
-                    last_tts_output_path = tts_output_path
-                    last_needs_transcode = needs_mp3_transcode
-                    for attempt in range(max_attempts):
-                        current_engine_label = (
-                            engine_tracker.get("label") or (config.engine or "").lower()
-                        )
-                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
-                            output_path, current_engine_label
-                        )
+                    self.progress.tick(
+                        f"🎤 Synthesizing {chapter_chars} chars (timeout: {timeout_seconds}s)..."
+                    )
+
+                    # Heartbeat para mostrar progresso (otimizado: 3s em vez de 1s)
+                    heartbeat_active = True
+                    start_synthesis = time.time()
+
+                    async def synthesis_heartbeat():
+                        spinner_frames = ["⚙️", "🔧"]
+                        frame_idx = 0
+                        while heartbeat_active:
+                            await asyncio.sleep(5)  # Atualizar a cada 5 segundos (reduz overhead)
+                            if not heartbeat_active:
+                                break
+                            elapsed = int(time.time() - start_synthesis)
+                            frame = spinner_frames[frame_idx % len(spinner_frames)]
+                            self.progress.tick(
+                                f"{frame} Synthesizing... {elapsed}s/{timeout_seconds}s ({chapter_chars} chars)"
+                            )
+                            self._mark_health_activity(chapter_num, "heartbeat")
+                            frame_idx += 1
+
+                    heartbeat_task = asyncio.create_task(synthesis_heartbeat())
+
+                    try:
+                        if self.verbose:
+                            print(f"   🔄 Executando comando TTS: {type(tts_engine).__name__}")
+
+                        synthesis_result = None
+                        max_attempts = 1 if current_engine_label == "edge" else 2
                         last_tts_output_path = tts_output_path
                         last_needs_transcode = needs_mp3_transcode
-
-                        # Create progress callback for granular updates
-                        def on_segment_complete(text: str, total_chars: int):
-                            self.progress.update_chars_progress(text, total_chars)
-                            self._mark_health_activity(chapter_num, "segment")
-
-                        chunk_callback = None
-                        chunk_root: Optional[Path] = None
-                        chunk_base: Optional[Path] = None
-                        job_id = getattr(config, "job_id", None)
-                        if job_id:
-                            chunk_base = Path(config.output_dir) / "streams" / str(job_id)
-                        else:
-                            cache_root = getattr(config, "cache_dir", None)
-                            if cache_root:
-                                chunk_base = Path(cache_root) / "streams" / "cli"
-                        if chunk_base:
-                            chunk_root = chunk_base / f"chapter_{chapter_num:04d}"
-                            try:
-                                # **RESUME**: Don't delete existing chunks - Edge engine will resume
-                                chunk_root.mkdir(parents=True, exist_ok=True)
-                            except Exception:
-                                chunk_root = None
-                        if chunk_root and chunk_root.exists():
-                            try:
-                                existing_chunks = list(chunk_root.glob("chunk_*.mp3"))
-                            except Exception:
-                                existing_chunks = []
-                            if existing_chunks:
-                                self.progress.tick(
-                                    f"♻️ Retomando {len(existing_chunks)} chunk(s) já prontos"
-                                )
-
-                        def on_chunk_ready(
-                            segment_index: int,
-                            temp_path: Path,
-                            segment_text: Optional[str] = None,
-                        ) -> None:
-                            # Atualiza barra com chunks concluídos
-                            if hasattr(self, "progress"):
-                                try:
-                                    self.progress.update_chunk_progress(segment_index)
-                                except Exception:
-                                    pass
-
-                            if chunk_root is None:
-                                return
-                            try:
-                                target = chunk_root / f"chunk_{segment_index:04d}{temp_path.suffix}"
-                                try:
-                                    if temp_path.resolve() != target.resolve():
-                                        shutil.copy2(temp_path, target)
-                                except OSError:
-                                    shutil.copy2(temp_path, target)
-                                manifest_path = chunk_root / "manifest.json"
-                                manifest = {
-                                    "jobId": job_id or "cli",
-                                    "chapterIndex": chapter_num,
-                                    "chunks": [],
-                                }
-                                if manifest_path.exists():
-                                    try:
-                                        manifest = json.loads(
-                                            manifest_path.read_text(encoding="utf-8")
-                                        )
-                                    except Exception:
-                                        manifest = {
-                                            "jobId": job_id or "cli",
-                                            "chapterIndex": chapter_num,
-                                            "chunks": [],
-                                        }
-                                existing = manifest.get("chunks") or []
-                                existing = [entry for entry in existing if isinstance(entry, dict)]
-                                existing_by_index = {
-                                    entry.get("index"): entry for entry in existing
-                                }
-                                previous = existing_by_index.get(segment_index) or {}
-                                entry = {
-                                    "index": segment_index,
-                                    "file": target.name,
-                                }
-                                if job_id:
-                                    entry["url"] = (
-                                        f"/api/streams/{job_id}/chapters/"
-                                        f"{chapter_num}/chunks/{segment_index}"
-                                    )
-                                if segment_text:
-                                    entry["text"] = segment_text
-                                elif previous.get("text"):
-                                    entry["text"] = previous["text"]
-                                existing_by_index[segment_index] = entry
-                                manifest["chunks"] = sorted(
-                                    existing_by_index.values(),
-                                    key=lambda item: item.get("index", 0),
-                                )
-                                manifest["updatedAt"] = time.time()
-                                manifest["baseUrl"] = (
-                                    f"/api/streams/{job_id}/chapters/{chapter_num}"
-                                    if job_id
-                                    else ""
-                                )
-                                manifest_path.write_text(
-                                    json.dumps(manifest, ensure_ascii=False, indent=2),
-                                    encoding="utf-8",
-                                )
-                            except Exception as exc:
-                                if self.verbose:
-                                    print(f"   ⚠️ Falha ao salvar chunk {segment_index}: {exc}")
-
-                        # Só usar callback/chunking quando há diretório de resume disponível
-                        chunk_callback = on_chunk_ready if chunk_root else None
-                        primary_chunk_callback = chunk_callback
-                        primary_chunk_root = chunk_root if chunk_root else None
-
-                        stall_event = asyncio.Event()
-                        synthesis_task = asyncio.create_task(
-                            _synthesize_safe(
-                                tts_engine,
-                                speech_text,
-                                tts_output_path,
-                                formatting_segments=(
-                                    None
-                                    if payload_locked
-                                    else getattr(chapter, "formatting_segments", None)
-                                ),
-                                progress_callback=on_segment_complete,
-                                chunk_callback=primary_chunk_callback,
-                                resume_chunks_dir=primary_chunk_root,
-                            )
-                        )
-                        stall_task = asyncio.create_task(
-                            self._watch_chapter_stall(
-                                chapter_num, synthesis_task, stall_seconds, stall_event
-                            )
-                        )
-                        try:
-                            synthesis_result = await asyncio.wait_for(
-                                synthesis_task, timeout=timeout_seconds
-                            )
-                        except asyncio.CancelledError as exc:
-                            if stall_event.is_set():
-                                raise asyncio.TimeoutError() from exc
-                            raise
-                        finally:
-                            stall_task.cancel()
-                            with contextlib.suppress(asyncio.CancelledError):
-                                await stall_task
-                        if synthesis_result:
-                            break
-                        waited = await wait_edge_cooldown_if_needed(
-                            f"tentativa {attempt + 1}/{max_attempts}",
-                            tracker=engine_tracker,
-                            engine_ref=engine_instance,
-                        )
-                        if not waited:
-                            break
-
-                    if synthesis_result and last_needs_transcode:
-                        self.progress.tick("🎼 Converting WAV→MP3...")
-                        if self.verbose:
-                            print(
-                                f"[DEBUG] Converting WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
-                            )
-                        converted = await self.audio_processor.convert_to_mp3(
-                            last_tts_output_path,
-                            output_path,
-                            bitrate=config.bitrate,
-                        )
-                        if self.verbose and converted is None:
-                            print("[DEBUG] Falha ao converter WAV→MP3 (ffmpeg)")
-                        synthesis_result = converted
-                        with contextlib.suppress(OSError):
-                            last_tts_output_path.unlink(missing_ok=True)
-
-                    if self.verbose and synthesis_result:
-                        print(f"   ✅ TTS concluído: {output_path.name}")
-                except asyncio.TimeoutError:
-                    elapsed = int(time.time() - start_synthesis)
-                    if self.verbose:
-                        print(f"   ⚠️ TIMEOUT: Chapter stuck after {elapsed}s")
-                    self.progress.tick(
-                        f"⚠️ TIMEOUT após {elapsed}s - tentando fallback sem idioma..."
-                    )
-                    if current_engine_label == "edge":
-                        _maybe_apply_edge_slow_mode(
-                            f"timeout após {elapsed}s", engine_obj=tts_engine
-                        )
-                        setattr(tts_engine, "last_error", "timeout")
-                        await wait_edge_cooldown_if_needed(
-                            f"timeout após {elapsed}s",
-                            tracker=engine_tracker,
-                            engine_ref=engine_instance,
-                        )
-                    elif current_engine_label == "coqui":
-                        _maybe_apply_coqui_recovery(
-                            f"timeout após {elapsed}s", engine_obj=tts_engine
-                        )
-
-                    # **FALLBACK**: Remover marcação de idioma e tentar novamente
-                    try:
-                        from ..language import LanguageMarkup
-
-                        base_text = speech_text
-                        if payload_locked:
-                            clean_text = speech_text
-                        else:
-                            clean_text = (
-                                LanguageMarkup.strip(base_text) if LanguageMarkup else base_text
-                            )
-                        current_payload = clean_text
-                        clean_chars = len(clean_text)
-                        fallback_timeout = max(90, int(timeout_seconds * 0.5))
-                        if current_engine_label == "edge":
-                            fallback_timeout = max(120, min(int(timeout_seconds * 0.6), 600))
-
-                        if self.verbose:
-                            print("   🔄 RETRY: Tentando novamente sem marcas de idioma")
-                            print(
-                                f"   📝 RETRY: {clean_chars} chars (timeout: {fallback_timeout}s)"
-                            )
-
-                        self.progress.tick(
-                            f"🔄 Fallback: {clean_chars} chars (timeout: {fallback_timeout}s)"
-                        )
-
-                        # Heartbeat para fallback (otimizado: 3s)
-                        heartbeat_active = True
-                        start_fallback = time.time()
-
-                        async def fallback_heartbeat():
-                            spinner_frames = ["🚑", "🔥"]
-                            frame_idx = 0
-                            while heartbeat_active:
-                                await asyncio.sleep(5)
-                                if not heartbeat_active:
-                                    break
-                                elapsed_fb = int(time.time() - start_fallback)
-                                frame = spinner_frames[frame_idx % len(spinner_frames)]
-                                self.progress.tick(
-                                    f"{frame} FALLBACK {elapsed_fb}s/{fallback_timeout}s"
-                                )
-                                self._mark_health_activity(chapter_num, "fallback")
-                                frame_idx += 1
-
-                        fallback_task = asyncio.create_task(fallback_heartbeat())
-
-                        try:
+                        for attempt in range(max_attempts):
                             current_engine_label = (
                                 engine_tracker.get("label") or (config.engine or "").lower()
                             )
                             tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
                                 output_path, current_engine_label
                             )
-                            synthesis_result = await asyncio.wait_for(
+                            last_tts_output_path = tts_output_path
+                            last_needs_transcode = needs_mp3_transcode
+
+                            # Create progress callback for granular updates
+                            def on_segment_complete(text: str, total_chars: int):
+                                self.progress.update_chars_progress(text, total_chars)
+                                self._mark_health_activity(chapter_num, "segment")
+
+                            chunk_callback = None
+                            chunk_root: Optional[Path] = None
+                            chunk_base: Optional[Path] = None
+                            job_id = getattr(config, "job_id", None)
+                            if job_id:
+                                chunk_base = Path(config.output_dir) / "streams" / str(job_id)
+                            else:
+                                cache_root = getattr(config, "cache_dir", None)
+                                if cache_root:
+                                    chunk_base = Path(cache_root) / "streams" / "cli"
+                            if chunk_base:
+                                chunk_root = chunk_base / f"chapter_{progress_index:04d}"
+                                try:
+                                    # **RESUME**: Don't delete existing chunks - Edge engine will resume
+                                    chunk_root.mkdir(parents=True, exist_ok=True)
+                                except Exception:
+                                    chunk_root = None
+                            if chunk_root and chunk_root.exists():
+                                try:
+                                    existing_chunks = list(chunk_root.glob("chunk_*.mp3"))
+                                except Exception:
+                                    existing_chunks = []
+                                if existing_chunks:
+                                    self.progress.tick(
+                                        f"♻️ Retomando {len(existing_chunks)} chunk(s) já prontos"
+                                    )
+
+                            def on_chunk_ready(
+                                segment_index: int,
+                                temp_path: Path,
+                                segment_text: Optional[str] = None,
+                            ) -> None:
+                                # Atualiza barra com chunks concluídos
+                                if hasattr(self, "progress"):
+                                    try:
+                                        self.progress.update_chunk_progress(segment_index)
+                                    except Exception:
+                                        pass
+
+                                if chunk_root is None:
+                                    return
+                                try:
+                                    target = (
+                                        chunk_root / f"chunk_{segment_index:04d}{temp_path.suffix}"
+                                    )
+                                    try:
+                                        if temp_path.resolve() != target.resolve():
+                                            shutil.copy2(temp_path, target)
+                                    except OSError:
+                                        shutil.copy2(temp_path, target)
+                                    manifest_path = chunk_root / "manifest.json"
+                                    manifest = {
+                                        "jobId": job_id or "cli",
+                                        "chapterIndex": chapter_num,
+                                        "chunks": [],
+                                    }
+                                    if manifest_path.exists():
+                                        try:
+                                            manifest = json.loads(
+                                                manifest_path.read_text(encoding="utf-8")
+                                            )
+                                        except Exception:
+                                            manifest = {
+                                                "jobId": job_id or "cli",
+                                                "chapterIndex": chapter_num,
+                                                "chunks": [],
+                                            }
+                                    existing = manifest.get("chunks") or []
+                                    existing = [
+                                        entry for entry in existing if isinstance(entry, dict)
+                                    ]
+                                    existing_by_index = {
+                                        entry.get("index"): entry for entry in existing
+                                    }
+                                    previous = existing_by_index.get(segment_index) or {}
+                                    entry = {
+                                        "index": segment_index,
+                                        "file": target.name,
+                                    }
+                                    if job_id:
+                                        entry["url"] = (
+                                            f"/api/streams/{job_id}/chapters/"
+                                            f"{chapter_num}/chunks/{segment_index}"
+                                        )
+                                    if segment_text:
+                                        entry["text"] = segment_text
+                                    elif previous.get("text"):
+                                        entry["text"] = previous["text"]
+                                    existing_by_index[segment_index] = entry
+                                    manifest["chunks"] = sorted(
+                                        existing_by_index.values(),
+                                        key=lambda item: item.get("index", 0),
+                                    )
+                                    manifest["updatedAt"] = time.time()
+                                    manifest["baseUrl"] = (
+                                        f"/api/streams/{job_id}/chapters/{chapter_num}"
+                                        if job_id
+                                        else ""
+                                    )
+                                    manifest_path.write_text(
+                                        json.dumps(manifest, ensure_ascii=False, indent=2),
+                                        encoding="utf-8",
+                                    )
+                                except Exception as exc:
+                                    if self.verbose:
+                                        print(f"   ⚠️ Falha ao salvar chunk {segment_index}: {exc}")
+
+                            # Só usar callback/chunking quando há diretório de resume disponível
+                            chunk_callback = on_chunk_ready if chunk_root else None
+                            primary_chunk_callback = chunk_callback
+                            primary_chunk_root = chunk_root if chunk_root else None
+
+                            stall_event = asyncio.Event()
+                            synthesis_task = asyncio.create_task(
                                 _synthesize_safe(
                                     tts_engine,
-                                    clean_text,
+                                    speech_text,
                                     tts_output_path,
-                                    formatting_segments=None,
-                                    chunk_callback=None,
-                                    resume_chunks_dir=None,
-                                ),
-                                timeout=fallback_timeout,
-                            )
-                            if synthesis_result and needs_mp3_transcode:
-                                self.progress.tick("🎼 Converting WAV→MP3 (fallback)...")
-                                if self.verbose:
-                                    print(
-                                        f"[DEBUG] Converting WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
-                                    )
-                                converted = await self.audio_processor.convert_to_mp3(
-                                    tts_output_path,
-                                    output_path,
-                                    bitrate=config.bitrate,
+                                    formatting_segments=(
+                                        None
+                                        if payload_locked
+                                        else getattr(chapter, "formatting_segments", None)
+                                    ),
+                                    progress_callback=on_segment_complete,
+                                    chunk_callback=primary_chunk_callback,
+                                    resume_chunks_dir=primary_chunk_root,
                                 )
-                                if self.verbose and converted is None:
-                                    print("[DEBUG] Falha ao converter WAV→MP3 (fallback)")
-                                synthesis_result = converted
-                                with contextlib.suppress(OSError):
-                                    tts_output_path.unlink(missing_ok=True)
-                            if self.verbose and synthesis_result:
-                                print("   ✅ RETRY: Sucesso no fallback!")
-                        finally:
-                            heartbeat_active = False
-                            fallback_task.cancel()
-                            with contextlib.suppress(asyncio.CancelledError):
-                                await fallback_task
+                            )
+                            stall_task = asyncio.create_task(
+                                self._watch_chapter_stall(
+                                    chapter_num, synthesis_task, stall_seconds, stall_event
+                                )
+                            )
+                            try:
+                                synthesis_result = await asyncio.wait_for(
+                                    synthesis_task, timeout=timeout_seconds
+                                )
+                            except asyncio.CancelledError as exc:
+                                if stall_event.is_set():
+                                    raise asyncio.TimeoutError() from exc
+                                raise
+                            finally:
+                                stall_task.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await stall_task
+                            if synthesis_result:
+                                break
+                            waited = await wait_edge_cooldown_if_needed(
+                                f"tentativa {attempt + 1}/{max_attempts}",
+                                tracker=engine_tracker,
+                                engine_ref=engine_instance,
+                            )
+                            if not waited:
+                                break
 
-                    except (ImportError, asyncio.TimeoutError):
-                        total_elapsed = int(time.time() - start_synthesis)
+                        if synthesis_result and last_needs_transcode:
+                            self.progress.tick("🎼 Converting WAV→MP3...")
+                            if self.verbose:
+                                print(
+                                    f"[DEBUG] Converting WAV→MP3: {last_tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                )
+                            converted = await self.audio_processor.convert_to_mp3(
+                                last_tts_output_path,
+                                output_path,
+                                bitrate=config.bitrate,
+                            )
+                            if self.verbose and converted is None:
+                                print("[DEBUG] Falha ao converter WAV→MP3 (ffmpeg)")
+                            synthesis_result = converted
+                            with contextlib.suppress(OSError):
+                                last_tts_output_path.unlink(missing_ok=True)
+
+                        if self.verbose and synthesis_result:
+                            print(f"   ✅ TTS concluído: {output_path.name}")
+                    except asyncio.TimeoutError:
+                        elapsed = int(time.time() - start_synthesis)
                         if self.verbose:
-                            print("   ⚠️ FALLBACK: Tentativa dupla falhou, tentando síntese simples")
-                        self.progress.tick("🔄 Última tentativa: síntese simples...")
+                            print(f"   ⚠️ TIMEOUT: Chapter stuck after {elapsed}s")
+                        self.progress.tick(
+                            f"⚠️ TIMEOUT após {elapsed}s - tentando fallback sem idioma..."
+                        )
+                        if current_engine_label == "edge":
+                            _maybe_apply_edge_slow_mode(
+                                f"timeout após {elapsed}s", engine_obj=tts_engine
+                            )
+                            setattr(tts_engine, "last_error", "timeout")
+                            await wait_edge_cooldown_if_needed(
+                                f"timeout após {elapsed}s",
+                                tracker=engine_tracker,
+                                engine_ref=engine_instance,
+                            )
+                        elif current_engine_label == "coqui":
+                            _maybe_apply_coqui_recovery(
+                                f"timeout após {elapsed}s", engine_obj=tts_engine
+                            )
 
-                        # **THIRD ATTEMPT**: Synthesis with minimal text processing
+                        # **FALLBACK**: Remover marcação de idioma e tentar novamente
                         try:
-                            if current_engine_label == "edge":
-                                if self.verbose:
-                                    print("   ⏭️ EMERGÊNCIA ignorada para Edge (preservando chunks)")
-                                synthesis_result = None
+                            from ..language import LanguageMarkup
+
+                            base_text = speech_text
+                            if payload_locked:
+                                clean_text = speech_text
                             else:
-                                # Get first 1000 chars as emergency fallback
-                                if payload_locked:
-                                    emergency_text = ""
-                                else:
-                                    emergency_text = (speech_text or "")[:1000].strip()
-                                if emergency_text:
-                                    emergency_timeout = (
-                                        90 if current_engine_label == "edge" else 30
-                                    )  # Short timeout for emergency
-                                    if self.verbose:
-                                        print(
-                                            f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)"
-                                        )
-
-                                    current_engine_label = (
-                                        engine_tracker.get("label") or (config.engine or "").lower()
-                                    )
-                                    tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
-                                        output_path, current_engine_label
-                                    )
-                                    synthesis_result = await asyncio.wait_for(
-                                        _synthesize_safe(
-                                            tts_engine,
-                                            emergency_text,
-                                            tts_output_path,
-                                            formatting_segments=None,
-                                            chunk_callback=None,
-                                            resume_chunks_dir=None,
-                                        ),
-                                        timeout=emergency_timeout,
-                                    )
-                                    if synthesis_result and needs_mp3_transcode:
-                                        self.progress.tick("🎼 Converting WAV→MP3 (emergency)...")
-                                        if self.verbose:
-                                            print(
-                                                f"[DEBUG] Converting WAV→MP3 (emergency): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
-                                            )
-                                        converted = await self.audio_processor.convert_to_mp3(
-                                            tts_output_path,
-                                            output_path,
-                                            bitrate=config.bitrate,
-                                        )
-                                        if self.verbose and converted is None:
-                                            print("[DEBUG] Falha ao converter WAV→MP3 (emergência)")
-                                        synthesis_result = converted
-                                        with contextlib.suppress(OSError):
-                                            tts_output_path.unlink(missing_ok=True)
-                                    if synthesis_result and self.verbose:
-                                        print("   ✅ EMERGÊNCIA: Sucesso com texto reduzido!")
-                                else:
-                                    synthesis_result = None
-                        except Exception as final_e:
-                            synthesis_result = None
-                            if self.verbose:
-                                print(f"   ❌ EMERGÊNCIA: Falhou - {final_e}")
-
-                        if not synthesis_result:
-                            total_elapsed = int(time.time() - start_synthesis)
-                            error_msg = f"TIMEOUT TRIPLO após {total_elapsed}s - todas as tentativas falharam"
-                            if self.verbose:
-                                print(f"   ❌ ERRO FINAL: {error_msg}")
-                            chapter_error = error_msg
-                            errors.append(f"{chapter.name}: {error_msg}")
-                            self.progress.complete_chapter(f"❌ {error_msg}")
-                            continue  # **STILL CONTINUE** - never give up completely
-                finally:
-                    heartbeat_active = False
-                    heartbeat_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await heartbeat_task
-
-                if not synthesis_result and is_auto_engine and auto_order:
-                    next_engine = self._next_auto_engine(auto_order, attempted_auto)
-                    if next_engine:
-                        attempted_auto.add(next_engine)
-                        engine_tracker["label"] = next_engine
-                        if self.verbose:
-                            print(f"   ⚡ AUTO: trocando para {next_engine} e tentando novamente")
-                        tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
-                            output_path, next_engine
-                        )
-                        continue
-
-                if synthesis_result and output_path.exists():
-                    file_size = output_path.stat().st_size
-
-                    # Validar que o arquivo tem tamanho mínimo (não está vazio/corrompido)
-                    if file_size > 1000:  # Mínimo 1KB para áudio válido
-                        truncation_warning = self._detect_short_audio_output(
-                            output_path,
-                            current_payload,
-                            config,
-                            engine_label=engine_tracker.get("label"),
-                        )
-                        if truncation_warning:
-                            if self.verbose:
-                                print(f"   ⚠️ {truncation_warning}")
-                            if hasattr(tts_engine, "last_error"):
-                                setattr(tts_engine, "last_error", "short_output")
-                            if (engine_tracker.get("label") or "").lower() == "edge":
-                                # Track Edge truncation failures for adaptive delay
-                                edge_failure_count += 1
-                                edge_consecutive_failures += 1
-                                if self.verbose and edge_consecutive_failures > 1:
-                                    print(
-                                        f"   ⚠️  Edge-TTS truncation #{edge_failure_count} "
-                                        f"({edge_consecutive_failures} consecutive)"
-                                    )
-                                _maybe_apply_edge_slow_mode("Áudio truncado", engine_obj=tts_engine)
-                                # Forçar fallback offline após truncamento
-                                edge_state = self._edge_auto_state or {}
-                                edge_state["force_offline_after_trunc"] = True
-                                self._edge_auto_state = edge_state
-                            output_path.unlink(missing_ok=True)
-                            chapter_error = truncation_warning
-                            errors.append(f"{chapter.name}: {truncation_warning}")
-                            self.progress.complete_chapter(f"❌ {truncation_warning}")
-                            continue
-
-                        if getattr(config, "validate_audio", True):
-                            audio_ok, audio_error = self._validate_audio_after_write(
-                                current_payload, output_path, config=config
-                            )
-                            if not audio_ok:
-                                retried = await self._attempt_segment_retry(
-                                    tts_engine,
-                                    chapter_num,
-                                    chapter_label,
-                                    output_path,
-                                    config=config,
+                                clean_text = (
+                                    LanguageMarkup.strip(base_text) if LanguageMarkup else base_text
                                 )
-                                if retried:
-                                    audio_ok, audio_error = self._validate_audio_after_write(
-                                        current_payload, output_path, config=config
+                            current_payload = clean_text
+                            clean_chars = len(clean_text)
+                            fallback_timeout = max(90, int(timeout_seconds * 0.5))
+                            if current_engine_label == "edge":
+                                fallback_timeout = max(120, min(int(timeout_seconds * 0.6), 600))
+
+                            if self.verbose:
+                                print("   🔄 RETRY: Tentando novamente sem marcas de idioma")
+                                print(
+                                    f"   📝 RETRY: {clean_chars} chars (timeout: {fallback_timeout}s)"
+                                )
+
+                            self.progress.tick(
+                                f"🔄 Fallback: {clean_chars} chars (timeout: {fallback_timeout}s)"
+                            )
+
+                            # Heartbeat para fallback (otimizado: 3s)
+                            heartbeat_active = True
+                            start_fallback = time.time()
+
+                            async def fallback_heartbeat():
+                                spinner_frames = ["🚑", "🔥"]
+                                frame_idx = 0
+                                while heartbeat_active:
+                                    await asyncio.sleep(5)
+                                    if not heartbeat_active:
+                                        break
+                                    elapsed_fb = int(time.time() - start_fallback)
+                                    frame = spinner_frames[frame_idx % len(spinner_frames)]
+                                    self.progress.tick(
+                                        f"{frame} FALLBACK {elapsed_fb}s/{fallback_timeout}s"
                                     )
-                                if not audio_ok:
-                                    output_path.unlink(missing_ok=True)
-                                    chapter_error = audio_error or "Áudio inválido"
-                                    # Track Edge validation failures for adaptive delay
-                                    if (engine_tracker.get("label") or "").lower() == "edge":
-                                        edge_failure_count += 1
-                                        edge_consecutive_failures += 1
-                                        if self.verbose:
-                                            print(
-                                                f"   ⚠️  Edge-TTS validation failure #{edge_failure_count}"
-                                            )
-                                    errors.append(f"{chapter.name}: {chapter_error}")
-                                    self.progress.complete_chapter(f"❌ {chapter_error}")
-                                    continue
+                                    self._mark_health_activity(chapter_num, "fallback")
+                                    frame_idx += 1
 
-                        converted_files.append(output_path)
-                        self._embed_id3_metadata(
-                            output_path,
-                            title=chapter_label,
-                            album=book_title,
-                            artist=book_author or None,
-                            cover_art=cover_art,
-                        )
-                        chapter_success = True
+                            fallback_task = asyncio.create_task(fallback_heartbeat())
 
-                        if self.verbose:
-                            print(f"   📊 Arquivo gerado: {file_size} bytes")
-                        self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
-                        chapter_elapsed = time.time() - start_time
-                        current_engine_label = (
-                            engine_tracker.get("label") or (config.engine or "").lower()
-                        )
-                        if chapter_chars:
-                            throughput = int(chapter_chars / max(chapter_elapsed, 0.001))
-                        else:
-                            throughput = 0
-                        engine_display = (current_engine_label or "engine").upper()
-                        print(
-                            f"⏱️ [{engine_display}] Capítulo {chapter_num} → "
-                            f"{chapter_elapsed:.1f}s para {chapter_chars} chars "
-                            f"({throughput or '~0'} chars/s)"
-                        )
-                        if (
-                            current_engine_label == "edge"
-                            and not switched_for_size
-                            and getattr(config, "edge_auto_offline_seconds", 0)
-                        ):
-                            slow_cutoff = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
-                            if slow_cutoff and chapter_elapsed >= slow_cutoff * 1.4:
-                                if build_best_offline_engine(
-                                    f"Edge levou {int(chapter_elapsed)}s para este capítulo"
-                                ):
-                                    if self.verbose:
-                                        print(
-                                            "   ⚡ Próximos capítulos migrarão para engine offline pela performance"
-                                        )
+                            try:
                                 current_engine_label = (
                                     engine_tracker.get("label") or (config.engine or "").lower()
                                 )
                                 tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
                                     output_path, current_engine_label
                                 )
-                        if (
-                            edge_auto_enabled
-                            and current_engine_label == "edge"
-                            and not chapter_cached
-                        ):
-                            chars_per_second = chapter_chars / max(chapter_elapsed, 0.001)
-                            min_cps = float(
-                                edge_state.get("min_chars_per_second", EDGE_MIN_CHARS_PER_SECOND)
-                            )
-                            slow_ratio = float(
-                                edge_state.get("slow_ratio_threshold", EDGE_SLOW_RATIO_THRESHOLD)
-                            )
-                            if chars_per_second < min_cps or (
-                                estimated_seconds > 0
-                                and chapter_elapsed > (estimated_seconds * slow_ratio)
-                            ):
-                                _maybe_apply_edge_slow_mode(
-                                    f"velocidade baixa ({chars_per_second:.1f} chars/s)",
-                                    engine_obj=tts_engine,
+                                synthesis_result = await asyncio.wait_for(
+                                    _synthesize_safe(
+                                        tts_engine,
+                                        clean_text,
+                                        tts_output_path,
+                                        formatting_segments=None,
+                                        chunk_callback=None,
+                                        resume_chunks_dir=None,
+                                    ),
+                                    timeout=fallback_timeout,
                                 )
-                        self._retry_original_texts.pop(chapter_label, None)
-
-                        # Validate audio completeness (detect truncations)
-                        if current_engine_label == "edge":
-                            is_complete, coverage_percent = validate_audio_completeness(
-                                output_path, chapter_chars
-                            )
-
-                            if not is_complete:
-                                # Audio was truncated - treat as failure
-                                missing_percent = 100.0 - coverage_percent
-                                if self.verbose:
-                                    print(
-                                        f"   ⚠️ Áudio truncado: {coverage_percent:.1f}% do texto "
-                                        f"({missing_percent:.1f}% faltando)"
+                                if synthesis_result and needs_mp3_transcode:
+                                    self.progress.tick("🎼 Converting WAV→MP3 (fallback)...")
+                                    if self.verbose:
+                                        print(
+                                            f"[DEBUG] Converting WAV→MP3 (fallback): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                        )
+                                    converted = await self.audio_processor.convert_to_mp3(
+                                        tts_output_path,
+                                        output_path,
+                                        bitrate=config.bitrate,
                                     )
+                                    if self.verbose and converted is None:
+                                        print("[DEBUG] Falha ao converter WAV→MP3 (fallback)")
+                                    synthesis_result = converted
+                                    with contextlib.suppress(OSError):
+                                        tts_output_path.unlink(missing_ok=True)
+                                if self.verbose and synthesis_result:
+                                    print("   ✅ RETRY: Sucesso no fallback!")
+                            finally:
+                                heartbeat_active = False
+                                fallback_task.cancel()
+                                with contextlib.suppress(asyncio.CancelledError):
+                                    await fallback_task
 
-                                # Increment failure counters
-                                edge_failure_count += 1
-                                edge_consecutive_failures += 1
+                        except (ImportError, asyncio.TimeoutError):
+                            total_elapsed = int(time.time() - start_synthesis)
+                            if self.verbose:
+                                print(
+                                    "   ⚠️ FALLBACK: Tentativa dupla falhou, tentando síntese simples"
+                                )
+                            self.progress.tick("🔄 Última tentativa: síntese simples...")
 
-                                # Mark for retry
-                                output_path.unlink(missing_ok=True)
+                            # **THIRD ATTEMPT**: Synthesis with minimal text processing
+                            try:
+                                if current_engine_label == "edge":
+                                    if self.verbose:
+                                        print(
+                                            "   ⏭️ EMERGÊNCIA ignorada para Edge (preservando chunks)"
+                                        )
+                                    synthesis_result = None
+                                else:
+                                    # Get first 1000 chars as emergency fallback
+                                    if payload_locked:
+                                        emergency_text = ""
+                                    else:
+                                        emergency_text = (speech_text or "")[:1000].strip()
+                                    if emergency_text:
+                                        emergency_timeout = (
+                                            90 if current_engine_label == "edge" else 30
+                                        )  # Short timeout for emergency
+                                        if self.verbose:
+                                            print(
+                                                f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)"
+                                            )
+
+                                        current_engine_label = (
+                                            engine_tracker.get("label")
+                                            or (config.engine or "").lower()
+                                        )
+                                        tts_output_path, needs_mp3_transcode = (
+                                            _resolve_tts_output_path(
+                                                output_path, current_engine_label
+                                            )
+                                        )
+                                        synthesis_result = await asyncio.wait_for(
+                                            _synthesize_safe(
+                                                tts_engine,
+                                                emergency_text,
+                                                tts_output_path,
+                                                formatting_segments=None,
+                                                chunk_callback=None,
+                                                resume_chunks_dir=None,
+                                            ),
+                                            timeout=emergency_timeout,
+                                        )
+                                        if synthesis_result and needs_mp3_transcode:
+                                            self.progress.tick(
+                                                "🎼 Converting WAV→MP3 (emergency)..."
+                                            )
+                                            if self.verbose:
+                                                print(
+                                                    f"[DEBUG] Converting WAV→MP3 (emergency): {tts_output_path.name} → {output_path.name} (bitrate={config.bitrate})"
+                                                )
+                                            converted = await self.audio_processor.convert_to_mp3(
+                                                tts_output_path,
+                                                output_path,
+                                                bitrate=config.bitrate,
+                                            )
+                                            if self.verbose and converted is None:
+                                                print(
+                                                    "[DEBUG] Falha ao converter WAV→MP3 (emergência)"
+                                                )
+                                            synthesis_result = converted
+                                            with contextlib.suppress(OSError):
+                                                tts_output_path.unlink(missing_ok=True)
+                                        if synthesis_result and self.verbose:
+                                            print("   ✅ EMERGÊNCIA: Sucesso com texto reduzido!")
+                                    else:
+                                        synthesis_result = None
+                            except Exception as final_e:
                                 synthesis_result = None
-
-                                # Log failure stats
                                 if self.verbose:
-                                    print(
-                                        f"   📊 Falhas Edge: {edge_failure_count} total, "
-                                        f"{edge_consecutive_failures} consecutivas"
-                                    )
-                            else:
-                                # Audio is complete - reset consecutive failures counter
-                                # (but keep total failure count for statistics)
-                                if edge_consecutive_failures > 0 and self.verbose:
-                                    print(
-                                        f"   ✅ Áudio completo ({coverage_percent:.1f}% do texto) - "
-                                        f"resetando contador de falhas consecutivas"
-                                    )
-                                edge_consecutive_failures = 0
-                    else:
-                        # Arquivo muito pequeno - provavelmente corrompido
-                        if self.verbose:
-                            print(
-                                f"   ⚠️ Arquivo muito pequeno ({file_size} bytes) - considerando falha"
+                                    print(f"   ❌ EMERGÊNCIA: Falhou - {final_e}")
+
+                            if not synthesis_result:
+                                total_elapsed = int(time.time() - start_synthesis)
+                                error_msg = f"TIMEOUT TRIPLO após {total_elapsed}s - todas as tentativas falharam"
+                                if self.verbose:
+                                    print(f"   ❌ ERRO FINAL: {error_msg}")
+                                chapter_error = error_msg
+                                if (engine_tracker.get("label") or "").lower() == "edge":
+                                    _edge_retry(error_msg)
+                                errors.append(f"{chapter.name}: {error_msg}")
+                                error_msg = _error_text(error_msg)
+                                self.progress.complete_chapter(f"❌ {error_msg}")
+                                break
+                    finally:
+                        heartbeat_active = False
+                        heartbeat_task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await heartbeat_task
+
+                    if not synthesis_result and is_auto_engine and auto_order:
+                        next_engine = self._next_auto_engine(auto_order, attempted_auto)
+                        if next_engine:
+                            attempted_auto.add(next_engine)
+                            engine_tracker["label"] = next_engine
+                            if self.verbose:
+                                print(
+                                    f"   ⚡ AUTO: trocando para {next_engine} e tentando novamente"
+                                )
+                            tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                                output_path, next_engine
                             )
-                        output_path.unlink(missing_ok=True)
-                        synthesis_result = None  # Forçar retry
-                else:
-                    # **RETRY**: Tentar com idioma padrão em caso de falha
-                    # Note: Don't block retry just because payload is locked - the cached text
-                    # may still be correct, and blocking prevents recovery from transient failures
-                    if current_engine_label == "edge":
-                        last_err = getattr(tts_engine, "last_error", None)
-                        reason = _edge_error_reason(last_err)
-                        if reason in {
-                            "service_unavailable",
-                            "no_audio",
-                            "rate_limit",
-                            "timeout",
-                            "network",
-                        }:
+                            continue
+
+                    if synthesis_result and output_path.exists():
+                        file_size = output_path.stat().st_size
+
+                        # Validar que o arquivo tem tamanho mínimo (não está vazio/corrompido)
+                        if file_size > 1000:  # Mínimo 1KB para áudio válido
+                            truncation_warning = self._detect_short_audio_output(
+                                output_path,
+                                current_payload,
+                                config,
+                                engine_label=engine_tracker.get("label"),
+                            )
+                            if truncation_warning:
+                                if self.verbose:
+                                    print(f"   ⚠️ {truncation_warning}")
+                                if hasattr(tts_engine, "last_error"):
+                                    setattr(tts_engine, "last_error", "short_output")
+                                if (engine_tracker.get("label") or "").lower() == "edge":
+                                    # Track Edge truncation failures for adaptive delay
+                                    edge_failure_count += 1
+                                    edge_consecutive_failures += 1
+                                    if self.verbose and edge_consecutive_failures > 1:
+                                        print(
+                                            f"   ⚠️  Edge-TTS truncation #{edge_failure_count} "
+                                            f"({edge_consecutive_failures} consecutive)"
+                                        )
+                                    _maybe_apply_edge_slow_mode(
+                                        "Áudio truncado", engine_obj=tts_engine
+                                    )
+                                    # Forçar fallback offline após truncamento
+                                    edge_state = self._edge_auto_state or {}
+                                    edge_state["force_offline_after_trunc"] = True
+                                    self._edge_auto_state = edge_state
+                                output_path.unlink(missing_ok=True)
+                                chapter_error = truncation_warning
+                                if (engine_tracker.get("label") or "").lower() == "edge":
+                                    _edge_retry(truncation_warning, count_failure=False)
+                                errors.append(f"{chapter.name}: {truncation_warning}")
+                                self.progress.complete_chapter(f"❌ {truncation_warning}")
+                                break
+
+                            if getattr(config, "validate_audio", True):
+                                audio_ok, audio_error = self._validate_audio_after_write(
+                                    current_payload, output_path, config=config
+                                )
+                                if not audio_ok:
+                                    retried = await self._attempt_segment_retry(
+                                        tts_engine,
+                                        chapter_num,
+                                        chapter_label,
+                                        output_path,
+                                        config=config,
+                                    )
+                                    if retried:
+                                        audio_ok, audio_error = self._validate_audio_after_write(
+                                            current_payload, output_path, config=config
+                                        )
+                                    if not audio_ok:
+                                        output_path.unlink(missing_ok=True)
+                                        chapter_error = audio_error or "Áudio inválido"
+                                        # Track Edge validation failures for adaptive delay
+                                        if (engine_tracker.get("label") or "").lower() == "edge":
+                                            edge_failure_count += 1
+                                            edge_consecutive_failures += 1
+                                            if self.verbose:
+                                                print(
+                                                    f"   ⚠️  Edge-TTS validation failure #{edge_failure_count}"
+                                                )
+                                        if (engine_tracker.get("label") or "").lower() == "edge":
+                                            _edge_retry(chapter_error, count_failure=False)
+                                        errors.append(f"{chapter.name}: {chapter_error}")
+                                        chapter_error = _error_text(chapter_error)
+                                        self.progress.complete_chapter(f"❌ {chapter_error}")
+                                        break
+
+                            if (engine_tracker.get("label") or "").lower() == "edge":
+                                segments_ok, segments_error = self._edge_segment_integrity_ok(
+                                    tts_engine
+                                )
+                                if not segments_ok:
+                                    output_path.unlink(missing_ok=True)
+                                    chapter_error = segments_error or "Segmentos incompletos"
+                                    edge_failure_count += 1
+                                    edge_consecutive_failures += 1
+                                    if self.verbose:
+                                        print(
+                                            f"   ⚠️  Edge-TTS segment failure #{edge_failure_count}"
+                                        )
+                                        print(f"   ⚠️  {chapter_error}")
+                                    _edge_retry(chapter_error, count_failure=False)
+                                errors.append(f"{chapter.name}: {chapter_error}")
+                                chapter_error = _error_text(chapter_error)
+                                self.progress.complete_chapter(f"❌ {chapter_error}")
+                                break
+
+                            converted_files.append(output_path)
+                            self._embed_id3_metadata(
+                                output_path,
+                                title=chapter_label,
+                                album=book_title,
+                                artist=book_author or None,
+                                cover_art=cover_art,
+                            )
+                            chapter_success = True
+
+                            if self.verbose:
+                                print(f"   📊 Arquivo gerado: {file_size} bytes")
+                            self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
+                            chapter_elapsed = time.time() - start_time
+                            current_engine_label = (
+                                engine_tracker.get("label") or (config.engine or "").lower()
+                            )
+                            if chapter_chars:
+                                throughput = int(chapter_chars / max(chapter_elapsed, 0.001))
+                            else:
+                                throughput = 0
+                            engine_display = (current_engine_label or "engine").upper()
+                            print(
+                                f"⏱️ [{engine_display}] Capítulo {chapter_num} → "
+                                f"{chapter_elapsed:.1f}s para {chapter_chars} chars "
+                                f"({throughput or '~0'} chars/s)"
+                            )
+                            if (
+                                current_engine_label == "edge"
+                                and not switched_for_size
+                                and getattr(config, "edge_auto_offline_seconds", 0)
+                            ):
+                                slow_cutoff = max(
+                                    getattr(config, "edge_auto_offline_seconds", 0), 0
+                                )
+                                if slow_cutoff and chapter_elapsed >= slow_cutoff * 1.4:
+                                    if build_best_offline_engine(
+                                        f"Edge levou {int(chapter_elapsed)}s para este capítulo"
+                                    ):
+                                        if self.verbose:
+                                            print(
+                                                "   ⚡ Próximos capítulos migrarão para engine offline pela performance"
+                                            )
+                                    current_engine_label = (
+                                        engine_tracker.get("label") or (config.engine or "").lower()
+                                    )
+                                    tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
+                                        output_path, current_engine_label
+                                    )
+                            if (
+                                edge_auto_enabled
+                                and current_engine_label == "edge"
+                                and not chapter_cached
+                            ):
+                                chars_per_second = chapter_chars / max(chapter_elapsed, 0.001)
+                                min_cps = float(
+                                    edge_state.get(
+                                        "min_chars_per_second", EDGE_MIN_CHARS_PER_SECOND
+                                    )
+                                )
+                                slow_ratio = float(
+                                    edge_state.get(
+                                        "slow_ratio_threshold", EDGE_SLOW_RATIO_THRESHOLD
+                                    )
+                                )
+                                if chars_per_second < min_cps or (
+                                    estimated_seconds > 0
+                                    and chapter_elapsed > (estimated_seconds * slow_ratio)
+                                ):
+                                    _maybe_apply_edge_slow_mode(
+                                        f"velocidade baixa ({chars_per_second:.1f} chars/s)",
+                                        engine_obj=tts_engine,
+                                    )
+                            self._retry_original_texts.pop(chapter_label, None)
+
+                            # Validate audio completeness (detect truncations)
+                            if current_engine_label == "edge":
+                                is_complete, coverage_percent = validate_audio_completeness(
+                                    output_path, chapter_chars
+                                )
+
+                                if not is_complete:
+                                    # Audio was truncated - treat as failure
+                                    missing_percent = 100.0 - coverage_percent
+                                    if self.verbose:
+                                        print(
+                                            f"   ⚠️ Áudio truncado: {coverage_percent:.1f}% do texto "
+                                            f"({missing_percent:.1f}% faltando)"
+                                        )
+
+                                    # Increment failure counters
+                                    edge_failure_count += 1
+                                    edge_consecutive_failures += 1
+
+                                    # Mark for retry
+                                    output_path.unlink(missing_ok=True)
+                                    synthesis_result = None
+
+                                    # Log failure stats
+                                    if self.verbose:
+                                        print(
+                                            f"   📊 Falhas Edge: {edge_failure_count} total, "
+                                            f"{edge_consecutive_failures} consecutivas"
+                                        )
+                                else:
+                                    # Audio is complete - reset consecutive failures counter
+                                    # (but keep total failure count for statistics)
+                                    if edge_consecutive_failures > 0 and self.verbose:
+                                        print(
+                                            f"   ✅ Áudio completo ({coverage_percent:.1f}% do texto) - "
+                                            f"resetando contador de falhas consecutivas"
+                                        )
+                                    edge_consecutive_failures = 0
+                        else:
+                            # Arquivo muito pequeno - provavelmente corrompido
+                            if self.verbose:
+                                print(
+                                    f"   ⚠️ Arquivo muito pequeno ({file_size} bytes) - considerando falha"
+                                )
+                            output_path.unlink(missing_ok=True)
+                            synthesis_result = None  # Forçar retry
+                    else:
+                        # **RETRY**: Tentar com idioma padrão em caso de falha
+                        # Note: Don't block retry just because payload is locked - the cached text
+                        # may still be correct, and blocking prevents recovery from transient failures
+                        if current_engine_label == "edge":
+                            last_err = getattr(tts_engine, "last_error", None)
+                            reason = _edge_error_reason(last_err)
                             # Track Edge failures for adaptive delay
                             edge_failure_count += 1
                             edge_consecutive_failures += 1
@@ -5486,194 +5674,275 @@ class AudioConverter:
                             _maybe_apply_edge_slow_mode(
                                 f"falha Edge ({reason})", engine_obj=tts_engine
                             )
-                            chapter_error = f"Edge indisponível ({reason})"
-                            errors.append(f"{chapter.name}: {chapter_error}")
-                            self.progress.complete_chapter(f"❌ {chapter_error}")
-                            continue
-                    if self.verbose:
-                        print("   ⚠️ RETRY: Síntese falhou, tentando com idioma padrão")
+                            chapter_error = (
+                                f"Edge indisponível ({reason})"
+                                if reason != "unknown"
+                                else "Edge falhou"
+                            )
+                            _edge_retry(chapter_error, count_failure=False)
+                        if self.verbose:
+                            print("   ⚠️ RETRY: Síntese falhou, tentando com idioma padrão")
 
-                    try:
-                        # If Edge is on cooldown, wait before retrying to avoid instant failures.
-                        await wait_edge_cooldown_if_needed(
-                            "antes do retry",
-                            tracker=engine_tracker,
-                            engine_ref=engine_instance,
-                        )
-
-                        # Use only the first part of text with default language
-                        simple_text = (speech_text or "")[:2000].strip()
-                        current_payload = simple_text
-                        if simple_text:
-                            self.progress.tick("🔄 Retry: texto simples (idioma padrão)...")
-                            retry_timeout = 45
-
-                            synthesis_result = None
-                            for attempt in range(2):
-                                synthesis_result = await asyncio.wait_for(
-                                    _synthesize_safe(
-                                        tts_engine,
-                                        simple_text,
-                                        output_path,
-                                        formatting_segments=None,
-                                        chunk_callback=chunk_callback,
-                                        resume_chunks_dir=chunk_root,
-                                    ),
-                                    timeout=retry_timeout,
-                                )
-                                if synthesis_result:
-                                    break
-                                waited = await wait_edge_cooldown_if_needed(
-                                    f"retry {attempt + 1}/2",
+                            try:
+                                # If Edge is on cooldown, wait before retrying to avoid instant failures.
+                                await wait_edge_cooldown_if_needed(
+                                    "antes do retry",
                                     tracker=engine_tracker,
                                     engine_ref=engine_instance,
                                 )
-                                if not waited:
-                                    break
 
-                            if synthesis_result and output_path.exists():
-                                file_size = output_path.stat().st_size
+                                # Use only the first part of text with default language
+                                simple_text = (speech_text or "")[:2000].strip()
+                                current_payload = simple_text
+                                if simple_text:
+                                    self.progress.tick("🔄 Retry: texto simples (idioma padrão)...")
+                                    retry_timeout = 45
 
-                                # Validar tamanho mínimo
-                                if file_size > 1000:
-                                    truncation_warning = self._detect_short_audio_output(
-                                        output_path,
-                                        current_payload,
-                                        config,
-                                        engine_label=engine_tracker.get("label"),
-                                    )
-                                    if truncation_warning:
-                                        if self.verbose:
-                                            print(f"   ⚠️ {truncation_warning}")
-                                        if hasattr(tts_engine, "last_error"):
-                                            setattr(tts_engine, "last_error", "short_output")
-                                        output_path.unlink(missing_ok=True)
-                                        chapter_error = truncation_warning
-                                        errors.append(f"{chapter.name}: {truncation_warning}")
-                                        self.progress.complete_chapter(f"❌ {truncation_warning}")
-                                        continue
-
-                                    if getattr(config, "validate_audio", True):
-                                        audio_ok, audio_error = self._validate_audio_after_write(
-                                            current_payload, output_path, config=config
-                                        )
-                                        if not audio_ok:
-                                            retried = await self._attempt_segment_retry(
+                                    synthesis_result = None
+                                    for attempt in range(2):
+                                        synthesis_result = await asyncio.wait_for(
+                                            _synthesize_safe(
                                                 tts_engine,
-                                                chapter_num,
-                                                chapter_label,
+                                                simple_text,
                                                 output_path,
-                                                config=config,
+                                                formatting_segments=None,
+                                                chunk_callback=chunk_callback,
+                                                resume_chunks_dir=chunk_root,
+                                            ),
+                                            timeout=retry_timeout,
+                                        )
+                                        if synthesis_result:
+                                            break
+                                        waited = await wait_edge_cooldown_if_needed(
+                                            f"retry {attempt + 1}/2",
+                                            tracker=engine_tracker,
+                                            engine_ref=engine_instance,
+                                        )
+                                        if not waited:
+                                            break
+
+                                    if synthesis_result and output_path.exists():
+                                        file_size = output_path.stat().st_size
+
+                                        # Validar tamanho mínimo
+                                        if file_size > 1000:
+                                            truncation_warning = self._detect_short_audio_output(
+                                                output_path,
+                                                current_payload,
+                                                config,
+                                                engine_label=engine_tracker.get("label"),
                                             )
-                                            if retried:
+                                            if truncation_warning:
+                                                if self.verbose:
+                                                    print(f"   ⚠️ {truncation_warning}")
+                                                if hasattr(tts_engine, "last_error"):
+                                                    setattr(
+                                                        tts_engine, "last_error", "short_output"
+                                                    )
+                                                output_path.unlink(missing_ok=True)
+                                                chapter_error = truncation_warning
+                                                if (
+                                                    engine_tracker.get("label") or ""
+                                                ).lower() == "edge":
+                                                    _edge_retry(truncation_warning)
+                                                errors.append(
+                                                    f"{chapter.name}: {truncation_warning}"
+                                                )
+                                                self.progress.complete_chapter(
+                                                    f"❌ {truncation_warning}"
+                                                )
+                                                break
+
+                                            if getattr(config, "validate_audio", True):
                                                 audio_ok, audio_error = (
                                                     self._validate_audio_after_write(
-                                                        current_payload,
+                                                        current_payload, output_path, config=config
+                                                    )
+                                                )
+                                                if not audio_ok:
+                                                    retried = await self._attempt_segment_retry(
+                                                        tts_engine,
+                                                        chapter_num,
+                                                        chapter_label,
                                                         output_path,
                                                         config=config,
                                                     )
+                                                    if retried:
+                                                        audio_ok, audio_error = (
+                                                            self._validate_audio_after_write(
+                                                                current_payload,
+                                                                output_path,
+                                                                config=config,
+                                                            )
+                                                        )
+                                                    if not audio_ok:
+                                                        output_path.unlink(missing_ok=True)
+                                                        chapter_error = (
+                                                            audio_error or "Áudio inválido"
+                                                        )
+                                                        if (
+                                                            engine_tracker.get("label") or ""
+                                                        ).lower() == "edge":
+                                                            _edge_retry(chapter_error)
+                                                        errors.append(
+                                                            f"{chapter.name}: {chapter_error}"
+                                                        )
+                                                        self.progress.complete_chapter(
+                                                            f"❌ {chapter_error}"
+                                                        )
+                                                        break
+
+                                            if (
+                                                engine_tracker.get("label") or ""
+                                            ).lower() == "edge":
+                                                segments_ok, segments_error = (
+                                                    self._edge_segment_integrity_ok(tts_engine)
                                                 )
-                                            if not audio_ok:
-                                                output_path.unlink(missing_ok=True)
-                                                chapter_error = audio_error or "Áudio inválido"
+                                                if not segments_ok:
+                                                    output_path.unlink(missing_ok=True)
+                                                    chapter_error = (
+                                                        segments_error or "Segmentos incompletos"
+                                                    )
+                                                    edge_failure_count += 1
+                                                    edge_consecutive_failures += 1
+                                                    if self.verbose:
+                                                        print(
+                                                            f"   ⚠️  Edge-TTS segment failure #{edge_failure_count}"
+                                                        )
+                                                        print(f"   ⚠️  {chapter_error}")
+                                                    _edge_retry(chapter_error, count_failure=False)
                                                 errors.append(f"{chapter.name}: {chapter_error}")
+                                                chapter_error = _error_text(chapter_error)
                                                 self.progress.complete_chapter(
                                                     f"❌ {chapter_error}"
                                                 )
-                                                continue
+                                                break
 
-                                    converted_files.append(output_path)
-                                    self._embed_id3_metadata(
-                                        output_path,
-                                        title=chapter_label,
-                                        album=book_title,
-                                        artist=book_author or None,
-                                        cover_art=cover_art,
-                                    )
-                                    chapter_success = True
+                                            converted_files.append(output_path)
+                                            self._embed_id3_metadata(
+                                                output_path,
+                                                title=chapter_label,
+                                                album=book_title,
+                                                artist=book_author or None,
+                                                cover_art=cover_art,
+                                            )
+                                            chapter_success = True
 
-                                    if self.verbose:
-                                        print(
-                                            f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)"
-                                        )
-                                    self.progress.complete_chapter("✅ Sucesso (retry)")
-                                    chapter_elapsed = time.time() - start_time
-                                    current_engine_label = (
-                                        engine_tracker.get("label") or (config.engine or "").lower()
-                                    )
-                                    if (
-                                        current_engine_label == "edge"
-                                        and not switched_for_size
-                                        and getattr(config, "edge_auto_offline_seconds", 0)
-                                    ):
-                                        slow_cutoff = max(
-                                            getattr(config, "edge_auto_offline_seconds", 0), 0
-                                        )
-                                        if slow_cutoff and chapter_elapsed >= slow_cutoff * 1.4:
-                                            if build_best_offline_engine(
-                                                f"Edge levou {int(chapter_elapsed)}s para este capítulo"
+                                            if self.verbose:
+                                                print(
+                                                    f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)"
+                                                )
+                                            self.progress.complete_chapter("✅ Sucesso (retry)")
+                                            chapter_elapsed = time.time() - start_time
+                                            current_engine_label = (
+                                                engine_tracker.get("label")
+                                                or (config.engine or "").lower()
+                                            )
+                                            if (
+                                                current_engine_label == "edge"
+                                                and not switched_for_size
+                                                and getattr(config, "edge_auto_offline_seconds", 0)
                                             ):
-                                                if self.verbose:
-                                                    print(
-                                                        "   ⚡ Próximos capítulos migrarão para engine offline pela performance"
-                                                    )
-                                                current_engine_label = (
-                                                    engine_tracker.get("label")
-                                                    or (config.engine or "").lower()
+                                                slow_cutoff = max(
+                                                    getattr(config, "edge_auto_offline_seconds", 0),
+                                                    0,
                                                 )
-                                                tts_output_path, needs_mp3_transcode = (
-                                                    _resolve_tts_output_path(
-                                                        output_path, current_engine_label
-                                                    )
-                                                )
-                                    self._retry_original_texts.pop(chapter_label, None)
-                                    continue  # Success! Continue to next chapter
+                                                if (
+                                                    slow_cutoff
+                                                    and chapter_elapsed >= slow_cutoff * 1.4
+                                                ):
+                                                    if build_best_offline_engine(
+                                                        f"Edge levou {int(chapter_elapsed)}s para este capítulo"
+                                                    ):
+                                                        if self.verbose:
+                                                            print(
+                                                                "   ⚡ Próximos capítulos migrarão para engine offline pela performance"
+                                                            )
+                                                        current_engine_label = (
+                                                            engine_tracker.get("label")
+                                                            or (config.engine or "").lower()
+                                                        )
+                                                        tts_output_path, needs_mp3_transcode = (
+                                                            _resolve_tts_output_path(
+                                                                output_path, current_engine_label
+                                                            )
+                                                        )
+                                            self._retry_original_texts.pop(chapter_label, None)
+                                            break  # Success! Continue to next chapter
 
+                                        if self.verbose:
+                                            print(
+                                                f"   ⚠️ RETRY: Arquivo inválido ({file_size} bytes)"
+                                            )
+                                        output_path.unlink(missing_ok=True)
+                            except Exception as retry_e:
                                 if self.verbose:
-                                    print(f"   ⚠️ RETRY: Arquivo inválido ({file_size} bytes)")
-                                output_path.unlink(missing_ok=True)
-                    except Exception as retry_e:
-                        if self.verbose:
-                            print(f"   ❌ RETRY falhou: {retry_e}")
+                                    print(f"   ❌ RETRY falhou: {retry_e}")
 
-                    if current_engine_label == "edge":
-                        last_err = ""
-                        try:
-                            last_err = str(getattr(tts_engine, "last_error", "") or "")
-                        except Exception:
-                            last_err = ""
-                        if (
-                            "rate_limit" in last_err.lower()
-                            or "too many requests" in last_err.lower()
-                        ):
-                            _maybe_apply_edge_slow_mode(
-                                "Rate limit detectado", engine_obj=tts_engine
-                            )
-                            if hasattr(self, "progress"):
-                                self.progress.tick(
-                                    "⏳ Edge limitado; aplicando modo seguro e tentando novamente"
-                                )
+                            if current_engine_label == "edge":
+                                last_err = ""
+                                try:
+                                    last_err = str(getattr(tts_engine, "last_error", "") or "")
+                                except Exception:
+                                    last_err = ""
+                                if (
+                                    "rate_limit" in last_err.lower()
+                                    or "too many requests" in last_err.lower()
+                                ):
+                                    _maybe_apply_edge_slow_mode(
+                                        "Rate limit detectado", engine_obj=tts_engine
+                                    )
+                                    if hasattr(self, "progress"):
+                                        self.progress.tick(
+                                            "⏳ Edge limitado; aplicando modo seguro e tentando novamente"
+                                        )
 
-                    # If all retries failed
-                    error_msg = "Falha na síntese"
-                    if hasattr(tts_engine, "last_error") and tts_engine.last_error:
-                        error_msg += f": {tts_engine.last_error}"
+                            # If all retries failed
+                            error_msg = "Falha na síntese"
+                            if hasattr(tts_engine, "last_error") and tts_engine.last_error:
+                                error_msg += f": {tts_engine.last_error}"
+                            if self.verbose:
+                                print(f"   ❌ ERRO FINAL: {error_msg}")
+                            chapter_error = error_msg
+                            if (
+                                engine_tracker.get("label") or (config.engine or "").lower()
+                            ) == "edge":
+                                _edge_retry(error_msg)
+                            errors.append(f"{chapter.name}: {error_msg}")
+                            error_msg = _error_text(error_msg)
+                            self.progress.complete_chapter(f"❌ {error_msg}")
+                            # **CONTINUE** - never skip chapter, just mark as error
+
+                except _RetryChapter as retry_exc:
+                    chapter_retry = True
+                    chapter_error = str(retry_exc)
+                except Exception as e:
+                    error_msg = f"Exceção: {str(e)}"
                     if self.verbose:
-                        print(f"   ❌ ERRO FINAL: {error_msg}")
+                        print(f"   ❌ ERRO DE EXCEÇÃO: {error_msg}")
                     chapter_error = error_msg
+                    if (engine_tracker.get("label") or (config.engine or "").lower()) == "edge":
+                        _edge_retry(error_msg)
                     errors.append(f"{chapter.name}: {error_msg}")
+                    error_msg = _error_text(error_msg)
                     self.progress.complete_chapter(f"❌ {error_msg}")
-                    # **CONTINUE** - never skip chapter, just mark as error
+                    # **CONTINUE** - log error but continue processing other chapters
+                finally:
+                    if engine_obj is not None and engine_name_used:
+                        engine_pool.release(engine_name_used, engine_obj)
+                        engine_obj = None
+                        engine_name_used = None
 
-            except Exception as e:
-                error_msg = f"Exceção: {str(e)}"
-                if self.verbose:
-                    print(f"   ❌ ERRO DE EXCEÇÃO: {error_msg}")
-                chapter_error = error_msg
-                errors.append(f"{chapter.name}: {error_msg}")
-                self.progress.complete_chapter(f"❌ {error_msg}")
-                # **CONTINUE** - log error but continue processing other chapters
-            finally:
+                if chapter_retry:
+                    if chapter_attempt >= max_chapter_attempts:
+                        chapter_error = chapter_error or "Falha persistente"
+                        errors.append(f"{chapter.name}: {chapter_error}")
+                        chapter_error = _error_text(chapter_error)
+                        self.progress.complete_chapter(f"❌ {chapter_error}")
+                        break
+                    await _maybe_apply_edge_fallback()
+                    continue
+
                 elapsed = time.time() - start_time
                 message = self.speed_controller.after_chapter(
                     engine_tracker.get("label") or (config.engine or "").lower(),
@@ -5689,10 +5958,7 @@ class AudioConverter:
                 if message:
                     print(message)
                 self._mark_health_progress(chapter_num, chapter_success, elapsed, chapter_error)
-                if engine_obj is not None and engine_name_used:
-                    engine_pool.release(engine_name_used, engine_obj)
-                    engine_obj = None
-                    engine_name_used = None
+                break
 
         success = len(errors) == 0
 

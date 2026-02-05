@@ -360,6 +360,14 @@ class ConverterApplication:
                 reader, filter_chapters=bool(getattr(args, "filter_chapters", False))
             )
 
+            if getattr(args, "detect_language", False):
+                verbose = self._resolve_verbose(args)
+                self.language_profile = self._prepare_language_profile(
+                    reader, structure_items, verbose=verbose, allow_prompt=False
+                )
+                self._update_metadata_display_language()
+                return 0
+
             range_start = getattr(args, "from_chapter_to_end", None)
             range_span = getattr(args, "from_chapter_to_chapter", None)
             if range_start and range_span:
@@ -502,6 +510,10 @@ class ConverterApplication:
                 return 1
             config.verbose = self._resolve_verbose(args)
             self._announce_footnote_mode(config)
+            if selectors:
+                selected_indices = [str(item.index) for item in structure_items]
+                if selected_indices:
+                    config.extra["selected_indices"] = ",".join(selected_indices)
 
             # Configurar o diretório temporário usando o método existente com `config`
             temp_dir = self.converter._setup_temp_directory(config)
@@ -1391,6 +1403,8 @@ class ConverterApplication:
         reader: EbookReader,
         items: List[ChapterStructureItem],
         verbose: bool = False,
+        *,
+        allow_prompt: bool = True,
     ) -> LanguageProfile:
         print(self.localization.t("language_profile_start"), flush=True)
         sample_texts: List[str] = []
@@ -1400,7 +1414,10 @@ class ConverterApplication:
         total_chars = 0
         items_checked = 0
         max_items = min(20, len(items))  # Até 20 capítulos
-        min_chars = 2000  # Mínimo 2000 chars para boa detecção
+        # IMPROVED: Increased minimum chars for more confident detection (was 2000)
+        # This ensures we have enough text to reliably detect the book's primary language
+        min_chars = 5000  # Mínimo 5000 chars para detecção mais confiável
+        min_chapters = 5  # Mínimo 5 capítulos (was 3)
 
         total_items = len(items)
         if total_items <= max_items:
@@ -1426,8 +1443,8 @@ class ConverterApplication:
                 total_chars += len(source_text)
                 items_checked += 1
 
-                # Parar se já temos caracteres suficientes
-                if total_chars >= min_chars and items_checked >= 3:
+                # Parar se já temos caracteres suficientes E capítulos suficientes
+                if total_chars >= min_chars and items_checked >= min_chapters:
                     break
 
         if verbose:
@@ -1439,8 +1456,25 @@ class ConverterApplication:
         language_votes = self._collect_language_votes(sample_texts)
         profile = self.language_detector.detect_profile(sample_texts)
         profile = self._rebalance_language_profile(profile, ascii_ratio, language_votes)
+        if profile.primary == "pt":
+            profile = LanguageProfile(
+                primary="pt-BR",
+                languages=[
+                    "pt-BR" if self._normalise_lang_code(lang) == "pt" else lang
+                    for lang in profile.languages
+                ],
+                predictions=profile.predictions,
+                analysed_chars=profile.analysed_chars,
+            )
 
         if not profile.languages or not profile.primary:
+            if not allow_prompt:
+                return LanguageProfile(
+                    primary=None,
+                    languages=[],
+                    predictions=profile.predictions or [],
+                    analysed_chars=sum(len(text) for text in sample_texts),
+                )
             languages = self._prompt_for_languages(reader)
             primary = languages[0] if languages else None
             return LanguageProfile(
@@ -2686,7 +2720,7 @@ class ConverterApplication:
                 )
                 if len(self.language_profile.predictions) > 0:
                     best_prediction = self.language_profile.predictions[0]
-                    print(f"   Probabilidade: {best_prediction.probability:.1%}")
+                    print(f"   Precisão: {best_prediction.probability:.1%}")
                 if len(self.language_profile.languages) > 1:
                     other_langs = ", ".join(
                         self.language_profile.languages[1:3]
@@ -3302,6 +3336,11 @@ def _add_conversion_arguments(
         "--show-structure",
         action="store_true",
         help="Print the detected book structure and exit",
+    )
+    parser.add_argument(
+        "--detect-language",
+        action="store_true",
+        help="Detect book language and exit (prints primary language + precision)",
     )
     parser.add_argument(
         "--filter-chapters",

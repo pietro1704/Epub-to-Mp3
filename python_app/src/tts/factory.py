@@ -44,6 +44,33 @@ class TTSFactory:
     def __init__(self) -> None:
         self.voice_provider = VoiceConfigProvider()
 
+    def available_engines(self) -> list[str]:
+        """Return list of available TTS engines."""
+        engines = ["edge"]  # Edge is always available (cloud-based)
+
+        # Check Coqui TTS
+        import importlib.util
+
+        if importlib.util.find_spec("TTS") is not None:
+            engines.append("coqui")
+
+        # Check Piper (needs to be in venv or PATH)
+        import shutil
+        import sys
+
+        if shutil.which("piper") or (Path(sys.executable).parent / "piper").exists():
+            engines.append("piper")
+
+        # Check Kokoro
+        if importlib.util.find_spec("kokoro") is not None:
+            engines.append("kokoro")
+
+        # Check Spark-TTS
+        if importlib.util.find_spec("transformers") is not None:
+            engines.append("spark")
+
+        return engines
+
     def _resolve_project_root(self) -> Path:
         """Return repository root robustly, even in shallow temp dirs."""
         resolved = Path(__file__).resolve()

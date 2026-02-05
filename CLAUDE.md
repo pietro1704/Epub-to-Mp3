@@ -115,7 +115,10 @@ EDGE_CHUNK_CHARS=10000          # Chars per request (default 10K, max 15K)
 EDGE_MAX_CONCURRENCY=8          # Parallel requests (optimal)
 EDGE_MAX_SEGMENT_SECONDS=85     # Max audio segment duration
 EDGE_SAFE_CHAPTER_PARALLEL=8    # Parallel chapters
-EDGE_FAILURE_THRESHOLD=20       # Auto-switch to Piper after N consecutive failures (default 20)
+# Three-tier fallback system:
+EDGE_MONOLINGUAL_THRESHOLD=3    # Switch to monolingual Edge after N failures (default 3)
+EDGE_PIPER_THRESHOLD=5          # Switch to Piper after N failures (default 5)
+EDGE_FAILURE_THRESHOLD=5        # Legacy env var (maps to PIPER threshold)
 ```
 
 ### Kokoro Tuning
@@ -131,37 +134,56 @@ SPARK_CHUNK_CHARS=1500          # Chars per chunk
 SPARK_MAX_WORKERS=1             # Workers (GPU-bound)
 ```
 
-## Adaptive Delays & Automatic Piper Fallback
+## Three-Tier Fallback System & Adaptive Delays
 
-**Edge-TTS Resilience System** (implemented Jan 2026):
+**Edge-TTS Resilience System** (updated Feb 2026):
 
-When using Edge-TTS, the system automatically handles rate limiting and service degradation:
+When using Edge-TTS, the system automatically handles rate limiting and service degradation with a **three-tier progressive fallback**:
 
-1. **Adaptive Delays** (exponential backoff):
-   - Failure 1 → 0.5s delay
-   - Failure 2 → 1s delay
-   - Failure 3 → 2s delay
-   - Failure 4 → 4s delay
-   - Failure 5 → 8s delay
-   - Failure 6 → 16s delay
-   - Failure 7+ → 30s delay (capped)
+### Tier 1: Edge-TTS Multilingual (Default)
+- Uses multilingual neural voices (e.g., `pt-BR-ThalitaMultilingualNeural`)
+- Best quality but more prone to rate limiting under heavy load
+- Includes **adaptive delays** (exponential backoff):
+  - Failure 1 → 0.5s delay
+  - Failure 2 → 1s delay
+  - Failure 3 → 2s delay
+  - Failure 4 → 4s delay
+  - Failure 5 → 8s delay
+  - Failure 6 → 16s delay
+  - Failure 7+ → 30s delay (capped)
 
-2. **Automatic Piper Fallback** (after N consecutive failures, default 20):
-   ```
-   🔄 Edge-TTS com 20 falhas consecutivas
-   🛟 Mudando automaticamente para Piper (offline) com idioma: <detected_language>
-   ✅ Piper carregado: <model_name>.onnx
-   ```
-   - Threshold configurable via `EDGE_FAILURE_THRESHOLD` env var (default 20)
-   - Uses detected book language (from `config.primary_language`)
-   - Switches to appropriate Piper model (e.g., `en_US-lessac-medium.onnx` for English)
-   - Continues conversion with offline engine
-   - Requires venv activation for Piper to be found in PATH
+### Tier 2: Edge-TTS Monolingual (after 3 failures)
+```
+🔄 Edge-TTS com 3 falhas consecutivas
+🔀 Mudando para Edge monolíngue (idioma fixo): pt
+🎤 Nova voz: pt-BR-FabioNeural
+```
+- Automatically switches to **monolingual** (language-specific) voice after 3 consecutive failures
+- Uses non-multilingual voices which may have less rate limiting
+- Maintains cloud quality with potentially better stability
+- Threshold configurable via `EDGE_MONOLINGUAL_THRESHOLD` env var (default 3)
 
-3. **Failure Tracking**:
-   - Counts consecutive failures (truncation, validation errors)
-   - Resets counter on successful chapter conversion
-   - Logs detailed failure metrics for debugging
+### Tier 3: Piper Offline (after 5 total failures)
+```
+🔄 Edge-TTS com 5 falhas consecutivas
+🛟 Mudando automaticamente para Piper (offline) com idioma: pt
+✅ Piper carregado: pt_BR-faber-medium.onnx
+```
+- Falls back to **Piper** (offline ONNX) after 5 consecutive failures (default)
+- Uses detected book language for appropriate model selection
+- Continues conversion with offline engine (no rate limits)
+- Threshold configurable via `EDGE_PIPER_THRESHOLD` env var (default 5)
+- Requires venv activation for Piper to be found in PATH
+
+### Language Detection
+- System analyzes **at least 5 chapters** and **5000+ characters** for confident language detection
+- Uses weighted voting across multiple samples
+- Ensures accurate language selection for monolingual and Piper fallbacks
+
+### Failure Tracking
+- Counts consecutive failures (truncation, validation errors, timeouts)
+- Resets counter on successful chapter conversion
+- Logs detailed failure metrics for debugging
 
 ## Design Patterns
 - **Factory**: TTSFactory creates engine instances by name

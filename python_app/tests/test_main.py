@@ -103,6 +103,57 @@ class TestConverterApplication(unittest.TestCase):
 
     @patch("main.asyncio.run")
     @patch("main.EbookReader")
+    def test_run_with_detect_language(self, mock_reader, mock_asyncio_run):
+        """Test running with detect-language option"""
+        mock_reader_instance = Mock()
+        mock_reader_instance.title = "Test Book"
+        mock_reader_instance.author = "Test Author"
+        mock_reader_instance.get_chapters.return_value = [
+            Mock(name="Chapter 1", text="Conteúdo em português para detecção"),
+            Mock(name="Chapter 2", text="Mais texto para análise"),
+        ]
+        mock_reader.return_value = mock_reader_instance
+
+        args = Namespace(
+            input_file=self.test_file,
+            show_structure=False,
+            detect_language=True,
+            engine=None,
+            voice=None,
+            model=None,
+            output_dir=None,
+            filter_chapters=False,
+            parallel=None,
+            menu=False,
+            listen=False,
+            clear_cache=False,
+            no_cache=False,
+            chapters=None,
+            sections=None,
+            verbose=False,
+            no_footnote=False,
+            footnote_chapter_end=False,
+        )
+
+        with patch.object(self.app, "_prepare_language_profile") as mock_prepare:
+            mock_prepare.return_value = self.app.language_profile = Mock(
+                primary="pt-BR",
+                languages=["pt-BR"],
+                predictions=[Mock(probability=0.91)],
+                analysed_chars=12345,
+                is_confident=True,
+            )
+            with patch.object(self.app, "_update_metadata_display_language") as mock_update:
+                result = self.app.run(args)
+
+        self.assertEqual(result, 0)
+        mock_reader.assert_called_once_with(self.test_file)
+        mock_prepare.assert_called_once()
+        mock_update.assert_called_once()
+        mock_asyncio_run.assert_not_called()
+
+    @patch("main.asyncio.run")
+    @patch("main.EbookReader")
     def test_run_with_engine_specified(self, mock_reader, mock_asyncio_run):
         """Test running with specific engine"""
         mock_reader_instance = Mock()
@@ -407,6 +458,9 @@ class TestArgumentParser(unittest.TestCase):
         self.assertEqual(args.output_dir, "test-output")
         self.assertTrue(args.show_structure)
         self.assertTrue(args.filter_chapters)
+
+        args = parser.parse_args(["convert", "test.epub", "--detect-language"])
+        self.assertTrue(args.detect_language)
 
     def test_parser_engine_choices(self):
         """Test engine choices validation"""

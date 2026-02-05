@@ -993,6 +993,23 @@ class EdgeTTSEngine:
 
                     # Falhar se mais de 2 segmentos consecutivos falharem
                     if failed_segments > 2:
+                        last_error_text = (self.last_error or "").lower()
+                        is_network_like = any(
+                            token in last_error_text
+                            for token in (
+                                "ssl",
+                                "clientconnector",
+                                "connection",
+                                "dns",
+                                "timeout",
+                                "network",
+                            )
+                        )
+                        if is_network_like:
+                            self._log(
+                                f"❌ Edge TTS: falhas consecutivas por rede/SSL ({failed_segments}), abortando"
+                            )
+                            raise RuntimeError("edge_network_abort")
                         micro_segments = self._force_micro_segments(
                             voice, segment_text, micro_split_tracker
                         )

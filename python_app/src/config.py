@@ -241,6 +241,12 @@ class VoiceConfigProvider:
                 "multilingual": False,
                 "language": "es-ES",
             },
+            {
+                "id": "it-IT-IsabellaNeural",
+                "label": "Isabella – it-IT",
+                "multilingual": False,
+                "language": "it-IT",
+            },
         ]
         self._edge_voices = {
             str(index): (entry["id"], entry["label"])
@@ -462,6 +468,26 @@ class VoiceConfigProvider:
             code = (primary_language or "").split("-", 1)[0].lower()
             return self._resolve_piper_model(code)
         return None
+
+    def get_monolingual_voice(self, primary_language: Optional[str] = None) -> Optional[str]:
+        """Return a monolingual (non-multilingual) Edge voice for the given language.
+
+        This is useful as a fallback when multilingual voices are experiencing rate limiting
+        or degraded performance.
+        """
+        language = (primary_language or "").split("-", 1)[0].lower() or None
+        if not language:
+            return None
+
+        # Find first non-multilingual voice matching the language
+        for entry in self._edge_voice_catalog:
+            if not entry.get("multilingual"):
+                entry_lang = str(entry.get("language", "")).split("-", 1)[0].lower()
+                if entry_lang == language:
+                    return str(entry.get("id"))
+
+        # Fallback to language map
+        return self._edge_language_map.get(language)
 
     def _resolve_piper_model(self, code: str) -> Optional[str]:
         discovered = self.get_piper_models()
