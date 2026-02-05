@@ -689,7 +689,7 @@ class AudioConverter:
 
                     # Sintetizar áudio
                     wav_file = await tts_engine.synthesize_async(
-                        text, str(target_file.parent / f"temp_{chapter_num}.wav")
+                        text, target_file.parent / f"temp_{chapter_num}.wav"
                     )
 
                     if not wav_file or not Path(wav_file).exists():
