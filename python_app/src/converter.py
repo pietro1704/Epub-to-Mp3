@@ -5548,10 +5548,10 @@ class AudioConverter:
                                         )
                                         print(f"   ⚠️  {chapter_error}")
                                     _edge_retry(chapter_error, count_failure=False)
-                                errors.append(f"{chapter.name}: {chapter_error}")
-                                chapter_error = _error_text(chapter_error)
-                                self.progress.complete_chapter(f"❌ {chapter_error}")
-                                break
+                                    errors.append(f"{chapter.name}: {chapter_error}")
+                                    chapter_error = _error_text(chapter_error)
+                                    self.progress.complete_chapter(f"❌ {chapter_error}")
+                                    break
 
                             converted_files.append(output_path)
                             self._embed_id3_metadata(
@@ -5637,7 +5637,6 @@ class AudioConverter:
                                 is_complete, coverage_percent = validate_audio_completeness(
                                     output_path, chapter_chars
                                 )
-
                                 if not is_complete:
                                     # Audio was truncated - treat as failure
                                     missing_percent = 100.0 - coverage_percent
