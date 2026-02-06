@@ -5,7 +5,9 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import dataclass
 from pathlib import Path
+from typing import List, Optional
 from unittest.mock import Mock, patch
 
 # Add parent directory to path for imports
@@ -17,6 +19,21 @@ from src.deep_validator import (
     ValidationReport,
     run_deep_validation,
 )
+
+
+@dataclass
+class _FakeChapter:
+    """Minimal Chapter stand-in for tests."""
+
+    index: int
+    name: str
+    text: str
+    source_path: str = ""
+    level: int = 1
+    raw_html: Optional[str] = None
+    formatting_segments: Optional[list] = None
+    speech_text: Optional[str] = None
+    footnotes: Optional[list] = None
 
 
 class TestChapterComparison(unittest.TestCase):
@@ -89,6 +106,13 @@ class TestValidationReport(unittest.TestCase):
         )
         self.assertTrue(report.auto_corrected)
         self.assertEqual(len(report.corrections_made), 1)
+
+
+def _make_fake_reader(chapters: List[_FakeChapter]):
+    """Return a mock EbookReader whose get_chapters() returns *chapters*."""
+    reader = Mock()
+    reader.get_chapters.return_value = chapters
+    return reader
 
 
 class TestDeepValidator(unittest.TestCase):
@@ -218,6 +242,66 @@ class TestDeepValidator(unittest.TestCase):
                 self.assertTrue(file1.exists())
                 self.assertFalse(file2.exists())
 
+    def test_extract_chapter_index(self):
+        """Test extracting chapter index from parsed filenames."""
+        self.assertEqual(DeepValidator._extract_chapter_index("1 - Chapter One-parsed.txt"), "1")
+        self.assertEqual(DeepValidator._extract_chapter_index("5.4 - Part Five-parsed.txt"), "5.4")
+        self.assertEqual(DeepValidator._extract_chapter_index("12 - Epilogue-parsed.txt"), "12")
+        self.assertIsNone(DeepValidator._extract_chapter_index("no-number-parsed.txt"))
+
+    def test_compare_chapter_content_fingerprint_match(self):
+        """Test that compare_chapter matches by content fingerprint."""
+        content = "This is the full text of chapter one with enough words to pass validation " * 5
+
+        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as epub_file:
+            validator = DeepValidator(epub_file.name, str(self.cache_dir))
+            # Key by content fingerprint (same as what compare_chapter computes)
+            fp = DeepValidator._content_fingerprint(content)
+            validator.epub_chapters = {fp: content}
+
+            # Write parsed file with matching content
+            parsed_file = self.text_dir / "1 - Chapter One-parsed.txt"
+            parsed_file.write_text(content, encoding="utf-8")
+
+            comp = validator.compare_chapter(parsed_file)
+            self.assertIsNotNone(comp)
+            self.assertTrue(comp.is_valid)
+            self.assertTrue(comp.start_match)
+            self.assertTrue(comp.end_match)
+
+    def test_compare_chapter_decimal_label_match(self):
+        """Test that compare_chapter works regardless of filename label format."""
+        content = "This is chapter five point four with enough text to pass the validation " * 5
+
+        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as epub_file:
+            validator = DeepValidator(epub_file.name, str(self.cache_dir))
+            fp = DeepValidator._content_fingerprint(content)
+            validator.epub_chapters = {fp: content}
+
+            parsed_file = self.text_dir / "5.4 - Part Five Section Four-parsed.txt"
+            parsed_file.write_text(content, encoding="utf-8")
+
+            comp = validator.compare_chapter(parsed_file)
+            self.assertIsNotNone(comp)
+            self.assertTrue(comp.is_valid)
+
+    def test_compare_chapter_no_match(self):
+        """Test compare_chapter when no matching content exists."""
+        content = "Some chapter content that is long enough to be detected as a real chapter " * 20
+
+        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as epub_file:
+            validator = DeepValidator(epub_file.name, str(self.cache_dir))
+            other = "Completely different chapter with different words and different meaning " * 20
+            fp = DeepValidator._content_fingerprint(other)
+            validator.epub_chapters = {fp: other}
+
+            parsed_file = self.text_dir / "99 - Missing Chapter-parsed.txt"
+            parsed_file.write_text(content, encoding="utf-8")
+
+            comp = validator.compare_chapter(parsed_file)
+            self.assertIsNotNone(comp)
+            self.assertFalse(comp.is_valid)
+
 
 class TestValidateIntegration(unittest.TestCase):
     """Integration tests for complete validation flow."""
@@ -233,79 +317,99 @@ class TestValidateIntegration(unittest.TestCase):
         """Clean up test fixtures."""
         self.temp_dir.cleanup()
 
-    @patch("src.deep_validator.epub.read_epub")
-    def test_validate_success_no_issues(self, mock_read_epub):
+    @patch("src.deep_validator.DeepValidator.load_epub_chapters")
+    def test_validate_success_no_issues(self, mock_load):
         """Test successful validation with no issues."""
-        # Mock EPUB loading
-        mock_book = Mock()
-        mock_item = Mock()
-        mock_item.get_type.return_value = 2  # ITEM_DOCUMENT
-        mock_item.get_content.return_value = b"<p>Test chapter content</p>"
-        mock_item.get_id.return_value = "chapter1"
-        mock_book.get_items.return_value = [mock_item]
-        mock_read_epub.return_value = mock_book
+        content = "Test chapter content that is long enough " * 10
+        mock_load.side_effect = lambda: True
 
         # Create matching parsed file
-        parsed_file = self.text_dir / "1-chapter1-parsed.txt"
-        parsed_file.write_text("Test chapter content", encoding="utf-8")
+        parsed_file = self.text_dir / "1 - chapter1-parsed.txt"
+        parsed_file.write_text(content, encoding="utf-8")
 
         with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as epub_file:
             validator = DeepValidator(epub_file.name, str(self.cache_dir), tolerance_pct=10.0)
+            fp = DeepValidator._content_fingerprint(content)
+            validator.epub_chapters = {fp: content}
+
             report = validator.validate(auto_correct=False)
 
-            self.assertGreaterEqual(report.valid_chapters, 0)
+            self.assertTrue(report.success)
+            self.assertEqual(report.valid_chapters, 1)
             self.assertEqual(report.duplicates_found, 0)
 
-    @patch("src.deep_validator.epub.read_epub")
-    def test_validate_with_autofix(self, mock_read_epub):
+    @patch("src.deep_validator.DeepValidator.load_epub_chapters")
+    def test_validate_with_autofix(self, mock_load):
         """Test validation with automatic correction of duplicates."""
-        # Mock EPUB loading
-        mock_book = Mock()
-        mock_item = Mock()
-        mock_item.get_type.return_value = 2  # ITEM_DOCUMENT
-        mock_item.get_content.return_value = b"<p>Test chapter content</p>"
-        mock_item.get_id.return_value = "chapter1"
-        mock_book.get_items.return_value = [mock_item]
-        mock_read_epub.return_value = mock_book
+        content = "Test chapter content that is long enough " * 10
+        mock_load.return_value = True
 
         # Create duplicate files
-        file1 = self.text_dir / "1-chapter1-parsed.txt"
+        file1 = self.text_dir / "1 - chapter1-parsed.txt"
         file2 = self.text_dir / "1 - chapter1 - duplicate-parsed.txt"
-        duplicate_content = "Test chapter content"
-        file1.write_text(duplicate_content, encoding="utf-8")
-        file2.write_text(duplicate_content, encoding="utf-8")
+        file1.write_text(content, encoding="utf-8")
+        file2.write_text(content, encoding="utf-8")
 
         with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as epub_file:
             validator = DeepValidator(epub_file.name, str(self.cache_dir))
+            fp = DeepValidator._content_fingerprint(content)
+            validator.epub_chapters = {fp: content}
             report = validator.validate(auto_correct=True)
 
             # After correction, no duplicates should remain in the report
             self.assertEqual(report.duplicates_found, 0)
-
-            # Validation should process at least some chapters
             self.assertGreaterEqual(report.total_chapters, 0)
 
-    @patch("src.deep_validator.epub.read_epub")
-    def test_run_deep_validation_function(self, mock_read_epub):
-        """Test the run_deep_validation helper function."""
-        # Mock EPUB loading
-        mock_book = Mock()
-        mock_item = Mock()
-        mock_item.get_type.return_value = 2  # ITEM_DOCUMENT
-        mock_item.get_content.return_value = b"<p>Test content</p>"
-        mock_item.get_id.return_value = "chapter1"
-        mock_book.get_items.return_value = [mock_item]
-        mock_read_epub.return_value = mock_book
+    @patch("src.deep_validator.DeepValidator.load_epub_chapters")
+    def test_run_deep_validation_returns_report(self, mock_load):
+        """Test that run_deep_validation returns a ValidationReport."""
+        content = "Test content that is long enough for validation " * 10
+        mock_load.return_value = True
 
-        # Create valid parsed file
-        parsed_file = self.text_dir / "1-chapter1-parsed.txt"
-        parsed_file.write_text("Test content" * 10, encoding="utf-8")
+        parsed_file = self.text_dir / "1 - chapter1-parsed.txt"
+        parsed_file.write_text(content, encoding="utf-8")
 
         with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as epub_file:
-            success = run_deep_validation(epub_file.name, str(self.cache_dir), auto_correct=True)
+            # We need to also set epub_chapters on the validator inside run_deep_validation
+            # Since run_deep_validation creates its own validator, we patch load_epub_chapters
+            # to set epub_chapters as a side effect
+            def load_side_effect():
+                return True
 
-            # Should return success status
-            self.assertIsInstance(success, bool)
+            mock_load.side_effect = load_side_effect
+
+            report = run_deep_validation(epub_file.name, str(self.cache_dir), auto_correct=True)
+
+            self.assertIsInstance(report, ValidationReport)
+
+    @patch("src.deep_validator.DeepValidator.load_epub_chapters")
+    def test_100_percent_success_required(self, mock_load):
+        """Test that 100% of chapters must be valid for success."""
+        good_content = (
+            "This is valid chapter content with enough text to exceed the minimum threshold " * 20
+        )
+        bad_content = (
+            "Completely different chapter text that does not match any fingerprint in the validator "
+            * 20
+        )
+        mock_load.return_value = True
+
+        # Create two parsed files with different content
+        (self.text_dir / "1 - chapter1-parsed.txt").write_text(good_content, encoding="utf-8")
+        (self.text_dir / "2 - chapter2-parsed.txt").write_text(bad_content, encoding="utf-8")
+
+        with tempfile.NamedTemporaryFile(suffix=".epub", delete=False) as epub_file:
+            validator = DeepValidator(epub_file.name, str(self.cache_dir))
+            # Only provide fingerprint for chapter 1 — chapter 2 will fail
+            fp = DeepValidator._content_fingerprint(good_content)
+            validator.epub_chapters = {fp: good_content}
+
+            report = validator.validate(auto_correct=False)
+
+            # Chapter 2 has no match → not valid → success should be False
+            self.assertFalse(report.success)
+            self.assertEqual(report.valid_chapters, 1)
+            self.assertEqual(report.total_chapters, 2)
 
 
 class TestValidationReportPrinting(unittest.TestCase):

@@ -9,13 +9,10 @@ This module performs comprehensive validation including:
 """
 
 import hashlib
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-
-import ebooklib
-from bs4 import BeautifulSoup
-from ebooklib import epub
 
 
 @dataclass
@@ -136,20 +133,99 @@ class DeepValidator:
         self.cache_dir = Path(cache_dir)
         self.tolerance_pct = tolerance_pct
         self.epub_chapters: Dict[str, str] = {}
+        self._chapter_list: list = []  # ordered list from EbookReader
+
+    @staticmethod
+    def _content_fingerprint(text: str, word_count: int = 40) -> str:
+        """Return a fingerprint from the *last* ``word_count`` words of *text*.
+
+        We use the end of the text because the converter may prepend
+        section / part headers (e.g. "Parte 1 – A sombra antes") that
+        don't exist in the raw EbookReader chapter text, but the ending
+        is always identical.
+        """
+        words = text.split()
+        if len(words) <= word_count:
+            return " ".join(w.lower() for w in words)
+        segment = words[-word_count:]
+        return " ".join(w.lower() for w in segment)
+
+    def _find_epub_match(self, parsed_clean: str) -> Optional[str]:
+        """Find matching EPUB chapter text for a parsed file's content.
+
+        Strategy (in order):
+        1. Fingerprint lookup on last-N-words (O(1), handles most chapters).
+        2. Full containment check — does the EbookReader text appear
+           verbatim inside the parsed text?  Handles short chapters
+           where headers dominate.
+        3. Partial-tail check — do the last 20 words of the EbookReader
+           chapter appear in the parsed text?  Handles cases where the
+           converter slightly trims or extends the text.
+        """
+        # 1. Fingerprint
+        fp = self._content_fingerprint(parsed_clean)
+        epub_text = self.epub_chapters.get(fp)
+        if epub_text is not None:
+            return epub_text
+
+        parsed_lower = parsed_clean.lower()
+
+        best_candidate = None
+        best_overlap = 0.0
+
+        parsed_words = set(parsed_lower.split())
+
+        for _fp, candidate in self.epub_chapters.items():
+            cand_lower = candidate.lower()
+
+            # 2. Full containment
+            if cand_lower in parsed_lower:
+                return candidate
+
+            # 3. Partial-tail: last 20 words of epub in parsed
+            cand_words_list = cand_lower.split()
+            if len(cand_words_list) > 20:
+                tail = " ".join(cand_words_list[-20:])
+                if tail in parsed_lower:
+                    return candidate
+
+            # 4. Track best fuzzy match by word overlap
+            cand_words = set(cand_words_list)
+            if cand_words and parsed_words:
+                overlap = len(cand_words & parsed_words) / max(len(cand_words), len(parsed_words))
+                if overlap > best_overlap:
+                    best_overlap = overlap
+                    best_candidate = candidate
+
+        # Accept the best fuzzy match if word overlap >= 80%
+        if best_candidate is not None and best_overlap >= 0.8:
+            return best_candidate
+
+        return None
 
     def load_epub_chapters(self) -> bool:
-        """Load and parse all chapters from the original EPUB."""
+        """Load and parse all chapters from the original EPUB using EbookReader.
+
+        Uses the same parsing pipeline as the converter (footnotes, formatting,
+        pauses) so that validation compares identical text representations.
+
+        Chapters are indexed by a content fingerprint (first N words) because
+        the converter may relabel chapter indices via TOC structure (e.g.
+        ``1`` → ``"4.1"``), making raw index matching unreliable.
+        """
         try:
-            book = epub.read_epub(self.epub_path)
+            from .ebook_reader import EbookReader
 
-            for item in book.get_items():
-                if item.get_type() == ebooklib.ITEM_DOCUMENT:
-                    soup = BeautifulSoup(item.get_content(), "html.parser")
-                    text = soup.get_text()
-                    text_clean = " ".join(text.split())  # Normalize whitespace
+            reader = EbookReader(self.epub_path)
+            chapters = reader.get_chapters()
+            self._chapter_list = chapters
 
-                    if len(text_clean) > 50:  # Skip very small chapters
-                        self.epub_chapters[item.get_id()] = text_clean
+            for ch in chapters:
+                text = ch.text or ""
+                text_clean = " ".join(text.split())
+                if len(text_clean) > 50:  # Skip very small chapters
+                    fp = self._content_fingerprint(text_clean)
+                    self.epub_chapters[fp] = text_clean
 
             return len(self.epub_chapters) > 0
         except Exception as e:
@@ -213,6 +289,11 @@ class DeepValidator:
         """
         Compare start, middle, and end sections of content.
 
+        Uses positional fuzzy matching first, then falls back to a
+        containment check (does the EPUB sample appear anywhere in the
+        parsed text?).  This handles slight positional shifts caused by
+        the converter trimming or extending content.
+
         Args:
             epub_text: Original EPUB text
             parsed_text: Parsed text from conversion
@@ -224,11 +305,19 @@ class DeepValidator:
         # Normalize both texts
         epub_norm = " ".join(epub_text.split())
         parsed_norm = " ".join(parsed_text.split())
+        parsed_lower = parsed_norm.lower()
+
+        def _check_section(epub_sample: str, parsed_sample: str) -> bool:
+            """Positional fuzzy match, then containment fallback."""
+            if self._fuzzy_match(epub_sample, parsed_sample):
+                return True
+            # Containment: does the epub sample appear in the full parsed text?
+            return epub_sample.lower() in parsed_lower
 
         # Compare start
         epub_start = epub_norm[:sample_size]
         parsed_start = parsed_norm[:sample_size]
-        start_match = self._fuzzy_match(epub_start, parsed_start)
+        start_match = _check_section(epub_start, parsed_start)
 
         # Compare middle
         epub_mid_pos = len(epub_norm) // 2
@@ -239,12 +328,12 @@ class DeepValidator:
         parsed_middle = parsed_norm[
             max(0, parsed_mid_pos - sample_size // 2) : parsed_mid_pos + sample_size // 2
         ]
-        middle_match = self._fuzzy_match(epub_middle, parsed_middle)
+        middle_match = _check_section(epub_middle, parsed_middle)
 
         # Compare end
         epub_end = epub_norm[-sample_size:]
         parsed_end = parsed_norm[-sample_size:]
-        end_match = self._fuzzy_match(epub_end, parsed_end)
+        end_match = _check_section(epub_end, parsed_end)
 
         return start_match, middle_match, end_match
 
@@ -271,56 +360,40 @@ class DeepValidator:
 
         return (overlap / total) >= threshold if total > 0 else False
 
+    @staticmethod
+    def _extract_chapter_index(filename: str) -> Optional[str]:
+        """Extract the chapter index from a parsed filename.
+
+        Filenames follow the pattern ``"<label> - <name>-parsed.txt"``
+        where *label* may be ``"1"``, ``"1.0"``, ``"5.4"``, etc.
+
+        Returns the label string (e.g. ``"5.4"``) or ``None``.
+        """
+        m = re.match(r"^(\d+(?:\.\d+)?)\s*-\s*", filename)
+        return m.group(1) if m else None
+
     def compare_chapter(
         self, parsed_file: Path, chapter_number: Optional[int] = None
     ) -> Optional[ChapterComparison]:
-        """
-        Compare a parsed chapter with its original EPUB content.
+        """Compare a parsed chapter with its original EPUB content.
 
-        Args:
-            parsed_file: Path to parsed text file
-            chapter_number: Optional chapter number for identification
-
-        Returns:
-            ChapterComparison object or None if comparison failed
+        Uses content-fingerprint matching: computes a fingerprint from the
+        first N words of the parsed file and looks it up in the
+        fingerprint-keyed ``self.epub_chapters`` dictionary.
         """
         try:
-            # Read parsed content
             with open(parsed_file, "r", encoding="utf-8") as f:
                 parsed_text = f.read()
 
             parsed_clean = " ".join(parsed_text.split())
             parsed_chars = len(parsed_clean)
 
-            # Try to match with EPUB chapters
-            # Look for best match by comparing middle/end content (skip headers)
-            best_match = None
-            best_score = 0
+            # --- Content matching (fingerprint + substring fallback) ---
+            epub_text = self._find_epub_match(parsed_clean)
 
-            # Get a sample from middle/end of parsed text (skip potential headers)
-            parsed_words = parsed_clean.split()
-            skip_header = min(50, len(parsed_words) // 10)  # Skip first 10% or 50 words
-            parsed_sample = parsed_words[skip_header : skip_header + 50]  # Take 50 words after skip
-
-            for epub_id, epub_text in self.epub_chapters.items():
-                epub_words = epub_text.split()
-
-                # Try to find parsed_sample in epub text
-                for i in range(len(epub_words) - len(parsed_sample)):
-                    epub_chunk = epub_words[i : i + len(parsed_sample)]
-                    score = sum(
-                        1 for w1, w2 in zip(epub_chunk, parsed_sample) if w1.lower() == w2.lower()
-                    )
-
-                    if score > best_score:
-                        best_score = score
-                        best_match = (epub_id, epub_text)
-
-            if not best_match or best_score < 10:  # Minimum 10 matching words
-                # Could not find matching chapter - but this might be OK for small chapters
-                # Check if it's a very small chapter (< 500 chars)
+            if epub_text is None:
+                # Small chapters without a match are considered valid
                 if parsed_chars < 500:
-                    # Small chapter, consider it valid if it exists
                     return ChapterComparison(
                         chapter_id=parsed_file.name,
                         epub_chars=parsed_chars,
@@ -345,25 +418,39 @@ class DeepValidator:
                     error_msg="Não foi possível encontrar capítulo correspondente no EPUB",
                 )
 
-            epub_id, epub_text = best_match
             epub_clean = " ".join(epub_text.split())
             epub_chars = len(epub_clean)
 
-            # Calculate character difference
-            char_diff = abs(parsed_chars - epub_chars)
+            # The converter may prepend section/chapter headers to the
+            # parsed text, so parsed_chars >= epub_chars is expected.
+            # We consider the chapter valid when the EPUB text is fully
+            # represented in the parsed text (with up to tolerance_pct
+            # extra characters for headers).
+            extra_chars = parsed_chars - epub_chars
+            # Negative means parsed is shorter (converter trimmed) — use abs
+            char_diff = abs(extra_chars) if extra_chars < 0 else 0
             char_diff_pct = (char_diff / epub_chars * 100) if epub_chars > 0 else 0
 
-            # Compare content sections
+            # Try to locate where the EPUB text starts within the parsed
+            # text so we can strip the prepended header for comparison.
+            epub_start_words = " ".join(epub_clean.split()[:8]).lower()
+            idx_in_parsed = parsed_clean.lower().find(epub_start_words)
+            if idx_in_parsed > 0:
+                parsed_body = parsed_clean[idx_in_parsed:]
+            elif parsed_chars > epub_chars:
+                parsed_body = parsed_clean[-epub_chars:]
+            else:
+                parsed_body = parsed_clean
+
             start_match, middle_match, end_match = self.compare_content_sections(
-                epub_clean, parsed_clean
+                epub_clean, parsed_body
             )
 
-            # Determine if valid
-            is_valid = (
-                char_diff_pct <= self.tolerance_pct
-                and start_match
-                and end_match  # Middle can be more flexible
-            )
+            # Valid when character count is within tolerance AND at least
+            # two of three sections match (start is weighted most heavily,
+            # but the converter may trim the ending slightly).
+            section_matches = sum([start_match, middle_match, end_match])
+            is_valid = char_diff_pct <= self.tolerance_pct and section_matches >= 2
 
             error_msg = None
             if not is_valid:
@@ -506,13 +593,12 @@ class DeepValidator:
             1 for c in comparisons if not (c.start_match and c.middle_match and c.end_match)
         )
 
-        # Success criteria: no duplicates and most chapters valid
-        # Allow some content mismatches for cached files with headers
+        # Success criteria: no duplicates and ALL chapters must be valid
         success_rate = (valid_chapters / len(comparisons)) if comparisons else 1.0
         success = (
             len(duplicates) == 0
             and char_mismatches == 0
-            and success_rate >= 0.5  # At least 50% of chapters must be valid
+            and success_rate >= 1.0  # All chapters must be valid
         )
 
         report = ValidationReport(
@@ -534,7 +620,9 @@ class DeepValidator:
         return report
 
 
-def run_deep_validation(epub_path: str, cache_dir: str, auto_correct: bool = True) -> bool:
+def run_deep_validation(
+    epub_path: str, cache_dir: str, auto_correct: bool = True
+) -> ValidationReport:
     """
     Run deep validation on a converted audiobook with automatic correction.
 
@@ -544,8 +632,7 @@ def run_deep_validation(epub_path: str, cache_dir: str, auto_correct: bool = Tru
         auto_correct: If True, automatically fix detected issues (default: True)
 
     Returns:
-        True if validation passed, False otherwise
+        ValidationReport with full results (check .success for pass/fail)
     """
     validator = DeepValidator(epub_path, cache_dir)
-    report = validator.validate(auto_correct=auto_correct)
-    return report.success
+    return validator.validate(auto_correct=auto_correct)

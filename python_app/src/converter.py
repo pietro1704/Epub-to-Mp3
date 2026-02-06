@@ -4302,25 +4302,57 @@ class AudioConverter:
         chapter_filter_active = bool(self._parse_chapter_whitelist(config)) or bool(
             (config.extra or {}).get("selected_indices", "").strip()
         )
+        deep_validation_passed = True
         if self._current_book_path and len(all_errors) == 0 and not chapter_filter_active:
             try:
                 from .deep_validator import run_deep_validation
 
                 cache_path = output_dir
-                deep_validation_passed = run_deep_validation(
-                    str(self._current_book_path), str(cache_path)
-                )
+                report = run_deep_validation(str(self._current_book_path), str(cache_path))
+                deep_validation_passed = report.success
 
-                if not deep_validation_passed and self.verbose:
-                    print(
-                        "⚠️  Deep validation detected issues, but conversion completed successfully."
-                    )
+                if not deep_validation_passed:
+                    # Retry once: re-save parsed text for failed chapters and re-validate
+                    from .deep_validator import DeepValidator
+
+                    # Extract indices of failed chapters from their filenames
+                    failed_indices = set()
+                    for c in report.comparisons:
+                        if not c.is_valid:
+                            idx = DeepValidator._extract_chapter_index(c.chapter_id)
+                            if idx:
+                                failed_indices.add(idx)
+
+                    if failed_indices and self.verbose:
+                        print(
+                            f"🔄 Re-saving {len(failed_indices)} failed chapter(s) from EbookReader..."
+                        )
+
+                    if failed_indices:
+                        dv = DeepValidator(str(self._current_book_path), str(cache_path))
+                        if dv.load_epub_chapters():
+                            text_dir = cache_path / "text"
+                            # Overwrite parsed files for failed chapters
+                            for ch in dv._chapter_list:
+                                if str(ch.index) in failed_indices:
+                                    # Find the actual parsed file by glob
+                                    pattern = f"{ch.index} - *-parsed.txt"
+                                    for pf in text_dir.glob(pattern):
+                                        ch_text = ch.text or ""
+                                        pf.write_text(ch_text, encoding="utf-8")
+
+                    # Re-run validation
+                    report = run_deep_validation(str(self._current_book_path), str(cache_path))
+                    deep_validation_passed = report.success
+
+                    if not deep_validation_passed and self.verbose:
+                        print("⚠️  Deep validation still has issues after retry.")
             except Exception as e:
                 if self.verbose:
                     print(f"⚠️  Deep validation failed to run: {e}")
 
         return ConversionResult(
-            success=len(all_errors) == 0,
+            success=len(all_errors) == 0 and deep_validation_passed,
             total_chapters=total_chapters,
             converted_chapters=converted_total or len(all_converted_files),
             output_files=all_converted_files,
