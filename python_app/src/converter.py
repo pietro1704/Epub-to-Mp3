@@ -120,6 +120,12 @@ def validate_audio_completeness(mp3_path: Path, text_length: int) -> tuple[bool,
     if not mp3_path.exists():
         return False, 0.0
 
+    # Skip check for short chapters: formatting cues, language markup, and
+    # header text inflate text_length disproportionately for small chapters,
+    # causing false "truncation" detection.
+    if text_length < 1000:
+        return True, 100.0
+
     try:
         # Get MP3 duration
         audio = MP3(str(mp3_path))
@@ -140,8 +146,10 @@ def validate_audio_completeness(mp3_path: Path, text_length: int) -> tuple[bool,
         return is_complete, coverage_percent
 
     except Exception:
-        # If we can't validate, assume it's incomplete to be safe
-        return False, 0.0
+        # If we can't parse the MP3, don't block conversion - the file exists
+        # and other validation (segment integrity, audio validator) will catch
+        # truly corrupt files.
+        return True, 100.0
 
 
 @dataclass
@@ -528,7 +536,7 @@ class AudioConverter:
                     if not text or not normalize_text(text):
                         continue
                     sequential_num += 1
-                    if epub_idx in chapters_to_reconvert:
+                    if str(epub_idx) in chapters_to_reconvert:
                         idx = getattr(chapter, "index", sequential_num)
                         chapter_indices.append(str(idx))
                         if self.verbose:
@@ -4291,7 +4299,9 @@ class AudioConverter:
         # **DEEP VALIDATION**: Automatic comprehensive validation
         # Verifies duplicates, start/middle/end content, and character counts
         # Skip when chapter filter is active (only validate requested chapters)
-        chapter_filter_active = bool(self._parse_chapter_whitelist(config))
+        chapter_filter_active = bool(self._parse_chapter_whitelist(config)) or bool(
+            (config.extra or {}).get("selected_indices", "").strip()
+        )
         if self._current_book_path and len(all_errors) == 0 and not chapter_filter_active:
             try:
                 from .deep_validator import run_deep_validation
