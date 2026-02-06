@@ -325,6 +325,119 @@ def _sample_edges(text: str, size: int = 180) -> Tuple[str, str]:
     return normalized[:size], normalized[-size:]
 
 
+def _extract_samples(text: str, sample_size: int = 200) -> Tuple[str, str, str]:
+    """Extract start, middle, end samples from normalized text."""
+    norm = normalize_text(text)
+    if not norm:
+        return "", "", ""
+    start = norm[:sample_size]
+    mid_pos = len(norm) // 2
+    middle = norm[max(0, mid_pos - sample_size // 2) : mid_pos + sample_size // 2]
+    end = norm[-sample_size:]
+    return start, middle, end
+
+
+def _truncate_for_display(text: str, max_len: int = 78) -> str:
+    """Truncate text for display with ellipsis."""
+    if len(text) <= max_len:
+        return text
+    return text[: max_len - 3] + "..."
+
+
+def _samples_match(epub_sample: str, other_sample: str, other_full: str) -> bool:
+    """Check if epub sample matches: positional word overlap or containment."""
+    if not epub_sample:
+        return True
+    epub_words = set(epub_sample.lower().split())
+    other_words = set(other_sample.lower().split())
+    if epub_words and other_words:
+        overlap = len(epub_words & other_words) / max(len(epub_words), len(other_words))
+        if overlap >= 0.8:
+            return True
+    # Containment fallback
+    return epub_sample.lower() in other_full.lower()
+
+
+def print_chapter_detail(
+    chapter_num: int,
+    title: str,
+    epub_text: str,
+    parsed_text: str | None,
+    pretts_text: str | None,
+    mp3_file: Path | None,
+    validator: "AudioValidator",
+) -> None:
+    """Print detailed start/mid/end text comparison for a chapter."""
+    epub_norm = normalize_text(epub_text) if epub_text else ""
+    parsed_norm = normalize_text(parsed_text) if parsed_text else ""
+    pretts_norm = normalize_text(strip_formatting_cues(pretts_text)) if pretts_text else ""
+
+    epub_samples = _extract_samples(epub_text) if epub_text else ("", "", "")
+    parsed_samples = _extract_samples(parsed_text) if parsed_text else ("", "", "")
+    pretts_samples = _extract_samples(pretts_text) if pretts_text else ("", "", "")
+
+    short_title = _truncate_for_display(title, 60)
+    print(f"  📖 Cap {chapter_num} ({short_title}) [{len(epub_norm):,} chars]")
+
+    section_names = ["INÍCIO", "MEIO", "FINAL"]
+    connectors = ["├─", "├─", "├─"]
+
+    for i, section in enumerate(section_names):
+        epub_s = epub_samples[i]
+        parsed_s = parsed_samples[i]
+        pretts_s = pretts_samples[i]
+
+        connector = connectors[i]
+        print(f"  {connector} {section}:")
+
+        epub_disp = _truncate_for_display(epub_s)
+        print(f'  │  EPUB:   "{epub_disp}"')
+
+        if parsed_text:
+            parsed_disp = _truncate_for_display(parsed_s)
+            p_match = _samples_match(epub_s, parsed_s, parsed_norm)
+            print(f'  │  Parsed: "{parsed_disp}"')
+        else:
+            p_match = False
+            print("  │  Parsed: (não encontrado)")
+
+        if pretts_text:
+            pretts_disp = _truncate_for_display(pretts_s)
+            t_match = _samples_match(epub_s, pretts_s, pretts_norm)
+            print(f'  │  PreTTS: "{pretts_disp}"')
+        else:
+            t_match = True  # No pre-tts to compare
+            print("  │  PreTTS: (não encontrado)")
+
+        if p_match and t_match:
+            print("  │  Result: ✅ Correspondem")
+        elif p_match:
+            print("  │  Result: ⚠️  PreTTS diverge")
+        elif t_match:
+            print("  │  Result: ⚠️  Parsed diverge")
+        else:
+            print("  │  Result: ❌ Não correspondem")
+
+    # MP3 info
+    if mp3_file and mp3_file.exists():
+        mp3_size_mb = mp3_file.stat().st_size / (1024 * 1024)
+        try:
+            duration = validator.get_audio_duration(mp3_file)
+        except Exception:
+            duration = None
+        if isinstance(duration, (int, float)) and duration > 0:
+            duration_min = duration / 60
+            chars_per_min = int(len(epub_norm) / duration_min) if duration_min > 0 else 0
+            print(
+                f"  └─ 🎵 MP3: {mp3_size_mb:.1f} MB | {duration_min:.1f} min | ~{chars_per_min} chars/min"
+            )
+        else:
+            print(f"  └─ 🎵 MP3: {mp3_size_mb:.1f} MB | duração indisponível")
+    else:
+        print("  └─ 🎵 MP3: (não encontrado)")
+    print()
+
+
 def strip_formatting_cues(text: str) -> str:
     """Remove audible formatting cue phrases from pre-TTS text."""
     if not text:
@@ -482,6 +595,9 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
         start_ok = True
         middle_ok = True
         end_ok = True
+        # Track loaded texts for detail display
+        _parsed_text_for_detail: str | None = None
+        _pretts_text_for_detail: str | None = None
         text_pct = 100.0
         norm_title = normalize_title_key(_strip_numeric_prefix(chapter_title))
         leading_title = normalized_leading_text(epub_text)
@@ -529,6 +645,7 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
             # Check parsed.txt vs EPUB
             if "parsed" in text_files:
                 parsed_text = text_files["parsed"].read_text(encoding="utf-8")
+                _parsed_text_for_detail = parsed_text
                 parsed_norm = normalize_text(parsed_text)
 
                 if contains_html_markup(parsed_text):
@@ -596,6 +713,7 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
             if "parsed" in text_files and "pre_tts" in text_files:
                 parsed_text = text_files["parsed"].read_text(encoding="utf-8")
                 pretts_text = text_files["pre_tts"].read_text(encoding="utf-8")
+                _pretts_text_for_detail = pretts_text
                 if contains_html_markup(pretts_text):
                     stats["text_mismatch"] += 1
                     status = "❌"
@@ -736,6 +854,17 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
 
         print(
             f"{chapter_num:<4} {status:<8} {imf_status:<7} {text_pct:>5.1f}% {epub_len:<7} {parsed_len:<7} {pretts_len:<7} {mp3_size:<7} {issue_desc}"
+        )
+
+        # Detailed text comparison display
+        print_chapter_detail(
+            chapter_num,
+            chapter_title,
+            epub_text,
+            _parsed_text_for_detail,
+            _pretts_text_for_detail,
+            mp3_file,
+            validator,
         )
 
     # Summary
