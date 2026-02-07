@@ -3148,12 +3148,11 @@ class AudioConverter:
         output_dir = self._setup_output_directory(config)
         self._last_output_dir = output_dir
 
-        # **EARLY VALIDATION**: Check if previous conversion exists and validate before reconverting
-        # This must happen BEFORE clearing cache and BEFORE processing chapters
-        await self._auto_validate_output(output_dir, stage="initial")
-
         # Honrar --clear-cache/clearCache: remove cache e artefatos do livro antes de continuar
+        # Must run BEFORE early validation so we don't validate stale output
         if getattr(config, "clear_cache", False):
+            if self.verbose:
+                print("🗑️  --clear-cache: removendo cache e output anteriores...")
             try:
                 if self._current_book_path:
                     self.cache_manager.clear_cache(self._current_book_path, title=reader.title)
@@ -3165,13 +3164,14 @@ class AudioConverter:
             try:
                 if output_dir.exists():
                     shutil.rmtree(output_dir, ignore_errors=True)
-                parent_dir = output_dir.parent if output_dir.parent else None
-                if parent_dir and parent_dir.exists():
-                    shutil.rmtree(parent_dir, ignore_errors=True)
                 output_dir = self._setup_output_directory(config)
+                self._last_output_dir = output_dir
             except Exception as exc:
                 if self.verbose:
                     print(f"⚠️ Falha ao limpar saída anterior: {exc}")
+        else:
+            # Only validate previous output when NOT clearing cache
+            await self._auto_validate_output(output_dir, stage="initial")
 
         # **CLEANUP**: Remove duplicate files (dup-1, dup-2, etc.) from output and cache
         if self.verbose:
