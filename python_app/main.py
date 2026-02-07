@@ -3063,8 +3063,8 @@ class ConverterApplication:
             overrides["channels"] = channels
 
         # Validation settings
-        if getattr(args, "verify_transcription", False):
-            overrides["verify_transcription"] = True
+        if getattr(args, "verify_transcription", None) is not None:
+            overrides["verify_transcription"] = bool(args.verify_transcription)
         if getattr(args, "transcription_model", None):
             overrides["transcription_model"] = str(args.transcription_model)
         if getattr(args, "validation_language", None):
@@ -3406,7 +3406,15 @@ def _add_conversion_arguments(
     parser.add_argument(
         "--verify-transcription",
         action="store_true",
-        help="Enable deep validation via speech-to-text transcription (slow, requires openai-whisper)",
+        default=None,
+        dest="verify_transcription",
+        help="Enable deep validation via speech-to-text transcription (enabled by default, requires faster-whisper)",
+    )
+    parser.add_argument(
+        "--no-verify-transcription",
+        action="store_false",
+        dest="verify_transcription",
+        help="Disable speech-to-text transcription verification",
     )
     parser.add_argument(
         "--validate-during-conversion",

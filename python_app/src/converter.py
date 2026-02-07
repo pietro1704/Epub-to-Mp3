@@ -449,6 +449,101 @@ class AudioConverter:
             )
 
             if not has_critical_problems:
+                # **TRANSCRIPTION VERIFICATION**: Final gate via speech-to-text
+                if getattr(config, "verify_transcription", False):
+                    try:
+                        from .transcription_verifier import TranscriptionVerifier
+                        from .transcription_verifier import is_available as _whisper_ok
+
+                        if _whisper_ok():
+                            if (
+                                not hasattr(self, "_transcription_verifier")
+                                or self._transcription_verifier is None
+                            ):
+                                # Don't force language — let Whisper auto-detect per chapter
+                                # (forced language fails on multilingual content)
+                                self._transcription_verifier = TranscriptionVerifier(
+                                    model_size=getattr(config, "transcription_model", "medium"),
+                                    language=None,
+                                )
+
+                            if self.verbose:
+                                print("🔍 Verificação de transcrição (faster-whisper)...")
+
+                            transcription_failures = []
+
+                            def _find_pretts(mp3_stem: str) -> Optional[Path]:
+                                """Find pre-tts.txt matching MP3 by best title overlap.
+
+                                Searches output_dir/text/ first (filenames match MP3),
+                                then cache_dir/text/ as fallback.
+                                """
+
+                                def _title(name: str) -> str:
+                                    parts = name.split(" - ", 1)
+                                    return parts[1].strip() if len(parts) > 1 else name
+
+                                mp3_title = _title(mp3_stem)
+                                search_dirs = []
+                                if (output_dir / "text").exists():
+                                    search_dirs.append(output_dir / "text")
+                                if cache_dir and (cache_dir / "text").exists():
+                                    search_dirs.append(cache_dir / "text")
+
+                                best_match = None
+                                best_overlap = 0
+                                for text_dir in search_dirs:
+                                    for candidate in text_dir.glob("*-pre-tts.txt"):
+                                        cache_title = _title(candidate.stem.replace("-pre-tts", ""))
+                                        overlap = 0
+                                        for a, b in zip(mp3_title, cache_title):
+                                            if a == b:
+                                                overlap += 1
+                                            else:
+                                                break
+                                        if overlap > best_overlap and overlap >= 20:
+                                            best_overlap = overlap
+                                            best_match = candidate
+                                return best_match
+
+                            for mp3_file in sorted(output_dir.glob("*.mp3")):
+                                pre_tts_path = _find_pretts(mp3_file.stem)
+
+                                if pre_tts_path and pre_tts_path.exists():
+                                    original_text = pre_tts_path.read_text(encoding="utf-8")
+                                    vr = self._transcription_verifier.verify_chapter(
+                                        mp3_file, original_text
+                                    )
+                                    if not vr.passed:
+                                        chapter_id = (
+                                            mp3_file.stem.split(" - ")[0].strip()
+                                            if " - " in mp3_file.stem
+                                            else mp3_file.stem
+                                        )
+                                        transcription_failures.append(chapter_id)
+                                        threshold = (
+                                            self._transcription_verifier.SIMILARITY_THRESHOLD
+                                        )
+                                        print(
+                                            f"❌ {mp3_file.name}: transcrição {vr.similarity_score:.1%} < {threshold:.0%}"
+                                        )
+                                        # Delete bad MP3 so retry loop picks it up
+                                        mp3_file.unlink(missing_ok=True)
+                                    else:
+                                        print(f"✅ {mp3_file.name}: {vr.similarity_score:.1%}")
+
+                            if transcription_failures:
+                                if self.verbose:
+                                    print(
+                                        f"🔄 {len(transcription_failures)} capítulo(s) falharam na transcrição, reconvertendo..."
+                                    )
+                                # Don't return True — fall through to retry
+                                last_problem_count = len(transcription_failures)
+                                continue
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"⚠️ Transcription verification error: {e}")
+
                 if self.verbose:
                     print("✅ Validação passou! Conversão 100% correta.")
                 return True
@@ -5133,7 +5228,11 @@ class AudioConverter:
                                 if cache_root:
                                     chunk_base = Path(cache_root) / "streams" / "cli"
                             if chunk_base:
-                                chunk_root = chunk_base / f"chapter_{progress_index:04d}"
+                                # Use chapter's unique index label (e.g. "1.0", "1.1") for dir name
+                                # to avoid collisions between sub-chapters in parallel mode
+                                _ch_label = self._chapter_index_label(chapter, idx + 1)
+                                _ch_label_safe = _ch_label.replace(".", "_")
+                                chunk_root = chunk_base / f"chapter_{_ch_label_safe}"
                                 try:
                                     # **RESUME**: Don't delete existing chunks - Edge engine will resume
                                     chunk_root.mkdir(parents=True, exist_ok=True)
@@ -6894,6 +6993,68 @@ class AudioConverter:
                     except Exception as e:
                         if self.verbose:
                             print(f"⚠️ Chapter {index} validation error: {e}")
+
+                # **TRANSCRIPTION VERIFICATION**: Verify audio content via speech-to-text
+                if (
+                    getattr(config, "verify_transcription", False)
+                    and converted
+                    and converted.exists()
+                ):
+                    try:
+                        from .transcription_verifier import TranscriptionVerifier
+                        from .transcription_verifier import is_available as _whisper_available
+
+                        if _whisper_available():
+                            if (
+                                not hasattr(self, "_transcription_verifier")
+                                or self._transcription_verifier is None
+                            ):
+                                # Don't force language — let Whisper auto-detect per chapter
+                                self._transcription_verifier = TranscriptionVerifier(
+                                    model_size=getattr(config, "transcription_model", "medium"),
+                                    language=None,
+                                )
+
+                            status_holder["text"] = "🔍 Verificando transcrição..."
+                            self._announce_stage(index, chapter_label, status_holder["text"])
+
+                            vr = self._transcription_verifier.verify_chapter(
+                                converted, chapter_payload
+                            )
+
+                            if vr.passed:
+                                if self.verbose:
+                                    print(
+                                        f"✅ Chapter {index} transcrição OK: "
+                                        f"{vr.similarity_score:.1%} similaridade"
+                                    )
+                            else:
+                                print(
+                                    f"❌ Chapter {index} transcrição FALHOU: "
+                                    f"{vr.similarity_score:.1%} similaridade (mínimo {self._transcription_verifier.SIMILARITY_THRESHOLD:.0%})"
+                                )
+                                if self.verbose:
+                                    print(f"   {vr.details}")
+                                # Delete bad audio and signal failure for retry
+                                converted.unlink(missing_ok=True)
+                                status_holder["text"] = (
+                                    f"❌ Transcrição diverge: {vr.similarity_score:.1%} similaridade"
+                                )
+                                self._announce_stage(index, chapter_label, status_holder["text"])
+                                outcome = ChapterConversionOutcome(
+                                    index=index,
+                                    name=chapter_label,
+                                    path=None,
+                                    error=status_holder["text"],
+                                )
+                                return None if legacy_mode else outcome
+                        elif self.verbose:
+                            print(
+                                "⚠️ faster-whisper não instalado, pulando verificação de transcrição"
+                            )
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"⚠️ Chapter {index} transcription verification error: {e}")
 
                 status_holder["text"] = self.loc.t("status_complete")
                 self._announce_stage(index, chapter_label, status_holder["text"])

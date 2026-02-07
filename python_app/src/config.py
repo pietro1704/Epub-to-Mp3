@@ -67,8 +67,8 @@ class ConversionConfig:
     speak_formatting_cues: bool = True
     formatting_locale: str = "pt"
     # Validation settings
-    verify_transcription: bool = False
-    transcription_model: str = "small"
+    verify_transcription: bool = True
+    transcription_model: str = "medium"
     validation_language: Optional[str] = None  # Language for transcription validation
 
     def __post_init__(self) -> None:
@@ -680,7 +680,7 @@ class AppConfig:
         piper_max_procs = kwargs.pop("piper_max_procs", None)
 
         # Validation settings
-        verify_transcription = bool(kwargs.pop("verify_transcription", False))
+        verify_transcription = bool(kwargs.pop("verify_transcription", True))
         transcription_model = str(kwargs.pop("transcription_model", "small"))
         validation_language = kwargs.pop("validation_language", None)
         validate_text = bool(kwargs.pop("validate_text", True))

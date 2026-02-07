@@ -41,6 +41,9 @@ langdetect>=1.0.9
 static-ffmpeg
 mutagen>=1.47.0
 
+# Audio Verification (speech-to-text)
+faster-whisper>=1.0.0
+
 # Data/Validation
 pydantic>=2.10.0
 numpy>=1.24.0,<2.0.0
