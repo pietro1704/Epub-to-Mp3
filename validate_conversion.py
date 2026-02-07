@@ -512,9 +512,18 @@ def compare_texts(original: str, cached: str) -> Tuple[bool, int, str]:
         return False, diff_chars, f"Added {-diff_chars} chars to cached"
 
 
-def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Path | None = None):
+def validate_book(
+    epub_path: Path,
+    output_dir: Path | None = None,
+    cache_dir: Path | None = None,
+    duration_tolerance: float | None = None,
+):
     """
     Validate complete book conversion.
+
+    Args:
+        duration_tolerance: Override for MP3 duration tolerance (0.0-1.0+).
+            If None, uses adaptive defaults (0.40-0.50).
     """
     print("\n" + "=" * 70)
     print("🔍 VALIDAÇÃO COMPLETA DE CONVERSÃO EPUB → MP3")
@@ -796,7 +805,10 @@ def validate_book(epub_path: Path, output_dir: Path | None = None, cache_dir: Pa
                 if pretts_len >= 5000:
                     # Increased tolerance: Edge-TTS speed varies significantly
                     # Portuguese text + formatting cues make duration estimation less accurate
-                    tolerance = 0.50 if pretts_len < 10000 else 0.40
+                    if duration_tolerance is not None:
+                        tolerance = duration_tolerance
+                    else:
+                        tolerance = 0.50 if pretts_len < 10000 else 0.40
                     result = validator.validate_duration(pretts_text, mp3_file, tolerance=tolerance)
 
                     if not result.is_valid:

@@ -412,9 +412,15 @@ class AudioConverter:
         consecutive_failures = 0
         last_problem_count = float("inf")
 
+        # Progressive duration tolerance: increase each retry to handle
+        # Edge-TTS reading speed variations (Portuguese ~100-120 WPM, not 150)
+        duration_tolerances = [None, 0.60, 0.70, 0.80, 0.90, 1.00, 1.20, 1.50, 2.00, 2.50]
+
         for attempt in range(1, max_retries + 1):
+            dur_tol = duration_tolerances[min(attempt - 1, len(duration_tolerances) - 1)]
             if self.verbose:
-                print(f"\n🔍 Validação (tentativa {attempt}/{max_retries})...")
+                tol_str = f" (duration tolerance: {dur_tol:.0%})" if dur_tol else ""
+                print(f"\n🔍 Validação (tentativa {attempt}/{max_retries}){tol_str}...")
 
             # Suprimir mensagens de erro durante auto-fix
             import os
@@ -423,15 +429,22 @@ class AudioConverter:
             os.environ["SUPPRESS_VALIDATION_ERRORS"] = "1"
 
             try:
-                stats, issues = validate_book(epub_path, output_dir, cache_dir=cache_dir)
+                stats, issues = validate_book(
+                    epub_path, output_dir, cache_dir=cache_dir, duration_tolerance=dur_tol
+                )
             finally:
                 os.environ["SUPPRESS_VALIDATION_ERRORS"] = old_verbose
 
-            # Verifica se passou
+            # Verifica se passou (duration_mismatch also critical)
             has_critical_problems = bool(
                 any(
                     stats.get(key, 0) > 0
-                    for key in ("text_mismatch", "parsed_pretts_diff", "missing_mp3")
+                    for key in (
+                        "text_mismatch",
+                        "parsed_pretts_diff",
+                        "missing_mp3",
+                        "duration_mismatch",
+                    )
                 )
             )
 
@@ -475,11 +488,15 @@ class AudioConverter:
                 print(f"   Capítulos: {', '.join(map(str, problem_chapters[:10]))}")
 
             # Categorizar problemas por tipo
-            missing_mp3_only = self._categorize_problems(issues, problem_chapters)
+            missing_mp3_only, duration_only = self._categorize_problems(issues, problem_chapters)
 
             if missing_mp3_only and self.verbose:
                 print(
                     f"   💡 {len(missing_mp3_only)} capítulo(s) apenas com MP3 faltante - síntese rápida"
+                )
+            if duration_only and self.verbose:
+                print(
+                    f"   ⏱️  {len(duration_only)} capítulo(s) apenas com duração incorreta - será retentado com tolerância maior"
                 )
 
             # Reconverte os capítulos problemáticos
@@ -492,13 +509,21 @@ class AudioConverter:
                     if success and self.verbose:
                         print(f"   ✅ {len(missing_mp3_only)} MP3(s) gerado(s) com sucesso")
 
+                # Duration-only chapters: re-synthesize MP3 (may get slightly different timing)
+                if duration_only and attempt <= 2:
+                    # Only re-synthesize on first 2 attempts; after that rely on tolerance increase
+                    if self.verbose:
+                        print(
+                            f"   🔄 Re-sintetizando {len(duration_only)} MP3(s) com duração incorreta..."
+                        )
+                    await self._reconvert_missing_mp3s(output_dir, cache_dir, duration_only, issues)
+
                 # Para os demais, reconverter capítulo completo
-                chapters_to_reconvert = [
-                    ch for ch in problem_chapters if ch not in missing_mp3_only
-                ]
+                skip_set = set(missing_mp3_only) | set(duration_only)
+                chapters_to_reconvert = [ch for ch in problem_chapters if ch not in skip_set]
 
                 if not chapters_to_reconvert:
-                    continue  # Apenas MP3s faltantes, já tratados
+                    continue  # Apenas MP3s/duration, já tratados
 
                 reader = EbookReader(str(epub_path))
 
@@ -584,14 +609,15 @@ class AudioConverter:
             )
         return False
 
-    def _categorize_problems(self, issues: list, problem_chapters: list) -> list:
+    def _categorize_problems(self, issues: list, problem_chapters: list) -> tuple[list, list]:
         """
         Categoriza problemas para decidir estratégia de reconversão.
 
         Returns:
-            Lista de capítulos que têm APENAS MP3 faltante (texto OK)
+            Tuple of (missing_mp3_only, duration_only) chapter lists
         """
         missing_mp3_only = []
+        duration_only = []
 
         for chapter_num in problem_chapters:
             # Verificar se tem apenas MP3 faltante
@@ -608,8 +634,11 @@ class AudioConverter:
 
             if has_missing_mp3 and not has_text_issues:
                 missing_mp3_only.append(chapter_num)
+            elif not has_missing_mp3 and not has_text_issues:
+                # Duration-only issue (text and MP3 exist but duration off)
+                duration_only.append(chapter_num)
 
-        return missing_mp3_only
+        return missing_mp3_only, duration_only
 
     async def _reconvert_missing_mp3s(
         self, output_dir: Path, cache_dir: Optional[Path], chapter_nums: list, issues: list
