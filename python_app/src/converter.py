@@ -472,10 +472,14 @@ class AudioConverter:
             current_problem_count = len(problem_chapters)
             if current_problem_count >= last_problem_count:
                 consecutive_failures += 1
-                if consecutive_failures >= 3:
+                # With progressive tolerance, allow more retries for duration-only issues
+                _, duration_only_check = self._categorize_problems(issues, problem_chapters)
+                all_duration_only = len(duration_only_check) == current_problem_count
+                max_consecutive = 6 if all_duration_only else 3
+                if consecutive_failures >= max_consecutive:
                     if self.verbose:
                         print(
-                            f"❌ Erro crítico: travado com {current_problem_count} problemas após 3 tentativas. Abortando."
+                            f"❌ Erro crítico: travado com {current_problem_count} problemas após {max_consecutive} tentativas. Abortando."
                         )
                     return False
             else:

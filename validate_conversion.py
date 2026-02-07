@@ -818,6 +818,9 @@ def validate_book(
                         issue_desc = (
                             issue_desc + f" Duration({result.duration_diff_percent:+.0f}%)"
                         ).strip()
+                        issues.append(
+                            f"Chapter {chapter_num}: Duration mismatch ({result.duration_diff_percent:+.0f}%)"
+                        )
 
             try:
                 base_hash = chapter_text_hash.get(chapter_num)
