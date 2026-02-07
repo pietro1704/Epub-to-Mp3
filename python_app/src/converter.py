@@ -822,7 +822,7 @@ class AudioConverter:
             if max_retries is None:
                 import os
 
-                max_retries = int(os.getenv("MAX_VALIDATION_RETRIES", "5"))
+                max_retries = int(os.getenv("MAX_VALIDATION_RETRIES", "8"))
 
             # Use retry-based validation if auto_fix is enabled
             if getattr(config, "auto_fix_output", True) and not self._auto_fix_guard:

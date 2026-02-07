@@ -54,7 +54,7 @@ def find_cache_dir(book_path: Path) -> Path:
     raise FileNotFoundError(f"Cache directory not found for {book_path.name}")
 
 
-def load_epub_chapters(epub_path: Path) -> List[Tuple[int, str, str]]:
+def load_epub_chapters(epub_path: Path) -> List[Tuple[object, str, str]]:
     """Load all chapters from EPUB."""
     print(f"📖 Reading EPUB: {epub_path.name}")
     reader = EbookReader(str(epub_path))
@@ -82,13 +82,16 @@ def load_epub_chapters(epub_path: Path) -> List[Tuple[int, str, str]]:
     for i, chapter in enumerate(chapters, 1):
         # Use structured text to match cached parsed content
         text = chapter.text or ""
-        result.append((i, chapter.name, text))
+        # Use chapter.index (the label used in cache filenames, e.g. "4.1", "5.3")
+        # instead of sequential i, so validation matches cache file names
+        label = chapter.index if chapter.index is not None else i
+        result.append((label, chapter.name, text))
 
     print(f"   ✅ Loaded {len(result)} chapters from EPUB")
     return result
 
 
-def find_text_files(text_dirs: List[Path], chapter_num: int) -> Dict[str, Path]:
+def find_text_files(text_dirs: List[Path], chapter_num) -> Dict[str, Path]:
     """Find parsed and pre-tts text files for a chapter by numeric prefix."""
     for text_dir in text_dirs:
         if not text_dir.exists():
@@ -582,7 +585,7 @@ def validate_book(
     issues = []
     validator = AudioValidator()
     text_hashes: Dict[str, List[int]] = {}
-    chapter_text_hash: Dict[int, str] = {}
+    chapter_text_hash: Dict[object, str] = {}
     audio_hashes: Dict[str, Dict[str, object]] = {}
 
     print(
@@ -591,13 +594,13 @@ def validate_book(
     print("-" * 90)
 
     sequential_num = 0  # Track sequential non-empty chapter number
-    for epub_index, (chapter_num, chapter_title, epub_text) in enumerate(epub_chapters, 1):
+    for epub_index, (chapter_label, chapter_title, epub_text) in enumerate(epub_chapters, 1):
         # Skip empty chapters (e.g., cover/blank pages) but keep index
         if not epub_text or not normalize_text(epub_text):
             continue
         sequential_num += 1
-        # Use epub_index (original position) for chapter identification
-        chapter_num = epub_index
+        # Use chapter_label (e.g. "4.1", "5.3") which matches cache filenames
+        chapter_num = chapter_label
         status = "✅"
         issue_desc = ""
         # Track start/middle/end validation
