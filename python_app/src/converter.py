@@ -77,7 +77,9 @@ EDGE_SLOW_RATIO_THRESHOLD = _env_float("EDGE_SLOW_RATIO_THRESHOLD", 1.5)  # More
 EDGE_SAFE_CHUNK_CHARS = _env_int("EDGE_SAFE_CHUNK_CHARS", 4000)
 EDGE_SAFE_MAX_SEGMENT_SECONDS = _env_float("EDGE_SAFE_MAX_SEGMENT_SECONDS", 300.0)
 EDGE_SAFE_CHAPTER_PARALLEL = _env_int("EDGE_SAFE_CHAPTER_PARALLEL", 1)
-EDGE_SAFE_TIMEOUT_MAX = _env_float("EDGE_SAFE_TIMEOUT_MAX", 900.0)  # Safer for long Edge chapters
+EDGE_SAFE_TIMEOUT_MAX = _env_float(
+    "EDGE_SAFE_TIMEOUT_MAX", 3600.0
+)  # Up to 1h for very long chapters
 # Three-tier fallback system: Edge multilingual → Edge monolingual → Piper
 EDGE_MONOLINGUAL_THRESHOLD = _env_int(
     "EDGE_MONOLINGUAL_THRESHOLD", 3
@@ -5137,11 +5139,11 @@ class AudioConverter:
                     max_timeout = 600.0  # Padrão: até 10 min
                     if current_engine_label == "edge":
                         if chapter_chars >= 80000:
-                            max_timeout = 2400.0
+                            max_timeout = 3600.0  # 1h for very large chapters
                         elif chapter_chars >= 50000:
-                            max_timeout = 1800.0
+                            max_timeout = 2400.0
                         elif chapter_chars >= 30000:
-                            max_timeout = 1200.0
+                            max_timeout = 1800.0
                         if edge_stable_mode:
                             max_timeout = max(max_timeout, 3600.0)
                     timeout_seconds = min(timeout_seconds, max_timeout)
@@ -5157,7 +5159,10 @@ class AudioConverter:
                     ):
                         safe_timeout = (edge_state.get("safe_profile") or {}).get("timeout_max")
                         if safe_timeout:
-                            timeout_seconds = min(timeout_seconds, int(safe_timeout))
+                            # Don't let safe_timeout reduce below size-based max_timeout
+                            timeout_seconds = min(
+                                timeout_seconds, max(int(safe_timeout), int(max_timeout))
+                            )
                     timeout_seconds = int(timeout_seconds)
                     stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "60") or "60")
                     if stall_seconds < 0:
