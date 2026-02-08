@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import difflib
 import re
+import threading
+import time
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
@@ -145,19 +147,93 @@ class TranscriptionVerifier:
             )
         return self._model
 
-    def transcribe(self, audio_path: Path) -> str:
-        """Transcreve um arquivo de áudio para texto."""
+    # Timeout for transcribing a single file (seconds)
+    TRANSCRIBE_TIMEOUT = 600  # 10 minutes
+
+    # Watchdog interval: if no new segment arrives within this time, consider it stuck
+    SEGMENT_STALL_TIMEOUT = 120  # 2 minutes per segment
+
+    def transcribe(self, audio_path: Path, verbose: bool = True) -> str:
+        """Transcreve um arquivo de áudio para texto.
+
+        Includes a watchdog that detects stalls and a global timeout.
+        Logs progress segment-by-segment when verbose=True.
+        """
         model = self._ensure_model()
         kwargs = {}
         if self._language:
             kwargs["language"] = self._language
-        segments, _info = model.transcribe(
+        segments_gen, info = model.transcribe(
             str(audio_path),
             beam_size=5,
             vad_filter=True,
             **kwargs,
         )
-        return " ".join(seg.text.strip() for seg in segments)
+
+        if verbose:
+            detected_lang = getattr(info, "language", "?")
+            duration = getattr(info, "duration", 0)
+            print(
+                f"   🎧 Transcrevendo: {audio_path.name} ({duration:.0f}s, idioma={detected_lang})",
+                flush=True,
+            )
+
+        texts: List[str] = []
+        last_activity = time.monotonic()
+        start_time = last_activity
+        stalled = False
+
+        # Watchdog thread: checks for stalls
+        stop_watchdog = threading.Event()
+
+        def _watchdog():
+            nonlocal stalled
+            while not stop_watchdog.is_set():
+                elapsed_since_activity = time.monotonic() - last_activity
+                total_elapsed = time.monotonic() - start_time
+                if total_elapsed > self.TRANSCRIBE_TIMEOUT:
+                    print(
+                        f"   ⏰ Timeout global ({self.TRANSCRIBE_TIMEOUT}s) atingido, abortando transcrição",
+                        flush=True,
+                    )
+                    stalled = True
+                    return
+                if elapsed_since_activity > self.SEGMENT_STALL_TIMEOUT:
+                    print(
+                        f"   ⏰ Nenhum segmento há {elapsed_since_activity:.0f}s, possível travamento",
+                        flush=True,
+                    )
+                    stalled = True
+                    return
+                stop_watchdog.wait(10)
+
+        watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
+        watchdog_thread.start()
+
+        try:
+            seg_count = 0
+            for seg in segments_gen:
+                if stalled:
+                    break
+                last_activity = time.monotonic()
+                seg_count += 1
+                text = seg.text.strip()
+                if text:
+                    texts.append(text)
+                # Log progress every 20 segments
+                if verbose and seg_count % 20 == 0:
+                    elapsed = time.monotonic() - start_time
+                    print(f"   📝 {seg_count} segmentos transcritos ({elapsed:.0f}s)", flush=True)
+        finally:
+            stop_watchdog.set()
+            watchdog_thread.join(timeout=5)
+
+        if verbose:
+            elapsed = time.monotonic() - start_time
+            status = "⚠️ parcial (timeout)" if stalled else "✅"
+            print(f"   {status} {seg_count} segmentos em {elapsed:.1f}s", flush=True)
+
+        return " ".join(texts)
 
     MULTILINGUAL_THRESHOLD = 0.40  # Lower threshold for multilingual content
 
@@ -166,6 +242,7 @@ class TranscriptionVerifier:
         audio_path: Path,
         original_text: str,
         threshold: Optional[float] = None,
+        verbose: bool = True,
     ) -> VerificationResult:
         """Transcreve segmento de áudio e compara com texto original."""
         if threshold is None:
@@ -175,7 +252,7 @@ class TranscriptionVerifier:
             else:
                 threshold = self.SIMILARITY_THRESHOLD
 
-        transcribed = self.transcribe(audio_path)
+        transcribed = self.transcribe(audio_path, verbose=verbose)
 
         # Word-level comparison after stripping TTS cues
         words_transcribed = _extract_words(transcribed)

@@ -508,7 +508,10 @@ class AudioConverter:
                                             best_match = candidate
                                 return best_match
 
-                            for mp3_file in sorted(output_dir.glob("*.mp3")):
+                            mp3_files = sorted(output_dir.glob("*.mp3"))
+                            total_mp3 = len(mp3_files)
+                            for mp3_idx, mp3_file in enumerate(mp3_files, 1):
+                                print(f"🔍 [{mp3_idx}/{total_mp3}] Verificando: {mp3_file.name}")
                                 pre_tts_path = _find_pretts(mp3_file.stem)
 
                                 if pre_tts_path and pre_tts_path.exists():
