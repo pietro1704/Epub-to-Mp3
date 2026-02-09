@@ -587,21 +587,39 @@ class AudioConverter:
 
             last_problem_count = current_problem_count
 
-            if self.verbose:
-                print(f"🔄 {len(problem_chapters)} capítulo(s) com problemas - reconvertendo...")
-                print(f"   Capítulos: {', '.join(map(str, problem_chapters[:10]))}")
-
             # Categorizar problemas por tipo
             missing_mp3_only, duration_only = self._categorize_problems(issues, problem_chapters)
 
-            if missing_mp3_only and self.verbose:
+            if self.verbose:
+                print()
+                print("=" * 60)
+                print(f"🔧 RECONVERSÃO: {len(problem_chapters)} capítulo(s) com problemas")
+                print("=" * 60)
+                print(f"   Capítulos: {', '.join(map(str, problem_chapters[:10]))}")
+                if missing_mp3_only:
+                    print(
+                        f"   💡 {len(missing_mp3_only)} capítulo(s) apenas com MP3 faltante - síntese rápida"
+                    )
+                if duration_only:
+                    print(
+                        f"   ⏱️  {len(duration_only)} capítulo(s) apenas com duração incorreta - será retentado com tolerância maior"
+                    )
+                skip_set = set(missing_mp3_only) | set(duration_only)
+                full_reconvert = [ch for ch in problem_chapters if ch not in skip_set]
+                if full_reconvert:
+                    print(
+                        f"   🔄 {len(full_reconvert)} capítulo(s) com texto/nome incorreto - reconversão completa"
+                    )
+
+            # Remover MP3s errados antes de reconverter
+            removed_files = self._remove_bad_mp3s(output_dir, issues, problem_chapters)
+            if removed_files and self.verbose:
                 print(
-                    f"   💡 {len(missing_mp3_only)} capítulo(s) apenas com MP3 faltante - síntese rápida"
+                    f"   🗑️  {len(removed_files)} MP3(s) errado(s) removidos antes da reconversão:"
                 )
-            if duration_only and self.verbose:
-                print(
-                    f"   ⏱️  {len(duration_only)} capítulo(s) apenas com duração incorreta - será retentado com tolerância maior"
-                )
+                for f in removed_files:
+                    print(f"      - {f}")
+                print("=" * 60)
 
             # Reconverte os capítulos problemáticos
             try:
@@ -743,6 +761,58 @@ class AudioConverter:
                 duration_only.append(chapter_num)
 
         return missing_mp3_only, duration_only
+
+    def _remove_bad_mp3s(self, output_dir: Path, issues: list, problem_chapters: list) -> list[str]:
+        """
+        Remove MP3s errados antes de reconverter para evitar conflitos.
+
+        Extrai nomes de MP3 das issues de validação (nome incorreto, duplicado,
+        duração errada) e os remove do diretório de output.
+
+        Returns:
+            Lista de nomes de arquivos removidos.
+        """
+        import re
+
+        removed = []
+        mp3_filenames_to_remove: set[str] = set()
+
+        for issue in issues:
+            # "MP3 filename 'xxx.mp3' does not match EPUB heading"
+            match = re.search(r"MP3 filename '([^']+\.mp3)'", issue)
+            if match:
+                mp3_filenames_to_remove.add(match.group(1))
+
+            # "MP3 filename contains HTML/markup: xxx.mp3"
+            match = re.search(r"HTML/markup:\s*(.+\.mp3)", issue)
+            if match:
+                mp3_filenames_to_remove.add(match.group(1).strip())
+
+        # Also remove MP3s for chapters with duration mismatch or duplicates
+        # by matching chapter number patterns in existing MP3 filenames
+        problem_set = set(str(ch) for ch in problem_chapters)
+        if output_dir.exists():
+            for mp3_file in output_dir.glob("*.mp3"):
+                # Extract chapter number from filename (e.g. "4.1 - ..." or "004 - ...")
+                stem = mp3_file.name
+                # Match decimal index: "4.1 - ...", "10.5 - ..."
+                ch_match = re.match(r"^(\d+\.\d+)\s*-\s*", stem)
+                if not ch_match:
+                    # Match zero-padded: "004 - ..."
+                    ch_match = re.match(r"^0*(\d+)\s*-\s*", stem)
+                if ch_match:
+                    ch_num = ch_match.group(1)
+                    if ch_num in problem_set:
+                        mp3_filenames_to_remove.add(mp3_file.name)
+
+        # Remove the files
+        for fname in mp3_filenames_to_remove:
+            mp3_path = output_dir / fname
+            if mp3_path.exists():
+                mp3_path.unlink()
+                removed.append(fname)
+
+        return removed
 
     async def _reconvert_missing_mp3s(
         self, output_dir: Path, cache_dir: Optional[Path], chapter_nums: list, issues: list
