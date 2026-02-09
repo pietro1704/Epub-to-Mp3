@@ -249,6 +249,9 @@ async def _record_success() -> None:
             if _edge_current_chunk_size < _DEFAULT_CHUNK_SIZE:
                 _edge_current_chunk_size = min(_DEFAULT_CHUNK_SIZE, _edge_current_chunk_size + 1000)
 
+            # Clear rate limit flag after sustained recovery
+            _edge_rate_limit_count = 0
+
             _edge_consecutive_successes = 0
 
 
@@ -1654,7 +1657,7 @@ class EdgeTTSEngine:
             safe_limit = 3600
         safe_limit = max(_SAFE_CHUNK_MIN, min(safe_limit, _SAFE_CHUNK_MAX))
 
-        if _edge_rate_limit_count > 0 or len(stripped) >= _EDGE_RATE_LIMIT_TRIGGER_CHARS:
+        if _edge_rate_limit_count > 0:
             adjusted = min(active_chunk_limit, safe_limit)
             if adjusted != active_chunk_limit and self.verbose:
                 self._log(

@@ -194,7 +194,7 @@ class NetworkTuner:
         self.condition = self.detect_condition()
 
         # Try to recover speed after success streak
-        if self.consecutive_successes >= 10 and self._can_adjust():
+        if self.consecutive_successes >= 5 and self._can_adjust():
             self._try_increase_speed()
 
     def record_failure(
@@ -326,7 +326,7 @@ class NetworkTuner:
         # Increase chunk size
         if self.config.chunk_size < self.config.max_chunk_size:
             old_chunk = self.config.chunk_size
-            increment = 1000 if self.condition == NetworkCondition.EXCELLENT else 500
+            increment = 2000 if self.condition == NetworkCondition.EXCELLENT else 1000
             self.config.chunk_size = min(
                 self.config.max_chunk_size, self.config.chunk_size + increment
             )
