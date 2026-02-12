@@ -74,29 +74,34 @@ def _env_float(name: str, default: float) -> float:
 EDGE_AUTO_TUNE = _env_bool("EDGE_AUTO_TUNE", True)
 EDGE_MIN_CHARS_PER_SECOND = _env_float("EDGE_MIN_CHARS_PER_SECOND", 60.0)  # Increased from 45
 EDGE_SLOW_RATIO_THRESHOLD = _env_float("EDGE_SLOW_RATIO_THRESHOLD", 1.5)  # More sensitive
-EDGE_SAFE_CHUNK_CHARS = _env_int("EDGE_SAFE_CHUNK_CHARS", 4000)
+EDGE_SAFE_CHUNK_CHARS = _env_int("EDGE_SAFE_CHUNK_CHARS", 10000)
 EDGE_SAFE_MAX_SEGMENT_SECONDS = _env_float("EDGE_SAFE_MAX_SEGMENT_SECONDS", 300.0)
-EDGE_SAFE_CHAPTER_PARALLEL = _env_int("EDGE_SAFE_CHAPTER_PARALLEL", 1)
+EDGE_SAFE_CHAPTER_PARALLEL = _env_int("EDGE_SAFE_CHAPTER_PARALLEL", 8)
 EDGE_SAFE_TIMEOUT_MAX = _env_float(
     "EDGE_SAFE_TIMEOUT_MAX", 3600.0
 )  # Up to 1h for very long chapters
-# Three-tier fallback system: Edge multilingual → Edge monolingual → Piper
+# Four-tier fallback: Edge multilingual → Edge monolingual → Kokoro → Piper
 EDGE_MONOLINGUAL_THRESHOLD = _env_int(
     "EDGE_MONOLINGUAL_THRESHOLD", 3
 )  # Switch to monolingual Edge after N consecutive failures
+EDGE_KOKORO_THRESHOLD = _env_int(
+    "EDGE_KOKORO_THRESHOLD", 3
+)  # Switch to Kokoro after N consecutive failures (after monolingual)
 EDGE_PIPER_THRESHOLD = _env_int(
     "EDGE_PIPER_THRESHOLD", 3
-)  # Switch to Piper after N consecutive failures
+)  # Switch to Piper after N consecutive failures (after Kokoro)
 # Legacy env var for backwards compatibility (maps to PIPER threshold)
 EDGE_FAILURE_THRESHOLD = _env_int("EDGE_FAILURE_THRESHOLD", EDGE_PIPER_THRESHOLD)
 EDGE_FORCE_SAFE_CHARS = _env_int("EDGE_FORCE_SAFE_CHARS", 60000)
 EDGE_AUTO_STABLE = _env_bool("EDGE_AUTO_STABLE", True)
 EDGE_AUTO_PARALLEL_CAPS = {
-    "slow": _env_int("EDGE_AUTO_PARALLEL_CAP_SLOW", 2),  # Increased from 1
-    "medium": _env_int("EDGE_AUTO_PARALLEL_CAP_MEDIUM", 3),  # Increased from 2
-    "fast": _env_int("EDGE_AUTO_PARALLEL_CAP_FAST", 4),  # Increased from 3
-    "ultra": _env_int("EDGE_AUTO_PARALLEL_CAP_ULTRA", 6),  # Increased from 4
+    "slow": _env_int("EDGE_AUTO_PARALLEL_CAP_SLOW", 4),
+    "medium": _env_int("EDGE_AUTO_PARALLEL_CAP_MEDIUM", 6),
+    "fast": _env_int("EDGE_AUTO_PARALLEL_CAP_FAST", 8),
+    "ultra": _env_int("EDGE_AUTO_PARALLEL_CAP_ULTRA", 10),
 }
+EDGE_MULTILINGUAL_RATE_CAP = _env_int("EDGE_MULTILINGUAL_RATE_CAP", 10)
+EDGE_MONOLINGUAL_RATE_CAP = _env_int("EDGE_MONOLINGUAL_RATE_CAP", 16)
 
 # Validation thresholds
 TRUNCATION_THRESHOLD_PERCENT = _env_float(
@@ -179,7 +184,7 @@ class ChapterConversionOutcome:
 class AudioConverter:
     """Coordinate ebook parsing, TTS synthesis and post-processing."""
 
-    _NUMBERED_FILENAME_RE = re.compile(r"^(\d+)[\s_-]+(.+)$")
+    _NUMBERED_FILENAME_RE = re.compile(r"^(\d+(?:\.\d+)?)[\s_-]+(.+)$")
 
     def __init__(self, localization: Optional[Localization] = None) -> None:
         self.tts_factory = TTSFactory()
@@ -316,27 +321,27 @@ class AudioConverter:
         return executor
 
     async def _initialize_auto_tuning(self) -> None:
-        """Inicializa auto-tuning de performance baseado em HW e rede."""
+        """Initialize performance auto-tuning based on HW and network."""
         if self._auto_tuning_initialized or not self._auto_tuning_enabled:
             return
 
         try:
             self._auto_tuner = AutoTuner(verbose=self.verbose)
 
-            # Medir rede apenas se não estiver em modo batch/silencioso
+            # Only measure network if not in batch/silent mode
             measure_network = self.verbose and _env_bool("AUTO_TUNE_MEASURE_NETWORK", True)
 
-            # Auto-configura (não sobrescreve vars já setadas manualmente)
+            # Auto-configure (does not overwrite manually set vars)
             await self._auto_tuner.auto_configure(force=False, measure_network=measure_network)
 
             self._auto_tuning_initialized = True
 
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️  Auto-tuning falhou (usando configs padrão): {exc}")
+                print(f"⚠️  Auto-tuning failed (using default configs): {exc}")
 
     def _initialize_adaptive_performance(self) -> None:
-        """Inicializa controlador de performance adaptativa."""
+        """Initialize adaptive performance controller."""
         if not self._adaptive_enabled:
             return
 
@@ -345,22 +350,22 @@ class AudioConverter:
             self._adaptive_controller.start_conversion()
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️  Adaptive Performance falhou (continuando sem ajustes): {exc}")
+                print(f"⚠️  Adaptive Performance failed (continuing without adjustments): {exc}")
             self._adaptive_controller = None
 
     def _record_chapter_progress(
         self, chapter: Chapter, success: bool, error: Optional[str] = None
     ):
-        """Registra progresso de um capítulo para ajuste adaptativo."""
+        """Record chapter progress for adaptive adjustment."""
         if not self._adaptive_controller:
             return
 
         try:
-            # Estima caracteres do capítulo
+            # Estimate chapter characters
             text = self._speech_text(chapter)
             chars_processed = len(text) if text else 0
 
-            # Detecta throttling por palavra-chave no erro
+            # Detect throttling by keyword in error
             throttled = (
                 error and ("throttl" in error.lower() or "rate limit" in error.lower())
                 if error
@@ -374,28 +379,28 @@ class AudioConverter:
                 throttled=throttled,
             )
 
-            # Verifica se deve ajustar
+            # Check if adjustment needed
             adjustment = self._adaptive_controller.calculate_adjustment()
             if adjustment.action != "no_change":
                 self._adaptive_controller.apply_adjustment(adjustment)
 
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️  Erro ao registrar progresso adaptativo: {exc}")
+                print(f"⚠️  Error recording adaptive progress: {exc}")
 
     async def _auto_validate_and_retry_async(
         self, output_dir: Path, epub_path: Path, cache_dir: Optional[Path], max_retries: int = 10
     ) -> bool:
         """
-        Valida e reconverte APENAS segmentos problemáticos até 100% correto.
+        Validate and reconvert ONLY problematic segments until 100% correct.
 
-        Retry inteligente:
-        - MP3 faltante: reconverte apenas o MP3 (usa texto cached)
-        - Texto modificado: reconverte o capítulo completo
-        - Loop até sucesso ou erro crítico de travamento
+        Smart retry:
+        - Missing MP3: reconvert only the MP3 (uses cached text)
+        - Modified text: reconvert the full chapter
+        - Loop until success or critical stall error
 
         Returns:
-            True se passou na validação, False se erro crítico
+            True if validation passed, False if critical error
         """
         import sys
 
@@ -422,9 +427,9 @@ class AudioConverter:
             dur_tol = duration_tolerances[min(attempt - 1, len(duration_tolerances) - 1)]
             if self.verbose:
                 tol_str = f" (duration tolerance: {dur_tol:.0%})" if dur_tol else ""
-                print(f"\n🔍 Validação (tentativa {attempt}/{max_retries}){tol_str}...")
+                print(f"\n🔍 Validation (attempt {attempt}/{max_retries}){tol_str}...")
 
-            # Suprimir mensagens de erro durante auto-fix
+            # Suppress error messages during auto-fix
             import os
 
             old_verbose = os.environ.get("SUPPRESS_VALIDATION_ERRORS", "0")
@@ -437,7 +442,7 @@ class AudioConverter:
             finally:
                 os.environ["SUPPRESS_VALIDATION_ERRORS"] = old_verbose
 
-            # Verifica se passou (duration_mismatch also critical)
+            # Check if passed (duration_mismatch also critical)
             has_critical_problems = bool(
                 any(
                     stats.get(key, 0) > 0
@@ -470,7 +475,7 @@ class AudioConverter:
                                 )
 
                             if self.verbose:
-                                print("🔍 Verificação de transcrição (faster-whisper)...")
+                                print("🔍 Transcription verification (faster-whisper)...")
 
                             transcription_failures = []
 
@@ -511,7 +516,7 @@ class AudioConverter:
                             mp3_files = sorted(output_dir.glob("*.mp3"))
                             total_mp3 = len(mp3_files)
                             for mp3_idx, mp3_file in enumerate(mp3_files, 1):
-                                print(f"🔍 [{mp3_idx}/{total_mp3}] Verificando: {mp3_file.name}")
+                                print(f"🔍 [{mp3_idx}/{total_mp3}] Verifying: {mp3_file.name}")
                                 pre_tts_path = _find_pretts(mp3_file.stem)
 
                                 if pre_tts_path and pre_tts_path.exists():
@@ -525,22 +530,29 @@ class AudioConverter:
                                             if " - " in mp3_file.stem
                                             else mp3_file.stem
                                         )
-                                        transcription_failures.append(chapter_id)
                                         threshold = (
                                             self._transcription_verifier.SIMILARITY_THRESHOLD
                                         )
-                                        print(
-                                            f"❌ {mp3_file.name}: transcrição {vr.similarity_score:.1%} < {threshold:.0%}"
-                                        )
-                                        # Delete bad MP3 so retry loop picks it up
-                                        mp3_file.unlink(missing_ok=True)
+                                        if getattr(vr, "partial", False):
+                                            # Timeout during transcription - audio is likely fine,
+                                            # just too large for Whisper to verify in time. Don't delete.
+                                            print(
+                                                f"⚠️ {mp3_file.name}: partial verification (timeout) {vr.similarity_score:.1%} - keeping MP3"
+                                            )
+                                        else:
+                                            transcription_failures.append(chapter_id)
+                                            print(
+                                                f"❌ {mp3_file.name}: transcription {vr.similarity_score:.1%} < {threshold:.0%}"
+                                            )
+                                            # Delete bad MP3 so retry loop picks it up
+                                            mp3_file.unlink(missing_ok=True)
                                     else:
                                         print(f"✅ {mp3_file.name}: {vr.similarity_score:.1%}")
 
                             if transcription_failures:
                                 if self.verbose:
                                     print(
-                                        f"🔄 {len(transcription_failures)} capítulo(s) falharam na transcrição, reconvertendo..."
+                                        f"🔄 {len(transcription_failures)} chapter(s) failed transcription, reconverting..."
                                     )
                                 # Don't return True — fall through to retry
                                 last_problem_count = len(transcription_failures)
@@ -1626,12 +1638,129 @@ class AudioConverter:
                 self._resolve_misnumbered_audio(chapter, chapter_num, audio_dir, audio_index)
 
         normalized_outputs: List[Path] = []
+        expected_names: set[str] = set()
         for idx, chapter in enumerate(chapters, start=1):
             chapter_num = self._chapter_number(chapter, idx)
             expected = self._expected_output_path(chapter, chapter_num, output_dir)
+            expected_names.add(expected.name)
             if expected.exists():
                 normalized_outputs.append(expected)
+
+        # Remove stale MP3s whose names don't match any expected filename
+        self._remove_stale_numbered_files(output_dir, "*.mp3", expected_names)
+        if temp_dir:
+            self._remove_stale_numbered_files(temp_dir, "*.mp3", expected_names)
+
+        # Clean stale cache text files
+        self._cleanup_stale_cache_text(chapters, config)
+
         return normalized_outputs
+
+    def _remove_stale_numbered_files(
+        self, directory: Path, glob_pattern: str, expected_names: set[str]
+    ) -> None:
+        """Remove numbered files whose name doesn't match any expected filename.
+
+        Only removes a file if another file with the **same title** (after stripping
+        the numeric prefix) exists in the expected set — i.e. it's a stale duplicate
+        from a previous numbering scheme.
+        """
+        if not directory.exists():
+            return
+
+        # Build a mapping from normalized title -> expected filename
+        expected_titles: dict[str, str] = {}
+        for name in expected_names:
+            m = self._NUMBERED_FILENAME_RE.match(Path(name).stem)
+            if m:
+                title_key = self._normalize_title_match(m.group(2))
+                expected_titles[title_key] = name
+
+        removed = 0
+        for f in directory.glob(glob_pattern):
+            if f.name in expected_names:
+                continue
+            m = self._NUMBERED_FILENAME_RE.match(f.stem)
+            if not m:
+                continue
+            title_key = self._normalize_title_match(m.group(2))
+            # Only remove if the same title exists under the expected naming
+            if title_key in expected_titles:
+                try:
+                    f.unlink()
+                    removed += 1
+                    if self.verbose:
+                        print(f"   🧹 Removed stale file: {f.name}")
+                except OSError:
+                    pass
+        if removed and not self.verbose:
+            print(f"  🧹 Removed {removed} stale file(s) from {directory.name}/")
+
+    def _cleanup_stale_cache_text(self, chapters: List[Chapter], config: ConversionConfig) -> None:
+        """Remove cache text files whose title duplicates an expected file but
+        with a different numeric prefix (stale from a previous numbering scheme)."""
+        cache_root = getattr(config, "cache_dir", None)
+        if not cache_root:
+            try:
+                if self._current_book_path:
+                    cache_root = self.cache_manager._get_cache_path(self._current_book_path)
+            except Exception:
+                return
+        if not cache_root:
+            return
+
+        # Build expected text filenames
+        expected_prefixes: set[str] = set()
+        for idx, chapter in enumerate(chapters, start=1):
+            chapter_label = self._chapter_index_label(chapter, idx)
+            chapter_name = getattr(chapter, "name", None) or f"Chapter {chapter_label}"
+            chapter_name_clean = self._remove_duplicate_chapter_prefix(chapter_label, chapter_name)
+            safe_name = self.file_manager.sanitize_filename(chapter_name_clean)
+            prefix = f"{chapter_label} - {safe_name}"
+            expected_prefixes.add(prefix)
+
+        # Build title index from expected prefixes
+        expected_titles: set[str] = set()
+        for prefix in expected_prefixes:
+            m = self._NUMBERED_FILENAME_RE.match(prefix)
+            if m:
+                expected_titles.add(self._normalize_title_match(m.group(2)))
+
+        # Check engine-specific text dirs under cache
+        for engine_dir in Path(cache_root).iterdir():
+            if not engine_dir.is_dir():
+                continue
+            text_dir = engine_dir / "text" if (engine_dir / "text").exists() else None
+            if engine_dir.name == "text":
+                text_dir = engine_dir
+            if not text_dir or not text_dir.exists():
+                continue
+            removed = 0
+            for txt_file in list(text_dir.glob("*.txt")):
+                # Check if file matches expected prefix
+                if any(txt_file.name.startswith(p) for p in expected_prefixes):
+                    continue
+                # Extract title from numbered file
+                # Strip suffix like "-parsed.txt" or "-pre-tts.txt" first
+                base = txt_file.name
+                for suffix in ("-parsed.txt", "-pre-tts.txt"):
+                    if base.endswith(suffix):
+                        base = base[: -len(suffix)]
+                        break
+                m = self._NUMBERED_FILENAME_RE.match(base)
+                if not m:
+                    continue
+                title_key = self._normalize_title_match(m.group(2))
+                if title_key in expected_titles:
+                    try:
+                        txt_file.unlink()
+                        removed += 1
+                        if self.verbose:
+                            print(f"   🧹 Removed stale cache text: {txt_file.name}")
+                    except OSError:
+                        pass
+            if removed and not self.verbose:
+                print(f"  🧹 Removed {removed} stale cache text file(s)")
 
     def _extract_cover_art(self, reader: EbookReader) -> Optional[dict]:
         extractor = getattr(reader, "extract_cover_image", None)
@@ -3538,18 +3667,22 @@ class AudioConverter:
             config.edge_chunk_chars = 4000
             config.edge_max_segment_seconds = 120
             print("🛡️ Edge modo estável: paralelismo reduzido e timeouts ampliados")
-        # Auto-parallel: prefer env override, else derive from hardware profile (defaults later)
+        # Auto-parallel: prefer env override, else derive from hardware profile
+        # Aggressive defaults: use all available CPU cores for maximum throughput
         chapter_parallel_count = int(os.getenv("CHAPTER_PARALLEL_COUNT", "0") or "0")
         if chapter_parallel_count <= 0:
+            cpu_logical = os.cpu_count() or 1
             cpu_physical = 0
             with contextlib.suppress(Exception):
                 cpu_physical = psutil.cpu_count(logical=False) or 0
             if cpu_physical >= 8:
-                chapter_parallel_count = 3
+                chapter_parallel_count = min(8, cpu_logical)
             elif cpu_physical >= 4:
-                chapter_parallel_count = 2
+                chapter_parallel_count = min(6, cpu_logical)
+            elif cpu_physical >= 2:
+                chapter_parallel_count = min(4, cpu_logical)
             else:
-                chapter_parallel_count = 1
+                chapter_parallel_count = 2
         if edge_stable_mode and chapter_parallel_count != 1:
             chapter_parallel_count = 1
         self._reset_parallel_state(chapter_parallel_count)
@@ -3605,6 +3738,18 @@ class AudioConverter:
             normalized_outputs = self._normalize_output_numbers(chapters, output_dir, config)
             if normalized_outputs:
                 result.output_files = normalized_outputs
+            # Apply ID3 tags (including cover art) to ALL MP3s in output dir
+            album_name = book_title or (
+                self._current_book_path.stem if self._current_book_path else output_dir.name
+            )
+            all_output_mp3s = sorted(output_dir.glob("*.mp3")) if output_dir.exists() else []
+            if all_output_mp3s:
+                self._apply_final_id3_tags(
+                    all_output_mp3s,
+                    default_album=album_name,
+                    artist=book_author or None,
+                    cover_art=cover_art,
+                )
             self._sync_text_cache_to_output(temp_dir, output_dir)
             self.progress.finish()
             await self._report_results(result)
@@ -3691,6 +3836,7 @@ class AudioConverter:
             if cfg and (cfg.engine or "").lower() == "edge" and id(cfg) not in edge_seen:
                 edge_configs.append(cfg)
                 edge_seen.add(id(cfg))
+        self._apply_edge_rate_caps(edge_configs)
         if has_edge_engine and edge_network_tier in {"slow", "medium"} and not edge_stable_mode:
             for cfg in edge_configs:
                 if (cfg.engine or "").lower() != "edge":
@@ -4168,12 +4314,16 @@ class AudioConverter:
             if normalized_outputs:
                 result.output_files = normalized_outputs
 
-            if result.output_files:
-                album_name = book_title or (
-                    self._current_book_path.stem if self._current_book_path else output_dir.name
-                )
+            # Apply ID3 tags (including cover art) to ALL MP3s in output dir,
+            # not just newly converted ones — ensures partial/resumed conversions
+            # always have consistent metadata and cover art.
+            album_name = book_title or (
+                self._current_book_path.stem if self._current_book_path else output_dir.name
+            )
+            all_output_mp3s = sorted(output_dir.glob("*.mp3")) if output_dir.exists() else []
+            if all_output_mp3s:
                 self._apply_final_id3_tags(
-                    result.output_files,
+                    all_output_mp3s,
                     default_album=album_name,
                     artist=book_author or None,
                     cover_art=cover_art,
@@ -4216,33 +4366,19 @@ class AudioConverter:
 
     def _setup_output_directory(self, config: ConversionConfig) -> Path:
         base_dir = Path(config.output_dir)
-        engine_suffix = self._build_engine_signature(config)
         if config.book_title:
             book_dir = self.file_manager.sanitize_filename(config.book_title)
-            base_dir = base_dir / f"{book_dir}_{engine_suffix}"
+            base_dir = base_dir / book_dir
         else:
-            # Compat: quando não há título, use padrão "edge__default"
-            base_dir = base_dir / f"{engine_suffix}__default"
+            base_dir = base_dir / "default"
         return self.file_manager.ensure_directory(base_dir)
 
     def _setup_temp_directory(self, config: ConversionConfig) -> Path:
         """Setup temporary directory for conversion files"""
         custom_cache = getattr(config, "cache_dir", None)
-        engine_suffix = self._build_engine_signature(config)
 
-        # **FIX**: If cache_dir already ends with engine suffix, don't add it again
-        # This prevents edge/edge duplication when _setup_temp_directory is called multiple times
         if custom_cache:
-            custom_cache_path = Path(custom_cache)
-            # Check if the last component is already the engine suffix
-            if custom_cache_path.name == engine_suffix:
-                # Already has engine suffix, use as-is
-                temp_dir = self.file_manager.ensure_directory(custom_cache_path)
-                config.cache_dir = temp_dir
-                return temp_dir
-            else:
-                # Custom cache without engine suffix, add it
-                base_cache = custom_cache_path
+            base_cache = Path(custom_cache)
         else:
             try:
                 base_cache = resolve_cache_root()
@@ -4259,7 +4395,7 @@ class AudioConverter:
                 print("💡 Using system temporary directory")
                 base_cache = Path(tempfile.mkdtemp(prefix="epub_to_mp3_"))
 
-        temp_dir = self.file_manager.ensure_directory(base_cache / engine_suffix)
+        temp_dir = self.file_manager.ensure_directory(base_cache)
         config.cache_dir = temp_dir
         return temp_dir
 
@@ -4872,65 +5008,88 @@ class AudioConverter:
 
         async def _maybe_apply_edge_fallback() -> None:
             nonlocal edge_switched_to_monolingual
+            nonlocal edge_switched_to_kokoro
             nonlocal edge_switched_to_piper
             nonlocal edge_consecutive_failures
             nonlocal config
 
-            if (config.engine or "").lower() != "edge":
+            current_engine = (config.engine or "").lower()
+            if current_engine not in ("edge", "kokoro"):
                 return
 
-            # TIER 2: Switch to monolingual Edge after MONOLINGUAL_THRESHOLD failures
+            # TIER 2: Edge monolingual after MONOLINGUAL_THRESHOLD failures
             if (
-                not edge_switched_to_monolingual
+                current_engine == "edge"
+                and not edge_switched_to_monolingual
                 and edge_consecutive_failures >= EDGE_MONOLINGUAL_THRESHOLD
-                and edge_consecutive_failures < EDGE_PIPER_THRESHOLD
             ):
                 from .config import VoiceConfigProvider
 
                 voice_provider = VoiceConfigProvider()
                 monolingual_voice = voice_provider.get_monolingual_voice(config.primary_language)
-
                 if monolingual_voice and monolingual_voice != config.voice:
                     print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
-                    print(
-                        f"   🔀 Mudando para Edge monolíngue (idioma fixo): {config.primary_language}"
-                    )
+                    print(f"   🔀 Mudando para Edge monolíngue: {config.primary_language}")
                     print(f"   🎤 Nova voz: {monolingual_voice}")
-
-                    # Switch to monolingual voice
                     config = replace(config, voice=monolingual_voice)
-                    # Update engine pool with new voice
                     engine_pool.register_engine("edge", config)
                     edge_switched_to_monolingual = True
-                    # Reset consecutive failures to measure monolingual stability
                     edge_consecutive_failures = 0
+                    return
                 else:
-                    if self.verbose:
-                        print(f"\n⚠️ Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
-                        print("   ⚠️ Voz monolíngue não disponível - continuando com voz atual")
+                    # No monolingual voice, skip to Kokoro
+                    edge_switched_to_monolingual = True
 
-            # TIER 3: Switch to Piper after PIPER_THRESHOLD failures
-            elif not edge_switched_to_piper and edge_consecutive_failures >= EDGE_PIPER_THRESHOLD:
-                if can_use_piper():
-                    print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
+            # TIER 3: Kokoro after KOKORO_THRESHOLD failures (from monolingual Edge)
+            if (
+                not edge_switched_to_kokoro
+                and edge_switched_to_monolingual
+                and current_engine == "edge"
+                and edge_consecutive_failures >= EDGE_KOKORO_THRESHOLD
+            ):
+                try:
+                    from .tts.kokoro_engine import KokoroTTSEngine
+
+                    KokoroTTSEngine()  # test availability
                     print(
-                        f"   🛟 Mudando automaticamente para Piper (offline) com idioma: {config.primary_language}"
+                        f"\n🔄 Edge monolíngue com {edge_consecutive_failures} falhas consecutivas"
                     )
-                    # Get appropriate Piper model for detected language
+                    print("   🔀 Mudando para Kokoro (local, rápido)")
+                    config = replace(config, engine="kokoro")
+                    engine_pool.register_engine("kokoro", config)
+                    edge_switched_to_kokoro = True
+                    edge_consecutive_failures = 0
+                    return
+                except Exception as e:
+                    if self.verbose:
+                        print(f"   ⚠️ Kokoro indisponível: {e}")
+                    edge_switched_to_kokoro = True  # skip to piper
+
+            # TIER 4: Piper after PIPER_THRESHOLD failures (from Kokoro or Edge)
+            if (
+                not edge_switched_to_piper
+                and edge_consecutive_failures >= EDGE_PIPER_THRESHOLD
+                and (edge_switched_to_kokoro or edge_switched_to_monolingual)
+            ):
+                if can_use_piper():
+                    current_label = "Kokoro" if current_engine == "kokoro" else "Edge"
+                    print(
+                        f"\n🔄 {current_label} com {edge_consecutive_failures} falhas consecutivas"
+                    )
+                    print(
+                        f"   🛟 Mudando para Piper (offline) com idioma: {config.primary_language}"
+                    )
                     from .config import VoiceConfigProvider
 
                     voice_provider = VoiceConfigProvider()
                     piper_model = voice_provider.get_voice("piper", config.primary_language)
                     if piper_model:
-                        # Switch to Piper for remaining chapters
                         config = replace(
                             config,
                             engine="piper",
                             model_path=Path(piper_model) if piper_model else None,
                         )
-                        # Register Piper in engine pool before acquiring
                         engine_pool.register_engine("piper", config)
-                        # Update engine pool
                         try:
                             _, piper_engine = await engine_pool.acquire("piper")
                             if piper_engine:
@@ -4938,30 +5097,26 @@ class AudioConverter:
                                     f"   ✅ Piper carregado: {Path(piper_model).name if piper_model else 'modelo padrão'}"
                                 )
                                 engine_pool.release("piper", piper_engine)
-                                # Only mark as switched if Piper was successfully loaded
                                 edge_switched_to_piper = True
-                                edge_consecutive_failures = 0  # Reset counter after switch
+                                edge_consecutive_failures = 0
                             else:
                                 print("   ⚠️ Piper engine não pôde ser carregado")
-                                print("   ⏩ Continuando com Edge-TTS")
                         except Exception as e:
                             print(f"   ⚠️ Erro ao carregar Piper: {e}")
-                            print("   ⏩ Continuando com Edge-TTS")
                     else:
                         print("   ⚠️ Modelo Piper não encontrado para este idioma")
-                        print("   ⏩ Continuando com Edge-TTS")
                 else:
-                    print(f"\n⚠️ Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
+                    print(f"\n⚠️ {edge_consecutive_failures} falhas consecutivas")
                     print("   ⚠️ Piper não instalado - não é possível fazer fallback")
-                    print("   ⏩ Continuando com Edge-TTS")
 
-        # Three-tier fallback system: Edge multilingual → Edge monolingual → Piper
+        # Four-tier fallback: Edge multilingual → Edge monolingual → Kokoro → Piper
         edge_failure_count = 0
         edge_consecutive_failures = 0
         base_delay = 0.5  # Start with 0.5s delay
         max_delay = 30.0  # Cap at 30s
-        edge_switched_to_monolingual = False  # Track if switched to monolingual Edge
-        edge_switched_to_piper = False  # Track if we already switched to Piper
+        edge_switched_to_monolingual = False
+        edge_switched_to_kokoro = False
+        edge_switched_to_piper = False
         config.voice if (config.engine or "").lower() == "edge" else None
 
         for idx, chapter in enumerate(chapters_list):
@@ -6250,11 +6405,65 @@ class AudioConverter:
             errors=errors,
         )
 
+    def _auto_engine_candidates(self, base_config: ConversionConfig) -> List[str]:
+        """Return preferred auto-mode engine order."""
+        candidates: List[str] = []
+        prefer_piper = bool(getattr(base_config, "auto_prefer_piper", False))
+        network_tier = (
+            getattr(self.hardware_profile, "network_speed_estimate", None)
+            if hasattr(self, "hardware_profile")
+            else None
+        )
+        prefer_offline = str(network_tier or "").lower() == "slow"
+        piper_voice = None
+        try:
+            piper_voice = self.tts_factory.voice_provider.get_voice(
+                "piper", base_config.primary_language
+            )
+        except Exception:
+            piper_voice = None
+        has_piper = bool(piper_voice)
+        if has_piper and (prefer_piper or prefer_offline):
+            candidates.append("piper")
+        candidates.extend(["edge", "coqui"])
+        if has_piper and "piper" not in candidates:
+            candidates.append("piper")
+        ordered: List[str] = []
+        seen: Set[str] = set()
+        for name in candidates:
+            if name and name not in seen:
+                ordered.append(name)
+                seen.add(name)
+        return ordered
+
+    def _apply_edge_rate_caps(self, configs: Iterable[ConversionConfig]) -> None:
+        """Clamp Edge concurrency according to the selected voice."""
+        for cfg in configs:
+            if (cfg.engine or "").lower() != "edge":
+                continue
+            cap = self._resolve_edge_cap(cfg.voice)
+            if not cap:
+                continue
+            current = cfg.edge_max_concurrency or cap
+            cfg.edge_max_concurrency = max(1, min(cap, current))
+
+    def _resolve_edge_cap(self, voice_id: Optional[str]) -> Optional[int]:
+        if not voice_id:
+            return None
+        multilingual = self.tts_factory.voice_provider.edge_voice_is_multilingual(voice_id)
+        if multilingual is None and isinstance(voice_id, str):
+            multilingual = "multilingual" in voice_id.lower()
+        if multilingual:
+            return EDGE_MULTILINGUAL_RATE_CAP
+        if multilingual is False:
+            return EDGE_MONOLINGUAL_RATE_CAP
+        return None
+
     def _prepare_auto_engines(
         self, base_config: ConversionConfig
     ) -> Dict[str, tuple[ConversionConfig, object]]:
         pool: Dict[str, tuple[ConversionConfig, object]] = {}
-        for name in ("edge", "coqui"):
+        for name in self._auto_engine_candidates(base_config):
             try:
                 cloned = self._clone_engine_config(base_config, name)
                 engine_instance = self.tts_factory.create_engine(cloned)
@@ -6269,7 +6478,14 @@ class AudioConverter:
         cloned = replace(base_config, engine=engine_name, voice=None, model_path=None)
         cloned.languages = list(base_config.languages)
         cloned.language_voices = {}
+        prefer_monolingual = bool(getattr(base_config, "prefer_monolingual_edge", False))
         voice = self.tts_factory.voice_provider.get_voice(engine_name, cloned.primary_language)
+        if engine_name == "edge" and prefer_monolingual:
+            monolingual_voice = self.tts_factory.voice_provider.get_monolingual_voice(
+                cloned.primary_language
+            )
+            if monolingual_voice:
+                voice = monolingual_voice
         if engine_name == "coqui" and not voice:
             voice = "tts_models/multilingual/multi-dataset/xtts_v2"
         cloned.voice = voice
@@ -6284,6 +6500,11 @@ class AudioConverter:
             voice,
             primary_language=cloned.primary_language,
         )
+        if engine_name == "edge" and prefer_monolingual:
+            lang_key = (cloned.primary_language or "").split("-", 1)[0]
+            cloned.language_voices = (
+                {lang_key: voice} if lang_key and voice else dict(cloned.language_voices)
+            )
         return cloned
 
     def _pick_auto_engine(
@@ -6316,17 +6537,7 @@ class AudioConverter:
 
         # Fallback: if no ranking data, use static optimal order
         if not order:
-
-            def append(order_list: List[str], candidate: str) -> None:
-                if candidate in pool and candidate not in order_list:
-                    order_list.append(candidate)
-
-            order = []
-            append(order, "edge")  # Fastest when healthy
-            append(order, "coqui")  # Most reliable but slower (piper removed for quality)
-            for name in available_engines:
-                if name not in order:
-                    order.append(name)
+            order = self._preferred_auto_engine_order(pool)
 
         if "edge" in order:
             order = ["edge"] + [name for name in order if name != "edge"]
@@ -6354,6 +6565,28 @@ class AudioConverter:
                     self.speed_controller.record_engine_switch(new_engine)
 
         return selected, order
+
+    def _preferred_auto_engine_order(
+        self, pool: Dict[str, tuple[ConversionConfig, object]]
+    ) -> List[str]:
+        order: List[str] = []
+        config = self._active_config or None
+        network_tier = (
+            getattr(self.hardware_profile, "network_speed_estimate", None)
+            if hasattr(self, "hardware_profile")
+            else None
+        )
+        prefer_offline = str(network_tier or "").lower() == "slow"
+        prefer_piper = bool(config and getattr(config, "auto_prefer_piper", False))
+        if (prefer_piper or prefer_offline) and "piper" in pool:
+            order.append("piper")
+        for candidate in ("edge", "coqui"):
+            if candidate in pool and candidate not in order:
+                order.append(candidate)
+        for name in pool:
+            if name not in order:
+                order.append(name)
+        return order
 
     @staticmethod
     def _next_auto_engine(order: List[str], attempted: Set[str]) -> Optional[str]:
@@ -7107,25 +7340,34 @@ class AudioConverter:
                                         f"{vr.similarity_score:.1%} similaridade"
                                     )
                             else:
-                                print(
-                                    f"❌ Chapter {index} transcrição FALHOU: "
-                                    f"{vr.similarity_score:.1%} similaridade (mínimo {self._transcription_verifier.SIMILARITY_THRESHOLD:.0%})"
-                                )
-                                if self.verbose:
-                                    print(f"   {vr.details}")
-                                # Delete bad audio and signal failure for retry
-                                converted.unlink(missing_ok=True)
-                                status_holder["text"] = (
-                                    f"❌ Transcrição diverge: {vr.similarity_score:.1%} similaridade"
-                                )
-                                self._announce_stage(index, chapter_label, status_holder["text"])
-                                outcome = ChapterConversionOutcome(
-                                    index=index,
-                                    name=chapter_label,
-                                    path=None,
-                                    error=status_holder["text"],
-                                )
-                                return None if legacy_mode else outcome
+                                if getattr(vr, "partial", False):
+                                    # Timeout during transcription - audio likely fine, just too large
+                                    print(
+                                        f"⚠️ Chapter {index} verificação parcial (timeout): "
+                                        f"{vr.similarity_score:.1%} - mantendo MP3"
+                                    )
+                                else:
+                                    print(
+                                        f"❌ Chapter {index} transcrição FALHOU: "
+                                        f"{vr.similarity_score:.1%} similaridade (mínimo {self._transcription_verifier.SIMILARITY_THRESHOLD:.0%})"
+                                    )
+                                    if self.verbose:
+                                        print(f"   {vr.details}")
+                                    # Delete bad audio and signal failure for retry
+                                    converted.unlink(missing_ok=True)
+                                    status_holder["text"] = (
+                                        f"❌ Transcrição diverge: {vr.similarity_score:.1%} similaridade"
+                                    )
+                                    self._announce_stage(
+                                        index, chapter_label, status_holder["text"]
+                                    )
+                                    outcome = ChapterConversionOutcome(
+                                        index=index,
+                                        name=chapter_label,
+                                        path=None,
+                                        error=status_holder["text"],
+                                    )
+                                    return None if legacy_mode else outcome
                         elif self.verbose:
                             print(
                                 "⚠️ faster-whisper não instalado, pulando verificação de transcrição"

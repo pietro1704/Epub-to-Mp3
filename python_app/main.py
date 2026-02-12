@@ -1467,6 +1467,12 @@ class ConverterApplication:
                 analysed_chars=profile.analysed_chars,
             )
 
+        # Always show detected language
+        print(
+            f"🌍 Idioma detectado: {profile.primary or '?'} "
+            f"({items_checked} capítulos, {total_chars} chars analisados)"
+        )
+
         if not profile.languages or not profile.primary:
             if not allow_prompt:
                 return LanguageProfile(
@@ -1650,6 +1656,18 @@ class ConverterApplication:
             [config.primary_language] if config.primary_language not in {None, "auto"} else []
         )
 
+        language_roots = {
+            self._normalise_language_code(lang) for lang in (config.languages or []) if lang
+        }
+        language_roots.discard("")
+        single_language = len(language_roots) == 1
+        prefer_monolingual_edge = bool(
+            single_language
+            and profile.is_confident
+            and (config.engine or "edge").lower() in {"edge", "auto"}
+        )
+        config.prefer_monolingual_edge = prefer_monolingual_edge
+
         voice_auto_raw = config.extra.get("voice_auto", False)
 
         def _to_bool(value) -> bool:
@@ -1675,6 +1693,26 @@ class ConverterApplication:
                 if suggested_voice:
                     config.voice = suggested_voice
                     break
+
+        if (
+            prefer_monolingual_edge
+            and voice_auto
+            and (config.engine or "edge").lower() in {"edge", "auto"}
+        ):
+            monolingual_voice = self.config.voice_configs.get_monolingual_voice(primary_language)
+            if monolingual_voice:
+                config.voice = monolingual_voice
+                config.language_voices = {}
+                lang_key = self._normalise_language_code(primary_language or "")
+                if lang_key:
+                    config.language_voices[lang_key] = monolingual_voice
+
+        prefer_piper = bool(
+            language_roots == {"pt"}
+            and profile.is_confident
+            and self.config.voice_configs.has_piper_model(primary_language)
+        )
+        config.auto_prefer_piper = prefer_piper
 
         language_voice_map = self.config.voice_configs.build_language_voice_map(
             config.engine,
@@ -3339,6 +3377,7 @@ def _add_conversion_arguments(
     )
     parser.add_argument(
         "--detect-language",
+        "--show-language",
         action="store_true",
         help="Detect book language and exit (prints primary language + precision)",
     )
@@ -3405,13 +3444,15 @@ def _add_conversion_arguments(
     )
     parser.add_argument(
         "--verify-transcription",
+        "--audio-verify",
         action="store_true",
         default=None,
         dest="verify_transcription",
-        help="Enable deep validation via speech-to-text transcription (enabled by default, requires faster-whisper)",
+        help="Enable deep validation via speech-to-text transcription (disabled by default, requires faster-whisper)",
     )
     parser.add_argument(
         "--no-verify-transcription",
+        "--no-audio-verify",
         action="store_false",
         dest="verify_transcription",
         help="Disable speech-to-text transcription verification",

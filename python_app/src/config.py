@@ -22,16 +22,16 @@ class ConversionConfig:
     job_id: Optional[str] = None
     voice: Optional[str] = None
     model_path: Optional[Path] = None
-    output_dir: Path = OUTPUT_DIR  # Sempre usa a raiz do projeto
+    output_dir: Path = OUTPUT_DIR  # Always uses project root
     book_title: str = ""
     preserve_all_chapters: bool = True
-    bitrate: str = "8k"  # Máxima compressão possível para voz (75% de redução)
-    sample_rate: int = 16_000  # Suficiente para voz (Nyquist 8kHz)
-    channels: int = 1  # Mono para audiobooks
+    bitrate: str = "8k"  # Maximum compression for voice (75% reduction)
+    sample_rate: int = 16_000  # Sufficient for voice (Nyquist 8kHz)
+    channels: int = 1  # Mono for audiobooks
     use_simple_converter: bool = False
     force_reprocess: bool = False
     listen: bool = False
-    cache_dir: Path = CACHE_DIR  # Sempre usa a raiz do projeto
+    cache_dir: Path = CACHE_DIR  # Always uses project root
     clear_cache: bool = False
     footnote_mode: str = "inline"
     footnote_context_words: int = 8
@@ -39,8 +39,8 @@ class ConversionConfig:
     languages: list[str] = field(default_factory=list)
     language_voices: Dict[str, str] = field(default_factory=dict)
     priority_selectors: list[str] = field(default_factory=list)
-    use_language_detection: bool = True  # **NEW**: Ativar detecção automática de idioma
-    prioritize_primary_language: bool = True  # **NEW**: Priorizar idioma primário em ambiguidades
+    use_language_detection: bool = True  # **NEW**: Enable automatic language detection
+    prioritize_primary_language: bool = True  # **NEW**: Prioritize primary language in ambiguities
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
@@ -54,12 +54,14 @@ class ConversionConfig:
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
     # Performance-optimized settings (Jan 2026):
     # Aggressive throughput target: 200+ chars/s with higher concurrency/segment sizes.
-    edge_chunk_chars: int = 10000  # Aggressive default tuned for throughput
-    edge_max_segment_seconds: int = 75
-    edge_aggressive_mode: bool = False
+    edge_chunk_chars: int = 12000  # Aggressive default for max throughput
+    edge_max_segment_seconds: int = 85
+    edge_aggressive_mode: bool = True
     edge_auto_tune: Optional[bool] = None
     edge_enable_parallel: bool = True
-    edge_max_concurrency: int = 6
+    edge_max_concurrency: int = 12  # Aggressive: saturate network with parallel requests
+    prefer_monolingual_edge: Optional[bool] = None  # Signals when to prefer mono voices
+    auto_prefer_piper: bool = False  # Auto-mode hint: Piper was benchmarked faster
     coqui_chunk_chars: Optional[int] = None  # override Coqui chunk size when auto-tuning
     coqui_max_workers: Optional[int] = None  # override Coqui worker pool size
     coqui_safe_mode: Optional[bool] = None  # force safe mode for Coqui (limits parallelism)
@@ -67,7 +69,7 @@ class ConversionConfig:
     speak_formatting_cues: bool = True
     formatting_locale: str = "pt"
     # Validation settings
-    verify_transcription: bool = True
+    verify_transcription: bool = False
     transcription_model: str = "medium"
     validation_language: Optional[str] = None  # Language for transcription validation
 
@@ -110,6 +112,8 @@ class ConversionConfig:
             "edge_auto_tune": self.edge_auto_tune,
             "edge_enable_parallel": self.edge_enable_parallel,
             "edge_max_concurrency": self.edge_max_concurrency,
+            "prefer_monolingual_edge": self.prefer_monolingual_edge,
+            "auto_prefer_piper": self.auto_prefer_piper,
             "coqui_chunk_chars": self.coqui_chunk_chars,
             "coqui_max_workers": self.coqui_max_workers,
             "coqui_safe_mode": self.coqui_safe_mode,
@@ -252,25 +256,28 @@ class VoiceConfigProvider:
             str(index): (entry["id"], entry["label"])
             for index, entry in enumerate(self._edge_voice_catalog, start=1)
         }
+        self._edge_voice_metadata = {
+            str(entry["id"]): dict(entry) for entry in self._edge_voice_catalog if entry.get("id")
+        }
         self._coqui_model_catalog: List[Dict[str, object]] = [
             {
                 "id": "tts_models/multilingual/multi-dataset/xtts_v2",
                 "label": "XTTS v2",
-                "description": "Modelo multilingue universal",
+                "description": "Universal multilingual model",
                 "multilingual": True,
                 "low_resource": False,
             },
             {
                 "id": "tts_models/pt/cv/vits",
                 "label": "VITS pt-BR",
-                "description": "Modelo otimizado para português",
+                "description": "Model optimized for Portuguese",
                 "multilingual": False,
                 "low_resource": True,
             },
             {
                 "id": "tts_models/multilingual/multi-dataset/xtts_v1",
                 "label": "XTTS v1",
-                "description": "Modelo compatível com GPU antiga",
+                "description": "Model compatible with older GPU",
                 "multilingual": True,
                 "low_resource": False,
             },
@@ -489,6 +496,23 @@ class VoiceConfigProvider:
         # Fallback to language map
         return self._edge_language_map.get(language)
 
+    def edge_voice_is_multilingual(self, voice_id: Optional[str]) -> Optional[bool]:
+        """Return True/False when we know if the Edge voice is multilingual."""
+        if not voice_id:
+            return None
+        entry = self._edge_voice_metadata.get(str(voice_id))
+        if not entry:
+            return None
+        return bool(entry.get("multilingual"))
+
+    def has_piper_model(self, language: Optional[str]) -> bool:
+        """Return True if a Piper model exists for the requested language."""
+        code = (language or "").split("-", 1)[0].lower()
+        if not code:
+            return False
+        model = self._resolve_piper_model(code)
+        return bool(model)
+
     def _resolve_piper_model(self, code: str) -> Optional[str]:
         discovered = self.get_piper_models()
         if not discovered:
@@ -579,11 +603,11 @@ class AppConfig:
         model_value = kwargs.pop("model_path", None) or kwargs.pop("model", None)
         model_path = Path(model_value) if model_value else None
 
-        # Cache dir: se fornecido, usa o caminho fornecido; senão, usa CACHE_DIR da raiz
+        # Cache dir: if provided, use the given path; otherwise, use CACHE_DIR from project root
         cache_dir_value = kwargs.pop("cache_dir", None)
         cache_dir_path = Path(cache_dir_value) if cache_dir_value else CACHE_DIR
 
-        # Output dir: se fornecido, usa o caminho fornecido; senão, usa OUTPUT_DIR da raiz
+        # Output dir: if provided, use the given path; otherwise, use OUTPUT_DIR from project root
         output_dir_value = kwargs.pop("output_dir", None)
         output_dir = Path(output_dir_value) if output_dir_value else OUTPUT_DIR
         book_title = kwargs.pop("book_title", "")
@@ -593,9 +617,9 @@ class AppConfig:
             preserve_all = bool(kwargs.pop("preserve_all"))
         preserve_all = True if preserve_all is None else bool(preserve_all)
 
-        bitrate = kwargs.pop("bitrate", "8k")  # 8k para máxima compressão (audiobooks)
-        sample_rate = int(kwargs.pop("sample_rate", 16_000))  # 16kHz suficiente para voz
-        channels = int(kwargs.pop("channels", 1))  # Mono para audiobooks
+        bitrate = kwargs.pop("bitrate", "8k")  # 8k for maximum compression (audiobooks)
+        sample_rate = int(kwargs.pop("sample_rate", 16_000))  # 16kHz sufficient for voice
+        channels = int(kwargs.pop("channels", 1))  # Mono for audiobooks
         force_reprocess = bool(kwargs.pop("force_reprocess", False))
         listen_flag = bool(kwargs.pop("listen", False))
         clear_cache_flag = bool(kwargs.pop("clear_cache", False))
@@ -680,7 +704,7 @@ class AppConfig:
         piper_max_procs = kwargs.pop("piper_max_procs", None)
 
         # Validation settings
-        verify_transcription = bool(kwargs.pop("verify_transcription", True))
+        verify_transcription = bool(kwargs.pop("verify_transcription", False))
         transcription_model = str(kwargs.pop("transcription_model", "small"))
         validation_language = kwargs.pop("validation_language", None)
         validate_text = bool(kwargs.pop("validate_text", True))

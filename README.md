@@ -188,6 +188,21 @@ export COQUI_MAX_WORKERS=6            # keep below logical cores to avoid thrash
 export PIPER_MAX_PROCS=3
 ```
 
+### Teste turbo específico para “It – A Coisa”
+
+O script `scripts/it_a_coisa_speedtest.py` executa a conversão real de **um capítulo** usando três cenários: Edge multilíngue, Edge pt-BR monolíngue (voz Francisca/Leticia, conforme detecção automática) e Piper local. Ele coleta o capítulo diretamente de `~/Downloads/It a Coisa` (ou do caminho informado), detecta o idioma predominante e aplica `HardwareDetector` para liberar o máximo de CPU/RAM/IO permitido — o mesmo pipeline usado no app CLI/web/Space.
+
+```bash
+python scripts/it_a_coisa_speedtest.py \
+  --book "~/Downloads/It a Coisa/it_a_coisa.epub" \
+  --chapter 7
+```
+
+Notas rápidas:
+- Edge multilíngue respeita o limite público de ~10 req/s das vozes `MultilingualNeural`; a variante monolíngue usa ~16 req/s para fugir do rate limit mais agressivo.
+- Piper usa automaticamente o modelo pt-BR recomendado em `models/` e ajusta `PIPER_MAX_PROCS` de acordo com os núcleos físicos detectados.
+- Use `--keep-cache` se quiser medições super rápidas (sem limpar cache), ou deixe o padrão para forçar reconversões completas.
+
 ## API Server
 
 ```bash
