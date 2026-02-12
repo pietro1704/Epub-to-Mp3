@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ruff: noqa: E402
-"""Benchmark script focusing on "It – A Coisa" chapter speed."""
+"""Benchmark script for comparing single-chapter TTS throughput."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -83,20 +83,19 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
             "Compara Edge multi-idioma, Edge pt-BR monolíngue e Piper "
-            "convertendo somente 1 capítulo de 'It – A Coisa'."
+            "convertendo somente 1 capítulo curto de qualquer EPUB/PDF."
         )
     )
     parser.add_argument(
         "--book",
         type=str,
-        help="Arquivo ou pasta (por padrão tenta ~/Downloads/It a Coisa).",
+        help="Arquivo/pasta do livro. Quando omitido usa o sample incluído no repositório.",
     )
     parser.add_argument(
         "--chapter",
-        type=int,
-        default=1,
-        help="Índice (1-based) do capítulo a converter. "
-        "Quando vazio, usa o primeiro capítulo com texto.",
+        type=str,
+        default="auto",
+        help="Índice (1-based) do capítulo. Use 'auto' para deixar o script escolher um capítulo curto.",
     )
     parser.add_argument(
         "--scenarios",
@@ -107,13 +106,38 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=str,
-        default="output/it_a_coisa_speedtest",
+        default="output/chapter_speedtest",
         help="Diretório base para salvar os áudios gerados.",
     )
     parser.add_argument(
         "--keep-cache",
         action="store_true",
         help="Não limpa cache antes de rodar cada cenário (mais rápido, porém menos justo).",
+    )
+    parser.add_argument(
+        "--prefer-short",
+        dest="prefer_short",
+        action="store_true",
+        default=True,
+        help="Prioriza capítulos curtos automaticamente (default).",
+    )
+    parser.add_argument(
+        "--no-prefer-short",
+        dest="prefer_short",
+        action="store_false",
+        help="Desativa a escolha automática de capítulo curto.",
+    )
+    parser.add_argument(
+        "--short-min-chars",
+        type=int,
+        default=200,
+        help="Tamanho mínimo (caracteres) para um capítulo ser considerado 'curto'.",
+    )
+    parser.add_argument(
+        "--short-max-chars",
+        type=int,
+        default=1800,
+        help="Tamanho máximo (caracteres) para o capítulo curto.",
     )
     return parser.parse_args()
 
@@ -122,25 +146,34 @@ def resolve_book_path(book_arg: Optional[str]) -> Path:
     candidates: List[Path] = []
     if book_arg:
         candidates.append(Path(book_arg).expanduser())
-    # Caminhos padrão citados pelo usuário
-    home = Path.home()
+    # Exemplos embutidos (não dependem de material protegido)
+    repo_root = PROJECT_ROOT
     candidates.extend(
         [
-            Path("downloads") / "it a coisa",
-            Path("downloads") / "It a Coisa",
-            home / "Downloads" / "it a coisa",
-            home / "Downloads" / "It a Coisa",
-            home / "Downloads" / "IT A COISA",
+            repo_root / "web" / "public" / "sample.epub",
+            repo_root / "python_app" / "tests" / "fixtures" / "epubs" / "sample_multilang.epub",
+            repo_root / "python_app" / "tests" / "fixtures" / "epubs" / "test_multifeature.epub",
         ]
     )
-
     for candidate in dict.fromkeys(candidates):
         resolved = _first_supported_input(candidate)
         if resolved:
             return resolved
-    raise FileNotFoundError(
-        "Livro não encontrado. Informe --book apontando para o EPUB/PDF de 'It a Coisa'."
+    home = Path.home()
+    generic_download = next(
+        (
+            path
+            for path in [
+                home / "Downloads" / "book.epub",
+                home / "Downloads" / "book.pdf",
+            ]
+            if path.exists()
+        ),
+        None,
     )
+    if generic_download:
+        return generic_download
+    raise FileNotFoundError("Livro não encontrado. Informe --book apontando para um EPUB/PDF.")
 
 
 def _first_supported_input(target: Path) -> Optional[Path]:
@@ -152,7 +185,7 @@ def _first_supported_input(target: Path) -> Optional[Path]:
             matches.extend(sorted(target.glob(f"**/*{suffix}")))
         if not matches:
             return None
-        matches.sort(key=lambda p: (0 if "coisa" in p.stem.lower() else 1, len(p.parts)))
+        matches.sort(key=lambda p: len(p.parts))
         return matches[0]
     return None
 
@@ -168,17 +201,39 @@ def parse_scenarios(raw: str) -> List[Scenario]:
     return selected
 
 
-def pick_chapter(chapters: Sequence[Chapter], index: int) -> tuple[Chapter, int]:
+def pick_chapter(
+    chapters: Sequence[Chapter],
+    *,
+    explicit_index: Optional[int],
+    prefer_short: bool,
+    short_range: Tuple[int, int],
+) -> tuple[Chapter, int]:
     if not chapters:
         raise ValueError("Nenhum capítulo encontrado no livro.")
-    requested = max(1, index)
-    chosen_idx = min(requested, len(chapters)) - 1
-    candidate = chapters[chosen_idx]
-    if candidate.text and candidate.text.strip():
-        return candidate, chosen_idx
+
+    def _valid_text(chapter: Chapter) -> bool:
+        return bool(chapter.text and chapter.text.strip())
+
+    if explicit_index is not None:
+        requested = max(1, explicit_index)
+        chosen_idx = min(requested, len(chapters)) - 1
+        candidate = chapters[chosen_idx]
+        if _valid_text(candidate):
+            return candidate, chosen_idx
+
+    if prefer_short:
+        min_chars, max_chars = short_range
+        for idx, chapter in enumerate(chapters):
+            if not _valid_text(chapter):
+                continue
+            length = len(chapter.text or "")
+            if min_chars <= length <= max_chars:
+                return chapter, idx
+
     for idx, chapter in enumerate(chapters):
-        if chapter.text and chapter.text.strip():
+        if _valid_text(chapter):
             return chapter, idx
+
     raise ValueError("Não foi possível encontrar capítulo com texto.")
 
 
@@ -388,7 +443,19 @@ async def async_main() -> None:
 
     reader = EbookReader(str(book_path))
     chapters = reader.get_chapters()
-    target_chapter, idx = pick_chapter(chapters, args.chapter)
+    short_range = (max(50, args.short_min_chars), max(args.short_min_chars, args.short_max_chars))
+    explicit_index = None
+    if str(args.chapter).strip().lower() not in {"", "auto"}:
+        try:
+            explicit_index = int(float(args.chapter))
+        except ValueError as exc:  # noqa: B904
+            raise ValueError("--chapter deve ser um número ou 'auto'") from exc
+    target_chapter, idx = pick_chapter(
+        chapters,
+        explicit_index=explicit_index,
+        prefer_short=args.prefer_short,
+        short_range=short_range,
+    )
 
     chapter_language, languages = detect_languages(target_chapter)
     print(f"Livro: {book_path}")

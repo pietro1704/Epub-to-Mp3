@@ -49,6 +49,7 @@ class ConversionConfig:
     validate_text: bool = True  # Validate parsed/pre-tts text during conversion
     validate_audio: bool = True  # Validate MP3 integrity/duration after synthesis
     strict_validate: bool = False  # Stop conversion when validation fails
+    deep_validate: bool = False  # Run expensive deep validation after conversion
     log_callback: Optional[Callable[[str], None]] = None  # Callback for verbose logging
     edge_auto_offline_seconds: int = 0  # disabled: Edge handles large chapters via chunking
     edge_auto_offline_chars: int = 0  # disabled: Edge handles large chapters via chunking
@@ -56,7 +57,7 @@ class ConversionConfig:
     # Aggressive throughput target: 200+ chars/s with higher concurrency/segment sizes.
     edge_chunk_chars: int = 12000  # Aggressive default for max throughput
     edge_max_segment_seconds: int = 85
-    edge_aggressive_mode: bool = True
+    edge_aggressive_mode: bool = False
     edge_auto_tune: Optional[bool] = None
     edge_enable_parallel: bool = True
     edge_max_concurrency: int = 12  # Aggressive: saturate network with parallel requests
@@ -128,6 +129,7 @@ class ConversionConfig:
         data["validate_text"] = self.validate_text
         data["validate_audio"] = self.validate_audio
         data["strict_validate"] = self.strict_validate
+        data["deep_validate"] = self.deep_validate
         data["validation_language"] = self.validation_language
         return data
 
@@ -710,6 +712,7 @@ class AppConfig:
         validate_text = bool(kwargs.pop("validate_text", True))
         validate_audio = bool(kwargs.pop("validate_audio", True))
         strict_validate = bool(kwargs.pop("strict_validate", False))
+        deep_validate = bool(kwargs.pop("deep_validate", ConversionConfig.deep_validate))
         auto_validate_output = bool(kwargs.pop("auto_validate_output", True))
         auto_fix_output = bool(kwargs.pop("auto_fix_output", True))
 
@@ -755,6 +758,7 @@ class AppConfig:
             validate_text=validate_text,
             validate_audio=validate_audio,
             strict_validate=strict_validate,
+            deep_validate=deep_validate,
             auto_validate_output=auto_validate_output,
             auto_fix_output=auto_fix_output,
         )

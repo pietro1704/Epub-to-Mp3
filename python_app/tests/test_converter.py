@@ -194,7 +194,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         )
         output_dir = self.converter._setup_output_directory(config)
 
-        expected = Path(self.temp_dir) / "edge__default"
+        expected = Path(self.temp_dir) / "default"
         self.assertEqual(output_dir, expected)
 
     def test_cache_text_creation(self):

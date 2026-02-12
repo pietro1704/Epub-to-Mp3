@@ -47,7 +47,7 @@ def _get_piper_semaphore():
             max_procs = 0
         if max_procs <= 0:
             cpu_count = os.cpu_count() or 1
-            max_procs = max(1, min(3, cpu_count))
+            max_procs = max(2, cpu_count)
         _piper_semaphore = asyncio.Semaphore(max_procs)
     return _piper_semaphore
 

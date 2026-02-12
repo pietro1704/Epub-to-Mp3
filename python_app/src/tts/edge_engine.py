@@ -9,9 +9,9 @@ import inspect
 import os
 import re
 
-# **SSL BYPASS**: Monkeypatch SSL ANTES de importar edge_tts
-# IMPORTANTE: Necessário porque certificado da Microsoft (api.msedgeservices.com) está expirado
-# Edge-TTS usa ssl.create_default_context(cafile=certifi.where())
+# **SSL BYPASS**: Monkeypatch SSL BEFORE importing edge_tts
+# IMPORTANT: Required because Microsoft certificate (api.msedgeservices.com) is expired
+# Edge-TTS uses ssl.create_default_context(cafile=certifi.where())
 import ssl as _ssl_module
 from contextlib import AsyncExitStack, suppress
 from pathlib import Path
@@ -23,13 +23,13 @@ from ..synthesis_tracker import SynthesisTracker
 from ..utils import TextValidator
 from .network_tuner import NetworkTuner
 
-# Salvar função original
+# Save original function
 _original_create_default_context = _ssl_module.create_default_context
 
 
-# Substituir por versão não-verificada
+# Replace with unverified version
 def _create_unverified_context_wrapper(*args, **kwargs):
-    """Sempre retorna contexto SSL não-verificado, ignorando parâmetros"""
+    """Always returns unverified SSL context, ignoring parameters"""
     ctx = _ssl_module._create_unverified_context()
     return ctx
 
@@ -70,7 +70,7 @@ except ImportError:
 # ==============================================================================
 # **PERFORMANCE**: Research-based settings for Edge-TTS optimization
 # ==============================================================================
-# Pesquisa (Jan 2026):
+# Research (Jan 2026):
 #
 # CHUNK SIZE:
 #   - Safe range: 3,000-8,000 chars (recommended)
@@ -207,7 +207,7 @@ async def _handle_rate_limit(log_callback: Optional[Callable] = None) -> float:
             _edge_rate_limiters[loop_id] = asyncio.Semaphore(_edge_max_concurrency)
         if log_callback:
             log_callback(
-                f"🔻 Rate limit (403), reduzindo paralelismo: {old_concurrency} → {_edge_max_concurrency}"
+                f"🔻 Rate limit (403), reducing parallelism: {old_concurrency} → {_edge_max_concurrency}"
             )
 
     # Also reduce chunk size while throttled to keep requests small
@@ -215,7 +215,7 @@ async def _handle_rate_limit(log_callback: Optional[Callable] = None) -> float:
 
     if log_callback:
         log_callback(
-            f"⏳ Rate limit detectado, aguardando {backoff:.1f}s (total: {_edge_rate_limit_count})"
+            f"⏳ Rate limit detected, waiting {backoff:.1f}s (total: {_edge_rate_limit_count})"
         )
 
     return backoff
@@ -267,7 +267,7 @@ def _reduce_chunk_size(log_callback: Optional[Callable] = None) -> int:
     _edge_current_chunk_size = max(_SAFE_CHUNK_MIN, _edge_current_chunk_size - reduction)
 
     if log_callback and old_size != _edge_current_chunk_size:
-        log_callback(f"🔻 Reduzindo chunk size: {old_size} → {_edge_current_chunk_size}")
+        log_callback(f"🔻 Reducing chunk size: {old_size} → {_edge_current_chunk_size}")
 
     return _edge_current_chunk_size
 
@@ -442,12 +442,12 @@ class EdgeTTSEngine:
         self._synthesis_tracker: Optional[SynthesisTracker] = None
 
         if self.verbose:
-            parallel_mode = "ativado" if self._enable_parallel else "desativado"
+            parallel_mode = "enabled" if self._enable_parallel else "disabled"
             max_concurrent = self._parallel_slots if self._enable_parallel else 1
-            self._log(f"🔧 EdgeTTS inicializado: {voice}")
-            self._log(f"   Paralelo: {parallel_mode} (max {max_concurrent} simultâneos)")
+            self._log(f"🔧 EdgeTTS initialized: {voice}")
+            self._log(f"   Parallel: {parallel_mode} (max {max_concurrent} concurrent)")
             self._log(
-                f"   Limites: {self._max_segment_seconds:.0f}s/segmento, {self._chunk_char_limit} chars/chunk"
+                f"   Limits: {self._max_segment_seconds:.0f}s/segment, {self._chunk_char_limit} chars/chunk"
             )
 
     def _log(self, message: str) -> None:
@@ -560,7 +560,7 @@ class EdgeTTSEngine:
             changed.append(f"segment: {old:.0f}s→{self._max_segment_seconds:.0f}s")
 
         if changed:
-            self._log(f"🔧 Rede: {', '.join(changed)}")
+            self._log(f"🔧 Network: {', '.join(changed)}")
 
     def _record_network_result(
         self,
@@ -587,11 +587,11 @@ class EdgeTTSEngine:
         return self._network_tuner.get_status_message()
 
     def supports_multilingual(self) -> bool:
-        """Edge TTS suporta multiidioma via voice switching e [[lang:]] tags"""
+        """Edge TTS supports multilingual via voice switching and [[lang:]] tags"""
         return True
 
     def supports_emphasis(self) -> bool:
-        """Edge TTS suporta ênfase via SSML quando voz é Neural"""
+        """Edge TTS supports emphasis via SSML when voice is Neural"""
         return self._supports_emphasis()
 
     def apply_speed_profile(
@@ -635,7 +635,7 @@ class EdgeTTSEngine:
                 updates.append(f"wpm={wpm}")
 
         if updates and self.verbose:
-            self._log(f"⚡ EdgeTTS speed profile atualizado: {', '.join(updates)}")
+            self._log(f"⚡ EdgeTTS speed profile updated: {', '.join(updates)}")
 
     @property
     def speed_profile(self) -> Dict[str, float]:
@@ -648,10 +648,10 @@ class EdgeTTSEngine:
 
     async def _probe_edge_health(self, voice: str) -> bool:
         """
-        Tenta uma síntese mínima para diferenciar erro de conteúdo x indisponibilidade do serviço.
-        Se até o texto de teste falhar, assumimos outage no backend do Edge.
+        Attempt a minimal synthesis to differentiate content error vs service unavailability.
+        If even the test text fails, we assume an outage on the Edge backend.
         """
-        test_text = "Teste rápido do Edge TTS."
+        test_text = "Quick Edge TTS test."
         timeout = 8
         try:
             async with self._rate_limiter:
@@ -676,14 +676,14 @@ class EdgeTTSEngine:
                 return await asyncio.wait_for(_consume_probe(), timeout=timeout)
         except Exception as exc:
             if self.verbose:
-                self._log(f"🔍 [VERBOSE] EdgeTTS health-check falhou: {exc}")
+                self._log(f"🔍 [VERBOSE] EdgeTTS health-check failed: {exc}")
             return False
 
     @staticmethod
     def _sanitize_for_edge(text: str) -> str:
         """
-        Remove caracteres de controle/zero-width e normaliza espaços.
-        Edge costuma retornar NoAudioReceived quando recebe controle invisível ou separadores de linha.
+        Remove control/zero-width characters and normalize whitespace.
+        Edge often returns NoAudioReceived when it receives invisible control chars or line separators.
         """
         cleaned = re.sub(r"[\u0000-\u001f\u007f-\u009f]", " ", text)
         cleaned = cleaned.replace("\u2028", " ").replace("\u2029", " ").replace("\ufeff", " ")
@@ -708,8 +708,8 @@ class EdgeTTSEngine:
 
         if self.verbose:
             text_preview = text[:150] + "..." if len(text) > 150 else text
-            self._log(f"\n📝 EdgeTTS iniciando síntese para {output_path.name}")
-            self._log(f"   Tamanho: {len(text)} caracteres")
+            self._log(f"\n📝 EdgeTTS starting synthesis for {output_path.name}")
+            self._log(f"   Size: {len(text)} characters")
             self._log(f"   Preview: {text_preview}")
 
         self.last_error = None
@@ -735,7 +735,7 @@ class EdgeTTSEngine:
         payload_text = sanitized
 
         if self.verbose and payload_text != text:
-            self._log(f"   ⚙️ Texto processado (sanitizado/formatado): {len(payload_text)} chars")
+            self._log(f"   ⚙️ Text processed (sanitized/formatted): {len(payload_text)} chars")
 
         force_plain_segments = self._should_force_plain_text(payload_text)
         if force_plain_segments:
@@ -747,7 +747,7 @@ class EdgeTTSEngine:
             return None
 
         if self.verbose:
-            self._log(f"   📦 Dividido em {len(segments)} segmentos")
+            self._log(f"   📦 Split into {len(segments)} segments")
 
         output_path = Path(output_path)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -786,8 +786,8 @@ class EdgeTTSEngine:
                     pass
             if pre_existing_chunks:
                 self._log(
-                    f"♻️ [RESUME] Encontrados {len(pre_existing_chunks)}/{len(segments_to_process)} "
-                    f"segmentos já processados, retomando do restante"
+                    f"♻️ [RESUME] Found {len(pre_existing_chunks)}/{len(segments_to_process)} "
+                    f"segments already processed, resuming from the rest"
                 )
 
         use_chunk_files = bool(chunk_callback) or bool(resume_chunks_dir)
@@ -805,14 +805,14 @@ class EdgeTTSEngine:
             except Exception as exc:
                 self.last_error = f"append_failed:{exc}"
                 if self.verbose:
-                    self._log(f"❌ Falha ao anexar chunk: {exc}")
+                    self._log(f"❌ Failed to append chunk: {exc}")
                 return False
 
         # **PARALLEL OPTIMIZATION**: Process segments in batches when parallel mode is enabled
         if self._enable_parallel and self._rate_limiter and len(segments_to_process) > 1:
             if self.verbose:
                 batch_size = self._determine_parallel_batch_size(len(segments_to_process))
-                self._log(f"🚀 [VERBOSE] Processamento paralelo ativado (batch size: {batch_size})")
+                self._log(f"🚀 [VERBOSE] Parallel processing enabled (batch size: {batch_size})")
             return await self._synthesize_parallel(
                 output_path,
                 segments_to_process,
@@ -923,7 +923,7 @@ class EdgeTTSEngine:
                     if retry_segments:
                         if self.verbose:
                             self._log(
-                                f"   ⚠️ Falhou, dividindo em {len(retry_segments)} sub-segmentos..."
+                                f"   ⚠️ Failed, splitting into {len(retry_segments)} sub-segments..."
                             )
                         segments_to_process[idx : idx + 1] = retry_segments
                         continue
@@ -931,7 +931,7 @@ class EdgeTTSEngine:
                     simplified_text = self._simplify_segment_text(segment_text)
                     if simplified_text and simplified_text != segment_text:
                         if self.verbose:
-                            self._log("   ⚠️ Tentando com texto simplificado...")
+                            self._log("   ⚠️ Retrying with simplified text...")
                         success = await self._synthesize_segment(
                             simplified_text,
                             voice,
@@ -954,7 +954,7 @@ class EdgeTTSEngine:
                                     with suppress(OSError):
                                         temp_segment_path.unlink(missing_ok=True)
                             if self.verbose:
-                                self._log("   ✅ Sucesso com texto simplificado")
+                                self._log("   ✅ Success with simplified text")
                             force_plain_segments = True
                             if progress_callback:
                                 progress_callback(simplified_text, total_text_chars or 0)
@@ -968,13 +968,13 @@ class EdgeTTSEngine:
 
                     failed_segments += 1
                     if self.verbose:
-                        self._log(f"   ❌ FALHOU: {self.last_error}")
+                        self._log(f"   ❌ FAILED: {self.last_error}")
 
-                    # Retry com backoff exponencial mais curto (1s, 2s)
+                    # Retry with shorter exponential backoff (1s, 2s)
                     if failed_segments <= 2:
                         backoff = min(1.0 * (2 ** (failed_segments - 1)), 3.0)
                         if self.verbose:
-                            self._log(f"   🔄 Tentando novamente após {backoff}s...")
+                            self._log(f"   🔄 Retrying after {backoff}s...")
                         await asyncio.sleep(backoff)
 
                         success = await self._synthesize_segment(
@@ -991,10 +991,10 @@ class EdgeTTSEngine:
 
                         if success:
                             if self.verbose:
-                                self._log("   ✅ Sucesso no retry")
+                                self._log("   ✅ Success on retry")
                             failed_segments = max(0, failed_segments - 1)
 
-                    # Falhar se mais de 2 segmentos consecutivos falharem
+                    # Fail if more than 2 consecutive segments failed
                     if failed_segments > 2:
                         last_error_text = (self.last_error or "").lower()
                         is_network_like = any(
@@ -1010,7 +1010,7 @@ class EdgeTTSEngine:
                         )
                         if is_network_like:
                             self._log(
-                                f"❌ Edge TTS: falhas consecutivas por rede/SSL ({failed_segments}), abortando"
+                                f"❌ Edge TTS: consecutive network/SSL failures ({failed_segments}), aborting"
                             )
                             raise RuntimeError("edge_network_abort")
                         micro_segments = self._force_micro_segments(
@@ -1019,14 +1019,14 @@ class EdgeTTSEngine:
                         if micro_segments:
                             if self.verbose:
                                 self._log(
-                                    f"   ⚡ Forçando divisão em {len(micro_segments)} microsegmentos"
+                                    f"   ⚡ Forcing split into {len(micro_segments)} micro-segments"
                                 )
                             segments_to_process[idx : idx + 1] = micro_segments
                             force_plain_segments = True
                             failed_segments = 0
                             continue
                         self._log(
-                            f"❌ Edge TTS: muitas falhas consecutivas ({failed_segments}), abortando"
+                            f"❌ Edge TTS: too many consecutive failures ({failed_segments}), aborting"
                         )
                         return None
 
@@ -1071,11 +1071,11 @@ class EdgeTTSEngine:
             "failed": failed_segments,
         }
 
-        # **FIXED**: Aceitar áudio somente se pelo menos 95% dos segmentos foram gerados com sucesso
+        # **FIXED**: Accept audio only if at least 95% of segments were generated successfully
         success_rate = total_segments / max(expected_segments, 1)
 
         if success_rate < 0.95:
-            # Menos de 95% dos segmentos -> falha crítica
+            # Less than 95% of segments -> critical failure
             self.partial_failure_detected = True
 
             # Adaptive: reduce chunk size for next attempt

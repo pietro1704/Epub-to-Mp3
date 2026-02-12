@@ -8,6 +8,22 @@ Full-stack EPUB/PDF to MP3 audiobook converter. Python backend with FastAPI serv
 
 **TTS Engines**: Edge-TTS (Microsoft cloud), Coqui TTS (local neural), Kokoro (fast local), Spark-TTS (LLM-based), Piper (local ONNX)
 
+## Language Policy
+
+**ALL code, comments, docstrings, log messages, print statements, and UI text MUST be in English.**
+- No Portuguese (or any non-English language) in source code
+- The i18n system handles user-facing translations separately
+- Variable names, function names, and identifiers must be in English
+- Commit messages in English
+
+## Performance Policy
+
+**Always maximize CPU and RAM usage by default.** The app should automatically:
+- Scale chapter parallelism to available CPU cores (not conservative defaults)
+- Use aggressive chunk sizes and concurrency for Edge-TTS
+- Scale Piper/Kokoro workers to match available cores
+- Never artificially limit resources unless rate-limited by external services
+
 ## Commands
 
 ### Python Setup
@@ -35,6 +51,12 @@ python -m python_app.main convert book.epub --show-structure   # Preview chapter
 python -m python_app.main convert book.epub --clear-cache      # Reprocess from scratch
 # Batch conversion
 python -m python_app.main convert book1.epub book2.pdf --batch ~/folder/
+```
+
+### Benchmarking
+```bash
+source .venv/bin/activate
+python benchmark_engines.py book.epub --engines edge,piper --chapters 3
 ```
 
 ### API Server
@@ -81,7 +103,7 @@ src/
 └── tts/
     ├── factory.py      # TTSFactory (factory pattern)
     ├── base.py         # TTSEngine abstract base
-    ├── edge_engine.py  # Edge-TTS (cloud, 10K char chunks, 8 concurrent, 85s segments)
+    ├── edge_engine.py  # Edge-TTS (cloud, 12K char chunks, 12 concurrent, 85s segments)
     ├── coqui_engine.py # Coqui XTTS (neural local, GPU recommended)
     ├── kokoro_engine.py# Kokoro (fast local, 82M params, EN/JA/ZH)
     ├── spark_engine.py # Spark-TTS (LLM-based, voice cloning)
@@ -111,20 +133,26 @@ React 18 + TypeScript + Vite. Key files:
 
 ### Edge-TTS Tuning
 ```bash
-EDGE_CHUNK_CHARS=10000          # Chars per request (default 10K, max 15K)
-EDGE_MAX_CONCURRENCY=8          # Parallel requests (optimal)
+EDGE_CHUNK_CHARS=12000          # Chars per request (default 12K, max 15K)
+EDGE_MAX_CONCURRENCY=12         # Parallel requests (aggressive default)
 EDGE_MAX_SEGMENT_SECONDS=85     # Max audio segment duration
 EDGE_SAFE_CHAPTER_PARALLEL=8    # Parallel chapters
-# Three-tier fallback system:
-EDGE_MONOLINGUAL_THRESHOLD=3    # Switch to monolingual Edge after N failures (default 3)
-EDGE_PIPER_THRESHOLD=5          # Switch to Piper after N failures (default 5)
-EDGE_FAILURE_THRESHOLD=5        # Legacy env var (maps to PIPER threshold)
+CHAPTER_PARALLEL_COUNT=0        # Auto-detect from CPU cores (0=auto)
+# Four-tier fallback system:
+EDGE_MONOLINGUAL_THRESHOLD=3    # Switch to monolingual Edge after N failures
+EDGE_KOKORO_THRESHOLD=3         # Switch to Kokoro after N failures (after monolingual)
+EDGE_PIPER_THRESHOLD=3          # Switch to Piper after N failures (after Kokoro)
 ```
 
 ### Kokoro Tuning
 ```bash
 KOKORO_CHUNK_CHARS=2000         # Chars per chunk
-KOKORO_MAX_WORKERS=2            # Parallel workers
+KOKORO_MAX_WORKERS=0            # Auto-detect from CPU cores (0=auto, default=cpu/2)
+```
+
+### Piper Tuning
+```bash
+PIPER_MAX_PROCS=0               # Auto-detect from CPU cores (0=auto, default=cpu_count)
 ```
 
 ### Spark-TTS Tuning
@@ -134,11 +162,11 @@ SPARK_CHUNK_CHARS=1500          # Chars per chunk
 SPARK_MAX_WORKERS=1             # Workers (GPU-bound)
 ```
 
-## Three-Tier Fallback System & Adaptive Delays
+## Four-Tier Fallback System & Adaptive Delays
 
 **Edge-TTS Resilience System** (updated Feb 2026):
 
-When using Edge-TTS, the system automatically handles rate limiting and service degradation with a **three-tier progressive fallback**:
+When using Edge-TTS, the system automatically handles rate limiting and service degradation with a **four-tier progressive fallback**:
 
 ### Tier 1: Edge-TTS Multilingual (Default)
 - Uses multilingual neural voices (e.g., `pt-BR-ThalitaMultilingualNeural`)
@@ -153,27 +181,19 @@ When using Edge-TTS, the system automatically handles rate limiting and service 
   - Failure 7+ → 30s delay (capped)
 
 ### Tier 2: Edge-TTS Monolingual (after 3 failures)
-```
-🔄 Edge-TTS com 3 falhas consecutivas
-🔀 Mudando para Edge monolíngue (idioma fixo): pt
-🎤 Nova voz: pt-BR-FabioNeural
-```
-- Automatically switches to **monolingual** (language-specific) voice after 3 consecutive failures
+- Automatically switches to monolingual (language-specific) voice
 - Uses non-multilingual voices which may have less rate limiting
 - Maintains cloud quality with potentially better stability
-- Threshold configurable via `EDGE_MONOLINGUAL_THRESHOLD` env var (default 3)
 
-### Tier 3: Piper Offline (after 5 total failures)
-```
-🔄 Edge-TTS com 5 falhas consecutivas
-🛟 Mudando automaticamente para Piper (offline) com idioma: pt
-✅ Piper carregado: pt_BR-faber-medium.onnx
-```
-- Falls back to **Piper** (offline ONNX) after 5 consecutive failures (default)
+### Tier 3: Kokoro Local (after 3 more failures)
+- Falls back to Kokoro (local neural TTS, 82M params)
+- Supports EN/JA/ZH only
+- No rate limits, uses CPU
+
+### Tier 4: Piper Offline (after 3 more failures)
+- Falls back to Piper (offline ONNX)
 - Uses detected book language for appropriate model selection
 - Continues conversion with offline engine (no rate limits)
-- Threshold configurable via `EDGE_PIPER_THRESHOLD` env var (default 5)
-- Requires venv activation for Piper to be found in PATH
 
 ### Language Detection
 - System analyzes **at least 5 chapters** and **5000+ characters** for confident language detection
@@ -190,10 +210,14 @@ When using Edge-TTS, the system automatically handles rate limiting and service 
 - **Job Queue**: JobManager handles async conversion with progress callbacks
 - **Caching**: CacheManager stores parsed text per chapter for resume
 - **Adaptive Resilience**: Exponential backoff + automatic fallback for service degradation
+- **Auto-Scaling**: Workers and parallelism auto-scale to available hardware
 
 ## Guidelines
+- **All code and comments in English** - no exceptions
 - Follow existing factory pattern for new TTS engines
 - Preserve chapter structure from EPUB navigation (NCX/nav)
 - Validate engine dependencies before use (ffmpeg, model files)
 - **Always activate venv** before running conversions (required for Piper fallback)
 - Keep changes minimal and focused
+- Default to aggressive performance settings (max CPU/RAM usage)
+- Progress bar denominator should show only chapters to be converted (exclude cached)

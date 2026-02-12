@@ -40,6 +40,7 @@ class VerificationResult:
     similarity_score: float  # 0.0 - 1.0
     passed: bool
     details: str = ""
+    partial: bool = False  # True when transcription was incomplete (timeout/stall)
 
 
 # ── Text normalization ──────────────────────────────────────────────
@@ -233,7 +234,7 @@ class TranscriptionVerifier:
             status = "⚠️ parcial (timeout)" if stalled else "✅"
             print(f"   {status} {seg_count} segmentos em {elapsed:.1f}s", flush=True)
 
-        return " ".join(texts)
+        return " ".join(texts), stalled
 
     MULTILINGUAL_THRESHOLD = 0.40  # Lower threshold for multilingual content
 
@@ -252,7 +253,11 @@ class TranscriptionVerifier:
             else:
                 threshold = self.SIMILARITY_THRESHOLD
 
-        transcribed = self.transcribe(audio_path, verbose=verbose)
+        result = self.transcribe(audio_path, verbose=verbose)
+        if isinstance(result, tuple):
+            transcribed, was_partial = result
+        else:
+            transcribed, was_partial = result, False
 
         # Word-level comparison after stripping TTS cues
         words_transcribed = _extract_words(transcribed)
@@ -284,6 +289,7 @@ class TranscriptionVerifier:
             similarity_score=similarity,
             passed=passed,
             details=details,
+            partial=was_partial,
         )
 
     def verify_chapter(

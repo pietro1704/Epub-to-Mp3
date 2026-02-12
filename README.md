@@ -93,6 +93,9 @@ python -m python_app.main book.epub --chapter 3
 # Multiple specific chapters at once (comma-separated or repeated flag)
 python -m python_app.main book.epub --chapter 5.1,5.2,5.3
 
+# Habilitar validação profunda ao final (mais lento)
+python -m python_app.main book.epub --deep-validate
+
 # Retry failed chapters automatically (default 2 rounds) or disable/force extra
 python -m python_app.main book.epub --retry-failed 3            # up to 3 auto rounds
 python -m python_app.main book.epub --retry-failed 0            # disable auto retries
@@ -188,14 +191,16 @@ export COQUI_MAX_WORKERS=6            # keep below logical cores to avoid thrash
 export PIPER_MAX_PROCS=3
 ```
 
-### Teste turbo específico para “It – A Coisa”
+### Teste turbo de 1 capítulo (Edge vs Piper)
 
-O script `scripts/it_a_coisa_speedtest.py` executa a conversão real de **um capítulo** usando três cenários: Edge multilíngue, Edge pt-BR monolíngue (voz Francisca/Leticia, conforme detecção automática) e Piper local. Ele coleta o capítulo diretamente de `~/Downloads/It a Coisa` (ou do caminho informado), detecta o idioma predominante e aplica `HardwareDetector` para liberar o máximo de CPU/RAM/IO permitido — o mesmo pipeline usado no app CLI/web/Space.
+O script `scripts/chapter_speedtest.py` executa a conversão real de **um capítulo** usando três cenários: Edge multilíngue, Edge pt-BR monolíngue (voz ajustada automaticamente) e Piper local. Ele usa, por padrão, o `web/public/sample.epub` (livro de teste incluso no repo) e procura automaticamente um capítulo curto para acelerar a medição. Basta apontar `--book` para qualquer EPUB/PDF para repetir o teste com seu arquivo.
 
 ```bash
-python scripts/it_a_coisa_speedtest.py \
-  --book "~/Downloads/It a Coisa/it_a_coisa.epub" \
-  --chapter 7
+# sample interno
+python scripts/chapter_speedtest.py
+
+# outro livro + cap. específico
+python scripts/chapter_speedtest.py --book "~/Downloads/SeuLivro.epub" --chapter 7
 ```
 
 Notas rápidas:

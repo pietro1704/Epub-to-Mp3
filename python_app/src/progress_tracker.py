@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Progress tracker unificado para conversões
+Unified progress tracker for conversions
 """
 
 import time
@@ -9,16 +9,16 @@ from .utils import TimeFormatter
 
 
 class ProgressTracker:
-    """Rastreamento de progresso unificado para conversões"""
+    """Unified progress tracking for conversions"""
 
-    def __init__(self, total_items: int, description: str = "Processando"):
+    def __init__(self, total_items: int, description: str = "Processing"):
         self.total_items = total_items
         self.description = description
         self.current_item = 0
         self.start_time = time.time()
 
     def update(self, current_item: int, status_message: str = ""):
-        """Atualiza progresso atual"""
+        """Update current progress"""
         self.current_item = current_item
         elapsed = time.time() - self.start_time
         eta = (
@@ -33,9 +33,9 @@ class ProgressTracker:
         )
 
     def finish(self):
-        """Marca o progresso como concluído"""
+        """Mark progress as completed"""
         elapsed = time.time() - self.start_time
-        print(f"\n✅ Concluído em {self._format_time(elapsed)}")
+        print(f"\n✅ Completed in {self._format_time(elapsed)}")
 
     def _generate_progress_bar(self, progress_pct: float, bar_width: int = 30) -> str:
         filled = int(bar_width * progress_pct / 100)

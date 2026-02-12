@@ -3225,6 +3225,8 @@ class ConverterApplication:
             config.auto_validate_output = bool(getattr(args, "auto_validate_output"))
         if getattr(args, "auto_fix_output", None) is not None:
             config.auto_fix_output = bool(getattr(args, "auto_fix_output"))
+        if getattr(args, "deep_validate", None) is not None:
+            config.deep_validate = bool(getattr(args, "deep_validate"))
         sample_rate = self._clamp_int(
             getattr(args, "sample_rate", None), min_value=8000, max_value=96000
         )
@@ -3456,6 +3458,19 @@ def _add_conversion_arguments(
         action="store_false",
         dest="verify_transcription",
         help="Disable speech-to-text transcription verification",
+    )
+    parser.add_argument(
+        "--deep-validate",
+        action="store_true",
+        dest="deep_validate",
+        default=None,
+        help="Enable deep validation (comparação texto/áudio completa) após converter",
+    )
+    parser.add_argument(
+        "--no-deep-validate",
+        action="store_false",
+        dest="deep_validate",
+        help="Desabilita a validação profunda (padrão, mais rápido)",
     )
     parser.add_argument(
         "--validate-during-conversion",

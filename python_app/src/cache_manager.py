@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Gerenciador de cache para ebooks processados
+Cache manager for processed ebooks
 """
 
 import hashlib
@@ -16,7 +16,7 @@ from .paths import CACHE_DIR
 
 @dataclass
 class ConversionCheckpoint:
-    """Estado de checkpoint de uma conversão"""
+    """Checkpoint state of a conversion"""
 
     book_path: str
     book_title: str
@@ -31,9 +31,9 @@ class ConversionCheckpoint:
 
 
 class CacheManager:
-    """Gerenciador de cache inteligente para ebooks"""
+    """Smart cache manager for ebooks"""
 
-    # Diretórios que não devem ser apagados por uma limpeza global (modelos, telemetria, etc.)
+    # Directories that should not be deleted by a global cleanup (models, telemetry, etc.)
     _PROTECTED_DIRS = {
         "telemetry",
         "coqui_models",
@@ -47,43 +47,43 @@ class CacheManager:
 
     def __init__(self, cache_dir: Optional[Path] = None):
         try:
-            # Sempre usa CACHE_DIR da raiz do projeto, a menos que seja explicitamente fornecido
+            # Always uses CACHE_DIR from project root, unless explicitly provided
             self.cache_dir = Path(cache_dir) if cache_dir else CACHE_DIR
             self.cache_dir.mkdir(parents=True, exist_ok=True)
         except (PermissionError, OSError) as e:
-            print(f"⚠️ Cache desabilitado: sem permissão de escrita ({e})")
-            print(f"💡 Dica: verifique as permissões do diretório {CACHE_DIR}")
-            # Fallback para None - operações de cache serão no-ops
+            print(f"⚠️ Cache disabled: no write permission ({e})")
+            print(f"💡 Tip: check the directory permissions for {CACHE_DIR}")
+            # Fallback to None - cache operations will be no-ops
             self.cache_dir = None
 
     def _get_ebook_hash(self, ebook_path: Path) -> str:
-        """Gera hash único para o ebook"""
-        # Usa stat do arquivo + nome para gerar hash único
+        """Generate unique hash for the ebook"""
+        # Uses file stat + name to generate unique hash
         stat = ebook_path.stat()
         hash_input = f"{ebook_path.name}_{stat.st_size}_{stat.st_mtime}"
         return hashlib.md5(hash_input.encode()).hexdigest()[:12]
 
     def _get_cache_path(self, ebook_path: Path, *, override_name: Optional[str] = None) -> Path:
-        """Retorna caminho do cache usando apenas o nome do livro
+        """Return cache path using only the book filename
 
-        IMPORTANTE: Sempre usa o nome do arquivo como base, NÃO o título do livro,
-        para evitar criar pastas duplicadas quando título != nome do arquivo
+        IMPORTANT: Always uses the filename as base, NOT the book title,
+        to avoid creating duplicate folders when title != filename
         """
         if self.cache_dir is None:
-            # Fallback para diretório temporário
+            # Fallback to temporary directory
             import tempfile
 
             return Path(tempfile.gettempdir()) / "epub_to_mp3_fallback"
-        # **CORRIGIDO**: Sempre usar ebook_path.stem, ignorar override_name
-        # para evitar criar múltiplas pastas para o mesmo livro
+        # **FIXED**: Always use ebook_path.stem, ignore override_name
+        # to avoid creating multiple folders for the same book
         source_name = ebook_path.stem
         safe_name = self._sanitize_filename(source_name)
         if not safe_name:
-            safe_name = "livro"
+            safe_name = "book"
         return self.cache_dir / safe_name
 
     def get_cached_chapters(self, ebook_path: Path) -> Optional[Dict[str, Any]]:
-        """Retorna capítulos cacheados se existirem"""
+        """Return cached chapters if they exist"""
         if self.cache_dir is None:
             return None
 
@@ -97,11 +97,11 @@ class CacheManager:
             with open(metadata_file, "r", encoding="utf-8") as f:
                 metadata = json.load(f)
 
-            # Valida se cache ainda é válido
+            # Validate if cache is still valid
             if self._is_cache_valid(metadata, ebook_path):
                 return metadata
             else:
-                # Remove cache inválido
+                # Remove invalid cache
                 self._cleanup_cache(cache_path)
                 return None
 
@@ -109,44 +109,44 @@ class CacheManager:
             return None
 
     def save_chapters_to_cache(self, ebook_path: Path, chapters_data: Dict[str, Any]) -> bool:
-        """Salva capítulos processados no cache"""
+        """Save processed chapters to cache"""
         if self.cache_dir is None:
-            # Cache desabilitado - operação silenciosa
+            # Cache disabled - silent operation
             return False
 
         try:
             ebook_path = Path(ebook_path)
         except TypeError:
-            print("⚠️  Caminho do ebook inválido para cache.")
+            print("⚠️  Invalid ebook path for cache.")
             return False
 
         if not isinstance(chapters_data, dict):
-            print("⚠️  Dados de capítulos inesperados ao salvar cache.")
+            print("⚠️  Unexpected chapter data when saving cache.")
             return False
 
         chapters = chapters_data.get("chapters")
         if chapters is None:
-            # Nenhum capítulo para salvar é uma condição aceitável
+            # No chapters to save is an acceptable condition
             chapters = []
         elif not isinstance(chapters, list):
-            print("⚠️  Formato inesperado para capítulos em cache.")
+            print("⚠️  Unexpected format for chapters in cache.")
             return False
 
         try:
-            # **CORRIGIDO**: Não usar override_name para evitar pastas duplicadas
+            # **FIXED**: Do not use override_name to avoid duplicate folders
             cache_path = self._get_cache_path(ebook_path)
             cache_path.mkdir(parents=True, exist_ok=True)
 
-            # Cria subdiretório txt para os capítulos, sobrescrevendo o conteúdo anterior
+            # Create txt subdirectory for chapters, overwriting previous content
             txt_dir = cache_path / "txt"
             if txt_dir.exists():
                 shutil.rmtree(txt_dir)
             txt_dir.mkdir(parents=True, exist_ok=True)
 
-            # Salva capítulos individuais como TXT
+            # Save individual chapters as TXT
             for index, chapter in enumerate(chapters, 1):
                 if not isinstance(chapter, dict):
-                    print("⚠️  Capítulo inesperado no cache, ignorando entrada inválida.")
+                    print("⚠️  Unexpected chapter in cache, skipping invalid entry.")
                     continue
 
                 chapter_title = chapter.get("title", "Chapter")
@@ -158,7 +158,7 @@ class CacheManager:
                 with open(chapter_file, "w", encoding="utf-8") as handle:
                     handle.write(chapter_text)
 
-            # **FIX**: Salvar metadata.json para que get_cached_chapters funcione
+            # **FIX**: Save metadata.json so that get_cached_chapters works
             stat = ebook_path.stat()
             metadata = {
                 "title": chapters_data.get("title", "Unknown"),
@@ -177,11 +177,11 @@ class CacheManager:
             return True
 
         except Exception as exc:
-            print(f"⚠️  Erro ao salvar cache: {exc}")
+            print(f"⚠️  Error saving cache: {exc}")
             return False
 
     def _is_cache_valid(self, metadata: Dict[str, Any], ebook_path: Path) -> bool:
-        """Valida se o cache ainda é válido"""
+        """Validate if the cache is still valid"""
         try:
             stat = ebook_path.stat()
             return metadata.get("size") == stat.st_size and metadata.get("mtime") == stat.st_mtime
@@ -189,17 +189,17 @@ class CacheManager:
             return False
 
     def _cleanup_cache(self, cache_path: Path):
-        """Remove cache inválido"""
+        """Remove invalid cache"""
         if cache_path.exists() and cache_path.is_dir():
             shutil.rmtree(cache_path, ignore_errors=True)
 
     def clear_cache(
         self, ebook_path: Optional[Path] = None, *, title: Optional[str] = None
     ) -> bool:
-        """Limpa o cache para um ebook específico ou, globalmente, apenas os livros.
+        """Clear the cache for a specific ebook or, globally, only the books.
 
-        Observação: diretórios de modelos/telemetria são preservados para evitar
-        downloads repetidos e caros.
+        Note: model/telemetry directories are preserved to avoid
+        repeated and expensive downloads.
         """
         if self.cache_dir is None:
             return False
@@ -208,8 +208,8 @@ class CacheManager:
 
         if ebook_path:
             ebook_path = Path(ebook_path)
-            # **CORRIGIDO**: Usar apenas o caminho baseado no nome do arquivo
-            # para evitar procurar em múltiplas pastas
+            # **FIXED**: Use only the path based on the filename
+            # to avoid searching in multiple folders
             candidates = set()
             candidates.add(self._get_cache_path(ebook_path))
             if title:
@@ -242,7 +242,7 @@ class CacheManager:
         return removed_any
 
     def get_cache_info(self) -> Dict[str, Any]:
-        """Retorna informações sobre o cache"""
+        """Return information about the cache"""
         if self.cache_dir is None:
             return {"total_cached_books": 0, "cache_size_mb": 0}
 
@@ -288,9 +288,9 @@ class CacheManager:
             return {"total_cached_books": 0, "cache_size_mb": 0}
 
     def _get_checkpoint_path(self, book_path: Path) -> Path:
-        """Gera caminho do checkpoint para o livro"""
+        """Generate checkpoint path for the book"""
         if self.cache_dir is None:
-            # Fallback para diretório temporário
+            # Fallback to temporary directory
             import tempfile
 
             temp_cache = Path(tempfile.gettempdir()) / "epub_to_mp3_fallback"
@@ -313,7 +313,7 @@ class CacheManager:
         current_chapter: Optional[int],
         conversion_config: Dict[str, Any],
     ) -> bool:
-        """Salva checkpoint da conversão"""
+        """Save conversion checkpoint"""
         try:
             checkpoint = ConversionCheckpoint(
                 book_path=str(book_path.absolute()),
@@ -335,11 +335,11 @@ class CacheManager:
             return True
 
         except Exception as e:
-            print(f"⚠️ Erro ao salvar checkpoint: {e}")
+            print(f"⚠️ Error saving checkpoint: {e}")
             return False
 
     def load_checkpoint(self, book_path: Path) -> Optional[ConversionCheckpoint]:
-        """Carrega checkpoint da conversão"""
+        """Load conversion checkpoint"""
         try:
             checkpoint_path = self._get_checkpoint_path(book_path)
             if not checkpoint_path.exists():
@@ -351,7 +351,7 @@ class CacheManager:
             return ConversionCheckpoint(**data)
 
         except Exception as e:
-            print(f"⚠️ Erro ao carregar checkpoint: {e}")
+            print(f"⚠️ Error loading checkpoint: {e}")
             return None
 
     def clear_checkpoint(self, book_path: Path) -> bool:

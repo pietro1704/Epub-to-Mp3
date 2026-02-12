@@ -52,68 +52,68 @@ class ValidationReport:
     def print_summary(self):
         """Print a formatted summary of the validation."""
         print("\n" + "=" * 80)
-        print("🔍 VALIDAÇÃO PROFUNDA - RELATÓRIO FINAL")
+        print("🔍 DEEP VALIDATION - FINAL REPORT")
         print("=" * 80)
 
-        print("\n📊 Estatísticas Gerais:")
-        print(f"   Total de capítulos: {self.total_chapters}")
-        print(f"   ✅ Capítulos válidos: {self.valid_chapters}")
-        print(f"   ❌ Capítulos com problemas: {self.total_chapters - self.valid_chapters}")
+        print("\n📊 General Statistics:")
+        print(f"   Total chapters: {self.total_chapters}")
+        print(f"   ✅ Valid chapters: {self.valid_chapters}")
+        print(f"   ❌ Chapters with issues: {self.total_chapters - self.valid_chapters}")
 
         if self.duplicates_found > 0:
-            print(f"\n⚠️  Duplicações Encontradas: {self.duplicates_found}")
+            print(f"\n⚠️  Duplications Found: {self.duplicates_found}")
             for file1, file2 in self.duplicate_files[:5]:  # Show first 5
                 print(f"   - {file1} = {file2}")
         else:
-            print("\n✅ Duplicações: Nenhuma encontrada")
+            print("\n✅ Duplications: None found")
 
         if self.char_mismatches > 0:
-            print(f"\n⚠️  Diferenças de Caracteres: {self.char_mismatches} capítulos")
+            print(f"\n⚠️  Character Differences: {self.char_mismatches} chapters")
         else:
-            print("\n✅ Contagem de Caracteres: Todas dentro da tolerância")
+            print("\n✅ Character Count: All within tolerance")
 
         if self.content_mismatches > 0:
-            print(f"\n⚠️  Diferenças de Conteúdo: {self.content_mismatches} capítulos")
-            print("   (início/meio/final não correspondem)")
+            print(f"\n⚠️  Content Differences: {self.content_mismatches} chapters")
+            print("   (start/middle/end do not match)")
         else:
-            print("\n✅ Conteúdo: Início/meio/final correspondem ao EPUB")
+            print("\n✅ Content: Start/middle/end match the EPUB")
 
         # Show failed chapters
         failed = [c for c in self.comparisons if not c.is_valid]
         if failed:
-            print("\n❌ Capítulos com Problemas:")
+            print("\n❌ Chapters with Issues:")
             for comp in failed[:10]:  # Show first 10
                 print(f"   - {comp.chapter_id}: {comp.error_msg}")
 
         print("\n" + "=" * 80)
         if self.success:
-            print("✅ VALIDAÇÃO PROFUNDA PASSOU!")
-            print("   - Nenhuma duplicação detectada")
-            print("   - Contagem de caracteres correta")
+            print("✅ DEEP VALIDATION PASSED!")
+            print("   - No duplications detected")
+            print("   - Character count correct")
             print(
-                f"   - {self.valid_chapters}/{self.total_chapters} capítulos validados com sucesso"
+                f"   - {self.valid_chapters}/{self.total_chapters} chapters validated successfully"
             )
             if self.auto_corrected and self.corrections_made:
-                print(f"\n🔧 Autocorreções Aplicadas: {len(self.corrections_made)}")
+                print(f"\n🔧 Auto-corrections Applied: {len(self.corrections_made)}")
                 for correction in self.corrections_made[:5]:
                     print(f"   - {correction}")
         else:
-            print("⚠️  VALIDAÇÃO PROFUNDA: Problemas detectados")
+            print("⚠️  DEEP VALIDATION: Issues detected")
             if self.duplicates_found > 0:
-                print(f"   - {self.duplicates_found} duplicações no cache")
+                print(f"   - {self.duplicates_found} duplications in cache")
             if self.char_mismatches > 0:
-                print(f"   - {self.char_mismatches} capítulos com diferença de caracteres")
+                print(f"   - {self.char_mismatches} chapters with character differences")
             if self.content_mismatches > 0:
-                print(f"   - {self.content_mismatches} capítulos com diferenças de conteúdo")
+                print(f"   - {self.content_mismatches} chapters with content differences")
 
             if self.auto_corrected and self.corrections_made:
-                print(f"\n🔧 Autocorreções Aplicadas: {len(self.corrections_made)}")
+                print(f"\n🔧 Auto-corrections Applied: {len(self.corrections_made)}")
                 for correction in self.corrections_made[:5]:
                     print(f"   - {correction}")
-                print("\n   ⚠️  Alguns problemas foram corrigidos, mas outros persistem.")
-                print("   💡 Considere rodar novamente a conversão com --clear-cache")
+                print("\n   ⚠️  Some issues were corrected, but others persist.")
+                print("   💡 Consider running the conversion again with --clear-cache")
             else:
-                print("\n   ⚠️  Execute novamente com --clear-cache para corrigir.")
+                print("\n   ⚠️  Run again with --clear-cache to fix.")
         print("=" * 80 + "\n")
 
 
@@ -229,7 +229,7 @@ class DeepValidator:
 
             return len(self.epub_chapters) > 0
         except Exception as e:
-            print(f"❌ Erro ao carregar EPUB: {e}")
+            print(f"❌ Error loading EPUB: {e}")
             return False
 
     def find_parsed_files(self) -> List[Path]:
@@ -279,7 +279,7 @@ class DeepValidator:
                     else:
                         file_hashes[file_hash] = filename
             except Exception as e:
-                print(f"⚠️  Erro ao ler {filepath.name}: {e}")
+                print(f"⚠️  Error reading {filepath.name}: {e}")
 
         return duplicates
 
@@ -415,7 +415,7 @@ class DeepValidator:
                     middle_match=False,
                     end_match=False,
                     is_valid=False,
-                    error_msg="Não foi possível encontrar capítulo correspondente no EPUB",
+                    error_msg="Could not find matching chapter in EPUB",
                 )
 
             epub_clean = " ".join(epub_text.split())
@@ -456,13 +456,13 @@ class DeepValidator:
             if not is_valid:
                 errors = []
                 if char_diff_pct > self.tolerance_pct:
-                    errors.append(f"Diferença de caracteres: {char_diff_pct:.1f}%")
+                    errors.append(f"Character difference: {char_diff_pct:.1f}%")
                 if not start_match:
-                    errors.append("Início não corresponde")
+                    errors.append("Start does not match")
                 if not middle_match:
-                    errors.append("Meio não corresponde")
+                    errors.append("Middle does not match")
                 if not end_match:
-                    errors.append("Final não corresponde")
+                    errors.append("End does not match")
                 error_msg = "; ".join(errors)
 
             return ChapterComparison(
@@ -487,7 +487,7 @@ class DeepValidator:
                 middle_match=False,
                 end_match=False,
                 is_valid=False,
-                error_msg=f"Erro ao processar: {str(e)}",
+                error_msg=f"Error processing: {str(e)}",
             )
 
     def auto_correct(self, duplicates: List[Tuple[str, str]]) -> List[str]:
@@ -504,8 +504,8 @@ class DeepValidator:
 
         # 1. Remove duplicate files (keep the one with shorter name)
         if duplicates:
-            print("\n🔧 Aplicando autocorreção...")
-            print(f"   Removendo {len(duplicates)} arquivo(s) duplicado(s)...")
+            print("\n🔧 Applying auto-correction...")
+            print(f"   Removing {len(duplicates)} duplicate file(s)...")
 
             for file1, file2 in duplicates:
                 # Find the actual file paths
@@ -523,7 +523,7 @@ class DeepValidator:
                         corrections.append(f"Removido duplicado: {to_remove.name}")
                         print(f"   ✅ Removido: {to_remove.name}")
                 except Exception as e:
-                    print(f"   ⚠️  Erro ao remover {to_remove.name}: {e}")
+                    print(f"   ⚠️  Error removing {to_remove.name}: {e}")
 
         return corrections
 
@@ -538,11 +538,11 @@ class DeepValidator:
             ValidationReport with all results
         """
         print("\n" + "=" * 80)
-        print("🔍 INICIANDO VALIDAÇÃO PROFUNDA...")
+        print("🔍 STARTING DEEP VALIDATION...")
         print("=" * 80)
 
         # Load EPUB chapters
-        print("\n📖 Carregando capítulos do EPUB original...")
+        print("\n📖 Loading chapters from original EPUB...")
         if not self.load_epub_chapters():
             return ValidationReport(
                 total_chapters=0,
@@ -554,17 +554,17 @@ class DeepValidator:
                 duplicate_files=[],
                 success=False,
             )
-        print(f"   ✅ {len(self.epub_chapters)} capítulos carregados")
+        print(f"   ✅ {len(self.epub_chapters)} chapters loaded")
 
         # Find parsed files
-        print("\n📁 Procurando arquivos parsed...")
+        print("\n📁 Searching for parsed files...")
         parsed_files = self.find_parsed_files()
-        print(f"   ✅ {len(parsed_files)} arquivos encontrados")
+        print(f"   ✅ {len(parsed_files)} files found")
 
         # Detect duplicates
-        print("\n🔍 Verificando duplicações...")
+        print("\n🔍 Checking for duplications...")
         duplicates = self.detect_duplicates(parsed_files)
-        print(f"   {'✅' if not duplicates else '⚠️ '} {len(duplicates)} duplicações encontradas")
+        print(f"   {'✅' if not duplicates else '⚠️ '} {len(duplicates)} duplications found")
 
         # Auto-correct duplicates if requested
         corrections_made = []

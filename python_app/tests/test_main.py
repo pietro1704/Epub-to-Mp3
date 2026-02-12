@@ -507,11 +507,9 @@ class TestClearCacheFlag(unittest.TestCase):
 
         output_dir = converter._setup_output_directory(config)
 
-        # Should be output/Test Book_edge, not output/Test Book/edge
+        # Should be output/Test Book (no engine suffix)
         # Note: FileManager keeps spaces in sanitized titles
-        self.assertTrue(str(output_dir).endswith("Test Book_edge"))
-        # Verify it's not a nested structure
-        self.assertNotIn(os.path.join("Test Book", "edge"), str(output_dir))
+        self.assertTrue(str(output_dir).endswith("Test Book"))
 
     def test_output_directory_format_with_underscores(self):
         """Test that output directory handles books with underscores in title"""
@@ -527,10 +525,8 @@ class TestClearCacheFlag(unittest.TestCase):
 
         output_dir = converter._setup_output_directory(config)
 
-        # Should use format book_engine, with engine suffix appended
-        self.assertTrue("My_Test_Book_coqui" in str(output_dir))
-        # Verify it's not a nested structure
-        self.assertNotIn(os.path.join("My_Test_Book", "coqui"), str(output_dir))
+        # Should use book title only (no engine suffix)
+        self.assertTrue(str(output_dir).endswith("My_Test_Book"))
 
 
 class TestClearCacheRemovesBookData(unittest.TestCase):
@@ -574,7 +570,7 @@ class TestClearCacheRemovesBookData(unittest.TestCase):
     def test_clear_cache_removes_book_output_directory(self):
         """--clear-cache should remove the book's output directory"""
 
-        book_output = Path(self.output_dir) / "Test Book_edge"
+        book_output = Path(self.output_dir) / "Test Book"
         book_output.mkdir(parents=True, exist_ok=True)
         (book_output / "chapter_01.mp3").write_text("fake mp3")
         (book_output / "chapter_02.mp3").write_text("fake mp3")
@@ -621,7 +617,7 @@ class TestClearCacheRemovesBookData(unittest.TestCase):
 
         converter = AudioConverter()
 
-        book_output = Path(self.output_dir) / "Test Book_edge"
+        book_output = Path(self.output_dir) / "Test Book"
         book_output.mkdir(parents=True, exist_ok=True)
         (book_output / "chapter_01.mp3").write_text("old mp3")
         (book_output / "chapter_02.mp3").write_text("old mp3")
@@ -671,14 +667,19 @@ class TestClearCacheRemovesBookData(unittest.TestCase):
         """main.py --clear-cache should remove output directories matching book title"""
         output_base = Path(self.output_dir)
 
-        # Create output directories for the book with different engines
-        for engine in ["edge", "piper", "coqui"]:
-            d = output_base / f"Test Book_{engine}"
-            d.mkdir(parents=True, exist_ok=True)
-            (d / "chapter_01.mp3").write_text("fake")
+        # Create output directory for the book (no engine suffix)
+        d = output_base / "Test Book"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "chapter_01.mp3").write_text("fake")
+
+        # Also create legacy dirs with engine suffix (should also be cleaned)
+        for engine in ["edge", "piper"]:
+            legacy = output_base / f"Test Book_{engine}"
+            legacy.mkdir(parents=True, exist_ok=True)
+            (legacy / "chapter_01.mp3").write_text("fake")
 
         # Create output for a different book (should NOT be removed)
-        other = output_base / "Other Book_edge"
+        other = output_base / "Other Book"
         other.mkdir(parents=True, exist_ok=True)
         (other / "chapter_01.mp3").write_text("fake")
 
@@ -698,9 +699,9 @@ class TestClearCacheRemovesBookData(unittest.TestCase):
                 removed_count += 1
 
         self.assertEqual(removed_count, 3)
+        self.assertFalse((output_base / "Test Book").exists())
         self.assertFalse((output_base / "Test Book_edge").exists())
         self.assertFalse((output_base / "Test Book_piper").exists())
-        self.assertFalse((output_base / "Test Book_coqui").exists())
         self.assertTrue(other.exists())
 
 

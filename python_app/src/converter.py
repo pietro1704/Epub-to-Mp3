@@ -4366,12 +4366,9 @@ class AudioConverter:
 
     def _setup_output_directory(self, config: ConversionConfig) -> Path:
         base_dir = Path(config.output_dir)
-        if config.book_title:
-            book_dir = self.file_manager.sanitize_filename(config.book_title)
-            base_dir = base_dir / book_dir
-        else:
-            base_dir = base_dir / "default"
-        return self.file_manager.ensure_directory(base_dir)
+        name = config.book_title or "default"
+        safe_name = self.file_manager.sanitize_filename(name)
+        return self.file_manager.ensure_directory(base_dir / safe_name)
 
     def _setup_temp_directory(self, config: ConversionConfig) -> Path:
         """Setup temporary directory for conversion files"""
@@ -4641,8 +4638,14 @@ class AudioConverter:
         chapter_filter_active = bool(self._parse_chapter_whitelist(config)) or bool(
             (config.extra or {}).get("selected_indices", "").strip()
         )
+        deep_validation_requested = bool(getattr(config, "deep_validate", False))
         deep_validation_passed = True
-        if self._current_book_path and len(all_errors) == 0 and not chapter_filter_active:
+        if (
+            deep_validation_requested
+            and self._current_book_path
+            and len(all_errors) == 0
+            and not chapter_filter_active
+        ):
             try:
                 from .deep_validator import run_deep_validation
 

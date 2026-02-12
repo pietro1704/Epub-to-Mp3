@@ -20,11 +20,11 @@ from unittest.mock import Mock
 TTS = None
 
 # ============================================================================
-# PRÉ-PROCESSAMENTO DE TEXTO PARA COQUI
-# Converte números e caracteres especiais não suportados pelo vocabulário
+# TEXT PRE-PROCESSING FOR COQUI
+# Converts numbers and special characters not supported by the vocabulary
 # ============================================================================
 
-# Números por extenso em português
+# Numbers spelled out in Portuguese
 _NUMEROS_PT = {
     "0": "zero",
     "1": "um",
@@ -66,19 +66,19 @@ _NUMEROS_PT = {
     "1000": "mil",
 }
 
-# Caracteres especiais para equivalentes ASCII
+# Special characters to ASCII equivalents
 _CHAR_REPLACEMENTS = {
     "–": "-",  # en-dash
     "—": "-",  # em-dash
-    "“": '"',  # aspas curvas esquerda
-    "”": '"',  # aspas curvas direita
-    "‘": "'",  # apóstrofo curvo esquerdo
-    "’": "'",  # apóstrofo curvo direito
-    "…": "...",  # reticências
-    "«": '"',  # guillemet esquerdo
-    "»": '"',  # guillemet direito
-    "‹": "'",  # guillemet simples esquerdo
-    "›": "'",  # guillemet simples direito
+    "“": '"',  # left curly quote
+    "”": '"',  # right curly quote
+    "‘": "'",  # left curly apostrophe
+    "’": "'",  # right curly apostrophe
+    "…": "...",  # ellipsis
+    "«": '"',  # left guillemet
+    "»": '"',  # right guillemet
+    "‹": "'",  # left single guillemet
+    "›": "'",  # right single guillemet
     "•": ",",  # bullet
     "·": ".",  # middle dot
     "№": "numero",  # numero sign
@@ -92,7 +92,7 @@ _CHAR_REPLACEMENTS = {
 
 
 def _numero_por_extenso(n: int) -> str:
-    """Converte número inteiro para texto por extenso em português."""
+    """Convert integer to spelled-out text in Portuguese."""
     if n < 0:
         return "menos " + _numero_por_extenso(-n)
     if n == 0:
@@ -130,53 +130,53 @@ def _numero_por_extenso(n: int) -> str:
         if resto == 0:
             return milhares_texto
         return f"{milhares_texto} e {_numero_por_extenso(resto)}"
-    # Para números muito grandes, retorna dígito a dígito
+    # For very large numbers, return digit by digit
     return " ".join(_NUMEROS_PT.get(d, d) for d in str(n))
 
 
 def _preprocess_text_for_coqui(text: str, verbose: bool = False) -> str:
-    """Pré-processa texto para Coqui TTS, convertendo números e caracteres especiais."""
+    """Pre-process text for Coqui TTS, converting numbers and special characters."""
     if not text:
         return text
 
     original_len = len(text)
 
-    # 1. Substituir caracteres especiais
+    # 1. Replace special characters
     for char, replacement in _CHAR_REPLACEMENTS.items():
         text = text.replace(char, replacement)
 
-    # 2. Converter números (anos, datas, valores)
-    # Padrão para anos (1900-2099)
+    # 2. Convert numbers (years, dates, values)
+    # Pattern for years (1900-2099)
     def replace_year(match):
         year = int(match.group(0))
         return _numero_por_extenso(year)
 
     text = re.sub(r"\b(1[89]\d{2}|20\d{2})\b", replace_year, text)
 
-    # Ordinais simples (ex: 8º, 1ª)
+    # Simple ordinals (e.g.: 8º, 1ª)
     def replace_ordinal(match):
         num = int(match.group(1))
         return _numero_por_extenso(num)
 
     text = re.sub(r"\b(\d+)\s*[ºª]\b", replace_ordinal, text)
 
-    # Padrão para números genéricos (até 999999)
+    # Pattern for generic numbers (up to 999999)
     def replace_number(match):
         num = int(match.group(0))
         if num > 999999:
-            # Números muito grandes: dígito a dígito
+            # Very large numbers: digit by digit
             return " ".join(_NUMEROS_PT.get(d, d) for d in match.group(0))
         return _numero_por_extenso(num)
 
     text = re.sub(r"\b\d+\b", replace_number, text)
 
     if verbose and len(text) != original_len:
-        print(f"🔍 [VERBOSE] Coqui pré-processamento: {original_len} → {len(text)} chars")
+        print(f"🔍 [VERBOSE] Coqui pre-processing: {original_len} → {len(text)} chars")
 
     return text
 
 
-# **FIXED**: Executor global com limite de threads para evitar travamentos
+# **FIXED**: Global executor with thread limit to avoid hangs
 _coqui_executor = None
 _memory_semaphore = None  # Global memory limiter
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
@@ -253,7 +253,7 @@ _patch_transformers_beam_search()
 
 
 def _patch_xtts_generation() -> None:
-    """Restaurar métodos de geração removidos do transformers 4.50+ para XTTS."""
+    """Restore generation methods removed from transformers 4.50+ for XTTS."""
     try:
         from transformers import PreTrainedModel  # type: ignore
         from transformers.generation.utils import GenerationMixin  # type: ignore
@@ -342,7 +342,7 @@ def _get_coqui_executor():
         _memory_semaphore = asyncio.Semaphore(max_workers)
 
         _coqui_executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="CoquiTTS")
-        print(f"🚀 [THREAD] Executor TTS criado: {max_workers} workers")
+        print(f"🚀 [THREAD] TTS executor created: {max_workers} workers")
     return _coqui_executor
 
 
@@ -395,9 +395,9 @@ def _expand_segments_with_limits(
             if limit and len(chunk) > limit:
                 smaller_chunks = _split_text_chunks(chunk, limit)
                 if verbose and not logged_limit and len(smaller_chunks) > 1:
-                    lang_label = language or "desconhecido"
+                    lang_label = language or "unknown"
                     print(
-                        f"🔍 [VERBOSE] Coqui limitando segmentos para {limit} chars (idioma: {lang_label})"
+                        f"🔍 [VERBOSE] Coqui limiting segments to {limit} chars (language: {lang_label})"
                     )
                     logged_limit = True
                 for sub_chunk in smaller_chunks:

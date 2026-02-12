@@ -40,12 +40,12 @@ class ProgressTracker:
         self._last_progress_pct: float = -1.0
         self._last_activity_time: float = time.time()
 
-        # **NOVO**: Tracking de caracteres/frases para mostrar progresso granular
+        # **NEW**: Character/sentence tracking for granular progress display
         self.total_chars: int = 0
         self.processed_chars: int = 0
         self.current_sentence: str = ""
         self.sentences_processed: int = 0
-        # **NOVO**: Track chunk-level progress (útil para streaming)
+        # **NEW**: Track chunk-level progress (useful for streaming)
         self.total_chunks: int = 0
         self.processed_chunks: int = 0
         self._chunks_confident: bool = False
@@ -85,7 +85,7 @@ class ProgressTracker:
         self._chapter_start_time = time.time()
         self._phase_start_time = self._chapter_start_time
 
-        # **NOVO**: Resetar contadores de caracteres para novo capítulo
+        # **NEW**: Reset character counters for new chapter
         self.processed_chars = 0
         self.total_chars = 0
         self.current_sentence = ""
@@ -106,12 +106,12 @@ class ProgressTracker:
 
     def update_chars_progress(self, text: str, total_chars: int = 0) -> None:
         """
-        **NOVO**: Atualiza progresso baseado em caracteres/frases sendo processados.
-        Mostra que o sistema não está travado.
+        **NEW**: Update progress based on characters/sentences being processed.
+        Shows that the system is not stuck.
 
         Args:
-            text: Texto/frase atual sendo processado
-            total_chars: Total de caracteres no capítulo (opcional)
+            text: Current text/sentence being processed
+            total_chars: Total characters in the chapter (optional)
         """
         if total_chars > 0:
             self.total_chars = total_chars
@@ -125,13 +125,13 @@ class ProgressTracker:
             self.processed_chars += len(text)
         self.sentences_processed += 1
 
-        # **THROTTLE**: Só atualizar a cada 0.5s para evitar overhead
+        # **THROTTLE**: Only update every 0.5s to avoid overhead
         now = time.time()
         if now - self._last_print_time < 0.5:
             return
         self._last_print_time = now
 
-        # Truncar frase para exibição
+        # Truncate sentence for display
         self.current_sentence = text[:60] + "..." if len(text) > 60 else text
 
         # Calculate current chapter progress
@@ -145,21 +145,21 @@ class ProgressTracker:
         self._render(status)
 
     def set_total_chunks(self, total: int) -> None:
-        """Define a contagem esperada de chunks quando conhecida pelo engine."""
+        """Set the expected chunk count when known by the engine."""
         if total > 0:
             self.total_chunks = total
             self._chunks_confident = True
 
     def update_chunk_progress(self, chunk_index: int) -> None:
         """
-        Atualiza progresso baseado em chunks de áudio finalizados.
-        Usa a contagem de chunks como sinal mais preciso que o texto foi sintetizado.
+        Update progress based on completed audio chunks.
+        Uses chunk count as a more accurate signal that text was synthesized.
         """
         # chunk_index é zero-based
         self.processed_chunks = max(self.processed_chunks, chunk_index + 1)
         self.total_chunks = max(self.total_chunks, chunk_index + 1)
         if self.total_chars > 0:
-            # Estimar fração com amortização para não cravar 100% cedo demais
+            # Estimate fraction with dampening to avoid hitting 100% too early
             denom = max(self.total_chunks + 2, 1)
             estimated_fraction = min(0.95, self.processed_chunks / denom)
             self.processed_chars = max(
@@ -268,7 +268,7 @@ class ProgressTracker:
             return 100.0 if self.completed_chapters else 0.0
         base = float(self.completed_chapters)
         partial = 0.0
-        # Prioriza chunks completos (mais fiel ao áudio gerado), depois fallback para caracteres
+        # Prioritize completed chunks (more faithful to generated audio), then fallback to characters
         if self.completed_chapters < self.total_chapters and self.current_index is not None:
             if self.total_chunks > 0 and (
                 self._chunks_confident or self.processed_chunks < self.total_chunks
