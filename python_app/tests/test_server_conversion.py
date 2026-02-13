@@ -110,7 +110,7 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     assert job["state"] == "finished", f"Job failed: {job.get('error')}"
     assert len(job["outputs"]) >= 2  # At least zip + 1 chapter
 
-    job_dir = tmp_path / job_id
+    job_dir = Path(job.get("outputDir") or (tmp_path / job_id))
     generated_files = {p.name for p in job_dir.iterdir() if p.is_file()}
 
     for asset in job["outputs"]:
