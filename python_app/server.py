@@ -366,38 +366,43 @@ def _engine_slug(engine: Optional[str]) -> str:
 
 
 def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = False) -> Path:
+    """Resolve the canonical output directory for a job.
+
+    The first successful resolution persists the location on the job payload so
+    follow-up calls (like streaming endpoints) read/write from the same place.
+    When no metadata is available we fallback to the legacy `<output>/<job_id>`
+    layout to avoid breaking older jobs.
+    """
+
     legacy_dir = output_dir / job_id
-    if ensure:
-        legacy_dir.mkdir(parents=True, exist_ok=True)
-        return legacy_dir
     job_data = job or jobs.get(job_id) or job_manager.load_job(job_id)
+    target: Optional[Path] = None
 
     if job_data:
         stored = job_data.get("outputDir")
         if stored:
-            path = Path(stored)
-            if ensure:
-                path.mkdir(parents=True, exist_ok=True)
-            return path
+            target = Path(stored)
+        else:
+            book_title = job_data.get("bookTitle") or job_data.get("fileName") or ""
+            file_name = job_data.get("file_path") or ""
+            book_slug = _book_slug(book_title, file_name)
+            engine_slug = _engine_slug(job_data.get("engine"))
+            target = output_dir / book_slug / engine_slug
 
-        book_title = job_data.get("bookTitle") or job_data.get("fileName") or ""
-        file_name = job_data.get("file_path") or ""
-        book_slug = _book_slug(book_title, file_name)
-        engine_slug = _engine_slug(job_data.get("engine"))
-        target = output_dir / book_slug / engine_slug
+            # If legacy dir already exists with data, prefer it to avoid breaking older jobs
+            if legacy_dir.exists() and any(legacy_dir.iterdir()):
+                target = legacy_dir
 
-        # If legacy dir already exists with data, prefer it to avoid breaking older jobs
-        if legacy_dir.exists() and any(legacy_dir.iterdir()):
-            target = legacy_dir
-        if ensure:
-            target.mkdir(parents=True, exist_ok=True)
-        job_data["outputDir"] = str(target)
-        jobs[job_id] = job_data
-        return target
+            job_data["outputDir"] = str(target)
+            jobs[job_id] = job_data
+
+    if target is None:
+        target = legacy_dir
 
     if ensure:
-        legacy_dir.mkdir(parents=True, exist_ok=True)
-    return legacy_dir
+        target.mkdir(parents=True, exist_ok=True)
+
+    return target
 
 
 def _chapter_chunk_dir(job_id: str, chapter_index: int, ensure: bool = False) -> Path:
