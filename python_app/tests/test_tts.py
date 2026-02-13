@@ -128,6 +128,15 @@ class TestTTSFactory(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 self.factory._find_piper_model()
 
+    def test_kokoro_rejected_for_portuguese(self):
+        """Kokoro should not be used for pt-BR since there is no native voice."""
+        config = ConversionConfig(engine="kokoro", primary_language="pt-BR")
+        with self.assertRaises(ValueError) as exc:
+            self.factory.create_engine(config)
+        message = str(exc.exception)
+        self.assertIn("Kokoro", message)
+        self.assertIn("pt-BR", message)
+
 
 class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
     """Test cases for EdgeTTSEngine"""

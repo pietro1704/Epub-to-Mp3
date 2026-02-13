@@ -41,6 +41,7 @@ from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController
 from .text_integrity_validator import TextIntegrityValidator
 from .tts.factory import TTSFactory
+from .tts.kokoro_engine import kokoro_supports_language
 from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
 
 
@@ -5050,23 +5051,28 @@ class AudioConverter:
                 and current_engine == "edge"
                 and edge_consecutive_failures >= EDGE_KOKORO_THRESHOLD
             ):
-                try:
-                    from .tts.kokoro_engine import KokoroTTSEngine
-
-                    KokoroTTSEngine()  # test availability
-                    print(
-                        f"\n🔄 Edge monolíngue com {edge_consecutive_failures} falhas consecutivas"
-                    )
-                    print("   🔀 Mudando para Kokoro (local, rápido)")
-                    config = replace(config, engine="kokoro")
-                    engine_pool.register_engine("kokoro", config)
-                    edge_switched_to_kokoro = True
-                    edge_consecutive_failures = 0
-                    return
-                except Exception as e:
+                if not kokoro_supports_language(config.primary_language):
                     if self.verbose:
-                        print(f"   ⚠️ Kokoro indisponível: {e}")
-                    edge_switched_to_kokoro = True  # skip to piper
+                        print("   ⚠️ Kokoro não possui voz para este idioma; pulando fallback")
+                    edge_switched_to_kokoro = True
+                else:
+                    try:
+                        from .tts.kokoro_engine import KokoroTTSEngine
+
+                        KokoroTTSEngine()  # test availability
+                        print(
+                            f"\n🔄 Edge monolíngue com {edge_consecutive_failures} falhas consecutivas"
+                        )
+                        print("   🔀 Mudando para Kokoro (local, rápido)")
+                        config = replace(config, engine="kokoro")
+                        engine_pool.register_engine("kokoro", config)
+                        edge_switched_to_kokoro = True
+                        edge_consecutive_failures = 0
+                        return
+                    except Exception as e:
+                        if self.verbose:
+                            print(f"   ⚠️ Kokoro indisponível: {e}")
+                        edge_switched_to_kokoro = True  # skip to piper
 
             # TIER 4: Piper after PIPER_THRESHOLD failures (from Kokoro or Edge)
             if (

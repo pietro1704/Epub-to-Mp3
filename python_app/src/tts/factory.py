@@ -160,8 +160,13 @@ class TTSFactory:
             return engine_instance
 
         if engine == "kokoro":
-            from .kokoro_engine import KokoroTTSEngine
+            from .kokoro_engine import KokoroTTSEngine, kokoro_supports_language
 
+            if not kokoro_supports_language(config.primary_language):
+                raise ValueError(
+                    "Kokoro TTS currently supports only English, Japanese and Chinese voices. "
+                    f"Requested language: {config.primary_language or 'unknown'}"
+                )
             voice = config.voice or self.voice_provider.get_voice("kokoro", config.primary_language)
             if not voice:
                 # Select default voice based on language

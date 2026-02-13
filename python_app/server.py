@@ -58,6 +58,7 @@ from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.edge_engine import reset_adaptive_settings
 from src.tts.factory import TTSFactory
+from src.tts.kokoro_engine import kokoro_supports_language
 from src.utils import AudioProcessor, FileManager, TextValidator
 
 logger = logging.getLogger(__name__)
@@ -1621,6 +1622,8 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
     if (config.engine or "").lower() == "edge":
         fallback_engines = _rank_fallbacks(["coqui", "kokoro", "spark", "piper"])
         for engine_name in fallback_engines:
+            if engine_name == "kokoro" and not kokoro_supports_language(config.primary_language):
+                continue
             clone = _clone_config_for_engine(config, engine_name)
             if clone.engine.lower() == "edge":
                 clone.edge_aggressive_mode = True
@@ -1633,6 +1636,8 @@ def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, ConversionC
     # Priority: edge (fast cloud), coqui (quality), kokoro (fast local), spark (LLM-based)
     # Piper excluded from auto due to lower quality
     for name in ("edge", "coqui", "kokoro", "spark"):
+        if name == "kokoro" and not kokoro_supports_language(config.primary_language):
+            continue
         try:
             candidate = _clone_config_for_engine(config, name)
             pool[name] = candidate

@@ -67,12 +67,22 @@ LANG_CODE_MAP = {
     "jp": "j",  # Japanese alias
     "zh": "z",  # Mandarin Chinese
     "zh-cn": "z",  # Mandarin Chinese
-    "pt": "a",  # Portuguese -> use English phonemes (best available)
-    "pt-br": "a",
-    "es": "a",  # Spanish -> English phonemes
-    "fr": "a",  # French -> English phonemes
-    "de": "a",  # German -> English phonemes
 }
+
+_SUPPORTED_BASE_LANGS = {"en", "ja", "zh"}
+
+
+def kokoro_supports_language(language: Optional[str]) -> bool:
+    """Return True when Kokoro has a native voice for the requested language."""
+    if not language:
+        return True
+    normalized = language.strip().lower()
+    if not normalized or normalized == "auto":
+        return True
+    normalized = normalized.replace("_", "-")
+    base = normalized.split("-", 1)[0]
+    return base in _SUPPORTED_BASE_LANGS
+
 
 # Default voices per language
 DEFAULT_VOICES = {
@@ -183,6 +193,12 @@ class KokoroTTSEngine:
         self.chunk_limit = chunk_char_limit or DEFAULT_CHUNK_CHARS
         self.max_workers = max_workers or MAX_WORKERS
         self.status_callback = status_callback
+
+        if not kokoro_supports_language(self.primary_language):
+            raise ValueError(
+                f"Kokoro currently supports only English, Japanese, and Chinese voices "
+                f"(requested: {self.primary_language or 'unknown'})"
+            )
 
         # Pipeline cache per language
         self._pipelines: Dict[str, object] = {}
