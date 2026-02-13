@@ -40,9 +40,32 @@ from .i18n import Localization, get_localization
 from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController
 from .text_integrity_validator import TextIntegrityValidator
+from .tts.coqui_guard import is_coqui_supported_environment
 from .tts.factory import TTSFactory
-from .tts.kokoro_engine import kokoro_supports_language
+from .tts.kokoro_guard import load_kokoro_supports_language
+from .tts.piper_guard import is_piper_supported_environment
 from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
+
+_kokoro_support_check = load_kokoro_supports_language()
+_coqui_supported = is_coqui_supported_environment()
+_piper_supported = is_piper_supported_environment()
+
+
+def _has_kokoro_support(language: Optional[str]) -> bool:
+    if _kokoro_support_check is None:
+        return False
+    try:
+        return bool(_kokoro_support_check(language))
+    except Exception:
+        return False
+
+
+def _has_piper_support() -> bool:
+    return _piper_supported
+
+
+def _has_coqui_support() -> bool:
+    return _coqui_supported
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -4902,7 +4925,9 @@ class AudioConverter:
             }
 
         def can_use_piper() -> bool:
-            """Check if piper is available in venv or system PATH."""
+            """Check if Piper is usable in this environment."""
+            if not _has_piper_support():
+                return False
             # Check venv first (common locations)
             venv_locations = [
                 Path(".venv/bin/piper"),
@@ -5051,7 +5076,7 @@ class AudioConverter:
                 and current_engine == "edge"
                 and edge_consecutive_failures >= EDGE_KOKORO_THRESHOLD
             ):
-                if not kokoro_supports_language(config.primary_language):
+                if not _has_kokoro_support(config.primary_language):
                     if self.verbose:
                         print("   ⚠️ Kokoro não possui voz para este idioma; pulando fallback")
                     edge_switched_to_kokoro = True
@@ -6431,10 +6456,12 @@ class AudioConverter:
             )
         except Exception:
             piper_voice = None
-        has_piper = bool(piper_voice)
+        has_piper = _has_piper_support() and bool(piper_voice)
         if has_piper and (prefer_piper or prefer_offline):
             candidates.append("piper")
-        candidates.extend(["edge", "coqui"])
+        candidates.append("edge")
+        if _has_coqui_support():
+            candidates.append("coqui")
         if has_piper and "piper" not in candidates:
             candidates.append("piper")
         ordered: List[str] = []
@@ -6589,7 +6616,10 @@ class AudioConverter:
         prefer_piper = bool(config and getattr(config, "auto_prefer_piper", False))
         if (prefer_piper or prefer_offline) and "piper" in pool:
             order.append("piper")
-        for candidate in ("edge", "coqui"):
+        base_candidates = ["edge"]
+        if _has_coqui_support():
+            base_candidates.append("coqui")
+        for candidate in base_candidates:
             if candidate in pool and candidate not in order:
                 order.append(candidate)
         for name in pool:

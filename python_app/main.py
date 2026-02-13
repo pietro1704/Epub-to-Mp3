@@ -21,6 +21,9 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import unquote
 
+# macOS Intel + NumPy + Accelerate triggers FPE at import time. Disable Accelerate usage.
+os.environ.setdefault("NPY_DISABLE_MAC_OS_ACCELERATE", "1")
+
 try:  # Optional dependency for shell tab completion
     import argcomplete  # type: ignore
     from argcomplete.completers import ChoicesCompleter, FilesCompleter

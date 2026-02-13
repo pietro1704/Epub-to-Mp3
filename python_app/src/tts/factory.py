@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from ..config import ConversionConfig, VoiceConfigProvider
+from .coqui_guard import is_coqui_supported_environment
+from .kokoro_guard import is_kokoro_supported_environment
+from .piper_guard import is_piper_supported_environment
+from .spark_guard import is_spark_supported_environment
 
 
 class TTSEngine(Protocol):
@@ -51,14 +55,18 @@ class TTSFactory:
         # Check Coqui TTS
         import importlib.util
 
-        if importlib.util.find_spec("TTS") is not None:
+        if is_coqui_supported_environment() and importlib.util.find_spec("TTS") is not None:
             engines.append("coqui")
 
         # Check Piper (needs to be in venv or PATH AND have models)
         import shutil
         import sys
 
-        piper_available = shutil.which("piper") or (Path(sys.executable).parent / "piper").exists()
+        piper_available = False
+        if is_piper_supported_environment():
+            piper_available = (
+                shutil.which("piper") or (Path(sys.executable).parent / "piper").exists()
+            )
         if piper_available:
             # Also check if there are any Piper models available
             try:
@@ -69,11 +77,14 @@ class TTSFactory:
                 pass  # No models available, don't add piper to available engines
 
         # Check Kokoro
-        if importlib.util.find_spec("kokoro") is not None:
+        if is_kokoro_supported_environment() and importlib.util.find_spec("kokoro") is not None:
             engines.append("kokoro")
 
         # Check Spark-TTS
-        if importlib.util.find_spec("transformers") is not None:
+        if (
+            is_spark_supported_environment()
+            and importlib.util.find_spec("transformers") is not None
+        ):
             engines.append("spark")
 
         return engines
@@ -120,6 +131,11 @@ class TTSFactory:
             )
 
         if engine == "coqui":
+            if not is_coqui_supported_environment():
+                raise RuntimeError(
+                    "Coqui TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
+                    "Defina ENABLE_COQUI_TTS=1 para forçar o uso por sua conta e risco."
+                )
             from .coqui_engine import CoquiTTSEngine
 
             voice = config.voice or self.voice_provider.get_voice("coqui", config.primary_language)
@@ -139,6 +155,11 @@ class TTSFactory:
             )
 
         if engine == "piper":
+            if not is_piper_supported_environment():
+                raise RuntimeError(
+                    "Piper TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
+                    "Defina ENABLE_PIPER=1 para forçar o uso por sua conta e risco."
+                )
             from .piper_engine import PiperTTSEngine
 
             model_path = config.model_path
@@ -160,6 +181,11 @@ class TTSFactory:
             return engine_instance
 
         if engine == "kokoro":
+            if not is_kokoro_supported_environment():
+                raise RuntimeError(
+                    "Kokoro TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
+                    "Defina ENABLE_KOKORO=1 para forçar o uso por sua conta e risco."
+                )
             from .kokoro_engine import KokoroTTSEngine, kokoro_supports_language
 
             if not kokoro_supports_language(config.primary_language):
@@ -193,6 +219,11 @@ class TTSFactory:
             )
 
         if engine == "spark":
+            if not is_spark_supported_environment():
+                raise RuntimeError(
+                    "Spark-TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
+                    "Defina ENABLE_SPARK_TTS=1 para forçar o uso por sua conta e risco."
+                )
             from .spark_engine import SparkTTSEngine
 
             voice = config.voice or "default"

@@ -133,6 +133,8 @@ error.log
 .tts_cache/
 .huggingface/
 .checkpoints/
+pretrained_models/
+.pretrained_models
 
 # Frontend build artifacts
 web/node_modules/

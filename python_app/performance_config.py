@@ -6,11 +6,29 @@ Otimizações de hardware, threading e alocação de memória
 
 import multiprocessing
 import os
+import platform
 import sys
+
+
+def _skip_numpy_tuning() -> bool:
+    """Return True when we should skip importing NumPy for perf tweaks."""
+    override = str(os.getenv("DISABLE_NUMPY_OPTIMIZATIONS", "")).strip().lower()
+    if override in {"1", "true", "yes", "on"}:
+        return True
+    if sys.platform != "darwin":
+        return False
+    # Apple's Accelerate on Intel macOS frequently crashes NumPy at import time.
+    arch = platform.machine().lower()
+    if arch in {"x86_64", "i386"}:
+        return True
+    return False
 
 
 def configure_numpy_performance():
     """Configure NumPy para usar BLAS otimizado e threading."""
+    if _skip_numpy_tuning():
+        print("⚠️ [NumPy] Otimizações desativadas (macOS/Intel ou override)")
+        return
     try:
         import numpy as np
 

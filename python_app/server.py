@@ -53,12 +53,15 @@ from src.engine_pool import JobEnginePool, ResourceSnapshot
 from src.hardware_detector import HardwareDetector, HardwareProfile
 from src.job_manager import JobManager
 from src.language import LanguageProfile
-from src.paths import OUTPUT_DIR
+from src.paths import OUTPUT_DIR, PERSISTENT_ROOT
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
+from src.tts.coqui_guard import is_coqui_supported_environment
 from src.tts.edge_engine import reset_adaptive_settings
 from src.tts.factory import TTSFactory
-from src.tts.kokoro_engine import kokoro_supports_language
+from src.tts.kokoro_guard import load_kokoro_supports_language
+from src.tts.piper_guard import is_piper_supported_environment
+from src.tts.spark_guard import is_spark_supported_environment
 from src.utils import AudioProcessor, FileManager, TextValidator
 
 logger = logging.getLogger(__name__)
@@ -305,24 +308,8 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# Para deployments em cloud (HF Spaces, etc.), usa diretório persistente para sobreviver restarts
-# Se OUTPUT_DIR env var estiver definida, usa ela; senão usa diretório persistente ou OUTPUT_DIR local
-if os.getenv("OUTPUT_DIR"):
-    output_dir = Path(os.getenv("OUTPUT_DIR"))
-elif os.getenv("SPACE_ID"):  # HuggingFace Spaces - usar /data para persistência
-    output_dir = Path(os.getenv("PERSISTENT_ROOT", "/data/epub-to-mp3")) / "output"
-else:
-    output_dir = OUTPUT_DIR
-
-output_dir.mkdir(exist_ok=True, parents=True)
-CACHE_DIR.mkdir(exist_ok=True, parents=True)
-
-# Dados persistentes (jobs/inputs) precisam sobreviver a reinícios em HF Spaces
-if os.getenv("SPACE_ID"):
-    persistent_root = Path(os.getenv("PERSISTENT_ROOT", "/data/epub-to-mp3"))
-else:
-    persistent_root = Path(os.getenv("PERSISTENT_ROOT", str(output_dir)))
-persistent_root.mkdir(exist_ok=True, parents=True)
+output_dir = OUTPUT_DIR
+persistent_root = PERSISTENT_ROOT
 
 uploads_dir = persistent_root / ".uploads"
 uploads_dir.mkdir(exist_ok=True, parents=True)
@@ -332,7 +319,7 @@ source_backups_dir = persistent_root / ".source_backups"
 source_backups_dir.mkdir(exist_ok=True, parents=True)
 
 # Cache persistente para textos extraídos de capítulos - sobrevive restarts
-persistent_cache_dir = persistent_root / ".cache" if os.getenv("SPACE_ID") else CACHE_DIR
+persistent_cache_dir = CACHE_DIR
 persistent_cache_dir.mkdir(exist_ok=True, parents=True)
 
 # CacheManager singleton com diretório persistente
@@ -465,6 +452,32 @@ def _clear_restart_marker() -> None:
 
 
 _skip_resume_on_startup = bool(_load_restart_marker())
+_kokoro_support_check = load_kokoro_supports_language()
+_COQUI_SUPPORTED = is_coqui_supported_environment()
+_PIPER_SUPPORTED = is_piper_supported_environment()
+_SPARK_SUPPORTED = is_spark_supported_environment()
+
+
+def _has_kokoro_support(language: Optional[str]) -> bool:
+    if _kokoro_support_check is None:
+        return False
+    try:
+        return bool(_kokoro_support_check(language))
+    except Exception:
+        return False
+
+
+def _has_piper_support() -> bool:
+    return _PIPER_SUPPORTED
+
+
+def _has_spark_support() -> bool:
+    return _SPARK_SUPPORTED
+
+
+def _has_coqui_support() -> bool:
+    return _COQUI_SUPPORTED
+
 
 _JOB_WORKERS = max(1, int(os.getenv("JOB_WORKERS", "1") or "1"))  # Processar 1 livro por vez
 _job_queue: Optional[asyncio.Queue[str]] = None
@@ -1620,9 +1633,23 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
         return ordered
 
     if (config.engine or "").lower() == "edge":
-        fallback_engines = _rank_fallbacks(["coqui", "kokoro", "spark", "piper"])
+        fallback_candidates = []
+        if _has_coqui_support():
+            fallback_candidates.append("coqui")
+        fallback_candidates.append("kokoro")
+        if _has_spark_support():
+            fallback_candidates.append("spark")
+        if _has_piper_support():
+            fallback_candidates.append("piper")
+        fallback_engines = _rank_fallbacks(fallback_candidates)
         for engine_name in fallback_engines:
-            if engine_name == "kokoro" and not kokoro_supports_language(config.primary_language):
+            if engine_name == "kokoro" and not _has_kokoro_support(config.primary_language):
+                continue
+            if engine_name == "piper" and not _has_piper_support():
+                continue
+            if engine_name == "spark" and not _has_spark_support():
+                continue
+            if engine_name == "coqui" and not _has_coqui_support():
                 continue
             clone = _clone_config_for_engine(config, engine_name)
             if clone.engine.lower() == "edge":
@@ -1635,8 +1662,18 @@ def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, ConversionC
     pool: dict[str, ConversionConfig] = {}
     # Priority: edge (fast cloud), coqui (quality), kokoro (fast local), spark (LLM-based)
     # Piper excluded from auto due to lower quality
-    for name in ("edge", "coqui", "kokoro", "spark"):
-        if name == "kokoro" and not kokoro_supports_language(config.primary_language):
+    candidate_order = ["edge"]
+    if _has_coqui_support():
+        candidate_order.append("coqui")
+    candidate_order.append("kokoro")
+    if _has_spark_support():
+        candidate_order.append("spark")
+    for name in candidate_order:
+        if name == "kokoro" and not _has_kokoro_support(config.primary_language):
+            continue
+        if name == "coqui" and not _has_coqui_support():
+            continue
+        if name == "spark" and not _has_spark_support():
             continue
         try:
             candidate = _clone_config_for_engine(config, name)
@@ -5323,6 +5360,7 @@ async def process_conversion(job_id: str) -> None:
         logger.info(f"Job {job_id} completed successfully - keeping in memory for frontend access")
 
     except Exception as exc:  # pragma: no cover - defensive handling
+        logger.exception("Job %s failed with unhandled error", job_id)
         job["state"] = "failed"
         job["error"] = str(exc)
         job["completedAt"] = time.time()  # Timestamp for cleanup

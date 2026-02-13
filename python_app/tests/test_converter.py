@@ -1577,13 +1577,56 @@ class TestChapterProcessor(unittest.TestCase):
         self.assertEqual(len(chunks), 1)
         self.assertEqual(chunks[0], "")
 
-    def test_chunk_text_single_long_sentence(self):
-        """Test chunking single very long sentence"""
-        text = "This is a very long sentence that exceeds the maximum size limit and should be handled gracefully"
-        chunks = ChapterProcessor.chunk_text(text, max_size=50)
 
-        self.assertGreaterEqual(len(chunks), 1)
-        # Should handle gracefully even if single sentence is too long
+def test_chunk_text_single_long_sentence(self):
+    """Test chunking single very long sentence"""
+    text = "This is a very long sentence that exceeds the maximum size limit and should be handled gracefully"
+    chunks = ChapterProcessor.chunk_text(text, max_size=50)
+
+    self.assertGreaterEqual(len(chunks), 1)
+    # Should handle gracefully even if single sentence is too long
+
+
+class TestAutoEngineCandidates(unittest.TestCase):
+    def _make_converter(self) -> AudioConverter:
+        conv = AudioConverter()
+        conv.hardware_profile = SimpleNamespace(network_speed_estimate="slow")
+        return conv
+
+    def test_skip_guarded_engines(self):
+        converter = self._make_converter()
+        config = ConversionConfig(engine="edge", primary_language="pt-BR")
+
+        with (
+            patch("src.converter._has_piper_support", return_value=False),
+            patch("src.converter._has_coqui_support", return_value=False),
+            patch.object(
+                converter.tts_factory.voice_provider,
+                "get_voice",
+                side_effect=lambda engine, lang: "model.onnx" if engine == "piper" else None,
+            ),
+        ):
+            order = converter._auto_engine_candidates(config)
+
+        self.assertNotIn("piper", order)
+        self.assertNotIn("coqui", order)
+
+    def test_prefers_piper_when_supported(self):
+        converter = self._make_converter()
+        config = ConversionConfig(engine="edge", primary_language="pt-BR")
+
+        with (
+            patch("src.converter._has_piper_support", return_value=True),
+            patch("src.converter._has_coqui_support", return_value=False),
+            patch.object(
+                converter.tts_factory.voice_provider,
+                "get_voice",
+                side_effect=lambda engine, lang: "model.onnx" if engine == "piper" else None,
+            ),
+        ):
+            order = converter._auto_engine_candidates(config)
+
+        self.assertEqual(order[0], "piper", f"Unexpected auto engine order: {order}")
 
 
 if __name__ == "__main__":

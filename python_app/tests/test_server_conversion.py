@@ -125,6 +125,31 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
+def test_build_engine_chain_respects_guards(monkeypatch):
+    config = ConversionConfig(engine="edge", primary_language="pt-BR")
+
+    monkeypatch.setattr(server, "_has_coqui_support", lambda: False)
+    monkeypatch.setattr(server, "_has_kokoro_support", lambda _: False)
+    monkeypatch.setattr(server, "_has_piper_support", lambda: False)
+    monkeypatch.setattr(server, "_has_spark_support", lambda: False)
+
+    chain = server._build_engine_chain(config)
+    assert [cfg.engine for cfg in chain] == ["edge"]
+
+
+def test_build_engine_chain_includes_supported_fallbacks(monkeypatch):
+    config = ConversionConfig(engine="edge", primary_language="pt-BR")
+
+    monkeypatch.setattr(server, "_has_coqui_support", lambda: True)
+    monkeypatch.setattr(server, "_has_kokoro_support", lambda _: True)
+    monkeypatch.setattr(server, "_has_piper_support", lambda: True)
+    monkeypatch.setattr(server, "_has_spark_support", lambda: False)
+
+    chain = server._build_engine_chain(config)
+    engines = [cfg.engine for cfg in chain]
+    assert "edge" in engines and "coqui" in engines and "piper" in engines
+
+
 class DummyTTSEngine:
     def __init__(self, name: str, fail_times: int = 0):
         self.name = name
@@ -315,6 +340,73 @@ def test_convert_endpoint_rejects_large_files(monkeypatch):
         },
     )
     assert response.status_code == 413
+
+
+def test_convert_endpoint_success_flow(tmp_path, monkeypatch):
+    """Hit the HTTP endpoint and process the job to completion."""
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_enqueue_job", lambda job_id: True)
+    monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
+
+    async def mock_synthesize(self, text, output_path):
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_bytes(MINIMAL_MP3)
+        return output_path
+
+    monkeypatch.setattr("src.tts.edge_engine.EdgeTTSEngine.synthesize_async", mock_synthesize)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/convert",
+        files={"file": ("book.epub", FIXTURE_BOOK.read_bytes(), "application/epub+zip")},
+        data={"engine": "edge"},
+    )
+    assert response.status_code == 200
+    job_id = response.json()["jobId"]
+
+    asyncio.run(server.process_conversion(job_id))
+
+    job_response = client.get(f"/api/jobs/{job_id}")
+    assert job_response.status_code == 200
+    assert job_response.json()["state"] == "finished"
+
+    server.jobs.pop(job_id, None)
+
+
+def test_convert_endpoint_failure_flow(tmp_path, monkeypatch):
+    """Ensure job state is marked failed when engine raises."""
+    _configure_server_paths(tmp_path, monkeypatch)
+    _make_telemetry(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "_enqueue_job", lambda job_id: True)
+
+    async def fail_process(job_id: str):
+        job = server.jobs[job_id]
+        job["state"] = "failed"
+        job["error"] = "edge boom"
+        server.jobs[job_id] = job
+
+    monkeypatch.setattr(server, "process_conversion", fail_process)
+
+    client = TestClient(server.app)
+    response = client.post(
+        "/api/convert",
+        files={"file": ("book.epub", FIXTURE_BOOK.read_bytes(), "application/epub+zip")},
+        data={"engine": "edge"},
+    )
+    assert response.status_code == 200
+    job_id = response.json()["jobId"]
+
+    asyncio.run(server.process_conversion(job_id))
+
+    job_response = client.get(f"/api/jobs/{job_id}")
+    assert job_response.status_code == 200
+    payload = job_response.json()
+    assert payload["state"] == "failed"
+    assert "edge boom" in payload.get("error", "")
+
+    server.jobs.pop(job_id, None)
 
 
 def _make_telemetry(tmp_path, monkeypatch):

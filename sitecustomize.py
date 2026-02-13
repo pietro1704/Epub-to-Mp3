@@ -6,6 +6,10 @@ import os
 import sys
 from pathlib import Path
 
+# macOS Accelerate on Intel CPUs triggers fatal FPE inside NumPy polyfit inv check.
+# Force NumPy to skip Accelerate usage so the app can boot without crashing.
+os.environ.setdefault("NPY_DISABLE_MAC_OS_ACCELERATE", "1")
+
 
 def _resolve_venv_dir(repo_root: Path) -> Path:
     preferred = repo_root / ".venv"
