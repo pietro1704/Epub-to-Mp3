@@ -30,6 +30,13 @@ import type { SystemStats } from "./useSystemStats";
 
 const resolveHealthEndpoint = (): string => resolveApiUrl("/api/health");
 const RESTART_GRACE_MS = 15000;
+const INITIAL_FETCH_RETRY_ATTEMPTS = 5;
+const INITIAL_FETCH_RETRY_BASE_DELAY_MS = 500;
+const INITIAL_FETCH_RETRY_MAX_DELAY_MS = 4000;
+const sleepMs = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 type AdaptiveTolerances = {
   healthPingTimeoutMs: number;
   healthCheckFirstTimeoutMs: number;
@@ -1709,8 +1716,36 @@ export function useConversionFlow(
       startTimeRef.current = Date.now();
 
       let initialSnapshot: JobSnapshot | null = null;
+      const fetchInitialSnapshot = async (): Promise<JobSnapshot> => {
+        let attempt = 0;
+        while (attempt < INITIAL_FETCH_RETRY_ATTEMPTS) {
+          try {
+            return await api.fetch(actualJobId);
+          } catch (error) {
+            const isNotFoundError =
+              error instanceof Error && error.message.includes("404");
+            if (!isNotFoundError) {
+              throw error;
+            }
+            attempt += 1;
+            if (attempt >= INITIAL_FETCH_RETRY_ATTEMPTS) {
+              throw error;
+            }
+            const backoff = Math.min(
+              INITIAL_FETCH_RETRY_BASE_DELAY_MS *
+                Math.pow(1.5, Math.max(0, attempt - 1)),
+              INITIAL_FETCH_RETRY_MAX_DELAY_MS,
+            );
+            console.info(
+              `[useConversionFlow] Job ${actualJobId} ainda não foi persistido no backend (tentativa ${attempt}/${INITIAL_FETCH_RETRY_ATTEMPTS}). Aguardando ${backoff}ms antes de tentar novamente.`,
+            );
+            await sleepMs(backoff);
+          }
+        }
+        throw new Error("Falha ao recuperar conversão inicial");
+      };
       try {
-        initialSnapshot = await api.fetch(actualJobId);
+        initialSnapshot = await fetchInitialSnapshot();
         console.log(
           "[useConversionFlow] Fetched initial snapshot for jobId:",
           actualJobId,
