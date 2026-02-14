@@ -20,11 +20,22 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import os
+import platform
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+if platform.system() == "Darwin" and os.environ.get("FORCE_BENCHMARK_TESTS", "0") != "1":
+    import pytest
+
+    pytest.skip(
+        "Skipping benchmark tests on macOS to avoid numpy Accelerate crashes. "
+        "Set FORCE_BENCHMARK_TESTS=1 to run anyway.",
+        allow_module_level=True,
+    )
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))

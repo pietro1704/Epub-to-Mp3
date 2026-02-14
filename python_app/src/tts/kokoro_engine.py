@@ -28,24 +28,29 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import platform
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+
+_IS_MACOS = platform.system().lower() == "darwin"
+_DISABLE_NATIVE_DEPENDENCIES = _IS_MACOS and os.environ.get("FORCE_KOKORO_NATIVE_DEPS", "0") != "1"
 
 # Lazy imports
 KPipeline = None
 sf = None
 np = None
 
-try:
-    import numpy as _np
-    import soundfile as _sf
+if not _DISABLE_NATIVE_DEPENDENCIES:
+    try:
+        import numpy as _np
+        import soundfile as _sf
 
-    np = _np
-    sf = _sf
-except ImportError:
-    pass
+        np = _np
+        sf = _sf
+    except ImportError:
+        pass
 
 try:
     from ..language import LanguageMarkup

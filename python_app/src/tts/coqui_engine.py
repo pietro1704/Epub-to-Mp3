@@ -17,6 +17,9 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from unittest.mock import Mock
 
+_IS_MACOS = platform.system().lower() == "darwin"
+_DISABLE_NATIVE_DEPENDENCIES = _IS_MACOS and os.environ.get("FORCE_COQUI_NATIVE_DEPS", "0") != "1"
+
 TTS = None
 
 # ============================================================================
@@ -222,6 +225,8 @@ def _set_memory_limits():
 
 def _patch_transformers_beam_search(force: bool = False) -> None:
     """Ensure ``transformers`` exposes ``BeamSearchScorer`` for older releases of ``TTS``."""
+    if _DISABLE_NATIVE_DEPENDENCIES:
+        return
     try:
         import transformers  # type: ignore
     except ImportError:
@@ -254,6 +259,8 @@ _patch_transformers_beam_search()
 
 def _patch_xtts_generation() -> None:
     """Restore generation methods removed from transformers 4.50+ for XTTS."""
+    if _DISABLE_NATIVE_DEPENDENCIES:
+        return
     try:
         from transformers import PreTrainedModel  # type: ignore
         from transformers.generation.utils import GenerationMixin  # type: ignore
@@ -484,35 +491,37 @@ def _concat_wav_files(sources: List[Path], output_path: Path) -> bool:
 np = None  # type: ignore
 sf = None  # type: ignore
 
-try:  # pragma: no cover - optional dependency
-    import numpy as _np  # type: ignore
-    import soundfile as _sf  # type: ignore
+if not _DISABLE_NATIVE_DEPENDENCIES:
+    try:  # pragma: no cover - optional dependency
+        import numpy as _np  # type: ignore
+        import soundfile as _sf  # type: ignore
 
-    np = _np  # type: ignore
-    sf = _sf  # type: ignore
-except Exception:  # pragma: no cover
-    pass
+        np = _np  # type: ignore
+        sf = _sf  # type: ignore
+    except Exception:  # pragma: no cover
+        pass
 
-# Transformers compatibility shim: newer releases stop exporting BeamSearchScorer at top-level
-try:  # pragma: no cover - defensive compatibility
-    import transformers as _transformers  # type: ignore
+if not _DISABLE_NATIVE_DEPENDENCIES:
+    # Transformers compatibility shim: newer releases stop exporting BeamSearchScorer at top-level
+    try:  # pragma: no cover - defensive compatibility
+        import transformers as _transformers  # type: ignore
 
-    if not hasattr(_transformers, "BeamSearchScorer"):
-        _BeamSearchScorer = None
-        try:
-            from transformers.generation.beam_search import (
-                BeamSearchScorer as _BeamSearchScorer,  # type: ignore
-            )
-        except Exception:
+        if not hasattr(_transformers, "BeamSearchScorer"):
+            _BeamSearchScorer = None
             try:
-                generation_mod = importlib.import_module("transformers.generation.utils")  # type: ignore
-                _BeamSearchScorer = getattr(generation_mod, "BeamSearchScorer", None)
+                from transformers.generation.beam_search import (
+                    BeamSearchScorer as _BeamSearchScorer,  # type: ignore
+                )
             except Exception:
-                _BeamSearchScorer = None
-        if _BeamSearchScorer is not None:
-            _transformers.BeamSearchScorer = _BeamSearchScorer  # type: ignore[attr-defined]
-except Exception:
-    pass
+                try:
+                    generation_mod = importlib.import_module("transformers.generation.utils")  # type: ignore
+                    _BeamSearchScorer = getattr(generation_mod, "BeamSearchScorer", None)
+                except Exception:
+                    _BeamSearchScorer = None
+            if _BeamSearchScorer is not None:
+                _transformers.BeamSearchScorer = _BeamSearchScorer  # type: ignore[attr-defined]
+    except Exception:
+        pass
 
 try:  # pragma: no cover - optional dependency
     from ..language import LanguageMarkup

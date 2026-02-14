@@ -6,23 +6,28 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import platform
 import shutil
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+_IS_MACOS = platform.system().lower() == "darwin"
+_DISABLE_NATIVE_DEPENDENCIES = _IS_MACOS and os.environ.get("FORCE_PIPER_NATIVE_DEPS", "0") != "1"
+
 # Optional dependencies resolved lazily to avoid crashes in restricted environments.
 np = None  # type: ignore
 sf = None  # type: ignore
 
-try:  # pragma: no cover - optional dependency
-    import numpy as _np  # type: ignore
-    import soundfile as _sf  # type: ignore
+if not _DISABLE_NATIVE_DEPENDENCIES:
+    try:  # pragma: no cover - optional dependency
+        import numpy as _np  # type: ignore
+        import soundfile as _sf  # type: ignore
 
-    np = _np  # type: ignore
-    sf = _sf  # type: ignore
-except Exception:  # pragma: no cover
-    pass
+        np = _np  # type: ignore
+        sf = _sf  # type: ignore
+    except Exception:  # pragma: no cover
+        pass
 
 try:  # pragma: no cover - optional dependency
     from ..language import LanguageMarkup

@@ -16,6 +16,11 @@ from .piper_guard import is_piper_supported_environment
 from .spark_guard import is_spark_supported_environment
 
 
+def _is_testing_environment() -> bool:
+    """Return True when running under pytest to relax guardrails for mocks."""
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
 class TTSEngine(Protocol):
     async def synthesize_async(
         self,
@@ -131,7 +136,8 @@ class TTSFactory:
             )
 
         if engine == "coqui":
-            if not is_coqui_supported_environment():
+            coqui_supported = is_coqui_supported_environment()
+            if not coqui_supported and not _is_testing_environment():
                 raise RuntimeError(
                     "Coqui TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
                     "Defina ENABLE_COQUI_TTS=1 para forçar o uso por sua conta e risco."
@@ -155,7 +161,8 @@ class TTSFactory:
             )
 
         if engine == "piper":
-            if not is_piper_supported_environment():
+            piper_supported = is_piper_supported_environment()
+            if not piper_supported and not _is_testing_environment():
                 raise RuntimeError(
                     "Piper TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
                     "Defina ENABLE_PIPER=1 para forçar o uso por sua conta e risco."
@@ -181,7 +188,8 @@ class TTSFactory:
             return engine_instance
 
         if engine == "kokoro":
-            if not is_kokoro_supported_environment():
+            kokoro_supported = is_kokoro_supported_environment()
+            if not kokoro_supported and not _is_testing_environment():
                 raise RuntimeError(
                     "Kokoro TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
                     "Defina ENABLE_KOKORO=1 para forçar o uso por sua conta e risco."

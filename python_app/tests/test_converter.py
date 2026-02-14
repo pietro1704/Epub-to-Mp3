@@ -1578,12 +1578,12 @@ class TestChapterProcessor(unittest.TestCase):
         self.assertEqual(chunks[0], "")
 
 
-def test_chunk_text_single_long_sentence(self):
+def test_chunk_text_single_long_sentence():
     """Test chunking single very long sentence"""
     text = "This is a very long sentence that exceeds the maximum size limit and should be handled gracefully"
     chunks = ChapterProcessor.chunk_text(text, max_size=50)
 
-    self.assertGreaterEqual(len(chunks), 1)
+    assert len(chunks) >= 1
     # Should handle gracefully even if single sentence is too long
 
 

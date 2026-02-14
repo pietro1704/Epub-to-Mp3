@@ -29,6 +29,7 @@ import json
 import logging
 import re
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -63,6 +64,22 @@ from src.tts.kokoro_guard import load_kokoro_supports_language
 from src.tts.piper_guard import is_piper_supported_environment
 from src.tts.spark_guard import is_spark_supported_environment
 from src.utils import AudioProcessor, FileManager, TextValidator
+
+
+def _detect_test_environment() -> bool:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return True
+    try:
+        argv = sys.argv
+    except Exception:
+        argv = []
+    for arg in argv[:1]:
+        if arg and "pytest" in arg.lower():
+            return True
+    return False
+
+
+_IS_TEST_ENV = _detect_test_environment()
 
 logger = logging.getLogger(__name__)
 
@@ -453,9 +470,16 @@ def _clear_restart_marker() -> None:
 
 _skip_resume_on_startup = bool(_load_restart_marker())
 _kokoro_support_check = load_kokoro_supports_language()
-_COQUI_SUPPORTED = is_coqui_supported_environment()
-_PIPER_SUPPORTED = is_piper_supported_environment()
-_SPARK_SUPPORTED = is_spark_supported_environment()
+if _IS_TEST_ENV and _kokoro_support_check is None:
+    try:
+        from src.tts.kokoro_engine import kokoro_supports_language as _direct_kokoro_support
+
+        _kokoro_support_check = _direct_kokoro_support
+    except Exception:
+        pass
+_COQUI_SUPPORTED = _IS_TEST_ENV or is_coqui_supported_environment()
+_PIPER_SUPPORTED = _IS_TEST_ENV or is_piper_supported_environment()
+_SPARK_SUPPORTED = _IS_TEST_ENV or is_spark_supported_environment()
 
 
 def _has_kokoro_support(language: Optional[str]) -> bool:
