@@ -879,6 +879,174 @@ def _job_status_payload(job_data: dict) -> dict:
     return payload
 
 
+def _normalize_book_title(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = re.sub(r"[_\-]+", " ", value)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or None
+
+
+def _safe_file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
+def _guess_image_mime(suffix: str) -> str:
+    lowered = suffix.lower()
+    if lowered in {".jpg", ".jpeg"}:
+        return "image/jpeg"
+    if lowered == ".png":
+        return "image/png"
+    if lowered == ".webp":
+        return "image/webp"
+    if lowered == ".gif":
+        return "image/gif"
+    return "application/octet-stream"
+
+
+def _find_cover_asset(job_output_dir: Path) -> Optional[Path]:
+    preferred_names = [
+        "cover.jpg",
+        "cover.jpeg",
+        "cover.png",
+        "cover.webp",
+    ]
+    for name in preferred_names:
+        candidate = job_output_dir / name
+        if candidate.exists():
+            return candidate
+
+    for suffix in (".jpg", ".jpeg", ".png", ".webp"):
+        for candidate in job_output_dir.glob(f"*{suffix}"):
+            if candidate.is_file():
+                return candidate
+    return None
+
+
+def _locate_job_output_dir_for_recovery(job_id: str) -> Optional[Path]:
+    legacy_dir = output_dir / job_id
+    if legacy_dir.exists():
+        return legacy_dir
+
+    try:
+        for streams_dir in output_dir.rglob("streams"):
+            if not streams_dir.is_dir():
+                continue
+            candidate = streams_dir / job_id
+            if candidate.exists():
+                return streams_dir.parent
+    except Exception as exc:
+        logger.warning("Failed to scan outputs for job %s: %s", job_id, exc)
+    return None
+
+
+def _restore_job_from_outputs(job_id: str) -> Optional[dict]:
+    """Rebuild a finished job if metadata was lost, based on existing outputs."""
+    job_output_dir = _locate_job_output_dir_for_recovery(job_id)
+    if not job_output_dir or not job_output_dir.exists():
+        return None
+
+    mp3_files = sorted(p for p in job_output_dir.glob("*.mp3") if p.is_file())
+    zip_files = sorted(p for p in job_output_dir.glob("*.zip") if p.is_file())
+    log_path = job_output_dir / "conversion.log"
+    has_log = log_path.exists()
+
+    if not mp3_files and not zip_files and not has_log:
+        return None
+
+    def _asset_entry(path: Path) -> dict:
+        return {
+            "name": path.name,
+            "url": f"/api/outputs/{job_id}/{path.name}",
+            "sizeBytes": _safe_file_size(path),
+        }
+
+    outputs: list[dict] = []
+    for zip_path in zip_files:
+        outputs.append(_asset_entry(zip_path))
+    if has_log:
+        outputs.append(_asset_entry(log_path))
+    for mp3_path in mp3_files:
+        outputs.append(_asset_entry(mp3_path))
+    outputs = _sort_output_entries(outputs)
+
+    book_title = _normalize_book_title(zip_files[0].stem if zip_files else None)
+    if not book_title:
+        parent_name = job_output_dir.parent.name if job_output_dir.parent else None
+        fallback = _normalize_book_title(parent_name) or _normalize_book_title(job_id)
+        book_title = fallback or "Livro Desconhecido"
+
+    chapter_progress = [
+        {
+            "index": idx,
+            "name": path.stem,
+            "status": "completed",
+            "downloadUrl": f"/api/outputs/{job_id}/{path.name}",
+        }
+        for idx, path in enumerate(mp3_files)
+    ]
+
+    timestamps: list[float] = []
+    for path in mp3_files + zip_files:
+        with contextlib.suppress(OSError):
+            timestamps.append(path.stat().st_mtime)
+    if has_log:
+        with contextlib.suppress(OSError):
+            timestamps.append(log_path.stat().st_mtime)
+    completed_ts = max(timestamps) if timestamps else time.time()
+    completed_iso = datetime.fromtimestamp(completed_ts, tz=timezone.utc).isoformat()
+
+    cover_entry = None
+    cover_path = _find_cover_asset(job_output_dir)
+    if cover_path:
+        cover_entry = {
+            "name": cover_path.name,
+            "url": f"/api/outputs/{job_id}/{cover_path.name}",
+            "mimeType": _guess_image_mime(cover_path.suffix),
+        }
+
+    job_data = {
+        "jobId": job_id,
+        "state": "finished",
+        "events": [
+            "♻️ Conversão recuperada a partir dos arquivos já salvos",
+            "📦 Downloads disponíveis - metadados reconstituídos automaticamente",
+        ],
+        "_raw_log": [],
+        "outputs": outputs,
+        "outputDir": str(job_output_dir),
+        "bookTitle": book_title,
+        "bookAuthor": None,
+        "engine": job_output_dir.name,
+        "voice": None,
+        "language": None,
+        "progressPercent": 100.0,
+        "chaptersCompleted": len(mp3_files),
+        "chaptersTotal": len(mp3_files),
+        "chapterProgress": chapter_progress,
+        "cover": cover_entry,
+        "coverUrl": cover_entry["url"] if cover_entry else None,
+        "coverMimeType": cover_entry["mimeType"] if cover_entry else None,
+        "logUrl": f"/api/outputs/{job_id}/{log_path.name}" if has_log else None,
+        "cancelRequested": False,
+        "resumeRequested": False,
+        "parallelActive": 0,
+        "createdAt": completed_iso,
+        "startedAt": completed_iso,
+        "completedAt": completed_ts,
+        "completedAtIso": completed_iso,
+        "_lastActivityTs": completed_ts,
+        "totalElapsedSeconds": None,
+    }
+    if cover_entry is None:
+        job_data["cover"] = None
+    job_data["_raw_log"] = list(job_data["events"])
+    return job_data
+
+
 def _resolve_job_activity_timestamp(job_data: dict) -> Optional[float]:
     ts = job_data.get("_lastActivityTs")
     if isinstance(ts, (int, float)):
@@ -2761,6 +2929,20 @@ async def get_job_status(job_id: str) -> JobStatus:
         jobs[job_id] = job_data
         logger.info(f"Job {job_id} loaded from disk successfully")
         return JobStatus(**_job_status_payload(job_data))
+
+    # Attempt to rebuild metadata from the existing outputs on disk
+    recovered_job = _restore_job_from_outputs(job_id)
+    if recovered_job:
+        jobs[job_id] = recovered_job
+        if job_manager.save_job(job_id, recovered_job):
+            saved_at = _determine_saved_at(recovered_job)
+            book_title = recovered_job.get("bookTitle") or "Unknown"
+            _recent_jobs_index[job_id] = (saved_at, book_title)
+            logger.warning("Job %s rehydrated from outputs directory", job_id)
+        else:
+            logger.error("Failed to persist reconstructed job %s", job_id)
+        _schedule_job_broadcast(job_id, recovered_job)
+        return JobStatus(**_job_status_payload(recovered_job))
 
     # Log all available jobs for debugging
     available_jobs = list(jobs.keys())

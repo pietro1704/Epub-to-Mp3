@@ -409,6 +409,41 @@ def test_convert_endpoint_failure_flow(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
+def test_job_status_rehydrates_outputs(tmp_path, monkeypatch):
+    """Jobs that lose their metadata are rebuilt from existing audio files."""
+    _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "jobs", {})
+    monkeypatch.setattr(server, "_recent_jobs_index", {})
+
+    job_id = str(uuid4())
+    job_output_dir = tmp_path / "Recovered Book" / "edge"
+    job_output_dir.mkdir(parents=True, exist_ok=True)
+    (job_output_dir / "streams" / job_id / "chapter_0001").mkdir(parents=True, exist_ok=True)
+
+    mp3_path = job_output_dir / "001 - Capitulo de teste.mp3"
+    mp3_path.write_bytes(MINIMAL_MP3)
+    zip_path = job_output_dir / "Recovered_Book.zip"
+    zip_path.write_bytes(b"PK\x03\x0400")
+    log_path = job_output_dir / "conversion.log"
+    log_path.write_text("done", encoding="utf-8")
+    cover_path = job_output_dir / "cover.jpg"
+    cover_path.write_bytes(b"\xff" * 10)
+
+    client = TestClient(server.app)
+    response = client.get(f"/api/jobs/{job_id}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["jobId"] == job_id
+    assert payload["state"] == "finished"
+    assert payload["chaptersCompleted"] == 1
+    assert any(asset["name"].endswith(".zip") for asset in payload["outputs"])
+    assert payload["bookTitle"].lower().startswith("recovered")
+    assert payload["chapterProgress"] and payload["chapterProgress"][0]["status"] == "completed"
+
+    job_state_path = tmp_path / ".jobs" / f"{job_id}.json"
+    assert job_state_path.exists()
+
+
 def _make_telemetry(tmp_path, monkeypatch):
     telemetry_path = Path(tmp_path) / "telemetry.json"
     recorder = TelemetryRecorder(telemetry_file=telemetry_path, max_samples=20)
