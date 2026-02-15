@@ -92,6 +92,9 @@ echo "🐍 Instalando dependências Python (python_app)..."
 echo "🔍 Instalando ferramentas de lint/format..."
 .venv/bin/python -m pip install ruff pre-commit
 
+echo "🎙️ Configurando Piper nativo..."
+bash scripts/install_piper_binary.sh
+
 echo "🌐 Instalando dependências web..."
 (cd web && mise exec -- npm install)
 """

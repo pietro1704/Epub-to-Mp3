@@ -69,17 +69,12 @@ class TTSFactory:
 
         piper_available = False
         if is_piper_supported_environment():
-            piper_available = (
+            piper_available = bool(
                 shutil.which("piper") or (Path(sys.executable).parent / "piper").exists()
             )
         if piper_available:
-            # Also check if there are any Piper models available
-            try:
-                piper_models = self.get_piper_models()
-                if piper_models:
-                    engines.append("piper")
-            except Exception:
-                pass  # No models available, don't add piper to available engines
+            # Piper downloads models on demand, so expose it whenever the binary exists.
+            engines.append("piper")
 
         # Check Kokoro
         if is_kokoro_supported_environment() and importlib.util.find_spec("kokoro") is not None:

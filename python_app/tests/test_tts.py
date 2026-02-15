@@ -7,6 +7,7 @@ import asyncio
 import os
 import sys
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, Mock, patch
@@ -99,6 +100,51 @@ class TestTTSFactory(unittest.TestCase):
             self.factory.create_engine(config)
 
         self.assertIn("Unsupported engine", str(context.exception))
+
+    def test_create_kokoro_engine(self):
+        """Test creating Kokoro TTS engine when environment is supported."""
+        config = ConversionConfig(engine="kokoro", primary_language="en-US", voice="kokoro_voice")
+        fake_module = types.ModuleType("src.tts.kokoro_engine")
+        mock_engine = Mock()
+        fake_module.KokoroTTSEngine = Mock(return_value=mock_engine)
+        fake_module.kokoro_supports_language = Mock(return_value=True)
+
+        with (
+            patch("src.tts.factory.is_kokoro_supported_environment", return_value=True),
+            patch.dict(sys.modules, {"src.tts.kokoro_engine": fake_module}),
+        ):
+            engine = self.factory.create_engine(config)
+
+        fake_module.KokoroTTSEngine.assert_called_once()
+        self.assertIs(engine, mock_engine)
+
+    def test_create_spark_engine(self):
+        """Test creating Spark TTS engine when dependencies are available."""
+        config = ConversionConfig(engine="spark", voice="spark-voice")
+        fake_module = types.ModuleType("src.tts.spark_engine")
+        mock_engine = Mock()
+        fake_module.SparkTTSEngine = Mock(return_value=mock_engine)
+
+        with (
+            patch("src.tts.factory.is_spark_supported_environment", return_value=True),
+            patch.dict(sys.modules, {"src.tts.spark_engine": fake_module}),
+        ):
+            engine = self.factory.create_engine(config)
+
+        fake_module.SparkTTSEngine.assert_called_once()
+        self.assertIs(engine, mock_engine)
+
+    def test_available_engines_includes_piper_without_models(self):
+        """Piper should be advertised when the binary exists even if no models are cached."""
+        with (
+            patch("shutil.which", return_value="/usr/bin/piper"),
+            patch("src.tts.factory.is_piper_supported_environment", return_value=True),
+            patch("src.tts.factory.is_coqui_supported_environment", return_value=False),
+            patch("src.tts.factory.is_kokoro_supported_environment", return_value=False),
+            patch("src.tts.factory.is_spark_supported_environment", return_value=False),
+        ):
+            engines = self.factory.available_engines()
+        self.assertIn("piper", engines)
 
     def test_find_piper_model_success(self):
         """Test finding Piper model successfully"""

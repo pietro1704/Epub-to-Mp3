@@ -3,6 +3,7 @@
 Sistema de detecção e marcação de formatação de texto para diferenciação no áudio
 """
 
+import os
 import re
 from dataclasses import dataclass
 from typing import List, Optional, Sequence
@@ -15,6 +16,9 @@ class FormattingSegment:
     text: str
     formatting: str  # 'normal', 'italic', 'bold', 'emphasis', 'strong', etc.
     language: Optional[str] = None
+
+
+PRESERVE_TTS_LAYOUT = os.getenv("PRESERVE_TTS_LAYOUT", "1").lower() in ("1", "true", "yes")
 
 
 class TextFormattingProcessor:
@@ -549,22 +553,8 @@ class TextFormattingProcessor:
         if not text:
             return ""
 
-        # Enhance natural pauses for better listening experience
-        text = cls.enhance_natural_pauses(text)
-
-        # Remove números de seção isolados que causam pausas longas
-        text = cls.remove_isolated_section_numbers(text)
-
-        # Consolida linhas curtas para reduzir pausas no TTS
-        text = cls.consolidate_short_lines(text)
-
-        # Remove markdown
-        text = cls.strip_inline_markdown(text)
-
-        # NOTE: Prosody application moved to TTS engines (per-chunk)
-        # to ensure tags work correctly with chunked synthesis
-
-        return text
+        # Preserve layout faithfully – apenas remove marcadores internos
+        return cls.remove_formatting_markers(text)
 
     @classmethod
     def enhance_natural_pauses(cls, text: str) -> str:
@@ -584,11 +574,6 @@ class TextFormattingProcessor:
         """
         if not text:
             return ""
-
-        # Add small pause after dialog markers for clarity
-        # Em-dash dialog (—): common in Portuguese and English literature
-        # Only if followed by another sentence (at least 20 chars)
-        text = re.sub(r"(—\s*[^—\n]{20,}?[.!?])\s+([A-Z])", r"\1, \2", text)
 
         # Add pause after chapter/section numbers for separation
         text = re.sub(r"(Capítulo\s+\d+[.:]\s*[^\n]{1,50}?)\n", r"\1.\n", text, flags=re.IGNORECASE)
@@ -637,6 +622,8 @@ class TextFormattingProcessor:
     def _inject_pause_markers(self, text: str) -> str:
         if not text:
             return ""
+        if PRESERVE_TTS_LAYOUT:
+            return text
 
         end_cues = self._collect_end_cues()
         text = self._append_pause_after_phrases(text, end_cues, pause_token=".")

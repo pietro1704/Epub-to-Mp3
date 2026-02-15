@@ -45,7 +45,7 @@ from src.language import (
     LanguageProfile,
     get_language_detector,
 )
-from src.text_formatting import TextFormattingProcessor
+from src.text_formatting import PRESERVE_TTS_LAYOUT, TextFormattingProcessor
 from src.ui.menu import MenuInterface
 from src.utils import FileManager, resolve_cache_root
 
@@ -1033,7 +1033,14 @@ class ConverterApplication:
             else:
                 final_text = final_text.lstrip()
 
-            speech_text = formatter.to_audible_text(final_text, formatting_segments)
+            # Recompute formatting markers after injecting headings or transforms
+            fresh_segments = formatter.parse_formatted_text(final_text)
+            formatting_segments = fresh_segments or None
+
+            if PRESERVE_TTS_LAYOUT:
+                speech_text = final_text
+            else:
+                speech_text = formatter.to_audible_text(final_text, formatting_segments)
 
             new_chapters.append(
                 Chapter(
@@ -3143,7 +3150,9 @@ class ConverterApplication:
             formatting_locale=self.localization.language,
             max_auto_retries=getattr(args, "retry_failed_rounds", None),
             manual_retry_failed=getattr(args, "retry_failed_manual", False),
-            force_reprocess=bool(getattr(args, "force_reprocess", False)),
+            force_reprocess=bool(
+                getattr(args, "force_reprocess", False) or getattr(args, "no_cache", False)
+            ),
             **overrides,
         )
         use_language_detection = getattr(args, "use_language_detection", None)
@@ -3164,7 +3173,7 @@ class ConverterApplication:
         if prioritize_primary is not None:
             config.prioritize_primary_language = bool(prioritize_primary)
 
-        if getattr(args, "force_reprocess", False):
+        if getattr(args, "force_reprocess", False) or getattr(args, "no_cache", False):
             config.force_reprocess = True
 
         edge_chunk_chars = self._clamp_int(
@@ -3446,6 +3455,12 @@ def _add_conversion_arguments(
         "--clear-cache",
         action="store_true",
         help="Remove cache and output for this book, then convert. Without a book, removes ALL cache/output (with confirmation)",
+    )
+    parser.add_argument(
+        "--no-cache",
+        dest="no_cache",
+        action="store_true",
+        help="Ignore existing cache/output and regenerate everything from scratch (also clears .cache for this run)",
     )
     parser.add_argument(
         "--verify-transcription",

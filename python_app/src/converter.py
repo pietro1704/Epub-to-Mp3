@@ -2687,8 +2687,12 @@ class AudioConverter:
         cache_index = self._load_cache_index(cache_dir)
         cached_paths: List[Path] = []
         pending: List[Chapter] = []
+        ignore_cached_audio = bool(getattr(config, "force_reprocess", False))
 
         for idx, chapter in enumerate(chapters, start=1):
+            if ignore_cached_audio:
+                pending.append(chapter)
+                continue
             chapter_num = self._chapter_number(chapter, idx)
             temp_mp3 = self._expected_output_path(chapter, chapter_num, output_dir)
             final_mp3 = final_output_dir / temp_mp3.name
@@ -3047,6 +3051,8 @@ class AudioConverter:
 
         announce = not state.get("slow_mode")
         state["slow_mode"] = True
+        state["slow_mode_reason"] = reason
+        state["recovery_streak"] = 0
         safe_profile = state.get("safe_profile") or {}
         chunk_chars = int(safe_profile.get("chunk_chars") or EDGE_SAFE_CHUNK_CHARS)
         max_segment = float(
@@ -3058,6 +3064,15 @@ class AudioConverter:
             with contextlib.suppress(TypeError, ValueError):
                 cap = min(cap, int(state["parallel_cap"]))
         state["parallel_cap"] = max(1, cap)
+        fast_profiles = state.setdefault("fast_profiles", {})
+        for cfg in state.get("configs") or []:
+            if (cfg.engine or "").lower() != "edge":
+                continue
+            fast_profiles[id(cfg)] = {
+                "chunk_chars": getattr(cfg, "edge_chunk_chars", None),
+                "max_segment_seconds": getattr(cfg, "edge_max_segment_seconds", None),
+                "enable_parallel": getattr(cfg, "edge_enable_parallel", True),
+            }
         state["safe_profile"] = {
             "chunk_chars": chunk_chars,
             "max_segment_seconds": max_segment,
@@ -3091,6 +3106,8 @@ class AudioConverter:
         state_current = self._parallel_state or {}
         current = max(1, int(state_current.get("current") or 1))
         ceiling = max(1, int(state_current.get("ceiling") or current))
+        if "pre_slow_parallel" not in state:
+            state["pre_slow_parallel"] = current
         new_current = min(current, state["parallel_cap"])
         new_ceiling = min(ceiling, state["parallel_cap"])
         state_current["current"] = max(1, new_current)
@@ -3105,6 +3122,124 @@ class AudioConverter:
                 f"{reason} → chunk={chunk_chars} seg={int(max_segment)}s paralelo={state_current['current']}"
             )
         return announce
+
+    def _restore_edge_fast_mode(
+        self,
+        reason: str,
+        *,
+        engine_pool: Optional[JobEnginePool] = None,
+        engine_obj: Optional[object] = None,
+    ) -> bool:
+        """Restore Edge settings back to the fast profile after recovery."""
+        state = self._edge_auto_state or {}
+        if not state.get("slow_mode"):
+            return False
+
+        state["slow_mode"] = False
+        state["slow_mode_reason"] = None
+        state["recovery_streak"] = 0
+        fast_profiles = state.get("fast_profiles") or {}
+        restored = False
+        for cfg in state.get("configs") or []:
+            if (cfg.engine or "").lower() != "edge":
+                continue
+            snapshot = fast_profiles.get(id(cfg))
+            if not snapshot:
+                continue
+            restored = True
+            if snapshot.get("chunk_chars") is not None:
+                cfg.edge_chunk_chars = snapshot["chunk_chars"]
+            if snapshot.get("max_segment_seconds") is not None:
+                cfg.edge_max_segment_seconds = snapshot["max_segment_seconds"]
+            if snapshot.get("enable_parallel") is not None:
+                cfg.edge_enable_parallel = snapshot["enable_parallel"]
+
+        fast_cap = int(state.get("fast_parallel_cap") or state.get("parallel_cap") or 1)
+        state["parallel_cap"] = max(1, fast_cap)
+        state_current = self._parallel_state or {}
+        target_parallel = state.pop("pre_slow_parallel", None)
+        if target_parallel is None:
+            target_parallel = state_current.get("current") or fast_cap
+        target_parallel = max(1, min(int(target_parallel), state["parallel_cap"]))
+        state_current["ceiling"] = state["parallel_cap"]
+        state_current["current"] = target_parallel
+        self._parallel_state = state_current
+        if engine_pool is not None:
+            engine_pool.update_parallel_slots(target_parallel)
+
+        if engine_obj is not None:
+            with contextlib.suppress(Exception):
+                if hasattr(engine_obj, "apply_speed_profile"):
+                    restore_cfg = None
+                    for cfg in state.get("configs") or []:
+                        if (cfg.engine or "").lower() == "edge":
+                            restore_cfg = cfg
+                            break
+                    chunk_chars = None
+                    segment_seconds = None
+                    if restore_cfg:
+                        chunk_chars = getattr(restore_cfg, "edge_chunk_chars", None)
+                        segment_seconds = getattr(restore_cfg, "edge_max_segment_seconds", None)
+                    kwargs = {}
+                    if chunk_chars:
+                        kwargs["chunk_char_limit"] = chunk_chars
+                    if segment_seconds:
+                        kwargs["max_segment_seconds"] = segment_seconds
+                    if kwargs:
+                        engine_obj.apply_speed_profile(**kwargs)
+                if hasattr(engine_obj, "_enable_parallel"):
+                    setattr(engine_obj, "_enable_parallel", True)
+                    if hasattr(engine_obj, "_parallel_slots"):
+                        setattr(engine_obj, "_parallel_slots", target_parallel)
+
+        self._edge_auto_state = state
+        if restored and self.verbose:
+            print(f"🚀 Edge modo seguro desativado: {reason}")
+        return restored
+
+    def _maybe_exit_edge_slow_mode(
+        self,
+        *,
+        engine_label: str,
+        chapter_chars: int,
+        elapsed: float,
+        engine_pool: Optional[JobEnginePool] = None,
+        engine_obj: Optional[object] = None,
+    ) -> None:
+        """Check if slow-mode constraints can be lifted after a fast chapter."""
+        if (engine_label or "").lower() != "edge":
+            return
+        state = self._edge_auto_state or {}
+        if not state.get("slow_mode"):
+            return
+        if chapter_chars <= 0 or elapsed <= 0:
+            return
+
+        throughput = chapter_chars / max(elapsed, 0.001)
+        min_cps = float(state.get("min_chars_per_second") or EDGE_MIN_CHARS_PER_SECOND)
+        recovery_threshold = max(min_cps * 1.25, min_cps + 30.0)
+        reason = (state.get("slow_mode_reason") or "").lower()
+        required_hits = 3
+        if "capítulo" in reason or "capitulo" in reason or "chapter" in reason:
+            required_hits = 1
+        elif "retry" in reason or "valid" in reason:
+            required_hits = 2
+
+        state["recovery_streak"] = int(state.get("recovery_streak") or 0)
+        if throughput >= recovery_threshold:
+            state["recovery_streak"] += 1
+        else:
+            state["recovery_streak"] = 0
+
+        if state["recovery_streak"] >= required_hits:
+            restored = self._restore_edge_fast_mode(
+                f"velocidade recuperada (~{int(throughput)} chars/s)",
+                engine_pool=engine_pool,
+                engine_obj=engine_obj,
+            )
+            if restored:
+                state["recovery_streak"] = 0
+        self._edge_auto_state = state
 
     @staticmethod
     def _should_force_edge_rescue(
@@ -3860,6 +3995,13 @@ class AudioConverter:
             if cfg and (cfg.engine or "").lower() == "edge" and id(cfg) not in edge_seen:
                 edge_configs.append(cfg)
                 edge_seen.add(id(cfg))
+        config_snapshots: Dict[int, Dict[str, object]] = {}
+        for cfg in edge_configs:
+            config_snapshots[id(cfg)] = {
+                "chunk_chars": getattr(cfg, "edge_chunk_chars", None),
+                "max_segment_seconds": getattr(cfg, "edge_max_segment_seconds", None),
+                "enable_parallel": getattr(cfg, "edge_enable_parallel", True),
+            }
         self._apply_edge_rate_caps(edge_configs)
         if has_edge_engine and edge_network_tier in {"slow", "medium"} and not edge_stable_mode:
             for cfg in edge_configs:
@@ -3887,6 +4029,7 @@ class AudioConverter:
             "enabled": edge_auto_enabled,
             "network_tier": edge_network_tier,
             "parallel_cap": parallel_slots_cap,
+            "fast_parallel_cap": parallel_slots_cap or chapter_parallel_count,
             "slow_mode": False,
             "safe_profile": {
                 "chunk_chars": EDGE_SAFE_CHUNK_CHARS,
@@ -3897,6 +4040,8 @@ class AudioConverter:
             "min_chars_per_second": EDGE_MIN_CHARS_PER_SECOND,
             "slow_ratio_threshold": EDGE_SLOW_RATIO_THRESHOLD,
             "configs": edge_configs,
+            "fast_profiles": config_snapshots,
+            "recovery_streak": 0,
         }
         if edge_stable_mode and has_edge_engine:
             safe_profile = self._edge_auto_state.get("safe_profile") or {}
@@ -6409,6 +6554,14 @@ class AudioConverter:
                 )
                 if message:
                     print(message)
+                if chapter_success and not chapter_cached:
+                    self._maybe_exit_edge_slow_mode(
+                        engine_label=engine_tracker.get("label") or (config.engine or "").lower(),
+                        chapter_chars=chapter_chars,
+                        elapsed=elapsed,
+                        engine_pool=engine_pool,
+                        engine_obj=engine_instance.get("object"),
+                    )
                 self._mark_health_progress(chapter_num, chapter_success, elapsed, chapter_error)
                 break
 

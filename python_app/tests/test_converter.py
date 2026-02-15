@@ -154,6 +154,26 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_split_cached_chapters_respects_force_reprocess(self):
+        """Force reprocess should ignore any cached MP3s that already exist."""
+        chapter = Chapter(1, "Chapter 1", "ch1.html", "Content 1")
+        output_dir = Path(self.temp_dir)
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=output_dir,
+            force_reprocess=True,
+            validate_audio=False,
+            validate_text=False,
+        )
+        cached_mp3 = self.converter._expected_output_path(chapter, 1, output_dir)
+        cached_mp3.parent.mkdir(parents=True, exist_ok=True)
+        cached_mp3.write_bytes(b"audio" * 400)  # Ensure file > 1000 bytes
+
+        cached, pending = self.converter._split_cached_chapters([chapter], output_dir, config)
+
+        self.assertEqual(cached, [], "Cached MP3s must be ignored when force_reprocess=True")
+        self.assertEqual(pending, [chapter], "All chapters should be reprocessed")
+
     def test_spot_check_text_against_epub(self):
         """Spot-check should ensure snippets from EPUB exist in payload."""
         epub_text = (
@@ -1232,7 +1252,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 semaphore, chapter, mock_tts_engine, output_dir, 1
             )
 
-    def test_report_results_success(self):
+    async def test_report_results_success(self):
         """Test reporting successful results"""
         result = ConversionResult(
             success=True,
@@ -1243,9 +1263,9 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         )
 
         # Should not raise exception
-        self.converter._report_results(result)
+        await self.converter._report_results(result)
 
-    def test_report_results_with_errors(self):
+    async def test_report_results_with_errors(self):
         """Test reporting results with errors"""
         result = ConversionResult(
             success=False,
@@ -1256,7 +1276,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         )
 
         # Should not raise exception
-        self.converter._report_results(result)
+        await self.converter._report_results(result)
 
     async def test_convert_integration(self):
         """Test full convert method integration"""

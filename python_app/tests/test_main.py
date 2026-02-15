@@ -274,13 +274,49 @@ class TestConverterApplication(unittest.TestCase):
             self.assertEqual(called_kwargs["voice"], "test-voice")
             self.assertIsNone(called_kwargs["model"])
             self.assertEqual(called_kwargs["output_dir"], "test_output")
-            self.assertEqual(called_kwargs["book_title"], "Test Book")
-            self.assertFalse(called_kwargs["preserve_all_chapters"])
-            self.assertTrue(called_kwargs["listen"])
-            self.assertEqual(called_kwargs["cache_dir"], "cache")
-            self.assertTrue(called_kwargs["clear_cache"])
+        self.assertEqual(called_kwargs["book_title"], "Test Book")
+        self.assertFalse(called_kwargs["preserve_all_chapters"])
+        self.assertTrue(called_kwargs["listen"])
+        self.assertEqual(called_kwargs["cache_dir"], "cache")
+        self.assertTrue(called_kwargs["clear_cache"])
         self.assertEqual(called_kwargs["footnote_mode"], "chapter_end")
         self.assertEqual(called_kwargs["footnote_context_words"], self.app.FOOTNOTE_CONTEXT_WORDS)
+
+    def test_create_config_from_args_sets_force_reprocess_when_no_cache(self):
+        """--no-cache should force reprocessing regardless of cached audio"""
+        mock_reader = Mock()
+        mock_reader.title = "Another Book"
+
+        args = Namespace(
+            engine="edge",
+            voice=None,
+            model=None,
+            output_dir=None,
+            filter_chapters=False,
+            listen=False,
+            cache_dir=None,
+            clear_cache=False,
+            no_cache=True,
+            no_footnote=False,
+            footnote_chapter_end=False,
+            formatting_cues=None,
+            priority=[],
+            retry_failed_rounds=None,
+            retry_failed_manual=False,
+        )
+
+        with patch.object(self.app.config, "create_conversion_config") as mock_create:
+            stub_config = Mock()
+            mock_create.return_value = stub_config
+
+            config = self.app._create_config_from_args(args, mock_reader)
+
+            self.assertIsNotNone(config)
+            called_kwargs = mock_create.call_args.kwargs
+            self.assertTrue(
+                called_kwargs.get("force_reprocess"),
+                "force_reprocess should be enabled when --no-cache is used",
+            )
 
     def _build_structure_item(self, html: str) -> ChapterStructureItem:
         chapter = Chapter(

@@ -14,22 +14,32 @@
 # - Smart engine selection (auto mode)
 #
 
-set -e  # Exit on error
+set -euo pipefail  # Exit on error + catch unset vars
+
+MISE_BIN=$(command -v mise || true)
+if [ -z "$MISE_BIN" ]; then
+    echo "❌ mise não encontrado. Instale mise (https://mise.jdx.dev) para usar ./convert."
+    exit 1
+fi
 
 VENV_DIR=".venv"
 PYTHON_BIN="$VENV_DIR/bin/python"
+PIPER_BIN="$VENV_DIR/bin/piper"
 
-# Bootstrap venv if needed (avoids PEP 668 issues on system Python)
-if [ ! -x "$PYTHON_BIN" ]; then
-    echo "🔧 Criando ambiente virtual em $VENV_DIR..."
-    python3 -m venv "$VENV_DIR"
-    echo "📦 Instalando dependências em $VENV_DIR..."
-    "$PYTHON_BIN" -m pip install --disable-pip-version-check -r python_app/requirements.txt
+# Ensure virtualenv & deps are provisioned via mise
+if [ ! -x "$PYTHON_BIN" ] || [ ! -x "$PIPER_BIN" ]; then
+    echo "📦 Preparando ambiente com mise (tarefa install)..."
+    "$MISE_BIN" run install
 fi
+
+# Allow Piper fallback by default (user can override to 0)
+export ENABLE_PIPER="${ENABLE_PIPER:-1}"
+
+PYTHON_CMD=("$MISE_BIN" "exec" "--" "python")
 
 # Check if special flags or commands (--help, -h, --version, clear-cache)
 if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "--version" ] || [ "$1" = "clear-cache" ] || [ "$1" = "--clear-cache" ]; then
-    "$PYTHON_BIN" -m python_app.main "$@"
+    "${PYTHON_CMD[@]}" -m python_app.main "$@"
     exit 0
 fi
 
@@ -74,6 +84,7 @@ for arg in "$@"; do
 done
 
 EXTRA_ARGS=()
+# Default to Edge turbo unless overridden
 if [ "$ENGINE_PRESENT" -eq 0 ]; then
     EXTRA_ARGS+=(--engine edge)
 fi
@@ -81,8 +92,8 @@ if [ "$VERBOSE_PRESENT" -eq 0 ]; then
     EXTRA_ARGS+=(--verbose)
 fi
 
-# Run conversion with optimal settings; append defaults only when absent
-"$PYTHON_BIN" -m python_app.main convert "$@" "${EXTRA_ARGS[@]}"
+# Run conversion with optimal settings through mise-managed Python
+"${PYTHON_CMD[@]}" -m python_app.main convert "$@" "${EXTRA_ARGS[@]}"
 
 # Print completion
 echo ""
