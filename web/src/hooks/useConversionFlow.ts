@@ -1069,9 +1069,7 @@ export function useConversionFlow(
         if (pendingQueue && pendingQueue.length > 0) {
           pendingQueue.forEach((queuedJob, index) => {
             const queuedFileName =
-              queuedJob.file?.name ||
-              queuedJob.fileName ||
-              `Livro ${index + 2}`;
+              queuedJob.file?.name || queuedJob.fileName || `Book ${index + 2}`;
             expanded.push({
               jobId: `${job.jobId}_queued_${index}`,
               fileName: queuedFileName,
@@ -1135,7 +1133,7 @@ export function useConversionFlow(
           return expandJobsWithQueue(
             {
               jobId: job.jobId,
-              fileName: job.fileName || job.bookTitle || "Livro Desconhecido",
+              fileName: job.fileName || job.bookTitle || "Unknown Book",
               timestamp: job.savedAt
                 ? new Date(job.savedAt).getTime()
                 : Date.now(),
@@ -1597,7 +1595,7 @@ export function useConversionFlow(
       dispatch({
         type: "append-entry",
         entry: entryFactoryRef.current(
-          t.flow.loadingCache || "📦 Recuperando dados desta conversão...",
+          t.flow.loadingCache || "📦 Restoring conversion data...",
         ),
       });
       const continuePendingBatch = async () => {
@@ -1610,7 +1608,7 @@ export function useConversionFlow(
         dispatch({
           type: "append-entry",
           entry: entryFactoryRef.current(
-            `🚀 Iniciando processamento da fila: ${jobQueueRef.current.length} conversões pendentes`,
+            `🚀 Starting queue processing: ${jobQueueRef.current.length} pending conversions`,
           ),
         });
         processedCountRef.current = 1; // Count the resumed job as processed
@@ -1683,7 +1681,7 @@ export function useConversionFlow(
             dispatch({
               type: "append-entry",
               entry: entryFactoryRef.current(
-                `🔄 Fila restaurada: ${queueToRestore.length} conversões pendentes serão retomadas após esta`,
+                `🔄 Queue restored: ${queueToRestore.length} pending conversions will resume after this one`,
               ),
             });
           }
@@ -1737,12 +1735,12 @@ export function useConversionFlow(
               INITIAL_FETCH_RETRY_MAX_DELAY_MS,
             );
             console.info(
-              `[useConversionFlow] Job ${actualJobId} ainda não foi persistido no backend (tentativa ${attempt}/${INITIAL_FETCH_RETRY_ATTEMPTS}). Aguardando ${backoff}ms antes de tentar novamente.`,
+              `[useConversionFlow] Job ${actualJobId} not yet persisted in backend (attempt ${attempt}/${INITIAL_FETCH_RETRY_ATTEMPTS}). Waiting ${backoff}ms before retrying.`,
             );
             await sleepMs(backoff);
           }
         }
-        throw new Error("Falha ao recuperar conversão inicial");
+        throw new Error("Failed to load initial conversion state");
       };
       try {
         initialSnapshot = await fetchInitialSnapshot();
@@ -1760,9 +1758,9 @@ export function useConversionFlow(
           markApiOnline();
           dispatch({
             type: "fail",
-            error: "Conversão não encontrada",
+            error: "Conversion not found",
             entry: entryFactoryRef.current(
-              "Esta conversão não existe mais no servidor. Ela pode ter sido removida ou expirou.",
+              "This conversion no longer exists on the server. It may have been removed or expired.",
             ),
           });
           // Remove both the original job and any queued job variants
@@ -1785,9 +1783,9 @@ export function useConversionFlow(
       if (!initialSnapshot) {
         dispatch({
           type: "fail",
-          error: "Não foi possível recuperar o estado da conversão",
+          error: "Could not recover conversion state",
           entry: entryFactoryRef.current(
-            "Servidor não retornou nenhuma informação sobre esta conversão.",
+            "Server returned no information about this conversion.",
           ),
         });
         startTimeRef.current = null;
@@ -1797,14 +1795,14 @@ export function useConversionFlow(
 
       if (!fileNameRef.current) {
         fileNameRef.current =
-          initialSnapshot.bookTitle || cached?.fileName || "Livro";
+          initialSnapshot.bookTitle || cached?.fileName || "Book";
       }
 
       appendSnapshotEvents(initialSnapshot.events);
       applySnapshotMeta(initialSnapshot);
 
       if (initialSnapshot.state === "interrupted") {
-        const message = initialSnapshot.error || "Conversão interrompida";
+        const message = initialSnapshot.error || "Conversion interrupted";
         dispatch({
           type: "fail",
           error: message,
@@ -2101,11 +2099,11 @@ export function useConversionFlow(
     startTimeRef.current = null;
 
     const entry = entryFactoryRef.current(
-      t.flow.skipped || "Conversão atual ignorada, pulando para próxima",
+      t.flow.skipped || "Current conversion skipped, moving to next",
     );
     dispatch({
       type: "cancelled",
-      error: t.flow.skipped || "Ignorado",
+      error: t.flow.skipped || "Skipped",
       entry,
     });
 
@@ -2137,7 +2135,7 @@ export function useConversionFlow(
       dispatch({
         type: "append-entry",
         entry: entryFactoryRef.current(
-          `⏭️ Pulando para próximo livro da fila (${jobQueueRef.current.length} restantes)`,
+          `⏭️ Skipping to next queued book (${jobQueueRef.current.length} remaining)`,
         ),
       });
       // Give time for the cancel to propagate
@@ -2150,7 +2148,7 @@ export function useConversionFlow(
       dispatch({
         type: "append-entry",
         entry: entryFactoryRef.current(
-          `⏭️ Pulando para próximo livro da fila (${jobQueueRef.current.length} restantes)`,
+          `⏭️ Skipping to next queued book (${jobQueueRef.current.length} remaining)`,
         ),
       });
     }
@@ -2216,7 +2214,7 @@ export function useConversionFlow(
         throw new Error(t.flow.backendOffline);
       }
       if (!api.upload) {
-        throw new Error("Upload não suportado pelo cliente atual");
+        throw new Error("Upload not supported by current client");
       }
       try {
         const response = await api.upload(file);
@@ -2279,7 +2277,7 @@ export function useConversionFlow(
   const restartBackend = useCallback(
     async (options?: RestartOptions) => {
       if (!api.restartBackend) {
-        throw new Error("Restart não suportado neste cliente");
+        throw new Error("Restart not supported in this client");
       }
       beginRestartGrace();
       reset();

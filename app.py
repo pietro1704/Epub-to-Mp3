@@ -8,7 +8,7 @@ import os
 import sys
 from pathlib import Path
 
-# Auto-aceitar licença Coqui TTS (CPML não-comercial) antes de qualquer import
+# Auto-accept Coqui TTS license (CPML non-commercial) before any import
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
 # Add python_app to path

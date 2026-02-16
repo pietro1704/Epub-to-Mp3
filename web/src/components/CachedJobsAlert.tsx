@@ -26,29 +26,29 @@ export default function CachedJobsAlert({
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
 
-    if (days > 0) return `há ${days} dia${days > 1 ? "s" : ""}`;
-    if (hours > 0) return `há ${hours} hora${hours > 1 ? "s" : ""}`;
-    if (minutes > 0) return `há ${minutes} minuto${minutes > 1 ? "s" : ""}`;
-    return "agora mesmo";
+    if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
+    if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+    if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+    return "just now";
   };
 
   return (
     <div className="cached-jobs-alert">
       <div className="cached-jobs-alert__header">
-        <h3>🔄 Conversões Interrompidas</h3>
+        <h3>🔄 Interrupted Conversions</h3>
         <button
           type="button"
           className="cached-jobs-alert__close"
           onClick={onDismiss}
-          aria-label="Fechar aviso"
+          aria-label="Close notice"
         >
           ✕
         </button>
       </div>
       <p className="cached-jobs-alert__message">
         {cachedJobs.length === 1
-          ? "Encontramos 1 conversão que foi interrompida. Deseja retomar?"
-          : `Encontramos ${cachedJobs.length} conversões que foram interrompidas. Deseja retomar alguma?`}
+          ? "We found 1 interrupted conversion. Do you want to resume it?"
+          : `We found ${cachedJobs.length} interrupted conversions. Do you want to resume one?`}
       </p>
       <ul className="cached-jobs-alert__list">
         {cachedJobs.map((job) => (
@@ -72,13 +72,13 @@ export default function CachedJobsAlert({
               className="cached-jobs-alert__resume"
               onClick={() => onResume(job.jobId)}
             >
-              Retomar
+              Resume
             </button>
             <button
               type="button"
               className="cached-jobs-alert__remove"
               onClick={() => onRemove(job.jobId)}
-              aria-label={`Cancelar ${job.fileName}`}
+              aria-label={`Remove ${job.fileName}`}
             >
               ✕
             </button>

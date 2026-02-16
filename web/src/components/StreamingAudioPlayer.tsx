@@ -248,18 +248,18 @@ export default function StreamingAudioPlayer({
   const currentProgress = manifest?.chunks
     ? `${currentSegment + 1} / ${manifest.chunks.length}`
     : waiting
-      ? "Aguardando..."
-      : "Pronto";
+      ? "Waiting..."
+      : "Ready";
 
   return (
     <div className="streaming-player">
       <div className="streaming-player__header">
         <div>
           <div className="streaming-player__title">
-            {isPlaying ? "▶️" : "⏸️"} Player Sequencial
+            {isPlaying ? "▶️" : "⏸️"} Sequential Player
           </div>
           <div className="streaming-player__chapter">
-            {currentChapterLabel || "Selecione um capítulo"}
+            {currentChapterLabel || "Select a chapter"}
           </div>
         </div>
         {!started ? (
@@ -269,7 +269,7 @@ export default function StreamingAudioPlayer({
             onClick={handleStart}
             disabled={!jobId || sortedChapters.length === 0}
           >
-            ▶️ Ouvir agora (streaming em sequência)
+            ▶️ Listen now (sequential streaming)
           </button>
         ) : (
           <div className="streaming-player__controls">
@@ -279,7 +279,7 @@ export default function StreamingAudioPlayer({
               onClick={handlePrevChapter}
               disabled={currentChapter === sortedChapters[0]?.index}
             >
-              ⏮️ Cap. anterior
+              ⏮️ Prev chapter
             </button>
             <button
               type="button"
@@ -290,7 +290,7 @@ export default function StreamingAudioPlayer({
                 sortedChapters[sortedChapters.length - 1]?.index
               }
             >
-              Cap. próximo ⏭️
+              Next chapter ⏭️
             </button>
           </div>
         )}
@@ -308,10 +308,10 @@ export default function StreamingAudioPlayer({
         <div className="streaming-player__meta">
           <span>
             {waiting
-              ? "⏳ Aguardando próximo segmento..."
+              ? "⏳ Waiting for next segment..."
               : src
-                ? `🎧 Segmento ${currentProgress}`
-                : "Pronto para iniciar"}
+                ? `🎧 Segment ${currentProgress}`
+                : "Ready to start"}
           </span>
           {error && <span className="streaming-player__error">⚠️ {error}</span>}
         </div>
@@ -319,7 +319,7 @@ export default function StreamingAudioPlayer({
         {currentSegmentText && (
           <div className="streaming-player__text">
             <div className="streaming-player__text-label">
-              📖 Texto do segmento atual:
+              📖 Current segment text:
             </div>
             <div className="streaming-player__text-content">
               {currentSegmentText}
@@ -331,7 +331,7 @@ export default function StreamingAudioPlayer({
       {manifest?.chunks && manifest.chunks.length > 0 && (
         <div className="streaming-player__chunks">
           <div className="streaming-player__chunks-label">
-            Segmentos do capítulo atual:
+            Current chapter segments:
           </div>
           <div className="streaming-player__chunks-list">
             {manifest.chunks.map((chunk: AudioChunkEntry) => (

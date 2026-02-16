@@ -193,7 +193,7 @@ export default function RecentJobsPanel({
               const batchLabel =
                 batch.jobs.length === 1
                   ? batch.jobs[0].bookTitle
-                  : `${batch.jobs.length} livros`;
+                  : `${batch.jobs.length} books`;
               const completedLabel = formatDateTime(
                 batch.completedAt ?? batch.startedAt,
               );
@@ -229,7 +229,7 @@ export default function RecentJobsPanel({
                         </strong>
                         {batch.jobs.length > 1 && (
                           <p className="recent-jobs__filename">
-                            Fila de {batch.jobs.length} conversões
+                            Queue of {batch.jobs.length} conversions
                           </p>
                         )}
                         {batch.jobs.length === 1 && (
@@ -351,7 +351,7 @@ export default function RecentJobsPanel({
                           className="recent-jobs__action recent-jobs__action--primary"
                           onClick={() => toggleBatch(batch.batchId)}
                         >
-                          Ver {batch.jobs.length} livros
+                          View {batch.jobs.length} books
                         </button>
                       )}
                     </div>

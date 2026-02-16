@@ -2,30 +2,30 @@ import { describe, expect, it } from "vitest";
 import { normalizeErrorMessage } from "./ConversionService";
 
 describe("normalizeErrorMessage", () => {
-  it("usa mensagem JSON quando disponível", () => {
+  it("uses JSON message when available", () => {
     const message = normalizeErrorMessage(
       400,
       "Bad Request",
-      JSON.stringify({ detail: "Arquivo inválido" }),
+      JSON.stringify({ detail: "Invalid file" }),
     );
-    expect(message).toBe("Arquivo inválido");
+    expect(message).toBe("Invalid file");
   });
 
-  it("ignora HTML e mostra fallback amigável", () => {
+  it("ignores HTML and shows friendly fallback", () => {
     const message = normalizeErrorMessage(
       500,
       "Internal Server Error",
       "<!DOCTYPE html><html><body>500</body></html>",
     );
-    expect(message).toContain("erro interno");
+    expect(message).toContain("internal error");
   });
 
-  it("retorna corpo em texto simples quando não é HTML", () => {
+  it("returns plain text body when not HTML", () => {
     const message = normalizeErrorMessage(
       429,
       "Too Many Requests",
-      "Limite excedido",
+      "Rate limit exceeded",
     );
-    expect(message).toBe("Limite excedido");
+    expect(message).toBe("Rate limit exceeded");
   });
 });

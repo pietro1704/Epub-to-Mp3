@@ -228,14 +228,14 @@ export default function DownloadsPanel({
 
       {cliCommand && (
         <div className="downloads-panel__command-section">
-          <h3>Comando executado</h3>
+          <h3>Executed command</h3>
           <code className="downloads-panel__command">{cliCommand}</code>
         </div>
       )}
 
       {showRawLog && (rawLog?.length || log.length) > 0 && (
         <div className="downloads-panel__command-section">
-          <h3>Saída do terminal (verbose)</h3>
+          <h3>Terminal output (verbose)</h3>
           <pre className="downloads-panel__log" ref={verboseLogRef}>
             {Array.isArray(rawLog) && rawLog.length > 0
               ? rawLog.join("\n")

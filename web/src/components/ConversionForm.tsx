@@ -540,10 +540,10 @@ export default function ConversionForm({
         );
       } catch (error) {
         const message =
-          error instanceof Error ? error.message : "Falha ao enviar arquivo";
+          error instanceof Error ? error.message : "File upload failed";
         const unsupported =
           typeof message === "string" &&
-          (message.toLowerCase().includes("não suportado") ||
+          (message.toLowerCase().includes("not supported") ||
             message.toLowerCase().includes("not supported"));
         if (unsupported) {
           setFileQueueSafe((prev) =>
@@ -1123,7 +1123,7 @@ export default function ConversionForm({
             <p className="form-hint">
               {engine === "auto"
                 ? locale === "pt"
-                  ? "Idioma será detectado automaticamente do livro"
+                  ? "Language will be automatically detected from the book"
                   : "Language will be automatically detected from the book"
                 : engineMeta.autoLanguage
                   ? t.form.languageNotRequired
@@ -1143,7 +1143,7 @@ export default function ConversionForm({
               {engine === "auto" && (
                 <option value="">
                   {locale === "pt"
-                    ? "Seleção automática baseada no idioma"
+                    ? "Automatic selection based on language"
                     : "Automatic selection based on language"}
                 </option>
               )}
@@ -1163,7 +1163,7 @@ export default function ConversionForm({
             <p className="form-hint">
               {engine === "auto"
                 ? locale === "pt"
-                  ? "Voz será escolhida automaticamente baseada no idioma detectado"
+                  ? "Voice will be automatically selected based on detected language"
                   : "Voice will be automatically selected based on detected language"
                 : currentVoiceMultilingual
                   ? `🌐 ${t.form.voiceHint} ${t.form.voiceMultilingualHint}`

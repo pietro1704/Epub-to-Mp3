@@ -322,7 +322,7 @@ def _torch_load_weights_disabled(torch_module, verbose: bool = False):
 
         torch_module.load = _patched_load
         if verbose:
-            print("🔒 [VERBOSE] Torch.load patched com weights_only=False (temporário)")
+            print("🔒 [VERBOSE] Torch.load patched with weights_only=False (temporary)")
         yield
     finally:
         torch_module.load = real_load
@@ -674,20 +674,20 @@ class CoquiTTSEngine:
                 gpu_name = torch.cuda.get_device_name(0)
                 gpu_memory = torch.cuda.get_device_properties(0).total_memory / (1024**3)
                 if self.verbose:
-                    print(f"🚀 [GPU] CUDA disponível: {gpu_name} ({gpu_memory:.1f} GB)")
-                    print("🚀 [GPU] Habilitando aceleração por GPU para TTS")
-                self._emit_status(f"Usando GPU: {gpu_name}")
+                    print(f"🚀 [GPU] CUDA available: {gpu_name} ({gpu_memory:.1f} GB)")
+                    print("🚀 [GPU] Enabling GPU acceleration for TTS")
+                self._emit_status(f"Using GPU: {gpu_name}")
                 global _COQUI_GPU_AVAILABLE
                 _COQUI_GPU_AVAILABLE = True
             else:
                 if self.verbose:
-                    print("⚠️ [CPU] GPU não disponível, usando CPU")
-                self._emit_status("Usando CPU (GPU não disponível)")
+                    print("⚠️ [CPU] GPU not available, using CPU")
+                self._emit_status("Using CPU (GPU not available)")
 
             _xtts_allowlisted = _allow_xtts_unpickle(verbose=self.verbose)
 
             try:
-                self._emit_status(f"Baixando/verificando modelo {model_short}...")
+                self._emit_status(f"Downloading/verifying model {model_short}...")
                 # Initialize with GPU support
                 with _torch_load_weights_disabled(torch, verbose=self.verbose):
                     self.tts = self._tts_class(model_name=self.model_name, gpu=gpu_available)
@@ -707,13 +707,13 @@ class CoquiTTSEngine:
                     torch.backends.cudnn.benchmark = True  # Auto-tune convolutions
                     torch.backends.cuda.matmul.allow_tf32 = True  # Faster matrix operations
                 if self.verbose:
-                    print("🚀 [GPU] Otimizações CUDA habilitadas (cudnn.benchmark + TF32)")
+                    print("🚀 [GPU] CUDA optimizations enabled (cudnn.benchmark + TF32)")
 
                 if self.verbose:
-                    print(f"✅ [VERBOSE] Coqui modelo inicializado com sucesso em {device.upper()}")
-                self._emit_status(f"Modelo Coqui pronto ({device.upper()})")
+                    print(f"✅ [VERBOSE] Coqui model initialized successfully on {device.upper()}")
+                self._emit_status(f"Coqui model ready ({device.upper()})")
 
-                # Melhorar tokenização para evitar avisos de attention_mask no Transformers
+                # Improve tokenization to avoid attention_mask warnings in Transformers
                 try:
                     tokenizer = getattr(self.tts, "tokenizer", None)
                     model = getattr(self.tts, "model", None) or getattr(
@@ -742,16 +742,16 @@ class CoquiTTSEngine:
                     _patch_transformers_beam_search(force=True)
                     self.tts = self._tts_class(model_name=self.model_name, gpu=gpu_available)
                     if self.verbose:
-                        print("🔍 [VERBOSE] Coqui modelo inicializado após patch Transformers")
+                        print("🔍 [VERBOSE] Coqui model initialized after Transformers patch")
                 else:
                     self.last_error = f"init_error: {e}"
                     if self.verbose:
-                        print(f"🔍 [VERBOSE] Coqui erro na inicialização: {e}")
+                        print(f"🔍 [VERBOSE] Coqui initialization error: {e}")
                     raise
             except Exception as e:
                 self.last_error = f"init_error: {e}"
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] Coqui erro na inicialização: {e}")
+                    print(f"🔍 [VERBOSE] Coqui initialization error: {e}")
                 raise
 
     async def synthesize_async(
@@ -774,7 +774,7 @@ class CoquiTTSEngine:
                 # Progress updates are best-effort; ignore failures
                 pass
 
-        # Preparar texto com pistas audíveis quando possível
+        # Prepare text with audible cues when possible
         if TextFormattingProcessor:
             formatter = TextFormattingProcessor(
                 cues_enabled=getattr(self, "formatting_cues_enabled", True),
@@ -785,19 +785,19 @@ class CoquiTTSEngine:
                 if converted:
                     if self.verbose and converted != text:
                         print(
-                            f"🔍 [VERBOSE] CoquiTTS texto ajustado para áudio: {len(converted)} chars"
+                            f"🔍 [VERBOSE] CoquiTTS text adjusted for audio: {len(converted)} chars"
                         )
                     text = converted
             except Exception as e:
                 if self.verbose:
                     print(
-                        f"🔍 [VERBOSE] CoquiTTS falha ao preparar texto ({e}); usando limpeza básica"
+                        f"🔍 [VERBOSE] CoquiTTS failed to prepare text ({e}); using basic cleanup"
                     )
                 text = formatter.clean_tts_text(text)
         else:
             text = text.strip()
 
-        # Pré-processar texto: converter números e caracteres especiais
+        # Pre-process text: convert numbers and special characters
         text = _preprocess_text_for_coqui(text, verbose=self.verbose)
 
         contains_markup = LanguageMarkup is not None and "[[lang:" in text.lower()
@@ -839,7 +839,7 @@ class CoquiTTSEngine:
         segments = _expand_segments_with_limits(segments, max_chars=max_chars, verbose=self.verbose)
         if self.verbose and len(segments) > base_segments:
             print(
-                f"🔍 [VERBOSE] Coqui dividindo em {len(segments)} segmentos (limite {max_chars} chars + segurança)"
+                f"🔍 [VERBOSE] Coqui splitting into {len(segments)} segments (limit {max_chars} chars + safety)"
             )
 
         self._initialize_model()
@@ -852,9 +852,9 @@ class CoquiTTSEngine:
             try:
                 if self.verbose:
                     print(
-                        f"🔍 [VERBOSE] Coqui sintetizando {len(segment_text)} chars, linguagem: {language}"
+                        f"🔍 [VERBOSE] Coqui synthesizing {len(segment_text)} chars, language: {language}"
                     )
-                # **FIXED**: Usar executor limitado em vez de None (thread pool padrão)
+                # **FIXED**: Use limited executor instead of None (default thread pool)
                 executor = self._get_executor()
                 timeout = _segment_timeout_seconds(segment_text)
                 await asyncio.wait_for(
@@ -876,18 +876,18 @@ class CoquiTTSEngine:
                     except Exception:
                         pass
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] Coqui síntese completa: {output_path}")
+                    print(f"🔍 [VERBOSE] Coqui synthesis complete: {output_path}")
             except asyncio.TimeoutError:
                 self.last_error = "synthesis_timeout"
                 if self.verbose:
                     print(
-                        f"⏱️ [VERBOSE] Coqui timeout após {_segment_timeout_seconds(segment_text)}s no segmento único"
+                        f"⏱️ [VERBOSE] Coqui timeout after {_segment_timeout_seconds(segment_text)}s on single segment"
                     )
                 return None
             except Exception as e:
                 self.last_error = f"synthesis_error: {e}"
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] Coqui erro na síntese: {e}")
+                    print(f"🔍 [VERBOSE] Coqui synthesis error: {e}")
                 return None
             return output_path if Path(output_path).exists() else None
 
@@ -927,7 +927,7 @@ class CoquiTTSEngine:
                         self.last_error = f"synthesis_timeout_segment_{idx}"
                         if self.verbose:
                             print(
-                                f"⏱️ [VERBOSE] Coqui timeout após {timeout}s no segmento {idx} (sem numpy)"
+                                f"⏱️ [VERBOSE] Coqui timeout after {timeout}s on segment {idx} (without numpy)"
                             )
                         return None
                     _notify_progress(segment_text)
@@ -983,7 +983,7 @@ class CoquiTTSEngine:
                         self.last_error = f"synthesis_timeout_segment_{segment_index}"
                         if self.verbose:
                             print(
-                                f"⏱️ [VERBOSE] Coqui timeout após {timeout}s no segmento {segment_index}"
+                                f"⏱️ [VERBOSE] Coqui timeout after {timeout}s on segment {segment_index}"
                             )
                         # On timeout, downgrade to single-worker safe mode for next segments
                         self._max_workers = 1
@@ -1007,18 +1007,18 @@ class CoquiTTSEngine:
             # Execute all synthesis tasks in parallel
             if tasks:
                 if self.verbose:
-                    print(f"🚀 [VERBOSE] Coqui processando {len(tasks)} segmentos em paralelo")
+                    print(f"🚀 [VERBOSE] Coqui processing {len(tasks)} segments in parallel")
                 try:
                     await asyncio.gather(*tasks)
                 except asyncio.TimeoutError:
                     parallel_failed = True
                     if self.verbose:
                         print(
-                            "⏱️ [VERBOSE] Coqui timeout durante a síntese paralela; refazendo em modo sequencial"
+                            "⏱️ [VERBOSE] Coqui timeout during parallel synthesis; retrying in sequential mode"
                         )
 
             if parallel_failed:
-                # Limpar arquivos temporários parcialmente escritos e refazer sequencialmente
+                # Clean up partially written temp files and redo sequentially
                 for temp_path in temp_files:
                     with contextlib.suppress(OSError):
                         temp_path.unlink()
@@ -1054,7 +1054,7 @@ class CoquiTTSEngine:
                         self.last_error = f"synthesis_timeout_segment_{idx}_seq"
                         if self.verbose:
                             print(
-                                f"⏱️ [VERBOSE] Coqui timeout após {timeout}s no segmento {idx} (sequencial)"
+                                f"⏱️ [VERBOSE] Coqui timeout after {timeout}s on segment {idx} (sequential)"
                             )
                         return None
                     _notify_progress(segment_text)
@@ -1124,12 +1124,12 @@ class CoquiTTSEngine:
                 error_msg = str(e).lower()
                 stripped_error = error_msg.strip().strip("'\"")
 
-                # Coqui às vezes retorna '0' quando speaker é inválido; trate como fallback de speaker
+                # Coqui sometimes returns '0' when speaker is invalid; treat as speaker fallback
                 if stripped_error == "0":
                     kwargs.pop("speaker", None)
                     kwargs.pop("speaker_wav", None)
                     if self.verbose:
-                        print("🔍 [VERBOSE] Coqui removendo speaker após erro '0'")
+                        print("🔍 [VERBOSE] Coqui removing speaker after '0' error")
                     retry_count += 1
                     continue
 
@@ -1137,7 +1137,7 @@ class CoquiTTSEngine:
                     kwargs.pop("speaker", None)
                     kwargs.pop("speaker_wav", None)
                     if self.verbose:
-                        print("🔍 [VERBOSE] Coqui removendo speaker após erro 'default'")
+                        print("🔍 [VERBOSE] Coqui removing speaker after 'default' error")
                     retry_count += 1
                     continue
 
@@ -1187,28 +1187,28 @@ class CoquiTTSEngine:
     def _add_speaker_fallback(self, kwargs: dict) -> None:
         """Fallback speaker detection for stubborn models."""
         if self.verbose:
-            print("🔍 [VERBOSE] Coqui tentando fallback de speaker")
+            print("🔍 [VERBOSE] Coqui trying speaker fallback")
 
         model_lower = self.model_name.lower()
 
-        # XTTS: não usar "0" – preferir speaker conhecido ou nenhum
+        # XTTS: do not use "0" - prefer known speaker or none
         if "xtts" in model_lower or "multilingual" in model_lower:
             speaker = self._resolve_xtts_speaker()
             if speaker:
                 kwargs["speaker"] = speaker
                 kwargs.pop("speaker_wav", None)
                 if self.verbose:
-                    print(f"🔍 [VERBOSE] Coqui XTTS fallback usando speaker: {speaker}")
+                    print(f"🔍 [VERBOSE] Coqui XTTS fallback using speaker: {speaker}")
             else:
                 kwargs.pop("speaker", None)
                 kwargs["speaker_wav"] = None
                 if self.verbose:
                     print(
-                        "🔍 [VERBOSE] Coqui XTTS fallback removendo speaker (usar padrão interno)"
+                        "🔍 [VERBOSE] Coqui XTTS fallback removing speaker (use internal default)"
                     )
             return
 
-        # Para modelos VITS PT, tente "0"
+        # For VITS PT models, try "0"
         if "vits" in model_lower and "pt" in model_lower:
             kwargs["speaker"] = "0"
             if self.verbose:
@@ -1233,10 +1233,10 @@ class CoquiTTSEngine:
         return data[indices]
 
     def _resolve_xtts_speaker(self) -> Optional[str]:
-        """Resolve um speaker válido para XTTS a partir do modelo ou cache."""
+        """Resolve a valid speaker for XTTS from the model or cache."""
         candidates: List[str] = []
 
-        # Tentativa 1: atributo speakers direto do TTS
+        # Attempt 1: direct speakers attribute from TTS
         speakers_attr = getattr(self.tts, "speakers", None)
         if isinstance(speakers_attr, dict):
             candidates.extend([str(k) for k in speakers_attr.keys()])

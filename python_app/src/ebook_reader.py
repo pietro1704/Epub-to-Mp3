@@ -323,13 +323,13 @@ class TextProcessor:
             cleaned = text.strip()
             label = (label or "").strip()
 
-            # Extrair apenas dígitos do label para comparação
+            # Extract only digits from label for comparison
             label_digits = "".join(ch for ch in label if ch.isdigit())
 
             if label_digits:
-                # Tentar remover várias formas do número/label no início
+                # Try to remove various forms of number/label at the beginning
                 candidates = [
-                    label,  # Label completo (ex: "[1]")
+                    label,  # Full label (e.g.: "[1]")
                     f"[{label}]",
                     f"({label})",
                     f"{label}.",
@@ -340,7 +340,7 @@ class TextProcessor:
                     f"{label_digits}.",
                     f"{label_digits}:",
                     f"{label_digits}-",
-                    label_digits,  # Apenas o número (ex: "1")
+                    label_digits,  # Just the number (e.g.: "1")
                 ]
 
                 lowered = cleaned.lower()
@@ -497,9 +497,9 @@ class TextProcessor:
             marker_token = f"[[FOOTNOTE_{counter}]]"
             footnote_text = footnote_map.get(lookup_key, "").strip()
 
-            # Remover número/label duplicado no início do texto
+            # Remove duplicate number/label at the beginning of the text
             if digits:
-                # Tentar remover várias formas do número no início
+                # Try to remove various forms of the number at the beginning
                 candidates = [
                     f"[{digits}]",
                     f"({digits})",
@@ -511,7 +511,7 @@ class TextProcessor:
                     f"{label}.",
                     f"{label}:",
                     f"{label}-",
-                    digits,  # Apenas o número
+                    digits,  # Just the number
                 ]
                 lowered = footnote_text.lower()
                 for candidate in candidates:
@@ -707,17 +707,17 @@ class TextProcessor:
 
     @staticmethod
     def join_broken_lines(text: str) -> str:
-        """Junta linhas quebradas no meio de frases (típico em PDFs).
+        """Join lines broken in the middle of sentences (typical in PDFs).
 
-        Preserva quebras de parágrafo reais (linhas terminadas com pontuação).
-        Remove cabeçalhos/rodapés repetidos que aparecem em múltiplas páginas.
+        Preserves real paragraph breaks (lines ending with punctuation).
+        Removes repeated headers/footers that appear on multiple pages.
         """
         if not text:
             return ""
 
         lines = text.split("\n")
 
-        # Primeiro: detectar e remover cabeçalhos/rodapés repetidos
+        # First: detect and remove repeated headers/footers
         lines = TextProcessor._remove_pdf_headers_footers(lines)
 
         joined_lines = []
@@ -730,22 +730,22 @@ class TextProcessor:
                 i += 1
                 continue
 
-            # Verifica se linha termina com pontuação que indica fim de frase
+            # Check if line ends with punctuation indicating end of sentence
             ends_with_punctuation = current_line.endswith((".", "!", "?", ":", ";"))
 
-            # Se não termina com pontuação E existe próxima linha, tenta juntar
+            # If it doesn't end with punctuation AND there's a next line, try to join
             while not ends_with_punctuation and i + 1 < len(lines):
                 next_line = lines[i + 1].strip()
 
-                # Se próxima linha está vazia, para de juntar
+                # If next line is empty, stop joining
                 if not next_line:
                     break
 
-                # Junta com espaço
+                # Join with space
                 current_line = current_line + " " + next_line
                 i += 1
 
-                # Atualiza flag de pontuação
+                # Update punctuation flag
                 ends_with_punctuation = current_line.endswith((".", "!", "?", ":", ";"))
 
             joined_lines.append(current_line)
@@ -755,55 +755,55 @@ class TextProcessor:
 
     @staticmethod
     def _remove_pdf_headers_footers(lines: List[str]) -> List[str]:
-        """Remove cabeçalhos e rodapés repetidos típicos de PDFs.
+        """Remove repeated headers and footers typical of PDFs.
 
-        Detecta linhas curtas que aparecem isoladas (sem continuação) e que
-        parecem ser títulos de livro, nomes de autor ou números de página.
+        Detects short lines that appear isolated (without continuation) and that
+        look like book titles, author names, or page numbers.
         """
         if not lines or len(lines) < 3:
             return lines
 
-        # Heurísticas para identificar cabeçalhos/rodapés:
-        # 1. Linhas muito curtas (< 100 chars) que não terminam com pontuação normal
-        # 2. Linhas que contêm apenas números (página)
-        # 3. Linhas que parecem títulos (sem verbos, palavras capitalizadas)
+        # Heuristics to identify headers/footers:
+        # 1. Very short lines (< 100 chars) that don't end with normal punctuation
+        # 2. Lines that contain only numbers (page number)
+        # 3. Lines that look like titles (no verbs, capitalized words)
 
         filtered_lines = []
 
-        # Primeiro: analisar padrões comuns nas primeiras e últimas linhas
-        # Cabeçalhos/rodapés geralmente estão nas primeiras 3-4 ou últimas 3-4 linhas
+        # First: analyze common patterns in the first and last lines
+        # Headers/footers are usually in the first 3-4 or last 3-4 lines
         for i, line in enumerate(lines):
             stripped = line.strip()
 
-            # Linha vazia, manter
+            # Empty line, keep
             if not stripped:
                 filtered_lines.append(line)
                 continue
 
-            # Linha é apenas número (número de página)
+            # Line is just a number (page number)
             if stripped.isdigit():
                 continue
 
-            # Verificar se é uma das primeiras ou últimas linhas não-vazias
+            # Check if it's one of the first or last non-empty lines
             is_header_position = i < 5
             is_footer_position = i >= len(lines) - 5
 
-            # Linha curta em posição de cabeçalho/rodapé
+            # Short line in header/footer position
             if (is_header_position or is_footer_position) and len(stripped) < 100:
-                # Verificar se parece cabeçalho/rodapé
+                # Check if it looks like a header/footer
                 words = stripped.split()
 
-                # Remover se for apenas título com palavras capitalizadas
+                # Remove if it's just a title with capitalized words
                 if len(words) >= 2:
                     cap_count = sum(1 for w in words if w and len(w) > 1 and w[0].isupper())
-                    # Se maioria das palavras são capitalizadas e não termina com pontuação
+                    # If most words are capitalized and it doesn't end with punctuation
                     if cap_count >= len(words) * 0.6 and not stripped.endswith(
                         (".", "!", "?", ":")
                     ):
-                        # Provável título de livro/autor
+                        # Likely book title/author
                         continue
 
-                # Remover linhas que são apenas "Página X" ou similares
+                # Remove lines that are just "Página X" or similar
                 if stripped.lower().startswith("página") or stripped.lower().startswith("pagina"):
                     continue
 
@@ -861,20 +861,20 @@ class EpubParser:
         text: str, formatting_segments: Optional[List[FormattingSegment]]
     ) -> str:
         """
-        Prepara o texto para envio ao TTS com pistas audíveis de formatação.
+        Prepare text for TTS submission with audible formatting cues.
 
-        Este método:
-        1. PRESERVA tags [[lang:xx]] para TTS multiidioma
-        2. Converte marcadores [[fmt:...]] em mensagens que o ouvinte entende (“em itálico”, “entre aspas” etc.)
-        3. Remove apenas markdown auxiliar (_italic_, **bold**) que não contribui para o áudio
+        This method:
+        1. PRESERVES [[lang:xx]] tags for multilingual TTS
+        2. Converts [[fmt:...]] markers into messages the listener understands ("in italics", "in quotes", etc.)
+        3. Removes only auxiliary markdown (_italic_, **bold**) that doesn't contribute to audio
 
-        Resultado: o texto retornado é exatamente o payload enviado ao TTS e salvo em -pre-tts.txt
+        Result: the returned text is exactly the payload sent to TTS and saved in -pre-tts.txt
         """
         if not text:
             return ""
 
-        # Apenas remover markdown inline que foi adicionado pelo processador
-        # IMPORTANTE: NÃO remover tags [[lang:]] nem [[fmt:]]
+        # Only remove inline markdown that was added by the processor
+        # IMPORTANT: Do NOT remove [[lang:]] or [[fmt:]] tags
         if TextFormattingProcessor:
             formatter = TextFormattingProcessor()
             try:
@@ -882,7 +882,7 @@ class EpubParser:
                 if processed:
                     return processed
             except Exception:
-                # Fallback para remoção básica caso algo falhe
+                # Fallback to basic removal if something fails
                 pass
             return TextFormattingProcessor.strip_inline_markdown(text)
 
@@ -895,7 +895,7 @@ class EpubParser:
             base_dir = self._opf_dir(opf_path)
             toc = self._parse_toc(archive, base_dir)
 
-            # Usar método baseado em spine (método antigo, mais confiável)
+            # Use spine-based method (old method, more reliable)
             chapters = self._extract_chapters(archive, manifest, spine_ids, base_dir)
 
         title = title or self.path.stem
@@ -968,22 +968,22 @@ class EpubParser:
         base_dir: str,
         toc: List[TocItem],
     ) -> List[Chapter]:
-        """Extrai capítulos baseado na estrutura do TOC (Table of Contents).
+        """Extract chapters based on the TOC (Table of Contents) structure.
 
-        Isso evita duplicação de conteúdo usando a hierarquia real do livro.
+        This avoids content duplication by using the book's actual hierarchy.
         """
         chapters: List[Chapter] = []
         index_counter = 1
         context_words = 8
 
-        # Cache de conteúdo HTML já lido
+        # Cache of already-read HTML content
         html_cache: Dict[str, str] = {}
-        # Track de arquivos já processados (sem âncora)
+        # Track already-processed files (without anchor)
         processed_full_files: set = set()
 
         def get_html_content(href: str) -> str:
-            """Obtém conteúdo HTML de um arquivo, usando cache."""
-            # Extrair apenas o arquivo (sem âncora)
+            """Get HTML content from a file, using cache."""
+            # Extract only the file (without anchor)
             file_path = href.split("#")[0] if "#" in href else href
             if not file_path:
                 return ""
@@ -1000,21 +1000,21 @@ class EpubParser:
                 return ""
 
         def get_all_split_files_content(href: str) -> str:
-            """Obtém conteúdo de todos os arquivos split relacionados.
+            """Get content from all related split files.
 
-            Se o arquivo for part0006_split_000.html, também carrega:
+            If the file is part0006_split_000.html, also loads:
             part0006_split_001.html, part0006_split_002.html, etc.
             """
             file_path = href.split("#")[0] if "#" in href else href
             if not file_path:
                 return ""
 
-            # Verificar se é arquivo split
+            # Check if it's a split file
             if "_split_" in file_path:
-                # Extrair base e número do split
+                # Extract base and split number
                 base_pattern = file_path.rsplit("_split_", 1)[0]
 
-                # Coletar todos os splits deste arquivo
+                # Collect all splits of this file
                 all_content = []
                 split_num = 0
 
@@ -1030,14 +1030,14 @@ class EpubParser:
                 if all_content:
                     return "\n".join(all_content)
 
-            # Se não é split ou não encontrou splits, retornar arquivo único
+            # If it's not a split or no splits were found, return single file
             return get_html_content(href)
 
         def process_toc_item(item: TocItem, level: int = 1) -> None:
-            """Processa um item do TOC e seus filhos recursivamente."""
+            """Process a TOC item and its children recursively."""
             nonlocal index_counter
 
-            # Extrair arquivo e âncora
+            # Extract file and anchor
             if "#" in item.href:
                 file_path_only = item.href.split("#")[0]
                 anchor = item.href.split("#")[1]
@@ -1045,25 +1045,25 @@ class EpubParser:
                 file_path_only = item.href
                 anchor = ""
 
-            # Para arquivos split, usar base sem número do split
+            # For split files, use base without split number
             base_file = file_path_only
             if "_split_" in file_path_only:
                 base_file = file_path_only.rsplit("_split_", 1)[0]
 
-            # Se não há âncora e o arquivo/base já foi processado, pular
+            # If there's no anchor and the file/base was already processed, skip
             if not anchor and base_file in processed_full_files:
                 return
 
-            # Obter conteúdo HTML deste item (incluindo todos os splits)
+            # Get HTML content of this item (including all splits)
             raw_content = get_all_split_files_content(item.href)
             if not raw_content or TextProcessor.looks_like_css(raw_content):
                 return
 
-            # Marcar base como processada
+            # Mark base as processed
             if not anchor:
                 processed_full_files.add(base_file)
 
-            # Criar resolver para footnotes externos
+            # Create resolver for external footnotes
             file_path = item.href.split("#")[0] if "#" in item.href else item.href
             chapter_dir = str(Path(self._join_path(base_dir, file_path)).parent).replace("\\", "/")
 
@@ -1074,7 +1074,7 @@ class EpubParser:
                 except (KeyError, Exception):
                     return None
 
-            # Processar texto
+            # Process text
             markup_with_markers, footnotes = TextProcessor.inject_footnotes(
                 raw_content, external_file_resolver=resolve_external_file
             )
@@ -1100,14 +1100,14 @@ class EpubParser:
 
             text = TextProcessor.add_pause_before_dash(text_with_footnotes)
 
-            # Usar título do TOC
-            raw_title = item.title.strip() if item.title else f"Capítulo {index_counter}"
+            # Use TOC title
+            raw_title = item.title.strip() if item.title else f"Chapter {index_counter}"
             chapter_title = TextProcessor.clean_chapter_title(raw_title)
 
-            # Preparar speech text
+            # Prepare speech text
             speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
 
-            # Criar capítulo
+            # Create chapter
             chapters.append(
                 Chapter(
                     index=index_counter,
@@ -1123,10 +1123,10 @@ class EpubParser:
             )
             index_counter += 1
 
-            # NÃO processar filhos - usar apenas nível 1 do TOC
-            # para evitar duplicação de conteúdo
+            # Do NOT process children - use only level 1 TOC items
+            # to avoid content duplication
 
-        # Processar apenas itens de nível 1 do TOC (capítulos principais)
+        # Process only level 1 TOC items (main chapters)
         for toc_item in toc:
             process_toc_item(toc_item, level=1)
 
@@ -1194,24 +1194,24 @@ class EpubParser:
                 text_with_footnotes = text_with_formatting
             text = TextProcessor.add_pause_before_dash(text_with_footnotes)
             raw_title = (
-                TextProcessor.extract_title(raw_content, f"Capítulo {index_counter}")
+                TextProcessor.extract_title(raw_content, f"Chapter {index_counter}")
                 if text
-                else f"Capítulo {index_counter}"
+                else f"Chapter {index_counter}"
             )
             title = TextProcessor.clean_chapter_title(raw_title)
 
-            # Adicionar todos os capítulos, mesmo que estejam vazios
-            # IMPORTANTE: speech_text deve ser o que será enviado ao TTS
-            # - Remove apenas markdown inline (_italic_, **bold**, `code`)
-            # - PRESERVA tags [[lang:xx]] para TTS multiidioma
-            # - PRESERVA marcadores de formatação [[fmt:...]] para ênfase
+            # Add all chapters, even if empty
+            # IMPORTANT: speech_text should be what will be sent to TTS
+            # - Removes only inline markdown (_italic_, **bold**, `code`)
+            # - PRESERVES [[lang:xx]] tags for multilingual TTS
+            # - PRESERVES formatting markers [[fmt:...]] for emphasis
             speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
             chapters.append(
                 Chapter(
                     index=index_counter,
                     name=title,
                     source_path=asset_path,
-                    text=text or "",  # Garantir que o texto não seja None
+                    text=text or "",  # Ensure the text is not None
                     raw_html=raw_content,
                     formatting_segments=formatting_segments,
                     footnotes=list(footnotes) if footnotes else None,
@@ -1223,33 +1223,33 @@ class EpubParser:
         return chapters
 
     def _remove_duplicate_chapters(self, chapters: List[Chapter]) -> List[Chapter]:
-        """Remove capítulos que têm conteúdo duplicado/sobreposto.
+        """Remove chapters that have duplicate/overlapping content.
 
-        Isso evita criar entradas separadas para subcapítulos que repetem
-        conteúdo já presente em outros capítulos.
+        This avoids creating separate entries for subchapters that repeat
+        content already present in other chapters.
         """
         if not chapters:
             return chapters
 
-        # Estratégia: manter apenas capítulos com conteúdo único
-        # Para cada capítulo, extrair "núcleo único" (conteúdo que não aparece em outros)
-        # Remover capítulos cujo conteúdo está 90%+ contido em outros capítulos
+        # Strategy: keep only chapters with unique content
+        # For each chapter, extract "unique core" (content that doesn't appear in others)
+        # Remove chapters whose content is 90%+ contained in other chapters
 
-        # Passo 1: normalizar todos os textos
+        # Step 1: normalize all texts
         normalized_texts = []
         for chapter in chapters:
             normalized_texts.append(self._normalize_for_comparison(chapter.text.strip()))
 
-        # Passo 2: identificar capítulos a remover
+        # Step 2: identify chapters to remove
         chapters_to_keep = []
         removed_chapters = []
 
         for i, chapter in enumerate(chapters):
             current_norm = normalized_texts[i]
 
-            # Capítulos vazios ou muito curtos: verificar se são só divisores
+            # Empty or very short chapters: check if they're just dividers
             if len(current_norm) < 50:
-                # Capítulo muito curto, provavelmente só título
+                # Very short chapter, probably just a title
                 removed_chapters.append(chapter)
                 continue
 

@@ -590,25 +590,23 @@ class AudioConverter:
                             print(f"⚠️ Transcription verification error: {e}")
 
                 if self.verbose:
-                    print("✅ Validação passou! Conversão 100% correta.")
+                    print("✅ Validation passed! Conversion 100% correct.")
                 return True
 
-            # Extrai capítulos com problemas
+            # Extract chapters with problems
             problem_chapters = extract_problem_chapters(issues)
 
             if not problem_chapters:
-                # Tem problemas mas não conseguiu identificar capítulos
+                # Has problems but couldn't identify specific chapters
                 if self.verbose:
-                    print(
-                        "⚠️  Problemas detectados mas não foi possível identificar capítulos específicos"
-                    )
+                    print("⚠️  Problems detected but couldn't identify specific chapters")
                 consecutive_failures += 1
                 if consecutive_failures >= 3:
-                    print("❌ Erro crítico: não é possível identificar problemas. Abortando.")
+                    print("❌ Critical error: cannot identify problems. Aborting.")
                     return False
                 continue
 
-            # Detectar se estamos travados (mesmo número de problemas)
+            # Detect if we're stuck (same number of problems)
             current_problem_count = len(problem_chapters)
             if current_problem_count >= last_problem_count:
                 consecutive_failures += 1
@@ -619,7 +617,7 @@ class AudioConverter:
                 if consecutive_failures >= max_consecutive:
                     if self.verbose:
                         print(
-                            f"❌ Erro crítico: travado com {current_problem_count} problemas após {max_consecutive} tentativas. Abortando."
+                            f"❌ Critical error: stuck with {current_problem_count} problems after {max_consecutive} attempts. Aborting."
                         )
                     return False
             else:
@@ -627,65 +625,63 @@ class AudioConverter:
 
             last_problem_count = current_problem_count
 
-            # Categorizar problemas por tipo
+            # Categorize problems by type
             missing_mp3_only, duration_only = self._categorize_problems(issues, problem_chapters)
 
             if self.verbose:
                 print()
                 print("=" * 60)
-                print(f"🔧 RECONVERSÃO: {len(problem_chapters)} capítulo(s) com problemas")
+                print(f"🔧 RECONVERSION: {len(problem_chapters)} chapter(s) with problems")
                 print("=" * 60)
-                print(f"   Capítulos: {', '.join(map(str, problem_chapters[:10]))}")
+                print(f"   Chapters: {', '.join(map(str, problem_chapters[:10]))}")
                 if missing_mp3_only:
                     print(
-                        f"   💡 {len(missing_mp3_only)} capítulo(s) apenas com MP3 faltante - síntese rápida"
+                        f"   💡 {len(missing_mp3_only)} chapter(s) with missing MP3 only - quick synthesis"
                     )
                 if duration_only:
                     print(
-                        f"   ⏱️  {len(duration_only)} capítulo(s) apenas com duração incorreta - será retentado com tolerância maior"
+                        f"   ⏱️  {len(duration_only)} chapter(s) with incorrect duration only - will be retried with higher tolerance"
                     )
                 skip_set = set(missing_mp3_only) | set(duration_only)
                 full_reconvert = [ch for ch in problem_chapters if ch not in skip_set]
                 if full_reconvert:
                     print(
-                        f"   🔄 {len(full_reconvert)} capítulo(s) com texto/nome incorreto - reconversão completa"
+                        f"   🔄 {len(full_reconvert)} chapter(s) with incorrect text/name - full reconversion"
                     )
 
-            # Remover MP3s errados antes de reconverter
+            # Remove bad MP3s before reconverting
             removed_files = self._remove_bad_mp3s(output_dir, issues, problem_chapters)
             if removed_files and self.verbose:
-                print(
-                    f"   🗑️  {len(removed_files)} MP3(s) errado(s) removidos antes da reconversão:"
-                )
+                print(f"   🗑️  {len(removed_files)} bad MP3(s) removed before reconversion:")
                 for f in removed_files:
                     print(f"      - {f}")
                 print("=" * 60)
 
-            # Reconverte os capítulos problemáticos
+            # Reconvert problematic chapters
             try:
-                # Para MP3s faltantes, tentar síntese rápida primeiro
+                # For missing MP3s, try quick synthesis first
                 if missing_mp3_only:
                     success = await self._reconvert_missing_mp3s(
                         output_dir, cache_dir, missing_mp3_only, issues
                     )
                     if success and self.verbose:
-                        print(f"   ✅ {len(missing_mp3_only)} MP3(s) gerado(s) com sucesso")
+                        print(f"   ✅ {len(missing_mp3_only)} MP3(s) generated successfully")
 
                 # Duration-only chapters: re-synthesize MP3 (may get slightly different timing)
                 if duration_only and attempt <= 2:
                     # Only re-synthesize on first 2 attempts; after that rely on tolerance increase
                     if self.verbose:
                         print(
-                            f"   🔄 Re-sintetizando {len(duration_only)} MP3(s) com duração incorreta..."
+                            f"   🔄 Re-synthesizing {len(duration_only)} MP3(s) with incorrect duration..."
                         )
                     await self._reconvert_missing_mp3s(output_dir, cache_dir, duration_only, issues)
 
-                # Para os demais, reconverter capítulo completo
+                # For the rest, reconvert full chapter
                 skip_set = set(missing_mp3_only) | set(duration_only)
                 chapters_to_reconvert = [ch for ch in problem_chapters if ch not in skip_set]
 
                 if not chapters_to_reconvert:
-                    continue  # Apenas MP3s/duration, já tratados
+                    continue  # Only MP3s/duration, already handled
 
                 reader = EbookReader(str(epub_path))
 
@@ -709,7 +705,7 @@ class AudioConverter:
                     app._apply_structure_to_reader(reader, structure_items)
                 except Exception as exc:
                     if self.verbose:
-                        print(f"⚠️  Aviso: falha ao aplicar transforms ({exc})")
+                        print(f"⚠️  Warning: failed to apply transforms ({exc})")
 
                 all_chapters = reader.get_chapter_structure(preserve_all=True)
 
@@ -728,12 +724,12 @@ class AudioConverter:
                         chapter_indices.append(str(idx))
                         if self.verbose:
                             print(
-                                f"   → Capítulo {epub_idx} mapeado para índice {idx}: {chapter.name[:60]}"
+                                f"   → Chapter {epub_idx} mapped to index {idx}: {chapter.name[:60]}"
                             )
 
                 if not chapter_indices:
                     if self.verbose:
-                        print("⚠️  Não foi possível mapear capítulos problemáticos")
+                        print("⚠️  Could not map problematic chapters")
                     consecutive_failures += 1
                     continue
 
@@ -755,7 +751,7 @@ class AudioConverter:
 
             except Exception as exc:
                 if self.verbose:
-                    print(f"⚠️  Erro ao reconverter: {exc}")
+                    print(f"⚠️  Error reconverting: {exc}")
                     import traceback
 
                     traceback.print_exc()
@@ -764,16 +760,14 @@ class AudioConverter:
                     return False
                 continue
 
-        # Se chegou aqui, esgotou tentativas mas pode ter progredido
+        # If we reached here, attempts exhausted but may have made progress
         if self.verbose:
-            print(
-                f"⚠️  Atingido limite de {max_retries} tentativas. Alguns problemas podem persistir."
-            )
+            print(f"⚠️  Reached limit of {max_retries} attempts. Some problems may persist.")
         return False
 
     def _categorize_problems(self, issues: list, problem_chapters: list) -> tuple[list, list]:
         """
-        Categoriza problemas para decidir estratégia de reconversão.
+        Categorize problems to decide reconversion strategy.
 
         Returns:
             Tuple of (missing_mp3_only, duration_only) chapter lists
@@ -782,7 +776,7 @@ class AudioConverter:
         duration_only = []
 
         for chapter_num in problem_chapters:
-            # Verificar se tem apenas MP3 faltante
+            # Check if it only has missing MP3
             chapter_issues = [issue for issue in issues if f"Chapter {chapter_num}" in issue]
 
             has_missing_mp3 = any("Missing MP3" in issue for issue in chapter_issues)
@@ -804,13 +798,13 @@ class AudioConverter:
 
     def _remove_bad_mp3s(self, output_dir: Path, issues: list, problem_chapters: list) -> list[str]:
         """
-        Remove MP3s errados antes de reconverter para evitar conflitos.
+        Remove bad MP3s before reconverting to avoid conflicts.
 
-        Extrai nomes de MP3 das issues de validação (nome incorreto, duplicado,
-        duração errada) e os remove do diretório de output.
+        Extracts MP3 names from validation issues (incorrect name, duplicate,
+        wrong duration) and removes them from the output directory.
 
         Returns:
-            Lista de nomes de arquivos removidos.
+            List of removed file names.
         """
         import re
 
@@ -858,10 +852,10 @@ class AudioConverter:
         self, output_dir: Path, cache_dir: Optional[Path], chapter_nums: list, issues: list
     ) -> bool:
         """
-        Reconverte apenas os MP3s faltantes usando texto cached.
+        Reconvert only the missing MP3s using cached text.
 
         Returns:
-            True se todos os MP3s foram gerados com sucesso
+            True if all MP3s were generated successfully
         """
         if not cache_dir or not cache_dir.exists():
             return False
@@ -874,7 +868,7 @@ class AudioConverter:
             if not config:
                 return False
 
-            # Criar engine TTS
+            # Create TTS engine
             factory = TTSFactory()
             tts_engine = factory.create_engine(config)
 
@@ -885,15 +879,15 @@ class AudioConverter:
 
             for chapter_num in chapter_nums:
                 try:
-                    # Encontrar arquivo pre-tts.txt no cache
+                    # Encontrar file pre-tts.txt no cache
                     text_dir = cache_dir / "text"
                     if not text_dir.exists():
                         text_dir = cache_dir
 
-                    # Procurar arquivo pre-tts correspondente
+                    # Procurar file pre-tts correspondente
                     pre_tts_files = list(text_dir.glob("*-pre-tts.txt"))
 
-                    # Encontrar o arquivo correto por número de capítulo
+                    # Encontrar o file correto por número de chapter
                     # Suporta formatos: "4 -", "4.5 -", "004 -", etc.
                     target_file = None
                     chapter_str = str(chapter_num)
@@ -919,24 +913,24 @@ class AudioConverter:
 
                     if not target_file or not target_file.exists():
                         if self.verbose:
-                            print(f"   ⚠️  Capítulo {chapter_num}: pre-tts.txt não encontrado")
+                            print(f"   ⚠️  Chapter {chapter_num}: pre-tts.txt not encontrado")
                             print(
                                 f"      Arquivos disponíveis: {[f.name[:50] for f in pre_tts_files[:3]]}"
                             )
                         continue
 
-                    # Ler texto
+                    # Ler text
                     text = target_file.read_text(encoding="utf-8")
                     if not text:
                         if self.verbose:
-                            print(f"   ⚠️  Capítulo {chapter_num}: texto vazio")
+                            print(f"   ⚠️  Chapter {chapter_num}: text vazio")
                         continue
 
-                    # Extrair nome do capítulo do filename
+                    # Extrair nome do chapter do filename
                     chapter_name = target_file.stem.replace("-pre-tts", "")
 
                     if self.verbose:
-                        print(f"   🎙️  Capítulo {chapter_num}: sintetizando MP3...")
+                        print(f"   🎙️  Chapter {chapter_num}: sintetizando MP3...")
 
                     # Sintetizar áudio
                     wav_file = await tts_engine.synthesize_async(
@@ -945,7 +939,7 @@ class AudioConverter:
 
                     if not wav_file or not Path(wav_file).exists():
                         if self.verbose:
-                            print(f"   ❌ Capítulo {chapter_num}: síntese falhou")
+                            print(f"   ❌ Chapter {chapter_num}: synthesis failed")
                         continue
 
                     # Converter para MP3
@@ -958,21 +952,21 @@ class AudioConverter:
                     if mp3_path.exists():
                         success_count += 1
                         if self.verbose:
-                            print(f"   ✅ Capítulo {chapter_num}: MP3 gerado")
+                            print(f"   ✅ Chapter {chapter_num}: MP3 gerado")
                     else:
                         if self.verbose:
-                            print(f"   ❌ Capítulo {chapter_num}: conversão MP3 falhou")
+                            print(f"   ❌ Chapter {chapter_num}: MP3 conversion failed")
 
                 except Exception as exc:
                     if self.verbose:
-                        print(f"   ⚠️  Capítulo {chapter_num}: erro - {exc}")
+                        print(f"   ⚠️  Chapter {chapter_num}: error - {exc}")
                     continue
 
             return success_count > 0
 
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️  Erro ao reconverter MP3s: {exc}")
+                print(f"⚠️  Error ao reconverter MP3s: {exc}")
             return False
 
     async def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
@@ -1015,7 +1009,7 @@ class AudioConverter:
                     return
                 if self.verbose:
                     print(
-                        f"\n🔍 Detectada conversão anterior com {len(mp3_files)} MP3(s). Validando antes de reconverter..."
+                        f"\n🔍 Detectada conversion anterior com {len(mp3_files)} MP3(s). Validando antes de reconverter..."
                     )
 
             # Add project root to sys.path for validate_conversion import
@@ -1053,15 +1047,15 @@ class AudioConverter:
                     )
                     if not success:
                         if self.verbose:
-                            print("\n⚠️  Conversão concluída mas com problemas na validação")
+                            print("\n⚠️  Conversion completed but with validation problems")
 
-                        # Tentativa de fallback automático para Piper se Edge-TTS falhou
+                        # Tentativa de fallback automatic para Piper se Edge-TTS failed
                         current_engine = getattr(config, "engine", "").lower()
                         if current_engine == "edge" and stage == "final":
                             if self.verbose:
-                                print("\n🔄 Tentando fallback automático para Piper...")
+                                print("\n🔄 Trying automatic fallback to Piper...")
 
-                            # Verificar se Piper está disponível
+                            # Verificar se Piper está available
                             try:
                                 from .tts.factory import TTSFactory
 
@@ -1069,7 +1063,7 @@ class AudioConverter:
                                 available_engines = factory.available_engines()
 
                                 if "piper" in available_engines:
-                                    # Obter capítulos com problemas
+                                    # Obter chapters com problems
                                     from validate_conversion import validate_book
 
                                     stats, issues = validate_book(
@@ -1079,7 +1073,7 @@ class AudioConverter:
                                     missing_chapters = []
                                     for issue in issues:
                                         if "Missing MP3" in issue:
-                                            # Extrair número do capítulo
+                                            # Extrair número do chapter
                                             import re
 
                                             match = re.search(r"Chapter (\d+)", issue)
@@ -1088,10 +1082,10 @@ class AudioConverter:
 
                                     if missing_chapters and self.verbose:
                                         print(
-                                            f"   🎯 {len(missing_chapters)} capítulo(s) faltando - reconvertendo com Piper"
+                                            f"   🎯 {len(missing_chapters)} chapter(s) missing - reconverting com Piper"
                                         )
                                         print(
-                                            f"   Capítulos: {', '.join(map(str, missing_chapters[:10]))}"
+                                            f"   Chapters: {', '.join(map(str, missing_chapters[:10]))}"
                                         )
 
                                     # Mudar temporariamente para Piper
@@ -1099,7 +1093,7 @@ class AudioConverter:
                                     config.engine = "piper"
 
                                     try:
-                                        # Reconverter capítulos faltando com Piper
+                                        # Reconverter chapters missing com Piper
                                         piper_success = await self._reconvert_missing_mp3s(
                                             Path(output_dir), cache_dir, missing_chapters, issues
                                         )
@@ -1123,31 +1117,31 @@ class AudioConverter:
                                             if not has_critical:
                                                 if self.verbose:
                                                     print(
-                                                        "   ✅ Fallback para Piper bem-sucedido! Todos os capítulos convertidos."
+                                                        "   ✅ Fallback para Piper bem-sucedido! Todos os chapters convertidos."
                                                     )
                                                 success = True
                                             elif self.verbose:
                                                 print(
-                                                    f"   ⚠️  Fallback parcial: {stats_after.get('missing_mp3', 0)} capítulo(s) ainda faltando"
+                                                    f"   ⚠️  Fallback parcial: {stats_after.get('missing_mp3', 0)} chapter(s) ainda missing"
                                                 )
                                     finally:
                                         # Restaurar engine original
                                         config.engine = original_engine
                                 else:
                                     if self.verbose:
-                                        print("   ⚠️  Piper não disponível para fallback")
+                                        print("   ⚠️  Piper not available para fallback")
                             except Exception as fallback_exc:
                                 if self.verbose:
-                                    print(f"   ⚠️  Erro no fallback: {fallback_exc}")
+                                    print(f"   ⚠️  Error no fallback: {fallback_exc}")
 
-                        # Se ainda há problemas após fallback, exibir erro claro
+                        # Se ainda há problems after fallback, exibir error claro
                         if not success and self.verbose:
                             print(
-                                "\n❌ CONVERSÃO INCOMPLETA: Alguns capítulos não foram convertidos"
+                                "\n❌ INCOMPLETE CONVERSION: Alguns chapters not foram convertidos"
                             )
                             print("   Tente:")
                             print("   1. Converter novamente com --engine piper")
-                            print("   2. Converter capítulos específicos com --chapter N")
+                            print("   2. Convert specific chapters with --chapter N")
                 finally:
                     self._auto_fix_guard = False
                 return
@@ -1171,7 +1165,7 @@ class AudioConverter:
             # Just report validation results (no auto-fix when it's disabled)
             if self.verbose and has_problems:
                 print(
-                    f"[DEBUG] Auto-validate ({stage}): validação com problemas mas auto-fix desabilitado"
+                    f"[DEBUG] Auto-validate ({stage}): validation com problems mas auto-fix desabilitado"
                 )
         except Exception as exc:
             if self.verbose:
@@ -1315,17 +1309,17 @@ class AudioConverter:
         epub_norm = validator.normalize_text(epub_text)
 
         if not parsed_norm:
-            issues.append("Texto do capítulo vazio ou não extraído do EPUB")
+            issues.append("chapter text is empty or not extracted from EPUB")
         if epub_norm:
             diff = len(epub_norm) - len(parsed_norm)
             allowed_diff = max(50, int(len(epub_norm) * 0.05))
             if abs(diff) > allowed_diff:
-                issues.append(f"Texto divergente do EPUB ({diff:+d} chars)")
+                issues.append(f"text divergente do EPUB ({diff:+d} chars)")
             start, end = self._sample_edges(epub_norm)
             if start and start not in parsed_norm:
-                issues.append("Texto parsed sem início do EPUB")
+                issues.append("text parsed sem start do EPUB")
             if end and end not in parsed_norm:
-                issues.append("Texto parsed sem final do EPUB")
+                issues.append("text parsed sem final do EPUB")
 
         if parsed_norm:
             text_hash = validator.calculate_text_hash(parsed_norm)
@@ -1334,7 +1328,7 @@ class AudioConverter:
                 # Only flag as duplicate if it's a different chapter
                 # (validation may be called multiple times for same chapter during retries)
                 if other != chapter_label:
-                    issues.append(f"Conteúdo duplicado (igual ao capítulo {other})")
+                    issues.append(f"Duplicate content (same as chapter {other})")
             else:
                 # Use full chapter label instead of just integer index to avoid false positives
                 # for subchapters (4.1, 4.2, etc.) which all have the same integer part
@@ -1342,9 +1336,9 @@ class AudioConverter:
 
             snippet = parsed_norm[:200]
             if snippet and parsed_norm.count(snippet) > 1:
-                issues.append("Possível duplicação interna (trecho repetido)")
+                issues.append("Possible internal duplication (repeated snippet)")
             if len(parsed_norm) > 400 and parsed_norm[:200] == parsed_norm[-200:]:
-                issues.append("Possível duplicação interna (início = fim)")
+                issues.append("Possible internal duplication (start = end)")
 
         if pre_tts_text and parsed_norm:
             pretts_norm = validator.normalize_text(self._strip_formatting_cues(pre_tts_text))
@@ -1367,7 +1361,7 @@ class AudioConverter:
                         )
 
         if issues:
-            message = f"Validação pós-parsing falhou ({chapter_label}): {', '.join(issues)}"
+            message = f"Post-parsing validation failed ({chapter_label}): {', '.join(issues)}"
             self._text_validation_errors.append(message)
             if self.verbose:
                 print(f"❌ {message}")
@@ -1404,9 +1398,9 @@ class AudioConverter:
                 if not duration_result.is_valid:
                     # Log warning but don't fail - file exists and is playable
                     if self.verbose:
-                        print(f"⚠️ Duration check: {duration_result.error_message}")
+                        print(f"⚠️ Duration check: {duration_result.message}")
                     # Don't fail conversion due to duration mismatch alone
-                    # return False, duration_result.error_message or "Duração inválida"
+                    # return False, duration_result.message or "Invalid duration"
 
             return True, None
         except Exception as exc:
@@ -1440,19 +1434,19 @@ class AudioConverter:
                     tracker_missing = 0
 
         if getattr(tts_engine, "partial_failure_detected", False):
-            return False, "Falha parcial detectada na síntese Edge"
+            return False, "Partial failure detected in Edge synthesis"
 
         if failed > 0 or tracker_missing > 0:
             total_failed = failed if failed > 0 else tracker_missing
             if expected and generated:
                 return (
                     False,
-                    f"Segmentos faltando: {generated}/{expected} (falharam {total_failed})",
+                    f"Missing segments: {generated}/{expected} (failed {total_failed})",
                 )
-            return False, f"Segmentos faltando: {total_failed}"
+            return False, f"Missing segments: {total_failed}"
 
         if expected and generated and expected != generated:
-            return False, f"Segmentos incompletos: {generated}/{expected}"
+            return False, f"Incomplete segments: {generated}/{expected}"
 
         return True, None
 
@@ -1479,7 +1473,7 @@ class AudioConverter:
                 return False
             if self.verbose:
                 print(
-                    f"🔄 Chapter {chapter_label}: {len(missing_segments)} segmento(s) falhando, tentando recuperar..."
+                    f"🔄 Chapter {chapter_label}: {len(missing_segments)} segmento(s) failurendo, tentando recuperar..."
                 )
             from .retry_manager import RetryManager
 
@@ -1494,7 +1488,7 @@ class AudioConverter:
             if self.verbose:
                 print(
                     f"✓ Retry segmentos: {retry_report.successful}/{retry_report.total_retried} recuperados, "
-                    f"{retry_report.still_failed} falharam"
+                    f"{retry_report.still_failed} failed"
                 )
             try:
                 if temp_retry_dir.exists():
@@ -1861,7 +1855,7 @@ class AudioConverter:
             audio.save()
         except Exception:
             if self.verbose:
-                print(f"   ⚠️ Falha ao embutir metadados ID3 em {mp3_path.name}")
+                print(f"   ⚠️ Failure ao embutir metadados ID3 em {mp3_path.name}")
 
     @staticmethod
     def _title_from_filename(mp3_path: Path) -> str:
@@ -2240,14 +2234,14 @@ class AudioConverter:
             label = self._chapter_display_name(chapter, chapter_num).strip()
             output_path = self._expected_output_path(chapter, chapter_num, temp_dir)
             if not output_path.exists():
-                detected[label] = "Arquivo ausente após tentativa inicial"
+                detected[label] = "File missing after initial attempt"
                 continue
             try:
                 size = output_path.stat().st_size
             except OSError:
                 size = 0
             if size <= 1000:
-                detected[label] = f"Arquivo inválido ({size} bytes)"
+                detected[label] = f"Invalid file ({size} bytes)"
         return detected
 
     def _validate_and_clean_cache(
@@ -2420,19 +2414,17 @@ class AudioConverter:
                         retry_count += 1
                         if retry_count < max_retries:
                             print(
-                                f"⚠️ Timeout ao processar capítulo {chapter_label} - tentativa {retry_count}/{max_retries}"
+                                f"⚠️ Timeout ao processar chapter {chapter_label} - attempt {retry_count}/{max_retries}"
                             )
                             future = executor.submit(_prepare_payload, chapter_label, chapter)
                         else:
-                            print(
-                                f"❌ Capítulo {chapter_label} falhou após {max_retries} tentativas"
-                            )
+                            print(f"❌ Chapter {chapter_label} failed after {max_retries} attempts")
                             raise Exception(
-                                f"Capítulo {chapter_label} não pode ser processado após {max_retries} tentativas"
+                                f"Chapter {chapter_label} cannot be processed after {max_retries} attempts"
                             )
 
                 if result_data is None:
-                    raise Exception(f"Capítulo {chapter_label} retornou dados nulos")
+                    raise Exception(f"Chapter {chapter_label} retornou dados nulos")
 
                 chapter_label, chapter_name, parsed_text, pre_tts_text = result_data
 
@@ -2478,8 +2470,8 @@ class AudioConverter:
                         for retry_idx in range(max_text_retries):
                             if self.verbose:
                                 print(
-                                    f"🔄 Regerando texto do capítulo {chapter_label} "
-                                    f"(tentativa {retry_idx + 1}/{max_text_retries})"
+                                    f"🔄 Regerando text do chapter {chapter_label} "
+                                    f"(attempt {retry_idx + 1}/{max_text_retries})"
                                 )
                             _, _, parsed_text, pre_tts_text = _prepare_payload(
                                 chapter_label, chapter
@@ -2498,7 +2490,7 @@ class AudioConverter:
                                 break
                     if not valid_text and strict_validation:
                         raise RuntimeError(
-                            f"Validação pós-parsing falhou após retry ({chapter_label})"
+                            f"Post-parsing validation failed after retry ({chapter_label})"
                         )
 
                 # Save segment plan (text chunks) for future reuse
@@ -2903,13 +2895,13 @@ class AudioConverter:
         reasons: List[str] = []
         if stats["max_chars"] >= EDGE_OFFLINE_LONG_CHARS:
             prefer_offline = True
-            reasons.append(f"capítulo com ~{stats['max_chars']:,} caracteres")
+            reasons.append(f"chapter com ~{stats['max_chars']:,} chars")
         if stats["long_ratio"] >= EDGE_OFFLINE_LONG_RATIO:
             prefer_offline = True
-            reasons.append(f"{int(stats['long_ratio'] * 100)}% dos capítulos são muito longos")
+            reasons.append(f"{int(stats['long_ratio'] * 100)}% of chapters are too long")
         if stats["total_chars"] >= EDGE_OFFLINE_TOTAL_CHARS:
             prefer_offline = True
-            reasons.append(f"{stats['total_chars']:,} caracteres totais")
+            reasons.append(f"{stats['total_chars']:,} chars totais")
         stats["prefer_offline_engine"] = prefer_offline
         if prefer_offline and reasons:
             stats["offline_reason"] = "; ".join(reasons)
@@ -2924,7 +2916,7 @@ class AudioConverter:
             return
         reason = stats.get("offline_reason")
         if reason:
-            print(f"🎯 Capítulos longos detectados ({reason}) – priorizando engine offline.")
+            print(f"🎯 Chapters longos detectados ({reason}) – priorizando engine offline.")
         engine_name = (config.engine or "edge").lower()
         if engine_name == "auto":
             if _has_piper_support():
@@ -2939,7 +2931,7 @@ class AudioConverter:
                 print("   🔄 Alternando automaticamente para Coqui (offline).")
                 config.engine = "coqui"
             else:
-                print("   ⚠️ Nenhuma engine offline disponível; permanecendo no Edge.")
+                print("   ⚠️ No offline engine available; staying on Edge.")
 
     def _parse_chapter_whitelist(self, config: Optional[ConversionConfig]) -> List[str]:
         if not config or not getattr(config, "extra", None):
@@ -2978,8 +2970,8 @@ class AudioConverter:
         self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig
     ) -> List[Chapter]:
         """
-        Skip obvious créditos/anúncios ou capítulos muito curtos quando não há áudio em cache.
-        Nunca remove capítulos que já têm MP3 cacheado.
+        Skip obvious credits/ads ou chapters very short quando not há áudio em cache.
+        Never removes chapters que already have MP3 cacheado.
         """
         patterns = [
             "créditos",
@@ -2990,7 +2982,7 @@ class AudioConverter:
             "capas",
         ]
         min_chars = int(os.getenv("AUTO_SKIP_MIN_CHARS", "400").strip() or "400")
-        # Default desativado para não pular capítulos em cenários de teste/conversão padrão
+        # Default disabled para not skip chapters em scenarios de teste/conversion default
         skip_enabled = os.getenv("AUTO_SKIP_EXTRA", "false").lower() not in {"false", "0", "no"}
 
         if not skip_enabled:
@@ -3069,7 +3061,7 @@ class AudioConverter:
             new_value = max(1, current - 1)
             state["degrade_runs"] = min(3, degrade_runs + 1)
             reason = (
-                f"reduzindo para {new_value} capítulo(s) simultâneos após {batch_errors} erro(s)"
+                f"reducing to {new_value} chapter(s) simultaneous after {batch_errors} error(s)"
             )
         else:
             state["degrade_runs"] = max(0, degrade_runs - 1)
@@ -3080,19 +3072,19 @@ class AudioConverter:
                     new_value = current - 1
                     reason = (
                         f"throughput caiu de ~{int(last)} para ~{int(throughput)} chars/s → "
-                        f"{new_value} capítulo(s)"
+                        f"{new_value} chapter(s)"
                     )
                 elif last and throughput >= last * 1.18 and current < ceiling:
                     new_value = current + 1
                     reason = (
                         f"throughput atingiu ~{int(throughput)} chars/s → "
-                        f"testando {new_value} capítulo(s)"
+                        f"testando {new_value} chapter(s)"
                     )
                 elif not last and current < ceiling and throughput >= max(best, 1.0):
                     new_value = current + 1
                     reason = (
-                        f"lote inicial rápido (~{int(throughput)} chars/s) → "
-                        f"{new_value} capítulo(s)"
+                        f"fast initial batch (~{int(throughput)} chars/s) → "
+                        f"{new_value} chapter(s)"
                     )
 
             if not reason:
@@ -3101,10 +3093,10 @@ class AudioConverter:
                     reason = f"RAM livre baixa ({ram_gb:.1f} GB) → limitando a {new_value}"
                 elif cpu_pct < 55.0 and new_value < ceiling:
                     new_value = new_value + 1
-                    reason = f"CPU em {int(cpu_pct)}% → liberando {new_value} capítulo(s)"
+                    reason = f"CPU em {int(cpu_pct)}% → liberando {new_value} chapter(s)"
                 elif cpu_pct > 94.0 and throughput and throughput < best * 0.85 and new_value > 1:
                     new_value = new_value - 1
-                    reason = f"CPU saturada ({int(cpu_pct)}%) sem ganho → {new_value} capítulo(s)"
+                    reason = f"CPU saturada ({int(cpu_pct)}%) sem ganho → {new_value} chapter(s)"
 
         new_value = max(1, min(ceiling, new_value))
         if throughput:
@@ -3196,8 +3188,8 @@ class AudioConverter:
 
         if announce:
             print(
-                "🧯 Edge modo seguro: "
-                f"{reason} → chunk={chunk_chars} seg={int(max_segment)}s paralelo={state_current['current']}"
+                "🧯 Edge mode seguro: "
+                f"{reason} → chunk={chunk_chars} seg={int(max_segment)}s parallel={state_current['current']}"
             )
         return announce
 
@@ -3272,7 +3264,7 @@ class AudioConverter:
 
         self._edge_auto_state = state
         if restored and self.verbose:
-            print(f"🚀 Edge modo seguro desativado: {reason}")
+            print(f"🚀 Edge mode seguro disabled: {reason}")
         return restored
 
     def _maybe_exit_edge_slow_mode(
@@ -3298,7 +3290,7 @@ class AudioConverter:
         recovery_threshold = max(min_cps * 1.25, min_cps + 30.0)
         reason = (state.get("slow_mode_reason") or "").lower()
         required_hits = 3
-        if "capítulo" in reason or "capitulo" in reason or "chapter" in reason:
+        if "chapter" in reason or "capitulo" in reason or "chapter" in reason:
             required_hits = 1
         elif "retry" in reason or "valid" in reason:
             required_hits = 2
@@ -3341,17 +3333,17 @@ class AudioConverter:
                     "rate_limit",
                     "too many requests",
                     "403",
-                    "sem áudio",
+                    "no audio",
                     "sem audio",
                     "noaudio",
                     "sem progresso",
-                    "truncado",
+                    "truncated",
                     "truncation",
-                    "arquivo ausente",
-                    "arquivo inválido",
-                    "arquivo invalido",
-                    "falha na síntese",
-                    "falha na sintese",
+                    "file ausente",
+                    "file invalid",
+                    "file invalido",
+                    "failure na synthesis",
+                    "failure na sintese",
                     "edge",
                 )
             ):
@@ -3404,7 +3396,7 @@ class AudioConverter:
         edge_state["slow_mode"] = True
         self._edge_auto_state = edge_state
 
-        profile_label = "modo seguro" if not aggressive else "modo seguro agressivo"
+        profile_label = "mode seguro" if not aggressive else "mode seguro agressivo"
         print(
             f"🛟 Edge retry ({profile_label}): {reason} → "
             f"chunk={chunk_chars} seg={int(max_segment)}s offline>={offline_chars} chars"
@@ -3501,7 +3493,7 @@ class AudioConverter:
                     f"\n🛟 Watchdog: chapter {chapter_index} no progress for {int(stall_seconds)}s"
                 )
                 self.progress.tick(
-                    f"🛟 Sem progresso há {int(stall_seconds)}s - reiniciando capítulo..."
+                    f"🛟 No progress for {int(stall_seconds)}s - restarting chapter..."
                 )
                 task.cancel()
                 return
@@ -3525,13 +3517,13 @@ class AudioConverter:
             if stalled >= action_threshold and not state.get("action_emitted"):
                 state["action_emitted"] = True
                 last_chapter = state.get("last_chapter")
-                info = f"{int(stalled)}s sem concluir capítulos"
+                info = f"{int(stalled)}s sem concluir chapters"
                 if last_chapter:
-                    info += f" (último capítulo #{last_chapter})"
+                    info += f" (last chapter #{last_chapter})"
                 print(f"\n🩺 Watchdog: {info} – investigating bottleneck")
                 if not self._apply_watchdog_backpressure():
                     print(
-                        "   Sugestão: verifique conexão ou permitir fallback offline (Coqui/Piper)."
+                        "   Suggestion: check connection ou allow offline fallback (Coqui/Piper)."
                     )
             elif stalled >= warning_threshold and not state.get("warn_emitted"):
                 state["warn_emitted"] = True
@@ -3659,7 +3651,7 @@ class AudioConverter:
 
             config.log_callback = _log_to_progress
 
-        # Initialize auto-tuning (detecta HW e rede, configura flags automaticamente)
+        # Initialize auto-tuning (detecta HW e network, configura flags automaticamente)
         await self._initialize_auto_tuning()
 
         # Initialize adaptive performance controller
@@ -3670,9 +3662,7 @@ class AudioConverter:
 
         if self.verbose:
             print("[DEBUG] AudioConverter.convert() iniciado")
-            print(
-                f"[DEBUG] Configuração: engine={getattr(config, 'engine', 'unknown')}, mode=sequential"
-            )
+            print(f"[DEBUG] Config: engine={getattr(config, 'engine', 'unknown')}, mode=sequential")
 
         # Setup paths
         reader_path = getattr(reader, "file_path", None)
@@ -3696,7 +3686,7 @@ class AudioConverter:
                     self.cache_manager.clear_cache(title=reader.title)
             except Exception as exc:
                 if self.verbose:
-                    print(f"⚠️ Falha ao limpar cache: {exc}")
+                    print(f"⚠️ Failure ao limpar cache: {exc}")
             try:
                 if output_dir.exists():
                     shutil.rmtree(output_dir, ignore_errors=True)
@@ -3704,7 +3694,7 @@ class AudioConverter:
                 self._last_output_dir = output_dir
             except Exception as exc:
                 if self.verbose:
-                    print(f"⚠️ Falha ao limpar saída anterior: {exc}")
+                    print(f"⚠️ Failed to clear previous output: {exc}")
         else:
             # Only validate previous output when NOT clearing cache
             await self._auto_validate_output(output_dir, stage="initial")
@@ -3785,7 +3775,7 @@ class AudioConverter:
         )
         if self._text_validation_errors and self.verbose:
             print(
-                f"⚠️ Validação pós-parsing: {len(self._text_validation_errors)} problema(s) detectado(s)"
+                f"⚠️ Post-parsing validation: {len(self._text_validation_errors)} problem(s) detected"
             )
 
         # Validate all chapters against cache
@@ -3797,13 +3787,12 @@ class AudioConverter:
         hard_block_errors = [
             v
             for v in integrity_report.chapters_with_issues
-            if v.error_message
-            and ("Chapter text empty" in v.error_message or "Duplicate content" in v.error_message)
+            if v.message and ("Chapter text empty" in v.message or "Duplicate content" in v.message)
         ]
         if hard_block_errors:
             print("\n❌ Text validation failed: empty or duplicate chapters detected.")
             for v in hard_block_errors:
-                print(f"   - Chapter {v.chapter_index}: {v.chapter_title} → {v.error_message}")
+                print(f"   - Chapter {v.chapter_index}: {v.chapter_title} → {v.message}")
             raise RuntimeError("Text validation failed: empty/duplicate chapters")
 
         # If cache corruption detected, offer to clear cache
@@ -3841,8 +3830,8 @@ class AudioConverter:
 
                 print("✅ Cache cleaned! Proceeding with full conversion.\n")
             except Exception as exc:
-                print(f"❌ Falha ao limpar cache: {exc}")
-                print("⚠️  Continuando com conversão mas pode haver problemas.\n")
+                print(f"❌ Failure ao limpar cache: {exc}")
+                print("⚠️  Continuando com conversion mas pode haver problems.\n")
 
         # Save parsed text for all chapters (creates baseline for validation)
         text_validator.save_all_chapters_text(chapters_for_text, show_progress=not self.verbose)
@@ -3901,13 +3890,13 @@ class AudioConverter:
                 edge_stable_mode = True
                 if getattr(config, "extra", None) is not None:
                     config.extra["edge_stable_mode"] = "1"
-                print("🛡️ Edge modo estável automático: rede lenta detectada")
+                print("🛡️ Edge automatic stable mode: slow network detected")
         if edge_stable_mode and (config.engine or "").lower() == "edge":
             config.edge_enable_parallel = False
             config.edge_auto_tune = False
             config.edge_chunk_chars = 4000
             config.edge_max_segment_seconds = 120
-            print("🛡️ Edge modo estável: paralelismo reduzido e timeouts ampliados")
+            print("🛡️ Edge stable mode: reduced parallelism and extended timeouts")
         # Auto-parallel: prefer env override, else derive from hardware profile
         # Aggressive defaults: use all available CPU cores for maximum throughput
         chapter_parallel_count = int(os.getenv("CHAPTER_PARALLEL_COUNT", "0") or "0")
@@ -4003,7 +3992,7 @@ class AudioConverter:
             if is_auto_engine:
                 auto_engine_pool = self._prepare_auto_engines(config)
                 if not auto_engine_pool:
-                    raise RuntimeError("Nenhuma engine disponível no modo automático")
+                    raise RuntimeError("No engine available in automatic mode")
                 for name, (_, engine_obj) in auto_engine_pool.items():
                     if engine_obj is not None:
                         engine_seeds[name.lower()] = engine_obj
@@ -4016,7 +4005,7 @@ class AudioConverter:
                 if is_auto_engine:
                     auto_engine_pool = self._prepare_auto_engines(config)
                     if not auto_engine_pool:
-                        raise RuntimeError("Nenhuma engine disponível no modo automático")
+                        raise RuntimeError("No engine available in automatic mode")
                     engine_seeds = {
                         name.lower(): engine_obj
                         for name, (_, engine_obj) in auto_engine_pool.items()
@@ -4106,7 +4095,7 @@ class AudioConverter:
             elif edge_network_tier == "medium" and chapter_parallel_count > 2:
                 chapter_parallel_count = 2
                 self._reset_parallel_state(chapter_parallel_count)
-            print("🌧️ Edge: rede instável detectada → perfil inicial mais conservador")
+            print("🌧️ Edge: network unstable detectada → perfil inicial mais conservador")
         self._edge_auto_state = {
             "enabled": edge_auto_enabled,
             "network_tier": edge_network_tier,
@@ -4288,14 +4277,14 @@ class AudioConverter:
                     rescue_profile = self._apply_edge_rescue_profile(
                         engine_pool=engine_pool,
                         edge_configs=edge_configs,
-                        reason="falhas detectadas em capítulos longos",
+                        reason="failures detectadas em chapters longos",
                     )
                     edge_rescue_applied = True
                 elif not edge_rescue_aggressive:
                     rescue_profile = self._apply_edge_rescue_profile(
                         engine_pool=engine_pool,
                         edge_configs=edge_configs,
-                        reason="falhas persistentes mesmo após ajuste seguro",
+                        reason="persistent failures even after safe adjustments",
                         aggressive=True,
                     )
                     edge_rescue_aggressive = True
@@ -4373,7 +4362,7 @@ class AudioConverter:
                 forced_offline_once = True
                 retry_config = replace(retry_config, engine=force_offline_engine, voice=None)
                 print(
-                    f"🛟 Edge instável → forçando retry com {force_offline_engine.upper()} (offline)"
+                    f"🛟 Edge unstable → forcing retry with {force_offline_engine.upper()} (offline)"
                 )
             retry_result = await self._convert_chapters_sequential(
                 chapters_to_retry,
@@ -4393,7 +4382,7 @@ class AudioConverter:
                 retry_error_map, chapter_lookup
             )
             for unresolved, message in unresolved_retry.items():
-                print(f"⚠️ Falha retornada sem correspondência: {unresolved}")
+                print(f"⚠️ Returned failure without match: {unresolved}")
                 unresolved_pool[unresolved] = message or "Unknown reason"
 
             for chapter_obj, original_idx, canonical_label in chapters_to_retry_info:
@@ -4526,9 +4515,9 @@ class AudioConverter:
                 ordered_errors.append((idx, name, message))
             ordered_errors.sort(key=lambda item: item[0])
             result.errors = [
-                f"{name}: {message} (tentativas: {attempts_used.get(name, 'n/d')})"
+                f"{name}: {message} (attempts: {attempts_used.get(name, 'n/d')})"
                 if message
-                else f"{name} (tentativas: {attempts_used.get(name, 'n/d')})"
+                else f"{name} (attempts: {attempts_used.get(name, 'n/d')})"
                 for _, name, message in ordered_errors
             ]
         else:
@@ -4536,16 +4525,14 @@ class AudioConverter:
 
         if unresolved_pool:
             for name, message in unresolved_pool.items():
-                result.errors.append(f"{name}: {message} (não correlacionado)")
+                result.errors.append(f"{name}: {message} (not correlacionado)")
 
         result.success = not pending_failures and not unresolved_pool
 
         # Move successfully converted files even on partial failure (for resume capability)
         if result.converted_chapters > 0:
             if self.verbose:
-                print(
-                    f"[DEBUG] Movendo {len(result.output_files)} arquivos para diretório final..."
-                )
+                print(f"[DEBUG] Moving {len(result.output_files)} files to final directory...")
 
             temp_mp3s = list(Path(temp_dir).glob("*.mp3"))
             moved_files = self.file_manager.move_files_to_final_output(temp_dir, output_dir)
@@ -4666,7 +4653,7 @@ class AudioConverter:
         book_author: str = "",
         cover_art: Optional[dict] = None,
     ) -> ConversionResult:
-        """Converte múltiplos capítulos em paralelo para máxima velocidade."""
+        """Converte múltiplos chapters em parallel para máxima velocidade."""
         chapters_list = list(chapters)
         selected_indices_raw = (config.extra.get("selected_indices") or "").strip()
         if selected_indices_raw:
@@ -4966,7 +4953,7 @@ class AudioConverter:
         book_author: str = "",
         cover_art: Optional[dict] = None,
     ) -> ConversionResult:
-        """Converte capítulos sequencialmente, SEM sistema de paralelismo."""
+        """Converte chapters sequentialmente, SEM sistema de parallelism."""
         chapters_list = list(chapters)
         selected_indices_raw = (config.extra.get("selected_indices") or "").strip()
         if selected_indices_raw:
@@ -5138,7 +5125,7 @@ class AudioConverter:
                         engine_obj._chunk_char_limit = target_limit
                         adjusted = True
                 if adjusted and self.verbose:
-                    print(f"   🛠️ Coqui em modo seguro ({reason}): chunks=1600, workers=1")
+                    print(f"   🛠️ Coqui em mode seguro ({reason}): chunks=1600, workers=1")
             except Exception:
                 pass
 
@@ -5183,7 +5170,7 @@ class AudioConverter:
                     voice = getattr(edge_engine, "voice", None)
                     healthy = await edge_engine._probe_edge_health(voice)  # type: ignore[attr-defined]
                     if not healthy and self.verbose:
-                        print("   ⚠️ Edge pré-check falhou; mantendo engine selecionada")
+                        print("   ⚠️ Edge pre-check failed; mantendo engine selecionada")
             except Exception:
                 pass
             finally:
@@ -5206,7 +5193,7 @@ class AudioConverter:
                 engine_ref: Optional[dict] = None,
             ) -> bool:
                 """
-                Handle Edge outages without mudar de engine (modo manual).
+                Handle Edge outages without mudar de engine (mode manual).
                 Aguarda cooldown curto antes de tentar novamente.
                 """
                 if (config.engine or "").lower() != "edge":
@@ -5231,24 +5218,24 @@ class AudioConverter:
                 if seconds <= 0:
                     seconds = 12
                 if self.verbose:
-                    print(f"   ⚠️ Edge indisponível ({context}) - erro: {last_error}")
+                    print(f"   ⚠️ Edge inavailable ({context}) - error: {last_error}")
                 nonlocal edge_unavailable_hits
                 edge_unavailable_hits += 1
                 if edge_unavailable_hits >= EDGE_MONOLINGUAL_THRESHOLD:
                     raise RuntimeError("edge_unavailable_threshold")
-                _maybe_apply_edge_slow_mode(f"Edge indisponível ({reason})", engine_obj=engine_obj)
+                _maybe_apply_edge_slow_mode(f"Edge inavailable ({reason})", engine_obj=engine_obj)
 
                 max_wait = min(seconds, 25)
                 if self.verbose:
                     print(
-                        f"   ⏳ Sem fallback disponível; aguardando {max_wait}s antes de tentar novamente..."
+                        f"   ⏳ Sem fallback available; aguardando {max_wait}s antes de tentar novamente..."
                     )
                 waited = 0
                 while waited < max_wait:
                     chunk = min(3, max_wait - waited)
                     await asyncio.sleep(chunk)
                     waited += chunk
-                    self.progress.tick(f"⏳ Edge indisponível - aguardando {max_wait - waited}s...")
+                    self.progress.tick(f"⏳ Edge inavailable - aguardando {max_wait - waited}s...")
                 return True
 
         def _resolve_tts_output_path(
@@ -5284,8 +5271,8 @@ class AudioConverter:
                 voice_provider = VoiceConfigProvider()
                 monolingual_voice = voice_provider.get_monolingual_voice(config.primary_language)
                 if monolingual_voice and monolingual_voice != config.voice:
-                    print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} falhas consecutivas")
-                    print(f"   🔀 Mudando para Edge monolíngue: {config.primary_language}")
+                    print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} failures consecutive")
+                    print(f"   🔀 Mudando para Edge monolingual: {config.primary_language}")
                     print(f"   🎤 Nova voz: {monolingual_voice}")
                     config = replace(config, voice=monolingual_voice)
                     engine_pool.register_engine("edge", config)
@@ -5305,7 +5292,7 @@ class AudioConverter:
             ):
                 if not _has_kokoro_support(config.primary_language):
                     if self.verbose:
-                        print("   ⚠️ Kokoro não possui voz para este idioma; pulando fallback")
+                        print("   ⚠️ Kokoro not possui voz para este language; pulando fallback")
                     edge_switched_to_kokoro = True
                 else:
                     try:
@@ -5313,9 +5300,9 @@ class AudioConverter:
 
                         KokoroTTSEngine()  # test availability
                         print(
-                            f"\n🔄 Edge monolíngue com {edge_consecutive_failures} falhas consecutivas"
+                            f"\n🔄 Edge monolingual com {edge_consecutive_failures} failures consecutive"
                         )
-                        print("   🔀 Mudando para Kokoro (local, rápido)")
+                        print("   🔀 Switching to Kokoro (local, fast)")
                         config = replace(config, engine="kokoro")
                         engine_pool.register_engine("kokoro", config)
                         edge_switched_to_kokoro = True
@@ -5323,7 +5310,7 @@ class AudioConverter:
                         return
                     except Exception as e:
                         if self.verbose:
-                            print(f"   ⚠️ Kokoro indisponível: {e}")
+                            print(f"   ⚠️ Kokoro inavailable: {e}")
                         edge_switched_to_kokoro = True  # skip to piper
 
             # TIER 4: Piper after PIPER_THRESHOLD failures (from Kokoro or Edge)
@@ -5335,10 +5322,10 @@ class AudioConverter:
                 if can_use_piper():
                     current_label = "Kokoro" if current_engine == "kokoro" else "Edge"
                     print(
-                        f"\n🔄 {current_label} com {edge_consecutive_failures} falhas consecutivas"
+                        f"\n🔄 {current_label} com {edge_consecutive_failures} failures consecutive"
                     )
                     print(
-                        f"   🛟 Mudando para Piper (offline) com idioma: {config.primary_language}"
+                        f"   🛟 Mudando para Piper (offline) com language: {config.primary_language}"
                     )
                     from .config import VoiceConfigProvider
 
@@ -5355,20 +5342,20 @@ class AudioConverter:
                             _, piper_engine = await engine_pool.acquire("piper")
                             if piper_engine:
                                 print(
-                                    f"   ✅ Piper carregado: {Path(piper_model).name if piper_model else 'modelo padrão'}"
+                                    f"   ✅ Piper loaded: {Path(piper_model).name if piper_model else 'modelo default'}"
                                 )
                                 engine_pool.release("piper", piper_engine)
                                 edge_switched_to_piper = True
                                 edge_consecutive_failures = 0
                             else:
-                                print("   ⚠️ Piper engine não pôde ser carregado")
+                                print("   ⚠️ Piper engine could not be loaded")
                         except Exception as e:
-                            print(f"   ⚠️ Erro ao carregar Piper: {e}")
+                            print(f"   ⚠️ Error ao carregar Piper: {e}")
                     else:
-                        print("   ⚠️ Modelo Piper não encontrado para este idioma")
+                        print("   ⚠️ Modelo Piper not encontrado para este language")
                 else:
-                    print(f"\n⚠️ {edge_consecutive_failures} falhas consecutivas")
-                    print("   ⚠️ Piper não instalado - não é possível fazer fallback")
+                    print(f"\n⚠️ {edge_consecutive_failures} failures consecutive")
+                    print("   ⚠️ Piper not installed - fallback is not possible")
 
         # Four-tier fallback: Edge multilingual → Edge monolingual → Kokoro → Piper
         edge_failure_count = 0
@@ -5428,9 +5415,9 @@ class AudioConverter:
                     raise _RetryChapter(reason)
 
                 def _error_text(message: Optional[str]) -> str:
-                    return message or "Falha na síntese"
+                    return message or "Failure na synthesis"
 
-                # **RESTORED**: Usar progress tracker (apenas uma vez por capítulo)
+                # **RESTORED**: Usar progress tracker (apenas uma vez por chapter)
                 if not progress_started:
                     self.progress.start_chapter(chapter.name, progress_index)
                     progress_started = True
@@ -5444,14 +5431,14 @@ class AudioConverter:
                 engine_obj: Optional[object] = None
 
                 try:
-                    # Conversão para diretório temporário
+                    # Conversion para diretório temporário
                     output_path = self._expected_output_path(chapter, chapter_num, output_dir)
 
                     # Check if MP3 already exists and is valid (size > 1KB)
                     # Note: Cache validation already done by _validate_and_clean_cache()
                     if output_path.exists() and not config.force_reprocess:
                         file_size = output_path.stat().st_size
-                        if file_size > 1000:  # Mínimo 1KB para áudio válido
+                        if file_size > 1000:  # Minimum 1KB for valid audio
                             cached_payload = (
                                 self._load_cached_payload(chapter, chapter_num, output_dir)
                                 or speech_text
@@ -5464,21 +5451,21 @@ class AudioConverter:
                             )
                             if truncation_warning:
                                 if self.verbose:
-                                    print(f"   ⚠️ Cache inválido detectado: {truncation_warning}")
+                                    print(f"   ⚠️ Invalid cache detected: {truncation_warning}")
                                 output_path.unlink(missing_ok=True)
                             else:
                                 converted_files.append(output_path)
                                 chapter_success = True
                                 chapter_cached = True
-                                self.progress.tick(f"✅ Arquivo já existe ({file_size} bytes)")
-                                self.progress.complete_chapter("✅ Completo (cache)")
+                                self.progress.tick(f"✅ File already exists ({file_size} bytes)")
+                                self.progress.complete_chapter("✅ Complete (cache)")
                                 self._retry_original_texts.pop(chapter_label, None)
                                 break
                         else:
                             # Arquivo vazio ou corrompido - remover e reconverter
                             if self.verbose:
                                 print(
-                                    f"   🗑️ Removendo arquivo inválido ({file_size} bytes): {output_path}"
+                                    f"   🗑️ Removing invalid file ({file_size} bytes): {output_path}"
                                 )
                             output_path.unlink(missing_ok=True)
                             output_path.with_suffix(".wav").unlink(missing_ok=True)
@@ -5498,7 +5485,7 @@ class AudioConverter:
                     if is_auto_engine:
                         pool_view = available_auto_pool()
                         if not pool_view:
-                            chapter_error = "Nenhuma engine disponível no modo automático"
+                            chapter_error = "No engine available in automatic mode"
                             errors.append(f"{chapter.name}: {chapter_error}")
                             chapter_error = _error_text(chapter_error)
                             self.progress.complete_chapter(f"❌ {chapter_error}")
@@ -5526,7 +5513,7 @@ class AudioConverter:
                         threshold_seconds = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
                         edge_reason = None
                         if threshold_chars and chapter_chars >= threshold_chars:
-                            edge_reason = f"Capítulo muito grande ({chapter_chars} caracteres)"
+                            edge_reason = f"Chapter muito grande ({chapter_chars} chars)"
                         elif threshold_seconds and estimated_seconds >= threshold_seconds:
                             edge_reason = f"Chapter estimated at {int(estimated_seconds)}s"
                         if edge_reason and self.verbose:
@@ -5534,7 +5521,7 @@ class AudioConverter:
                         elif edge_force_offline:
                             if self.verbose:
                                 print(
-                                    "   ℹ️ Edge marcado como instável, mantendo engine (sem fallback)"
+                                    "   ℹ️ Edge marcado como unstable, mantendo engine (sem fallback)"
                                 )
                             edge_force_offline = False
                             edge_state["force_offline_after_trunc"] = False
@@ -5561,7 +5548,7 @@ class AudioConverter:
                                     engine_tracker["label"] = next_engine
                                     current_engine_label = next_engine
                                     continue
-                            chapter_error = f"Engine {current_engine_label} indisponível: {exc}"
+                            chapter_error = f"Engine {current_engine_label} inavailable: {exc}"
                             errors.append(f"{chapter.name}: {chapter_error}")
                             chapter_error = _error_text(chapter_error)
                             self.progress.complete_chapter(f"❌ {chapter_error}")
@@ -5608,24 +5595,24 @@ class AudioConverter:
                         and current_engine_label == "edge"
                     ):
                         self._apply_edge_slow_mode(
-                            "modo seguro ativo",
+                            "mode seguro ativo",
                             engine_pool=engine_pool,
                             engine_obj=tts_engine,
                         )
                     elif current_engine_label == "edge" and chapter_chars >= EDGE_FORCE_SAFE_CHARS:
                         self._apply_edge_slow_mode(
-                            f"capítulo muito grande ({chapter_chars} chars)",
+                            f"chapter muito grande ({chapter_chars} chars)",
                             engine_pool=engine_pool,
                             engine_obj=tts_engine,
                         )
                         with contextlib.suppress(Exception):
                             setattr(tts_engine, "_auto_tune_enabled", False)
 
-                    # Timeout otimizado: agressivo, mas com teto maior para capítulos longos no Edge
-                    # Base: duração estimada * 1.5 + 30s buffer
+                    # Timeout otimizado: agressivo, mas com teto maior para chapters longos no Edge
+                    # Base: duration estimada * 1.5 + 30s buffer
                     base_timeout = estimated_seconds * 1.5 + 30.0
                     timeout_seconds = max(base_timeout, 60.0)  # Mínimo 60s
-                    max_timeout = 600.0  # Padrão: até 10 min
+                    max_timeout = 600.0  # Default: up to 10 min
                     if current_engine_label == "edge":
                         if chapter_chars >= 80000:
                             max_timeout = 3600.0  # 1h for very large chapters
@@ -5739,7 +5726,7 @@ class AudioConverter:
                                     existing_chunks = []
                                 if existing_chunks:
                                     self.progress.tick(
-                                        f"♻️ Retomando {len(existing_chunks)} chunk(s) já prontos"
+                                        f"♻️ Resuming {len(existing_chunks)} chunk(s) already ready"
                                     )
 
                             def on_chunk_ready(
@@ -5820,9 +5807,11 @@ class AudioConverter:
                                     )
                                 except Exception as exc:
                                     if self.verbose:
-                                        print(f"   ⚠️ Falha ao salvar chunk {segment_index}: {exc}")
+                                        print(
+                                            f"   ⚠️ Failure ao salvar chunk {segment_index}: {exc}"
+                                        )
 
-                            # Só usar callback/chunking quando há diretório de resume disponível
+                            # Só usar callback/chunking quando há diretório de resume available
                             chunk_callback = on_chunk_ready if chunk_root else None
                             primary_chunk_callback = chunk_callback
                             primary_chunk_root = chunk_root if chunk_root else None
@@ -5863,7 +5852,7 @@ class AudioConverter:
                             if synthesis_result:
                                 break
                             waited = await wait_edge_cooldown_if_needed(
-                                f"tentativa {attempt + 1}/{max_attempts}",
+                                f"attempt {attempt + 1}/{max_attempts}",
                                 tracker=engine_tracker,
                                 engine_ref=engine_instance,
                             )
@@ -5882,36 +5871,36 @@ class AudioConverter:
                                 bitrate=config.bitrate,
                             )
                             if self.verbose and converted is None:
-                                print("[DEBUG] Falha ao converter WAV→MP3 (ffmpeg)")
+                                print("[DEBUG] Failure ao converter WAV→MP3 (ffmpeg)")
                             synthesis_result = converted
                             with contextlib.suppress(OSError):
                                 last_tts_output_path.unlink(missing_ok=True)
 
                         if self.verbose and synthesis_result:
-                            print(f"   ✅ TTS concluído: {output_path.name}")
+                            print(f"   ✅ TTS completed: {output_path.name}")
                     except asyncio.TimeoutError:
                         elapsed = int(time.time() - start_synthesis)
                         if self.verbose:
                             print(f"   ⚠️ TIMEOUT: Chapter stuck after {elapsed}s")
                         self.progress.tick(
-                            f"⚠️ TIMEOUT após {elapsed}s - tentando fallback sem idioma..."
+                            f"⚠️ TIMEOUT after {elapsed}s - trying fallback without language..."
                         )
                         if current_engine_label == "edge":
                             _maybe_apply_edge_slow_mode(
-                                f"timeout após {elapsed}s", engine_obj=tts_engine
+                                f"timeout after {elapsed}s", engine_obj=tts_engine
                             )
                             setattr(tts_engine, "last_error", "timeout")
                             await wait_edge_cooldown_if_needed(
-                                f"timeout após {elapsed}s",
+                                f"timeout after {elapsed}s",
                                 tracker=engine_tracker,
                                 engine_ref=engine_instance,
                             )
                         elif current_engine_label == "coqui":
                             _maybe_apply_coqui_recovery(
-                                f"timeout após {elapsed}s", engine_obj=tts_engine
+                                f"timeout after {elapsed}s", engine_obj=tts_engine
                             )
 
-                        # **FALLBACK**: Remover marcação de idioma e tentar novamente
+                        # **FALLBACK**: Remover language markup e tentar novamente
                         try:
                             from ..language import LanguageMarkup
 
@@ -5929,7 +5918,7 @@ class AudioConverter:
                                 fallback_timeout = max(120, min(int(timeout_seconds * 0.6), 600))
 
                             if self.verbose:
-                                print("   🔄 RETRY: Tentando novamente sem marcas de idioma")
+                                print("   🔄 RETRY: Trying novamente sem marcas de language")
                                 print(
                                     f"   📝 RETRY: {clean_chars} chars (timeout: {fallback_timeout}s)"
                                 )
@@ -5989,12 +5978,12 @@ class AudioConverter:
                                         bitrate=config.bitrate,
                                     )
                                     if self.verbose and converted is None:
-                                        print("[DEBUG] Falha ao converter WAV→MP3 (fallback)")
+                                        print("[DEBUG] Failure ao converter WAV→MP3 (fallback)")
                                     synthesis_result = converted
                                     with contextlib.suppress(OSError):
                                         tts_output_path.unlink(missing_ok=True)
                                 if self.verbose and synthesis_result:
-                                    print("   ✅ RETRY: Sucesso no fallback!")
+                                    print("   ✅ RETRY: Success no fallback!")
                             finally:
                                 heartbeat_active = False
                                 fallback_task.cancel()
@@ -6005,17 +5994,15 @@ class AudioConverter:
                             total_elapsed = int(time.time() - start_synthesis)
                             if self.verbose:
                                 print(
-                                    "   ⚠️ FALLBACK: Tentativa dupla falhou, tentando síntese simples"
+                                    "   ⚠️ FALLBACK: Double attempt failed, trying simple synthesis"
                                 )
-                            self.progress.tick("🔄 Última tentativa: síntese simples...")
+                            self.progress.tick("🔄 Last attempt: simple synthesis...")
 
                             # **THIRD ATTEMPT**: Synthesis with minimal text processing
                             try:
                                 if current_engine_label == "edge":
                                     if self.verbose:
-                                        print(
-                                            "   ⏭️ EMERGÊNCIA ignorada para Edge (preservando chunks)"
-                                        )
+                                        print("   ⏭️ EMERGENCY ignored for Edge (preserving chunks)")
                                     synthesis_result = None
                                 else:
                                     # Get first 1000 chars as emergency fallback
@@ -6029,7 +6016,7 @@ class AudioConverter:
                                         )  # Short timeout for emergency
                                         if self.verbose:
                                             print(
-                                                f"   🚑 EMERGÊNCIA: {len(emergency_text)} chars (timeout: {emergency_timeout}s)"
+                                                f"   🚑 EMERGENCY: {len(emergency_text)} chars (timeout: {emergency_timeout}s)"
                                             )
 
                                         current_engine_label = (
@@ -6067,23 +6054,25 @@ class AudioConverter:
                                             )
                                             if self.verbose and converted is None:
                                                 print(
-                                                    "[DEBUG] Falha ao converter WAV→MP3 (emergência)"
+                                                    "[DEBUG] Failure ao converter WAV→MP3 (emergency)"
                                                 )
                                             synthesis_result = converted
                                             with contextlib.suppress(OSError):
                                                 tts_output_path.unlink(missing_ok=True)
                                         if synthesis_result and self.verbose:
-                                            print("   ✅ EMERGÊNCIA: Sucesso com texto reduzido!")
+                                            print("   ✅ EMERGENCY: Success with reduced text!")
                                     else:
                                         synthesis_result = None
                             except Exception as final_e:
                                 synthesis_result = None
                                 if self.verbose:
-                                    print(f"   ❌ EMERGÊNCIA: Falhou - {final_e}")
+                                    print(f"   ❌ EMERGENCY: Failed - {final_e}")
 
                             if not synthesis_result:
                                 total_elapsed = int(time.time() - start_synthesis)
-                                error_msg = f"TIMEOUT TRIPLO após {total_elapsed}s - todas as tentativas falharam"
+                                error_msg = (
+                                    f"TRIPLE TIMEOUT after {total_elapsed}s - all attempts failed"
+                                )
                                 if self.verbose:
                                     print(f"   ❌ ERRO FINAL: {error_msg}")
                                 chapter_error = error_msg
@@ -6116,8 +6105,8 @@ class AudioConverter:
                     if synthesis_result and output_path.exists():
                         file_size = output_path.stat().st_size
 
-                        # Validar que o arquivo tem tamanho mínimo (não está vazio/corrompido)
-                        if file_size > 1000:  # Mínimo 1KB para áudio válido
+                        # Validar que o file tem tamanho minimum (not is empty/corrupted)
+                        if file_size > 1000:  # Minimum 1KB for valid audio
                             truncation_warning = self._detect_short_audio_output(
                                 output_path,
                                 current_payload,
@@ -6139,9 +6128,9 @@ class AudioConverter:
                                             f"({edge_consecutive_failures} consecutive)"
                                         )
                                     _maybe_apply_edge_slow_mode(
-                                        "Áudio truncado", engine_obj=tts_engine
+                                        "Truncated audio", engine_obj=tts_engine
                                     )
-                                    # Forçar fallback offline após truncamento
+                                    # Force fallback offline after truncamento
                                     edge_state = self._edge_auto_state or {}
                                     edge_state["force_offline_after_trunc"] = True
                                     self._edge_auto_state = edge_state
@@ -6171,7 +6160,7 @@ class AudioConverter:
                                         )
                                     if not audio_ok:
                                         output_path.unlink(missing_ok=True)
-                                        chapter_error = audio_error or "Áudio inválido"
+                                        chapter_error = audio_error or "Invalid audio"
                                         # Track Edge validation failures for adaptive delay
                                         if (engine_tracker.get("label") or "").lower() == "edge":
                                             edge_failure_count += 1
@@ -6197,7 +6186,7 @@ class AudioConverter:
                                 )
                                 if not segments_ok:
                                     output_path.unlink(missing_ok=True)
-                                    chapter_error = segments_error or "Segmentos incompletos"
+                                    chapter_error = segments_error or "Incomplete segments"
                                     edge_failure_count += 1
                                     edge_consecutive_failures += 1
                                     if self.verbose:
@@ -6223,7 +6212,7 @@ class AudioConverter:
 
                             if self.verbose:
                                 print(f"   📊 Arquivo gerado: {file_size} bytes")
-                            self.progress.complete_chapter(f"✅ Sucesso ({file_size} bytes)")
+                            self.progress.complete_chapter(f"✅ Success ({file_size} bytes)")
                             chapter_elapsed = time.time() - start_time
                             current_engine_label = (
                                 engine_tracker.get("label") or (config.engine or "").lower()
@@ -6234,7 +6223,7 @@ class AudioConverter:
                                 throughput = 0
                             engine_display = (current_engine_label or "engine").upper()
                             print(
-                                f"⏱️ [{engine_display}] Capítulo {chapter_num} → "
+                                f"⏱️ [{engine_display}] Chapter {chapter_num} → "
                                 f"{chapter_elapsed:.1f}s para {chapter_chars} chars "
                                 f"({throughput or '~0'} chars/s)"
                             )
@@ -6248,11 +6237,11 @@ class AudioConverter:
                                 )
                                 if slow_cutoff and chapter_elapsed >= slow_cutoff * 1.4:
                                     if build_best_offline_engine(
-                                        f"Edge levou {int(chapter_elapsed)}s para este capítulo"
+                                        f"Edge levou {int(chapter_elapsed)}s para este chapter"
                                     ):
                                         if self.verbose:
                                             print(
-                                                "   ⚡ Próximos capítulos migrarão para engine offline pela performance"
+                                                "   ⚡ Next chapters will switch to offline engine for performance"
                                             )
                                     current_engine_label = (
                                         engine_tracker.get("label") or (config.engine or "").lower()
@@ -6300,8 +6289,8 @@ class AudioConverter:
                                     missing_percent = 100.0 - coverage_percent
                                     if self.verbose:
                                         print(
-                                            f"   ⚠️ Áudio truncado: {coverage_percent:.1f}% do texto "
-                                            f"({missing_percent:.1f}% faltando)"
+                                            f"   ⚠️ Truncated audio: {coverage_percent:.1f}% do text "
+                                            f"({missing_percent:.1f}% missing)"
                                         )
 
                                     # Increment failure counters
@@ -6315,28 +6304,28 @@ class AudioConverter:
                                     # Log failure stats
                                     if self.verbose:
                                         print(
-                                            f"   📊 Falhas Edge: {edge_failure_count} total, "
-                                            f"{edge_consecutive_failures} consecutivas"
+                                            f"   📊 Failures Edge: {edge_failure_count} total, "
+                                            f"{edge_consecutive_failures} consecutive"
                                         )
                                 else:
                                     # Audio is complete - reset consecutive failures counter
                                     # (but keep total failure count for statistics)
                                     if edge_consecutive_failures > 0 and self.verbose:
                                         print(
-                                            f"   ✅ Áudio completo ({coverage_percent:.1f}% do texto) - "
-                                            f"resetando contador de falhas consecutivas"
+                                            f"   ✅ Audio complete ({coverage_percent:.1f}% do text) - "
+                                            f"resetando contador de failures consecutive"
                                         )
                                     edge_consecutive_failures = 0
                         else:
-                            # Arquivo muito pequeno - provavelmente corrompido
+                            # Arquivo muito pequeno - likely corrompido
                             if self.verbose:
                                 print(
-                                    f"   ⚠️ Arquivo muito pequeno ({file_size} bytes) - considerando falha"
+                                    f"   ⚠️ Arquivo muito pequeno ({file_size} bytes) - considerando failure"
                                 )
                             output_path.unlink(missing_ok=True)
-                            synthesis_result = None  # Forçar retry
+                            synthesis_result = None  # Force retry
                     else:
-                        # **RETRY**: Tentar com idioma padrão em caso de falha
+                        # **RETRY**: Tentar com language default em caso de failure
                         # Note: Don't block retry just because payload is locked - the cached text
                         # may still be correct, and blocking prevents recovery from transient failures
                         if current_engine_label == "edge":
@@ -6351,16 +6340,16 @@ class AudioConverter:
                                     f"({edge_consecutive_failures} consecutive)"
                                 )
                             _maybe_apply_edge_slow_mode(
-                                f"falha Edge ({reason})", engine_obj=tts_engine
+                                f"failure Edge ({reason})", engine_obj=tts_engine
                             )
                             chapter_error = (
-                                f"Edge indisponível ({reason})"
+                                f"Edge inavailable ({reason})"
                                 if reason != "unknown"
-                                else "Edge falhou"
+                                else "Edge failed"
                             )
                             _edge_retry(chapter_error, count_failure=False)
                         if self.verbose:
-                            print("   ⚠️ RETRY: Síntese falhou, tentando com idioma padrão")
+                            print("   ⚠️ RETRY: Synthesis failed, retrying with default language")
 
                             try:
                                 # If Edge is on cooldown, wait before retrying to avoid instant failures.
@@ -6374,7 +6363,9 @@ class AudioConverter:
                                 simple_text = (speech_text or "")[:2000].strip()
                                 current_payload = simple_text
                                 if simple_text:
-                                    self.progress.tick("🔄 Retry: texto simples (idioma padrão)...")
+                                    self.progress.tick(
+                                        "🔄 Retry: text simples (language default)..."
+                                    )
                                     retry_timeout = 45
 
                                     synthesis_result = None
@@ -6403,7 +6394,7 @@ class AudioConverter:
                                     if synthesis_result and output_path.exists():
                                         file_size = output_path.stat().st_size
 
-                                        # Validar tamanho mínimo
+                                        # Validar tamanho minimum
                                         if file_size > 1000:
                                             truncation_warning = self._detect_short_audio_output(
                                                 output_path,
@@ -6457,7 +6448,7 @@ class AudioConverter:
                                                     if not audio_ok:
                                                         output_path.unlink(missing_ok=True)
                                                         chapter_error = (
-                                                            audio_error or "Áudio inválido"
+                                                            audio_error or "Invalid audio"
                                                         )
                                                         if (
                                                             engine_tracker.get("label") or ""
@@ -6480,7 +6471,7 @@ class AudioConverter:
                                                 if not segments_ok:
                                                     output_path.unlink(missing_ok=True)
                                                     chapter_error = (
-                                                        segments_error or "Segmentos incompletos"
+                                                        segments_error or "Incomplete segments"
                                                     )
                                                     edge_failure_count += 1
                                                     edge_consecutive_failures += 1
@@ -6509,9 +6500,9 @@ class AudioConverter:
 
                                             if self.verbose:
                                                 print(
-                                                    f"   ✅ RETRY: Sucesso com texto simplificado ({file_size} bytes)"
+                                                    f"   ✅ RETRY: Success com text simplificado ({file_size} bytes)"
                                                 )
-                                            self.progress.complete_chapter("✅ Sucesso (retry)")
+                                            self.progress.complete_chapter("✅ Success (retry)")
                                             chapter_elapsed = time.time() - start_time
                                             current_engine_label = (
                                                 engine_tracker.get("label")
@@ -6531,11 +6522,11 @@ class AudioConverter:
                                                     and chapter_elapsed >= slow_cutoff * 1.4
                                                 ):
                                                     if build_best_offline_engine(
-                                                        f"Edge levou {int(chapter_elapsed)}s para este capítulo"
+                                                        f"Edge levou {int(chapter_elapsed)}s para este chapter"
                                                     ):
                                                         if self.verbose:
                                                             print(
-                                                                "   ⚡ Próximos capítulos migrarão para engine offline pela performance"
+                                                                "   ⚡ Next chapters will switch to offline engine for performance"
                                                             )
                                                         current_engine_label = (
                                                             engine_tracker.get("label")
@@ -6550,13 +6541,11 @@ class AudioConverter:
                                             break  # Success! Continue to next chapter
 
                                         if self.verbose:
-                                            print(
-                                                f"   ⚠️ RETRY: Arquivo inválido ({file_size} bytes)"
-                                            )
+                                            print(f"   ⚠️ RETRY: Invalid file ({file_size} bytes)")
                                         output_path.unlink(missing_ok=True)
                             except Exception as retry_e:
                                 if self.verbose:
-                                    print(f"   ❌ RETRY falhou: {retry_e}")
+                                    print(f"   ❌ RETRY failed: {retry_e}")
 
                             if current_engine_label == "edge":
                                 last_err = ""
@@ -6573,11 +6562,11 @@ class AudioConverter:
                                     )
                                     if hasattr(self, "progress"):
                                         self.progress.tick(
-                                            "⏳ Edge limitado; aplicando modo seguro e tentando novamente"
+                                            "⏳ Edge limitado; aplicando mode seguro e tentando novamente"
                                         )
 
                             # If all retries failed
-                            error_msg = "Falha na síntese"
+                            error_msg = "Failure na synthesis"
                             if hasattr(tts_engine, "last_error") and tts_engine.last_error:
                                 error_msg += f": {tts_engine.last_error}"
                             if self.verbose:
@@ -6596,9 +6585,9 @@ class AudioConverter:
                     chapter_retry = True
                     chapter_error = str(retry_exc)
                 except Exception as e:
-                    error_msg = f"Exceção: {str(e)}"
+                    error_msg = f"Exception: {str(e)}"
                     if self.verbose:
-                        print(f"   ❌ ERRO DE EXCEÇÃO: {error_msg}")
+                        print(f"   ❌ ERRO DE EXCEPTION: {error_msg}")
                     chapter_error = error_msg
                     if (engine_tracker.get("label") or (config.engine or "").lower()) == "edge":
                         _edge_retry(error_msg)
@@ -6614,7 +6603,7 @@ class AudioConverter:
 
                 if chapter_retry:
                     if chapter_attempt >= max_chapter_attempts:
-                        chapter_error = chapter_error or "Falha persistente"
+                        chapter_error = chapter_error or "Failure persistente"
                         errors.append(f"{chapter.name}: {chapter_error}")
                         chapter_error = _error_text(chapter_error)
                         self.progress.complete_chapter(f"❌ {chapter_error}")
@@ -6992,7 +6981,7 @@ class AudioConverter:
                             check=False,
                         )
                     if venv_python.exists():
-                        print("📦 Instalando dependências no .venv...")
+                        print("📦 Installing dependencies in .venv...")
                         subprocess.run(
                             [
                                 str(venv_python),
@@ -7060,9 +7049,7 @@ class AudioConverter:
                     if not validation_result.is_valid:
                         cache_valid = False
                         if self.verbose:
-                            print(
-                                f"⚠️ Chapter {index} cache INVALID: {validation_result.error_message}"
-                            )
+                            print(f"⚠️ Chapter {index} cache INVALID: {validation_result.message}")
                             print(f"   Re-converting chapter {index}...")
                         # Delete invalid cached file
                         try:
@@ -7166,7 +7153,7 @@ class AudioConverter:
 
                 # Spot-check against EPUB to ensure payload still matches source text
                 if not self._spot_check_text_against_epub(speech_text or "", chapter_payload):
-                    status_holder["text"] = "❌ Texto diverge do EPUB (spot-check)"
+                    status_holder["text"] = "❌ text diverge do EPUB (spot-check)"
                     self._announce_stage(index, chapter_label, status_holder["text"])
                     outcome = ChapterConversionOutcome(
                         index=index,
@@ -7196,7 +7183,7 @@ class AudioConverter:
                 status_holder["text"] = self.loc.t("status_synthesizing")
                 self._announce_stage(index, chapter_label, status_holder["text"])
 
-                # **UPDATED**: Estratégia de fallback e timeouts baseados em duração estimada
+                # **UPDATED**: Estratégia de fallback and timeouts baseados em duration estimada
                 char_count = len(chapter_payload or "")
                 lang_tag_count = chapter_payload.lower().count("[[lang:") if chapter_payload else 0
 
@@ -7226,17 +7213,15 @@ class AudioConverter:
                                 f"{char_count} → {len(simplified)} chars"
                             )
                         status_holder["text"] = (
-                            f"🔄 Fallback: removendo {lang_tag_count} tags de idioma"
+                            f"🔄 Fallback: removendo {lang_tag_count} tags de language"
                         )
                         self._announce_stage(index, chapter_label, status_holder["text"])
                         chapter_payload = simplified
                     except ImportError:
                         if self.verbose:
-                            print(
-                                f"[DEBUG] Chapter {index} FALLBACK: LanguageMarkup não disponível"
-                            )
+                            print(f"[DEBUG] Chapter {index} FALLBACK: LanguageMarkup not available")
 
-                # Recalcular métricas após fallback
+                # Recalcular métricas after fallback
                 char_count = len(chapter_payload or "")
                 lang_tag_count = chapter_payload.lower().count("[[lang:") if chapter_payload else 0
                 estimated_seconds = TextValidator.estimate_duration(chapter_payload)
@@ -7285,19 +7270,19 @@ class AudioConverter:
                                     f"[DEBUG] Chapter {index} FALLBACK: {len(chapter_payload)} → {len(simplified_payload)} chars"
                                 )
                             status_holder["text"] = (
-                                f"🔄 Tentativa 2: removendo {original_count} tags de idioma"
+                                f"🔄 Tentativa 2: removendo {original_count} tags de language"
                             )
                             self._announce_stage(index, chapter_label, status_holder["text"])
                             chapter_payload = simplified_payload
                         except ImportError:
                             if self.verbose:
                                 print(
-                                    f"[DEBUG] Chapter {index} FALLBACK: LanguageMarkup não disponível"
+                                    f"[DEBUG] Chapter {index} FALLBACK: LanguageMarkup not available"
                                 )
 
                     try:
                         if self.verbose:
-                            print(f"[DEBUG] Chapter {index} tentativa {attempt}/{max_attempts}")
+                            print(f"[DEBUG] Chapter {index} attempt {attempt}/{max_attempts}")
 
                         # Pass formatting segments only on first attempt with original payload
                         chapter_formatting = (
@@ -7326,7 +7311,7 @@ class AudioConverter:
                     except asyncio.TimeoutError:
                         if self.verbose:
                             print(
-                                f"[DEBUG] Chapter {index} tentativa {attempt} timeout após {chapter_timeout}s"
+                                f"[DEBUG] Chapter {index} attempt {attempt} timeout after {chapter_timeout}s"
                             )
                         if synthesis_task and not synthesis_task.done():
                             synthesis_task.cancel()
@@ -7344,7 +7329,7 @@ class AudioConverter:
                         if legacy_mode:
                             raise
                         if self.verbose:
-                            print(f"[DEBUG] Chapter {index} tentativa {attempt} erro: {e}")
+                            print(f"[DEBUG] Chapter {index} attempt {attempt} error: {e}")
                         if synthesis_task and not synthesis_task.done():
                             synthesis_task.cancel()
 
@@ -7441,13 +7426,11 @@ class AudioConverter:
                         if not file_result.is_valid:
                             if self.verbose:
                                 print(
-                                    f"⚠️ Chapter {index} validation warning: {file_result.error_message}"
+                                    f"⚠️ Chapter {index} validation warning: {file_result.message}"
                                 )
                             if getattr(config, "strict_validate", False):
                                 converted.unlink(missing_ok=True)
-                                status_holder["text"] = (
-                                    file_result.error_message or "Áudio inválido"
-                                )
+                                status_holder["text"] = file_result.message or "Invalid audio"
                                 self._announce_stage(index, chapter_label, status_holder["text"])
                                 outcome = ChapterConversionOutcome(
                                     index=index,
@@ -7482,12 +7465,12 @@ class AudioConverter:
                                 if not validation_result.is_valid:
                                     if self.verbose:
                                         print(
-                                            f"⚠️ Chapter {index} validation warning: {validation_result.error_message}"
+                                            f"⚠️ Chapter {index} validation warning: {validation_result.message}"
                                         )
                                     if getattr(config, "strict_validate", False):
                                         converted.unlink(missing_ok=True)
                                         status_holder["text"] = (
-                                            validation_result.error_message or "Duração inválida"
+                                            validation_result.message or "Invalid duration"
                                         )
                                         self._announce_stage(
                                             index, chapter_label, status_holder["text"]
@@ -7576,7 +7559,7 @@ class AudioConverter:
                                             "expected_duration": validation_result.expected_duration,
                                             "actual_duration": validation_result.actual_duration,
                                             "duration_diff_percent": validation_result.duration_diff_percent,
-                                            "error_message": validation_result.error_message,
+                                            "message": validation_result.message,
                                             "text_length": len(chapter_payload),
                                         }
 
@@ -7630,7 +7613,7 @@ class AudioConverter:
                                     language=None,
                                 )
 
-                            status_holder["text"] = "🔍 Verificando transcrição..."
+                            status_holder["text"] = "🔍 Verificando transcription..."
                             self._announce_stage(index, chapter_label, status_holder["text"])
 
                             vr = self._transcription_verifier.verify_chapter(
@@ -7640,27 +7623,27 @@ class AudioConverter:
                             if vr.passed:
                                 if self.verbose:
                                     print(
-                                        f"✅ Chapter {index} transcrição OK: "
-                                        f"{vr.similarity_score:.1%} similaridade"
+                                        f"✅ Chapter {index} transcription OK: "
+                                        f"{vr.similarity_score:.1%} similarity"
                                     )
                             else:
                                 if getattr(vr, "partial", False):
                                     # Timeout during transcription - audio likely fine, just too large
                                     print(
-                                        f"⚠️ Chapter {index} verificação parcial (timeout): "
+                                        f"⚠️ Chapter {index} partial verification (timeout): "
                                         f"{vr.similarity_score:.1%} - mantendo MP3"
                                     )
                                 else:
                                     print(
-                                        f"❌ Chapter {index} transcrição FALHOU: "
-                                        f"{vr.similarity_score:.1%} similaridade (mínimo {self._transcription_verifier.SIMILARITY_THRESHOLD:.0%})"
+                                        f"❌ Chapter {index} transcription FALHOU: "
+                                        f"{vr.similarity_score:.1%} similarity (minimum {self._transcription_verifier.SIMILARITY_THRESHOLD:.0%})"
                                     )
                                     if self.verbose:
                                         print(f"   {vr.details}")
                                     # Delete bad audio and signal failure for retry
                                     converted.unlink(missing_ok=True)
                                     status_holder["text"] = (
-                                        f"❌ Transcrição diverge: {vr.similarity_score:.1%} similaridade"
+                                        f"❌ Transcription diverges: {vr.similarity_score:.1%} similarity"
                                     )
                                     self._announce_stage(
                                         index, chapter_label, status_holder["text"]
@@ -7674,7 +7657,7 @@ class AudioConverter:
                                     return None if legacy_mode else outcome
                         elif self.verbose:
                             print(
-                                "⚠️ faster-whisper não instalado, pulando verificação de transcrição"
+                                "⚠️ faster-whisper not installed, skipping transcription verification"
                             )
                     except Exception as e:
                         if self.verbose:
@@ -7734,12 +7717,12 @@ class AudioConverter:
                 text_dir.mkdir(parents=True, exist_ok=True)
 
             # Use book title from config or first chapter
-            book_title = "livro_completo"
+            book_title = "livro_complete"
             if self._active_config:
                 book_title = getattr(self._active_config, "book_title", None) or book_title
 
             safe_title = self.file_manager.sanitize_filename(book_title)
-            full_book_file = output_dir / f"{safe_title}_completo.txt"
+            full_book_file = output_dir / f"{safe_title}_complete.txt"
 
             # Collect all chapter texts in order
             full_text_parts = []
@@ -7754,7 +7737,7 @@ class AudioConverter:
 
                 # Add chapter header (use original name for display)
                 full_text_parts.append(f"\n{'='*70}\n")
-                full_text_parts.append(f"CAPÍTULO {chapter_label}: {chapter_name}\n")
+                full_text_parts.append(f"CHAPTER {chapter_label}: {chapter_name}\n")
                 full_text_parts.append(f"{'='*70}\n\n")
 
                 # Try to find pre-tts.txt first (final processed text)
@@ -7779,14 +7762,14 @@ class AudioConverter:
             full_book_file.write_text("".join(full_text_parts), encoding="utf-8")
 
             if self.verbose:
-                print(f"\n📖 Texto completo do livro gerado: {full_book_file.name}")
-                print(f"   Total: {len(''.join(full_text_parts)):,} caracteres")
+                print(f"\n📖 text complete do livro gerado: {full_book_file.name}")
+                print(f"   Total: {len(''.join(full_text_parts)):,} chars")
 
             return full_book_file
 
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️ Falha ao gerar texto completo do livro: {exc}")
+                print(f"⚠️ Failure ao gerar text complete do livro: {exc}")
             return None
 
     async def _report_results(self, result: ConversionResult) -> None:
@@ -7799,7 +7782,7 @@ class AudioConverter:
                 print(f"    • {error}")
         if not result.success:
             print(
-                "❌ Conversão incompleta: um ou mais capítulos falharam (reexecute para recuperar)."
+                "❌ Conversion incompleta: um ou mais chapters failed (reexecute para recuperar)."
             )
 
         # Print adaptive performance summary

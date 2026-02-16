@@ -150,8 +150,8 @@ class TestEpubParser(unittest.TestCase):
         self.assertEqual(len(book.chapters), 3)
 
         # Empty chapters should get default names
-        self.assertEqual(book.chapters[0].name, "Capítulo 1")
-        self.assertEqual(book.chapters[1].name, "Capítulo 2")
+        self.assertEqual(book.chapters[0].name, "Chapter 1")
+        self.assertEqual(book.chapters[1].name, "Chapter 2")
         self.assertEqual(book.chapters[2].name, "Valid content here.")
 
     def test_extract_cover_image(self):

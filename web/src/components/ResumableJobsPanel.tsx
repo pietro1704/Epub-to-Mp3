@@ -71,8 +71,7 @@ export default function ResumableJobsPanel({
             <div className="resumable-jobs__loading">
               <div className="resumable-jobs__spinner" />
               <span>
-                {t.resumableJobs.loading ||
-                  "Carregando conversões pendentes..."}
+                {t.resumableJobs.loading || "Loading pending conversions..."}
               </span>
             </div>
           </li>

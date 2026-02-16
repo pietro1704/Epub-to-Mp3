@@ -150,7 +150,7 @@ export default function StatusPanel({
             onClick={onSkip}
             disabled={cancelDisabled}
           >
-            {t.status.skipButton || "Pular para próximo"}
+            {t.status.skipButton || "Skip to next"}
           </button>
         )}
         {canCancel && onCancel && (

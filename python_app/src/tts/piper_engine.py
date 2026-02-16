@@ -84,7 +84,7 @@ try:  # pragma: no cover - optional dependency
 except ImportError:  # pragma: no cover
     TextFormattingProcessor = None  # type: ignore
 
-# **FIXED**: Semáforo global para limitar processos simultâneos do Piper
+# **FIXED**: Global semaphore to limit simultaneous Piper processes
 _piper_semaphore = None
 
 
@@ -215,13 +215,13 @@ class PiperTTSEngine:
                 if converted:
                     if self.verbose and converted != text:
                         print(
-                            f"🔍 [VERBOSE] PiperTTS texto ajustado para áudio: {len(converted)} chars"
+                            f"🔍 [VERBOSE] PiperTTS text adjusted for audio: {len(converted)} chars"
                         )
                     text = converted
             except Exception as exc:
                 if self.verbose:
                     print(
-                        f"🔍 [VERBOSE] PiperTTS falha ao preparar texto com formatação ({exc}); prosseguindo com limpeza básica"
+                        f"🔍 [VERBOSE] PiperTTS failed to prepare text with formatting ({exc}); proceeding with basic cleanup"
                     )
                 text = formatter.clean_tts_text(text)
         else:
@@ -279,7 +279,7 @@ class PiperTTSEngine:
                 segment_text = segment_text.strip()
                 if not segment_text:
                     continue
-                # **FIX**: Use output_path.parent para isolar por livro
+                # **FIX**: Use output_path.parent to isolate per book
                 import tempfile
 
                 temp_file = tempfile.NamedTemporaryFile(
@@ -456,7 +456,7 @@ class PiperTTSEngine:
             str(output_path),
         )
 
-        # **FIXED**: Usar semáforo para limitar processos simultâneos
+        # **FIXED**: Use semaphore to limit simultaneous processes
         async with self._semaphore:
             try:
                 process = await asyncio.create_subprocess_exec(

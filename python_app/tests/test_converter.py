@@ -185,7 +185,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         chapter_short = Chapter(2, "Short", "c2.html", "brief text")
         stats = self.converter._analyze_chapter_stats([chapter_long, chapter_short])
         self.assertTrue(stats["prefer_offline_engine"])
-        self.assertIn("capítulo", stats.get("offline_reason", ""))
+        self.assertIn("chapter", stats.get("offline_reason", ""))
 
     @patch("src.converter._has_piper_support", return_value=True)
     @patch("src.converter._has_coqui_support", return_value=False)

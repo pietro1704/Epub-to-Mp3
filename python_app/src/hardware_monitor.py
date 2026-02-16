@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Sistema de monitoramento de hardware e rede para auto-tuning de performance.
+Hardware and network monitoring system for performance auto-tuning.
 
-Detecta:
-- CPU cores, velocidade
-- RAM total/disponível
+Detects:
+- CPU cores, speed
+- Total/available RAM
 - GPU (CUDA, Metal, CPU)
-- Tipo de storage (SSD vs HDD)
-- Velocidade de rede em tempo real
-- Latência e throttling
+- Storage type (SSD vs HDD)
+- Real-time network speed
+- Latency and throttling
 """
 
 import asyncio
@@ -56,7 +56,7 @@ else:
 
 @dataclass
 class HardwareSpecs:
-    """Especificações de hardware detectadas."""
+    """Detected hardware specifications."""
 
     cpu_cores: int
     cpu_physical_cores: int
@@ -72,7 +72,7 @@ class HardwareSpecs:
 
 @dataclass
 class NetworkStats:
-    """Estatísticas de rede."""
+    """Network statistics."""
 
     download_mbps: float
     latency_ms: float
@@ -82,7 +82,7 @@ class NetworkStats:
 
 
 class SystemMonitor:
-    """Monitor de sistema para auto-tuning."""
+    """System monitor for auto-tuning."""
 
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
@@ -91,7 +91,7 @@ class SystemMonitor:
         self._network_samples: list[tuple[float, float]] = []  # (mbps, latency)
 
     def detect_hardware(self) -> HardwareSpecs:
-        """Detecta especificações de hardware."""
+        """Detect hardware specifications."""
         if self._hw_specs:
             return self._hw_specs
 
@@ -139,11 +139,11 @@ class SystemMonitor:
                 gpu_type = "metal"
                 gpu_name = "Apple Metal GPU"
 
-        # Storage type (heurística simples)
+        # Storage type (simple heuristic)
         storage_type: Literal["ssd", "hdd", "unknown"] = "unknown"
         if PSUTIL_AVAILABLE and platform.system() != "Windows":
             try:
-                # Testa velocidade de escrita rápida
+                # Quick write speed test
                 test_file = Path("/tmp/.storage_test")
                 data = b"0" * (1024 * 1024)  # 1MB
                 start = time.perf_counter()
@@ -151,7 +151,7 @@ class SystemMonitor:
                 test_file.unlink()
                 write_time = time.perf_counter() - start
 
-                # SSD geralmente < 10ms para 1MB, HDD > 50ms
+                # SSD typically < 10ms for 1MB, HDD > 50ms
                 if write_time < 0.015:
                     storage_type = "ssd"
                 elif write_time > 0.05:
@@ -178,22 +178,22 @@ class SystemMonitor:
         return self._hw_specs
 
     def _print_hw_specs(self) -> None:
-        """Imprime especificações de hardware."""
+        """Print hardware specifications."""
         if not self._hw_specs:
             return
 
         hw = self._hw_specs
         print("\n" + "=" * 70)
-        print("🖥️  HARDWARE DETECTADO")
+        print("🖥️  DETECTED HARDWARE")
         print("=" * 70)
-        print(f"CPU: {hw.cpu_physical_cores} cores físicos, {hw.cpu_cores} threads")
+        print(f"CPU: {hw.cpu_physical_cores} physical cores, {hw.cpu_cores} threads")
         if hw.cpu_freq_mhz > 0:
             print(f"     {hw.cpu_freq_mhz:.0f} MHz")
-        print(f"RAM: {hw.ram_available_gb:.1f} GB disponível / {hw.ram_total_gb:.1f} GB total")
+        print(f"RAM: {hw.ram_available_gb:.1f} GB available / {hw.ram_total_gb:.1f} GB total")
         if hw.gpu_available:
             print(f"GPU: {hw.gpu_name} ({hw.gpu_type.upper()})")
         else:
-            print("GPU: Não disponível (usando CPU)")
+            print("GPU: Not available (using CPU)")
         print(f"Storage: {hw.storage_type.upper()}")
         print(f"Platform: {hw.platform}")
         print("=" * 70 + "\n")
@@ -205,7 +205,7 @@ class SystemMonitor:
         timeout: float = 10.0,
     ) -> tuple[float, float]:
         """
-        Mede velocidade de rede (Mbps) e latência (ms).
+        Measure network speed (Mbps) and latency (ms).
 
         Returns:
             (download_mbps, latency_ms)
@@ -213,30 +213,30 @@ class SystemMonitor:
         try:
             import aiohttp
 
-            # Simula requisição Edge-TTS
+            # Simulate Edge-TTS request
             headers = {
                 "User-Agent": "Mozilla/5.0",
                 "Accept": "*/*",
             }
 
-            # Latência: tempo de handshake
+            # Latency: handshake time
             latency_start = time.perf_counter()
 
             async with aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=timeout)
             ) as session:
-                # HEAD request para medir latência
+                # HEAD request to measure latency
                 try:
                     async with session.head(test_url, headers=headers) as response:
                         latency_ms = (time.perf_counter() - latency_start) * 1000
                 except Exception:
                     latency_ms = 999.0
 
-                # Download speed: simula chunk pequeno
-                # Edge-TTS retorna áudio, então vamos simular com um request pequeno
+                # Download speed: simulate small chunk
+                # Edge-TTS returns audio, so we simulate with a small request
                 download_start = time.perf_counter()
                 try:
-                    # Usa um servidor de teste de velocidade se disponível
+                    # Use a speed test server if available
                     test_data_url = "https://speed.cloudflare.com/__down?bytes=51200"  # 50KB
                     async with session.get(test_data_url, headers=headers) as response:
                         data = await response.read()
@@ -248,7 +248,7 @@ class SystemMonitor:
                         else:
                             mbps = 0.0
                 except Exception:
-                    # Fallback: assume velocidade conservadora
+                    # Fallback: assume conservative speed
                     mbps = 10.0
                     if latency_ms < 50:
                         mbps = 50.0
@@ -259,25 +259,25 @@ class SystemMonitor:
 
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️  Falha ao medir velocidade de rede: {exc}")
-            # Valores conservadores padrão
+                print(f"⚠️  Failed to measure network speed: {exc}")
+            # Conservative default values
             return 10.0, 100.0
 
     async def classify_network(self) -> NetworkStats:
         """
-        Classifica a rede em tiers baseado em múltiplas amostras.
+        Classify the network into tiers based on multiple samples.
 
         Returns:
-            NetworkStats com tier: slow/medium/fast/ultra
+            NetworkStats with tier: slow/medium/fast/ultra
         """
         if self._network_stats and (time.time() - self._network_stats.last_measured) < 60:
-            # Cache válido por 1 minuto
+            # Cache valid for 1 minute
             return self._network_stats
 
         if self.verbose:
-            print("🌐 Medindo velocidade de rede...")
+            print("🌐 Measuring network speed...")
 
-        # Coleta 3 amostras rápidas
+        # Collect 3 quick samples
         samples = []
         for i in range(3):
             mbps, latency = await self.measure_network_speed()
@@ -285,12 +285,12 @@ class SystemMonitor:
             if i < 2:
                 await asyncio.sleep(0.5)
 
-        # Calcula média
+        # Calculate average
         avg_mbps = sum(s[0] for s in samples) / len(samples)
         avg_latency = sum(s[1] for s in samples) / len(samples)
 
-        # Classifica tier
-        # Leva em conta tanto velocidade quanto latência
+        # Classify tier
+        # Takes into account both speed and latency
         tier: Literal["slow", "medium", "fast", "ultra"] = "medium"
 
         if avg_mbps >= 100 and avg_latency < 50:
@@ -311,13 +311,13 @@ class SystemMonitor:
         )
 
         if self.verbose:
-            print(f"   Velocidade: {avg_mbps:.1f} Mbps")
-            print(f"   Latência: {avg_latency:.1f} ms")
-            print(f"   🎯 Tier de rede: {tier.upper()}\n")
+            print(f"   Speed: {avg_mbps:.1f} Mbps")
+            print(f"   Latency: {avg_latency:.1f} ms")
+            print(f"   🎯 Network tier: {tier.upper()}\n")
 
         return self._network_stats
 
     def get_current_stats(self) -> tuple[HardwareSpecs, Optional[NetworkStats]]:
-        """Retorna specs atuais (hw sempre, network se já medido)."""
+        """Return current specs (hw always, network if already measured)."""
         hw = self.detect_hardware()
         return hw, self._network_stats

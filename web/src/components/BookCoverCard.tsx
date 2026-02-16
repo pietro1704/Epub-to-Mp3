@@ -10,15 +10,15 @@ interface BookCoverCardProps {
 function resolveStatusLabel(phase: ConversionState['phase']): string {
   switch (phase) {
     case 'submitting':
-      return 'Arquivo enviado';
+      return 'File uploaded';
     case 'polling':
-      return 'Lendo e convertendo';
+      return 'Reading and converting';
     case 'success':
-      return 'Conversão concluída';
+      return 'Conversion completed';
     case 'error':
-      return 'Conversão interrompida';
+      return 'Conversion interrupted';
     default:
-      return 'Livro selecionado';
+      return 'Book selected';
   }
 }
 
@@ -29,12 +29,12 @@ export default function BookCoverCard({
   phase,
 }: BookCoverCardProps): JSX.Element {
   const statusLabel = resolveStatusLabel(phase);
-  const resolvedTitle = title || 'Livro carregado';
-  const resolvedAuthor = author || 'Autor desconhecido';
-  const altText = `Capa do livro ${resolvedTitle}`;
+  const resolvedTitle = title || 'Book loaded';
+  const resolvedAuthor = author || 'Unknown author';
+  const altText = `Book cover ${resolvedTitle}`;
 
   return (
-    <section className="cover-card" aria-label="Dados do livro selecionado">
+    <section className="cover-card" aria-label="Selected book data">
       <div className="cover-card__image">
         {coverUrl ? (
           <img src={coverUrl} alt={altText} loading="lazy" decoding="async" />

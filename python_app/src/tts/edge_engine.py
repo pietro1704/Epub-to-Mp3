@@ -1083,24 +1083,24 @@ class EdgeTTSEngine:
             self._chunk_char_limit = new_chunk
 
             if failed_segments > 0:
-                self._log(f"⚠️ Edge TTS: {failed_segments} segment(s) falharam durante a síntese")
+                self._log(f"⚠️ Edge TTS: {failed_segments} segment(s) failed during synthesis")
                 self._log(
-                    f"   Processados: {total_segments}/{expected_segments} segmentos ({success_rate * 100:.0f}%)"
+                    f"   Processed: {total_segments}/{expected_segments} segments ({success_rate * 100:.0f}%)"
                 )
                 if self.verbose:
-                    self._log("   Use --verbose para mais detalhes sobre os segmentos com falha")
+                    self._log("   Use --verbose for more details about failed segments")
             else:
                 self._log(
-                    f"⚠️ Edge TTS: somente {total_segments}/{expected_segments} segmentos foram gerados (saída incompleta)"
+                    f"⚠️ Edge TTS: only {total_segments}/{expected_segments} segments were generated (incomplete output)"
                 )
             self.last_error = f"incomplete_segments:{total_segments}/{expected_segments}"
             with suppress(OSError):
                 output_path.unlink(missing_ok=True)
             return None
         elif failed_segments > 0 and success_rate < 1.0:
-            # Entre 95-100% dos segmentos -> avisar mas aceitar o áudio
+            # Between 95-100% of segments -> warn but accept the audio
             self._log(
-                f"⚠️ Edge TTS: {failed_segments} segment(s) falharam, mas {success_rate * 100:.1f}% foi gerado com sucesso"
+                f"⚠️ Edge TTS: {failed_segments} segment(s) failed, but {success_rate * 100:.1f}% was generated successfully"
             )
             if self.verbose:
                 self._log(f"   Processados: {total_segments}/{expected_segments} segmentos")
@@ -1142,12 +1142,12 @@ class EdgeTTSEngine:
             remaining = total_segments - resumed_count
             if resumed_count > 0:
                 self._log(
-                    f"🚀 [PARALLEL] Processando {remaining} segmentos restantes "
-                    f"(♻️ {resumed_count} já prontos) em batches de {batch_size}"
+                    f"🚀 [PARALLEL] Processing {remaining} remaining segments "
+                    f"(♻️ {resumed_count} already done) in batches of {batch_size}"
                 )
             else:
                 self._log(
-                    f"🚀 [PARALLEL] Processando {total_segments} segmentos em batches de {batch_size}"
+                    f"🚀 [PARALLEL] Processing {total_segments} segments in batches of {batch_size}"
                 )
 
         # Process segments in fixed batches
@@ -1473,7 +1473,7 @@ class EdgeTTSEngine:
 
         if self.verbose:
             self._log(
-                f"✅ [PARALLEL] Síntese completa: {successful_segments}/{total_segments} segmentos ({success_rate * 100:.1f}%)"
+                f"✅ [PARALLEL] Synthesis complete: {successful_segments}/{total_segments} segments ({success_rate * 100:.1f}%)"
             )
 
         return output_path
@@ -1481,18 +1481,18 @@ class EdgeTTSEngine:
     def _calculate_timeout(self, text: str) -> int:
         """Estimate a safe upper bound for synthesis time in seconds.
 
-        Otimizado: timeout mais agressivo para falhar rápido em caso de problemas.
+        Optimized: more aggressive timeout to fail fast in case of problems.
         """
         if not text:
-            return 60  # 60s padrão para texto vazio
+            return 60  # 60s default for empty text
 
         estimated = max(self._estimate_duration(text), 5.0)
 
-        # Timeout = duração estimada + 40% de buffer + 20s fixos
-        # Mais agressivo para evitar esperas longas
+        # Timeout = estimated duration + 40% buffer + 20s fixed
+        # More aggressive to avoid long waits
         timeout = estimated * 1.4 + 20.0
 
-        # Limites: mínimo 45s, máximo dinâmico para evitar cortes de segmentos longos
+        # Limits: minimum 45s, dynamic maximum to avoid cutting long segments
         timeout = max(timeout, 45.0)
         timeout_cap = max(300.0, self._max_segment_seconds * 1.5 + 60.0)
         timeout = min(timeout, timeout_cap)
@@ -1574,27 +1574,27 @@ class EdgeTTSEngine:
 
     def _apply_chunk_prosody(self, text: str, rate_increase: str = "+50%") -> str:
         """
-        Aplica tags SSML prosody a um chunk individual para compensar pausas do Edge-TTS.
+        Apply SSML prosody tags to an individual chunk to compensate for Edge-TTS pauses.
 
-        NOTA: Função desabilitada - Edge-TTS ignora tags SSML prosody.
-        Mantida para compatibilidade futura se o Edge-TTS passar a suportar.
+        NOTE: Function disabled - Edge-TTS ignores SSML prosody tags.
+        Kept for future compatibility if Edge-TTS starts supporting them.
 
         Args:
-            text: Texto do chunk
-            rate_increase: Aumento percentual na taxa de fala (não utilizado)
+            text: Chunk text
+            rate_increase: Percentage increase in speech rate (not used)
 
         Returns:
-            Texto original sem modificações
+            Original text without modifications
         """
-        # DISABLED: Edge-TTS não respeita tags SSML prosody
-        # Testes mostraram que as tags não reduzem a duração do áudio
-        # Retorna texto sem modificações
+        # DISABLED: Edge-TTS does not respect SSML prosody tags
+        # Tests showed that tags do not reduce audio duration
+        # Returns text without modifications
         return text
 
     def _chunk_text(
         self, voice: str, text: str, chunk_size: Optional[int] = None
     ) -> list[tuple[str, str]]:
-        """Divide texto longo em blocos menores respeitando limites aproximados de frase e duração."""
+        """Split long text into smaller blocks respecting approximate sentence and duration limits."""
         if not text:
             return []
 
@@ -1660,9 +1660,7 @@ class EdgeTTSEngine:
         if _edge_rate_limit_count > 0:
             adjusted = min(active_chunk_limit, safe_limit)
             if adjusted != active_chunk_limit and self.verbose:
-                self._log(
-                    f"🔍 Edge: chunk reduzido para {adjusted} chars (rate limit / capítulo longo)"
-                )
+                self._log(f"🔍 Edge: chunk reduced to {adjusted} chars (rate limit / long chapter)")
             active_chunk_limit = adjusted
 
         if len(stripped) <= active_chunk_limit:
@@ -1974,17 +1972,17 @@ class EdgeTTSEngine:
             await stack.enter_async_context(self._rate_limiter)
             wait_time = loop.time() - waiting_start
             if self.verbose and wait_time > 1:
-                self._log(f"   🚀 Slot obtido após {wait_time:.1f}s")
+                self._log(f"   🚀 Slot acquired after {wait_time:.1f}s")
 
             now = loop.time()
             if now < self._noaudio_backoff_until:
                 remaining = int(self._noaudio_backoff_until - now)
                 self.last_error = f"service_unavailable (cooldown {remaining}s)"
                 if self.verbose:
-                    self._log(f"   ⏸️ Cooldown: {remaining}s restantes")
+                    self._log(f"   ⏸️ Cooldown: {remaining}s remaining")
                 return False
             try:
-                # SSL bypass já aplicado no topo do módulo via monkeypatch
+                # SSL bypass already applied at the top of the module via monkeypatch
                 communicator = self._edge_tts.Communicate(text, voice)
 
             except Exception as exc:  # pragma: no cover - defensive logging
@@ -1996,7 +1994,7 @@ class EdgeTTSEngine:
                         f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
                     )
                 if self.verbose:
-                    self._log(f"   ❌ Erro ao criar Communicate: {self.last_error}")
+                    self._log(f"   ❌ Error creating Communicate: {self.last_error}")
                 return False
 
             mode = "ab" if append else "wb"
@@ -2037,13 +2035,13 @@ class EdgeTTSEngine:
                         f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
                     )
                 if self.verbose:
-                    self._log(f"   ❌ Erro ao inicializar stream: {self.last_error}")
+                    self._log(f"   ❌ Error initializing stream: {self.last_error}")
                 return False
 
             if not hasattr(stream, "__aiter__"):
                 self.last_error = "invalid_stream"
                 if self.verbose:
-                    self._log("   ❌ Stream inválido (não assíncrono)")
+                    self._log("   ❌ Invalid stream (not async)")
                 return False
             chunks_received = 0
 
@@ -2090,7 +2088,7 @@ class EdgeTTSEngine:
                         if self.verbose and received_audio:
                             elapsed = asyncio.get_event_loop().time() - synthesis_start
                             self._log(
-                                f"   ✅ Concluído em {elapsed:.1f}s ({chunks_received} chunks)"
+                                f"   ✅ Completed in {elapsed:.1f}s ({chunks_received} chunks)"
                             )
 
                         break  # Success - exit retry loop
@@ -2100,7 +2098,7 @@ class EdgeTTSEngine:
                         self.last_error = "timeout"
                         if self.verbose:
                             self._log(
-                                f"   ⏱️ Timeout após {synthesis_time:.1f}s (limite: {timeout}s)"
+                                f"   ⏱️ Timeout after {synthesis_time:.1f}s (limit: {timeout}s)"
                             )
                         # Record timeout to network tuner
                         self._record_network_result(
@@ -2115,7 +2113,7 @@ class EdgeTTSEngine:
                         synthesis_time = asyncio.get_event_loop().time() - synthesis_start
                         self.last_error = "cancelled"
                         if self.verbose:
-                            self._log(f"   🚫 Cancelado após {synthesis_time:.1f}s")
+                            self._log(f"   🚫 Cancelled after {synthesis_time:.1f}s")
                         raise
 
                     except Exception as exc:
@@ -2123,7 +2121,7 @@ class EdgeTTSEngine:
 
                         if self.verbose:
                             self._log(
-                                f"   ⚠️ Exceção ({exc.__class__.__name__}) após {synthesis_time:.1f}s: {exc}"
+                                f"   ⚠️ Exception ({exc.__class__.__name__}) after {synthesis_time:.1f}s: {exc}"
                             )
 
                         is_rate_limit = _is_rate_limit_error(exc)
@@ -2182,7 +2180,7 @@ class EdgeTTSEngine:
                                 except Exception as retry_exc:
                                     self.last_error = f"retry_failed: {retry_exc}"
                                     if self.verbose:
-                                        self._log(f"   ❌ Falha no retry: {retry_exc}")
+                                        self._log(f"   ❌ Retry failed: {retry_exc}")
                                     return False
                             return False
 
@@ -2192,21 +2190,21 @@ class EdgeTTSEngine:
 
                             # Detailed SSL error logging
                             if is_cert_error:
-                                self._log(f"   🔒 Erro SSL: {exc.__class__.__name__}")
+                                self._log(f"   🔒 SSL error: {exc.__class__.__name__}")
                             elif is_no_audio:
                                 self._log(
-                                    f"   🔇 Sem áudio ({exc.__class__.__name__}); retry {retry_count}/{max_retries - 1} em {backoff_time}s"
+                                    f"   🔇 No audio ({exc.__class__.__name__}); retry {retry_count}/{max_retries - 1} in {backoff_time}s"
                                 )
                             else:
                                 self._log(
-                                    f"   🔄 Erro transitório ({exc.__class__.__name__}); retry {retry_count}/{max_retries - 1} em {backoff_time}s"
+                                    f"   🔄 Transient error ({exc.__class__.__name__}); retry {retry_count}/{max_retries - 1} in {backoff_time}s"
                                 )
 
                             await asyncio.sleep(backoff_time)
 
                             # Recreate communicator and stream for retry
                             try:
-                                # SSL bypass já aplicado no topo do módulo via monkeypatch
+                                # SSL bypass already applied at the top of the module via monkeypatch
                                 communicator = self._edge_tts.Communicate(text, voice)
                                 stream_candidate = communicator.stream()
                                 stream = (
@@ -2220,7 +2218,7 @@ class EdgeTTSEngine:
                             except Exception as retry_exc:
                                 self.last_error = f"retry_failed: {retry_exc}"
                                 if self.verbose:
-                                    self._log(f"   ❌ Falha no retry: {retry_exc}")
+                                    self._log(f"   ❌ Retry failed: {retry_exc}")
                                 return False
                         else:
                             # Not a cert error or max retries reached
@@ -2239,15 +2237,15 @@ class EdgeTTSEngine:
                                     self.last_error = f"service_unavailable (cooldown {int(EDGE_NOAUDIO_COOLDOWN_SECONDS)}s)"
                                     if self.verbose:
                                         self._log(
-                                            f"   ⛔ Serviço indisponível - cooldown {int(EDGE_NOAUDIO_COOLDOWN_SECONDS)}s"
+                                            f"   ⛔ Service unavailable - cooldown {int(EDGE_NOAUDIO_COOLDOWN_SECONDS)}s"
                                         )
                                 else:
-                                    # Provável problema de payload; não abrir cooldown global
+                                    # Likely payload issue; do not open global cooldown
                                     self.last_error = "no_audio_payload"
                                     if self.verbose:
-                                        self._log("   ⚠️ Sem áudio (provável problema de conteúdo)")
+                                        self._log("   ⚠️ No audio (likely content issue)")
                             if is_cert_error:
-                                self._log("   ❌ Erro SSL persistente")
+                                self._log("   ❌ Persistent SSL error")
                             return False
             finally:
                 with suppress(Exception):

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Sistema de detecção e marcação de formatação de texto para diferenciação no áudio
+Text formatting detection and markup system for audio differentiation
 """
 
 import os
@@ -11,7 +11,7 @@ from typing import List, Optional, Sequence
 
 @dataclass
 class FormattingSegment:
-    """Segmento de texto com formatação específica"""
+    """Text segment with specific formatting"""
 
     text: str
     formatting: str  # 'normal', 'italic', 'bold', 'emphasis', 'strong', etc.
@@ -22,11 +22,11 @@ PRESERVE_TTS_LAYOUT = os.getenv("PRESERVE_TTS_LAYOUT", "1").lower() in ("1", "tr
 
 
 class TextFormattingProcessor:
-    """Processador de formatação de texto para diferenciação no áudio"""
+    """Text formatting processor for audio differentiation"""
 
     FORMAT_MARKER_RE = re.compile(r"\[\[fmt:[^\]]+\]\]|\[\[/fmt\]\]", re.IGNORECASE)
 
-    # Regexes pré-compiladas para strip_inline_markdown (otimização de performance)
+    # Pre-compiled regexes for strip_inline_markdown (performance optimization)
     _BOLD_ASTERISK_RE = re.compile(r"\*\*\s*(.+?)\s*\*\*", re.DOTALL)
     _BOLD_UNDERSCORE_RE = re.compile(r"__\s*(.+?)\s*__", re.DOTALL)
     _ITALIC_UNDERSCORE_RE = re.compile(r"_\s*([^_]+?)\s*_")
@@ -59,7 +59,7 @@ class TextFormattingProcessor:
 
         return text
 
-    # Padrões HTML/EPUB comuns para formatação
+    # Common HTML/EPUB formatting patterns
     FORMATTING_PATTERNS = {
         "italic": [
             r"<i\b[^>]*>(.*?)</i>",
@@ -88,7 +88,7 @@ class TextFormattingProcessor:
         ],
     }
 
-    # Marcadores internos para preservar formatação
+    # Internal markers to preserve formatting
     INTERNAL_MARKERS = {
         "italic": "[[fmt:italic]]{}[[/fmt]]",
         "bold": "[[fmt:bold]]{}[[/fmt]]",

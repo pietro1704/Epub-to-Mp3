@@ -52,10 +52,10 @@ class HardwareProfile:
     is_windows: bool = False
 
     # Derived recommendations
-    recommended_concurrency: int = 8  # Padrão mais agressivo para melhor performance
+    recommended_concurrency: int = 8  # More aggressive default for better performance
     recommended_parallel: bool = True
-    recommended_chapter_parallel: int = 3  # Padrão otimizado: processar 3 capítulos simultaneamente
-    performance_tier: str = "high"  # Padrão "high" para melhor performance
+    recommended_chapter_parallel: int = 3  # Optimized default: process 3 chapters simultaneously
+    performance_tier: str = "high"  # Default "high" for better performance
     ram_budget_gb: float = 0.0  # RAM amount converter is allowed to consume aggressively
     force_sequential: bool = False  # True when chapter-level parallelism would slow things down
 
@@ -347,12 +347,12 @@ class HardwareDetector:
         if profile.has_gpu:
             score += 10
 
-        # Determine tier (thresholds mais baixos para melhor classificação)
-        if score >= 70:  # Reduzido de 80
+        # Determine tier (lower thresholds for better classification)
+        if score >= 70:  # Reduced from 80
             profile.performance_tier = "ultra"
-        elif score >= 50:  # Reduzido de 60
+        elif score >= 50:  # Reduced from 60
             profile.performance_tier = "high"
-        elif score >= 35:  # Reduzido de 40
+        elif score >= 35:  # Reduced from 40
             profile.performance_tier = "medium"
         else:
             profile.performance_tier = "low"
@@ -422,7 +422,7 @@ class HardwareDetector:
         ram_limit = max(1, int(usable_ram / ram_per_segment))
         profile.recommended_concurrency = max(
             4, min(12, min(base_concurrency, ram_limit))
-        )  # Mínimo 4, máximo 12
+        )  # Minimum 4, maximum 12
 
         if profile.force_sequential:
             profile.recommended_concurrency = min(
@@ -441,24 +441,24 @@ class HardwareDetector:
 
             if profile.performance_tier == "ultra":
                 ram_per_chapter = 0.35 * memory_pressure_factor
-                hard_chapter_cap = 8  # Aumentado de 6 para 8
+                hard_chapter_cap = 8  # Increased from 6 to 8
                 cpu_guardrail = profile.cpu_physical + 2
-                min_parallel = 4  # Aumentado de 3 para 4
+                min_parallel = 4  # Increased from 3 to 4
             elif profile.performance_tier == "high":
                 ram_per_chapter = 0.4 * memory_pressure_factor
-                hard_chapter_cap = 6  # Aumentado de 5 para 6
+                hard_chapter_cap = 6  # Increased from 5 to 6
                 cpu_guardrail = profile.cpu_physical + 1
-                min_parallel = 3  # Sempre 3 em vez de 2-3
+                min_parallel = 3  # Always 3 instead of 2-3
             elif profile.performance_tier == "medium":
                 ram_per_chapter = 0.55 * memory_pressure_factor
-                hard_chapter_cap = 5  # Aumentado de 4 para 5
-                cpu_guardrail = max(3, profile.cpu_physical)  # Mínimo 3
-                min_parallel = 2  # Sempre 2 em vez de 1-2
+                hard_chapter_cap = 5  # Increased from 4 to 5
+                cpu_guardrail = max(3, profile.cpu_physical)  # Minimum 3
+                min_parallel = 2  # Always 2 instead of 1-2
             else:
                 ram_per_chapter = 0.75 * memory_pressure_factor
-                hard_chapter_cap = 3  # Aumentado de 2 para 3
-                cpu_guardrail = max(2, profile.cpu_physical)  # Mínimo 2
-                min_parallel = 2  # Aumentado de 1 para 2
+                hard_chapter_cap = 3  # Increased from 2 to 3
+                cpu_guardrail = max(2, profile.cpu_physical)  # Minimum 2
+                min_parallel = 2  # Increased from 1 to 2
 
             # **FIX**: Also reduce min_parallel when memory is tight
             if ram_utilization < 0.5:
@@ -581,22 +581,22 @@ class HardwareDetector:
             except ValueError:
                 os.environ[name] = str(minimum)
 
-        turbo_mode = _env_truthy("MAX_PERFORMANCE", True)  # Turbo mode SEMPRE ativo por padrão
+        turbo_mode = _env_truthy("MAX_PERFORMANCE", True)  # Turbo mode ALWAYS active by default
 
         edge_concurrency = profile.recommended_concurrency
         chapter_parallel = profile.recommended_chapter_parallel
 
         if turbo_mode:
-            # **PERFORMANCE**: Aumentar para usar máxima CPU/RAM disponível
+            # **PERFORMANCE**: Increase to use maximum available CPU/RAM
             if profile.performance_tier in ("ultra", "high"):
-                edge_concurrency = max(edge_concurrency, 16)  # Aumentado de 10 para 16
-                chapter_parallel = max(chapter_parallel, 8)  # Aumentado de 5 para 8
+                edge_concurrency = max(edge_concurrency, 16)  # Increased from 10 to 16
+                chapter_parallel = max(chapter_parallel, 8)  # Increased from 5 to 8
             elif profile.performance_tier == "medium":
-                edge_concurrency = max(edge_concurrency, 12)  # Aumentado de 7 para 12
-                chapter_parallel = max(chapter_parallel, 6)  # Aumentado de 3 para 6
+                edge_concurrency = max(edge_concurrency, 12)  # Increased from 7 to 12
+                chapter_parallel = max(chapter_parallel, 6)  # Increased from 3 to 6
             else:
-                edge_concurrency = max(edge_concurrency, 8)  # Aumentado de 5 para 8
-                chapter_parallel = max(chapter_parallel, 4)  # Aumentado de 2 para 4
+                edge_concurrency = max(edge_concurrency, 8)  # Increased from 5 to 8
+                chapter_parallel = max(chapter_parallel, 4)  # Increased from 2 to 4
 
         network_tier = (profile.network_speed_estimate or "fast").strip().lower()
         edge_profile = dict(
@@ -659,12 +659,12 @@ class HardwareDetector:
                 os.environ["EDGE_MAX_CONCURRENCY"] = str(adjusted)
 
         if turbo_mode:
-            # **PERFORMANCE**: Mais workers para máxima utilização de CPU
+            # **PERFORMANCE**: More workers for maximum CPU utilization
             desired_workers = max(
                 2,
                 min(
-                    16,  # Aumentado de 8 para 16
-                    profile.cpu_physical * 2,  # Usar logical cores
+                    16,  # Increased from 8 to 16
+                    profile.cpu_physical * 2,  # Use logical cores
                     chapter_parallel * 2,
                 ),
             )

@@ -217,7 +217,7 @@ class JobManager:
                     {
                         "jobId": job_id,
                         "state": state,
-                        "bookTitle": job_data.get("bookTitle", "Livro Desconhecido"),
+                        "bookTitle": job_data.get("bookTitle", "Unknown Book"),
                         "fileName": Path(job_data.get("file_path", "")).name
                         if job_data.get("file_path")
                         else "unknown",
