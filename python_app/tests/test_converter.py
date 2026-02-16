@@ -1129,6 +1129,228 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(result.output_files), 2)
         self.assertEqual(len(result.errors), 0)
 
+    async def test_auto_mode_selects_engine_per_chapter_during_conversion(self):
+        """Auto mode should decide engine for each chapter during sequential conversion."""
+        chapters = [
+            Chapter(1, "Short Chapter", "short.html", "short text " * 20),
+            Chapter(2, "Long Chapter", "long.html", "long text " * 4000),
+        ]
+
+        class RecordingEngine(MockTTSEngine):
+            def __init__(self, label: str):
+                super().__init__()
+                self.label = label
+                self.calls = 0
+
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                self.calls += 1
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"fake audio" * 400)  # > 1000 bytes
+                return output_path
+
+        edge_engine = RecordingEngine("edge")
+        coqui_engine = RecordingEngine("coqui")
+        output_dir = Path(self.temp_dir)
+
+        async def fake_convert_to_mp3(input_file, output_file, bitrate="8k"):
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"mp3" * 400)
+            return output_path
+
+        self.converter.audio_processor.convert_to_mp3 = fake_convert_to_mp3
+
+        auto_config = ConversionConfig(
+            engine="auto",
+            output_dir=str(output_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Auto Book",
+        )
+
+        edge_cfg = ConversionConfig(
+            engine="edge",
+            output_dir=str(output_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Auto Book",
+        )
+        coqui_cfg = ConversionConfig(
+            engine="coqui",
+            output_dir=str(output_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Auto Book",
+        )
+
+        auto_pool = {
+            "edge": (edge_cfg, edge_engine),
+            "coqui": (coqui_cfg, coqui_engine),
+        }
+
+        class DummyPool:
+            def __init__(self, pool):
+                self.pool = pool
+
+            async def acquire(self, name):
+                return self.pool[name]
+
+            def release(self, *_args, **_kwargs):
+                return None
+
+            def register_engine(self, name, config, engine_obj=None):
+                self.pool[name] = (config, engine_obj or self.pool[name][1])
+                return None
+
+        engine_pool = DummyPool(auto_pool)
+
+        with patch.object(
+            self.converter,
+            "_pick_auto_engine",
+            side_effect=[
+                ("edge", ["edge", "coqui"]),
+                ("coqui", ["coqui", "edge"]),
+            ],
+        ) as mock_pick:
+            with patch.object(self.converter, "_detect_short_audio_output", return_value=None):
+                result = await self.converter._convert_chapters_sequential(
+                    chapters,
+                    engine_pool,
+                    output_dir,
+                    auto_config,
+                    is_auto_engine=True,
+                    auto_engine_pool=auto_pool,
+                )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.converted_chapters, 2)
+        self.assertEqual(mock_pick.call_count, 2)
+        self.assertEqual(edge_engine.calls, 1)
+        self.assertEqual(coqui_engine.calls, 1)
+
+    async def test_auto_mode_parallel_forwards_pool_per_chapter(self):
+        """Parallel mode should invoke sequential worker with auto engine context."""
+        chapters = [
+            Chapter(1, "Chapter 1", "c1.html", "hello " * 400),
+            Chapter(2, "Chapter 2", "c2.html", "world " * 500),
+        ]
+        output_dir = Path(self.temp_dir)
+        auto_pool = {
+            "edge": (ConversionConfig(engine="edge", output_dir=str(output_dir)), object()),
+            "coqui": (ConversionConfig(engine="coqui", output_dir=str(output_dir)), object()),
+        }
+        config = ConversionConfig(
+            engine="auto",
+            output_dir=str(output_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Parallel Auto",
+        )
+        calls = []
+
+        class DummyPool:
+            def update_parallel_slots(self, _slots):
+                return None
+
+        async def fake_convert_seq(
+            chapters_arg,
+            _engine_pool,
+            _output_dir,
+            _config,
+            *,
+            is_auto_engine=False,
+            auto_engine_pool=None,
+            skip_preprocessing=False,
+            **_kwargs,
+        ):
+            chapter = chapters_arg[0]
+            calls.append(
+                {
+                    "index": chapter.index,
+                    "is_auto_engine": is_auto_engine,
+                    "auto_pool_identity": auto_engine_pool is auto_pool,
+                    "skip_preprocessing": skip_preprocessing,
+                }
+            )
+            return ConversionResult(
+                success=True,
+                total_chapters=1,
+                converted_chapters=1,
+                output_files=[output_dir / f"{chapter.index:03d}.mp3"],
+                errors=[],
+            )
+
+        with patch.object(
+            self.converter, "_convert_chapters_sequential", side_effect=fake_convert_seq
+        ):
+            result = await self.converter._convert_chapters_parallel(
+                chapters,
+                DummyPool(),
+                output_dir,
+                config,
+                max_concurrent_chapters=2,
+                skip_preprocessing=True,
+                is_auto_engine=True,
+                auto_engine_pool=auto_pool,
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.converted_chapters, 2)
+        self.assertEqual(len(calls), 2)
+        self.assertTrue(all(entry["is_auto_engine"] for entry in calls))
+        self.assertTrue(all(entry["auto_pool_identity"] for entry in calls))
+        self.assertTrue(all(entry["skip_preprocessing"] for entry in calls))
+        self.assertEqual(sorted(entry["index"] for entry in calls), [1, 2])
+
+    async def test_edge_retries_after_truncated_audio_and_succeeds(self):
+        """Edge conversion should retry the chapter when truncation is detected."""
+        chapter = Chapter(1, "Retry Chapter", "retry.html", "retry content " * 800)
+        output_dir = Path(self.temp_dir)
+
+        class FlakyEdgeTTS(MockTTSEngine):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                self.calls += 1
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                if self.calls == 1:
+                    output_path.write_bytes(b"x" * 80_000)
+                else:
+                    output_path.write_bytes(b"y" * 220_000)
+                return output_path
+
+        engine = FlakyEdgeTTS()
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=str(output_dir),
+            validate_audio=False,
+            validate_text=False,
+            force_reprocess=True,
+            book_title="Retry Book",
+        )
+
+        with patch.object(
+            self.converter,
+            "_detect_short_audio_output",
+            side_effect=["Audio possibly truncated", None],
+        ):
+            result = await self.converter._convert_chapters_sequential(
+                [chapter],
+                engine,
+                output_dir,
+                config,
+            )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.converted_chapters, 1)
+        self.assertFalse(result.errors)
+        self.assertEqual(engine.calls, 2, "chapter should be retried once after truncation")
+        self.assertEqual(len(result.output_files), 1)
+
     async def test_convert_chapters_with_errors(self):
         """Test chapter conversion with errors"""
         chapters = [

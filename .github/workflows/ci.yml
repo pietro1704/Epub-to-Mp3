@@ -30,9 +30,20 @@ jobs:
       - name: Run Python tests
         run: mise exec -- python -m pytest -v --tb=short
 
+      - name: Run Python lint
+        run: mise exec -- ruff check .
+
       - name: Run web tests
         working-directory: web
         run: mise exec -- npm test
+
+      - name: Run web lint
+        working-directory: web
+        run: mise exec -- npm run lint
+
+      - name: Run web build
+        working-directory: web
+        run: mise exec -- npm run build
 
       - name: Run sample conversion smoke
         env:

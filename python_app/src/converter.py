@@ -913,7 +913,7 @@ class AudioConverter:
 
                     if not target_file or not target_file.exists():
                         if self.verbose:
-                            print(f"   ⚠️  Chapter {chapter_num}: pre-tts.txt not encontrado")
+                            print(f"   ⚠️  Chapter {chapter_num}: pre-tts.txt not found")
                             print(
                                 f"      Arquivos disponíveis: {[f.name[:50] for f in pre_tts_files[:3]]}"
                             )
@@ -923,14 +923,14 @@ class AudioConverter:
                     text = target_file.read_text(encoding="utf-8")
                     if not text:
                         if self.verbose:
-                            print(f"   ⚠️  Chapter {chapter_num}: text vazio")
+                            print(f"   ⚠️  Chapter {chapter_num}: empty text")
                         continue
 
                     # Extrair nome do chapter do filename
                     chapter_name = target_file.stem.replace("-pre-tts", "")
 
                     if self.verbose:
-                        print(f"   🎙️  Chapter {chapter_num}: sintetizando MP3...")
+                        print(f"   🎙️  Chapter {chapter_num}: synthesizing MP3...")
 
                     # Sintetizar áudio
                     wav_file = await tts_engine.synthesize_async(
@@ -966,7 +966,7 @@ class AudioConverter:
 
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️  Error ao reconverter MP3s: {exc}")
+                print(f"⚠️  Error while reconverting MP3s: {exc}")
             return False
 
     async def _auto_validate_output(self, output_dir: Optional[Path], stage: str = "final") -> None:
@@ -3188,7 +3188,7 @@ class AudioConverter:
 
         if announce:
             print(
-                "🧯 Edge mode seguro: "
+                "🧯 Edge safe mode: "
                 f"{reason} → chunk={chunk_chars} seg={int(max_segment)}s parallel={state_current['current']}"
             )
         return announce
@@ -3264,7 +3264,7 @@ class AudioConverter:
 
         self._edge_auto_state = state
         if restored and self.verbose:
-            print(f"🚀 Edge mode seguro disabled: {reason}")
+            print(f"🚀 Edge safe mode disabled: {reason}")
         return restored
 
     def _maybe_exit_edge_slow_mode(
@@ -3396,7 +3396,7 @@ class AudioConverter:
         edge_state["slow_mode"] = True
         self._edge_auto_state = edge_state
 
-        profile_label = "mode seguro" if not aggressive else "mode seguro agressivo"
+        profile_label = "safe mode" if not aggressive else "aggressive safe mode"
         print(
             f"🛟 Edge retry ({profile_label}): {reason} → "
             f"chunk={chunk_chars} seg={int(max_segment)}s offline>={offline_chars} chars"
@@ -5125,7 +5125,7 @@ class AudioConverter:
                         engine_obj._chunk_char_limit = target_limit
                         adjusted = True
                 if adjusted and self.verbose:
-                    print(f"   🛠️ Coqui em mode seguro ({reason}): chunks=1600, workers=1")
+                    print(f"   🛠️ Coqui safe mode ({reason}): chunks=1600, workers=1")
             except Exception:
                 pass
 
@@ -5218,24 +5218,24 @@ class AudioConverter:
                 if seconds <= 0:
                     seconds = 12
                 if self.verbose:
-                    print(f"   ⚠️ Edge inavailable ({context}) - error: {last_error}")
+                    print(f"   ⚠️ Edge unavailable ({context}) - error: {last_error}")
                 nonlocal edge_unavailable_hits
                 edge_unavailable_hits += 1
                 if edge_unavailable_hits >= EDGE_MONOLINGUAL_THRESHOLD:
                     raise RuntimeError("edge_unavailable_threshold")
-                _maybe_apply_edge_slow_mode(f"Edge inavailable ({reason})", engine_obj=engine_obj)
+                _maybe_apply_edge_slow_mode(f"Edge unavailable ({reason})", engine_obj=engine_obj)
 
                 max_wait = min(seconds, 25)
                 if self.verbose:
                     print(
-                        f"   ⏳ Sem fallback available; aguardando {max_wait}s antes de tentar novamente..."
+                        f"   ⏳ No fallback available; waiting {max_wait}s antes de tentar novamente..."
                     )
                 waited = 0
                 while waited < max_wait:
                     chunk = min(3, max_wait - waited)
                     await asyncio.sleep(chunk)
                     waited += chunk
-                    self.progress.tick(f"⏳ Edge inavailable - aguardando {max_wait - waited}s...")
+                    self.progress.tick(f"⏳ Edge unavailable - waiting {max_wait - waited}s...")
                 return True
 
         def _resolve_tts_output_path(
@@ -5310,7 +5310,7 @@ class AudioConverter:
                         return
                     except Exception as e:
                         if self.verbose:
-                            print(f"   ⚠️ Kokoro inavailable: {e}")
+                            print(f"   ⚠️ Kokoro unavailable: {e}")
                         edge_switched_to_kokoro = True  # skip to piper
 
             # TIER 4: Piper after PIPER_THRESHOLD failures (from Kokoro or Edge)
@@ -5350,9 +5350,9 @@ class AudioConverter:
                             else:
                                 print("   ⚠️ Piper engine could not be loaded")
                         except Exception as e:
-                            print(f"   ⚠️ Error ao carregar Piper: {e}")
+                            print(f"   ⚠️ Error loading Piper: {e}")
                     else:
-                        print("   ⚠️ Modelo Piper not encontrado para este language")
+                        print("   ⚠️ Piper model not found for this language")
                 else:
                     print(f"\n⚠️ {edge_consecutive_failures} failures consecutive")
                     print("   ⚠️ Piper not installed - fallback is not possible")
@@ -5415,7 +5415,7 @@ class AudioConverter:
                     raise _RetryChapter(reason)
 
                 def _error_text(message: Optional[str]) -> str:
-                    return message or "Failure na synthesis"
+                    return message or "Synthesis failed"
 
                 # **RESTORED**: Usar progress tracker (apenas uma vez por chapter)
                 if not progress_started:
@@ -5513,7 +5513,7 @@ class AudioConverter:
                         threshold_seconds = max(getattr(config, "edge_auto_offline_seconds", 0), 0)
                         edge_reason = None
                         if threshold_chars and chapter_chars >= threshold_chars:
-                            edge_reason = f"Chapter muito grande ({chapter_chars} chars)"
+                            edge_reason = f"Chapter too large ({chapter_chars} chars)"
                         elif threshold_seconds and estimated_seconds >= threshold_seconds:
                             edge_reason = f"Chapter estimated at {int(estimated_seconds)}s"
                         if edge_reason and self.verbose:
@@ -5548,7 +5548,7 @@ class AudioConverter:
                                     engine_tracker["label"] = next_engine
                                     current_engine_label = next_engine
                                     continue
-                            chapter_error = f"Engine {current_engine_label} inavailable: {exc}"
+                            chapter_error = f"Engine {current_engine_label} unavailable: {exc}"
                             errors.append(f"{chapter.name}: {chapter_error}")
                             chapter_error = _error_text(chapter_error)
                             self.progress.complete_chapter(f"❌ {chapter_error}")
@@ -5595,13 +5595,13 @@ class AudioConverter:
                         and current_engine_label == "edge"
                     ):
                         self._apply_edge_slow_mode(
-                            "mode seguro ativo",
+                            "safe mode enabled",
                             engine_pool=engine_pool,
                             engine_obj=tts_engine,
                         )
                     elif current_engine_label == "edge" and chapter_chars >= EDGE_FORCE_SAFE_CHARS:
                         self._apply_edge_slow_mode(
-                            f"chapter muito grande ({chapter_chars} chars)",
+                            f"chapter too large ({chapter_chars} chars)",
                             engine_pool=engine_pool,
                             engine_obj=tts_engine,
                         )
@@ -5918,7 +5918,7 @@ class AudioConverter:
                                 fallback_timeout = max(120, min(int(timeout_seconds * 0.6), 600))
 
                             if self.verbose:
-                                print("   🔄 RETRY: Trying novamente sem marcas de language")
+                                print("   🔄 RETRY: Trying again without language markers")
                                 print(
                                     f"   📝 RETRY: {clean_chars} chars (timeout: {fallback_timeout}s)"
                                 )
@@ -6074,7 +6074,7 @@ class AudioConverter:
                                     f"TRIPLE TIMEOUT after {total_elapsed}s - all attempts failed"
                                 )
                                 if self.verbose:
-                                    print(f"   ❌ ERRO FINAL: {error_msg}")
+                                    print(f"   ❌ FINAL ERROR: {error_msg}")
                                 chapter_error = error_msg
                                 if (engine_tracker.get("label") or "").lower() == "edge":
                                     _edge_retry(error_msg)
@@ -6094,9 +6094,7 @@ class AudioConverter:
                             attempted_auto.add(next_engine)
                             engine_tracker["label"] = next_engine
                             if self.verbose:
-                                print(
-                                    f"   ⚡ AUTO: trocando para {next_engine} e tentando novamente"
-                                )
+                                print(f"   ⚡ AUTO: switching to {next_engine} and retrying")
                             tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
                                 output_path, next_engine
                             )
@@ -6224,7 +6222,7 @@ class AudioConverter:
                             engine_display = (current_engine_label or "engine").upper()
                             print(
                                 f"⏱️ [{engine_display}] Chapter {chapter_num} → "
-                                f"{chapter_elapsed:.1f}s para {chapter_chars} chars "
+                                f"{chapter_elapsed:.1f}s for {chapter_chars} chars "
                                 f"({throughput or '~0'} chars/s)"
                             )
                             if (
@@ -6237,7 +6235,7 @@ class AudioConverter:
                                 )
                                 if slow_cutoff and chapter_elapsed >= slow_cutoff * 1.4:
                                     if build_best_offline_engine(
-                                        f"Edge levou {int(chapter_elapsed)}s para este chapter"
+                                        f"Edge took {int(chapter_elapsed)}s for this chapter"
                                     ):
                                         if self.verbose:
                                             print(
@@ -6313,14 +6311,14 @@ class AudioConverter:
                                     if edge_consecutive_failures > 0 and self.verbose:
                                         print(
                                             f"   ✅ Audio complete ({coverage_percent:.1f}% do text) - "
-                                            f"resetando contador de failures consecutive"
+                                            f"resetting consecutive failures counter"
                                         )
                                     edge_consecutive_failures = 0
                         else:
-                            # Arquivo muito pequeno - likely corrompido
+                            # Output file too small - likely corrompido
                             if self.verbose:
                                 print(
-                                    f"   ⚠️ Arquivo muito pequeno ({file_size} bytes) - considerando failure"
+                                    f"   ⚠️ Output file too small ({file_size} bytes) - considerando failure"
                                 )
                             output_path.unlink(missing_ok=True)
                             synthesis_result = None  # Force retry
@@ -6343,7 +6341,7 @@ class AudioConverter:
                                 f"failure Edge ({reason})", engine_obj=tts_engine
                             )
                             chapter_error = (
-                                f"Edge inavailable ({reason})"
+                                f"Edge unavailable ({reason})"
                                 if reason != "unknown"
                                 else "Edge failed"
                             )
@@ -6500,7 +6498,7 @@ class AudioConverter:
 
                                             if self.verbose:
                                                 print(
-                                                    f"   ✅ RETRY: Success com text simplificado ({file_size} bytes)"
+                                                    f"   ✅ RETRY: Success with simplified text ({file_size} bytes)"
                                                 )
                                             self.progress.complete_chapter("✅ Success (retry)")
                                             chapter_elapsed = time.time() - start_time
@@ -6522,7 +6520,7 @@ class AudioConverter:
                                                     and chapter_elapsed >= slow_cutoff * 1.4
                                                 ):
                                                     if build_best_offline_engine(
-                                                        f"Edge levou {int(chapter_elapsed)}s para este chapter"
+                                                        f"Edge took {int(chapter_elapsed)}s for this chapter"
                                                     ):
                                                         if self.verbose:
                                                             print(
@@ -6558,19 +6556,19 @@ class AudioConverter:
                                     or "too many requests" in last_err.lower()
                                 ):
                                     _maybe_apply_edge_slow_mode(
-                                        "Rate limit detectado", engine_obj=tts_engine
+                                        "Rate limit detected", engine_obj=tts_engine
                                     )
                                     if hasattr(self, "progress"):
                                         self.progress.tick(
-                                            "⏳ Edge limitado; aplicando mode seguro e tentando novamente"
+                                            "⏳ Edge rate-limited; applying safe mode and retrying"
                                         )
 
                             # If all retries failed
-                            error_msg = "Failure na synthesis"
+                            error_msg = "Synthesis failed"
                             if hasattr(tts_engine, "last_error") and tts_engine.last_error:
                                 error_msg += f": {tts_engine.last_error}"
                             if self.verbose:
-                                print(f"   ❌ ERRO FINAL: {error_msg}")
+                                print(f"   ❌ FINAL ERROR: {error_msg}")
                             chapter_error = error_msg
                             if (
                                 engine_tracker.get("label") or (config.engine or "").lower()
@@ -6587,7 +6585,7 @@ class AudioConverter:
                 except Exception as e:
                     error_msg = f"Exception: {str(e)}"
                     if self.verbose:
-                        print(f"   ❌ ERRO DE EXCEPTION: {error_msg}")
+                        print(f"   ❌ EXCEPTION ERROR: {error_msg}")
                     chapter_error = error_msg
                     if (engine_tracker.get("label") or (config.engine or "").lower()) == "edge":
                         _edge_retry(error_msg)

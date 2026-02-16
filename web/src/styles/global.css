@@ -2023,6 +2023,11 @@ select {
   gap: 0.15rem;
 }
 
+.chapter-progress__engine {
+  font-size: 0.72rem;
+  color: var(--text-secondary);
+}
+
 .chapter-progress__time {
   font-size: 0.75rem;
   color: var(--text-secondary);

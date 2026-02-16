@@ -104,6 +104,7 @@ export interface ChapterProgressEntry {
   index: number;
   name: string;
   status: ChapterProgressStatus;
+  engine?: string;
   elapsedSeconds?: number;
   charsPerSecond?: number;
   downloadUrl?: string;

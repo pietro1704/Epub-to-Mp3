@@ -326,6 +326,7 @@ export interface StatusText {
   searchPrev: string;
   searchNext: string;
   chapterStatuses: Record<ChapterProgressStatus, string>;
+  chapterEngineLabel: (engine: string) => string;
   bookFallbackTitle: string;
   bookFallbackAuthor: string;
   uploadingFiles: string;
@@ -945,6 +946,7 @@ export const translations: Record<Locale, Translations> = {
         cancelled: "Cancelado",
         retrying: "Tentando novamente",
       },
+      chapterEngineLabel: (engine: string) => `Motor: ${engine.toUpperCase()}`,
       bookFallbackTitle: "Livro carregado",
       bookFallbackAuthor: "Autor desconhecido",
       uploadingFiles: "Enviando livros…",
@@ -1550,6 +1552,7 @@ export const translations: Record<Locale, Translations> = {
         cancelled: "Cancelled",
         retrying: "Retrying",
       },
+      chapterEngineLabel: (engine: string) => `Engine: ${engine.toUpperCase()}`,
       bookFallbackTitle: "Uploaded book",
       bookFallbackAuthor: "Unknown author",
       uploadingFiles: "Uploading books…",

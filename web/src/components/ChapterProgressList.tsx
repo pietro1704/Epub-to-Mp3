@@ -566,6 +566,7 @@ export default function ChapterProgressList({
         {entries.map((entry) => {
           const status = entry.status;
           const statusLabel = t.status.chapterStatuses?.[status] ?? status;
+          const entryEngine = entry.engine?.trim();
           const isExpanded = Boolean(expanded[entry.index]);
           const manifest = manifests[entry.index];
           const loading = Boolean(manifestLoading[entry.index]);
@@ -598,6 +599,12 @@ export default function ChapterProgressList({
                   aria-label={statusLabel}
                 >
                   {statusLabel}
+                  {entryEngine && (
+                    <span className="chapter-progress__engine">
+                      {" "}
+                      • {t.status.chapterEngineLabel(entryEngine)}
+                    </span>
+                  )}
                   {/* Retry information */}
                   {entry.status === "retrying" && (
                     <span className="chapter-progress__retry">

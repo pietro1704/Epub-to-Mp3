@@ -4507,13 +4507,19 @@ async def process_conversion(job_id: str) -> None:
                         job,
                         idx,
                         "retrying",
+                        engine_label=(config.engine or "auto"),
                         retry_count=attempt - 1,
                         max_retries=max_chapter_attempts,
                         retry_reason="Falha anterior",
                         param_adjustment="Parâmetros reduzidos",
                     )
                 else:
-                    _set_chapter_status(job, idx, "processing")
+                    _set_chapter_status(
+                        job,
+                        idx,
+                        "processing",
+                        engine_label=(config.engine or "auto"),
+                    )
                 _append_event(job, "")
                 _append_event(job, f"🎯 Convertendo capítulo {idx}/{len(chapters)}: {chapter_name}")
 
@@ -4615,6 +4621,12 @@ async def process_conversion(job_id: str) -> None:
                     local_active_config = available_auto[selected_engine]
                     _append_event(
                         job, f"⚡ AUTO: usando {selected_engine.upper()} para este capítulo"
+                    )
+                    _set_chapter_status(
+                        job,
+                        idx,
+                        "processing",
+                        engine_label=selected_engine,
                     )
                     est = TextValidator.estimate_duration(clean_text)
                     if est <= 0:
@@ -5137,6 +5149,11 @@ async def process_conversion(job_id: str) -> None:
                     idx,
                     "completed",
                     download_url=chapter_output["url"],
+                    engine_label=(
+                        local_active_config.engine
+                        if local_active_config
+                        else local_engine_name or config.engine
+                    ),
                     retry_count=retry_count,
                 )
                 _refresh_chapter_completion()
@@ -5718,6 +5735,7 @@ def _set_chapter_status(
     chapter_index: Optional[int],
     status: str,
     download_url: Optional[str] = None,
+    engine_label: Optional[str] = None,
     *,
     retry_count: Optional[int] = None,
     max_retries: Optional[int] = None,
@@ -5735,6 +5753,8 @@ def _set_chapter_status(
                 entry["status"] = status
                 if download_url:
                     entry["downloadUrl"] = download_url
+                if engine_label:
+                    entry["engine"] = str(engine_label).lower()
                 # Retry information
                 if retry_count is not None:
                     entry["retryCount"] = retry_count
@@ -5797,7 +5817,13 @@ async def _preload_existing_outputs(
         }
         existing_outputs.append(entry)
         completed_indices.add(idx)
-        _set_chapter_status(job, idx, "completed", download_url=download_url)
+        _set_chapter_status(
+            job,
+            idx,
+            "completed",
+            download_url=download_url,
+            engine_label=job.get("engine"),
+        )
     return existing_outputs, completed_indices
 
 
