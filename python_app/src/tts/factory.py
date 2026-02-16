@@ -134,8 +134,8 @@ class TTSFactory:
             coqui_supported = is_coqui_supported_environment()
             if not coqui_supported and not _is_testing_environment():
                 raise RuntimeError(
-                    "Coqui TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
-                    "Defina ENABLE_COQUI_TTS=1 para forçar o uso por sua conta e risco."
+                    "Coqui TTS unavailable on this system (NumPy/Accelerate incompatible). "
+                    "Set ENABLE_COQUI_TTS=1 to force usage at your own risk."
                 )
             from .coqui_engine import CoquiTTSEngine
 
@@ -159,8 +159,9 @@ class TTSFactory:
             piper_supported = is_piper_supported_environment()
             if not piper_supported and not _is_testing_environment():
                 raise RuntimeError(
-                    "Piper TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
-                    "Defina ENABLE_PIPER=1 para forçar o uso por sua conta e risco."
+                    "Piper TTS unavailable on this system. "
+                    "Ensure the 'piper' binary is installed (pip install piper-tts) "
+                    "or set ENABLE_PIPER=1 to force."
                 )
             from .piper_engine import PiperTTSEngine
 
@@ -186,8 +187,8 @@ class TTSFactory:
             kokoro_supported = is_kokoro_supported_environment()
             if not kokoro_supported and not _is_testing_environment():
                 raise RuntimeError(
-                    "Kokoro TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
-                    "Defina ENABLE_KOKORO=1 para forçar o uso por sua conta e risco."
+                    "Kokoro TTS unavailable on this system (NumPy/Accelerate incompatible). "
+                    "Set ENABLE_KOKORO=1 to force usage at your own risk."
                 )
             from .kokoro_engine import KokoroTTSEngine, kokoro_supports_language
 
@@ -224,8 +225,8 @@ class TTSFactory:
         if engine == "spark":
             if not is_spark_supported_environment():
                 raise RuntimeError(
-                    "Spark-TTS indisponível neste sistema (NumPy/Accelerate incompatível). "
-                    "Defina ENABLE_SPARK_TTS=1 para forçar o uso por sua conta e risco."
+                    "Spark-TTS unavailable on this system (NumPy/Accelerate incompatible). "
+                    "Set ENABLE_SPARK_TTS=1 to force usage at your own risk."
                 )
             from .spark_engine import SparkTTSEngine
 

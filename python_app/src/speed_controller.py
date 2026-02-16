@@ -412,6 +412,76 @@ class AdaptiveSpeedController:
 
         return None
 
+    def recommend_engine_for_chapter(
+        self,
+        chapter_chars: int,
+        available_engines: List[str],
+    ) -> Optional[str]:
+        """Pick the best engine for a specific chapter based on size and history.
+
+        Short chapters benefit from local engines (Piper/Kokoro) which avoid
+        network overhead.  Long chapters benefit from Edge which streams
+        efficiently.  When enough history exists the actual measured throughput
+        per size bucket overrides the heuristic.
+
+        Returns the recommended engine name or ``None`` when no recommendation
+        can be made (caller should fall back to the default ranking).
+        """
+        if not available_engines or chapter_chars <= 0:
+            return None
+
+        # --- Heuristic: chapter-size based preference ---
+        local_engines = [e for e in available_engines if e in ("piper", "kokoro")]
+        cloud_engines = [e for e in available_engines if e == "edge"]
+
+        # If we only have one type, nothing to decide
+        if not local_engines or not cloud_engines:
+            return None
+
+        # --- Data-driven: use actual throughput per size bucket ---
+        bucket = self._size_bucket(chapter_chars)
+        bucket_speeds: Dict[str, float] = {}
+        for engine in available_engines:
+            history = self._history.get(engine, deque())
+            matching = [
+                p
+                for p in history
+                if p.success
+                and not p.from_cache
+                and p.elapsed > 0
+                and self._size_bucket(p.chars) == bucket
+            ]
+            if matching:
+                bucket_speeds[engine] = sum(p.chars / p.elapsed for p in matching) / len(matching)
+
+        if bucket_speeds:
+            best = max(bucket_speeds, key=bucket_speeds.get)  # type: ignore[arg-type]
+            return best
+
+        # --- Fallback heuristic when no bucket data yet ---
+        # Short chapters: local engines avoid network latency
+        if chapter_chars < 5_000 and local_engines:
+            return local_engines[0]
+
+        # Medium chapters: no strong preference, let caller decide
+        if chapter_chars < 30_000:
+            return None
+
+        # Long chapters: Edge streams efficiently
+        if cloud_engines:
+            return cloud_engines[0]
+
+        return None
+
+    @staticmethod
+    def _size_bucket(chars: int) -> str:
+        """Categorise chapter length into a bucket for comparison."""
+        if chars < 5_000:
+            return "short"
+        if chars < 30_000:
+            return "medium"
+        return "long"
+
     def record_engine_switch(self, new_engine: str) -> None:
         """Record that we switched to a new engine."""
         self._current_engine = new_engine

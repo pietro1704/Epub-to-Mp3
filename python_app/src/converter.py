@@ -126,6 +126,9 @@ EDGE_AUTO_PARALLEL_CAPS = {
 }
 EDGE_MULTILINGUAL_RATE_CAP = _env_int("EDGE_MULTILINGUAL_RATE_CAP", 10)
 EDGE_MONOLINGUAL_RATE_CAP = _env_int("EDGE_MONOLINGUAL_RATE_CAP", 16)
+EDGE_OFFLINE_LONG_CHARS = _env_int("EDGE_OFFLINE_LONG_CHARS", 70000)
+EDGE_OFFLINE_LONG_RATIO = _env_float("EDGE_OFFLINE_LONG_RATIO", 0.35)
+EDGE_OFFLINE_TOTAL_CHARS = _env_int("EDGE_OFFLINE_TOTAL_CHARS", 1_200_000)
 
 # Validation thresholds
 TRUNCATION_THRESHOLD_PERCENT = _env_float(
@@ -250,6 +253,7 @@ class AudioConverter:
         self._last_chapters_for_text: Optional[List[Chapter]] = None
         self._memory_optimized = False
         self._thread_pools: List[weakref.ref] = []
+        self._chapter_stats: Dict[str, float] = {}
 
     def _optimize_memory_settings(self) -> None:
         """
@@ -2863,6 +2867,70 @@ class AudioConverter:
             text = getattr(chapter, "text", "") or ""
         return len(text or "")
 
+    def _analyze_chapter_stats(self, chapters: List[Chapter]) -> Dict[str, float]:
+        """Return summary statistics used to pick the fastest engine for the book."""
+        stats: Dict[str, float] = {
+            "count": len(chapters),
+            "max_chars": 0,
+            "avg_chars": 0,
+            "long_ratio": 0.0,
+            "total_chars": 0,
+            "prefer_offline_engine": False,
+        }
+        if not chapters:
+            return stats
+
+        lengths: List[int] = [max(0, self._estimate_chapter_chars(chapter)) for chapter in chapters]
+        total = sum(lengths)
+        stats["total_chars"] = total
+        stats["max_chars"] = max(lengths) if lengths else 0
+        stats["avg_chars"] = total / len(lengths)
+        long_threshold = EDGE_OFFLINE_LONG_CHARS
+        long_count = sum(1 for value in lengths if value >= long_threshold)
+        stats["long_ratio"] = long_count / len(lengths)
+
+        prefer_offline = False
+        reasons: List[str] = []
+        if stats["max_chars"] >= EDGE_OFFLINE_LONG_CHARS:
+            prefer_offline = True
+            reasons.append(f"capítulo com ~{stats['max_chars']:,} caracteres")
+        if stats["long_ratio"] >= EDGE_OFFLINE_LONG_RATIO:
+            prefer_offline = True
+            reasons.append(f"{int(stats['long_ratio'] * 100)}% dos capítulos são muito longos")
+        if stats["total_chars"] >= EDGE_OFFLINE_TOTAL_CHARS:
+            prefer_offline = True
+            reasons.append(f"{stats['total_chars']:,} caracteres totais")
+        stats["prefer_offline_engine"] = prefer_offline
+        if prefer_offline and reasons:
+            stats["offline_reason"] = "; ".join(reasons)
+            stats["prefer_piper_engine"] = True
+        return stats
+
+    def _apply_chapter_engine_preferences(
+        self, config: ConversionConfig, stats: Dict[str, float]
+    ) -> None:
+        """Adjust engine preferences based on chapter stats."""
+        if not stats or not stats.get("prefer_offline_engine"):
+            return
+        reason = stats.get("offline_reason")
+        if reason:
+            print(f"🎯 Capítulos longos detectados ({reason}) – priorizando engine offline.")
+        engine_name = (config.engine or "edge").lower()
+        if engine_name == "auto":
+            if _has_piper_support():
+                config.auto_prefer_piper = True
+                return
+            return
+        if engine_name == "edge":
+            if _has_piper_support():
+                print("   🔄 Alternando automaticamente para Piper para evitar rate-limit do Edge.")
+                config.engine = "piper"
+            elif _has_coqui_support():
+                print("   🔄 Alternando automaticamente para Coqui (offline).")
+                config.engine = "coqui"
+            else:
+                print("   ⚠️ Nenhuma engine offline disponível; permanecendo no Edge.")
+
     def _parse_chapter_whitelist(self, config: Optional[ConversionConfig]) -> List[str]:
         if not config or not getattr(config, "extra", None):
             return []
@@ -3658,6 +3726,10 @@ class AudioConverter:
         chapters, duplicates_removed = deduplicate_chapters_by_content(chapters)
         if duplicates_removed:
             print(f"  🧹 Removed {duplicates_removed} duplicate chapter(s) automatically")
+
+        chapter_stats = self._analyze_chapter_stats(chapters)
+        self._chapter_stats = chapter_stats
+        self._apply_chapter_engine_preferences(config, chapter_stats)
 
         # Validate chapter count against TOC (if available from CLI flow)
         expected_count = getattr(reader, "_toc_expected_chapters", 0)
@@ -6593,7 +6665,11 @@ class AudioConverter:
         )
 
     def _auto_engine_candidates(self, base_config: ConversionConfig) -> List[str]:
-        """Return preferred auto-mode engine order."""
+        """Return preferred auto-mode engine order.
+
+        Considers network quality, book size, and chapter stats to decide
+        whether a local engine (Piper) should be tried before Edge.
+        """
         candidates: List[str] = []
         prefer_piper = bool(getattr(base_config, "auto_prefer_piper", False))
         network_tier = (
@@ -6610,8 +6686,21 @@ class AudioConverter:
         except Exception:
             piper_voice = None
         has_piper = _has_piper_support() and bool(piper_voice)
+        stats = getattr(self, "_chapter_stats", None)
+        if stats and stats.get("prefer_offline_engine"):
+            prefer_offline = True
+            prefer_piper = True
+
+        # Small books: Piper avoids Edge network overhead (latency, rate limits)
+        if has_piper and stats and not prefer_piper:
+            total_chars = stats.get("total_chars", 0)
+            if 0 < total_chars < 50_000:
+                prefer_piper = True
+
         if has_piper and (prefer_piper or prefer_offline):
             candidates.append("piper")
+        elif prefer_offline and _has_coqui_support():
+            candidates.append("coqui")
         candidates.append("edge")
         if _has_coqui_support():
             candidates.append("coqui")
@@ -6703,55 +6792,62 @@ class AudioConverter:
         pool: Dict[str, tuple[ConversionConfig, object]],
     ) -> tuple[str, List[str]]:
         """
-        Pick the best engine based on real-time performance data.
+        Pick the best engine for this chapter based on its size and runtime
+        performance data.
 
-        Uses SpeedController's ranking system to choose the fastest engine.
-        Falls back to static ordering if no performance data available.
+        Priority order:
+        1. Chapter-size-aware recommendation (uses per-bucket throughput data
+           when available, otherwise heuristic based on chapter length).
+        2. SpeedController global ranking (recent performance across all sizes).
+        3. Static preferred order (network tier, config hints).
         """
         available_engines = list(pool.keys())
 
         if not available_engines:
             return ("edge", [])
 
-        # Get performance-based ranking from SpeedController
+        # --- 1. Chapter-size recommendation ---
+        size_pick = self.speed_controller.recommend_engine_for_chapter(
+            chapter_chars, available_engines
+        )
+
+        # --- 2. Global performance ranking ---
         rankings = self.speed_controller.get_engine_ranking(available_engines)
 
         if self.verbose and rankings:
             print("📊 Engine Rankings (based on recent performance):")
             for engine, score, reason in rankings:
-                print(f"   {engine}: {score:.1f}/100 ({reason})")
+                marker = " ← size pick" if engine == size_pick else ""
+                print(f"   {engine}: {score:.1f}/100 ({reason}){marker}")
 
-        # Use ranked order (best first)
         order = [engine for engine, _, _ in rankings]
 
-        # Fallback: if no ranking data, use static optimal order
+        # --- 3. Fallback to static order ---
         if not order:
             order = self._preferred_auto_engine_order(pool)
-
-        if "edge" in order:
-            order = ["edge"] + [name for name in order if name != "edge"]
-
         if not order:
             order = available_engines
 
-        selected = order[0]
+        # If size-aware pick differs from ranking, promote it to the front
+        if size_pick and size_pick in available_engines:
+            selected = size_pick
+            if size_pick != order[0]:
+                order = [size_pick] + [e for e in order if e != size_pick]
+        else:
+            selected = order[0]
 
-        # Check if we should switch from current engine
-        if (
-            hasattr(self.speed_controller, "_current_engine")
-            and self.speed_controller._current_engine
-        ):
-            current = self.speed_controller._current_engine
-            if current in available_engines and current != selected:
-                switch_recommendation = self.speed_controller.recommend_engine_switch(
-                    current, available_engines, verbose=self.verbose
-                )
-                if switch_recommendation:
-                    new_engine, reason = switch_recommendation
-                    print(f"🔄 AUTO: Switching {current} → {new_engine}")
-                    print(f"   Reason: {reason}")
-                    selected = new_engine
-                    self.speed_controller.record_engine_switch(new_engine)
+        # Check if speed controller recommends switching from current engine
+        current = getattr(self.speed_controller, "_current_engine", None)
+        if current and current in available_engines and current != selected:
+            switch_recommendation = self.speed_controller.recommend_engine_switch(
+                current, available_engines, verbose=self.verbose
+            )
+            if switch_recommendation:
+                new_engine, reason = switch_recommendation
+                print(f"🔄 AUTO: Switching {current} → {new_engine}")
+                print(f"   Reason: {reason}")
+                selected = new_engine
+                self.speed_controller.record_engine_switch(new_engine)
 
         return selected, order
 
@@ -6767,6 +6863,12 @@ class AudioConverter:
         )
         prefer_offline = str(network_tier or "").lower() == "slow"
         prefer_piper = bool(config and getattr(config, "auto_prefer_piper", False))
+        # Small books: prefer Piper (avoids Edge network overhead)
+        stats = getattr(self, "_chapter_stats", None)
+        if not prefer_piper and stats:
+            total_chars = stats.get("total_chars", 0)
+            if 0 < total_chars < 50_000:
+                prefer_piper = True
         if (prefer_piper or prefer_offline) and "piper" in pool:
             order.append("piper")
         base_candidates = ["edge"]

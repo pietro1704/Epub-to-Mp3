@@ -84,9 +84,9 @@ for arg in "$@"; do
 done
 
 EXTRA_ARGS=()
-# Default to Edge turbo unless overridden
+# Default to auto engine unless user specified one
 if [ "$ENGINE_PRESENT" -eq 0 ]; then
-    EXTRA_ARGS+=(--engine edge)
+    EXTRA_ARGS+=(--engine auto)
 fi
 if [ "$VERBOSE_PRESENT" -eq 0 ]; then
     EXTRA_ARGS+=(--verbose)

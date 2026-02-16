@@ -16,7 +16,12 @@ from unittest.mock import AsyncMock, Mock, patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import ConversionConfig
-from src.converter import AudioConverter, ChapterProcessor, ConversionResult
+from src.converter import (
+    EDGE_OFFLINE_LONG_CHARS,
+    AudioConverter,
+    ChapterProcessor,
+    ConversionResult,
+)
 from src.ebook_reader import Chapter
 from src.text_formatting import TextFormattingProcessor
 
@@ -173,6 +178,41 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(cached, [], "Cached MP3s must be ignored when force_reprocess=True")
         self.assertEqual(pending, [chapter], "All chapters should be reprocessed")
+
+    def test_analyze_chapter_stats_flags_prefer_offline(self):
+        """Very long chapters should trigger offline recommendation."""
+        chapter_long = Chapter(1, "Long", "c1.html", "x" * (EDGE_OFFLINE_LONG_CHARS + 5000))
+        chapter_short = Chapter(2, "Short", "c2.html", "brief text")
+        stats = self.converter._analyze_chapter_stats([chapter_long, chapter_short])
+        self.assertTrue(stats["prefer_offline_engine"])
+        self.assertIn("capítulo", stats.get("offline_reason", ""))
+
+    @patch("src.converter._has_piper_support", return_value=True)
+    @patch("src.converter._has_coqui_support", return_value=False)
+    def test_apply_chapter_engine_preferences_auto(self, mock_coqui, mock_piper):
+        """Auto mode should prefer Piper when offline recommended."""
+        config = ConversionConfig(engine="auto", output_dir=self.temp_dir)
+        stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
+        self.converter._apply_chapter_engine_preferences(config, stats)
+        self.assertTrue(config.auto_prefer_piper)
+
+    @patch("src.converter._has_piper_support", return_value=True)
+    @patch("src.converter._has_coqui_support", return_value=False)
+    def test_apply_chapter_engine_preferences_switches_edge(self, mock_coqui, mock_piper):
+        """Explicit Edge engine should switch to Piper when available."""
+        config = ConversionConfig(engine="edge", output_dir=self.temp_dir)
+        stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
+        self.converter._apply_chapter_engine_preferences(config, stats)
+        self.assertEqual(config.engine, "piper")
+
+    @patch("src.converter._has_piper_support", return_value=False)
+    @patch("src.converter._has_coqui_support", return_value=True)
+    def test_apply_chapter_engine_preferences_coqui_fallback(self, mock_coqui, mock_piper):
+        """If Piper unavailable, prefer Coqui for offline recommendation."""
+        config = ConversionConfig(engine="edge", output_dir=self.temp_dir)
+        stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
+        self.converter._apply_chapter_engine_preferences(config, stats)
+        self.assertEqual(config.engine, "coqui")
 
     def test_spot_check_text_against_epub(self):
         """Spot-check should ensure snippets from EPUB exist in payload."""
