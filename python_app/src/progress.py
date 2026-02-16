@@ -302,7 +302,18 @@ class ProgressTracker:
         progress_fraction = min(max(progress_fraction, 0.001), 0.999)
 
         remaining_fraction = 1.0 - progress_fraction
-        return max(elapsed * (remaining_fraction / progress_fraction), 0.0)
+        raw_eta = max(elapsed * (remaining_fraction / progress_fraction), 0.0)
+
+        # Cap ETA when we have no real progress data yet (prevents absurd estimates)
+        # If no chunks/chars have been processed, we're just guessing — show "--" equivalent
+        has_progress_data = (
+            self.completed_chapters > 0 or self.processed_chunks > 0 or self.processed_chars > 0
+        )
+        if not has_progress_data:
+            # No data yet: don't guess, just show elapsed as a rough placeholder
+            return elapsed * 2  # Conservative: assume we're ~halfway through setup
+
+        return raw_eta
 
     def _generate_progress_bar(self, progress_pct: float, bar_width: int = 30) -> str:
         filled = int(bar_width * progress_pct / 100)

@@ -7,12 +7,57 @@ import asyncio
 import contextlib
 import os
 import platform
+import re
 import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _IS_MACOS = platform.system().lower() == "darwin"
+
+# Chunk size for parallel Piper synthesis (env-configurable)
+_PIPER_CHUNK_CHARS = int(os.environ.get("PIPER_CHUNK_CHARS", "3000"))
+
+
+def _split_text_into_chunks(text: str, max_chars: int) -> List[str]:
+    """Split text into chunks at sentence boundaries, respecting max_chars."""
+    if len(text) <= max_chars:
+        return [text]
+
+    chunks: List[str] = []
+    remaining = text
+
+    while remaining:
+        if len(remaining) <= max_chars:
+            chunks.append(remaining)
+            break
+
+        # Find the best split point near max_chars
+        candidate = remaining[:max_chars]
+        # Prefer splitting at sentence end (.!?\n)
+        split_pos = -1
+        for pattern in (r"[.!?]\s", r"\n"):
+            for m in re.finditer(pattern, candidate):
+                split_pos = m.end()
+        # Fallback: split at last space
+        if split_pos < max_chars // 2:
+            last_space = candidate.rfind(" ")
+            if last_space > max_chars // 2:
+                split_pos = last_space + 1
+        # Last resort: hard split
+        if split_pos < max_chars // 2:
+            split_pos = max_chars
+
+        chunk = remaining[:split_pos].rstrip()
+        if chunk:
+            chunks.append(chunk)
+        remaining = remaining[split_pos:].lstrip()
+
+    return chunks
+
+
 _DISABLE_NATIVE_DEPENDENCIES = _IS_MACOS and os.environ.get("FORCE_PIPER_NATIVE_DEPS", "0") != "1"
 
 # Optional dependencies resolved lazily to avoid crashes in restricted environments.
@@ -215,7 +260,13 @@ class PiperTTSEngine:
         if len(segments) == 1:
             lang, segment_text = segments[0]
             model = self._resolve_model_for_language(lang)
-            return await self._synthesize_single(segment_text, output_path, model)
+            return await self._synthesize_chunked(
+                segment_text,
+                output_path,
+                model,
+                progress_callback=progress_callback,
+                chunk_callback=chunk_callback,
+            )
 
         if np is None or sf is None:
             combined_text = " ".join(segment for _, segment in segments)
@@ -278,6 +329,116 @@ class PiperTTSEngine:
                     temp_path.unlink()
 
         return output_path if Path(output_path).exists() else None
+
+    async def _synthesize_chunked(
+        self,
+        text: str,
+        output_path: Path,
+        model_path: Path,
+        progress_callback=None,
+        chunk_callback=None,
+    ) -> Optional[Path]:
+        """Synthesize text with parallel chunking for large inputs.
+
+        Splits text into chunks of ~PIPER_CHUNK_CHARS, synthesizes them in
+        parallel (bounded by semaphore), and concatenates WAV outputs.
+        For short texts, falls back to single-shot synthesis.
+        """
+        chunks = _split_text_into_chunks(text, _PIPER_CHUNK_CHARS)
+
+        # Short text: single shot (no overhead)
+        if len(chunks) <= 1:
+            return await self._synthesize_single(text, output_path, model_path)
+
+        # Need ffmpeg for concatenation
+        if not shutil.which("ffmpeg"):
+            # Fallback: single shot
+            return await self._synthesize_single(text, output_path, model_path)
+
+        temp_dir = output_path.parent
+        temp_files: List[Path] = []
+        try:
+            # Create temp files for each chunk
+            for idx in range(len(chunks)):
+                tf = tempfile.NamedTemporaryFile(
+                    delete=False,
+                    suffix=".wav",
+                    dir=temp_dir,
+                    prefix=f"piper_chunk{idx:03d}_",
+                )
+                tf.close()
+                temp_files.append(Path(tf.name))
+
+            # Synthesize all chunks in parallel (semaphore limits concurrency)
+            tasks = []
+            for idx, (chunk_text, temp_path) in enumerate(zip(chunks, temp_files)):
+                tasks.append(self._synthesize_single(chunk_text, temp_path, model_path))
+
+            results = await asyncio.gather(*tasks)
+
+            # Check all succeeded
+            for idx, result in enumerate(results):
+                if result is None:
+                    return None
+                if progress_callback:
+                    try:
+                        progress_callback(chunks[idx], len(text))
+                    except Exception:
+                        pass
+                if chunk_callback:
+                    try:
+                        chunk_callback(idx, temp_files[idx], chunks[idx])
+                    except (TypeError, Exception):
+                        pass
+
+            # Concatenate WAV files using ffmpeg
+            concat_list = tempfile.NamedTemporaryFile(
+                delete=False,
+                suffix=".txt",
+                dir=temp_dir,
+                prefix="piper_concat_",
+            )
+            try:
+                for tf in temp_files:
+                    concat_list.write(f"file '{tf}'\n".encode("utf-8"))
+                concat_list.close()
+
+                wav_out = output_path.with_suffix(".wav")
+                proc = subprocess.run(
+                    [
+                        "ffmpeg",
+                        "-y",
+                        "-f",
+                        "concat",
+                        "-safe",
+                        "0",
+                        "-i",
+                        str(concat_list.name),
+                        "-c",
+                        "copy",
+                        str(wav_out),
+                    ],
+                    capture_output=True,
+                    timeout=120,
+                )
+                if proc.returncode != 0 or not wav_out.exists():
+                    return None
+
+                # If output_path expects wav, we're done
+                if output_path.suffix.lower() == ".wav":
+                    if wav_out != output_path:
+                        wav_out.rename(output_path)
+                    return output_path if output_path.exists() else None
+
+                # Otherwise move wav to the expected output
+                wav_out.rename(output_path)
+                return output_path if output_path.exists() else None
+            finally:
+                Path(concat_list.name).unlink(missing_ok=True)
+        finally:
+            for tf in temp_files:
+                with contextlib.suppress(OSError):
+                    tf.unlink()
 
     def _resolve_model_for_language(self, language: Optional[str]) -> Path:
         code = (language or "").split("-", 1)[0].lower()

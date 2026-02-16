@@ -7,7 +7,7 @@ NATIVE_BIN="$BIN_DIR/piper-native"
 PYTHON_SHIM="$BIN_DIR/piper"
 
 if [ ! -d "$VENV_DIR" ]; then
-  echo "⚠️  .venv não encontrado; rode 'mise run install' primeiro."
+  echo "⚠️  .venv not found; run 'mise run install' first."
   exit 0
 fi
 
@@ -30,7 +30,7 @@ case "$PLATFORM" in
     fi
     ;;
   *)
-    echo "⚠️ Plataforma $PLATFORM/$ARCH não suportada para download automático do Piper."
+    echo "⚠️ Platform $PLATFORM/$ARCH not supported for automatic Piper download."
     exit 0
     ;;
 esac
@@ -39,22 +39,30 @@ BASE_URL="${PIPER_RELEASE_BASE:-https://github.com/OHF-Voice/piper1-gpl/releases
 DOWNLOAD_URL="${BASE_URL}/${ASSET}"
 TMP_FILE="$(mktemp)"
 
-echo "⬇️  Baixando Piper nativo (${ASSET})..."
-if curl -L "$DOWNLOAD_URL" -o "$TMP_FILE"; then
-  chmod +x "$TMP_FILE"
-  mkdir -p "$BIN_DIR"
-  mv "$TMP_FILE" "$NATIVE_BIN"
-else
-  echo "⚠️  Não foi possível baixar ${ASSET}. Verifique sua conexão e rode novamente."
-  rm -f "$TMP_FILE"
-  exit 0
-fi
+echo "⬇️  Downloading native Piper (${ASSET})..."
+HTTP_CODE=$(curl -L -w "%{http_code}" "$DOWNLOAD_URL" -o "$TMP_FILE" 2>/dev/null || echo "000")
 
-if [ -x "$PYTHON_SHIM" ] && [ ! -f "${PYTHON_SHIM}-python" ]; then
-  mv "$PYTHON_SHIM" "${PYTHON_SHIM}-python"
+if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ] && [ -s "$TMP_FILE" ]; then
+  # Validate the downloaded file is a real binary, not an HTML error page
+  FILE_TYPE=$(file -b "$TMP_FILE" 2>/dev/null || echo "unknown")
+  if echo "$FILE_TYPE" | grep -qiE "executable|Mach-O|ELF|script"; then
+    chmod +x "$TMP_FILE"
+    mkdir -p "$BIN_DIR"
+    mv "$TMP_FILE" "$NATIVE_BIN"
+
+    if [ -x "$PYTHON_SHIM" ] && [ ! -f "${PYTHON_SHIM}-python" ]; then
+      mv "$PYTHON_SHIM" "${PYTHON_SHIM}-python"
+    fi
+    ln -sf "piper-native" "$PYTHON_SHIM"
+    echo "✅ Native Piper installed at $PYTHON_SHIM"
+  else
+    echo "⚠️  Downloaded file is not a valid binary (got: $FILE_TYPE). Keeping pip piper."
+    rm -f "$TMP_FILE"
+  fi
+else
+  echo "⚠️  Could not download ${ASSET} (HTTP $HTTP_CODE). Keeping pip piper."
+  rm -f "$TMP_FILE"
 fi
-ln -sf "piper-native" "$PYTHON_SHIM"
-echo "✅ Piper nativo instalado em $PYTHON_SHIM"
 
 MODELS_DIR="models"
 mkdir -p "$MODELS_DIR"
@@ -62,14 +70,14 @@ MODEL_FILE="$MODELS_DIR/pt_BR-faber-medium.onnx"
 CONFIG_FILE="$MODELS_DIR/pt_BR-faber-medium.onnx.json"
 
 if [ ! -f "$MODEL_FILE" ] || [ ! -f "$CONFIG_FILE" ]; then
-  echo "⬇️  Baixando modelo padrão do Piper (pt_BR-faber-medium)..."
+  echo "⬇️  Downloading default Piper model (pt_BR-faber-medium)..."
   MODEL_BASE="${PIPER_MODEL_BASE:-https://huggingface.co/rhasspy/piper-voices/resolve/main/pt}"
-  if curl -L "${MODEL_BASE}/pt_BR-faber-medium.onnx" -o "$MODEL_FILE" \
-     && curl -L "${MODEL_BASE}/pt_BR-faber-medium.onnx.json" -o "$CONFIG_FILE"; then
-    echo "✅ Modelo salvo em $MODEL_FILE"
+  if curl -fL "${MODEL_BASE}/pt_BR-faber-medium.onnx" -o "$MODEL_FILE" \
+     && curl -fL "${MODEL_BASE}/pt_BR-faber-medium.onnx.json" -o "$CONFIG_FILE"; then
+    echo "✅ Model saved to $MODEL_FILE"
   else
-    echo "⚠️  Falha ao baixar o modelo padrão. Baixe manualmente e coloque em $MODELS_DIR."
+    echo "⚠️  Failed to download default model. Download manually to $MODELS_DIR."
   fi
 else
-  echo "ℹ️  Modelo pt_BR-faber-medium já existente."
+  echo "ℹ️  Model pt_BR-faber-medium already present."
 fi

@@ -56,8 +56,9 @@ if [ $# -eq 0 ]; then
     exit 1
 fi
 
-# Check if file exists
+# Check if file exists (expand ~ to $HOME)
 BOOK_PATH="$1"
+BOOK_PATH="${BOOK_PATH/#\~/$HOME}"
 if [ ! -f "$BOOK_PATH" ]; then
     echo "❌ Error: File not found: $BOOK_PATH"
     exit 1
@@ -93,7 +94,8 @@ if [ "$VERBOSE_PRESENT" -eq 0 ]; then
 fi
 
 # Run conversion with optimal settings through mise-managed Python
-"${PYTHON_CMD[@]}" -m python_app.main convert "$@" "${EXTRA_ARGS[@]}"
+# Use expanded BOOK_PATH instead of $1, pass remaining args as-is
+"${PYTHON_CMD[@]}" -m python_app.main convert "$BOOK_PATH" "${@:2}" "${EXTRA_ARGS[@]}"
 
 # Print completion
 echo ""
