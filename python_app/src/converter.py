@@ -980,6 +980,8 @@ class AudioConverter:
         Run validate_conversion.validate_book to cross-check EPUB, cache and MP3.
 
         Best-effort: failures are logged only in verbose mode.
+        Skipped when a chapter filter is active (--chapter) because the
+        full-book validator would flag every non-requested chapter as missing.
         """
         try:
             if stage not in {"final", "cache-only", "test", "initial"}:
@@ -987,6 +989,14 @@ class AudioConverter:
             config = self._active_config
             if not config or getattr(config, "auto_validate_output", True) is False:
                 return
+
+            # Skip full-book validation when only specific chapters were requested
+            chapter_filter_active = bool(self._parse_chapter_whitelist(config)) or bool(
+                (config.extra or {}).get("selected_indices", "").strip()
+            )
+            if chapter_filter_active:
+                return
+
             epub_path = getattr(self, "_current_book_path", None)
             if not epub_path or not Path(epub_path).exists():
                 return
