@@ -271,7 +271,7 @@ def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     asyncio.run(server.process_conversion(job_id))
     job = server.jobs[job_id]
     assert job["state"] == "finished"
-    assert any("tentando fallback" in event for event in job["events"])
+    assert any("trying fallback" in event for event in job["events"])
     assert all(entry["status"] == "completed" for entry in job.get("chapterProgress", []))
     assert all(entry.get("engine") for entry in job.get("chapterProgress", []))
     assert job["outputs"], "expected generated assets"
@@ -312,7 +312,7 @@ def test_edge_fallbacks_to_piper_when_coqui_fails(tmp_path, monkeypatch):
     asyncio.run(server.process_conversion(job_id))
     job = server.jobs[job_id]
     assert job["state"] == "finished"
-    assert any("Agora usando PIPER" in event for event in job["events"])
+    assert any("Now using PIPER" in event for event in job["events"])
     assert job["chapterProgress"]
     assert all(entry["status"] == "completed" for entry in job["chapterProgress"])
     assert all(entry.get("engine") for entry in job["chapterProgress"])
