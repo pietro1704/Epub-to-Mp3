@@ -701,6 +701,7 @@ class EdgeTTSEngine:
         formatting_segments=None,
         progress_callback=None,
         chunk_callback=None,
+        pre_segment_callback=None,
         resume_chunks_dir: Optional[Path] = None,
     ) -> Optional[Path]:
         if not text:
@@ -819,6 +820,7 @@ class EdgeTTSEngine:
                 force_plain_segments,
                 progress_callback=progress_callback,
                 chunk_callback=chunk_callback,
+                pre_segment_callback=pre_segment_callback,
                 pre_existing_chunks=pre_existing_chunks,
             )
 
@@ -842,6 +844,10 @@ class EdgeTTSEngine:
                     if simplified_segment:
                         segment_text = simplified_segment
                         force_plain_segments = True
+
+                if pre_segment_callback:
+                    with suppress(Exception):
+                        pre_segment_callback(segment_text, total_text_chars or len(segment_text))
 
                 if use_chunk_files:
                     existing_chunk = pre_existing_chunks.get(idx)
@@ -1114,6 +1120,7 @@ class EdgeTTSEngine:
         force_plain_segments: bool,
         progress_callback=None,
         chunk_callback=None,
+        pre_segment_callback=None,
         pre_existing_chunks: Optional[Dict[int, Path]] = None,
     ) -> Optional[Path]:
         """Process segments in parallel batches for faster synthesis."""
@@ -1199,6 +1206,11 @@ class EdgeTTSEngine:
                     simplified = self._simplify_segment_text(segment_text, limit_chars=None)
                     if simplified:
                         segment_text = simplified
+
+                if pre_segment_callback:
+                    with suppress(Exception):
+                        total_chars = sum(len(text) for _, text in segments_to_process)
+                        pre_segment_callback(segment_text, total_chars or len(segment_text))
 
                 # **INTEGRITY TRACKING**: Record segment as pending before synthesis
                 if self._synthesis_tracker:
@@ -1351,6 +1363,10 @@ class EdgeTTSEngine:
                 retry_path = Path(temp_file.name)
 
                 try:
+                    if pre_segment_callback:
+                        with suppress(Exception):
+                            total_chars = sum(len(text) for _, text in segments_to_process)
+                            pre_segment_callback(segment_text, total_chars or len(segment_text))
                     success = await self._synthesize_segment(
                         segment_text,
                         voice or self.voice,

@@ -164,6 +164,23 @@ class PiperTTSEngine:
         self.formatting_locale = locale_root
         self.formatting_cues_enabled = bool(formatting_cues_enabled)
         self._semaphore = self._resolve_semaphore(max_procs)
+        self._chunk_char_limit = _PIPER_CHUNK_CHARS
+
+    def _effective_chunk_chars(self) -> int:
+        """Resolve chunk size dynamically so converter auto-tuning can update it at runtime."""
+        try:
+            runtime_limit = int(getattr(self, "_chunk_char_limit", 0) or 0)
+        except (TypeError, ValueError):
+            runtime_limit = 0
+        if runtime_limit > 0:
+            return runtime_limit
+        try:
+            env_limit = int(os.environ.get("PIPER_CHUNK_CHARS", "").strip() or "0")
+        except ValueError:
+            env_limit = 0
+        if env_limit > 0:
+            return env_limit
+        return _PIPER_CHUNK_CHARS
 
     @staticmethod
     def _resolve_semaphore(max_procs: Optional[int]) -> asyncio.Semaphore:
@@ -193,6 +210,7 @@ class PiperTTSEngine:
         formatting_segments=None,
         progress_callback=None,
         chunk_callback=None,
+        pre_segment_callback=None,
     ) -> Optional[Path]:
         if not text:
             return None
@@ -266,6 +284,7 @@ class PiperTTSEngine:
                 model,
                 progress_callback=progress_callback,
                 chunk_callback=chunk_callback,
+                pre_segment_callback=pre_segment_callback,
             )
 
         if np is None or sf is None:
@@ -289,6 +308,9 @@ class PiperTTSEngine:
                 temp_path = Path(temp_file.name)
                 temp_files.append(temp_path)
                 model = self._resolve_model_for_language(language)
+                if pre_segment_callback:
+                    with contextlib.suppress(Exception):
+                        pre_segment_callback(segment_text, len(text))
                 result = await self._synthesize_single(segment_text, temp_path, model)
                 if result is None:
                     return None
@@ -337,6 +359,7 @@ class PiperTTSEngine:
         model_path: Path,
         progress_callback=None,
         chunk_callback=None,
+        pre_segment_callback=None,
     ) -> Optional[Path]:
         """Synthesize text with parallel chunking for large inputs.
 
@@ -344,10 +367,13 @@ class PiperTTSEngine:
         parallel (bounded by semaphore), and concatenates WAV outputs.
         For short texts, falls back to single-shot synthesis.
         """
-        chunks = _split_text_into_chunks(text, _PIPER_CHUNK_CHARS)
+        chunks = _split_text_into_chunks(text, self._effective_chunk_chars())
 
         # Short text: single shot (no overhead)
         if len(chunks) <= 1:
+            if pre_segment_callback:
+                with contextlib.suppress(Exception):
+                    pre_segment_callback(text, len(text))
             return await self._synthesize_single(text, output_path, model_path)
 
         # Need ffmpeg for concatenation
@@ -372,6 +398,9 @@ class PiperTTSEngine:
             # Synthesize all chunks in parallel (semaphore limits concurrency)
             tasks = []
             for idx, (chunk_text, temp_path) in enumerate(zip(chunks, temp_files)):
+                if pre_segment_callback:
+                    with contextlib.suppress(Exception):
+                        pre_segment_callback(chunk_text, len(text))
                 tasks.append(self._synthesize_single(chunk_text, temp_path, model_path))
 
             results = await asyncio.gather(*tasks)

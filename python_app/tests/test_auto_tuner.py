@@ -73,6 +73,7 @@ class TestAutoTuner(unittest.IsolatedAsyncioTestCase):
             "EDGE_MAX_CONCURRENCY",
             "EDGE_CHUNK_CHARS",
             "COQUI_MAX_WORKERS",
+            "PIPER_MAX_PROCS",
         ]:
             os.environ.pop(key, None)
 
@@ -81,6 +82,7 @@ class TestAutoTuner(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(os.environ["EDGE_MAX_CONCURRENCY"], str(profile.edge_max_concurrency))
         self.assertEqual(os.environ["EDGE_CHUNK_CHARS"], str(profile.edge_chunk_chars))
         self.assertEqual(os.environ["COQUI_MAX_WORKERS"], str(profile.coqui_max_workers))
+        self.assertEqual(os.environ["PIPER_MAX_PROCS"], str(profile.piper_max_workers))
 
     def test_apply_profile_respects_existing_vars(self):
         """Apply profile should not override existing vars unless force=True."""

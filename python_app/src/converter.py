@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import csv
 import gc
 import hashlib
+import html
 import inspect
 import json
 import os
@@ -19,6 +21,7 @@ import threading
 import time
 import unicodedata
 import weakref
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -254,6 +257,24 @@ class AudioConverter:
         self._memory_optimized = False
         self._thread_pools: List[weakref.ref] = []
         self._chapter_stats: Dict[str, float] = {}
+        self._segment_adaptive_state: Dict[str, Any] = {
+            "last_event_by_chapter": {},
+            "engine_cps": {},
+            "last_adjustment": 0.0,
+            "cooldown_seconds": 20.0,
+            "up_streak": 0,
+            "down_streak": 0,
+            "pre_reduce_streak": 0,
+            "pre_hold_streak": 0,
+        }
+        self._edge_circuit_state: Dict[str, Any] = {
+            "open": False,
+            "failures": 0,
+            "threshold": 2,
+            "opened_at": 0.0,
+            "cooldown_seconds": 900.0,
+            "last_reason": "",
+        }
 
     def _optimize_memory_settings(self) -> None:
         """
@@ -415,6 +436,647 @@ class AudioConverter:
         except Exception as exc:
             if self.verbose:
                 print(f"⚠️  Error recording adaptive progress: {exc}")
+
+    def _runtime_metrics_path(self, output_dir: Optional[Path] = None) -> Optional[Path]:
+        target_dir = output_dir or self._last_output_dir
+        if not target_dir:
+            return None
+        try:
+            target_dir = Path(target_dir)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            return target_dir / "_runtime_metrics.jsonl"
+        except Exception:
+            return None
+
+    def _append_runtime_metric(
+        self, payload: Dict[str, Any], output_dir: Optional[Path] = None
+    ) -> None:
+        path = self._runtime_metrics_path(output_dir)
+        if path is None:
+            return
+        event = dict(payload or {})
+        event.setdefault("ts", time.time())
+        try:
+            self._rotate_runtime_metrics_if_needed(path)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to persist runtime metric")
+
+    @staticmethod
+    def _failure_checkpoint_path(output_dir: Optional[Path]) -> Optional[Path]:
+        if not output_dir:
+            return None
+        try:
+            base = Path(output_dir)
+            base.mkdir(parents=True, exist_ok=True)
+            return base / "_failure_checkpoint.json"
+        except Exception:
+            return None
+
+    def _load_failure_checkpoint(self, output_dir: Optional[Path]) -> Dict[str, Any]:
+        path = self._failure_checkpoint_path(output_dir)
+        if path is None or not path.exists():
+            return {}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            return payload if isinstance(payload, dict) else {}
+        except Exception:
+            return {}
+
+    def _save_failure_checkpoint(
+        self,
+        output_dir: Optional[Path],
+        *,
+        failed_chapters: Iterable[str],
+        edge_blocked_chapters: Optional[Iterable[str]] = None,
+    ) -> None:
+        path = self._failure_checkpoint_path(output_dir)
+        if path is None:
+            return
+        try:
+            failed = sorted({str(item).strip() for item in failed_chapters if str(item).strip()})
+            blocked = sorted(
+                {str(item).strip() for item in (edge_blocked_chapters or []) if str(item).strip()}
+            )
+            resume_chunks: Dict[str, Dict[str, int]] = {}
+            chunks_root = path.parent / "chunks"
+            if chunks_root.exists():
+                for chapter_dir in chunks_root.glob("chapter_*"):
+                    if not chapter_dir.is_dir():
+                        continue
+                    chunk_files = list(chapter_dir.glob("chunk_*.mp3"))
+                    manifest_entries = 0
+                    manifest_path = chapter_dir / "manifest.json"
+                    if manifest_path.exists():
+                        with contextlib.suppress(Exception):
+                            manifest_data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                            if isinstance(manifest_data, list):
+                                manifest_entries = len(manifest_data)
+                    resume_chunks[chapter_dir.name] = {
+                        "chunk_files": len(chunk_files),
+                        "manifest_entries": manifest_entries,
+                    }
+            payload = {
+                "updated_at": time.time(),
+                "failed_chapters": failed,
+                "edge_blocked_chapters": blocked,
+                "resume_chunks": resume_chunks,
+            }
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to save failure checkpoint")
+
+    def _clear_failure_checkpoint(self, output_dir: Optional[Path]) -> None:
+        path = self._failure_checkpoint_path(output_dir)
+        if path is None:
+            return
+        with contextlib.suppress(OSError):
+            path.unlink(missing_ok=True)
+
+    def _rotate_runtime_metrics_if_needed(self, path: Path, max_bytes: int = 2_000_000) -> None:
+        try:
+            if not path.exists():
+                return
+            if path.stat().st_size < max_bytes:
+                return
+            timestamp = time.strftime("%Y%m%d-%H%M%S")
+            rotated = path.with_name(f"{path.stem}.{timestamp}{path.suffix}")
+            path.replace(rotated)
+            siblings = sorted(
+                path.parent.glob(f"{path.stem}.*{path.suffix}"),
+                key=lambda candidate: candidate.stat().st_mtime,
+                reverse=True,
+            )
+            for stale in siblings[5:]:
+                with contextlib.suppress(OSError):
+                    stale.unlink(missing_ok=True)
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to rotate runtime metrics")
+
+    def _write_runtime_metrics_summary(self, output_dir: Optional[Path] = None) -> None:
+        metrics_path = self._runtime_metrics_path(output_dir)
+        if metrics_path is None or not metrics_path.exists():
+            return
+        event_counts: Counter[str] = Counter()
+        engine_counts: Counter[str] = Counter()
+        failure_counts: Counter[str] = Counter()
+        edge_blocked_chapters: Set[str] = set()
+        chapters_total = 0
+        chapters_ok = 0
+        switches = 0
+        total_events = 0
+        try:
+            with metrics_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except Exception:
+                        continue
+                    total_events += 1
+                    event = str(payload.get("event") or "unknown")
+                    event_counts[event] += 1
+                    engine = str(payload.get("engine") or "").strip().lower()
+                    if engine:
+                        engine_counts[engine] += 1
+                    if event == "chapter_complete":
+                        chapters_total += 1
+                        if bool(payload.get("success")):
+                            chapters_ok += 1
+                    if event == "engine_switch":
+                        switches += 1
+                    if event == "edge_blocked_chapter":
+                        chapter_label = str(
+                            payload.get("chapter_label") or payload.get("chapter") or ""
+                        ).strip()
+                        if chapter_label:
+                            edge_blocked_chapters.add(chapter_label)
+                    if "failed" in event or "failure" in event:
+                        failure_counts[event] += 1
+
+            summary = {
+                "generated_at": time.time(),
+                "metrics_file": str(metrics_path),
+                "total_events": total_events,
+                "chapters": {
+                    "total": chapters_total,
+                    "successful": chapters_ok,
+                    "failed": max(0, chapters_total - chapters_ok),
+                },
+                "engine_events": dict(sorted(engine_counts.items())),
+                "event_counts": dict(sorted(event_counts.items())),
+                "failures": dict(sorted(failure_counts.items())),
+                "engine_switches": switches,
+                "edge_blocked_chapters": {
+                    "count": len(edge_blocked_chapters),
+                    "chapters": sorted(edge_blocked_chapters),
+                },
+            }
+            summary_path = metrics_path.with_name("metrics-summary.json")
+            summary_path.write_text(
+                json.dumps(summary, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to write runtime metrics summary")
+
+    def _write_runtime_metrics_csv(self, output_dir: Optional[Path] = None) -> None:
+        metrics_path = self._runtime_metrics_path(output_dir)
+        if metrics_path is None or not metrics_path.exists():
+            return
+        chapter_engine_rows: Dict[tuple[str, str], Dict[str, Any]] = {}
+        try:
+            with metrics_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except Exception:
+                        continue
+                    if str(payload.get("event") or "") != "chapter_complete":
+                        continue
+                    chapter = str(payload.get("chapter") or "").strip()
+                    engine = str(payload.get("engine") or "").strip().lower()
+                    if not chapter or not engine:
+                        continue
+                    key = (chapter, engine)
+                    row = chapter_engine_rows.setdefault(
+                        key,
+                        {
+                            "chapter": chapter,
+                            "engine": engine,
+                            "attempts": 0,
+                            "successes": 0,
+                            "failures": 0,
+                            "total_chars": 0,
+                            "total_elapsed_s": 0.0,
+                            "last_error": "",
+                        },
+                    )
+                    row["attempts"] += 1
+                    chars = int(payload.get("chars") or 0)
+                    elapsed = float(payload.get("elapsed_s") or 0.0)
+                    row["total_chars"] += max(0, chars)
+                    row["total_elapsed_s"] += max(0.0, elapsed)
+                    if bool(payload.get("success")):
+                        row["successes"] += 1
+                    else:
+                        row["failures"] += 1
+                        row["last_error"] = str(payload.get("error") or "")[:240]
+
+            csv_path = metrics_path.with_name("metrics-chapter-engine.csv")
+            fieldnames = [
+                "chapter",
+                "engine",
+                "attempts",
+                "successes",
+                "failures",
+                "total_chars",
+                "total_elapsed_s",
+                "avg_chars_per_second",
+                "last_error",
+            ]
+            with csv_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writeheader()
+                for key in sorted(
+                    chapter_engine_rows.keys(),
+                    key=lambda item: (str(item[0]), str(item[1])),
+                ):
+                    row = chapter_engine_rows[key]
+                    elapsed_total = float(row["total_elapsed_s"] or 0.0)
+                    avg_cps = (
+                        float(row["total_chars"]) / elapsed_total if elapsed_total > 0 else 0.0
+                    )
+                    writer.writerow(
+                        {
+                            "chapter": row["chapter"],
+                            "engine": row["engine"],
+                            "attempts": row["attempts"],
+                            "successes": row["successes"],
+                            "failures": row["failures"],
+                            "total_chars": row["total_chars"],
+                            "total_elapsed_s": f"{elapsed_total:.3f}",
+                            "avg_chars_per_second": f"{avg_cps:.3f}",
+                            "last_error": row["last_error"],
+                        }
+                    )
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to write runtime metrics CSV")
+
+    def _write_runtime_metrics_dashboard(self, output_dir: Optional[Path] = None) -> None:
+        metrics_path = self._runtime_metrics_path(output_dir)
+        if metrics_path is None:
+            return
+        summary_path = metrics_path.with_name("metrics-summary.json")
+        csv_path = metrics_path.with_name("metrics-chapter-engine.csv")
+        if not summary_path.exists():
+            return
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            chapters = summary.get("chapters", {}) if isinstance(summary, dict) else {}
+            total_events = (
+                int(summary.get("total_events", 0) or 0) if isinstance(summary, dict) else 0
+            )
+            switches = (
+                int(summary.get("engine_switches", 0) or 0) if isinstance(summary, dict) else 0
+            )
+            blocked_info = (
+                summary.get("edge_blocked_chapters", {}) if isinstance(summary, dict) else {}
+            )
+            blocked_count = (
+                int(blocked_info.get("count", 0) or 0) if isinstance(blocked_info, dict) else 0
+            )
+            blocked_list = (
+                blocked_info.get("chapters", []) if isinstance(blocked_info, dict) else []
+            )
+            rows_html = ""
+            if csv_path.exists():
+                with csv_path.open("r", encoding="utf-8") as handle:
+                    reader = csv.DictReader(handle)
+                    rows = list(reader)
+                for row in rows:
+                    rows_html += (
+                        "<tr>"
+                        f"<td>{html.escape(str(row.get('chapter', '')))}</td>"
+                        f"<td>{html.escape(str(row.get('engine', '')))}</td>"
+                        f"<td>{html.escape(str(row.get('attempts', '')))}</td>"
+                        f"<td>{html.escape(str(row.get('successes', '')))}</td>"
+                        f"<td>{html.escape(str(row.get('failures', '')))}</td>"
+                        f"<td>{html.escape(str(row.get('avg_chars_per_second', '')))}</td>"
+                        f"<td>{html.escape(str(row.get('last_error', '')))}</td>"
+                        "</tr>"
+                    )
+            blocked_html = "".join(
+                f"<li>{html.escape(str(chapter))}</li>" for chapter in (blocked_list or [])
+            )
+            dashboard = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Conversion Metrics Dashboard</title>
+  <style>
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #1b1f24; }}
+    h1 {{ margin: 0 0 12px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }}
+    .card {{ border: 1px solid #d0d7de; border-radius: 8px; padding: 12px; background: #f6f8fa; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+    th, td {{ border: 1px solid #d0d7de; padding: 8px; text-align: left; vertical-align: top; }}
+    th {{ background: #f3f4f6; }}
+  </style>
+</head>
+<body>
+  <h1>Conversion Metrics Dashboard</h1>
+  <div class="grid">
+    <div class="card"><strong>Total events</strong><br>{total_events}</div>
+    <div class="card"><strong>Chapters ok</strong><br>{int(chapters.get('successful', 0) or 0)}/{int(chapters.get('total', 0) or 0)}</div>
+    <div class="card"><strong>Engine switches</strong><br>{switches}</div>
+    <div class="card"><strong>Edge blocked chapters</strong><br>{blocked_count}</div>
+  </div>
+  <h2>Chapter/Engine Attempts</h2>
+  <table>
+    <thead>
+      <tr><th>Chapter</th><th>Engine</th><th>Attempts</th><th>Successes</th><th>Failures</th><th>Avg chars/s</th><th>Last error</th></tr>
+    </thead>
+    <tbody>{rows_html}</tbody>
+  </table>
+  <h2>Edge Blocked Chapters</h2>
+  <ul>{blocked_html}</ul>
+</body>
+</html>
+"""
+            dashboard_path = metrics_path.with_name("metrics-dashboard.html")
+            dashboard_path.write_text(dashboard, encoding="utf-8")
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to write metrics dashboard")
+
+    def _apply_detected_runtime_defaults(
+        self,
+        config: ConversionConfig,
+        *,
+        network_tier: str,
+        auto_engine_pool: Optional[Dict[str, tuple[ConversionConfig, object]]] = None,
+    ) -> None:
+        """Apply HW/network driven defaults and propagate to runtime engine configs."""
+        profile = self.hardware_profile
+        cpu_physical = max(1, int(getattr(profile, "cpu_physical", 2) or 2))
+        ram_total = float(getattr(profile, "ram_total_gb", 0.0) or 0.0)
+        tier = (network_tier or "fast").strip().lower()
+
+        targets: List[ConversionConfig] = [config]
+        if auto_engine_pool:
+            for pooled_config, _ in auto_engine_pool.values():
+                if pooled_config is not None and pooled_config not in targets:
+                    targets.append(pooled_config)
+
+        for cfg in targets:
+            engine_name = (cfg.engine or "").lower()
+            if engine_name == "piper":
+                if getattr(cfg, "piper_max_procs", None) is None:
+                    piper_cap = max(1, min(4, cpu_physical))
+                    if ram_total < 8:
+                        piper_cap = min(piper_cap, 2)
+                    if tier in {"slow", "medium"}:
+                        piper_cap = max(1, min(piper_cap, max(1, cpu_physical // 2)))
+                    cfg.piper_max_procs = piper_cap
+                os.environ.setdefault("PIPER_MAX_PROCS", str(max(1, int(cfg.piper_max_procs or 1))))
+                os.environ.setdefault(
+                    "PIPER_CHUNK_CHARS",
+                    str(2600 if ram_total < 8 else 3200),
+                )
+            elif engine_name == "coqui":
+                if getattr(cfg, "coqui_max_workers", None) is None:
+                    workers = 1 if ram_total < 8 else min(4, max(1, cpu_physical // 2))
+                    cfg.coqui_max_workers = workers
+                if getattr(cfg, "coqui_chunk_chars", None) is None:
+                    cfg.coqui_chunk_chars = 1200 if ram_total < 8 else 1800
+                os.environ.setdefault(
+                    "COQUI_MAX_WORKERS", str(max(1, int(cfg.coqui_max_workers or 1)))
+                )
+                os.environ.setdefault(
+                    "COQUI_CHUNK_CHARS", str(max(800, int(cfg.coqui_chunk_chars or 1200)))
+                )
+
+        if auto_engine_pool:
+            for name, (pooled_config, engine_obj) in auto_engine_pool.items():
+                engine_name = (name or "").lower()
+                if engine_name == "piper" and engine_obj is not None:
+                    target = max(1, int(getattr(pooled_config, "piper_max_procs", 1) or 1))
+                    with contextlib.suppress(Exception):
+                        setattr(engine_obj, "_semaphore", asyncio.Semaphore(target))
+                if engine_name == "coqui" and engine_obj is not None:
+                    chunk_limit = int(getattr(pooled_config, "coqui_chunk_chars", 0) or 0)
+                    if chunk_limit > 0:
+                        with contextlib.suppress(Exception):
+                            setattr(engine_obj, "_chunk_char_limit", chunk_limit)
+
+    def _record_segment_success(
+        self,
+        *,
+        engine_label: str,
+        chapter_index: int,
+        segment_chars: int,
+        engine_pool: Optional[JobEnginePool] = None,
+        config: Optional[ConversionConfig] = None,
+    ) -> None:
+        """Adapt runtime parameters using successful segment/chunk telemetry."""
+        engine = (engine_label or "").lower()
+        if segment_chars <= 0:
+            return
+
+        state = self._segment_adaptive_state
+        now = time.time()
+        chapter_key = f"{engine}:{chapter_index}"
+        chapter_times = state.setdefault("last_event_by_chapter", {})
+        prev_ts = chapter_times.get(chapter_key)
+        chapter_times[chapter_key] = now
+        if prev_ts is None:
+            return
+
+        elapsed = max(now - float(prev_ts), 0.001)
+        cps = float(segment_chars) / elapsed
+        engine_cps = state.setdefault("engine_cps", {})
+        history = engine_cps.setdefault(engine, [])
+        history.append(cps)
+        if len(history) > 16:
+            del history[0 : len(history) - 16]
+        avg_cps = sum(history) / len(history)
+
+        cooldown = float(state.get("cooldown_seconds", 10.0) or 10.0)
+        last_adjustment = float(state.get("last_adjustment", 0.0) or 0.0)
+        if (now - last_adjustment) < cooldown:
+            return
+
+        snapshot = self._resource_snapshot()
+        current_parallel = max(1, int(self._parallel_state.get("current") or 1))
+        ceiling_parallel = max(
+            current_parallel, int(self._parallel_state.get("ceiling") or current_parallel)
+        )
+        new_parallel = current_parallel
+        reason = None
+
+        if snapshot.ram_gb < 0.45 and current_parallel > 1:
+            state["down_streak"] = int(state.get("down_streak", 0) or 0) + 1
+            state["up_streak"] = 0
+            if state["down_streak"] >= 2:
+                new_parallel = current_parallel - 1
+                reason = f"segment telemetry: low RAM ({snapshot.ram_gb:.1f} GB)"
+        elif snapshot.cpu_percent > 95 and avg_cps < 100 and current_parallel > 1:
+            state["down_streak"] = int(state.get("down_streak", 0) or 0) + 1
+            state["up_streak"] = 0
+            if state["down_streak"] >= 2:
+                new_parallel = current_parallel - 1
+                reason = (
+                    f"segment telemetry: CPU saturation ({int(snapshot.cpu_percent)}%) with low cps"
+                )
+        elif (
+            snapshot.cpu_percent < 75
+            and snapshot.ram_gb > 1.0
+            and avg_cps > 170
+            and current_parallel < ceiling_parallel
+        ):
+            state["up_streak"] = int(state.get("up_streak", 0) or 0) + 1
+            state["down_streak"] = 0
+            if state["up_streak"] >= 3:
+                new_parallel = current_parallel + 1
+                reason = f"segment telemetry: stable throughput (~{int(avg_cps)} chars/s)"
+        else:
+            state["up_streak"] = 0
+            state["down_streak"] = 0
+
+        new_parallel = max(1, min(ceiling_parallel, new_parallel))
+        if new_parallel != current_parallel:
+            self._parallel_state["current"] = new_parallel
+            if engine_pool is not None:
+                engine_pool.update_parallel_slots(new_parallel)
+            state["last_adjustment"] = now
+            state["up_streak"] = 0
+            state["down_streak"] = 0
+            if self.verbose and reason:
+                print(f"⚙️ {reason} → {new_parallel} chapter(s) in parallel")
+            return
+
+        if not config:
+            return
+
+        tuned = False
+        if engine == "piper":
+            chunk_chars = int(os.getenv("PIPER_CHUNK_CHARS", "3000") or "3000")
+            new_chunk = chunk_chars
+            if avg_cps > 200 and snapshot.cpu_percent < 85:
+                new_chunk = min(6000, chunk_chars + 300)
+            elif avg_cps < 120 or snapshot.cpu_percent > 95:
+                new_chunk = max(1800, chunk_chars - 300)
+            if new_chunk != chunk_chars:
+                os.environ["PIPER_CHUNK_CHARS"] = str(new_chunk)
+                tuned = True
+                if self.verbose:
+                    print(f"⚙️ Piper adaptive chunk: {chunk_chars} → {new_chunk} (seg ok)")
+        elif engine == "coqui":
+            chunk_chars = int(os.getenv("COQUI_CHUNK_CHARS", "1500") or "1500")
+            new_chunk = chunk_chars
+            if avg_cps > 120 and snapshot.cpu_percent < 88:
+                new_chunk = min(4000, chunk_chars + 200)
+            elif avg_cps < 70 or snapshot.cpu_percent > 95:
+                new_chunk = max(900, chunk_chars - 200)
+            if new_chunk != chunk_chars:
+                os.environ["COQUI_CHUNK_CHARS"] = str(new_chunk)
+                config.coqui_chunk_chars = new_chunk
+                tuned = True
+                if self.verbose:
+                    print(f"⚙️ Coqui adaptive chunk: {chunk_chars} → {new_chunk} (seg ok)")
+        elif engine == "edge":
+            edge_chunk = int(os.getenv("EDGE_CHUNK_CHARS", "12000") or "12000")
+            new_chunk = edge_chunk
+            if avg_cps > 240 and snapshot.cpu_percent < 85:
+                new_chunk = min(24000, edge_chunk + 500)
+            elif avg_cps < 140 or snapshot.cpu_percent > 95:
+                new_chunk = max(4000, edge_chunk - 500)
+            if new_chunk != edge_chunk:
+                os.environ["EDGE_CHUNK_CHARS"] = str(new_chunk)
+                if config is not None:
+                    config.edge_chunk_chars = new_chunk
+                tuned = True
+                if self.verbose:
+                    print(f"⚙️ Edge adaptive chunk: {edge_chunk} → {new_chunk} (seg ok)")
+
+        if tuned:
+            state["last_adjustment"] = now
+
+    def _pre_segment_health_check(
+        self,
+        *,
+        engine_label: str,
+        segment_chars: int,
+        engine_pool: Optional[JobEnginePool] = None,
+        config: Optional[ConversionConfig] = None,
+        engine_obj: Optional[object] = None,
+    ) -> None:
+        """Run health checks before each segment and proactively adjust parameters."""
+        engine = (engine_label or "").lower()
+        if segment_chars <= 0:
+            return
+
+        snapshot = self._resource_snapshot()
+        current_parallel = max(1, int(self._parallel_state.get("current") or 1))
+        ceiling_parallel = max(
+            current_parallel, int(self._parallel_state.get("ceiling") or current_parallel)
+        )
+
+        reduced_parallel = current_parallel
+        if snapshot.ram_gb < 0.4 and current_parallel > 1:
+            state = self._segment_adaptive_state
+            state["pre_reduce_streak"] = int(state.get("pre_reduce_streak", 0) or 0) + 1
+            state["pre_hold_streak"] = 0
+            if state["pre_reduce_streak"] >= 2:
+                reduced_parallel = current_parallel - 1
+        elif snapshot.cpu_percent > 97 and current_parallel > 1:
+            state = self._segment_adaptive_state
+            state["pre_reduce_streak"] = int(state.get("pre_reduce_streak", 0) or 0) + 1
+            state["pre_hold_streak"] = 0
+            if state["pre_reduce_streak"] >= 2:
+                reduced_parallel = current_parallel - 1
+        else:
+            state = self._segment_adaptive_state
+            state["pre_hold_streak"] = int(state.get("pre_hold_streak", 0) or 0) + 1
+            if state["pre_hold_streak"] >= 2:
+                state["pre_reduce_streak"] = 0
+
+        reduced_parallel = max(1, min(ceiling_parallel, reduced_parallel))
+        if reduced_parallel != current_parallel:
+            self._parallel_state["current"] = reduced_parallel
+            if engine_pool is not None:
+                engine_pool.update_parallel_slots(reduced_parallel)
+            state = self._segment_adaptive_state
+            state["pre_reduce_streak"] = 0
+            state["pre_hold_streak"] = 0
+            if self.verbose:
+                print(
+                    f"🩺 Pre-segment check: reducing parallelism {current_parallel}→{reduced_parallel}"
+                )
+
+        if engine == "edge":
+            if config is not None:
+                chunk_chars = int(getattr(config, "edge_chunk_chars", 12000) or 12000)
+                if snapshot.cpu_percent > 95 and segment_chars > 8000:
+                    chunk_chars = max(4000, chunk_chars - 1000)
+                elif snapshot.cpu_percent < 75 and segment_chars > 12000:
+                    chunk_chars = min(24000, chunk_chars + 500)
+                config.edge_chunk_chars = chunk_chars
+                os.environ["EDGE_CHUNK_CHARS"] = str(chunk_chars)
+            if engine_obj is not None and hasattr(engine_obj, "apply_speed_profile"):
+                with contextlib.suppress(Exception):
+                    engine_obj.apply_speed_profile(
+                        chunk_char_limit=max(4000, int(getattr(config, "edge_chunk_chars", 12000))),
+                    )
+        elif engine == "piper":
+            chunk_chars = int(os.getenv("PIPER_CHUNK_CHARS", "3000") or "3000")
+            if snapshot.cpu_percent > 95:
+                chunk_chars = max(1800, chunk_chars - 300)
+            elif snapshot.cpu_percent < 75 and segment_chars > 6000:
+                chunk_chars = min(6000, chunk_chars + 200)
+            os.environ["PIPER_CHUNK_CHARS"] = str(chunk_chars)
+        elif engine == "coqui":
+            chunk_chars = int(os.getenv("COQUI_CHUNK_CHARS", "1500") or "1500")
+            if snapshot.cpu_percent > 95:
+                chunk_chars = max(900, chunk_chars - 200)
+            elif snapshot.cpu_percent < 75 and segment_chars > 6000:
+                chunk_chars = min(4000, chunk_chars + 150)
+            os.environ["COQUI_CHUNK_CHARS"] = str(chunk_chars)
+            if config is not None:
+                config.coqui_chunk_chars = chunk_chars
 
     async def _auto_validate_and_retry_async(
         self, output_dir: Path, epub_path: Path, cache_dir: Optional[Path], max_retries: int = 10
@@ -3751,6 +4413,40 @@ class AudioConverter:
                 empty_result = ConversionResult(True, 0, 0, [], [])
                 await self._report_results(empty_result)
                 return empty_result
+        resume_from_failure = True
+        if getattr(config, "extra", None):
+            resume_raw = config.extra.get("resume_from_failure")
+            if resume_raw is not None:
+                resume_from_failure = str(resume_raw).lower() in {"1", "true", "yes", "on"}
+        if resume_from_failure:
+            checkpoint = self._load_failure_checkpoint(temp_dir)
+            failed_labels = (
+                checkpoint.get("failed_chapters", []) if isinstance(checkpoint, dict) else []
+            )
+            if isinstance(failed_labels, list) and failed_labels:
+                failed_set = {str(item).strip() for item in failed_labels if str(item).strip()}
+                resumed_chapters: List[Chapter] = []
+                for idx, chapter in enumerate(chapters, start=1):
+                    chapter_num = self._chapter_number(chapter, idx)
+                    chapter_label = self._chapter_display_name(chapter, chapter_num)
+                    chapter_name = str(getattr(chapter, "name", "") or "").strip()
+                    if (
+                        str(chapter_num) in failed_set
+                        or chapter_label in failed_set
+                        or chapter_name in failed_set
+                    ):
+                        resumed_chapters.append(chapter)
+                if resumed_chapters and len(resumed_chapters) < len(chapters):
+                    print(
+                        f"🔁 Resume-from-failure: retrying only {len(resumed_chapters)}/{len(chapters)} failed chapter(s)"
+                    )
+                    chapters = resumed_chapters
+            if isinstance(checkpoint, dict):
+                blocked = checkpoint.get("edge_blocked_chapters", [])
+                if blocked:
+                    if getattr(config, "extra", None) is None:
+                        config.extra = {}
+                    config.extra["edge_blocked_chapters"] = list(blocked)
 
         # Set chapters_for_text AFTER filtering
         chapters_for_text = chapters
@@ -3905,6 +4601,17 @@ class AudioConverter:
             cpu_physical = 0
             with contextlib.suppress(Exception):
                 cpu_physical = psutil.cpu_count(logical=False) or 0
+            ram_total = 0.0
+            ram_available = 0.0
+            network_tier = ""
+            if self.hardware_profile is not None:
+                ram_total = float(getattr(self.hardware_profile, "ram_total_gb", 0.0) or 0.0)
+                ram_available = float(
+                    getattr(self.hardware_profile, "ram_available_gb", 0.0) or 0.0
+                )
+                network_tier = str(
+                    getattr(self.hardware_profile, "network_speed_estimate", "") or ""
+                ).lower()
             if cpu_physical >= 8:
                 chapter_parallel_count = min(8, cpu_logical)
             elif cpu_physical >= 4:
@@ -3913,6 +4620,11 @@ class AudioConverter:
                 chapter_parallel_count = min(4, cpu_logical)
             else:
                 chapter_parallel_count = 2
+            # Resource-aware conservative defaults for stability/throughput.
+            if (ram_total and ram_total <= 8.5) or (ram_available and ram_available <= 2.5):
+                chapter_parallel_count = min(chapter_parallel_count, 2)
+            if network_tier in {"slow", "medium"}:
+                chapter_parallel_count = min(chapter_parallel_count, 1)
         if edge_stable_mode and chapter_parallel_count != 1:
             chapter_parallel_count = 1
         self._reset_parallel_state(chapter_parallel_count)
@@ -3982,6 +4694,9 @@ class AudioConverter:
                 )
             self._sync_text_cache_to_output(temp_dir, output_dir)
             self.progress.finish()
+            self._write_runtime_metrics_summary(temp_dir)
+            self._write_runtime_metrics_csv(temp_dir)
+            self._write_runtime_metrics_dashboard(temp_dir)
             await self._report_results(result)
             return result
 
@@ -4046,6 +4761,11 @@ class AudioConverter:
         edge_network_tier = (edge_network_tier or "fast").strip().lower()
         if edge_network_tier not in EDGE_AUTO_PARALLEL_CAPS:
             edge_network_tier = "fast"
+        self._apply_detected_runtime_defaults(
+            config,
+            network_tier=edge_network_tier,
+            auto_engine_pool=auto_engine_pool if is_auto_engine else None,
+        )
         edge_auto_override = getattr(config, "edge_auto_tune", None)
         edge_auto_enabled = (
             EDGE_AUTO_TUNE if edge_auto_override is None else bool(edge_auto_override)
@@ -4529,6 +5249,18 @@ class AudioConverter:
 
         result.success = not pending_failures and not unresolved_pool
 
+        if result.success:
+            self._clear_failure_checkpoint(temp_dir)
+        else:
+            edge_blocked = []
+            if getattr(config, "extra", None):
+                edge_blocked = config.extra.get("edge_blocked_chapters", []) or []
+            self._save_failure_checkpoint(
+                temp_dir,
+                failed_chapters=pending_failures.keys(),
+                edge_blocked_chapters=edge_blocked,
+            )
+
         # Move successfully converted files even on partial failure (for resume capability)
         if result.converted_chapters > 0:
             if self.verbose:
@@ -4580,6 +5312,9 @@ class AudioConverter:
         await self._stop_health_watchdog()
         self._sync_text_cache_to_output(temp_dir, output_dir)
         self.progress.finish()
+        self._write_runtime_metrics_summary(temp_dir)
+        self._write_runtime_metrics_csv(temp_dir)
+        self._write_runtime_metrics_dashboard(temp_dir)
         await self._report_results(result)
         return result
 
@@ -5097,9 +5832,58 @@ class AudioConverter:
         edge_unavailable_hits = 0
         auto_engine_pool = auto_engine_pool or {}
         unavailable_engines: Set[str] = set()
+        edge_blocked_chapters_global: Set[str] = set()
+        if getattr(config, "extra", None):
+            raw_blocked = config.extra.get("edge_blocked_chapters") or []
+            if isinstance(raw_blocked, (list, tuple, set)):
+                edge_blocked_chapters_global = {
+                    str(item).strip() for item in raw_blocked if str(item).strip()
+                }
+            else:
+                edge_blocked_chapters_global = {
+                    part.strip() for part in str(raw_blocked).split(",") if part.strip()
+                }
         edge_state = self._edge_auto_state or {}
         edge_auto_enabled = bool(edge_state.get("enabled"))
         edge_force_offline = bool(edge_state.get("force_offline_after_trunc"))
+        edge_circuit = self._edge_circuit_state
+        edge_circuit["open"] = False
+        edge_circuit["failures"] = 0
+        edge_circuit["opened_at"] = 0.0
+        edge_circuit["last_reason"] = ""
+
+        def _edge_circuit_open() -> bool:
+            if not bool(edge_circuit.get("open")):
+                return False
+            opened_at = float(edge_circuit.get("opened_at") or 0.0)
+            cooldown = float(edge_circuit.get("cooldown_seconds") or 900.0)
+            if opened_at > 0 and (time.time() - opened_at) >= cooldown:
+                edge_circuit["open"] = False
+                edge_circuit["failures"] = 0
+                edge_circuit["opened_at"] = 0.0
+                edge_circuit["last_reason"] = ""
+                if self.verbose:
+                    print("✅ Edge circuit breaker reset after cooldown")
+                return False
+            return True
+
+        def _trip_edge_circuit(reason: str) -> None:
+            failures = int(edge_circuit.get("failures", 0) or 0) + 1
+            edge_circuit["failures"] = failures
+            edge_circuit["last_reason"] = reason
+            threshold = int(edge_circuit.get("threshold", 2) or 2)
+            if failures >= threshold:
+                edge_circuit["open"] = True
+                edge_circuit["opened_at"] = time.time()
+                unavailable_engines.add("edge")
+                if self.verbose:
+                    print(f"🧯 Edge circuit breaker OPEN ({reason})")
+
+        def _reset_edge_circuit() -> None:
+            edge_circuit["open"] = False
+            edge_circuit["failures"] = 0
+            edge_circuit["opened_at"] = 0.0
+            edge_circuit["last_reason"] = ""
 
         def _maybe_apply_edge_slow_mode(reason: str, engine_obj: Optional[object] = None) -> None:
             if edge_auto_enabled:
@@ -5132,10 +5916,11 @@ class AudioConverter:
         def available_auto_pool() -> Dict[str, tuple[ConversionConfig, object]]:
             if not auto_engine_pool:
                 return {}
+            circuit_open = _edge_circuit_open()
             return {
                 name: entry
                 for name, entry in auto_engine_pool.items()
-                if name not in unavailable_engines
+                if name not in unavailable_engines and not (circuit_open and name == "edge")
             }
 
         def can_use_piper() -> bool:
@@ -5398,6 +6183,16 @@ class AudioConverter:
             progress_started = False
             chapter_attempt = 0
             max_chapter_attempts = 6
+            forced_auto_engine: Optional[str] = None
+            blocked_engines_for_chapter: Set[str] = set()
+            edge_connectivity_recorded = False
+            if str(chapter_num) in edge_blocked_chapters_global:
+                blocked_engines_for_chapter.add("edge")
+            if chapter_label in edge_blocked_chapters_global:
+                blocked_engines_for_chapter.add("edge")
+            chapter_name_raw = str(getattr(chapter, "name", "") or "").strip()
+            if chapter_name_raw in edge_blocked_chapters_global:
+                blocked_engines_for_chapter.add("edge")
 
             while True:
                 chapter_attempt += 1
@@ -5416,6 +6211,51 @@ class AudioConverter:
 
                 def _error_text(message: Optional[str]) -> str:
                     return message or "Synthesis failed"
+
+                def _block_edge_connectivity(last_error: Optional[str]) -> None:
+                    nonlocal forced_auto_engine
+                    nonlocal edge_connectivity_recorded
+                    blocked_engines_for_chapter.add("edge")
+                    # Keep Edge unavailable for the remainder of this sequential pass.
+                    unavailable_engines.add("edge")
+                    _trip_edge_circuit("network")
+                    if not edge_connectivity_recorded:
+                        self.speed_controller.record_connectivity_failure("edge")
+                        edge_connectivity_recorded = True
+                    err_text = str(last_error or "")[:220]
+                    self._append_runtime_metric(
+                        {
+                            "event": "edge_connectivity_failure",
+                            "chapter": chapter_num,
+                            "engine": "edge",
+                            "error": err_text,
+                        },
+                        output_dir=output_dir,
+                    )
+                    edge_blocked_chapters_global.update(
+                        {
+                            str(chapter_num),
+                            str(chapter_label or "").strip(),
+                            str(getattr(chapter, "name", "") or "").strip(),
+                        }
+                    )
+                    if getattr(config, "extra", None) is None:
+                        config.extra = {}
+                    config.extra["edge_blocked_chapters"] = sorted(
+                        item for item in edge_blocked_chapters_global if item
+                    )
+                    self._append_runtime_metric(
+                        {
+                            "event": "edge_blocked_chapter",
+                            "chapter": chapter_num,
+                            "chapter_label": chapter_label,
+                            "engine": "edge",
+                            "blocked_size": len(config.extra["edge_blocked_chapters"]),
+                        },
+                        output_dir=output_dir,
+                    )
+                    if (engine_tracker.get("label") or "").lower() in {"piper", "coqui", "kokoro"}:
+                        forced_auto_engine = (engine_tracker.get("label") or "").lower()
 
                 # **RESTORED**: Usar progress tracker (apenas uma vez por chapter)
                 if not progress_started:
@@ -5490,9 +6330,40 @@ class AudioConverter:
                             chapter_error = _error_text(chapter_error)
                             self.progress.complete_chapter(f"❌ {chapter_error}")
                             break
-                        picked_engine, auto_order = self._pick_auto_engine(
-                            chapter_chars, estimated_seconds, pool_view
-                        )
+                        if forced_auto_engine and forced_auto_engine in blocked_engines_for_chapter:
+                            forced_auto_engine = None
+                        if forced_auto_engine and forced_auto_engine in pool_view:
+                            picked_engine = forced_auto_engine
+                            auto_order = self._preferred_auto_engine_order(pool_view)
+                            if picked_engine in auto_order:
+                                auto_order = [picked_engine] + [
+                                    name for name in auto_order if name != picked_engine
+                                ]
+                            auto_order = [
+                                name
+                                for name in auto_order
+                                if name not in blocked_engines_for_chapter
+                            ]
+                            if self.verbose:
+                                print(f"   ⚡ AUTO: forcing engine {picked_engine} for retry")
+                        else:
+                            picked_engine, auto_order = self._pick_auto_engine(
+                                chapter_chars, estimated_seconds, pool_view
+                            )
+                            auto_order = [
+                                name
+                                for name in (auto_order or [])
+                                if name not in blocked_engines_for_chapter
+                            ]
+                            if picked_engine in blocked_engines_for_chapter:
+                                picked_engine = next(
+                                    (
+                                        candidate
+                                        for candidate in (auto_order or [])
+                                        if candidate in pool_view
+                                    ),
+                                    picked_engine,
+                                )
                         attempted_auto.add(picked_engine)
                         engine_tracker["label"] = picked_engine
                         # Record engine selection for future ranking
@@ -5542,7 +6413,14 @@ class AudioConverter:
                         except Exception as exc:
                             unavailable_engines.add(current_engine_label)
                             if is_auto_engine and auto_order:
-                                next_engine = self._next_auto_engine(auto_order, attempted_auto)
+                                candidate_order = [
+                                    name
+                                    for name in (auto_order or [])
+                                    if name not in blocked_engines_for_chapter
+                                ]
+                                next_engine = self._next_auto_engine(
+                                    candidate_order, attempted_auto
+                                )
                                 if next_engine:
                                     attempted_auto.add(next_engine)
                                     engine_tracker["label"] = next_engine
@@ -5639,6 +6517,37 @@ class AudioConverter:
                             timeout_seconds = min(
                                 timeout_seconds, max(int(safe_timeout), int(max_timeout))
                             )
+                    # Aggressive local strategy for very large chapters on Piper:
+                    # start with smaller chunks + more workers and fail faster per attempt.
+                    if current_engine_label == "piper" and chapter_chars >= 15000:
+                        cpu_physical = max(
+                            1,
+                            int(
+                                getattr(getattr(self, "hardware_profile", None), "cpu_physical", 2)
+                                or 2
+                            ),
+                        )
+                        ram_total = float(
+                            getattr(getattr(self, "hardware_profile", None), "ram_total_gb", 0.0)
+                            or 0.0
+                        )
+                        target_chunk = 2200 if chapter_chars >= 25000 else 2400
+                        target_workers = min(4, cpu_physical)
+                        if 0 < ram_total < 8:
+                            target_workers = min(target_workers, 2)
+                        target_workers = max(1, target_workers)
+                        os.environ["PIPER_CHUNK_CHARS"] = str(target_chunk)
+                        os.environ["PIPER_MAX_PROCS"] = str(target_workers)
+                        with contextlib.suppress(Exception):
+                            setattr(tts_engine, "_chunk_char_limit", target_chunk)
+                        with contextlib.suppress(Exception):
+                            setattr(tts_engine, "_semaphore", asyncio.Semaphore(target_workers))
+                        timeout_seconds = min(timeout_seconds, 240.0)
+                        if self.verbose:
+                            print(
+                                f"⚡ Piper large-chapter mode: chunks={target_chunk}, "
+                                f"workers={target_workers}, timeout={int(timeout_seconds)}s"
+                            )
                     timeout_seconds = int(timeout_seconds)
                     stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "60") or "60")
                     if stall_seconds < 0:
@@ -5697,6 +6606,26 @@ class AudioConverter:
                             def on_segment_complete(text: str, total_chars: int):
                                 self.progress.update_chars_progress(text, total_chars)
                                 self._mark_health_activity(chapter_num, "segment")
+                                self._record_segment_success(
+                                    engine_label=engine_tracker.get("label")
+                                    or (config.engine or "").lower(),
+                                    chapter_index=chapter_num,
+                                    segment_chars=len(text or ""),
+                                    engine_pool=engine_pool,
+                                    config=engine_config,
+                                )
+
+                            def on_pre_segment(text: str, total_chars: int):
+                                segment_chars = len(text or "")
+                                self._mark_health_activity(chapter_num, "pre-segment")
+                                self._pre_segment_health_check(
+                                    engine_label=engine_tracker.get("label")
+                                    or (config.engine or "").lower(),
+                                    segment_chars=segment_chars,
+                                    engine_pool=engine_pool,
+                                    config=engine_config,
+                                    engine_obj=engine_instance.get("object"),
+                                )
 
                             chunk_callback = None
                             chunk_root: Optional[Path] = None
@@ -5828,6 +6757,7 @@ class AudioConverter:
                                         else getattr(chapter, "formatting_segments", None)
                                     ),
                                     progress_callback=on_segment_complete,
+                                    pre_segment_callback=on_pre_segment,
                                     chunk_callback=primary_chunk_callback,
                                     resume_chunks_dir=primary_chunk_root,
                                 )
@@ -5872,9 +6802,20 @@ class AudioConverter:
                             )
                             if self.verbose and converted is None:
                                 print("[DEBUG] Failure ao converter WAV→MP3 (ffmpeg)")
+                                self._append_runtime_metric(
+                                    {
+                                        "event": "transcode_failed",
+                                        "chapter": chapter_num,
+                                        "engine": current_engine_label,
+                                        "input": str(last_tts_output_path.name),
+                                        "output": str(output_path.name),
+                                    },
+                                    output_dir=output_dir,
+                                )
                             synthesis_result = converted
-                            with contextlib.suppress(OSError):
-                                last_tts_output_path.unlink(missing_ok=True)
+                            if synthesis_result:
+                                with contextlib.suppress(OSError):
+                                    last_tts_output_path.unlink(missing_ok=True)
 
                         if self.verbose and synthesis_result:
                             print(f"   ✅ TTS completed: {output_path.name}")
@@ -5961,6 +6902,7 @@ class AudioConverter:
                                         clean_text,
                                         tts_output_path,
                                         formatting_segments=None,
+                                        pre_segment_callback=on_pre_segment,
                                         chunk_callback=None,
                                         resume_chunks_dir=None,
                                     ),
@@ -5979,9 +6921,21 @@ class AudioConverter:
                                     )
                                     if self.verbose and converted is None:
                                         print("[DEBUG] Failure ao converter WAV→MP3 (fallback)")
+                                        self._append_runtime_metric(
+                                            {
+                                                "event": "transcode_failed",
+                                                "chapter": chapter_num,
+                                                "engine": current_engine_label,
+                                                "input": str(tts_output_path.name),
+                                                "output": str(output_path.name),
+                                                "phase": "fallback",
+                                            },
+                                            output_dir=output_dir,
+                                        )
                                     synthesis_result = converted
-                                    with contextlib.suppress(OSError):
-                                        tts_output_path.unlink(missing_ok=True)
+                                    if synthesis_result:
+                                        with contextlib.suppress(OSError):
+                                            tts_output_path.unlink(missing_ok=True)
                                 if self.verbose and synthesis_result:
                                     print("   ✅ RETRY: Success no fallback!")
                             finally:
@@ -6034,6 +6988,7 @@ class AudioConverter:
                                                 emergency_text,
                                                 tts_output_path,
                                                 formatting_segments=None,
+                                                pre_segment_callback=on_pre_segment,
                                                 chunk_callback=None,
                                                 resume_chunks_dir=None,
                                             ),
@@ -6056,9 +7011,21 @@ class AudioConverter:
                                                 print(
                                                     "[DEBUG] Failure ao converter WAV→MP3 (emergency)"
                                                 )
+                                                self._append_runtime_metric(
+                                                    {
+                                                        "event": "transcode_failed",
+                                                        "chapter": chapter_num,
+                                                        "engine": current_engine_label,
+                                                        "input": str(tts_output_path.name),
+                                                        "output": str(output_path.name),
+                                                        "phase": "emergency",
+                                                    },
+                                                    output_dir=output_dir,
+                                                )
                                             synthesis_result = converted
-                                            with contextlib.suppress(OSError):
-                                                tts_output_path.unlink(missing_ok=True)
+                                            if synthesis_result:
+                                                with contextlib.suppress(OSError):
+                                                    tts_output_path.unlink(missing_ok=True)
                                         if synthesis_result and self.verbose:
                                             print("   ✅ EMERGENCY: Success with reduced text!")
                                     else:
@@ -6077,7 +7044,11 @@ class AudioConverter:
                                     print(f"   ❌ FINAL ERROR: {error_msg}")
                                 chapter_error = error_msg
                                 if (engine_tracker.get("label") or "").lower() == "edge":
-                                    _edge_retry(error_msg)
+                                    if is_auto_engine:
+                                        blocked_engines_for_chapter.add("edge")
+                                        _trip_edge_circuit("timeout")
+                                    else:
+                                        _edge_retry(error_msg)
                                 errors.append(f"{chapter.name}: {error_msg}")
                                 error_msg = _error_text(error_msg)
                                 self.progress.complete_chapter(f"❌ {error_msg}")
@@ -6089,12 +7060,43 @@ class AudioConverter:
                             await heartbeat_task
 
                     if not synthesis_result and is_auto_engine and auto_order:
-                        next_engine = self._next_auto_engine(auto_order, attempted_auto)
+                        if current_engine_label in {"piper", "coqui"}:
+                            blocked_engines_for_chapter.add("edge")
+                            forced_auto_engine = current_engine_label
+                            self._append_runtime_metric(
+                                {
+                                    "event": "sticky_offline_after_transcode_failure",
+                                    "chapter": chapter_num,
+                                    "engine": current_engine_label,
+                                },
+                                output_dir=output_dir,
+                            )
+                        if current_engine_label == "edge":
+                            last_err = str(getattr(tts_engine, "last_error", "") or "")
+                            if _edge_error_reason(last_err) == "network":
+                                _block_edge_connectivity(last_err)
+                        preferred_order = [
+                            name
+                            for name in (auto_order or [])
+                            if name not in blocked_engines_for_chapter
+                        ]
+                        next_engine = self._next_auto_engine(preferred_order, attempted_auto)
                         if next_engine:
                             attempted_auto.add(next_engine)
+                            forced_auto_engine = next_engine
                             engine_tracker["label"] = next_engine
+                            current_engine_label = next_engine
                             if self.verbose:
                                 print(f"   ⚡ AUTO: switching to {next_engine} and retrying")
+                            self._append_runtime_metric(
+                                {
+                                    "event": "engine_switch",
+                                    "chapter": chapter_num,
+                                    "to": next_engine,
+                                    "blocked": sorted(blocked_engines_for_chapter),
+                                },
+                                output_dir=output_dir,
+                            )
                             tts_output_path, needs_mp3_transcode = _resolve_tts_output_path(
                                 output_path, next_engine
                             )
@@ -6345,7 +7347,14 @@ class AudioConverter:
                                 if reason != "unknown"
                                 else "Edge failed"
                             )
-                            _edge_retry(chapter_error, count_failure=False)
+                            if is_auto_engine and reason == "network":
+                                _block_edge_connectivity(last_err)
+                                if self.verbose:
+                                    print(
+                                        "   🛡️ Edge blocked for this chapter/pass after connectivity failure"
+                                    )
+                            else:
+                                _edge_retry(chapter_error, count_failure=False)
                         if self.verbose:
                             print("   ⚠️ RETRY: Synthesis failed, retrying with default language")
 
@@ -6374,6 +7383,7 @@ class AudioConverter:
                                                 simple_text,
                                                 output_path,
                                                 formatting_segments=None,
+                                                pre_segment_callback=on_pre_segment,
                                                 chunk_callback=chunk_callback,
                                                 resume_chunks_dir=chunk_root,
                                             ),
@@ -6623,6 +7633,22 @@ class AudioConverter:
                 )
                 if message:
                     print(message)
+                self._append_runtime_metric(
+                    {
+                        "event": "chapter_complete",
+                        "chapter": chapter_num,
+                        "engine": engine_tracker.get("label") or (config.engine or "").lower(),
+                        "chars": chapter_chars,
+                        "elapsed_s": round(float(elapsed), 3),
+                        "success": bool(chapter_success),
+                        "cached": bool(chapter_cached),
+                        "attempt": chapter_attempt,
+                        "error": (chapter_error or "")[:240] if chapter_error else "",
+                    },
+                    output_dir=output_dir,
+                )
+                if (engine_tracker.get("label") or "").lower() == "edge" and chapter_success:
+                    _reset_edge_circuit()
                 if chapter_success and not chapter_cached:
                     self._maybe_exit_edge_slow_mode(
                         engine_label=engine_tracker.get("label") or (config.engine or "").lower(),
@@ -6632,6 +7658,11 @@ class AudioConverter:
                         engine_obj=engine_instance.get("object"),
                     )
                 self._mark_health_progress(chapter_num, chapter_success, elapsed, chapter_error)
+                self._record_chapter_progress(
+                    chapter,
+                    chapter_success,
+                    chapter_error,
+                )
                 break
 
         success = len(errors) == 0
@@ -7248,6 +8279,14 @@ class AudioConverter:
                 max_attempts = 1 if use_immediate_fallback else 2
                 attempt = 1
 
+                def _pre_segment_monitor(segment_text: str, _total_chars: int):
+                    self._pre_segment_health_check(
+                        engine_label=(config.engine or "").lower(),
+                        segment_chars=len(segment_text or ""),
+                        config=config,
+                        engine_obj=tts_engine,
+                    )
+
                 while attempt <= max_attempts and temp_wav is None:
                     # On second attempt for non-complex chapters, apply fallback
                     if attempt == 2 and not use_immediate_fallback and not payload_locked:
@@ -7298,6 +8337,7 @@ class AudioConverter:
                                 chapter_payload,
                                 output_path.with_suffix(".wav"),
                                 formatting_segments=chapter_formatting,
+                                pre_segment_callback=_pre_segment_monitor,
                             )
                         )
                         temp_wav = await asyncio.wait_for(synthesis_task, timeout=chapter_timeout)

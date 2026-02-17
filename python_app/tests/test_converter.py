@@ -235,6 +235,41 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(self.converter.file_manager)
         self.assertIsNotNone(self.converter.progress)
 
+    def test_failure_checkpoint_roundtrip(self):
+        """Failure checkpoint should persist and clear failed chapter metadata."""
+        temp_dir = Path(self.temp_dir) / "checkpoint"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        self.converter._save_failure_checkpoint(
+            temp_dir,
+            failed_chapters=["1", "2.1 - Chapter"],
+            edge_blocked_chapters=["1"],
+        )
+        payload = self.converter._load_failure_checkpoint(temp_dir)
+        self.assertIn("failed_chapters", payload)
+        self.assertEqual(set(payload["failed_chapters"]), {"1", "2.1 - Chapter"})
+        self.assertEqual(set(payload.get("edge_blocked_chapters", [])), {"1"})
+        self.converter._clear_failure_checkpoint(temp_dir)
+        self.assertEqual(self.converter._load_failure_checkpoint(temp_dir), {})
+
+    def test_metrics_dashboard_generation(self):
+        """Dashboard HTML should be generated from summary + csv files."""
+        temp_dir = Path(self.temp_dir) / "metrics"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        (temp_dir / "_runtime_metrics.jsonl").write_text("", encoding="utf-8")
+        (temp_dir / "metrics-summary.json").write_text(
+            '{"total_events":1,"chapters":{"total":1,"successful":1},"engine_switches":0,"edge_blocked_chapters":{"count":0,"chapters":[]}}',
+            encoding="utf-8",
+        )
+        (temp_dir / "metrics-chapter-engine.csv").write_text(
+            "chapter,engine,attempts,successes,failures,total_chars,total_elapsed_s,avg_chars_per_second,last_error\n1,edge,1,1,0,1000,2.0,500,\n",
+            encoding="utf-8",
+        )
+        self.converter._write_runtime_metrics_dashboard(temp_dir)
+        dashboard = temp_dir / "metrics-dashboard.html"
+        self.assertTrue(dashboard.exists())
+        content = dashboard.read_text(encoding="utf-8")
+        self.assertIn("Conversion Metrics Dashboard", content)
+
     def test_setup_output_directory(self):
         """Test output directory setup"""
         output_dir = self.converter._setup_output_directory(self.config)
@@ -1229,6 +1264,99 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(edge_engine.calls, 1)
         self.assertEqual(coqui_engine.calls, 1)
 
+    async def test_auto_mode_skips_edge_when_chapter_marked_with_connectivity_failure(self):
+        """If chapter is marked as Edge-connectivity-failed, auto mode must not call Edge again."""
+        chapters = [Chapter(1, "Retry Chapter", "retry.html", "retry text " * 600)]
+
+        class RecordingEngine(MockTTSEngine):
+            def __init__(self, label: str):
+                super().__init__()
+                self.label = label
+                self.calls = 0
+
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                self.calls += 1
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"fake audio" * 400)
+                return output_path
+
+        edge_engine = RecordingEngine("edge")
+        coqui_engine = RecordingEngine("coqui")
+        output_dir = Path(self.temp_dir)
+
+        async def fake_convert_to_mp3(input_file, output_file, bitrate="8k"):
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"mp3" * 400)
+            return output_path
+
+        self.converter.audio_processor.convert_to_mp3 = fake_convert_to_mp3
+
+        auto_config = ConversionConfig(
+            engine="auto",
+            output_dir=str(output_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Auto Retry Book",
+        )
+        auto_config.extra = {"edge_blocked_chapters": ["1"]}
+
+        edge_cfg = ConversionConfig(
+            engine="edge",
+            output_dir=str(output_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Auto Retry Book",
+        )
+        coqui_cfg = ConversionConfig(
+            engine="coqui",
+            output_dir=str(output_dir),
+            validate_audio=False,
+            validate_text=False,
+            book_title="Auto Retry Book",
+        )
+        auto_pool = {
+            "edge": (edge_cfg, edge_engine),
+            "coqui": (coqui_cfg, coqui_engine),
+        }
+
+        class DummyPool:
+            def __init__(self, pool):
+                self.pool = pool
+
+            async def acquire(self, name):
+                return self.pool[name]
+
+            def release(self, *_args, **_kwargs):
+                return None
+
+            def register_engine(self, name, config, engine_obj=None):
+                self.pool[name] = (config, engine_obj or self.pool[name][1])
+                return None
+
+        engine_pool = DummyPool(auto_pool)
+
+        with patch.object(
+            self.converter,
+            "_pick_auto_engine",
+            return_value=("edge", ["edge", "coqui"]),
+        ):
+            with patch.object(self.converter, "_detect_short_audio_output", return_value=None):
+                result = await self.converter._convert_chapters_sequential(
+                    chapters,
+                    engine_pool,
+                    output_dir,
+                    auto_config,
+                    is_auto_engine=True,
+                    auto_engine_pool=auto_pool,
+                )
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.converted_chapters, 1)
+        self.assertEqual(edge_engine.calls, 0, "Edge must be skipped for blocked chapter")
+        self.assertEqual(coqui_engine.calls, 1)
+
     async def test_auto_mode_parallel_forwards_pool_per_chapter(self):
         """Parallel mode should invoke sequential worker with auto engine context."""
         chapters = [
@@ -1575,6 +1703,92 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 "expected sequential or parallel conversion to be called",
             )
             mock_report.assert_called_once_with(expected_result)
+
+    async def test_convert_auto_e2e_edge_dns_failure_falls_back_offline(self):
+        """E2E: auto mode should recover from Edge DNS failure by switching offline."""
+        chapter_text = "conteudo de teste " * 600
+        chapter = Chapter(1, "Chapter DNS", "dns.html", chapter_text, speech_text=chapter_text)
+        reader = SimpleNamespace(
+            title="E2E DNS Book",
+            author="Tester",
+            file_path=Path(self.temp_dir) / "e2e_dns.epub",
+            get_chapter_structure=lambda preserve_all=True: [chapter],
+        )
+
+        class EdgeDnsEngine(MockTTSEngine):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                self.calls += 1
+                self.last_error = "ClientConnectorDNSError: dns failure"
+                return None
+
+        class PiperOkEngine(MockTTSEngine):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                self.calls += 1
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"wav" * 500)
+                return output_path
+
+        edge_engine = EdgeDnsEngine()
+        piper_engine = PiperOkEngine()
+
+        async def fake_convert_to_mp3(input_file, output_file, bitrate="8k"):
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"mp3" * 350_000)
+            return output_path
+
+        self.converter.audio_processor.convert_to_mp3 = fake_convert_to_mp3
+
+        auto_config = ConversionConfig(
+            engine="auto",
+            output_dir=self.temp_dir,
+            validate_audio=False,
+            validate_text=False,
+            book_title="E2E DNS Book",
+            force_reprocess=True,
+        )
+        edge_cfg = ConversionConfig(
+            engine="edge",
+            output_dir=self.temp_dir,
+            validate_audio=False,
+            validate_text=False,
+            book_title="E2E DNS Book",
+        )
+        piper_cfg = ConversionConfig(
+            engine="piper",
+            output_dir=self.temp_dir,
+            validate_audio=False,
+            validate_text=False,
+            book_title="E2E DNS Book",
+        )
+
+        with patch.object(
+            self.converter,
+            "_prepare_auto_engines",
+            return_value={"edge": (edge_cfg, edge_engine), "piper": (piper_cfg, piper_engine)},
+        ):
+            with patch.object(
+                self.converter,
+                "_pick_auto_engine",
+                return_value=("edge", ["edge", "piper"]),
+            ):
+                result = await self.converter.convert(reader, auto_config)
+
+        self.assertTrue(result.success)
+        self.assertGreaterEqual(result.converted_chapters, 1)
+        self.assertGreaterEqual(edge_engine.calls, 1)
+        self.assertGreaterEqual(piper_engine.calls, 1)
+        blocked = (auto_config.extra or {}).get("edge_blocked_chapters", [])
+        self.assertTrue(blocked, "Edge blocked chapter list should be persisted after DNS failure")
 
     async def test_convert_with_exception(self):
         """Test convert method propagates exceptions"""

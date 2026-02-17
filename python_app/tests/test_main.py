@@ -318,6 +318,55 @@ class TestConverterApplication(unittest.TestCase):
                 "force_reprocess should be enabled when --no-cache is used",
             )
 
+    def test_apply_cli_overrides_auto_engine_enables_auto_tuning_defaults(self):
+        config = self.app.config.create_conversion_config(engine="auto")
+        args = Namespace(
+            use_language_detection=None,
+            prioritize_primary_language=None,
+            force_reprocess=False,
+            no_cache=False,
+            edge_chunk_chars=None,
+            edge_max_segment_seconds=None,
+            edge_enable_parallel=None,
+            edge_auto_tune=None,
+            coqui_chunk_chars=None,
+            coqui_max_workers=None,
+            coqui_safe_mode=None,
+            piper_max_procs=None,
+            edge_stable_mode=None,
+            bitrate=None,
+            auto_validate_output=None,
+            auto_fix_output=None,
+            deep_validate=None,
+            sample_rate=None,
+            channels=None,
+            max_performance=False,
+            parallel_slots=None,
+            no_parallel=False,
+            chapter_stall_seconds=None,
+            edge_network_tier=None,
+            health_check_interval_seconds=None,
+            health_check_slow_edge_cps=None,
+            health_check_slow_cps=None,
+            health_check_high_cpu=None,
+            health_check_high_mem=None,
+            health_check_ok_cpu=None,
+            health_check_ok_mem=None,
+            health_check_slow_streak=None,
+        )
+
+        with patch.dict(os.environ, {}, clear=True):
+            self.app._apply_cli_overrides(args, config)
+            self.assertEqual(os.environ.get("ENABLE_AUTO_TUNING"), "1")
+            self.assertEqual(os.environ.get("ENABLE_ADAPTIVE_PERFORMANCE"), "1")
+            self.assertEqual(os.environ.get("CHAPTER_STALL_SECONDS"), "45")
+            self.assertEqual(os.environ.get("CHAPTER_PARALLEL_COUNT"), "4")
+            self.assertEqual(os.environ.get("CHAPTER_PARALLEL_MAX"), "4")
+
+        self.assertTrue(config.edge_auto_tune)
+        self.assertEqual(config.edge_chunk_chars, 24000)
+        self.assertEqual(config.edge_max_segment_seconds, 300)
+
     def _build_structure_item(self, html: str) -> ChapterStructureItem:
         chapter = Chapter(
             index=1,
@@ -497,13 +546,30 @@ class TestArgumentParser(unittest.TestCase):
 
         args = parser.parse_args(["convert", "test.epub", "--detect-language"])
         self.assertTrue(args.detect_language)
+        args = parser.parse_args(["convert", "test.epub", "--show-metrics-summary"])
+        self.assertTrue(args.show_metrics_summary)
+        args = parser.parse_args(["convert", "test.epub", "--show-metrics-dashboard"])
+        self.assertTrue(args.show_metrics_dashboard)
+        args = parser.parse_args(["convert", "test.epub", "--open-metrics-dashboard"])
+        self.assertTrue(args.open_metrics_dashboard)
+        args = parser.parse_args(["convert", "test.epub", "--export-metrics-bundle"])
+        self.assertTrue(args.export_metrics_bundle)
+        args = parser.parse_args(
+            ["convert", "test.epub", "--profile", "speed", "--speed-scenario", "offline-heavy"]
+        )
+        self.assertEqual(args.profile, "speed")
+        self.assertEqual(args.speed_scenario, "offline-heavy")
+        args = parser.parse_args(["convert", "test.epub", "--resume-from-failure"])
+        self.assertTrue(args.resume_from_failure)
+        args = parser.parse_args(["convert", "test.epub", "--no-resume-from-failure"])
+        self.assertFalse(args.resume_from_failure)
 
     def test_parser_engine_choices(self):
         """Test engine choices validation"""
         parser = create_argument_parser()
 
         # Valid engines
-        for engine in ["edge", "coqui", "piper"]:
+        for engine in ["auto", "edge", "coqui", "piper", "kokoro", "spark"]:
             args = parser.parse_args(["convert", "test.epub", "--engine", engine])
             self.assertEqual(args.engine, engine)
 

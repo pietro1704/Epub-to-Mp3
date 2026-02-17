@@ -49,6 +49,11 @@ class AdaptiveSpeedController:
         }
         # Engine performance tracking for auto-mode
         self._engine_scores: Dict[str, float] = {}
+        self._connectivity_failures: Dict[str, Deque[float]] = {
+            "edge": deque(maxlen=20),
+            "coqui": deque(maxlen=20),
+            "piper": deque(maxlen=20),
+        }
         self._last_switch_time: float = 0
         self._current_engine: Optional[str] = None
         self._switch_cooldown: float = 300.0  # 5 minutes between switches
@@ -361,8 +366,30 @@ class AdaptiveSpeedController:
 
         final_score = speed_score * 0.6 + success_score * 0.3 + consistency_score * 0.1
 
+        # Penalize engines with recent connectivity issues (DNS/SSL/network).
+        # This avoids oscillation back to unstable cloud engines in auto mode.
+        now = time.time()
+        window_seconds = 15 * 60
+        failures = self._connectivity_failures.get(engine, deque())
+        recent = [ts for ts in failures if (now - ts) <= window_seconds]
+        if recent:
+            penalty = min(70.0, 25.0 * len(recent))
+            final_score = max(0.0, final_score - penalty)
+            reason = (
+                f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% success, "
+                f"connectivity penalty x{len(recent)}"
+            )
+            return (final_score, reason)
+
         reason = f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% success"
         return (final_score, reason)
+
+    def record_connectivity_failure(self, engine: str) -> None:
+        """Record a network/connectivity failure for ranking penalties."""
+        normalized = (engine or "").lower()
+        if normalized not in self._connectivity_failures:
+            self._connectivity_failures[normalized] = deque(maxlen=20)
+        self._connectivity_failures[normalized].append(time.time())
 
     def recommend_engine_switch(
         self, current_engine: str, available_engines: List[str], verbose: bool = False

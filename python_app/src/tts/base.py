@@ -23,6 +23,7 @@ class TTSEngine(Protocol):
         formatting_segments=None,
         progress_callback=None,
         chunk_callback=None,
+        pre_segment_callback=None,
     ) -> Path:
         """Synthesize text to audio file"""
         ...

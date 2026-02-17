@@ -7,6 +7,7 @@ import asyncio
 import re
 import shutil
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -143,8 +144,9 @@ class AudioProcessor:
         except ImportError:
             pass  # static-ffmpeg is optional, will use system ffmpeg
 
-        # Use ffmpeg directly (no pydub/audioop dependency)
-        command = (
+        # Use ffmpeg directly (no pydub/audioop dependency).
+        # Try strict profile first, then fallback to a simpler command for edge cases.
+        command_primary = (
             "ffmpeg",
             "-y",
             "-i",
@@ -163,22 +165,88 @@ class AudioProcessor:
             "8000",  # Cortar frequências acima de 8kHz (suficiente para voz)
             str(output_path),
         )
-
-        subprocess_exec = asyncio.create_subprocess_exec
-        positional_args = (
-            (command,) if getattr(subprocess_exec, "__module__", "") == "unittest.mock" else command
+        command_fallback = (
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(input_path),
+            "-vn",
+            "-acodec",
+            "libmp3lame",
+            "-q:a",
+            "7",
+            "-ar",
+            "16000",
+            "-ac",
+            "1",
+            str(output_path),
         )
 
-        try:
-            process = await subprocess_exec(
-                *positional_args,
-                stdout=asyncio.subprocess.DEVNULL,
-                stderr=asyncio.subprocess.DEVNULL,
+        subprocess_exec = asyncio.create_subprocess_exec
+
+        async def _run_ffmpeg(command: tuple[str, ...]) -> bool:
+            positional_args = (
+                (command,)
+                if getattr(subprocess_exec, "__module__", "") == "unittest.mock"
+                else command
             )
-            await process.wait()
-            if process.returncode != 0:
-                return None
-        except Exception:
+            try:
+                process = await subprocess_exec(
+                    *positional_args,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await process.wait()
+                return process.returncode == 0
+            except Exception:
+                return False
+
+        ok = await _run_ffmpeg(command_primary)
+        if not ok:
+            ok = await _run_ffmpeg(command_fallback)
+        if not ok:
+            # Final fallback: use short temporary paths to avoid path/encoding edge cases.
+            tmp_in = Path(tempfile.mkstemp(prefix="tts_in_", suffix=input_path.suffix)[1])
+            tmp_out = Path(tempfile.mkstemp(prefix="tts_out_", suffix=".mp3")[1])
+            try:
+                shutil.copy2(input_path, tmp_in)
+                short_primary = (
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(tmp_in),
+                    "-b:a",
+                    bitrate,
+                    "-ar",
+                    "16000",
+                    "-ac",
+                    "1",
+                    str(tmp_out),
+                )
+                short_fallback = (
+                    "ffmpeg",
+                    "-y",
+                    "-i",
+                    str(tmp_in),
+                    "-vn",
+                    "-acodec",
+                    "libmp3lame",
+                    "-q:a",
+                    "7",
+                    str(tmp_out),
+                )
+                ok = await _run_ffmpeg(short_primary)
+                if not ok:
+                    ok = await _run_ffmpeg(short_fallback)
+                if ok and tmp_out.exists():
+                    output_path.parent.mkdir(parents=True, exist_ok=True)
+                    if output_path.exists():
+                        output_path.unlink(missing_ok=True)
+                    shutil.move(str(tmp_out), str(output_path))
+            finally:
+                tmp_in.unlink(missing_ok=True)
+                tmp_out.unlink(missing_ok=True)
+        if not ok:
             return None
 
         return output_path if output_path.exists() else None

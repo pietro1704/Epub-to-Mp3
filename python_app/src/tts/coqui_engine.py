@@ -761,6 +761,7 @@ class CoquiTTSEngine:
         formatting_segments=None,
         progress_callback=None,
         chunk_callback=None,
+        pre_segment_callback=None,
     ) -> Optional[Path]:
         if not text:
             return None
@@ -850,6 +851,9 @@ class CoquiTTSEngine:
             if not segment_text.strip():
                 return None
             try:
+                if pre_segment_callback:
+                    with contextlib.suppress(Exception):
+                        pre_segment_callback(segment_text, len(segment_text))
                 if self.verbose:
                     print(
                         f"🔍 [VERBOSE] Coqui synthesizing {len(segment_text)} chars, language: {language}"
@@ -913,6 +917,9 @@ class CoquiTTSEngine:
                     temp_files.append(temp_path)
                     timeout = _segment_timeout_seconds(segment_text)
                     try:
+                        if pre_segment_callback:
+                            with contextlib.suppress(Exception):
+                                pre_segment_callback(segment_text, len(segment_text))
                         await asyncio.wait_for(
                             loop.run_in_executor(
                                 executor,
@@ -969,6 +976,9 @@ class CoquiTTSEngine:
                 ):
                     timeout = _segment_timeout_seconds(text_value)
                     try:
+                        if pre_segment_callback:
+                            with contextlib.suppress(Exception):
+                                pre_segment_callback(text_value, len(text_value))
                         await asyncio.wait_for(
                             loop.run_in_executor(
                                 executor,
@@ -1040,6 +1050,9 @@ class CoquiTTSEngine:
                     temp_files.append(temp_path)
                     timeout = max(_segment_timeout_seconds(segment_text) * 2, 180)
                     try:
+                        if pre_segment_callback:
+                            with contextlib.suppress(Exception):
+                                pre_segment_callback(segment_text, len(segment_text))
                         await asyncio.wait_for(
                             loop.run_in_executor(
                                 executor,

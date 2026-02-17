@@ -263,6 +263,8 @@ class AutoTuner:
 
         # Piper TTS
         set_if_not_exists("PIPER_MAX_WORKERS", str(profile.piper_max_workers))
+        # Piper runtime uses PIPER_MAX_PROCS; keep both for compatibility.
+        set_if_not_exists("PIPER_MAX_PROCS", str(profile.piper_max_workers))
 
         self._applied_profile = profile
 

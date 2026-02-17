@@ -9,13 +9,16 @@ import argparse
 import asyncio
 import copy
 import glob
+import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 import traceback
 import unicodedata
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -536,6 +539,14 @@ class ConverterApplication:
 
             elapsed = time.time() - conversion_start
             print(f"⏱️ Tempo total de conversão: {self._format_hms(elapsed)}")
+            if getattr(args, "show_metrics_summary", False):
+                self._print_metrics_summary(temp_dir)
+            if getattr(args, "show_metrics_dashboard", False):
+                self._print_metrics_dashboard_path(temp_dir)
+            if getattr(args, "open_metrics_dashboard", False):
+                self._open_metrics_dashboard(temp_dir)
+            if getattr(args, "export_metrics_bundle", False):
+                self._export_metrics_bundle(temp_dir)
 
             if isinstance(result, ConversionResult):
                 return 0 if result.success else 1
@@ -562,6 +573,85 @@ class ConverterApplication:
             parts.append(f"{minutes:02d}m")
         parts.append(f"{secs:02d}s")
         return " ".join(parts)
+
+    @staticmethod
+    def _print_metrics_summary(temp_dir: Optional[Path]) -> None:
+        if not temp_dir:
+            return
+        summary_path = Path(temp_dir) / "metrics-summary.json"
+        if not summary_path.exists():
+            print("📊 Metrics summary: not found")
+            return
+        try:
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception as exc:
+            print(f"⚠️ Metrics summary read failed: {exc}")
+            return
+
+        chapters = payload.get("chapters", {}) if isinstance(payload, dict) else {}
+        total_events = payload.get("total_events", 0) if isinstance(payload, dict) else 0
+        print("\n📊 Runtime metrics summary")
+        print(f"   events: {total_events}")
+        print(
+            "   chapters: "
+            f"{chapters.get('successful', 0)}/{chapters.get('total', 0)} ok, "
+            f"{chapters.get('failed', 0)} failed"
+        )
+        print(f"   file: {summary_path}")
+
+    @staticmethod
+    def _print_metrics_dashboard_path(temp_dir: Optional[Path]) -> None:
+        if not temp_dir:
+            return
+        dashboard_path = Path(temp_dir) / "metrics-dashboard.html"
+        if dashboard_path.exists():
+            print(f"📈 Metrics dashboard: {dashboard_path}")
+        else:
+            print("📈 Metrics dashboard: not found")
+
+    @staticmethod
+    def _open_metrics_dashboard(temp_dir: Optional[Path]) -> None:
+        if not temp_dir:
+            return
+        dashboard_path = Path(temp_dir) / "metrics-dashboard.html"
+        if not dashboard_path.exists():
+            print("📈 Metrics dashboard: not found")
+            return
+        try:
+            subprocess.Popen(
+                ["open", str(dashboard_path)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            print(f"📈 Opened metrics dashboard: {dashboard_path}")
+        except Exception as exc:
+            print(f"⚠️ Could not open metrics dashboard: {exc}")
+            print(f"   file: {dashboard_path}")
+
+    @staticmethod
+    def _export_metrics_bundle(temp_dir: Optional[Path]) -> None:
+        if not temp_dir:
+            return
+        base = Path(temp_dir)
+        candidates = [
+            "metrics-summary.json",
+            "metrics-chapter-engine.csv",
+            "metrics-dashboard.html",
+            "_runtime_metrics.jsonl",
+            "_failure_checkpoint.json",
+        ]
+        existing = [base / name for name in candidates if (base / name).exists()]
+        if not existing:
+            print("📦 Metrics bundle: no metric files found")
+            return
+        bundle_path = base / f"metrics-bundle-{int(time.time())}.zip"
+        try:
+            with zipfile.ZipFile(bundle_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for path in existing:
+                    zf.write(path, arcname=path.name)
+            print(f"📦 Metrics bundle: {bundle_path}")
+        except Exception as exc:
+            print(f"⚠️ Could not export metrics bundle: {exc}")
 
     def _generate_structure_items(
         self, reader: EbookReader, *, filter_chapters: bool = True
@@ -3175,6 +3265,9 @@ class ConverterApplication:
 
         if getattr(args, "force_reprocess", False) or getattr(args, "no_cache", False):
             config.force_reprocess = True
+        resume_from_failure = getattr(args, "resume_from_failure", None)
+        if resume_from_failure is not None:
+            config.extra["resume_from_failure"] = "1" if bool(resume_from_failure) else "0"
 
         edge_chunk_chars = self._clamp_int(
             getattr(args, "edge_chunk_chars", None), min_value=4000, max_value=24000
@@ -3248,7 +3341,18 @@ class ConverterApplication:
         if channels is not None:
             config.channels = channels
 
-        max_performance = bool(getattr(args, "max_performance", False))
+        auto_engine_mode = (config.engine or "").lower() == "auto"
+        if auto_engine_mode:
+            # Auto mode should continuously tune for throughput in CLI runs.
+            os.environ.setdefault("ENABLE_AUTO_TUNING", "1")
+            os.environ.setdefault("ENABLE_ADAPTIVE_PERFORMANCE", "1")
+            os.environ.setdefault("CHAPTER_STALL_SECONDS", "45")
+            if edge_auto_tune_override is None:
+                config.edge_auto_tune = True
+
+        self._apply_speed_profile(args, config)
+
+        max_performance = bool(getattr(args, "max_performance", False) or auto_engine_mode)
         if max_performance:
             profile = getattr(self.converter, "hardware_profile", None)
             cpu_physical = int(getattr(profile, "cpu_physical", 2) or 2)
@@ -3299,6 +3403,55 @@ class ConverterApplication:
             config.edge_enable_parallel = False
             os.environ["CHAPTER_PARALLEL_COUNT"] = "1"
             os.environ["CHAPTER_PARALLEL_MAX"] = "1"
+
+    def _apply_speed_profile(self, args: argparse.Namespace, config: ConversionConfig) -> None:
+        profile_name = str(getattr(args, "profile", "") or "").strip().lower()
+        if profile_name != "speed":
+            return
+
+        scenario = str(getattr(args, "speed_scenario", "auto") or "auto").strip().lower()
+        hw_profile = getattr(self.converter, "hardware_profile", None)
+        network_tier = str(getattr(hw_profile, "network_speed_estimate", "") or "").lower()
+        cpu_physical = int(getattr(hw_profile, "cpu_physical", 2) or 2)
+        ram_total = float(getattr(hw_profile, "ram_total_gb", 0.0) or 0.0)
+
+        if scenario == "auto":
+            if network_tier in {"slow", "medium"}:
+                scenario = "offline-heavy"
+            elif network_tier in {"fast", "ultra"} and cpu_physical >= 6 and ram_total >= 12:
+                scenario = "edge-fast"
+            else:
+                scenario = "balanced"
+
+        if getattr(config, "extra", None) is None:
+            config.extra = {}
+        config.extra["speed_profile"] = "speed"
+        config.extra["speed_scenario"] = scenario
+
+        if scenario == "offline-heavy":
+            config.auto_prefer_piper = True
+            config.edge_enable_parallel = False
+            config.edge_chunk_chars = min(int(config.edge_chunk_chars or 12000), 8000)
+            config.edge_max_segment_seconds = min(int(config.edge_max_segment_seconds or 85), 90)
+            slots = max(1, min(3, cpu_physical // 2 if cpu_physical > 1 else 1))
+            os.environ["CHAPTER_PARALLEL_COUNT"] = str(slots)
+            os.environ["CHAPTER_PARALLEL_MAX"] = str(slots)
+        elif scenario == "edge-fast":
+            config.edge_enable_parallel = True
+            config.edge_chunk_chars = max(int(config.edge_chunk_chars or 12000), 20000)
+            config.edge_max_segment_seconds = max(int(config.edge_max_segment_seconds or 85), 180)
+            config.edge_max_concurrency = max(int(config.edge_max_concurrency or 8), 12)
+            slots = min(6, max(2, cpu_physical))
+            os.environ["CHAPTER_PARALLEL_COUNT"] = str(slots)
+            os.environ["CHAPTER_PARALLEL_MAX"] = str(slots)
+        else:
+            config.edge_enable_parallel = True
+            config.edge_chunk_chars = max(12000, int(config.edge_chunk_chars or 12000))
+            config.edge_max_segment_seconds = max(85, int(config.edge_max_segment_seconds or 85))
+            config.edge_max_concurrency = max(int(config.edge_max_concurrency or 6), 8)
+            slots = min(4, max(2, cpu_physical // 2 if cpu_physical > 2 else 2))
+            os.environ["CHAPTER_PARALLEL_COUNT"] = str(slots)
+            os.environ["CHAPTER_PARALLEL_MAX"] = str(slots)
 
     def _apply_healthcheck_env(self, args: argparse.Namespace) -> None:
         interval = self._clamp_float(
@@ -3377,9 +3530,9 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["edge", "coqui", "piper", "kokoro", "spark"],
+        choices=["auto", "edge", "coqui", "piper", "kokoro", "spark"],
         default="edge",
-        help="TTS engine to use (default: edge). edge=fast cloud, coqui=neural local, kokoro=fast local, spark=LLM-based",
+        help="TTS engine to use (default: edge). auto=choose fastest per chapter, edge=fast cloud, coqui=neural local, kokoro=fast local, spark=LLM-based",
     )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
     parser.add_argument("--model", help="Model path (for Piper/Coqui/Spark)")
@@ -3461,6 +3614,21 @@ def _add_conversion_arguments(
         dest="no_cache",
         action="store_true",
         help="Ignore existing cache/output and regenerate everything from scratch (also clears .cache for this run)",
+    )
+    resume_group = parser.add_mutually_exclusive_group()
+    resume_group.add_argument(
+        "--resume-from-failure",
+        dest="resume_from_failure",
+        action="store_true",
+        default=None,
+        help="When a failure checkpoint exists, retry only failed chapters first",
+    )
+    resume_group.add_argument(
+        "--no-resume-from-failure",
+        dest="resume_from_failure",
+        action="store_false",
+        default=None,
+        help="Ignore failure checkpoint and process selected chapters normally",
     )
     parser.add_argument(
         "--verify-transcription",
@@ -3646,6 +3814,19 @@ def _add_conversion_arguments(
         dest="max_performance",
         action="store_true",
         help="Use aggressive performance defaults (larger chunks and more parallelism)",
+    )
+    parser.add_argument(
+        "--profile",
+        dest="profile",
+        choices=["speed"],
+        help="Apply predefined profile (speed)",
+    )
+    parser.add_argument(
+        "--speed-scenario",
+        dest="speed_scenario",
+        choices=["auto", "balanced", "edge-fast", "offline-heavy"],
+        default="auto",
+        help="Scenario for --profile speed (auto|balanced|edge-fast|offline-heavy)",
     )
     parser.add_argument(
         "--parallel-slots",
@@ -3838,6 +4019,30 @@ def _add_conversion_arguments(
         dest="retry_failed_manual",
         action="store_true",
         help="After auto retries, force one extra pass only for failed chapters.",
+    )
+    parser.add_argument(
+        "--show-metrics-summary",
+        dest="show_metrics_summary",
+        action="store_true",
+        help="Print runtime metrics summary from metrics-summary.json when conversion ends",
+    )
+    parser.add_argument(
+        "--show-metrics-dashboard",
+        dest="show_metrics_dashboard",
+        action="store_true",
+        help="Print metrics dashboard path (metrics-dashboard.html) when conversion ends",
+    )
+    parser.add_argument(
+        "--open-metrics-dashboard",
+        dest="open_metrics_dashboard",
+        action="store_true",
+        help="Open metrics-dashboard.html in default browser when conversion ends",
+    )
+    parser.add_argument(
+        "--export-metrics-bundle",
+        dest="export_metrics_bundle",
+        action="store_true",
+        help="Export metrics files into a ZIP bundle when conversion ends",
     )
     parser.add_argument(
         "--batch",
