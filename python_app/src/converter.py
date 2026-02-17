@@ -266,6 +266,12 @@ class AudioConverter:
             "down_streak": 0,
             "pre_reduce_streak": 0,
             "pre_hold_streak": 0,
+            "pre_check_counter_by_engine": {},
+            "pre_check_interval_by_engine": {},
+            "pre_check_stable_streak_by_engine": {},
+            "pre_check_base_interval": max(1, _env_int("PRE_SEGMENT_CHECK_BASE_INTERVAL", 1)),
+            "pre_check_max_interval": max(1, _env_int("PRE_SEGMENT_CHECK_MAX_INTERVAL", 4)),
+            "pre_check_promote_streak": max(2, _env_int("PRE_SEGMENT_CHECK_PROMOTE_STREAK", 6)),
         }
         self._edge_circuit_state: Dict[str, Any] = {
             "open": False,
@@ -893,13 +899,46 @@ class AudioConverter:
         if len(history) > 16:
             del history[0 : len(history) - 16]
         avg_cps = sum(history) / len(history)
+        snapshot = self._resource_snapshot()
+
+        # Reduce health-check overhead after sustained stability; restore immediately when unstable.
+        base_interval = max(1, int(state.get("pre_check_base_interval", 1) or 1))
+        max_interval = max(base_interval, int(state.get("pre_check_max_interval", 4) or 4))
+        promote_streak = max(2, int(state.get("pre_check_promote_streak", 6) or 6))
+        interval_by_engine = state.setdefault("pre_check_interval_by_engine", {})
+        stable_by_engine = state.setdefault("pre_check_stable_streak_by_engine", {})
+        current_interval = max(
+            base_interval, int(interval_by_engine.get(engine, base_interval) or 1)
+        )
+        stable_streak = int(stable_by_engine.get(engine, 0) or 0)
+
+        is_unstable = snapshot.cpu_percent > 95 or snapshot.ram_gb < 0.6 or avg_cps < 80
+        if is_unstable:
+            stable_by_engine[engine] = 0
+            if current_interval != base_interval:
+                interval_by_engine[engine] = base_interval
+                if self.verbose:
+                    print(
+                        f"🩺 Pre-check interval reset for {engine}: {current_interval}→{base_interval}"
+                    )
+        else:
+            stable_streak += 1
+            if stable_streak >= promote_streak and current_interval < max_interval:
+                interval_by_engine[engine] = min(max_interval, current_interval + 1)
+                stable_by_engine[engine] = 0
+                if self.verbose:
+                    print(
+                        f"⚡ Pre-check interval promoted for {engine}: "
+                        f"{current_interval}→{interval_by_engine[engine]}"
+                    )
+            else:
+                stable_by_engine[engine] = stable_streak
 
         cooldown = float(state.get("cooldown_seconds", 10.0) or 10.0)
         last_adjustment = float(state.get("last_adjustment", 0.0) or 0.0)
         if (now - last_adjustment) < cooldown:
             return
 
-        snapshot = self._resource_snapshot()
         current_parallel = max(1, int(self._parallel_state.get("current") or 1))
         ceiling_parallel = max(
             current_parallel, int(self._parallel_state.get("ceiling") or current_parallel)
@@ -1008,6 +1047,15 @@ class AudioConverter:
         engine = (engine_label or "").lower()
         if segment_chars <= 0:
             return
+        state = self._segment_adaptive_state
+        base_interval = max(1, int(state.get("pre_check_base_interval", 1) or 1))
+        interval_by_engine = state.setdefault("pre_check_interval_by_engine", {})
+        counter_by_engine = state.setdefault("pre_check_counter_by_engine", {})
+        interval = max(base_interval, int(interval_by_engine.get(engine, base_interval) or 1))
+        counter = int(counter_by_engine.get(engine, 0) or 0) + 1
+        counter_by_engine[engine] = counter
+        if interval > 1 and (counter % interval) != 1:
+            return
 
         snapshot = self._resource_snapshot()
         current_parallel = max(1, int(self._parallel_state.get("current") or 1))
@@ -1017,19 +1065,16 @@ class AudioConverter:
 
         reduced_parallel = current_parallel
         if snapshot.ram_gb < 0.4 and current_parallel > 1:
-            state = self._segment_adaptive_state
             state["pre_reduce_streak"] = int(state.get("pre_reduce_streak", 0) or 0) + 1
             state["pre_hold_streak"] = 0
             if state["pre_reduce_streak"] >= 2:
                 reduced_parallel = current_parallel - 1
         elif snapshot.cpu_percent > 97 and current_parallel > 1:
-            state = self._segment_adaptive_state
             state["pre_reduce_streak"] = int(state.get("pre_reduce_streak", 0) or 0) + 1
             state["pre_hold_streak"] = 0
             if state["pre_reduce_streak"] >= 2:
                 reduced_parallel = current_parallel - 1
         else:
-            state = self._segment_adaptive_state
             state["pre_hold_streak"] = int(state.get("pre_hold_streak", 0) or 0) + 1
             if state["pre_hold_streak"] >= 2:
                 state["pre_reduce_streak"] = 0

@@ -179,6 +179,68 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cached, [], "Cached MP3s must be ignored when force_reprocess=True")
         self.assertEqual(pending, [chapter], "All chapters should be reprocessed")
 
+    def test_pre_segment_health_check_uses_adaptive_interval(self):
+        """Pre-segment checks should skip intermediate segments when interval > 1."""
+        state = self.converter._segment_adaptive_state
+        state["pre_check_base_interval"] = 1
+        state["pre_check_interval_by_engine"] = {"edge": 2}
+        state["pre_check_counter_by_engine"] = {}
+
+        self.converter._resource_snapshot = Mock(
+            return_value=SimpleNamespace(cpu_percent=55.0, ram_gb=2.5)
+        )
+
+        self.converter._pre_segment_health_check(
+            engine_label="edge",
+            segment_chars=5000,
+            config=self.config,
+            engine_obj=None,
+        )
+        self.converter._pre_segment_health_check(
+            engine_label="edge",
+            segment_chars=5000,
+            config=self.config,
+            engine_obj=None,
+        )
+
+        self.assertEqual(self.converter._resource_snapshot.call_count, 1)
+
+    @patch("src.converter.time.time", side_effect=[1.0, 2.0, 3.0])
+    def test_record_segment_success_promotes_pre_check_interval(self, _mock_time):
+        """Stable successful segments should increase pre-check interval."""
+        state = self.converter._segment_adaptive_state
+        state["pre_check_base_interval"] = 1
+        state["pre_check_max_interval"] = 3
+        state["pre_check_promote_streak"] = 2
+        state["pre_check_interval_by_engine"] = {"edge": 1}
+        state["pre_check_stable_streak_by_engine"] = {"edge": 0}
+        state["cooldown_seconds"] = 9999.0
+
+        self.converter._resource_snapshot = Mock(
+            return_value=SimpleNamespace(cpu_percent=40.0, ram_gb=3.0)
+        )
+
+        self.converter._record_segment_success(
+            engine_label="edge",
+            chapter_index=1,
+            segment_chars=1000,
+            config=self.config,
+        )
+        self.converter._record_segment_success(
+            engine_label="edge",
+            chapter_index=1,
+            segment_chars=1000,
+            config=self.config,
+        )
+        self.converter._record_segment_success(
+            engine_label="edge",
+            chapter_index=1,
+            segment_chars=1000,
+            config=self.config,
+        )
+
+        self.assertEqual(state["pre_check_interval_by_engine"]["edge"], 2)
+
     def test_analyze_chapter_stats_flags_prefer_offline(self):
         """Very long chapters should trigger offline recommendation."""
         chapter_long = Chapter(1, "Long", "c1.html", "x" * (EDGE_OFFLINE_LONG_CHARS + 5000))
