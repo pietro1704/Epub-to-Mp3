@@ -4,6 +4,8 @@
 
 import os
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import pytest
@@ -162,6 +164,31 @@ class TestAutoTuner(unittest.IsolatedAsyncioTestCase):
 
         # Should set env vars
         self.assertIn("EDGE_MAX_CONCURRENCY", os.environ)
+
+    @patch("python_app.src.hardware_monitor.SystemMonitor.detect_hardware")
+    @patch("python_app.src.hardware_monitor.SystemMonitor.classify_network")
+    async def test_auto_configure_uses_cached_profile(
+        self, mock_classify_network, mock_detect_hardware
+    ):
+        """When cache is fresh, auto-configure should skip probing."""
+        with TemporaryDirectory() as tmp_dir:
+            cache_path = Path(tmp_dir) / "auto_tune_profile.json"
+            os.environ["AUTO_TUNE_CACHE_FILE"] = str(cache_path)
+            os.environ["AUTO_TUNE_CACHE_TTL_SECONDS"] = "3600"
+            os.environ["AUTO_TUNE_USE_CACHE"] = "1"
+
+            tuner = AutoTuner(verbose=False)
+            tuner._save_cached_profile(tuner.PROFILES["maximum"])
+
+            profile = await tuner.auto_configure(force=False, measure_network=True)
+
+            self.assertEqual(profile.name, "Maximum")
+            mock_detect_hardware.assert_not_called()
+            mock_classify_network.assert_not_called()
+
+        os.environ.pop("AUTO_TUNE_CACHE_FILE", None)
+        os.environ.pop("AUTO_TUNE_CACHE_TTL_SECONDS", None)
+        os.environ.pop("AUTO_TUNE_USE_CACHE", None)
 
 
 if __name__ == "__main__":

@@ -12,11 +12,15 @@ Configura automaticamente flags de otimização:
 etc.
 """
 
+import json
 import os
+import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Dict, Optional
 
 from python_app.src.hardware_monitor import HardwareSpecs, NetworkStats, SystemMonitor
+from python_app.src.paths import TELEMETRY_DIR
 
 
 @dataclass
@@ -119,6 +123,108 @@ class AutoTuner:
         self.verbose = verbose
         self.monitor = SystemMonitor(verbose=verbose)
         self._applied_profile: Optional[TuningProfile] = None
+        self._profile_cache_path = Path(
+            os.getenv("AUTO_TUNE_CACHE_FILE", str(TELEMETRY_DIR / "auto_tune_profile.json"))
+        )
+        self._cache_ttl_seconds = max(
+            0, int(os.getenv("AUTO_TUNE_CACHE_TTL_SECONDS", str(6 * 60 * 60)))
+        )
+        self._use_cache = os.getenv("AUTO_TUNE_USE_CACHE", "1").strip().lower() not in {
+            "0",
+            "false",
+            "no",
+            "off",
+        }
+
+    @staticmethod
+    def _profile_from_payload(payload: Dict[str, object]) -> Optional[TuningProfile]:
+        """Build profile from persisted payload."""
+        required = {
+            "name",
+            "description",
+            "edge_max_concurrency",
+            "edge_chunk_chars",
+            "edge_safe_chapter_parallel",
+            "edge_max_segment_seconds",
+            "coqui_max_workers",
+            "coqui_chunk_chars",
+            "kokoro_max_workers",
+            "kokoro_chunk_chars",
+            "spark_max_workers",
+            "spark_chunk_chars",
+            "piper_max_workers",
+        }
+        if not required.issubset(payload):
+            return None
+        try:
+            return TuningProfile(
+                name=str(payload["name"]),
+                description=str(payload["description"]),
+                edge_max_concurrency=int(payload["edge_max_concurrency"]),
+                edge_chunk_chars=int(payload["edge_chunk_chars"]),
+                edge_safe_chapter_parallel=int(payload["edge_safe_chapter_parallel"]),
+                edge_max_segment_seconds=float(payload["edge_max_segment_seconds"]),
+                coqui_max_workers=int(payload["coqui_max_workers"]),
+                coqui_chunk_chars=int(payload["coqui_chunk_chars"]),
+                kokoro_max_workers=int(payload["kokoro_max_workers"]),
+                kokoro_chunk_chars=int(payload["kokoro_chunk_chars"]),
+                spark_max_workers=int(payload["spark_max_workers"]),
+                spark_chunk_chars=int(payload["spark_chunk_chars"]),
+                piper_max_workers=int(payload["piper_max_workers"]),
+            )
+        except (TypeError, ValueError):
+            return None
+
+    def _load_cached_profile(self) -> Optional[TuningProfile]:
+        """Load cached profile when valid and fresh."""
+        if not self._use_cache or self._cache_ttl_seconds <= 0:
+            return None
+        try:
+            if not self._profile_cache_path.exists():
+                return None
+            with self._profile_cache_path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            created_at = float(payload.get("created_at", 0.0))
+            if created_at <= 0:
+                return None
+            if (time.time() - created_at) > self._cache_ttl_seconds:
+                return None
+            profile_data = payload.get("profile")
+            if not isinstance(profile_data, dict):
+                return None
+            return self._profile_from_payload(profile_data)
+        except Exception:
+            return None
+
+    def _save_cached_profile(self, profile: TuningProfile) -> None:
+        """Persist latest tuned profile for future runs."""
+        if not self._use_cache:
+            return
+        try:
+            self._profile_cache_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "created_at": time.time(),
+                "profile": {
+                    "name": profile.name,
+                    "description": profile.description,
+                    "edge_max_concurrency": profile.edge_max_concurrency,
+                    "edge_chunk_chars": profile.edge_chunk_chars,
+                    "edge_safe_chapter_parallel": profile.edge_safe_chapter_parallel,
+                    "edge_max_segment_seconds": profile.edge_max_segment_seconds,
+                    "coqui_max_workers": profile.coqui_max_workers,
+                    "coqui_chunk_chars": profile.coqui_chunk_chars,
+                    "kokoro_max_workers": profile.kokoro_max_workers,
+                    "kokoro_chunk_chars": profile.kokoro_chunk_chars,
+                    "spark_max_workers": profile.spark_max_workers,
+                    "spark_chunk_chars": profile.spark_chunk_chars,
+                    "piper_max_workers": profile.piper_max_workers,
+                },
+            }
+            with self._profile_cache_path.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=False, indent=2)
+        except Exception:
+            # Non-fatal: cache write failure should never block conversion.
+            return
 
     def select_profile(
         self, hw: HardwareSpecs, network: Optional[NetworkStats] = None
@@ -303,6 +409,14 @@ class AutoTuner:
         Returns:
             Perfil aplicado
         """
+        if not force:
+            cached_profile = self._load_cached_profile()
+            if cached_profile is not None:
+                self.apply_profile(cached_profile, force=False)
+                if self.verbose:
+                    print(f"⚡ Auto-tuning: loaded cached profile from {self._profile_cache_path}")
+                return cached_profile
+
         # Detecta hardware
         hw = self.monitor.detect_hardware()
 
@@ -316,6 +430,7 @@ class AutoTuner:
 
         # Aplica configurações
         self.apply_profile(profile, force=force)
+        self._save_cached_profile(profile)
 
         return profile
 
