@@ -145,6 +145,10 @@ _edge_chunk_failure_count: int = 0
 _EDGE_RATE_LIMIT_TRIGGER_CHARS: int = int(
     os.getenv("EDGE_RATE_LIMIT_TRIGGER_CHARS", "20000") or 20000
 )
+_EDGE_IDENTITY_ROTATION_ENABLED = os.getenv(
+    "EDGE_IDENTITY_ROTATION_ENABLED", "true"
+).strip().lower() in {"1", "true", "yes", "on"}
+_EDGE_IDENTITY_ROTATION_WINDOW = max(1, int(os.getenv("EDGE_IDENTITY_ROTATION_WINDOW", "2") or "2"))
 
 
 def _get_global_edge_limiter(loop: asyncio.AbstractEventLoop) -> asyncio.Semaphore:
@@ -437,6 +441,11 @@ class EdgeTTSEngine:
         self._tuner: Optional[AdaptiveEdgeTuner] = None
         self._auto_tune_enabled = True
         self._segment_timings: List[Tuple[int, float]] = []  # (chars, duration)
+        self._identity_rotation_enabled = _EDGE_IDENTITY_ROTATION_ENABLED
+        self._rate_limit_streak = 0
+        self._voice_rotation_pool: List[str] = []
+        self._voice_rotation_cursor = 0
+        self._init_identity_pool()
 
         # Initialize synthesis tracker for integrity validation
         self._synthesis_tracker: Optional[SynthesisTracker] = None
@@ -449,6 +458,56 @@ class EdgeTTSEngine:
             self._log(
                 f"   Limits: {self._max_segment_seconds:.0f}s/segment, {self._chunk_char_limit} chars/chunk"
             )
+            if self._identity_rotation_enabled and len(self._voice_rotation_pool) > 1:
+                self._log(
+                    f"   Identity rotation: {len(self._voice_rotation_pool)} voice identities"
+                )
+
+    def _init_identity_pool(self) -> None:
+        """Build a deduplicated voice pool used after repeated throttling."""
+        entries: List[str] = []
+        primary = str(self.voice or "").strip()
+        if primary:
+            entries.append(primary)
+
+        env_pool = os.getenv("EDGE_IDENTITY_VOICES", "").strip()
+        if env_pool:
+            entries.extend(item.strip() for item in env_pool.split(",") if item.strip())
+
+        for _, value in sorted((self.language_voices or {}).items()):
+            candidate = str(value or "").strip()
+            if candidate:
+                entries.append(candidate)
+
+        seen = set()
+        deduped: List[str] = []
+        for voice_name in entries:
+            key = voice_name.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append(voice_name)
+        self._voice_rotation_pool = deduped
+
+    def _rotate_retry_voice(self, current_voice: str) -> str:
+        """Choose another voice identity when rate-limit streak is high."""
+        if (
+            not self._identity_rotation_enabled
+            or len(self._voice_rotation_pool) <= 1
+            or self._rate_limit_streak < _EDGE_IDENTITY_ROTATION_WINDOW
+        ):
+            return current_voice
+        current_key = str(current_voice or "").lower()
+        for _ in range(len(self._voice_rotation_pool)):
+            self._voice_rotation_cursor = (self._voice_rotation_cursor + 1) % len(
+                self._voice_rotation_pool
+            )
+            candidate = self._voice_rotation_pool[self._voice_rotation_cursor]
+            if str(candidate).lower() != current_key:
+                if self.verbose:
+                    self._log(f"   🔁 Rate-limit rotation: voice {current_voice} -> {candidate}")
+                return candidate
+        return current_voice
 
     def _log(self, message: str) -> None:
         """Log message using callback if available, otherwise print."""
@@ -2170,6 +2229,7 @@ class EdgeTTSEngine:
 
                         if is_rate_limit:
                             self.last_error = f"rate_limit: {exc}" if exc else "rate_limit"
+                            self._rate_limit_streak += 1
                             # Record rate limit to network tuner
                             self._record_network_result(
                                 success=False,
@@ -2183,6 +2243,7 @@ class EdgeTTSEngine:
                                 retry_count += 1
                                 await asyncio.sleep(backoff_time)
                                 try:
+                                    voice = self._rotate_retry_voice(voice)
                                     communicator = self._edge_tts.Communicate(text, voice)
                                     stream_candidate = communicator.stream()
                                     stream = (
@@ -2281,6 +2342,7 @@ class EdgeTTSEngine:
             if received_audio:
                 with suppress(Exception):
                     await _record_success()
+                self._rate_limit_streak = 0
                 # Record successful segment timing for auto-tuning
                 self._record_segment_timing(text_chars, segment_duration, success=True)
                 # Record success to network tuner for adaptive speed recovery

@@ -217,6 +217,17 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         self.engine._parallel_slots = 4
         self.assertEqual(self.engine._determine_parallel_batch_size(5), 1)
 
+    def test_identity_pool_includes_primary_voice(self):
+        self.assertIn("test-voice", self.engine._voice_rotation_pool)
+
+    def test_rotate_retry_voice_switches_after_rate_limit_window(self):
+        self.engine._voice_rotation_pool = ["v1", "v2", "v3"]
+        self.engine._identity_rotation_enabled = True
+        self.engine._rate_limit_streak = 3
+        rotated = self.engine._rotate_retry_voice("v1")
+        self.assertIn(rotated, {"v2", "v3"})
+        self.assertNotEqual(rotated, "v1")
+
 
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()

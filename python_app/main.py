@@ -3287,6 +3287,14 @@ class ConverterApplication:
         adaptive_checkpoint = getattr(args, "adaptive_checkpoint", None)
         if adaptive_checkpoint is not None:
             config.extra["adaptive_checkpoint"] = "1" if bool(adaptive_checkpoint) else "0"
+        stage_pipeline = getattr(args, "stage_pipeline", None)
+        if stage_pipeline is not None:
+            config.extra["stage_pipeline"] = "1" if bool(stage_pipeline) else "0"
+        stage_pipeline_depth = self._clamp_int(
+            getattr(args, "stage_pipeline_depth", None), min_value=1, max_value=8
+        )
+        if stage_pipeline_depth is not None:
+            config.extra["stage_pipeline_depth"] = str(stage_pipeline_depth)
 
         edge_chunk_chars = self._clamp_int(
             getattr(args, "edge_chunk_chars", None), min_value=4000, max_value=24000
@@ -4077,6 +4085,27 @@ def _add_conversion_arguments(
         action="store_false",
         default=None,
         help="Disable chapter prefetch pipeline",
+    )
+    stage_pipeline_group = parser.add_mutually_exclusive_group()
+    stage_pipeline_group.add_argument(
+        "--stage-pipeline",
+        dest="stage_pipeline",
+        action="store_true",
+        default=None,
+        help="Enable internal staged pipeline (prepare/synthesize/encode overlap)",
+    )
+    stage_pipeline_group.add_argument(
+        "--no-stage-pipeline",
+        dest="stage_pipeline",
+        action="store_false",
+        default=None,
+        help="Disable internal staged pipeline",
+    )
+    parser.add_argument(
+        "--stage-pipeline-depth",
+        dest="stage_pipeline_depth",
+        type=int,
+        help="Prefetch depth for staged pipeline (default: 2)",
     )
     auto_ab_group = parser.add_mutually_exclusive_group()
     auto_ab_group.add_argument(

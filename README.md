@@ -113,6 +113,7 @@ python -m python_app.main book.epub --clear-cache
 # Runtime optimization toggles
 python -m python_app.main book.epub --prefetch --ab-auto --adaptive-checkpoint
 python -m python_app.main book.epub --no-prefetch --no-ab-auto --no-adaptive-checkpoint
+python -m python_app.main book.epub --stage-pipeline --stage-pipeline-depth 3
 ```
 
 ### Batch Conversion
@@ -137,6 +138,13 @@ The helper script `python_app/convert` also supports batch-only runs:
 
 ```bash
 python python_app/convert --batch ~/Downloads/*.epub --batch-file favorites.txt
+```
+
+For multi-process throughput, use the external worker pool:
+
+```bash
+python scripts/external_worker_pool.py ~/Books --workers 4 \
+  --forward-args "--engine auto --max-performance --stage-pipeline"
 ```
 
 Arguments such as `--engine`, `--voice`, and formatting options apply to every book in the queue. `--batch` and `--batch-file` remain handy for folders, glob patterns, or long manifests. By default the converter continues after failures; add `--stop-on-error` to abort the batch on the first unsuccessful conversion.
@@ -253,6 +261,9 @@ Se o Edge-TTS ficar instável no ambiente atual:
     - `EDGE_MAX_CONCURRENCY=1..2`
     - `EDGE_CHUNK_CHARS=4000..9000`
   - mantenha auto-tune ligado (`--edge-auto-tune`)
+  - habilite rotação de identidade/voz em throttling:
+    - `EDGE_IDENTITY_ROTATION_ENABLED=true`
+    - `EDGE_IDENTITY_VOICES=pt-BR-FranciscaNeural,pt-BR-AntonioNeural,en-US-JennyNeural`
 - **timeouts frequentes**:
   - aumentar tolerância:
     - `EDGE_MAX_SEGMENT_SECONDS=90..120`

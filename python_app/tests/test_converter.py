@@ -206,6 +206,18 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.converter._resource_snapshot.call_count, 1)
 
+    def test_stage_pipeline_toggle_from_config_extra(self):
+        self.config.extra["stage_pipeline"] = "1"
+        self.assertTrue(self.converter._is_stage_pipeline_enabled(self.config))
+        self.config.extra["stage_pipeline"] = "0"
+        self.assertFalse(self.converter._is_stage_pipeline_enabled(self.config))
+
+    def test_stage_pipeline_depth_from_config_extra(self):
+        self.config.extra["stage_pipeline_depth"] = "4"
+        self.assertEqual(self.converter._stage_pipeline_depth(self.config), 4)
+        self.config.extra["stage_pipeline_depth"] = "invalid"
+        self.assertGreaterEqual(self.converter._stage_pipeline_depth(self.config), 1)
+
     @patch("src.converter.time.time", side_effect=[1.0, 2.0, 3.0])
     def test_record_segment_success_promotes_pre_check_interval(self, _mock_time):
         """Stable successful segments should increase pre-check interval."""

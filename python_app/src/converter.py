@@ -133,6 +133,8 @@ EDGE_MONOLINGUAL_RATE_CAP = _env_int("EDGE_MONOLINGUAL_RATE_CAP", 16)
 EDGE_OFFLINE_LONG_CHARS = _env_int("EDGE_OFFLINE_LONG_CHARS", 70000)
 EDGE_OFFLINE_LONG_RATIO = _env_float("EDGE_OFFLINE_LONG_RATIO", 0.35)
 EDGE_OFFLINE_TOTAL_CHARS = _env_int("EDGE_OFFLINE_TOTAL_CHARS", 1_200_000)
+STAGE_PIPELINE_ENABLED_DEFAULT = _env_bool("STAGE_PIPELINE_ENABLED", True)
+STAGE_PIPELINE_DEPTH_DEFAULT = max(1, _env_int("STAGE_PIPELINE_DEPTH", 2))
 
 # Validation thresholds
 TRUNCATION_THRESHOLD_PERCENT = _env_float(
@@ -610,6 +612,28 @@ class AudioConverter:
         checkpoint = _opt_bool("adaptive_checkpoint")
         if checkpoint is not None:
             self._adaptive_checkpoint_enabled = checkpoint
+        stage_pipeline = _opt_bool("stage_pipeline")
+        if stage_pipeline is not None:
+            config.extra["stage_pipeline"] = "1" if stage_pipeline else "0"
+
+    @staticmethod
+    def _is_stage_pipeline_enabled(config: Optional[ConversionConfig]) -> bool:
+        if config is None:
+            return STAGE_PIPELINE_ENABLED_DEFAULT
+        raw = getattr(config, "extra", {}).get("stage_pipeline")
+        if raw is None:
+            return STAGE_PIPELINE_ENABLED_DEFAULT
+        return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _stage_pipeline_depth(config: Optional[ConversionConfig]) -> int:
+        raw = None if config is None else getattr(config, "extra", {}).get("stage_pipeline_depth")
+        if raw is None:
+            return STAGE_PIPELINE_DEPTH_DEFAULT
+        try:
+            return max(1, int(raw))
+        except (TypeError, ValueError):
+            return STAGE_PIPELINE_DEPTH_DEFAULT
 
     def _apply_engine_params(
         self,
@@ -6709,11 +6733,67 @@ class AudioConverter:
         edge_switched_to_kokoro = False
         edge_switched_to_piper = False
         config.voice if (config.engine or "").lower() == "edge" else None
+        stage_pipeline_enabled = self._is_stage_pipeline_enabled(config)
+        stage_pipeline_depth = self._stage_pipeline_depth(config)
+        stage_pipeline_queue: Optional[asyncio.Queue] = None
+        stage_pipeline_task: Optional[asyncio.Task] = None
+        stage_pipeline_buffer: Dict[int, tuple[str, Path, bool]] = {}
+        stage_pipeline_done = False
         prefetch_task: Optional[asyncio.Task] = None
         prefetch_for_idx: Optional[int] = None
 
+        if stage_pipeline_enabled:
+            stage_pipeline_queue = asyncio.Queue(maxsize=max(1, stage_pipeline_depth))
+
+            async def _pipeline_producer() -> None:
+                assert stage_pipeline_queue is not None
+                for pidx, pchapter in enumerate(chapters_list):
+                    pchapter_num = self._chapter_number(pchapter, pidx + 1)
+                    started = time.time()
+                    self._append_runtime_metric(
+                        {
+                            "event": "pipeline_stage_start",
+                            "stage": "prepare",
+                            "chapter": pchapter_num,
+                        },
+                        output_dir=output_dir,
+                    )
+                    try:
+                        payload = await asyncio.to_thread(
+                            self._resolve_pre_tts_payload,
+                            pchapter,
+                            pchapter_num,
+                            output_dir,
+                            config,
+                        )
+                        await stage_pipeline_queue.put((pidx, payload, None))
+                        self._append_runtime_metric(
+                            {
+                                "event": "pipeline_stage_done",
+                                "stage": "prepare",
+                                "chapter": pchapter_num,
+                                "elapsed_s": round(time.time() - started, 3),
+                            },
+                            output_dir=output_dir,
+                        )
+                    except Exception as exc:
+                        await stage_pipeline_queue.put((pidx, None, exc))
+                await stage_pipeline_queue.put((-1, None, None))
+
+            stage_pipeline_task = asyncio.create_task(_pipeline_producer())
+            self._append_runtime_metric(
+                {
+                    "event": "pipeline_enabled",
+                    "depth": stage_pipeline_depth,
+                    "chapters": len(chapters_list),
+                },
+                output_dir=output_dir,
+            )
+
         def _launch_prefetch(next_idx: int) -> None:
             nonlocal prefetch_task, prefetch_for_idx
+            if stage_pipeline_enabled:
+                return
             if not self._chapter_prefetch_enabled:
                 return
             if next_idx < 0 or next_idx >= len(chapters_list):
@@ -6761,34 +6841,61 @@ class AudioConverter:
             chapter_num = self._chapter_number(chapter, idx + 1)
             progress_index = getattr(chapter, "_progress_index", None) or (idx + 1)
             chapter_label = self._chapter_display_name(chapter, chapter_num)
-            used_prefetch = False
-            if prefetch_task is not None and prefetch_for_idx == idx:
-                try:
-                    speech_text, pre_tts_path, payload_locked = await prefetch_task
-                    used_prefetch = True
-                    self._append_runtime_metric(
-                        {
-                            "event": "prefetch_hit",
-                            "chapter": chapter_num,
-                        },
-                        output_dir=output_dir,
+            if stage_pipeline_enabled and stage_pipeline_queue is not None:
+                if idx in stage_pipeline_buffer:
+                    speech_text, pre_tts_path, payload_locked = stage_pipeline_buffer.pop(idx)
+                else:
+                    while True:
+                        queue_idx, queue_payload, queue_error = await stage_pipeline_queue.get()
+                        if queue_idx == -1:
+                            stage_pipeline_done = True
+                            break
+                        if queue_error is not None:
+                            if queue_idx == idx:
+                                queue_payload = self._resolve_pre_tts_payload(
+                                    chapter, chapter_num, output_dir, config
+                                )
+                            else:
+                                continue
+                        if queue_payload is None:
+                            continue
+                        if queue_idx == idx:
+                            speech_text, pre_tts_path, payload_locked = queue_payload
+                            break
+                        stage_pipeline_buffer[queue_idx] = queue_payload
+                    if stage_pipeline_done and idx not in stage_pipeline_buffer:
+                        speech_text, pre_tts_path, payload_locked = self._resolve_pre_tts_payload(
+                            chapter, chapter_num, output_dir, config
+                        )
+            else:
+                used_prefetch = False
+                if prefetch_task is not None and prefetch_for_idx == idx:
+                    try:
+                        speech_text, pre_tts_path, payload_locked = await prefetch_task
+                        used_prefetch = True
+                        self._append_runtime_metric(
+                            {
+                                "event": "prefetch_hit",
+                                "chapter": chapter_num,
+                            },
+                            output_dir=output_dir,
+                        )
+                    except Exception:
+                        used_prefetch = False
+                        self._append_runtime_metric(
+                            {
+                                "event": "prefetch_fallback",
+                                "chapter": chapter_num,
+                            },
+                            output_dir=output_dir,
+                        )
+                    prefetch_task = None
+                    prefetch_for_idx = None
+                if not used_prefetch:
+                    speech_text, pre_tts_path, payload_locked = self._resolve_pre_tts_payload(
+                        chapter, chapter_num, output_dir, config
                     )
-                except Exception:
-                    used_prefetch = False
-                    self._append_runtime_metric(
-                        {
-                            "event": "prefetch_fallback",
-                            "chapter": chapter_num,
-                        },
-                        output_dir=output_dir,
-                    )
-                prefetch_task = None
-                prefetch_for_idx = None
-            if not used_prefetch:
-                speech_text, pre_tts_path, payload_locked = self._resolve_pre_tts_payload(
-                    chapter, chapter_num, output_dir, config
-                )
-            _launch_prefetch(idx + 1)
+                _launch_prefetch(idx + 1)
             current_payload: Optional[str] = speech_text
             chapter_chars = len(speech_text or "")
             progress_started = False
@@ -7215,6 +7322,15 @@ class AudioConverter:
                         max_attempts = 1 if current_engine_label == "edge" else 2
                         last_tts_output_path = tts_output_path
                         last_needs_transcode = needs_mp3_transcode
+                        self._append_runtime_metric(
+                            {
+                                "event": "pipeline_stage_start",
+                                "stage": "synthesize",
+                                "chapter": chapter_num,
+                                "engine": current_engine_label,
+                            },
+                            output_dir=output_dir,
+                        )
                         for attempt in range(max_attempts):
                             current_engine_label = (
                                 engine_tracker.get("label") or (config.engine or "").lower()
@@ -7413,6 +7529,15 @@ class AudioConverter:
                                 break
 
                         if synthesis_result and last_needs_transcode:
+                            self._append_runtime_metric(
+                                {
+                                    "event": "pipeline_stage_start",
+                                    "stage": "encode",
+                                    "chapter": chapter_num,
+                                    "engine": current_engine_label,
+                                },
+                                output_dir=output_dir,
+                            )
                             self.progress.tick("🎼 Converting WAV→MP3...")
                             if self.verbose:
                                 print(
@@ -7439,6 +7564,15 @@ class AudioConverter:
                             if synthesis_result:
                                 with contextlib.suppress(OSError):
                                     last_tts_output_path.unlink(missing_ok=True)
+                                self._append_runtime_metric(
+                                    {
+                                        "event": "pipeline_stage_done",
+                                        "stage": "encode",
+                                        "chapter": chapter_num,
+                                        "engine": current_engine_label,
+                                    },
+                                    output_dir=output_dir,
+                                )
 
                         if self.verbose and synthesis_result:
                             print(f"   ✅ TTS completed: {output_path.name}")
@@ -7726,6 +7860,16 @@ class AudioConverter:
                             continue
 
                     if synthesis_result and output_path.exists():
+                        self._append_runtime_metric(
+                            {
+                                "event": "pipeline_stage_done",
+                                "stage": "synthesize",
+                                "chapter": chapter_num,
+                                "engine": engine_tracker.get("label")
+                                or (config.engine or "").lower(),
+                            },
+                            output_dir=output_dir,
+                        )
                         file_size = output_path.stat().st_size
 
                         # Validar que o file tem tamanho minimum (not is empty/corrupted)
@@ -8310,6 +8454,10 @@ class AudioConverter:
                 break
 
         success = len(errors) == 0
+        if stage_pipeline_task is not None:
+            stage_pipeline_task.cancel()
+            with contextlib.suppress(Exception):
+                await stage_pipeline_task
         if prefetch_task is not None:
             prefetch_task.cancel()
             with contextlib.suppress(Exception):
