@@ -4,6 +4,7 @@ Unit tests for simplified converter module
 """
 
 import asyncio
+import json
 import os
 import re
 import sys
@@ -240,6 +241,138 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(state["pre_check_interval_by_engine"]["edge"], 2)
+
+    def test_apply_persisted_engine_params_updates_config(self):
+        """Converter should apply persisted best params for matching key."""
+        store_path = Path(self.temp_dir) / "profiles.json"
+        self.converter._best_param_store.path = store_path
+        self.converter._best_param_store.upsert_profile(
+            engine="edge",
+            voice="test-voice",
+            language="auto",
+            chars_per_second=1000.0,
+            params={
+                "edge_chunk_chars": 15000,
+                "edge_max_concurrency": 9,
+                "edge_enable_parallel": True,
+                "edge_max_segment_seconds": 95,
+            },
+        )
+        changed = self.converter._apply_persisted_engine_params(
+            cfg=self.config,
+            engine_label="edge",
+            engine_obj=None,
+        )
+        self.assertTrue(changed)
+        self.assertEqual(self.config.edge_chunk_chars, 15000)
+        self.assertEqual(self.config.edge_max_concurrency, 9)
+
+    def test_persist_engine_params_after_chapter_saves_best(self):
+        """Successful chapter should persist tuned params for future runs."""
+        store_path = Path(self.temp_dir) / "profiles.json"
+        self.converter._best_param_store.path = store_path
+        self.converter._persist_engine_params_after_chapter(
+            cfg=self.config,
+            engine_label="edge",
+            chapter_chars=5000,
+            elapsed_s=5.0,
+            success=True,
+        )
+        entry = self.converter._best_param_store.get_profile(
+            engine="edge", voice="test-voice", language="auto"
+        )
+        self.assertIsNotNone(entry)
+        self.assertGreater(float(entry.get("best_chars_per_second", 0.0)), 0.0)
+
+    def test_pick_auto_engine_ab_exploration(self):
+        """Auto picker should occasionally explore second best engine."""
+        self.converter._auto_ab_enabled = True
+        self.converter._auto_ab_interval = 2
+        self.converter._auto_ab_max_gap = 10.0
+        self.converter._auto_ab_counter = 1  # next call triggers exploration
+        self.converter.speed_controller.get_engine_ranking = Mock(
+            return_value=[("edge", 72.0, "fast"), ("piper", 66.0, "stable")]
+        )
+        self.converter.speed_controller.recommend_engine_for_chapter = Mock(return_value=None)
+        self.converter.speed_controller.recommend_engine_switch = Mock(return_value=None)
+        self.converter.speed_controller._current_engine = None
+        pool = {
+            "edge": (ConversionConfig(engine="edge"), object()),
+            "piper": (ConversionConfig(engine="piper"), object()),
+        }
+        selected, _order = self.converter._pick_auto_engine(12000, 120.0, pool)
+        self.assertEqual(selected, "piper")
+
+    def test_classify_failure_reason(self):
+        self.assertEqual(
+            self.converter._classify_failure_reason("429 too many requests"), "throttle"
+        )
+        self.assertEqual(
+            self.converter._classify_failure_reason("SSL certificate error"), "network"
+        )
+        self.assertEqual(self.converter._classify_failure_reason("timeout after 30s"), "transient")
+        self.assertEqual(self.converter._classify_failure_reason("401 unauthorized"), "auth")
+
+    def test_engine_resource_budget_reduces_parallel_on_pressure(self):
+        self.converter._resource_budget_enabled = True
+        self.converter._parallel_state["ceiling"] = 4
+        self.converter._parallel_state["current"] = 4
+        self.converter._apply_engine_resource_budget(
+            engine_label="edge",
+            snapshot=SimpleNamespace(cpu_percent=98.0, ram_gb=0.4),
+            engine_pool=None,
+        )
+        self.converter._apply_engine_resource_budget(
+            engine_label="edge",
+            snapshot=SimpleNamespace(cpu_percent=97.0, ram_gb=0.5),
+            engine_pool=None,
+        )
+        self.assertEqual(self.converter._parallel_state["current"], 3)
+
+    def test_adaptive_state_checkpoint_roundtrip(self):
+        path_dir = Path(self.temp_dir)
+        self.converter._adaptive_checkpoint_enabled = True
+        self.converter._segment_adaptive_state["pre_check_interval_by_engine"] = {"edge": 3}
+        self.converter._engine_resource_budget = {
+            "edge": {"cap": 2, "pressure_streak": 0, "free_streak": 0}
+        }
+        self.converter._auto_ab_counter = 9
+        self.converter._save_adaptive_state_checkpoint(path_dir)
+
+        other = AudioConverter()
+        other._adaptive_checkpoint_enabled = True
+        other._load_adaptive_state_checkpoint(path_dir)
+        self.assertEqual(
+            other._segment_adaptive_state["pre_check_interval_by_engine"].get("edge"), 3
+        )
+        self.assertEqual(other._engine_resource_budget.get("edge", {}).get("cap"), 2)
+        self.assertEqual(other._auto_ab_counter, 9)
+
+    def test_runtime_metrics_summary_includes_optimization_metrics(self):
+        metrics_path = Path(self.temp_dir) / "_runtime_metrics.jsonl"
+        events = [
+            {"event": "prefetch_request", "chapter": 1},
+            {"event": "prefetch_hit", "chapter": 1},
+            {"event": "auto_ab_exploration", "chapter": 1, "engine": "piper"},
+            {"event": "resource_budget_cap", "engine": "edge"},
+            {"event": "adaptive_state_restored"},
+            {"event": "chapter_complete", "chapter": 1, "engine": "edge", "success": True},
+        ]
+        metrics_path.write_text(
+            "\n".join(json.dumps(item, ensure_ascii=False) for item in events) + "\n",
+            encoding="utf-8",
+        )
+        self.converter._last_output_dir = Path(self.temp_dir)
+        self.converter._write_runtime_metrics_summary(Path(self.temp_dir))
+        summary_path = Path(self.temp_dir) / "metrics-summary.json"
+        self.assertTrue(summary_path.exists())
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+        opt = payload.get("optimization_metrics", {})
+        self.assertEqual(int(opt.get("prefetch_requests", 0)), 1)
+        self.assertEqual(int(opt.get("prefetch_hits", 0)), 1)
+        self.assertEqual(int(opt.get("ab_explorations", 0)), 1)
+        self.assertEqual(int(opt.get("budget_caps_applied", 0)), 1)
+        self.assertEqual(int(opt.get("adaptive_state_restores", 0)), 1)
 
     def test_analyze_chapter_stats_flags_prefer_offline(self):
         """Very long chapters should trigger offline recommendation."""
@@ -1851,6 +1984,123 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertGreaterEqual(piper_engine.calls, 1)
         blocked = (auto_config.extra or {}).get("edge_blocked_chapters", [])
         self.assertTrue(blocked, "Edge blocked chapter list should be persisted after DNS failure")
+
+    async def test_convert_auto_resume_and_adaptive_checkpoint_e2e(self):
+        """E2E: auto mode should save checkpoint on partial failure and resume only failed chapter."""
+        chapter_ok = Chapter(1, "Chapter 1", "c1.html", "texto ok " * 400)
+        chapter_fail = Chapter(2, "Chapter 2", "c2.html", "FORCE_FAIL " * 400)
+        reader = SimpleNamespace(
+            title="Resume Book",
+            author="Tester",
+            file_path=Path(self.temp_dir) / "resume.epub",
+            get_chapter_structure=lambda preserve_all=True: [chapter_ok, chapter_fail],
+        )
+
+        class FlakyPiperEngine(MockTTSEngine):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                self.calls += 1
+                if "chapter 2" in str(output_path).lower() or "002" in str(output_path):
+                    self.last_error = "timeout while generating audio"
+                    return None
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"wav" * 500)
+                return output_path
+
+        class HealthyPiperEngine(MockTTSEngine):
+            def __init__(self):
+                super().__init__()
+                self.calls = 0
+
+            async def synthesize_async(self, text, output_path, formatting_segments=None):
+                self.calls += 1
+                output_path = Path(output_path)
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(b"wav" * 500)
+                return output_path
+
+        async def fake_convert_to_mp3(input_file, output_file, bitrate="8k"):
+            output_path = Path(output_file)
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_bytes(b"mp3" * 250_000)
+            return output_path
+
+        self.converter.audio_processor.convert_to_mp3 = fake_convert_to_mp3
+        config_first = ConversionConfig(
+            engine="auto",
+            output_dir=self.temp_dir,
+            cache_dir=Path(self.temp_dir) / "cache",
+            validate_audio=False,
+            validate_text=False,
+            book_title="Resume Book",
+            force_reprocess=True,
+            extra={"max_auto_retries": "0", "manual_retry_failed": "0"},
+        )
+        flaky_engine = FlakyPiperEngine()
+        piper_cfg = ConversionConfig(
+            engine="piper",
+            output_dir=self.temp_dir,
+            cache_dir=Path(self.temp_dir) / "cache",
+            validate_audio=False,
+            validate_text=False,
+            book_title="Resume Book",
+        )
+        with patch.object(
+            self.converter,
+            "_prepare_auto_engines",
+            return_value={"piper": (piper_cfg, flaky_engine)},
+        ):
+            result_first = await self.converter.convert(reader, config_first)
+
+        self.assertIsNotNone(result_first)
+        cache_dir = Path(config_first.cache_dir)
+        self.assertTrue((cache_dir / "_adaptive_state_checkpoint.json").exists())
+        self.converter._save_failure_checkpoint(
+            cache_dir,
+            failed_chapters=["2"],
+            edge_blocked_chapters=[],
+        )
+        self.assertTrue((cache_dir / "_failure_checkpoint.json").exists())
+
+        second_converter = AudioConverter()
+        second_converter.audio_processor.convert_to_mp3 = fake_convert_to_mp3
+        healthy_engine = HealthyPiperEngine()
+        config_second = ConversionConfig(
+            engine="auto",
+            output_dir=self.temp_dir,
+            cache_dir=Path(self.temp_dir) / "cache",
+            validate_audio=False,
+            validate_text=False,
+            book_title="Resume Book",
+            force_reprocess=True,
+            extra={"resume_from_failure": "1"},
+        )
+        piper_cfg_second = ConversionConfig(
+            engine="piper",
+            output_dir=self.temp_dir,
+            cache_dir=Path(self.temp_dir) / "cache",
+            validate_audio=False,
+            validate_text=False,
+            book_title="Resume Book",
+        )
+        with patch.object(
+            second_converter,
+            "_prepare_auto_engines",
+            return_value={"piper": (piper_cfg_second, healthy_engine)},
+        ):
+            result_second = await second_converter.convert(reader, config_second)
+
+        self.assertTrue(result_second.success)
+        self.assertIn(
+            healthy_engine.calls,
+            {1, 2},
+            "Resume flow should process only failed chapter; optional warmup may add one extra call",
+        )
+        self.assertEqual(second_converter._load_failure_checkpoint(cache_dir), {})
 
     async def test_convert_with_exception(self):
         """Test convert method propagates exceptions"""

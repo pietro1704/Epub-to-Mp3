@@ -9,7 +9,14 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from src.ci_speed_benchmark import check_regression, run_ci_speed_benchmark
+from src.ci_speed_benchmark import (
+    baseline_is_stale,
+    check_regression,
+    check_regression_vs_baseline,
+    load_baseline,
+    run_ci_speed_benchmark,
+    save_baseline,
+)
 
 
 class TestCISpeedBenchmark(unittest.IsolatedAsyncioTestCase):
@@ -31,3 +38,23 @@ class TestCISpeedBenchmark(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         ok, _msg = check_regression({"avg_chars_per_second": 800.0}, 1000.0)
         self.assertFalse(ok)
+
+    def test_baseline_store_and_regression(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            baseline_path = Path(temp_dir) / "baseline.json"
+            save_baseline({"avg_chars_per_second": 1000.0, "items": []}, baseline_path)
+            baseline = load_baseline(baseline_path)
+            self.assertIsNotNone(baseline)
+            self.assertFalse(baseline_is_stale(baseline, period_hours=24))
+            ok, _msg = check_regression_vs_baseline(
+                {"avg_chars_per_second": 950.0},
+                baseline,
+                max_regression_pct=10.0,
+            )
+            self.assertTrue(ok)
+            ok, _msg = check_regression_vs_baseline(
+                {"avg_chars_per_second": 850.0},
+                baseline,
+                max_regression_pct=10.0,
+            )
+            self.assertFalse(ok)

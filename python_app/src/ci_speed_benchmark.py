@@ -14,6 +14,7 @@ from typing import Dict, List, Optional
 from .config import ConversionConfig
 from .converter import AudioConverter
 from .ebook_reader import Chapter
+from .paths import TELEMETRY_DIR
 
 
 @dataclass
@@ -136,4 +137,78 @@ def check_regression(payload: Dict[str, object], min_avg_cps: float) -> tuple[bo
     return False, f"avg chars/s {avg_cps:.1f} < threshold {threshold:.1f}"
 
 
-__all__ = ["run_ci_speed_benchmark", "check_regression"]
+def load_baseline(path: Optional[Path] = None) -> Optional[Dict[str, object]]:
+    baseline_path = Path(path or (TELEMETRY_DIR / "ci-speed-baseline.json"))
+    if not baseline_path.exists():
+        return None
+    try:
+        payload = json.loads(baseline_path.read_text(encoding="utf-8"))
+        if isinstance(payload, dict):
+            return payload
+    except Exception:
+        return None
+    return None
+
+
+def save_baseline(payload: Dict[str, object], path: Optional[Path] = None) -> Path:
+    baseline_path = Path(path or (TELEMETRY_DIR / "ci-speed-baseline.json"))
+    baseline_path.parent.mkdir(parents=True, exist_ok=True)
+    body = {
+        "saved_at": time.time(),
+        "avg_chars_per_second": float(payload.get("avg_chars_per_second", 0.0) or 0.0),
+        "items": list(payload.get("items", []) or []),
+    }
+    baseline_path.write_text(json.dumps(body, ensure_ascii=False, indent=2), encoding="utf-8")
+    return baseline_path
+
+
+def baseline_is_stale(
+    baseline: Optional[Dict[str, object]],
+    *,
+    period_hours: float,
+) -> bool:
+    if baseline is None:
+        return True
+    hours = float(period_hours or 0.0)
+    if hours <= 0:
+        return False
+    saved_at = float(baseline.get("saved_at", 0.0) or 0.0)
+    if saved_at <= 0:
+        return True
+    return (time.time() - saved_at) >= (hours * 3600.0)
+
+
+def check_regression_vs_baseline(
+    payload: Dict[str, object],
+    baseline: Optional[Dict[str, object]],
+    *,
+    max_regression_pct: float,
+) -> tuple[bool, str]:
+    if baseline is None:
+        return True, "no baseline configured"
+    regression_pct = max(0.0, float(max_regression_pct or 0.0))
+    baseline_avg = float(baseline.get("avg_chars_per_second", 0.0) or 0.0)
+    current_avg = float(payload.get("avg_chars_per_second", 0.0) or 0.0)
+    if baseline_avg <= 0:
+        return True, "baseline avg chars/s is not set"
+    floor = baseline_avg * (1.0 - (regression_pct / 100.0))
+    if current_avg >= floor:
+        return (
+            True,
+            f"avg chars/s {current_avg:.1f} within {regression_pct:.1f}% of baseline {baseline_avg:.1f}",
+        )
+    return (
+        False,
+        f"avg chars/s {current_avg:.1f} below baseline floor {floor:.1f} "
+        f"({regression_pct:.1f}% from {baseline_avg:.1f})",
+    )
+
+
+__all__ = [
+    "run_ci_speed_benchmark",
+    "check_regression",
+    "load_baseline",
+    "save_baseline",
+    "baseline_is_stale",
+    "check_regression_vs_baseline",
+]

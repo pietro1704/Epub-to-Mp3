@@ -19,7 +19,14 @@ repo_root = os.path.abspath(os.path.join(python_app_dir, ".."))
 sys.path.insert(0, os.path.abspath(python_app_dir))
 sys.path.insert(0, repo_root)
 
-from src.ci_speed_benchmark import check_regression, run_ci_speed_benchmark  # noqa: E402
+from src.ci_speed_benchmark import (  # noqa: E402
+    baseline_is_stale,
+    check_regression,
+    check_regression_vs_baseline,
+    load_baseline,
+    run_ci_speed_benchmark,
+    save_baseline,
+)
 
 
 def main() -> int:
@@ -42,6 +49,29 @@ def main() -> int:
         default=0.0,
         help="Fail with exit code 2 if avg chars/s is below this threshold",
     )
+    parser.add_argument(
+        "--baseline-file",
+        type=Path,
+        default=Path(".cache/telemetry/ci-speed-baseline.json"),
+        help="Baseline JSON used for periodic regression checks",
+    )
+    parser.add_argument(
+        "--max-regression-pct",
+        type=float,
+        default=12.0,
+        help="Fail with exit code 3 if performance regresses more than this percent vs baseline",
+    )
+    parser.add_argument(
+        "--period-hours",
+        type=float,
+        default=24.0,
+        help="Baseline refresh period in hours (<=0 disables staleness check)",
+    )
+    parser.add_argument(
+        "--update-baseline",
+        action="store_true",
+        help="Force update baseline with current benchmark result",
+    )
     args = parser.parse_args()
     payload = asyncio.run(run_ci_speed_benchmark(output_path=args.output, cps=args.cps))
     print(f"✅ Benchmark complete: {args.output}")
@@ -53,6 +83,23 @@ def main() -> int:
         else:
             print(f"❌ Regression check: {message}")
             return 2
+    baseline = load_baseline(args.baseline_file)
+    baseline_stale = baseline_is_stale(baseline, period_hours=args.period_hours)
+    if args.update_baseline or baseline_stale:
+        saved = save_baseline(payload, args.baseline_file)
+        why = "forced" if args.update_baseline else "periodic refresh"
+        print(f"💾 Baseline updated ({why}): {saved}")
+        baseline = load_baseline(args.baseline_file)
+    ok_baseline, baseline_msg = check_regression_vs_baseline(
+        payload,
+        baseline,
+        max_regression_pct=args.max_regression_pct,
+    )
+    if ok_baseline:
+        print(f"✅ Baseline check: {baseline_msg}")
+    else:
+        print(f"❌ Baseline check: {baseline_msg}")
+        return 3
     return 0
 
 

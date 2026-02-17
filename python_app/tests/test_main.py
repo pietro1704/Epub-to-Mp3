@@ -4,6 +4,7 @@ Unit tests for main application
 """
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -367,6 +368,52 @@ class TestConverterApplication(unittest.TestCase):
         self.assertEqual(config.edge_chunk_chars, 24000)
         self.assertEqual(config.edge_max_segment_seconds, 300)
 
+    def test_apply_cli_overrides_sets_runtime_feature_flags(self):
+        config = self.app.config.create_conversion_config(engine="auto")
+        args = Namespace(
+            use_language_detection=None,
+            prioritize_primary_language=None,
+            force_reprocess=False,
+            no_cache=False,
+            resume_from_failure=None,
+            chapter_prefetch=False,
+            auto_ab=True,
+            adaptive_checkpoint=False,
+            edge_chunk_chars=None,
+            edge_max_segment_seconds=None,
+            edge_enable_parallel=None,
+            edge_auto_tune=None,
+            coqui_chunk_chars=None,
+            coqui_max_workers=None,
+            coqui_safe_mode=None,
+            piper_max_procs=None,
+            edge_stable_mode=None,
+            bitrate=None,
+            auto_validate_output=None,
+            auto_fix_output=None,
+            deep_validate=None,
+            sample_rate=None,
+            channels=None,
+            max_performance=False,
+            parallel_slots=None,
+            no_parallel=False,
+            chapter_stall_seconds=None,
+            edge_network_tier=None,
+            health_check_interval_seconds=None,
+            health_check_slow_edge_cps=None,
+            health_check_slow_cps=None,
+            health_check_high_cpu=None,
+            health_check_high_mem=None,
+            health_check_ok_cpu=None,
+            health_check_ok_mem=None,
+            health_check_slow_streak=None,
+        )
+
+        self.app._apply_cli_overrides(args, config)
+        self.assertEqual(config.extra.get("chapter_prefetch"), "0")
+        self.assertEqual(config.extra.get("auto_ab"), "1")
+        self.assertEqual(config.extra.get("adaptive_checkpoint"), "0")
+
     def _build_structure_item(self, html: str) -> ChapterStructureItem:
         chapter = Chapter(
             index=1,
@@ -563,6 +610,18 @@ class TestArgumentParser(unittest.TestCase):
         self.assertTrue(args.resume_from_failure)
         args = parser.parse_args(["convert", "test.epub", "--no-resume-from-failure"])
         self.assertFalse(args.resume_from_failure)
+        args = parser.parse_args(["convert", "test.epub", "--prefetch"])
+        self.assertTrue(args.chapter_prefetch)
+        args = parser.parse_args(["convert", "test.epub", "--no-prefetch"])
+        self.assertFalse(args.chapter_prefetch)
+        args = parser.parse_args(["convert", "test.epub", "--ab-auto"])
+        self.assertTrue(args.auto_ab)
+        args = parser.parse_args(["convert", "test.epub", "--no-ab-auto"])
+        self.assertFalse(args.auto_ab)
+        args = parser.parse_args(["convert", "test.epub", "--adaptive-checkpoint"])
+        self.assertTrue(args.adaptive_checkpoint)
+        args = parser.parse_args(["convert", "test.epub", "--no-adaptive-checkpoint"])
+        self.assertFalse(args.adaptive_checkpoint)
 
     def test_parser_engine_choices(self):
         """Test engine choices validation"""
@@ -833,6 +892,35 @@ class TestMainFunction(unittest.TestCase):
         result = main()
         self.assertEqual(result, 1)
         mock_app.run.assert_called_once()
+
+
+class TestCliE2E(unittest.TestCase):
+    def test_convert_show_structure_accepts_runtime_feature_flags(self):
+        repo_root = Path(__file__).resolve().parents[2]
+        fixture = (
+            repo_root / "python_app" / "tests" / "fixtures" / "epubs" / "sample_multilang.epub"
+        )
+        cmd = [
+            sys.executable,
+            "-m",
+            "python_app.main",
+            "convert",
+            str(fixture),
+            "--show-structure",
+            "--prefetch",
+            "--ab-auto",
+            "--adaptive-checkpoint",
+        ]
+        proc = subprocess.run(
+            cmd,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+        self.assertEqual(proc.returncode, 0, msg=proc.stderr or proc.stdout)
+        self.assertIn("Chapters:", proc.stdout)
 
 
 if __name__ == "__main__":

@@ -597,6 +597,15 @@ class ConverterApplication:
             f"{chapters.get('successful', 0)}/{chapters.get('total', 0)} ok, "
             f"{chapters.get('failed', 0)} failed"
         )
+        optimization = payload.get("optimization_metrics", {}) if isinstance(payload, dict) else {}
+        if isinstance(optimization, dict) and optimization:
+            print(
+                "   optimization: "
+                f"prefetch_hit_rate={float(optimization.get('prefetch_hit_rate', 0.0) or 0.0) * 100:.1f}% | "
+                f"ab_explorations={int(optimization.get('ab_explorations', 0) or 0)} | "
+                f"budget_caps={int(optimization.get('budget_caps_applied', 0) or 0)} | "
+                f"adaptive_restores={int(optimization.get('adaptive_state_restores', 0) or 0)}"
+            )
         print(f"   file: {summary_path}")
 
     @staticmethod
@@ -639,6 +648,7 @@ class ConverterApplication:
             "metrics-dashboard.html",
             "_runtime_metrics.jsonl",
             "_failure_checkpoint.json",
+            "_adaptive_state_checkpoint.json",
         ]
         existing = [base / name for name in candidates if (base / name).exists()]
         if not existing:
@@ -3268,6 +3278,15 @@ class ConverterApplication:
         resume_from_failure = getattr(args, "resume_from_failure", None)
         if resume_from_failure is not None:
             config.extra["resume_from_failure"] = "1" if bool(resume_from_failure) else "0"
+        chapter_prefetch = getattr(args, "chapter_prefetch", None)
+        if chapter_prefetch is not None:
+            config.extra["chapter_prefetch"] = "1" if bool(chapter_prefetch) else "0"
+        auto_ab = getattr(args, "auto_ab", None)
+        if auto_ab is not None:
+            config.extra["auto_ab"] = "1" if bool(auto_ab) else "0"
+        adaptive_checkpoint = getattr(args, "adaptive_checkpoint", None)
+        if adaptive_checkpoint is not None:
+            config.extra["adaptive_checkpoint"] = "1" if bool(adaptive_checkpoint) else "0"
 
         edge_chunk_chars = self._clamp_int(
             getattr(args, "edge_chunk_chars", None), min_value=4000, max_value=24000
@@ -4043,6 +4062,51 @@ def _add_conversion_arguments(
         dest="export_metrics_bundle",
         action="store_true",
         help="Export metrics files into a ZIP bundle when conversion ends",
+    )
+    prefetch_group = parser.add_mutually_exclusive_group()
+    prefetch_group.add_argument(
+        "--prefetch",
+        dest="chapter_prefetch",
+        action="store_true",
+        default=None,
+        help="Enable chapter prefetch pipeline",
+    )
+    prefetch_group.add_argument(
+        "--no-prefetch",
+        dest="chapter_prefetch",
+        action="store_false",
+        default=None,
+        help="Disable chapter prefetch pipeline",
+    )
+    auto_ab_group = parser.add_mutually_exclusive_group()
+    auto_ab_group.add_argument(
+        "--ab-auto",
+        dest="auto_ab",
+        action="store_true",
+        default=None,
+        help="Enable online A/B exploration in auto-engine mode",
+    )
+    auto_ab_group.add_argument(
+        "--no-ab-auto",
+        dest="auto_ab",
+        action="store_false",
+        default=None,
+        help="Disable online A/B exploration in auto-engine mode",
+    )
+    adaptive_checkpoint_group = parser.add_mutually_exclusive_group()
+    adaptive_checkpoint_group.add_argument(
+        "--adaptive-checkpoint",
+        dest="adaptive_checkpoint",
+        action="store_true",
+        default=None,
+        help="Enable adaptive-state checkpoint persistence",
+    )
+    adaptive_checkpoint_group.add_argument(
+        "--no-adaptive-checkpoint",
+        dest="adaptive_checkpoint",
+        action="store_false",
+        default=None,
+        help="Disable adaptive-state checkpoint persistence",
     )
     parser.add_argument(
         "--batch",

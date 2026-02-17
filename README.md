@@ -109,6 +109,10 @@ python -m python_app.main book.epub --show-structure
 
 # Clear cache and reprocess
 python -m python_app.main book.epub --clear-cache
+
+# Runtime optimization toggles
+python -m python_app.main book.epub --prefetch --ab-auto --adaptive-checkpoint
+python -m python_app.main book.epub --no-prefetch --no-ab-auto --no-adaptive-checkpoint
 ```
 
 ### Batch Conversion
@@ -207,6 +211,73 @@ Notas rápidas:
 - Edge multilíngue respeita o limite público de ~10 req/s das vozes `MultilingualNeural`; a variante monolíngue usa ~16 req/s para fugir do rate limit mais agressivo.
 - Piper usa automaticamente o modelo pt-BR recomendado em `models/` e ajusta `PIPER_MAX_PROCS` de acordo com os núcleos físicos detectados.
 - Use `--keep-cache` se quiser medições super rápidas (sem limpar cache), ou deixe o padrão para forçar reconversões completas.
+
+### Benchmark real por engine (baseline por máquina)
+
+Para medir engines reais (Edge/Piper/Coqui) com capítulos curto/médio/longo e salvar baseline local:
+
+```bash
+python scripts/real_engine_benchmark.py \
+  --book python_app/tests/fixtures/epubs/sample_multilang.epub \
+  --engines edge,piper,coqui
+```
+
+Arquivos gerados em `.cache/telemetry/`:
+- `real-engine-benchmark-<hostname>.json` (execução atual)
+- `real-engine-baseline-<hostname>.json` (baseline persistente da máquina)
+
+Engines indisponíveis são marcadas como falha no relatório, sem interromper as demais.
+
+### Métricas de otimização no dashboard
+
+`metrics-summary.json` e `metrics-dashboard.html` agora incluem:
+
+- `prefetch_hit_rate`: taxa de acerto do prefetch de capítulo
+- `ab_explorations`: quantas explorações A/B ocorreram em `--engine auto`
+- `budget_caps_applied`: quantas vezes o budget de recursos reduziu paralelismo
+- `adaptive_state_restores`: quantas restaurações de checkpoint adaptativo ocorreram
+
+### Troubleshooting Edge (DNS/SSL/429)
+
+Se o Edge-TTS ficar instável no ambiente atual:
+
+- **DNS/SSL (`ClientConnectorDNSError`, certificado)**:
+  - valide conectividade externa no host
+  - reduza concorrência:
+    - `EDGE_MAX_CONCURRENCY=1`
+    - `CHAPTER_PARALLEL_COUNT=1`
+  - habilite fallback automático para local:
+    - `--engine auto` (com Piper/Coqui instalados)
+- **429 / rate limit / throttle**:
+  - reduza carga:
+    - `EDGE_MAX_CONCURRENCY=1..2`
+    - `EDGE_CHUNK_CHARS=4000..9000`
+  - mantenha auto-tune ligado (`--edge-auto-tune`)
+- **timeouts frequentes**:
+  - aumentar tolerância:
+    - `EDGE_MAX_SEGMENT_SECONDS=90..120`
+    - `CHAPTER_STALL_SECONDS=60`
+  - usar perfil estável:
+    - `--edge-stable-mode`
+
+Para investigação rápida:
+
+```bash
+python -m python_app.main convert book.epub --engine edge --chapter 1 --no-parallel --verbose
+```
+
+Se falhar, rode com `--engine auto` para permitir recuperação por engine local.
+
+### CI benchmark noturno
+
+O repositório inclui workflow agendado (`.github/workflows/nightly-benchmark.yml`) que:
+
+- roda benchmark de velocidade diário
+- compara com baseline e aplica gate de regressão
+- publica artefatos JSON
+- abre issue automaticamente em caso de regressão
+
+Para histórico de mudanças desta release, veja `CHANGELOG.md`.
 
 ## API Server
 

@@ -40,6 +40,7 @@ from .ebook_reader import Chapter, EbookReader
 from .engine_pool import JobEnginePool, ResourceSnapshot
 from .hardware_detector import HardwareProfile
 from .i18n import Localization, get_localization
+from .performance_profile_store import PerformanceProfileStore
 from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController
 from .text_integrity_validator import TextIntegrityValidator
@@ -281,6 +282,26 @@ class AudioConverter:
             "cooldown_seconds": 900.0,
             "last_reason": "",
         }
+        self._auto_ab_enabled = _env_bool("AUTO_ENGINE_AB_ENABLED", True)
+        self._auto_ab_interval = max(2, _env_int("AUTO_ENGINE_AB_INTERVAL", 6))
+        self._auto_ab_max_gap = max(1.0, _env_float("AUTO_ENGINE_AB_MAX_GAP", 15.0))
+        self._auto_ab_counter = 0
+        self._resource_budget_enabled = _env_bool("ENGINE_RESOURCE_BUDGET_ENABLED", True)
+        self._engine_resource_budget: Dict[str, Dict[str, int]] = {}
+        self._resource_budget_min_share = max(
+            0.15, min(0.8, _env_float("ENGINE_RESOURCE_BUDGET_MIN_SHARE", 0.3))
+        )
+        self._best_param_store = PerformanceProfileStore()
+        self._persist_best_params = _env_bool("PERSIST_BEST_ENGINE_PARAMS", True)
+        # Warmup is opt-in to avoid changing synthesis semantics unexpectedly.
+        self._warmup_before_first_chapter = _env_bool("ENGINE_WARMUP_ENABLED", False)
+        self._engine_warmup_done: Set[str] = set()
+        self._chapter_prefetch_enabled = _env_bool("CHAPTER_PREFETCH_ENABLED", True)
+        self._adaptive_checkpoint_enabled = _env_bool("ADAPTIVE_STATE_CHECKPOINT_ENABLED", True)
+        self._adaptive_checkpoint_interval = max(
+            1, _env_int("ADAPTIVE_STATE_CHECKPOINT_INTERVAL", 1)
+        )
+        self._adaptive_checkpoint_dirty = 0
 
     def _optimize_memory_settings(self) -> None:
         """
@@ -350,6 +371,455 @@ class AudioConverter:
 
         except Exception:
             pass  # Ignore cleanup errors
+
+    @staticmethod
+    def _normalize_perf_key_piece(value: Optional[str], fallback: str) -> str:
+        text = (value or "").strip()
+        return text if text else fallback
+
+    def _runtime_tuning_key(
+        self, cfg: Optional[ConversionConfig], engine_label: str
+    ) -> Dict[str, str]:
+        engine = self._normalize_perf_key_piece((engine_label or "").lower(), "unknown")
+        voice = self._normalize_perf_key_piece(getattr(cfg, "voice", None), "default")
+        language = self._normalize_perf_key_piece(getattr(cfg, "primary_language", None), "auto")
+        return {"engine": engine, "voice": voice, "language": language}
+
+    @staticmethod
+    def _classify_failure_reason(error_text: Optional[str]) -> str:
+        text = str(error_text or "").strip().lower()
+        if not text:
+            return "unknown"
+        if any(token in text for token in ("unauthorized", "forbidden", "401", "403", "auth")):
+            return "auth"
+        if any(
+            token in text
+            for token in (
+                "rate_limit",
+                "rate limit",
+                "too many requests",
+                "429",
+                "throttle",
+                "quota",
+            )
+        ):
+            return "throttle"
+        if any(token in text for token in ("noaudio", "no_audio", "noaudioreceived")):
+            return "no_audio"
+        if any(
+            token in text
+            for token in ("ssl", "certificate", "dns", "connector", "connection refused")
+        ):
+            return "network"
+        if any(token in text for token in ("timeout", "timed out", "503", "service_unavailable")):
+            return "transient"
+        if "connection" in text:
+            return "network"
+        return "unknown"
+
+    def _apply_engine_resource_budget(
+        self,
+        *,
+        engine_label: str,
+        snapshot: ResourceSnapshot,
+        engine_pool: Optional[JobEnginePool] = None,
+    ) -> None:
+        if not self._resource_budget_enabled:
+            return
+        engine = (engine_label or "unknown").lower()
+        ceiling = max(1, int(self._parallel_state.get("ceiling") or 1))
+        current = max(1, int(self._parallel_state.get("current") or 1))
+        budget = self._engine_resource_budget.setdefault(
+            engine,
+            {"cap": ceiling, "pressure_streak": 0, "free_streak": 0},
+        )
+        cap = max(1, min(ceiling, int(budget.get("cap", ceiling) or ceiling)))
+        engine_cps = self._segment_adaptive_state.get("engine_cps", {})
+        if isinstance(engine_cps, dict) and engine_cps:
+            averages: Dict[str, float] = {}
+            for name, values in engine_cps.items():
+                try:
+                    seq = [float(v) for v in (values or []) if float(v) > 0]
+                except Exception:
+                    seq = []
+                if seq:
+                    averages[str(name).lower()] = sum(seq) / len(seq)
+            if averages and engine in averages:
+                top = max(averages.values()) or 1.0
+                ratio = max(self._resource_budget_min_share, min(1.0, averages[engine] / top))
+                perf_cap = max(1, int(round(ceiling * ratio)))
+                cap = min(cap, perf_cap)
+
+        if snapshot.cpu_percent > 94 or snapshot.ram_gb < 0.65:
+            budget["pressure_streak"] = int(budget.get("pressure_streak", 0) or 0) + 1
+            budget["free_streak"] = 0
+            if budget["pressure_streak"] >= 2:
+                cap = max(1, cap - 1)
+                budget["pressure_streak"] = 0
+        elif snapshot.cpu_percent < 72 and snapshot.ram_gb > 1.4:
+            budget["free_streak"] = int(budget.get("free_streak", 0) or 0) + 1
+            budget["pressure_streak"] = 0
+            if budget["free_streak"] >= 3:
+                cap = min(ceiling, cap + 1)
+                budget["free_streak"] = 0
+        else:
+            budget["pressure_streak"] = 0
+            budget["free_streak"] = 0
+
+        budget["cap"] = cap
+        if current > cap:
+            self._parallel_state["current"] = cap
+            if engine_pool is not None:
+                engine_pool.update_parallel_slots(cap)
+            self._append_runtime_metric(
+                {
+                    "event": "resource_budget_cap",
+                    "engine": engine,
+                    "from_parallel": current,
+                    "to_parallel": cap,
+                    "cpu_percent": round(float(snapshot.cpu_percent), 2),
+                    "ram_gb": round(float(snapshot.ram_gb), 3),
+                }
+            )
+            if self.verbose:
+                print(f"⚖️ Resource budget cap for {engine}: {current}→{cap}")
+
+    @staticmethod
+    def _adaptive_state_path(temp_dir: Optional[Path]) -> Optional[Path]:
+        if temp_dir is None:
+            return None
+        return Path(temp_dir) / "_adaptive_state_checkpoint.json"
+
+    def _save_adaptive_state_checkpoint(self, temp_dir: Optional[Path]) -> None:
+        if not self._adaptive_checkpoint_enabled:
+            return
+        path = self._adaptive_state_path(temp_dir)
+        if path is None:
+            return
+        payload = {
+            "saved_at": time.time(),
+            "segment_adaptive_state": {
+                "pre_check_interval_by_engine": dict(
+                    self._segment_adaptive_state.get("pre_check_interval_by_engine", {}) or {}
+                ),
+                "pre_check_stable_streak_by_engine": dict(
+                    self._segment_adaptive_state.get("pre_check_stable_streak_by_engine", {}) or {}
+                ),
+                "engine_cps": dict(self._segment_adaptive_state.get("engine_cps", {}) or {}),
+                "last_adjustment": float(
+                    self._segment_adaptive_state.get("last_adjustment", 0.0) or 0.0
+                ),
+            },
+            "engine_resource_budget": dict(self._engine_resource_budget),
+            "auto_ab_counter": int(self._auto_ab_counter or 0),
+        }
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+            self._adaptive_checkpoint_dirty = 0
+            self._append_runtime_metric({"event": "adaptive_state_saved"})
+        except Exception:
+            return
+
+    def _load_adaptive_state_checkpoint(self, temp_dir: Optional[Path]) -> None:
+        if not self._adaptive_checkpoint_enabled:
+            return
+        path = self._adaptive_state_path(temp_dir)
+        if path is None or not path.exists():
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        if not isinstance(payload, dict):
+            return
+        seg = payload.get("segment_adaptive_state")
+        if isinstance(seg, dict):
+            for key in (
+                "pre_check_interval_by_engine",
+                "pre_check_stable_streak_by_engine",
+                "engine_cps",
+                "last_adjustment",
+            ):
+                if key in seg:
+                    self._segment_adaptive_state[key] = seg.get(key)
+        budget = payload.get("engine_resource_budget")
+        if isinstance(budget, dict):
+            self._engine_resource_budget = {
+                str(name): dict(state) for name, state in budget.items() if isinstance(state, dict)
+            }
+        self._auto_ab_counter = int(payload.get("auto_ab_counter", self._auto_ab_counter) or 0)
+        self._append_runtime_metric({"event": "adaptive_state_restored"})
+
+    def _collect_engine_params(
+        self, engine: str, cfg: Optional[ConversionConfig]
+    ) -> Dict[str, object]:
+        engine_name = (engine or "").lower()
+        params: Dict[str, object] = {}
+        if engine_name == "edge":
+            params["edge_chunk_chars"] = int(getattr(cfg, "edge_chunk_chars", 12000) or 12000)
+            params["edge_max_concurrency"] = int(
+                os.getenv(
+                    "EDGE_MAX_CONCURRENCY", str(getattr(cfg, "edge_max_concurrency", 12) or 12)
+                )
+            )
+            params["edge_enable_parallel"] = bool(getattr(cfg, "edge_enable_parallel", True))
+            params["edge_max_segment_seconds"] = int(
+                getattr(cfg, "edge_max_segment_seconds", 85) or 85
+            )
+        elif engine_name == "coqui":
+            params["coqui_chunk_chars"] = int(
+                getattr(cfg, "coqui_chunk_chars", 1500)
+                or os.getenv("COQUI_CHUNK_CHARS", "1500")
+                or 1500
+            )
+            params["coqui_max_workers"] = int(
+                getattr(cfg, "coqui_max_workers", 0) or os.getenv("COQUI_MAX_WORKERS", "2") or 2
+            )
+        elif engine_name == "piper":
+            params["piper_max_procs"] = int(
+                getattr(cfg, "piper_max_procs", 0) or os.getenv("PIPER_MAX_PROCS", "2") or 2
+            )
+            params["piper_chunk_chars"] = int(os.getenv("PIPER_CHUNK_CHARS", "3000") or 3000)
+        elif engine_name == "kokoro":
+            params["kokoro_max_workers"] = int(os.getenv("KOKORO_MAX_WORKERS", "2") or 2)
+            params["kokoro_chunk_chars"] = int(os.getenv("KOKORO_CHUNK_CHARS", "2000") or 2000)
+        elif engine_name == "spark":
+            params["spark_max_workers"] = int(os.getenv("SPARK_MAX_WORKERS", "1") or 1)
+            params["spark_chunk_chars"] = int(os.getenv("SPARK_CHUNK_CHARS", "1500") or 1500)
+        return params
+
+    def _apply_runtime_feature_overrides(self, config: Optional[ConversionConfig]) -> None:
+        """Apply per-run feature toggles from ConversionConfig.extra."""
+        if config is None or not getattr(config, "extra", None):
+            return
+        extra = config.extra
+
+        def _opt_bool(key: str) -> Optional[bool]:
+            raw = extra.get(key)
+            if raw is None:
+                return None
+            return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+        prefetch = _opt_bool("chapter_prefetch")
+        if prefetch is not None:
+            self._chapter_prefetch_enabled = prefetch
+        auto_ab = _opt_bool("auto_ab")
+        if auto_ab is not None:
+            self._auto_ab_enabled = auto_ab
+        checkpoint = _opt_bool("adaptive_checkpoint")
+        if checkpoint is not None:
+            self._adaptive_checkpoint_enabled = checkpoint
+
+    def _apply_engine_params(
+        self,
+        *,
+        engine: str,
+        cfg: Optional[ConversionConfig],
+        params: Dict[str, object],
+        engine_obj: Optional[object] = None,
+    ) -> bool:
+        engine_name = (engine or "").lower()
+        changed = False
+        if engine_name == "edge":
+            chunk_chars = int(
+                params.get("edge_chunk_chars", getattr(cfg, "edge_chunk_chars", 12000))
+            )
+            max_concurrency = int(
+                params.get(
+                    "edge_max_concurrency",
+                    os.getenv(
+                        "EDGE_MAX_CONCURRENCY", str(getattr(cfg, "edge_max_concurrency", 12))
+                    ),
+                )
+            )
+            enable_parallel = bool(
+                params.get("edge_enable_parallel", getattr(cfg, "edge_enable_parallel", True))
+            )
+            max_segment_seconds = int(
+                params.get("edge_max_segment_seconds", getattr(cfg, "edge_max_segment_seconds", 85))
+            )
+            if cfg is not None:
+                cfg.edge_chunk_chars = chunk_chars
+                cfg.edge_max_concurrency = max_concurrency
+                cfg.edge_enable_parallel = enable_parallel
+                cfg.edge_max_segment_seconds = max_segment_seconds
+            os.environ["EDGE_CHUNK_CHARS"] = str(chunk_chars)
+            os.environ["EDGE_MAX_CONCURRENCY"] = str(max_concurrency)
+            os.environ["EDGE_MAX_SEGMENT_SECONDS"] = str(max_segment_seconds)
+            if engine_obj is not None and hasattr(engine_obj, "apply_speed_profile"):
+                with contextlib.suppress(Exception):
+                    engine_obj.apply_speed_profile(
+                        chunk_char_limit=max(4000, int(chunk_chars)),
+                        max_segment_seconds=max(30.0, float(max_segment_seconds)),
+                    )
+            changed = True
+        elif engine_name == "coqui":
+            chunk_chars = int(
+                params.get(
+                    "coqui_chunk_chars",
+                    getattr(cfg, "coqui_chunk_chars", 1500)
+                    or os.getenv("COQUI_CHUNK_CHARS", "1500"),
+                )
+            )
+            max_workers = int(
+                params.get(
+                    "coqui_max_workers",
+                    getattr(cfg, "coqui_max_workers", 0) or os.getenv("COQUI_MAX_WORKERS", "2"),
+                )
+            )
+            if cfg is not None:
+                cfg.coqui_chunk_chars = chunk_chars
+                cfg.coqui_max_workers = max_workers
+            os.environ["COQUI_CHUNK_CHARS"] = str(chunk_chars)
+            os.environ["COQUI_MAX_WORKERS"] = str(max_workers)
+            if engine_obj is not None:
+                with contextlib.suppress(Exception):
+                    setattr(engine_obj, "_chunk_char_limit", chunk_chars)
+            changed = True
+        elif engine_name == "piper":
+            max_procs = int(
+                params.get(
+                    "piper_max_procs",
+                    getattr(cfg, "piper_max_procs", 0) or os.getenv("PIPER_MAX_PROCS", "2"),
+                )
+            )
+            chunk_chars = int(
+                params.get("piper_chunk_chars", os.getenv("PIPER_CHUNK_CHARS", "3000"))
+            )
+            if cfg is not None:
+                cfg.piper_max_procs = max_procs
+            os.environ["PIPER_MAX_PROCS"] = str(max_procs)
+            os.environ["PIPER_CHUNK_CHARS"] = str(chunk_chars)
+            if engine_obj is not None:
+                with contextlib.suppress(Exception):
+                    setattr(engine_obj, "_chunk_char_limit", chunk_chars)
+                with contextlib.suppress(Exception):
+                    setattr(engine_obj, "_semaphore", asyncio.Semaphore(max(1, max_procs)))
+            changed = True
+        elif engine_name == "kokoro":
+            os.environ["KOKORO_MAX_WORKERS"] = str(
+                int(params.get("kokoro_max_workers", os.getenv("KOKORO_MAX_WORKERS", "2")))
+            )
+            os.environ["KOKORO_CHUNK_CHARS"] = str(
+                int(params.get("kokoro_chunk_chars", os.getenv("KOKORO_CHUNK_CHARS", "2000")))
+            )
+            changed = True
+        elif engine_name == "spark":
+            os.environ["SPARK_MAX_WORKERS"] = str(
+                int(params.get("spark_max_workers", os.getenv("SPARK_MAX_WORKERS", "1")))
+            )
+            os.environ["SPARK_CHUNK_CHARS"] = str(
+                int(params.get("spark_chunk_chars", os.getenv("SPARK_CHUNK_CHARS", "1500")))
+            )
+            changed = True
+        return changed
+
+    def _apply_persisted_engine_params(
+        self,
+        *,
+        cfg: Optional[ConversionConfig],
+        engine_label: str,
+        engine_obj: Optional[object] = None,
+    ) -> bool:
+        if not self._persist_best_params:
+            return False
+        key = self._runtime_tuning_key(cfg, engine_label)
+        entry = self._best_param_store.get_profile(
+            engine=key["engine"], voice=key["voice"], language=key["language"]
+        )
+        if not entry:
+            return False
+        params = entry.get("params", {})
+        if not isinstance(params, dict) or not params:
+            return False
+        changed = self._apply_engine_params(
+            engine=key["engine"],
+            cfg=cfg,
+            params=params,
+            engine_obj=engine_obj,
+        )
+        if changed and self.verbose:
+            print(
+                "⚡ Loaded best params "
+                f"[{key['engine']}/{key['voice']}/{key['language']}] "
+                f"({float(entry.get('best_chars_per_second', 0.0) or 0.0):.1f} chars/s)"
+            )
+        return changed
+
+    def _persist_engine_params_after_chapter(
+        self,
+        *,
+        cfg: Optional[ConversionConfig],
+        engine_label: str,
+        chapter_chars: int,
+        elapsed_s: float,
+        success: bool,
+    ) -> None:
+        if not self._persist_best_params or not success:
+            return
+        if chapter_chars < 1500 or elapsed_s <= 0:
+            return
+        cps = float(chapter_chars) / max(float(elapsed_s), 0.001)
+        key = self._runtime_tuning_key(cfg, engine_label)
+        params = self._collect_engine_params(key["engine"], cfg)
+        if not params:
+            return
+        improved = self._best_param_store.upsert_profile(
+            engine=key["engine"],
+            voice=key["voice"],
+            language=key["language"],
+            chars_per_second=cps,
+            params=params,
+        )
+        if improved and self.verbose:
+            print(
+                "💾 Updated best params "
+                f"[{key['engine']}/{key['voice']}/{key['language']}] -> {cps:.1f} chars/s"
+            )
+
+    @staticmethod
+    def _warmup_output_path(base_dir: Path, engine: str) -> Path:
+        ext = ".mp3" if (engine or "").lower() == "edge" else ".wav"
+        return base_dir / f"{(engine or 'engine').lower()}-warmup{ext}"
+
+    async def _run_engine_warmup(
+        self,
+        *,
+        engine_label: str,
+        engine_obj: Optional[object],
+        cfg: Optional[ConversionConfig],
+        output_dir: Path,
+    ) -> None:
+        engine_name = (engine_label or "").lower()
+        if (
+            not self._warmup_before_first_chapter
+            or engine_obj is None
+            or not hasattr(engine_obj, "synthesize_async")
+            or engine_name in self._engine_warmup_done
+        ):
+            return
+        warmup_chars = max(160, _env_int("ENGINE_WARMUP_CHARS", 420))
+        warmup_text = ("Warmup segment. " * 40)[:warmup_chars]
+        warmup_timeout = max(10.0, _env_float("ENGINE_WARMUP_TIMEOUT_SECONDS", 45.0))
+        warmup_dir = Path(output_dir) / ".warmup"
+        warmup_dir.mkdir(parents=True, exist_ok=True)
+        warmup_path = self._warmup_output_path(warmup_dir, engine_name)
+        try:
+            await asyncio.wait_for(
+                engine_obj.synthesize_async(warmup_text, warmup_path, formatting_segments=None),
+                timeout=warmup_timeout,
+            )
+            self._engine_warmup_done.add(engine_name)
+            if self.verbose:
+                print(f"🔥 Warmup ready for {engine_name}")
+        except Exception as exc:
+            if self.verbose:
+                print(f"⚠️ Warmup skipped for {engine_name}: {exc}")
+        finally:
+            with contextlib.suppress(Exception):
+                if warmup_path.exists():
+                    warmup_path.unlink()
 
     def _create_optimized_thread_pool(self, max_workers: int) -> ThreadPoolExecutor:
         """
@@ -623,6 +1093,24 @@ class AudioConverter:
                     "count": len(edge_blocked_chapters),
                     "chapters": sorted(edge_blocked_chapters),
                 },
+                "optimization_metrics": {
+                    "prefetch_requests": int(event_counts.get("prefetch_request", 0) or 0),
+                    "prefetch_hits": int(event_counts.get("prefetch_hit", 0) or 0),
+                    "prefetch_hit_rate": (
+                        round(
+                            float(event_counts.get("prefetch_hit", 0) or 0)
+                            / float(event_counts.get("prefetch_request", 1) or 1),
+                            4,
+                        )
+                        if int(event_counts.get("prefetch_request", 0) or 0) > 0
+                        else 0.0
+                    ),
+                    "ab_explorations": int(event_counts.get("auto_ab_exploration", 0) or 0),
+                    "budget_caps_applied": int(event_counts.get("resource_budget_cap", 0) or 0),
+                    "adaptive_state_restores": int(
+                        event_counts.get("adaptive_state_restored", 0) or 0
+                    ),
+                },
             }
             summary_path = metrics_path.with_name("metrics-summary.json")
             summary_path.write_text(
@@ -746,6 +1234,11 @@ class AudioConverter:
             blocked_list = (
                 blocked_info.get("chapters", []) if isinstance(blocked_info, dict) else []
             )
+            opt = summary.get("optimization_metrics", {}) if isinstance(summary, dict) else {}
+            prefetch_hit_rate = float(opt.get("prefetch_hit_rate", 0.0) or 0.0)
+            ab_explorations = int(opt.get("ab_explorations", 0) or 0)
+            budget_caps = int(opt.get("budget_caps_applied", 0) or 0)
+            adaptive_restores = int(opt.get("adaptive_state_restores", 0) or 0)
             rows_html = ""
             if csv_path.exists():
                 with csv_path.open("r", encoding="utf-8") as handle:
@@ -789,6 +1282,10 @@ class AudioConverter:
     <div class="card"><strong>Chapters ok</strong><br>{int(chapters.get('successful', 0) or 0)}/{int(chapters.get('total', 0) or 0)}</div>
     <div class="card"><strong>Engine switches</strong><br>{switches}</div>
     <div class="card"><strong>Edge blocked chapters</strong><br>{blocked_count}</div>
+    <div class="card"><strong>Prefetch hit rate</strong><br>{prefetch_hit_rate * 100:.1f}%</div>
+    <div class="card"><strong>A/B explorations</strong><br>{ab_explorations}</div>
+    <div class="card"><strong>Budget caps applied</strong><br>{budget_caps}</div>
+    <div class="card"><strong>Adaptive restores</strong><br>{adaptive_restores}</div>
   </div>
   <h2>Chapter/Engine Attempts</h2>
   <table>
@@ -900,6 +1397,11 @@ class AudioConverter:
             del history[0 : len(history) - 16]
         avg_cps = sum(history) / len(history)
         snapshot = self._resource_snapshot()
+        self._apply_engine_resource_budget(
+            engine_label=engine,
+            snapshot=snapshot,
+            engine_pool=engine_pool,
+        )
 
         # Reduce health-check overhead after sustained stability; restore immediately when unstable.
         base_interval = max(1, int(state.get("pre_check_base_interval", 1) or 1))
@@ -1058,6 +1560,11 @@ class AudioConverter:
             return
 
         snapshot = self._resource_snapshot()
+        self._apply_engine_resource_budget(
+            engine_label=engine,
+            snapshot=snapshot,
+            engine_pool=engine_pool,
+        )
         current_parallel = max(1, int(self._parallel_state.get("current") or 1))
         ceiling_parallel = max(
             current_parallel, int(self._parallel_state.get("ceiling") or current_parallel)
@@ -4424,6 +4931,8 @@ class AudioConverter:
 
         # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
+        self._apply_runtime_feature_overrides(config)
+        self._load_adaptive_state_checkpoint(temp_dir)
         chapters = list(
             reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or []
         )
@@ -4558,6 +5067,8 @@ class AudioConverter:
 
                 # Recreate temp directory
                 temp_dir = self._setup_temp_directory(config)
+                self._apply_runtime_feature_overrides(config)
+                self._load_adaptive_state_checkpoint(temp_dir)
                 text_validator = TextIntegrityValidator(cache_dir=temp_dir, verbose=self.verbose)
 
                 self._generate_all_text_files(
@@ -4710,6 +5221,7 @@ class AudioConverter:
 
         pending_total = len(pending_chapters)
         self._start_health_watchdog(pending_total)
+        self._engine_warmup_done.clear()
         self._assign_progress_indices(pending_chapters)
         self.progress.start(pending_total, description="Converting chapters")
 
@@ -4811,6 +5323,19 @@ class AudioConverter:
             network_tier=edge_network_tier,
             auto_engine_pool=auto_engine_pool if is_auto_engine else None,
         )
+        if is_auto_engine:
+            for name, (pool_cfg, pool_engine_obj) in auto_engine_pool.items():
+                self._apply_persisted_engine_params(
+                    cfg=pool_cfg,
+                    engine_label=name,
+                    engine_obj=pool_engine_obj,
+                )
+        else:
+            self._apply_persisted_engine_params(
+                cfg=config,
+                engine_label=(config.engine or "").lower(),
+                engine_obj=engine_seeds.get((config.engine or "").lower()),
+            )
         edge_auto_override = getattr(config, "edge_auto_tune", None)
         edge_auto_enabled = (
             EDGE_AUTO_TUNE if edge_auto_override is None else bool(edge_auto_override)
@@ -5855,24 +6380,12 @@ class AudioConverter:
         cooldown_pattern = re.compile(r"cooldown\\s+(\\d+)s", re.IGNORECASE)
 
         def _edge_error_reason(last_error: Optional[str]) -> str:
-            text = str(last_error or "").lower()
-            if "rate_limit" in text or "too many requests" in text:
+            reason = self._classify_failure_reason(last_error)
+            if reason == "throttle":
                 return "rate_limit"
-            if "noaudio" in text or "no_audio" in text or "noaudioreceived" in text:
-                return "no_audio"
-            if "service_unavailable" in text or "503" in text:
-                return "service_unavailable"
-            if "timeout" in text:
+            if reason == "transient":
                 return "timeout"
-            if (
-                "ssl" in text
-                or "certificate" in text
-                or "connection" in text
-                or "dns" in text
-                or "connector" in text
-            ):
-                return "network"
-            return "unknown"
+            return reason
 
         edge_unavailable_hits = 0
         auto_engine_pool = auto_engine_pool or {}
@@ -6196,6 +6709,34 @@ class AudioConverter:
         edge_switched_to_kokoro = False
         edge_switched_to_piper = False
         config.voice if (config.engine or "").lower() == "edge" else None
+        prefetch_task: Optional[asyncio.Task] = None
+        prefetch_for_idx: Optional[int] = None
+
+        def _launch_prefetch(next_idx: int) -> None:
+            nonlocal prefetch_task, prefetch_for_idx
+            if not self._chapter_prefetch_enabled:
+                return
+            if next_idx < 0 or next_idx >= len(chapters_list):
+                return
+            next_chapter = chapters_list[next_idx]
+            next_chapter_num = self._chapter_number(next_chapter, next_idx + 1)
+            prefetch_for_idx = next_idx
+            prefetch_task = asyncio.create_task(
+                asyncio.to_thread(
+                    self._resolve_pre_tts_payload,
+                    next_chapter,
+                    next_chapter_num,
+                    output_dir,
+                    config,
+                )
+            )
+            self._append_runtime_metric(
+                {
+                    "event": "prefetch_request",
+                    "chapter": next_chapter_num,
+                },
+                output_dir=output_dir,
+            )
 
         for idx, chapter in enumerate(chapters_list):
             # Adaptive delay and fallback logic for Edge-TTS
@@ -6220,9 +6761,34 @@ class AudioConverter:
             chapter_num = self._chapter_number(chapter, idx + 1)
             progress_index = getattr(chapter, "_progress_index", None) or (idx + 1)
             chapter_label = self._chapter_display_name(chapter, chapter_num)
-            speech_text, pre_tts_path, payload_locked = self._resolve_pre_tts_payload(
-                chapter, chapter_num, output_dir, config
-            )
+            used_prefetch = False
+            if prefetch_task is not None and prefetch_for_idx == idx:
+                try:
+                    speech_text, pre_tts_path, payload_locked = await prefetch_task
+                    used_prefetch = True
+                    self._append_runtime_metric(
+                        {
+                            "event": "prefetch_hit",
+                            "chapter": chapter_num,
+                        },
+                        output_dir=output_dir,
+                    )
+                except Exception:
+                    used_prefetch = False
+                    self._append_runtime_metric(
+                        {
+                            "event": "prefetch_fallback",
+                            "chapter": chapter_num,
+                        },
+                        output_dir=output_dir,
+                    )
+                prefetch_task = None
+                prefetch_for_idx = None
+            if not used_prefetch:
+                speech_text, pre_tts_path, payload_locked = self._resolve_pre_tts_payload(
+                    chapter, chapter_num, output_dir, config
+                )
+            _launch_prefetch(idx + 1)
             current_payload: Optional[str] = speech_text
             chapter_chars = len(speech_text or "")
             progress_started = False
@@ -6314,6 +6880,7 @@ class AudioConverter:
                 engine_instance = {"object": None}
                 engine_name_used: Optional[str] = None
                 engine_obj: Optional[object] = None
+                engine_config: Optional[ConversionConfig] = None
 
                 try:
                     # Conversion para diretório temporário
@@ -6482,6 +7049,17 @@ class AudioConverter:
                         break
 
                     tts_engine = engine_obj
+                    self._apply_persisted_engine_params(
+                        cfg=engine_config,
+                        engine_label=current_engine_label,
+                        engine_obj=tts_engine,
+                    )
+                    await self._run_engine_warmup(
+                        engine_label=current_engine_label,
+                        engine_obj=tts_engine,
+                        cfg=engine_config,
+                        output_dir=output_dir,
+                    )
                     try:
                         if current_engine_label == "edge":
                             plan_segments = self._load_segment_plan(
@@ -7118,7 +7696,7 @@ class AudioConverter:
                             )
                         if current_engine_label == "edge":
                             last_err = str(getattr(tts_engine, "last_error", "") or "")
-                            if _edge_error_reason(last_err) == "network":
+                            if _edge_error_reason(last_err) in {"network", "auth"}:
                                 _block_edge_connectivity(last_err)
                         preferred_order = [
                             name
@@ -7384,6 +7962,16 @@ class AudioConverter:
                                     f"   ⚠️  Edge-TTS failure #{edge_failure_count} "
                                     f"({edge_consecutive_failures} consecutive)"
                                 )
+                            if reason in {"rate_limit", "timeout"}:
+                                backoff = min(8.0, 1.5 + float(edge_consecutive_failures))
+                                _maybe_apply_edge_slow_mode(
+                                    f"{reason} detected", engine_obj=tts_engine
+                                )
+                                if self.verbose:
+                                    print(
+                                        f"   ⏳ Edge {reason}: applying {backoff:.1f}s backoff before retry"
+                                    )
+                                await asyncio.sleep(backoff)
                             _maybe_apply_edge_slow_mode(
                                 f"failure Edge ({reason})", engine_obj=tts_engine
                             )
@@ -7392,7 +7980,7 @@ class AudioConverter:
                                 if reason != "unknown"
                                 else "Edge failed"
                             )
-                            if is_auto_engine and reason == "network":
+                            if is_auto_engine and reason in {"network", "auth"}:
                                 _block_edge_connectivity(last_err)
                                 if self.verbose:
                                     print(
@@ -7692,6 +8280,13 @@ class AudioConverter:
                     },
                     output_dir=output_dir,
                 )
+                self._persist_engine_params_after_chapter(
+                    cfg=engine_config if engine_config is not None else config,
+                    engine_label=engine_tracker.get("label") or (config.engine or "").lower(),
+                    chapter_chars=chapter_chars,
+                    elapsed_s=elapsed,
+                    success=chapter_success and not chapter_cached,
+                )
                 if (engine_tracker.get("label") or "").lower() == "edge" and chapter_success:
                     _reset_edge_circuit()
                 if chapter_success and not chapter_cached:
@@ -7708,9 +8303,17 @@ class AudioConverter:
                     chapter_success,
                     chapter_error,
                 )
+                if self._adaptive_checkpoint_enabled:
+                    self._adaptive_checkpoint_dirty += 1
+                    if self._adaptive_checkpoint_dirty >= self._adaptive_checkpoint_interval:
+                        self._save_adaptive_state_checkpoint(output_dir)
                 break
 
         success = len(errors) == 0
+        if prefetch_task is not None:
+            prefetch_task.cancel()
+            with contextlib.suppress(Exception):
+                await prefetch_task
 
         # Log Edge-TTS failure statistics if any failures occurred
         if (config.engine or "").lower() == "edge" and (
@@ -7728,6 +8331,8 @@ class AudioConverter:
                     f"   ⚠️  Reached failure threshold ({EDGE_FAILURE_THRESHOLD}) but Piper unavailable"
                 )
             print("─" * 60 + "\n")
+
+        self._save_adaptive_state_checkpoint(output_dir)
 
         return ConversionResult(
             success=success,
@@ -7908,6 +8513,33 @@ class AudioConverter:
                 order = [size_pick] + [e for e in order if e != size_pick]
         else:
             selected = order[0]
+
+        # Online A/B exploration to avoid lock-in to stale ranking.
+        if self._auto_ab_enabled and len(order) >= 2:
+            self._auto_ab_counter += 1
+            if self._auto_ab_counter % self._auto_ab_interval == 0:
+                score_by_engine = {engine: score for engine, score, _ in rankings}
+                top_engine = order[0]
+                alt_engine = order[1]
+                top_score = float(score_by_engine.get(top_engine, 0.0))
+                alt_score = float(score_by_engine.get(alt_engine, 0.0))
+                if (top_score - alt_score) <= self._auto_ab_max_gap:
+                    selected = alt_engine
+                    order = [alt_engine] + [e for e in order if e != alt_engine]
+                    self._append_runtime_metric(
+                        {
+                            "event": "auto_ab_exploration",
+                            "selected_engine": alt_engine,
+                            "baseline_engine": top_engine,
+                            "score_gap": round(top_score - alt_score, 3),
+                            "chapter_chars": int(chapter_chars or 0),
+                        }
+                    )
+                    if self.verbose:
+                        print(
+                            f"🧪 AUTO A/B: exploring {alt_engine} "
+                            f"(gap {top_score - alt_score:.1f} vs {top_engine})"
+                        )
 
         # Check if speed controller recommends switching from current engine
         current = getattr(self.speed_controller, "_current_engine", None)

@@ -52,6 +52,12 @@ _epub_convert() {
     '--show-metrics-dashboard[Show metrics dashboard path at end]'
     '--open-metrics-dashboard[Open metrics dashboard in browser at end]'
     '--export-metrics-bundle[Export metrics files as ZIP at end]'
+    '--prefetch[Enable chapter prefetch]'
+    '--no-prefetch[Disable chapter prefetch]'
+    '--ab-auto[Enable auto-engine A/B exploration]'
+    '--no-ab-auto[Disable auto-engine A/B exploration]'
+    '--adaptive-checkpoint[Enable adaptive state checkpoint]'
+    '--no-adaptive-checkpoint[Disable adaptive state checkpoint]'
     '-y[Assume yes]'
     '--verbose[Verbose output]'
   )
