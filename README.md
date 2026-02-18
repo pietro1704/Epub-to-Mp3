@@ -116,6 +116,14 @@ python -m python_app.main book.epub --no-prefetch --no-ab-auto --no-adaptive-che
 python -m python_app.main book.epub --stage-pipeline --stage-pipeline-depth 3
 ```
 
+### Feature A/B Benchmark
+
+```bash
+python scripts/benchmark_feature_ab.py --book book.epub --engine auto --workers 2
+```
+
+The report is saved in `.cache/telemetry/feature-ab-benchmark-<host>.json`.
+
 ### Batch Conversion
 
 Convert several books sequentially without babysitting the CLI:
@@ -146,6 +154,11 @@ For multi-process throughput, use the external worker pool:
 python scripts/external_worker_pool.py ~/Books --workers 4 \
   --forward-args "--engine auto --max-performance --stage-pipeline"
 ```
+
+Useful options:
+- `--retries N` and `--retry-delay-seconds S` for transient failures
+- `--job-timeout-seconds S` to abort a stuck book and move to next worker slot
+- `--json-report path.json` to persist per-book execution stats
 
 Arguments such as `--engine`, `--voice`, and formatting options apply to every book in the queue. `--batch` and `--batch-file` remain handy for folders, glob patterns, or long manifests. By default the converter continues after failures; add `--stop-on-error` to abort the batch on the first unsuccessful conversion.
 
@@ -244,6 +257,12 @@ Engines indisponíveis são marcadas como falha no relatório, sem interromper a
 - `ab_explorations`: quantas explorações A/B ocorreram em `--engine auto`
 - `budget_caps_applied`: quantas vezes o budget de recursos reduziu paralelismo
 - `adaptive_state_restores`: quantas restaurações de checkpoint adaptativo ocorreram
+- `thermal_guard_cap`: quantas vezes o guard térmico/energia reduziu paralelismo
+- `segment_success` / `pre_segment_check`: eventos detalhados em `_segment_metrics.jsonl`
+- `segment-metrics-summary.json` / `segment-metrics-engine-chapter.csv`: agregados por engine/capítulo
+- `segment-metrics-dashboard.html`: visão rápida visual dos segmentos
+- `metrics-recommendations.txt`: recomendações automáticas pós-run
+  - inclui percentis (P50/P95) e jitter para detectar instabilidade real
 
 ### Troubleshooting Edge (DNS/SSL/429)
 
@@ -288,6 +307,20 @@ O repositório inclui workflow agendado (`.github/workflows/nightly-benchmark.ym
 - publica artefatos JSON
 - abre issue automaticamente em caso de regressão
 
+Também há o workflow de PR (`.github/workflows/feature-ab-regression.yml`) que:
+
+- roda benchmark A/B das features (`stage-pipeline` + `external_worker_pool`)
+- aplica gate de regressão com thresholds configuráveis
+- publica artefato JSON com os resultados
+
+E o workflow semanal (`.github/workflows/weekly-feature-history.yml`) que:
+
+- roda benchmark A/B semanal
+- atualiza histórico rolling (`feature-ab-history.json`) via cache do GitHub Actions
+- executa smoke de estabilidade longa (`scripts/long_stability_smoke.py`)
+- roda análise de tendência (`scripts/check_benchmark_history_trend.py`) para detectar regressão sustentada
+- publica relatório Markdown resumido (`feature-ab-history.md`) no Step Summary do Actions
+
 Para histórico de mudanças desta release, veja `CHANGELOG.md`.
 
 ## API Server
@@ -311,12 +344,16 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 - `POST /api/cleanup` - Cleanup old files (R2 + local)
 - `GET /api/voices` - Dynamic list of curated voices/models for the frontend
 - `GET /api/telemetry` - Aggregated Edge/Coqui/Piper throughput (chars/s)
+- `GET /api/telemetry/segments` - Latest segment-level telemetry summary
+- `GET /api/telemetry/feature-history` - Rolling Feature A/B benchmark history
 
 #### Upload limits
 
 Uploads are capped at **100 MB** by default to avoid long-running requests on Hugging Face Spaces. Override the limit by setting:
 
 ```
+
+Telemetry artifacts are auto-cleaned by retention (`TELEMETRY_RETENTION_HOURS`, default 720h / 30 days).
 # Backend (FastAPI)
 export MAX_UPLOAD_MB=120
 

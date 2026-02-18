@@ -9,6 +9,7 @@ import os
 import re
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -218,7 +219,90 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.config.extra["stage_pipeline_depth"] = "invalid"
         self.assertGreaterEqual(self.converter._stage_pipeline_depth(self.config), 1)
 
-    @patch("src.converter.time.time", side_effect=[1.0, 2.0, 3.0])
+    def test_write_segment_metrics_outputs_summary_and_csv(self):
+        output_dir = Path(self.temp_dir)
+        self.converter._append_segment_metric(
+            {
+                "event": "segment_success",
+                "engine": "edge",
+                "chapter": "1",
+                "segment_chars": 1000,
+                "elapsed_s": 2.0,
+            },
+            output_dir=output_dir,
+        )
+        self.converter._append_segment_metric(
+            {
+                "event": "segment_success",
+                "engine": "edge",
+                "chapter": "1",
+                "segment_chars": 500,
+                "elapsed_s": 1.0,
+            },
+            output_dir=output_dir,
+        )
+        self.converter._write_segment_metrics_summary(output_dir)
+        self.converter._write_segment_metrics_csv(output_dir)
+        self.converter._write_segment_metrics_dashboard(output_dir)
+        self.assertTrue((output_dir / "segment-metrics-summary.json").exists())
+        self.assertTrue((output_dir / "segment-metrics-engine-chapter.csv").exists())
+        self.assertTrue((output_dir / "segment-metrics-dashboard.html").exists())
+
+    def test_write_runtime_recommendations_outputs_file(self):
+        output_dir = Path(self.temp_dir)
+        (output_dir / "metrics-summary.json").write_text(
+            json.dumps(
+                {
+                    "chapters": {"total": 10, "failed": 2},
+                    "engine_switches": 6,
+                    "optimization_metrics": {"prefetch_hit_rate": 0.2, "budget_caps_applied": 5},
+                    "edge_blocked_chapters": {"count": 1},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (output_dir / "segment-metrics-summary.json").write_text(
+            json.dumps(
+                {
+                    "engines": {
+                        "edge": {"avg_chars_per_second": 100.0},
+                        "piper": {"avg_chars_per_second": 120.0},
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        self.converter._write_runtime_recommendations(output_dir)
+        rec_path = output_dir / "metrics-recommendations.txt"
+        self.assertTrue(rec_path.exists())
+        text = rec_path.read_text(encoding="utf-8")
+        self.assertIn("Runtime Recommendations", text)
+
+    def test_percentile_helper(self):
+        values = [1.0, 2.0, 3.0, 4.0, 5.0]
+        self.assertAlmostEqual(self.converter._percentile(values, 0.5), 3.0, places=3)
+        self.assertAlmostEqual(self.converter._percentile(values, 0.95), 4.8, places=1)
+
+    def test_warm_start_prunes_expired_entries(self):
+        self.converter._warm_start_enabled = True
+        self.converter._warm_start_ttl_seconds = 60.0
+        warm_path = Path(self.temp_dir) / "warm-start.json"
+        self.converter._warm_start_path = warm_path
+        now = time.time()
+        payload = {
+            "updated_at": now,
+            "ttl_seconds": 60.0,
+            "entries": {
+                "fresh": {"ts": now - 10},
+                "expired": {"ts": now - 1000},
+            },
+        }
+        warm_path.write_text(json.dumps(payload), encoding="utf-8")
+        entries = self.converter._load_warm_start_state()
+        self.assertIn("fresh", entries)
+        self.assertNotIn("expired", entries)
+
+    @patch("src.converter.time.time", side_effect=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
     def test_record_segment_success_promotes_pre_check_interval(self, _mock_time):
         """Stable successful segments should increase pre-check interval."""
         state = self.converter._segment_adaptive_state
@@ -295,6 +379,17 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         )
         self.assertIsNotNone(entry)
         self.assertGreater(float(entry.get("best_chars_per_second", 0.0)), 0.0)
+
+    def test_runtime_tuning_key_contains_machine_signature(self):
+        self.converter.hardware_profile = SimpleNamespace(
+            cpu_physical=8,
+            ram_total_gb=16.0,
+            os_type="Darwin",
+            network_speed_estimate="fast",
+        )
+        key = self.converter._runtime_tuning_key(self.config, "edge")
+        self.assertIn("machine_signature", key)
+        self.assertIn("darwin", key["machine_signature"])
 
     def test_pick_auto_engine_ab_exploration(self):
         """Auto picker should occasionally explore second best engine."""

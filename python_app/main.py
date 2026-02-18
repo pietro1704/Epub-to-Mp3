@@ -606,6 +606,43 @@ class ConverterApplication:
                 f"budget_caps={int(optimization.get('budget_caps_applied', 0) or 0)} | "
                 f"adaptive_restores={int(optimization.get('adaptive_state_restores', 0) or 0)}"
             )
+        seg_summary_path = Path(temp_dir) / "segment-metrics-summary.json"
+        if seg_summary_path.exists():
+            try:
+                seg_payload = json.loads(seg_summary_path.read_text(encoding="utf-8"))
+                engines = seg_payload.get("engines", {}) if isinstance(seg_payload, dict) else {}
+                if isinstance(engines, dict) and engines:
+                    best_engine = None
+                    best_cps = 0.0
+                    for engine_name, row in engines.items():
+                        if not isinstance(row, dict):
+                            continue
+                        avg = float(row.get("avg_chars_per_second", 0.0) or 0.0)
+                        if avg > best_cps:
+                            best_cps = avg
+                            best_engine = str(engine_name)
+                    if best_engine:
+                        print(
+                            f"   segments: best_engine={best_engine} avg_chars_per_second={best_cps:.1f}"
+                        )
+            except Exception:
+                pass
+        rec_path = Path(temp_dir) / "metrics-recommendations.txt"
+        if rec_path.exists():
+            try:
+                rec_lines = rec_path.read_text(encoding="utf-8").splitlines()
+                recommendation = next(
+                    (
+                        line.strip()
+                        for line in rec_lines
+                        if line.strip().startswith("- ") and line.strip()
+                    ),
+                    "",
+                )
+                if recommendation:
+                    print(f"   recommendation: {recommendation[2:]}")
+            except Exception:
+                pass
         print(f"   file: {summary_path}")
 
     @staticmethod
@@ -646,7 +683,12 @@ class ConverterApplication:
             "metrics-summary.json",
             "metrics-chapter-engine.csv",
             "metrics-dashboard.html",
+            "segment-metrics-summary.json",
+            "segment-metrics-engine-chapter.csv",
+            "segment-metrics-dashboard.html",
+            "metrics-recommendations.txt",
             "_runtime_metrics.jsonl",
+            "_segment_metrics.jsonl",
             "_failure_checkpoint.json",
             "_adaptive_state_checkpoint.json",
         ]

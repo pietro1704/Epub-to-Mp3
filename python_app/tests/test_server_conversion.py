@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -444,6 +445,49 @@ def test_job_status_rehydrates_outputs(tmp_path, monkeypatch):
 
     job_state_path = tmp_path / ".jobs" / f"{job_id}.json"
     assert job_state_path.exists()
+
+
+def test_feature_history_endpoint_missing_file(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "CACHE_DIR", tmp_path)
+    client = TestClient(server.app)
+
+    response = client.get("/api/telemetry/feature-history")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is False
+    assert payload["count"] == 0
+    assert payload["entries"] == []
+
+
+def test_feature_history_endpoint_returns_limited_entries(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setattr(server, "CACHE_DIR", tmp_path)
+    telemetry_dir = tmp_path / "telemetry"
+    telemetry_dir.mkdir(parents=True, exist_ok=True)
+    history_path = telemetry_dir / "feature-ab-history.json"
+    history_path.write_text(
+        json.dumps(
+            {
+                "updated_at": 1700000000.0,
+                "entries": [
+                    {"ts": 3, "engine": "edge", "stage_vs_baseline_gain_pct": 10.0},
+                    {"ts": 2, "engine": "edge", "stage_vs_baseline_gain_pct": 8.0},
+                    {"ts": 1, "engine": "edge", "stage_vs_baseline_gain_pct": 6.0},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    client = TestClient(server.app)
+
+    response = client.get("/api/telemetry/feature-history?limit=2")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["count"] == 3
+    assert len(payload["entries"]) == 2
+    assert payload["entries"][0]["ts"] == 3
 
 
 def _make_telemetry(tmp_path, monkeypatch):

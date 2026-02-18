@@ -12,6 +12,7 @@ import html
 import inspect
 import json
 import os
+import platform
 import re
 import resource
 import shutil
@@ -135,6 +136,8 @@ EDGE_OFFLINE_LONG_RATIO = _env_float("EDGE_OFFLINE_LONG_RATIO", 0.35)
 EDGE_OFFLINE_TOTAL_CHARS = _env_int("EDGE_OFFLINE_TOTAL_CHARS", 1_200_000)
 STAGE_PIPELINE_ENABLED_DEFAULT = _env_bool("STAGE_PIPELINE_ENABLED", True)
 STAGE_PIPELINE_DEPTH_DEFAULT = max(1, _env_int("STAGE_PIPELINE_DEPTH", 2))
+ENGINE_WARM_START_ENABLED = _env_bool("ENGINE_WARM_START_ENABLED", True)
+ENGINE_WARM_START_TTL_SECONDS = max(60.0, _env_float("ENGINE_WARM_START_TTL_SECONDS", 14_400.0))
 
 # Validation thresholds
 TRUNCATION_THRESHOLD_PERCENT = _env_float(
@@ -298,12 +301,22 @@ class AudioConverter:
         # Warmup is opt-in to avoid changing synthesis semantics unexpectedly.
         self._warmup_before_first_chapter = _env_bool("ENGINE_WARMUP_ENABLED", False)
         self._engine_warmup_done: Set[str] = set()
+        self._warm_start_enabled = ENGINE_WARM_START_ENABLED
+        self._warm_start_ttl_seconds = ENGINE_WARM_START_TTL_SECONDS
+        self._warm_start_path = self._best_param_store.path.with_name("engine-warm-start.json")
         self._chapter_prefetch_enabled = _env_bool("CHAPTER_PREFETCH_ENABLED", True)
         self._adaptive_checkpoint_enabled = _env_bool("ADAPTIVE_STATE_CHECKPOINT_ENABLED", True)
         self._adaptive_checkpoint_interval = max(
             1, _env_int("ADAPTIVE_STATE_CHECKPOINT_INTERVAL", 1)
         )
         self._adaptive_checkpoint_dirty = 0
+        thermal_cap_env = _env_int("THERMAL_PARALLEL_CAP", 0)
+        self._thermal_guard_state: Dict[str, Any] = {
+            "last_poll": 0.0,
+            "poll_interval": max(10.0, _env_float("THERMAL_GUARD_POLL_SECONDS", 20.0)),
+            "cap": thermal_cap_env if thermal_cap_env > 0 else None,
+            "mode": str(os.getenv("THERMAL_POWER_MODE", "normal") or "normal"),
+        }
 
     def _optimize_memory_settings(self) -> None:
         """
@@ -385,7 +398,20 @@ class AudioConverter:
         engine = self._normalize_perf_key_piece((engine_label or "").lower(), "unknown")
         voice = self._normalize_perf_key_piece(getattr(cfg, "voice", None), "default")
         language = self._normalize_perf_key_piece(getattr(cfg, "primary_language", None), "auto")
-        return {"engine": engine, "voice": voice, "language": language}
+        machine_signature = "generic"
+        profile = getattr(self, "hardware_profile", None)
+        if profile is not None:
+            cpu = int(getattr(profile, "cpu_physical", 0) or 0)
+            ram = int(float(getattr(profile, "ram_total_gb", 0.0) or 0.0))
+            os_name = str(getattr(profile, "os_type", "unknown") or "unknown").lower()
+            net = str(getattr(profile, "network_speed_estimate", "unknown") or "unknown").lower()
+            machine_signature = f"{os_name}-c{cpu}-r{ram}-n{net}"
+        return {
+            "engine": engine,
+            "voice": voice,
+            "language": language,
+            "machine_signature": machine_signature,
+        }
 
     @staticmethod
     def _classify_failure_reason(error_text: Optional[str]) -> str:
@@ -750,7 +776,10 @@ class AudioConverter:
             return False
         key = self._runtime_tuning_key(cfg, engine_label)
         entry = self._best_param_store.get_profile(
-            engine=key["engine"], voice=key["voice"], language=key["language"]
+            engine=key["engine"],
+            voice=key["voice"],
+            language=key["language"],
+            machine_signature=key["machine_signature"],
         )
         if not entry:
             return False
@@ -793,6 +822,7 @@ class AudioConverter:
             engine=key["engine"],
             voice=key["voice"],
             language=key["language"],
+            machine_signature=key["machine_signature"],
             chars_per_second=cps,
             params=params,
         )
@@ -806,6 +836,95 @@ class AudioConverter:
     def _warmup_output_path(base_dir: Path, engine: str) -> Path:
         ext = ".mp3" if (engine or "").lower() == "edge" else ".wav"
         return base_dir / f"{(engine or 'engine').lower()}-warmup{ext}"
+
+    def _warm_start_key(self, cfg: Optional[ConversionConfig], engine_label: str) -> str:
+        key = self._runtime_tuning_key(cfg, engine_label)
+        return f"{key['engine']}|{key['voice']}|{key['language']}|{key.get('machine_signature','generic')}"
+
+    def _load_warm_start_state(self) -> Dict[str, Any]:
+        if not self._warm_start_enabled or not self._warm_start_path.exists():
+            return {}
+        try:
+            payload = json.loads(self._warm_start_path.read_text(encoding="utf-8"))
+            entries = payload.get("entries", {}) if isinstance(payload, dict) else {}
+            if not isinstance(entries, dict):
+                return {}
+            now = time.time()
+            ttl = max(60.0, float(payload.get("ttl_seconds", self._warm_start_ttl_seconds) or 0.0))
+            cleaned: Dict[str, Any] = {}
+            changed = False
+            for key, raw in entries.items():
+                if not isinstance(raw, dict):
+                    changed = True
+                    continue
+                ts = float(raw.get("ts", 0.0) or 0.0)
+                if ts <= 0 or (now - ts) > ttl:
+                    changed = True
+                    continue
+                cleaned[str(key)] = {"ts": ts}
+            if changed:
+                self._save_warm_start_state(cleaned)
+            return cleaned
+        except Exception:
+            return {}
+
+    def _save_warm_start_state(self, entries: Dict[str, Any]) -> None:
+        if not self._warm_start_enabled:
+            return
+        try:
+            self._warm_start_path.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "updated_at": time.time(),
+                "ttl_seconds": self._warm_start_ttl_seconds,
+                "entries": entries,
+            }
+            self._warm_start_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception:
+            return
+
+    def _is_warm_start_fresh(self, cfg: Optional[ConversionConfig], engine_label: str) -> bool:
+        entries = self._load_warm_start_state()
+        if not entries:
+            return False
+        key = self._warm_start_key(cfg, engine_label)
+        raw = entries.get(key)
+        if not isinstance(raw, dict):
+            return False
+        ts = float(raw.get("ts", 0.0) or 0.0)
+        if ts <= 0:
+            return False
+        return (time.time() - ts) <= self._warm_start_ttl_seconds
+
+    @staticmethod
+    def _percentile(values: List[float], q: float) -> float:
+        seq = sorted(float(v) for v in (values or []) if float(v) >= 0.0)
+        if not seq:
+            return 0.0
+        if q <= 0:
+            return float(seq[0])
+        if q >= 1:
+            return float(seq[-1])
+        idx = (len(seq) - 1) * q
+        lo = int(idx)
+        hi = min(len(seq) - 1, lo + 1)
+        frac = idx - lo
+        return float(seq[lo] * (1.0 - frac) + seq[hi] * frac)
+
+    def _mark_warm_start_ready(self, cfg: Optional[ConversionConfig], engine_label: str) -> None:
+        entries = self._load_warm_start_state()
+        key = self._warm_start_key(cfg, engine_label)
+        entries[key] = {"ts": time.time()}
+        if len(entries) > 300:
+            sorted_keys = sorted(
+                entries.keys(),
+                key=lambda item: float((entries.get(item) or {}).get("ts", 0.0) or 0.0),
+                reverse=True,
+            )
+            entries = {name: entries[name] for name in sorted_keys[:200]}
+        self._save_warm_start_state(entries)
 
     async def _run_engine_warmup(
         self,
@@ -823,6 +942,15 @@ class AudioConverter:
             or engine_name in self._engine_warmup_done
         ):
             return
+        if self._is_warm_start_fresh(cfg, engine_name):
+            self._engine_warmup_done.add(engine_name)
+            self._append_runtime_metric(
+                {"event": "warm_start_hit", "engine": engine_name},
+                output_dir=output_dir,
+            )
+            if self.verbose:
+                print(f"⚡ Warm start hit for {engine_name} (skipping warmup)")
+            return
         warmup_chars = max(160, _env_int("ENGINE_WARMUP_CHARS", 420))
         warmup_text = ("Warmup segment. " * 40)[:warmup_chars]
         warmup_timeout = max(10.0, _env_float("ENGINE_WARMUP_TIMEOUT_SECONDS", 45.0))
@@ -835,6 +963,11 @@ class AudioConverter:
                 timeout=warmup_timeout,
             )
             self._engine_warmup_done.add(engine_name)
+            self._mark_warm_start_ready(cfg, engine_name)
+            self._append_runtime_metric(
+                {"event": "warm_start_store", "engine": engine_name},
+                output_dir=output_dir,
+            )
             if self.verbose:
                 print(f"🔥 Warmup ready for {engine_name}")
         except Exception as exc:
@@ -963,6 +1096,33 @@ class AudioConverter:
         except Exception:
             if self.verbose:
                 print("⚠️ Failed to persist runtime metric")
+
+    def _segment_metrics_path(self, output_dir: Optional[Path] = None) -> Optional[Path]:
+        target_dir = output_dir or self._last_output_dir
+        if not target_dir:
+            return None
+        try:
+            base = Path(target_dir)
+            base.mkdir(parents=True, exist_ok=True)
+            return base / "_segment_metrics.jsonl"
+        except Exception:
+            return None
+
+    def _append_segment_metric(
+        self, payload: Dict[str, Any], output_dir: Optional[Path] = None
+    ) -> None:
+        path = self._segment_metrics_path(output_dir)
+        if path is None:
+            return
+        event = dict(payload or {})
+        event.setdefault("ts", time.time())
+        try:
+            self._rotate_runtime_metrics_if_needed(path, max_bytes=4_000_000)
+            with path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to persist segment metric")
 
     @staticmethod
     def _failure_checkpoint_path(output_dir: Optional[Path]) -> Optional[Path]:
@@ -1329,6 +1489,353 @@ class AudioConverter:
             if self.verbose:
                 print("⚠️ Failed to write metrics dashboard")
 
+    def _write_segment_metrics_summary(self, output_dir: Optional[Path] = None) -> None:
+        metrics_path = self._segment_metrics_path(output_dir)
+        if metrics_path is None or not metrics_path.exists():
+            return
+        counts: Counter[str] = Counter()
+        per_engine: Dict[str, Dict[str, float]] = {}
+        try:
+            with metrics_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except Exception:
+                        continue
+                    event = str(payload.get("event") or "unknown")
+                    counts[event] += 1
+                    if event != "segment_success":
+                        continue
+                    engine = str(payload.get("engine") or "unknown").lower()
+                    bucket = per_engine.setdefault(
+                        engine,
+                        {
+                            "segments": 0.0,
+                            "total_chars": 0.0,
+                            "total_elapsed_s": 0.0,
+                            "cps_values": [],
+                            "elapsed_values": [],
+                        },
+                    )
+                    elapsed = float(payload.get("elapsed_s") or 0.0)
+                    chars = float(payload.get("segment_chars") or 0.0)
+                    cps = (chars / elapsed) if elapsed > 0 else 0.0
+                    bucket["segments"] += 1.0
+                    bucket["total_chars"] += chars
+                    bucket["total_elapsed_s"] += elapsed
+                    if cps > 0:
+                        bucket["cps_values"].append(cps)
+                    if elapsed > 0:
+                        bucket["elapsed_values"].append(elapsed)
+
+            engine_summary: Dict[str, Dict[str, float]] = {}
+            for engine, row in sorted(per_engine.items()):
+                elapsed = max(0.001, float(row.get("total_elapsed_s") or 0.0))
+                chars = float(row.get("total_chars") or 0.0)
+                segs = max(1.0, float(row.get("segments") or 1.0))
+                cps_values = [float(v) for v in (row.get("cps_values") or []) if float(v) > 0]
+                elapsed_values = [
+                    float(v) for v in (row.get("elapsed_values") or []) if float(v) > 0
+                ]
+                p50_cps = self._percentile(cps_values, 0.5)
+                p95_cps = self._percentile(cps_values, 0.95)
+                p50_elapsed = self._percentile(elapsed_values, 0.5)
+                p95_elapsed = self._percentile(elapsed_values, 0.95)
+                jitter_ratio = (p95_elapsed / max(0.001, p50_elapsed)) if p50_elapsed > 0 else 0.0
+                engine_summary[engine] = {
+                    "segments": int(segs),
+                    "total_chars": int(chars),
+                    "total_elapsed_s": round(elapsed, 3),
+                    "avg_chars_per_second": round(chars / elapsed, 3),
+                    "avg_chars_per_segment": round(chars / segs, 3),
+                    "p50_chars_per_second": round(p50_cps, 3),
+                    "p95_chars_per_second": round(p95_cps, 3),
+                    "p50_elapsed_s": round(p50_elapsed, 3),
+                    "p95_elapsed_s": round(p95_elapsed, 3),
+                    "jitter_ratio": round(jitter_ratio, 3),
+                }
+
+            summary = {
+                "generated_at": time.time(),
+                "segment_metrics_file": str(metrics_path),
+                "event_counts": dict(sorted(counts.items())),
+                "engines": engine_summary,
+            }
+            summary_path = metrics_path.with_name("segment-metrics-summary.json")
+            summary_path.write_text(
+                json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to write segment metrics summary")
+
+    def _write_segment_metrics_csv(self, output_dir: Optional[Path] = None) -> None:
+        metrics_path = self._segment_metrics_path(output_dir)
+        if metrics_path is None or not metrics_path.exists():
+            return
+        rows: Dict[tuple[str, str], Dict[str, Any]] = {}
+        try:
+            with metrics_path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        payload = json.loads(line)
+                    except Exception:
+                        continue
+                    if str(payload.get("event") or "") != "segment_success":
+                        continue
+                    engine = str(payload.get("engine") or "").strip().lower()
+                    chapter = str(payload.get("chapter") or "").strip()
+                    if not engine or not chapter:
+                        continue
+                    key = (engine, chapter)
+                    row = rows.setdefault(
+                        key,
+                        {
+                            "engine": engine,
+                            "chapter": chapter,
+                            "segments": 0,
+                            "total_chars": 0,
+                            "total_elapsed_s": 0.0,
+                            "avg_cps": 0.0,
+                        },
+                    )
+                    row["segments"] += 1
+                    row["total_chars"] += int(payload.get("segment_chars") or 0)
+                    row["total_elapsed_s"] += float(payload.get("elapsed_s") or 0.0)
+            csv_path = metrics_path.with_name("segment-metrics-engine-chapter.csv")
+            fields = [
+                "engine",
+                "chapter",
+                "segments",
+                "total_chars",
+                "total_elapsed_s",
+                "avg_chars_per_second",
+            ]
+            with csv_path.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fields)
+                writer.writeheader()
+                for key in sorted(rows.keys(), key=lambda item: (item[0], item[1])):
+                    row = rows[key]
+                    elapsed = max(0.001, float(row["total_elapsed_s"] or 0.0))
+                    avg = float(row["total_chars"]) / elapsed
+                    writer.writerow(
+                        {
+                            "engine": row["engine"],
+                            "chapter": row["chapter"],
+                            "segments": row["segments"],
+                            "total_chars": row["total_chars"],
+                            "total_elapsed_s": f"{elapsed:.3f}",
+                            "avg_chars_per_second": f"{avg:.3f}",
+                        }
+                    )
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to write segment metrics CSV")
+
+    def _write_segment_metrics_dashboard(self, output_dir: Optional[Path] = None) -> None:
+        metrics_path = self._segment_metrics_path(output_dir)
+        if metrics_path is None:
+            return
+        summary_path = metrics_path.with_name("segment-metrics-summary.json")
+        csv_path = metrics_path.with_name("segment-metrics-engine-chapter.csv")
+        if not summary_path.exists():
+            return
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            engines = summary.get("engines", {}) if isinstance(summary, dict) else {}
+            event_counts = summary.get("event_counts", {}) if isinstance(summary, dict) else {}
+            total_segments = sum(
+                int((entry or {}).get("segments", 0) or 0)
+                for entry in (engines.values() if isinstance(engines, dict) else [])
+                if isinstance(entry, dict)
+            )
+            cards = ""
+            for engine, row in sorted((engines or {}).items()):
+                if not isinstance(row, dict):
+                    continue
+                cards += (
+                    "<div class='card'>"
+                    f"<strong>{html.escape(str(engine))}</strong><br>"
+                    f"Segments: {int(row.get('segments', 0) or 0)}<br>"
+                    f"Avg chars/s: {float(row.get('avg_chars_per_second', 0.0) or 0.0):.1f}<br>"
+                    f"P95 chars/s: {float(row.get('p95_chars_per_second', 0.0) or 0.0):.1f}<br>"
+                    f"Jitter: {float(row.get('jitter_ratio', 0.0) or 0.0):.2f}x"
+                    "</div>"
+                )
+
+            rows_html = ""
+            if csv_path.exists():
+                with csv_path.open("r", encoding="utf-8") as handle:
+                    reader = csv.DictReader(handle)
+                    for row in reader:
+                        rows_html += (
+                            "<tr>"
+                            f"<td>{html.escape(str(row.get('engine', '')))}</td>"
+                            f"<td>{html.escape(str(row.get('chapter', '')))}</td>"
+                            f"<td>{html.escape(str(row.get('segments', '')))}</td>"
+                            f"<td>{html.escape(str(row.get('total_chars', '')))}</td>"
+                            f"<td>{html.escape(str(row.get('avg_chars_per_second', '')))}</td>"
+                            "</tr>"
+                        )
+            dashboard = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Segment Metrics Dashboard</title>
+  <style>
+    body {{ font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 24px; color: #1b1f24; }}
+    h1 {{ margin: 0 0 12px; }}
+    .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }}
+    .card {{ border: 1px solid #d0d7de; border-radius: 8px; padding: 12px; background: #f6f8fa; }}
+    table {{ width: 100%; border-collapse: collapse; font-size: 14px; }}
+    th, td {{ border: 1px solid #d0d7de; padding: 8px; text-align: left; vertical-align: top; }}
+    th {{ background: #f3f4f6; }}
+  </style>
+</head>
+<body>
+  <h1>Segment Metrics Dashboard</h1>
+  <div class="grid">
+    <div class="card"><strong>Total segments</strong><br>{int(total_segments)}</div>
+    <div class="card"><strong>Segment success events</strong><br>{int(event_counts.get('segment_success', 0) or 0)}</div>
+    <div class="card"><strong>Pre-check events</strong><br>{int(event_counts.get('pre_segment_check', 0) or 0)}</div>
+  </div>
+  <div class="grid">{cards}</div>
+  <h2>Engine/Chapter Segments</h2>
+  <table>
+    <thead>
+      <tr><th>Engine</th><th>Chapter</th><th>Segments</th><th>Total chars</th><th>Avg chars/s</th></tr>
+    </thead>
+    <tbody>{rows_html}</tbody>
+  </table>
+</body>
+</html>
+"""
+            dashboard_path = metrics_path.with_name("segment-metrics-dashboard.html")
+            dashboard_path.write_text(dashboard, encoding="utf-8")
+        except Exception:
+            if self.verbose:
+                print("⚠️ Failed to write segment metrics dashboard")
+
+    def _write_runtime_recommendations(self, output_dir: Optional[Path] = None) -> None:
+        metrics_path = self._runtime_metrics_path(output_dir)
+        if metrics_path is None:
+            return
+        summary_path = metrics_path.with_name("metrics-summary.json")
+        segment_summary_path = metrics_path.with_name("segment-metrics-summary.json")
+        if not summary_path.exists():
+            return
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        segment_summary: Dict[str, Any] = {}
+        if segment_summary_path.exists():
+            with contextlib.suppress(Exception):
+                loaded = json.loads(segment_summary_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    segment_summary = loaded
+
+        recommendations: List[str] = []
+        chapters = summary.get("chapters", {}) if isinstance(summary, dict) else {}
+        total = int(chapters.get("total", 0) or 0)
+        failed = int(chapters.get("failed", 0) or 0)
+        switches = int(summary.get("engine_switches", 0) or 0) if isinstance(summary, dict) else 0
+        opt = summary.get("optimization_metrics", {}) if isinstance(summary, dict) else {}
+        hit_rate = float(opt.get("prefetch_hit_rate", 0.0) or 0.0)
+        budget_caps = int(opt.get("budget_caps_applied", 0) or 0)
+        blocked = summary.get("edge_blocked_chapters", {}) if isinstance(summary, dict) else {}
+        blocked_count = int(blocked.get("count", 0) or 0) if isinstance(blocked, dict) else 0
+
+        if total > 0 and (failed / max(1, total)) > 0.1:
+            recommendations.append(
+                "- Alta taxa de falha: habilite `--engine auto` e mantenha retries automáticos."
+            )
+        if blocked_count > 0:
+            recommendations.append(
+                "- Edge bloqueou capítulos: reduza `EDGE_MAX_CONCURRENCY` ou use fallback offline."
+            )
+        if hit_rate < 0.4:
+            recommendations.append(
+                "- Prefetch com baixo aproveitamento: teste `--stage-pipeline` e `--stage-pipeline-depth 3`."
+            )
+        if budget_caps > 3:
+            recommendations.append(
+                "- Resource budget reduziu paralelismo várias vezes: reduza `--parallel-slots`."
+            )
+        if switches > max(3, total // 2):
+            recommendations.append(
+                "- Muitas trocas de engine: fixe engine principal para este livro e compare com A/B."
+            )
+
+        if segment_summary:
+            engines = segment_summary.get("engines", {})
+            if isinstance(engines, dict) and engines:
+                ranked = sorted(
+                    (
+                        (
+                            str(name),
+                            float((row or {}).get("avg_chars_per_second", 0.0) or 0.0),
+                        )
+                        for name, row in engines.items()
+                        if isinstance(row, dict)
+                    ),
+                    key=lambda item: item[1],
+                    reverse=True,
+                )
+                if ranked:
+                    best_name, best_cps = ranked[0]
+                    recommendations.append(
+                        f"- Melhor engine nesta execução: `{best_name}` (~{best_cps:.1f} chars/s)."
+                    )
+                high_jitter = [
+                    (name, float((row or {}).get("jitter_ratio", 0.0) or 0.0))
+                    for name, row in engines.items()
+                    if isinstance(row, dict)
+                    and float((row or {}).get("jitter_ratio", 0.0) or 0.0) >= 2.5
+                ]
+                if high_jitter:
+                    worst = sorted(high_jitter, key=lambda item: item[1], reverse=True)[0]
+                    recommendations.append(
+                        f"- Alta variabilidade de segmento em `{worst[0]}` ({worst[1]:.2f}x): "
+                        "reduza chunk/concurrency para estabilidade."
+                    )
+                low_p50 = [
+                    (name, float((row or {}).get("p50_chars_per_second", 0.0) or 0.0))
+                    for name, row in engines.items()
+                    if isinstance(row, dict)
+                ]
+                if low_p50:
+                    slowest = sorted(low_p50, key=lambda item: item[1])[0]
+                    if slowest[1] > 0 and slowest[1] < 90:
+                        recommendations.append(
+                            f"- P50 baixo em `{slowest[0]}` ({slowest[1]:.1f} chars/s): "
+                            "priorize engine alternativa ou aumente paralelismo."
+                        )
+
+        if not recommendations:
+            recommendations.append(
+                "- Execução estável; manter perfil atual e repetir benchmark A/B."
+            )
+
+        content = [
+            "# Runtime Recommendations",
+            "",
+            f"Generated at: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+            *recommendations,
+            "",
+        ]
+        out = metrics_path.with_name("metrics-recommendations.txt")
+        with contextlib.suppress(Exception):
+            out.write_text("\n".join(content), encoding="utf-8")
+
     def _apply_detected_runtime_defaults(
         self,
         config: ConversionConfig,
@@ -1421,6 +1928,21 @@ class AudioConverter:
             del history[0 : len(history) - 16]
         avg_cps = sum(history) / len(history)
         snapshot = self._resource_snapshot()
+        self._apply_thermal_power_guard(engine_pool=engine_pool)
+        self._append_segment_metric(
+            {
+                "event": "segment_success",
+                "engine": engine,
+                "chapter": chapter_index,
+                "segment_chars": int(segment_chars),
+                "elapsed_s": round(float(elapsed), 4),
+                "cps": round(float(cps), 3),
+                "avg_cps": round(float(avg_cps), 3),
+                "cpu_percent": round(float(snapshot.cpu_percent), 2),
+                "ram_gb": round(float(snapshot.ram_gb), 3),
+                "parallel": int(self._parallel_state.get("current") or 1),
+            }
+        )
         self._apply_engine_resource_budget(
             engine_label=engine,
             snapshot=snapshot,
@@ -1584,6 +2106,17 @@ class AudioConverter:
             return
 
         snapshot = self._resource_snapshot()
+        self._apply_thermal_power_guard(engine_pool=engine_pool)
+        self._append_segment_metric(
+            {
+                "event": "pre_segment_check",
+                "engine": engine,
+                "segment_chars": int(segment_chars),
+                "cpu_percent": round(float(snapshot.cpu_percent), 2),
+                "ram_gb": round(float(snapshot.ram_gb), 3),
+                "parallel": int(self._parallel_state.get("current") or 1),
+            }
+        )
         self._apply_engine_resource_budget(
             engine_label=engine,
             snapshot=snapshot,
@@ -4276,6 +4809,85 @@ class AudioConverter:
             active_jobs=1,
         )
 
+    def _detect_macos_thermal_power_cap(self, ceiling: int) -> tuple[int, str]:
+        """Return runtime parallel cap based on macOS power/thermal pressure."""
+        if platform.system().lower() != "darwin":
+            return ceiling, "normal"
+        cap = int(max(1, ceiling))
+        mode = "normal"
+        try:
+            batt = subprocess.run(
+                ["pmset", "-g", "batt"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            batt_out = str(batt.stdout or "").lower()
+            on_battery = "battery power" in batt_out
+            if on_battery:
+                mode = "battery"
+                cap = max(1, min(cap, int(round(ceiling * 0.7))))
+        except Exception:
+            pass
+        try:
+            therm = subprocess.run(
+                ["pmset", "-g", "therm"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            therm_out = str(therm.stdout or "")
+            speed_limit = None
+            match = re.search(r"CPU_Speed_Limit\\s*=\\s*(\\d+)", therm_out, flags=re.IGNORECASE)
+            if match:
+                speed_limit = int(match.group(1))
+            if speed_limit is not None:
+                if speed_limit < 75:
+                    mode = "thermal_hot"
+                    cap = max(1, min(cap, int(round(ceiling * 0.5))))
+                elif speed_limit < 90:
+                    if mode == "normal":
+                        mode = "thermal_warm"
+                    cap = max(1, min(cap, int(round(ceiling * 0.75))))
+        except Exception:
+            pass
+        return max(1, cap), mode
+
+    def _apply_thermal_power_guard(self, engine_pool: Optional[JobEnginePool] = None) -> None:
+        """Continuously cap parallelism under thermal/power pressure."""
+        state = self._thermal_guard_state
+        now = time.time()
+        poll_interval = float(state.get("poll_interval", 20.0) or 20.0)
+        cached_cap = state.get("cap")
+        mode = str(state.get("mode", "normal") or "normal")
+        ceiling = max(1, int(self._parallel_state.get("ceiling") or 1))
+
+        if (now - float(state.get("last_poll", 0.0) or 0.0)) >= poll_interval or cached_cap is None:
+            cap, mode = self._detect_macos_thermal_power_cap(ceiling)
+            state["last_poll"] = now
+            state["cap"] = cap
+            state["mode"] = mode
+            cached_cap = cap
+
+        if cached_cap is None:
+            return
+        cap_int = max(1, min(ceiling, int(cached_cap)))
+        current = max(1, int(self._parallel_state.get("current") or 1))
+        if current > cap_int:
+            self._parallel_state["current"] = cap_int
+            if engine_pool is not None:
+                engine_pool.update_parallel_slots(cap_int)
+            self._append_runtime_metric(
+                {
+                    "event": "thermal_guard_cap",
+                    "mode": mode,
+                    "from_parallel": current,
+                    "to_parallel": cap_int,
+                }
+            )
+            if self.verbose:
+                print(f"🌡️ Thermal/power guard ({mode}): {current}→{cap_int}")
+
     def _auto_tune_parallelism(
         self,
         *,
@@ -4285,6 +4897,12 @@ class AudioConverter:
         """Decide the next chapter parallelism level based on telemetry."""
         state = self._parallel_state or {}
         ceiling = max(1, int(state.get("ceiling") or 1))
+        thermal_cap = self._thermal_guard_state.get("cap")
+        if thermal_cap is not None:
+            try:
+                ceiling = max(1, min(ceiling, int(thermal_cap)))
+            except (TypeError, ValueError):
+                pass
         current = max(1, min(ceiling, int(state.get("current") or 1)))
         best = float(state.get("best_throughput") or 0.0)
         last = state.get("last_throughput")
@@ -5278,6 +5896,10 @@ class AudioConverter:
             self._write_runtime_metrics_summary(temp_dir)
             self._write_runtime_metrics_csv(temp_dir)
             self._write_runtime_metrics_dashboard(temp_dir)
+            self._write_segment_metrics_summary(temp_dir)
+            self._write_segment_metrics_csv(temp_dir)
+            self._write_segment_metrics_dashboard(temp_dir)
+            self._write_runtime_recommendations(temp_dir)
             await self._report_results(result)
             return result
 
@@ -5909,6 +6531,10 @@ class AudioConverter:
         self._write_runtime_metrics_summary(temp_dir)
         self._write_runtime_metrics_csv(temp_dir)
         self._write_runtime_metrics_dashboard(temp_dir)
+        self._write_segment_metrics_summary(temp_dir)
+        self._write_segment_metrics_csv(temp_dir)
+        self._write_segment_metrics_dashboard(temp_dir)
+        self._write_runtime_recommendations(temp_dir)
         await self._report_results(result)
         return result
 

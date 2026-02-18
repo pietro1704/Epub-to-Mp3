@@ -1,0 +1,109 @@
+name: Weekly Feature History
+
+on:
+  schedule:
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  weekly-history:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install toolchain via mise
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+          PIP_NO_CACHE_DIR: "1"
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        run: mise run install
+
+      - name: Restore rolling benchmark history cache
+        id: history_restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/telemetry/feature-ab-history.json
+          key: feature-ab-history-${{ github.run_id }}
+          restore-keys: |
+            feature-ab-history-
+
+      - name: Run weekly A/B feature benchmark
+        run: |
+          mkdir -p .cache/telemetry
+          mise exec -- python scripts/benchmark_feature_ab.py \
+            --book web/public/sample.epub \
+            --engine edge \
+            --workers 1 \
+            --output .cache/telemetry/feature-ab-weekly.json
+
+      - name: Update weekly benchmark history
+        run: |
+          mise exec -- python scripts/update_benchmark_history.py \
+            --report .cache/telemetry/feature-ab-weekly.json \
+            --history .cache/telemetry/feature-ab-history.json \
+            --max-entries 156
+
+      - name: Check weekly trend regression
+        continue-on-error: true
+        run: |
+          mise exec -- python scripts/check_benchmark_history_trend.py \
+            --history .cache/telemetry/feature-ab-history.json \
+            --recent-window 4 \
+            --baseline-window 12 \
+            --max-drop-pct 20
+
+      - name: Render weekly history markdown
+        run: |
+          mise exec -- python scripts/render_benchmark_history_report.py \
+            --history .cache/telemetry/feature-ab-history.json \
+            --output .cache/telemetry/feature-ab-history.md \
+            --max-rows 16
+
+      - name: Publish weekly history summary
+        if: always()
+        run: |
+          if [ -f .cache/telemetry/feature-ab-history.md ]; then
+            cat .cache/telemetry/feature-ab-history.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Run long stability smoke
+        env:
+          R2_OPTIONAL: "true"
+          EDGE_MAX_CONCURRENCY: "1"
+          EDGE_ENABLE_PARALLEL: "false"
+          EDGE_AUTO_TUNE: "false"
+          CHAPTER_PARALLEL_COUNT: "1"
+        run: |
+          mise exec -- python scripts/long_stability_smoke.py \
+            --book web/public/sample.epub \
+            --engine edge \
+            --loops 3 \
+            --max-failures 1 \
+            --max-mem-growth-mb 700
+
+      - name: Save rolling benchmark history cache
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/telemetry/feature-ab-history.json
+          key: feature-ab-history-${{ github.run_id }}
+
+      - name: Upload weekly history artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-feature-history-${{ github.run_id }}
+          path: |
+            .cache/telemetry/feature-ab-weekly.json
+            .cache/telemetry/feature-ab-history.json
+            .cache/telemetry/feature-ab-history.md

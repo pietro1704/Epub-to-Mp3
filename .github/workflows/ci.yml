@@ -54,3 +54,15 @@ jobs:
           EDGE_AUTO_TUNE: "false"
         run: |
           mise exec -- python -m python_app.main convert web/public/sample.epub --engine edge --chapter 1 --no-parallel --verbose
+
+      - name: Run external worker pool E2E smoke
+        env:
+          R2_OPTIONAL: "true"
+          EDGE_MAX_CONCURRENCY: "1"
+          EDGE_ENABLE_PARALLEL: "false"
+          EDGE_AUTO_TUNE: "false"
+          CHAPTER_PARALLEL_COUNT: "1"
+        run: |
+          mise exec -- python scripts/external_worker_pool.py web/public/sample.epub \
+            --workers 1 \
+            --forward-args "--engine edge --chapter 1 --no-parallel --no-validate-text --no-validate-audio --stage-pipeline"

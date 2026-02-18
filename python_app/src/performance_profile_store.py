@@ -18,8 +18,13 @@ class PerformanceProfileStore:
         self.path = Path(path or (TELEMETRY_DIR / "performance-profiles.json"))
 
     @staticmethod
-    def _key(engine: str, voice: str, language: str) -> str:
-        return f"{(engine or '').strip().lower()}|{(voice or '').strip().lower()}|{(language or '').strip().lower()}"
+    def _key(engine: str, voice: str, language: str, machine_signature: str = "") -> str:
+        return (
+            f"{(engine or '').strip().lower()}"
+            f"|{(voice or '').strip().lower()}"
+            f"|{(language or '').strip().lower()}"
+            f"|{(machine_signature or '').strip().lower()}"
+        )
 
     def _load(self) -> Dict[str, object]:
         if not self.path.exists():
@@ -36,12 +41,25 @@ class PerformanceProfileStore:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    def get_profile(self, *, engine: str, voice: str, language: str) -> Optional[Dict[str, object]]:
+    def get_profile(
+        self,
+        *,
+        engine: str,
+        voice: str,
+        language: str,
+        machine_signature: str = "",
+    ) -> Optional[Dict[str, object]]:
         payload = self._load()
         profiles = payload.get("profiles", {})
         if not isinstance(profiles, dict):
             return None
-        entry = profiles.get(self._key(engine, voice, language))
+        entry = profiles.get(self._key(engine, voice, language, machine_signature))
+        if entry is None and machine_signature:
+            # Backward compatibility with pre-signature profiles.
+            entry = profiles.get(self._key(engine, voice, language, ""))
+        if entry is None and not machine_signature:
+            # Compatibility with machine-scoped profiles when callers omit signature.
+            entry = profiles.get(self._key(engine, voice, language, "generic"))
         if isinstance(entry, dict):
             return entry
         return None
@@ -52,6 +70,7 @@ class PerformanceProfileStore:
         engine: str,
         voice: str,
         language: str,
+        machine_signature: str = "",
         chars_per_second: float,
         params: Dict[str, object],
         min_improvement_ratio: float = 0.03,
@@ -62,7 +81,7 @@ class PerformanceProfileStore:
             profiles = {}
             payload["profiles"] = profiles
 
-        key = self._key(engine, voice, language)
+        key = self._key(engine, voice, language, machine_signature)
         existing = profiles.get(key) if isinstance(profiles.get(key), dict) else None
         previous_cps = float((existing or {}).get("best_chars_per_second", 0.0) or 0.0)
         sample_count = int((existing or {}).get("sample_count", 0) or 0) + 1
@@ -82,6 +101,7 @@ class PerformanceProfileStore:
             "engine": (engine or "").lower(),
             "voice": voice or "",
             "language": (language or "").lower(),
+            "machine_signature": (machine_signature or "").lower(),
             "best_chars_per_second": cps,
             "last_seen_chars_per_second": cps,
             "sample_count": sample_count,

@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import os
 import platform
+import re
 import socket
 import statistics
 import subprocess
@@ -687,6 +688,55 @@ class HardwareDetector:
             from .benchmark_profile import apply_global_overrides
 
             apply_global_overrides()
+
+        # macOS thermal/power hint for runtime guard (converter polls dynamically too).
+        if profile.is_macos:
+            cap, mode = HardwareDetector._detect_macos_power_thermal_cap(
+                int(os.getenv("CHAPTER_PARALLEL_COUNT", str(chapter_parallel)) or chapter_parallel)
+            )
+            os.environ["THERMAL_PARALLEL_CAP"] = str(cap)
+            os.environ["THERMAL_POWER_MODE"] = mode
+
+    @staticmethod
+    def _detect_macos_power_thermal_cap(current_parallel: int) -> tuple[int, str]:
+        if platform.system().lower() != "darwin":
+            return max(1, int(current_parallel or 1)), "normal"
+        cap = max(1, int(current_parallel or 1))
+        mode = "normal"
+        try:
+            batt = subprocess.run(
+                ["pmset", "-g", "batt"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            out = str(batt.stdout or "").lower()
+            if "battery power" in out:
+                mode = "battery"
+                cap = max(1, min(cap, int(round(cap * 0.7))))
+        except Exception:
+            pass
+        try:
+            therm = subprocess.run(
+                ["pmset", "-g", "therm"],
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            out = str(therm.stdout or "")
+            match = re.search(r"CPU_Speed_Limit\\s*=\\s*(\\d+)", out, flags=re.IGNORECASE)
+            if match:
+                limit = int(match.group(1))
+                if limit < 75:
+                    mode = "thermal_hot"
+                    cap = max(1, min(cap, int(round(current_parallel * 0.5))))
+                elif limit < 90:
+                    if mode == "normal":
+                        mode = "thermal_warm"
+                    cap = max(1, min(cap, int(round(current_parallel * 0.75))))
+        except Exception:
+            pass
+        return max(1, int(cap)), mode
 
 
 __all__ = ["HardwareDetector", "HardwareProfile"]

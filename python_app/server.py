@@ -214,6 +214,9 @@ EDGE_AUTO_PARALLEL_CAPS = {
 # Job cleanup configuration
 COMPLETED_JOB_TTL_HOURS = 1  # Keep completed jobs for 1 hour
 CLEANUP_INTERVAL_SECONDS = 300  # Run cleanup every 5 minutes
+TELEMETRY_RETENTION_HOURS = max(
+    24, int(os.getenv("TELEMETRY_RETENTION_HOURS", "720") or "720")
+)  # 30 days
 
 # CORS configuration - supports both local dev and Cloudflare deployment
 allowed_origins = [
@@ -1483,6 +1486,12 @@ async def _periodic_job_cleanup():
                     _cleanup_job_output(job_id)
                     logger.info(f"Cleaned up job {job_id}")
 
+            telemetry_deleted = _cleanup_telemetry_artifacts(
+                max_age_hours=TELEMETRY_RETENTION_HOURS
+            )
+            if telemetry_deleted > 0:
+                logger.info("Telemetry cleanup removed %s stale file(s)", telemetry_deleted)
+
         except Exception as e:
             logger.error(f"Error in periodic job cleanup: {e}", exc_info=True)
 
@@ -1519,6 +1528,60 @@ def _has_active_jobs() -> bool:
         except Exception:
             return False
     return False
+
+
+def _cleanup_telemetry_artifacts(max_age_hours: int = 720) -> int:
+    """Delete stale telemetry artifacts older than retention window."""
+    retention_h = max(24, int(max_age_hours or 720))
+    cutoff = time.time() - (retention_h * 3600)
+    telemetry_dir = CACHE_DIR / "telemetry"
+    if not telemetry_dir.exists():
+        return 0
+
+    keep_names = {
+        "feature-ab-history.json",
+        "ci-speed-baseline-nightly.json",
+        "benchmark_profiles.json",
+        "engine_samples.json",
+        "performance-profiles.json",
+        "engine-warm-start.json",
+    }
+    deleted = 0
+    for path in telemetry_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name in keep_names:
+            continue
+        with contextlib.suppress(OSError):
+            if path.stat().st_mtime >= cutoff:
+                continue
+            path.unlink(missing_ok=True)
+            deleted += 1
+    return deleted
+
+
+def _latest_segment_summary(limit_scan: int = 300) -> Optional[Path]:
+    """Find newest segment-metrics-summary.json across output tree."""
+    candidates: List[Path] = []
+    try:
+        for idx, path in enumerate(output_dir.rglob("segment-metrics-summary.json")):
+            if idx >= max(1, int(limit_scan)):
+                break
+            if path.is_file():
+                candidates.append(path)
+    except Exception:
+        return None
+    if not candidates:
+        return None
+    try:
+        return max(candidates, key=lambda p: p.stat().st_mtime)
+    except Exception:
+        return candidates[-1]
+
+
+def _feature_ab_history_path() -> Path:
+    """Return canonical path for rolling feature A/B history cache."""
+    return CACHE_DIR / "telemetry" / "feature-ab-history.json"
 
 
 def _estimate_recommendations(stats: Optional[dict]) -> dict:
@@ -2695,6 +2758,9 @@ async def cleanup_old_files(max_age_hours: int = 48) -> dict:
     # Cleanup old job state files
     jobs_deleted = job_manager.cleanup_old_jobs(max_age_hours=max_age_hours)
     result["jobs_deleted"] = jobs_deleted
+    result["telemetry_deleted"] = _cleanup_telemetry_artifacts(
+        max_age_hours=max(max_age_hours, TELEMETRY_RETENTION_HOURS)
+    )
 
     logger.info(f"Cleanup completed: {result}")
     return result
@@ -3135,6 +3201,55 @@ async def get_engine_telemetry() -> dict:
     return {
         "engines": summary,
         "recent": recent,
+    }
+
+
+@app.get("/api/telemetry/segments")
+async def get_segment_telemetry() -> dict:
+    """Return latest segment-level telemetry summary if available."""
+    summary_path = _latest_segment_summary()
+    if summary_path is None:
+        return {"available": False, "summary": None, "source": None}
+    try:
+        payload = json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read segment telemetry: {exc}")
+    return {
+        "available": True,
+        "summary": payload if isinstance(payload, dict) else {},
+        "source": str(summary_path),
+    }
+
+
+@app.get("/api/telemetry/feature-history")
+async def get_feature_ab_history(limit: int = 20) -> dict:
+    """Return rolling feature A/B benchmark history, when available."""
+    history_path = _feature_ab_history_path()
+    if not history_path.exists():
+        return {
+            "available": False,
+            "history": {"entries": []},
+            "entries": [],
+            "count": 0,
+            "source": str(history_path),
+        }
+    try:
+        payload = json.loads(history_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to read feature history: {exc}")
+
+    history = payload if isinstance(payload, dict) else {"entries": []}
+    entries = history.get("entries", [])
+    if not isinstance(entries, list):
+        entries = []
+    entries = [item for item in entries if isinstance(item, dict)]
+    safe_limit = max(1, min(200, int(limit or 20)))
+    return {
+        "available": True,
+        "history": history,
+        "entries": entries[:safe_limit],
+        "count": len(entries),
+        "source": str(history_path),
     }
 
 

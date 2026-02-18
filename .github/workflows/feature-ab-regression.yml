@@ -1,0 +1,49 @@
+name: Feature A/B Regression
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  ab-regression:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install mise
+        uses: jdx/mise-action@v2
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install toolchain via mise
+        env:
+          PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
+          PIP_NO_CACHE_DIR: "1"
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
+        run: mise run install
+
+      - name: Run feature A/B benchmark
+        run: |
+          mkdir -p .cache/telemetry
+          mise exec -- python scripts/benchmark_feature_ab.py \
+            --book web/public/sample.epub \
+            --engine piper \
+            --workers 2 \
+            --output .cache/telemetry/feature-ab-ci.json
+
+      - name: Validate regression thresholds
+        run: |
+          mise exec -- python scripts/check_feature_ab_regression.py \
+            --report .cache/telemetry/feature-ab-ci.json \
+            --max-stage-loss-pct 25 \
+            --max-pool-loss-pct 35
+
+      - name: Upload A/B artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: feature-ab-regression-${{ github.run_id }}
+          path: .cache/telemetry/feature-ab-ci.json
