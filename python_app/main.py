@@ -3222,6 +3222,9 @@ class ConverterApplication:
         piper_max_procs = self._clamp_int(
             getattr(args, "piper_max_procs", None), min_value=1, max_value=12
         )
+        piper_chunk_chars = self._clamp_int(
+            getattr(args, "piper_chunk_chars", None), min_value=800, max_value=12000
+        )
         sample_rate = self._clamp_int(
             getattr(args, "sample_rate", None), min_value=8000, max_value=96000
         )
@@ -3245,6 +3248,8 @@ class ConverterApplication:
             overrides["coqui_safe_mode"] = bool(getattr(args, "coqui_safe_mode"))
         if piper_max_procs is not None:
             overrides["piper_max_procs"] = piper_max_procs
+        if piper_chunk_chars is not None:
+            overrides["piper_chunk_chars"] = piper_chunk_chars
         if getattr(args, "bitrate", None):
             overrides["bitrate"] = str(getattr(args, "bitrate"))
         if sample_rate is not None:
@@ -3356,6 +3361,9 @@ class ConverterApplication:
         piper_max_procs = self._clamp_int(
             getattr(args, "piper_max_procs", None), min_value=1, max_value=12
         )
+        piper_chunk_chars = self._clamp_int(
+            getattr(args, "piper_chunk_chars", None), min_value=800, max_value=12000
+        )
 
         if edge_chunk_chars is not None:
             config.edge_chunk_chars = edge_chunk_chars
@@ -3373,6 +3381,9 @@ class ConverterApplication:
             config.coqui_safe_mode = bool(coqui_safe_mode)
         if piper_max_procs is not None:
             config.piper_max_procs = piper_max_procs
+        if piper_chunk_chars is not None:
+            config.piper_chunk_chars = piper_chunk_chars
+            os.environ["PIPER_CHUNK_CHARS"] = str(piper_chunk_chars)
 
         edge_stable_mode = getattr(args, "edge_stable_mode", None)
         if edge_stable_mode is not None:
@@ -3442,6 +3453,8 @@ class ConverterApplication:
                     config.coqui_max_workers = min(12, max(2, cpu_physical * 2))
             if piper_max_procs is None:
                 config.piper_max_procs = min(6, max(1, cpu_physical))
+            if piper_chunk_chars is None and getattr(config, "piper_chunk_chars", None) is None:
+                config.piper_chunk_chars = 3000
 
         parallel_slots = self._clamp_int(
             getattr(args, "parallel_slots", None), min_value=1, max_value=12
@@ -3577,6 +3590,29 @@ class ConverterApplication:
             os.environ["JOB_HEALTHCHECK_OK_MEM_PERCENT"] = str(ok_mem)
         if slow_streak is not None:
             os.environ["JOB_HEALTHCHECK_SLOW_STREAK"] = str(slow_streak)
+
+
+def _apply_overnight_preset(args: argparse.Namespace) -> None:
+    """Apply a stable high-throughput offline preset for long overnight runs."""
+    if not bool(getattr(args, "overnight", False)):
+        return
+    args.engine = "piper"
+    args.max_performance = True
+    args.profile = "speed"
+    args.speed_scenario = "offline-heavy"
+    args.stage_pipeline = True
+    args.stage_pipeline_depth = 3
+    args.chapter_prefetch = True
+    args.auto_ab = False
+    args.adaptive_checkpoint = True
+    args.verify_transcription = False
+    args.deep_validate = False
+    args.validate_text = False
+    args.validate_audio = False
+    args.auto_validate_output = False
+    args.auto_fix_output = False
+    if getattr(args, "piper_chunk_chars", None) is None:
+        args.piper_chunk_chars = 2200
 
 
 def _add_conversion_arguments(
@@ -3885,6 +3921,12 @@ def _add_conversion_arguments(
         help="Use aggressive performance defaults (larger chunks and more parallelism)",
     )
     parser.add_argument(
+        "--overnight",
+        dest="overnight",
+        action="store_true",
+        help="Apply overnight preset: Piper + offline-heavy speed profile + staged pipeline + minimal validation",
+    )
+    parser.add_argument(
         "--profile",
         dest="profile",
         choices=["speed"],
@@ -4001,9 +4043,16 @@ def _add_conversion_arguments(
     )
     parser.add_argument(
         "--piper-max-procs",
+        "--piper-workers",
         dest="piper_max_procs",
         type=int,
         help="Override Piper concurrent process limit",
+    )
+    parser.add_argument(
+        "--piper-chunk-chars",
+        dest="piper_chunk_chars",
+        type=int,
+        help="Override Piper chunk size (chars)",
     )
     parser.add_argument(
         "--bitrate",
@@ -4273,6 +4322,7 @@ def main() -> int:
         return 0
 
     args = parser.parse_args(argv)
+    _apply_overnight_preset(args)
 
     # Handle --no-validate flag to disable all validations
     if getattr(args, "no_validate", False):

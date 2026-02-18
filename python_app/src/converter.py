@@ -608,7 +608,11 @@ class AudioConverter:
             params["piper_max_procs"] = int(
                 getattr(cfg, "piper_max_procs", 0) or os.getenv("PIPER_MAX_PROCS", "2") or 2
             )
-            params["piper_chunk_chars"] = int(os.getenv("PIPER_CHUNK_CHARS", "3000") or 3000)
+            params["piper_chunk_chars"] = int(
+                getattr(cfg, "piper_chunk_chars", 0)
+                or os.getenv("PIPER_CHUNK_CHARS", "3000")
+                or 3000
+            )
         elif engine_name == "kokoro":
             params["kokoro_max_workers"] = int(os.getenv("KOKORO_MAX_WORKERS", "2") or 2)
             params["kokoro_chunk_chars"] = int(os.getenv("KOKORO_CHUNK_CHARS", "2000") or 2000)
@@ -735,10 +739,14 @@ class AudioConverter:
                 )
             )
             chunk_chars = int(
-                params.get("piper_chunk_chars", os.getenv("PIPER_CHUNK_CHARS", "3000"))
+                params.get(
+                    "piper_chunk_chars",
+                    getattr(cfg, "piper_chunk_chars", 0) or os.getenv("PIPER_CHUNK_CHARS", "3000"),
+                )
             )
             if cfg is not None:
                 cfg.piper_max_procs = max_procs
+                cfg.piper_chunk_chars = chunk_chars
             os.environ["PIPER_MAX_PROCS"] = str(max_procs)
             os.environ["PIPER_CHUNK_CHARS"] = str(chunk_chars)
             if engine_obj is not None:

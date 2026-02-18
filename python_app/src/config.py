@@ -67,6 +67,7 @@ class ConversionConfig:
     coqui_max_workers: Optional[int] = None  # override Coqui worker pool size
     coqui_safe_mode: Optional[bool] = None  # force safe mode for Coqui (limits parallelism)
     piper_max_procs: Optional[int] = None  # override Piper concurrent process limit
+    piper_chunk_chars: Optional[int] = None  # override Piper chunk size when auto-tuning
     speak_formatting_cues: bool = True
     formatting_locale: str = "pt"
     # Validation settings
@@ -119,6 +120,7 @@ class ConversionConfig:
             "coqui_max_workers": self.coqui_max_workers,
             "coqui_safe_mode": self.coqui_safe_mode,
             "piper_max_procs": self.piper_max_procs,
+            "piper_chunk_chars": self.piper_chunk_chars,
         }
         if self.extra:
             data["extra"] = dict(self.extra)
@@ -704,6 +706,7 @@ class AppConfig:
         coqui_max_workers = kwargs.pop("coqui_max_workers", None)
         coqui_safe_mode = kwargs.pop("coqui_safe_mode", None)
         piper_max_procs = kwargs.pop("piper_max_procs", None)
+        piper_chunk_chars = kwargs.pop("piper_chunk_chars", None)
 
         # Validation settings
         verify_transcription = bool(kwargs.pop("verify_transcription", False))
@@ -750,6 +753,7 @@ class AppConfig:
             coqui_max_workers=coqui_max_workers,
             coqui_safe_mode=coqui_safe_mode,
             piper_max_procs=piper_max_procs,
+            piper_chunk_chars=piper_chunk_chars,
             speak_formatting_cues=speak_formatting_cues,
             formatting_locale=formatting_locale,
             verify_transcription=verify_transcription,

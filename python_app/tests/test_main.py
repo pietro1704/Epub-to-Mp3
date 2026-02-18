@@ -15,7 +15,13 @@ from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from main import ChapterStructureItem, ConverterApplication, create_argument_parser, main
+from main import (
+    ChapterStructureItem,
+    ConverterApplication,
+    _apply_overnight_preset,
+    create_argument_parser,
+    main,
+)
 from src.ebook_reader import Chapter
 
 
@@ -622,6 +628,13 @@ class TestArgumentParser(unittest.TestCase):
         self.assertTrue(args.adaptive_checkpoint)
         args = parser.parse_args(["convert", "test.epub", "--no-adaptive-checkpoint"])
         self.assertFalse(args.adaptive_checkpoint)
+        args = parser.parse_args(
+            ["convert", "test.epub", "--piper-workers", "4", "--piper-chunk-chars", "2200"]
+        )
+        self.assertEqual(args.piper_max_procs, 4)
+        self.assertEqual(args.piper_chunk_chars, 2200)
+        args = parser.parse_args(["convert", "test.epub", "--overnight"])
+        self.assertTrue(args.overnight)
 
     def test_parser_engine_choices(self):
         """Test engine choices validation"""
@@ -631,6 +644,46 @@ class TestArgumentParser(unittest.TestCase):
         for engine in ["auto", "edge", "coqui", "piper", "kokoro", "spark"]:
             args = parser.parse_args(["convert", "test.epub", "--engine", engine])
             self.assertEqual(args.engine, engine)
+
+
+class TestOvernightPreset(unittest.TestCase):
+    def test_apply_overnight_preset(self):
+        args = Namespace(
+            overnight=True,
+            engine="edge",
+            max_performance=False,
+            profile=None,
+            speed_scenario="auto",
+            stage_pipeline=None,
+            stage_pipeline_depth=None,
+            chapter_prefetch=None,
+            auto_ab=None,
+            adaptive_checkpoint=None,
+            verify_transcription=None,
+            deep_validate=None,
+            validate_text=True,
+            validate_audio=True,
+            auto_validate_output=True,
+            auto_fix_output=True,
+            piper_chunk_chars=None,
+        )
+
+        _apply_overnight_preset(args)
+
+        self.assertEqual(args.engine, "piper")
+        self.assertTrue(args.max_performance)
+        self.assertEqual(args.profile, "speed")
+        self.assertEqual(args.speed_scenario, "offline-heavy")
+        self.assertTrue(args.stage_pipeline)
+        self.assertEqual(args.stage_pipeline_depth, 3)
+        self.assertTrue(args.chapter_prefetch)
+        self.assertFalse(args.auto_ab)
+        self.assertTrue(args.adaptive_checkpoint)
+        self.assertFalse(args.validate_text)
+        self.assertFalse(args.validate_audio)
+        self.assertFalse(args.auto_validate_output)
+        self.assertFalse(args.auto_fix_output)
+        self.assertEqual(args.piper_chunk_chars, 2200)
 
 
 class TestClearCacheFlag(unittest.TestCase):
