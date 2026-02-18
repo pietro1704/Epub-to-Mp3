@@ -39,6 +39,8 @@ class ProgressTracker:
         self._spinner_index: int = 0
         self._last_progress_pct: float = -1.0
         self._last_activity_time: float = time.time()
+        self._eta_remaining_chars_hint: int = 0
+        self._eta_chars_per_sec_hint: float = 0.0
 
         # **NEW**: Character/sentence tracking for granular progress display
         self.total_chars: int = 0
@@ -75,6 +77,8 @@ class ProgressTracker:
         self._spinner_index = 0
         self._last_progress_pct = -1.0
         self._last_activity_time = time.time()
+        self._eta_remaining_chars_hint = 0
+        self._eta_chars_per_sec_hint = 0.0
         if self.total_chapters == 0:
             self._render("No chapters available", force=True)
 
@@ -95,6 +99,11 @@ class ProgressTracker:
         self._chunks_confident = False
 
         print(f"\n🎧 [{index}/{max(self.total_chapters, 1)}] {chapter_name}")
+
+    def update_eta_hint(self, *, remaining_chars: int, chars_per_second: float) -> None:
+        """Inject a chapter-size-aware ETA hint from converter telemetry."""
+        self._eta_remaining_chars_hint = max(0, int(remaining_chars or 0))
+        self._eta_chars_per_sec_hint = max(0.0, float(chars_per_second or 0.0))
 
     def complete_chapter(self, status: str = "") -> None:
         """Mark chapter completion and refresh the progress bar."""
@@ -287,6 +296,10 @@ class ProgressTracker:
     def _eta_seconds(self, elapsed: float) -> float:
         if self.total_chapters <= 0:
             return 0.0
+
+        # Prefer explicit telemetry ETA when converter can estimate remaining chars.
+        if self._eta_remaining_chars_hint > 0 and self._eta_chars_per_sec_hint > 1.0:
+            return self._eta_remaining_chars_hint / self._eta_chars_per_sec_hint
 
         # Use fractional progress (including current chapter) to avoid ETA explosion early on.
         partial = 0.0

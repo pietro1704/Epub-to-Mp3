@@ -161,6 +161,25 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_eta_baseline_persistence_roundtrip(self):
+        config = ConversionConfig(
+            engine="piper",
+            output_dir=self.temp_dir,
+            book_title="ETA Book",
+            validate_audio=False,
+            validate_text=False,
+        )
+        baseline_path = Path(self.temp_dir) / "eta-baselines.json"
+        self.converter._eta_baseline_path = baseline_path
+
+        self.assertEqual(self.converter._load_eta_baseline(config), 0.0)
+        self.converter._save_eta_baseline(config, 150.0)
+        loaded = self.converter._load_eta_baseline(config)
+        self.assertGreater(loaded, 0.0)
+        self.converter._save_eta_baseline(config, 210.0)
+        loaded_2 = self.converter._load_eta_baseline(config)
+        self.assertGreaterEqual(loaded_2, loaded)
+
     def test_split_cached_chapters_respects_force_reprocess(self):
         """Force reprocess should ignore any cached MP3s that already exist."""
         chapter = Chapter(1, "Chapter 1", "ch1.html", "Content 1")

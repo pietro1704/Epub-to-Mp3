@@ -263,6 +263,7 @@ class AudioConverter:
         self._memory_optimized = False
         self._thread_pools: List[weakref.ref] = []
         self._chapter_stats: Dict[str, float] = {}
+        self._eta_recent_cps: List[float] = []
         self._segment_adaptive_state: Dict[str, Any] = {
             "last_event_by_chapter": {},
             "engine_cps": {},
@@ -304,6 +305,8 @@ class AudioConverter:
         self._warm_start_enabled = ENGINE_WARM_START_ENABLED
         self._warm_start_ttl_seconds = ENGINE_WARM_START_TTL_SECONDS
         self._warm_start_path = self._best_param_store.path.with_name("engine-warm-start.json")
+        self._eta_baseline_path = self._best_param_store.path.with_name("eta-baselines.json")
+        self._eta_baseline_key: Optional[str] = None
         self._chapter_prefetch_enabled = _env_bool("CHAPTER_PREFETCH_ENABLED", True)
         self._adaptive_checkpoint_enabled = _env_bool("ADAPTIVE_STATE_CHECKPOINT_ENABLED", True)
         self._adaptive_checkpoint_interval = max(
@@ -1132,6 +1135,60 @@ class AudioConverter:
             if self.verbose:
                 print("⚠️ Failed to persist segment metric")
 
+    def _eta_baseline_key_for_config(self, config: Optional[ConversionConfig]) -> str:
+        cfg = config or self._active_config
+        engine = str(getattr(cfg, "engine", "unknown") or "unknown").lower()
+        book = str(getattr(cfg, "book_title", "") or "unknown").strip().lower()
+        key = self._runtime_tuning_key(cfg, str(getattr(cfg, "engine", "unknown") or "unknown"))
+        machine = str(key.get("machine_signature", "generic") or "generic")
+        return f"{machine}|{engine}|{book}"
+
+    def _load_eta_baseline(self, config: Optional[ConversionConfig]) -> float:
+        key = self._eta_baseline_key_for_config(config)
+        self._eta_baseline_key = key
+        path = self._eta_baseline_path
+        if not path.exists():
+            return 0.0
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            return 0.0
+        if not isinstance(payload, dict):
+            return 0.0
+        row = payload.get(key)
+        if not isinstance(row, dict):
+            return 0.0
+        try:
+            return max(0.0, float(row.get("chars_per_second", 0.0) or 0.0))
+        except Exception:
+            return 0.0
+
+    def _save_eta_baseline(
+        self, config: Optional[ConversionConfig], chars_per_second: float
+    ) -> None:
+        cps = max(0.0, float(chars_per_second or 0.0))
+        if cps <= 1.0:
+            return
+        key = self._eta_baseline_key or self._eta_baseline_key_for_config(config)
+        path = self._eta_baseline_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload: Dict[str, Any] = {}
+        if path.exists():
+            with contextlib.suppress(Exception):
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    payload.update(loaded)
+        prev = payload.get(key) if isinstance(payload.get(key), dict) else {}
+        prev_cps = float((prev or {}).get("chars_per_second", 0.0) or 0.0)
+        blended = cps if prev_cps <= 0 else ((prev_cps * 0.65) + (cps * 0.35))
+        payload[key] = {
+            "chars_per_second": round(float(blended), 3),
+            "updated_at": time.time(),
+            "samples": int(float((prev or {}).get("samples", 0) or 0) + 1),
+        }
+        with contextlib.suppress(Exception):
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
     @staticmethod
     def _failure_checkpoint_path(output_dir: Optional[Path]) -> Optional[Path]:
         if not output_dir:
@@ -1691,6 +1748,74 @@ class AudioConverter:
                             f"<td>{html.escape(str(row.get('avg_chars_per_second', '')))}</td>"
                             "</tr>"
                         )
+            chart_html = "<p>No segment cps timeline available.</p>"
+            timeline_points: Dict[str, List[tuple[float, float]]] = {}
+            if metrics_path.exists():
+                with contextlib.suppress(Exception):
+                    with metrics_path.open("r", encoding="utf-8") as handle:
+                        for line in handle:
+                            line = line.strip()
+                            if not line:
+                                continue
+                            payload = json.loads(line)
+                            if str(payload.get("event") or "") != "segment_success":
+                                continue
+                            engine = str(payload.get("engine") or "unknown").lower()
+                            ts = float(payload.get("ts") or 0.0)
+                            cps = float(payload.get("cps") or 0.0)
+                            if ts <= 0.0 or cps <= 0.0:
+                                continue
+                            timeline_points.setdefault(engine, []).append((ts, cps))
+            if timeline_points:
+                all_ts = [pt[0] for points in timeline_points.values() for pt in points]
+                all_cps = [pt[1] for points in timeline_points.values() for pt in points]
+                min_ts = min(all_ts)
+                max_ts = max(all_ts)
+                max_cps = max(1.0, max(all_cps))
+                width = 900.0
+                height = 280.0
+                pad_x = 42.0
+                pad_y = 20.0
+                plot_w = max(80.0, width - (pad_x * 2))
+                plot_h = max(80.0, height - (pad_y * 2))
+                palette = [
+                    "#1f77b4",
+                    "#d62728",
+                    "#2ca02c",
+                    "#9467bd",
+                    "#ff7f0e",
+                    "#17becf",
+                ]
+                lines: List[str] = [
+                    f"<svg viewBox='0 0 {int(width)} {int(height)}' role='img' aria-label='chars per second over time'>",
+                    f"<rect x='0' y='0' width='{int(width)}' height='{int(height)}' fill='#ffffff' stroke='#d0d7de' />",
+                    f"<line x1='{pad_x}' y1='{height - pad_y}' x2='{width - pad_x}' y2='{height - pad_y}' stroke='#9aa4b2'/>",
+                    f"<line x1='{pad_x}' y1='{pad_y}' x2='{pad_x}' y2='{height - pad_y}' stroke='#9aa4b2'/>",
+                ]
+                for idx, engine in enumerate(sorted(timeline_points.keys())):
+                    points = sorted(timeline_points[engine], key=lambda item: item[0])
+                    if len(points) < 2:
+                        continue
+                    color = palette[idx % len(palette)]
+                    coords = []
+                    for ts, cps in points:
+                        if max_ts <= min_ts:
+                            x = pad_x
+                        else:
+                            x = pad_x + ((ts - min_ts) / (max_ts - min_ts)) * plot_w
+                        y = (height - pad_y) - ((cps / max_cps) * plot_h)
+                        coords.append(f"{x:.1f},{y:.1f}")
+                    lines.append(
+                        f"<polyline fill='none' stroke='{color}' stroke-width='2' points='{' '.join(coords)}' />"
+                    )
+                    lines.append(
+                        f"<text x='{pad_x + 6}' y='{pad_y + 14 + (idx * 14)}' fill='{color}' font-size='11'>{html.escape(engine)}</text>"
+                    )
+                lines.append(
+                    f"<text x='{width - pad_x}' y='{pad_y + 12}' text-anchor='end' font-size='11' fill='#57606a'>max {max_cps:.1f} cps</text>"
+                )
+                lines.append("</svg>")
+                chart_html = "".join(lines)
             dashboard = f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1715,6 +1840,8 @@ class AudioConverter:
     <div class="card"><strong>Pre-check events</strong><br>{int(event_counts.get('pre_segment_check', 0) or 0)}</div>
   </div>
   <div class="grid">{cards}</div>
+  <h2>Chars/s Timeline</h2>
+  {chart_html}
   <h2>Engine/Chapter Segments</h2>
   <table>
     <thead>
@@ -2059,6 +2186,20 @@ class AudioConverter:
                 tuned = True
                 if self.verbose:
                     print(f"⚙️ Piper adaptive chunk: {chunk_chars} → {new_chunk} (seg ok)")
+            workers = int(
+                getattr(config, "piper_max_procs", 0) or os.getenv("PIPER_MAX_PROCS", "2") or "2"
+            )
+            new_workers = workers
+            if snapshot.cpu_percent > 95 or snapshot.ram_gb < 0.8:
+                new_workers = max(1, workers - 1)
+            elif avg_cps > 170 and snapshot.cpu_percent < 82 and snapshot.ram_gb > 1.4:
+                new_workers = min(8, workers + 1)
+            if new_workers != workers:
+                os.environ["PIPER_MAX_PROCS"] = str(new_workers)
+                config.piper_max_procs = new_workers
+                tuned = True
+                if self.verbose:
+                    print(f"⚙️ Piper adaptive workers: {workers} → {new_workers} (seg ok)")
         elif engine == "coqui":
             chunk_chars = int(os.getenv("COQUI_CHUNK_CHARS", "1500") or "1500")
             new_chunk = chunk_chars
@@ -2180,11 +2321,26 @@ class AudioConverter:
                     )
         elif engine == "piper":
             chunk_chars = int(os.getenv("PIPER_CHUNK_CHARS", "3000") or "3000")
+            workers = int(
+                getattr(config, "piper_max_procs", 0)
+                if config is not None
+                else 0 or os.getenv("PIPER_MAX_PROCS", "2") or "2"
+            )
             if snapshot.cpu_percent > 95:
                 chunk_chars = max(1800, chunk_chars - 300)
+                workers = max(1, workers - 1)
             elif snapshot.cpu_percent < 75 and segment_chars > 6000:
                 chunk_chars = min(6000, chunk_chars + 200)
+                workers = min(8, workers + 1)
             os.environ["PIPER_CHUNK_CHARS"] = str(chunk_chars)
+            os.environ["PIPER_MAX_PROCS"] = str(workers)
+            if config is not None:
+                config.piper_max_procs = workers
+            if engine_obj is not None:
+                with contextlib.suppress(Exception):
+                    setattr(engine_obj, "_chunk_char_limit", chunk_chars)
+                with contextlib.suppress(Exception):
+                    setattr(engine_obj, "_semaphore", asyncio.Semaphore(max(1, workers)))
         elif engine == "coqui":
             chunk_chars = int(os.getenv("COQUI_CHUNK_CHARS", "1500") or "1500")
             if snapshot.cpu_percent > 95:
@@ -7452,6 +7608,11 @@ class AudioConverter:
                 output_dir=output_dir,
             )
 
+        chapter_char_estimates = [max(0, self._estimate_chapter_chars(ch)) for ch in chapters_list]
+        if not self._eta_recent_cps:
+            baseline_cps = self._load_eta_baseline(config)
+            if baseline_cps > 1.0:
+                self._eta_recent_cps = [baseline_cps]
         for idx, chapter in enumerate(chapters_list):
             # Adaptive delay and fallback logic for Edge-TTS
             if (config.engine or "").lower() == "edge" and idx > 0:
@@ -7532,6 +7693,20 @@ class AudioConverter:
                 _launch_prefetch(idx + 1)
             current_payload: Optional[str] = speech_text
             chapter_chars = len(speech_text or "")
+            remaining_chars_estimate = max(
+                0,
+                int(chapter_chars)
+                + sum(max(0, int(v or 0)) for v in chapter_char_estimates[idx + 1 :]),
+            )
+            recent_cps = 0.0
+            if self._eta_recent_cps:
+                recent_tail = self._eta_recent_cps[-6:]
+                recent_cps = sum(recent_tail) / max(1, len(recent_tail))
+            with contextlib.suppress(Exception):
+                self.progress.update_eta_hint(
+                    remaining_chars=remaining_chars_estimate,
+                    chars_per_second=recent_cps,
+                )
             progress_started = False
             chapter_attempt = 0
             max_chapter_attempts = 6
@@ -8622,6 +8797,12 @@ class AudioConverter:
                                 throughput = int(chapter_chars / max(chapter_elapsed, 0.001))
                             else:
                                 throughput = 0
+                            if chapter_chars > 0 and chapter_elapsed > 0:
+                                cps = float(chapter_chars) / max(float(chapter_elapsed), 0.001)
+                                self._eta_recent_cps.append(cps)
+                                if len(self._eta_recent_cps) > 12:
+                                    del self._eta_recent_cps[0 : len(self._eta_recent_cps) - 12]
+                                self._save_eta_baseline(config, cps)
                             engine_display = (current_engine_label or "engine").upper()
                             print(
                                 f"⏱️ [{engine_display}] Chapter {chapter_num} → "

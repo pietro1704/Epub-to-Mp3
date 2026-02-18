@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -383,9 +384,28 @@ class PiperTTSEngine:
 
         temp_dir = output_path.parent
         temp_files: List[Path] = []
+        resumed_chunks: set[int] = set()
         try:
-            # Create temp files for each chunk
+            # Reuse existing chunk files when available (resume after interrupted runs).
+            # This is intentionally best-effort: if a resumed chunk is invalid, ffmpeg
+            # concatenation will fail and caller fallback logic will handle retry.
             for idx in range(len(chunks)):
+                existing_candidates = sorted(
+                    temp_dir.glob(f"piper_chunk{idx:03d}_*.wav"),
+                    key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
+                    reverse=True,
+                )
+                resumed = None
+                for candidate in existing_candidates:
+                    with contextlib.suppress(OSError):
+                        if candidate.is_file() and candidate.stat().st_size > 256:
+                            resumed = candidate
+                            break
+                if resumed is not None:
+                    temp_files.append(resumed)
+                    resumed_chunks.add(idx)
+                    continue
+
                 tf = tempfile.NamedTemporaryFile(
                     delete=False,
                     suffix=".wav",
@@ -396,19 +416,35 @@ class PiperTTSEngine:
                 temp_files.append(Path(tf.name))
 
             # Synthesize all chunks in parallel (semaphore limits concurrency)
-            tasks = []
+            tasks: Dict[int, asyncio.Task[Optional[Path]]] = {}
             for idx, (chunk_text, temp_path) in enumerate(zip(chunks, temp_files)):
+                if idx in resumed_chunks:
+                    continue
                 if pre_segment_callback:
                     with contextlib.suppress(Exception):
                         pre_segment_callback(chunk_text, len(text))
-                tasks.append(self._synthesize_single(chunk_text, temp_path, model_path))
+                tasks[idx] = asyncio.create_task(
+                    self._synthesize_single(chunk_text, temp_path, model_path)
+                )
 
-            results = await asyncio.gather(*tasks)
+            task_results: Dict[int, Optional[Path]] = {}
+            if tasks:
+                gathered = await asyncio.gather(*tasks.values())
+                task_results = {
+                    chunk_idx: result for chunk_idx, result in zip(tasks.keys(), gathered)
+                }
 
             # Check all succeeded
-            for idx, result in enumerate(results):
-                if result is None:
+            for idx, file_path in enumerate(temp_files):
+                if idx not in resumed_chunks:
+                    result = task_results.get(idx)
+                    if result is None:
+                        return None
+                if not file_path.exists():
                     return None
+                with contextlib.suppress(OSError):
+                    if file_path.stat().st_size <= 0:
+                        return None
                 if progress_callback:
                     try:
                         progress_callback(chunks[idx], len(text))
@@ -484,22 +520,76 @@ class PiperTTSEngine:
             "--output_file",
             str(output_path),
         )
+        max_retries = max(0, int(os.environ.get("PIPER_CHUNK_MAX_RETRIES", "1") or "1"))
+        stall_seconds = float(os.environ.get("PIPER_CHUNK_STALL_SECONDS", "45") or "45")
+        stall_seconds = max(0.0, stall_seconds)
 
         # **FIXED**: Use semaphore to limit simultaneous processes
         async with self._semaphore:
-            try:
-                process = await asyncio.create_subprocess_exec(
-                    *command,
-                    stdin=asyncio.subprocess.PIPE,
-                )
-                await process.communicate(input=text.encode("utf-8"))
-            except Exception:
-                return None
+            for _attempt in range(max_retries + 1):
+                with contextlib.suppress(Exception):
+                    output_path.unlink(missing_ok=True)
+                try:
+                    process = await asyncio.create_subprocess_exec(
+                        *command,
+                        stdin=asyncio.subprocess.PIPE,
+                    )
+                    if stall_seconds > 0:
+                        ok = await self._communicate_with_stall_watchdog(
+                            process=process,
+                            payload=text.encode("utf-8"),
+                            output_path=output_path,
+                            stall_seconds=stall_seconds,
+                        )
+                        if not ok:
+                            continue
+                    else:
+                        await process.communicate(input=text.encode("utf-8"))
+                except Exception:
+                    continue
 
-            if process.returncode != 0:
-                return None
+                if process.returncode == 0 and Path(output_path).exists():
+                    return output_path
 
-        return output_path if Path(output_path).exists() else None
+        return None
+
+    async def _communicate_with_stall_watchdog(
+        self,
+        *,
+        process: asyncio.subprocess.Process,
+        payload: bytes,
+        output_path: Path,
+        stall_seconds: float,
+    ) -> bool:
+        """Abort stuck Piper process when output file stops growing for too long."""
+        task = asyncio.create_task(process.communicate(input=payload))
+        last_size = -1
+        last_growth = time.time()
+        try:
+            while not task.done():
+                await asyncio.sleep(1.0)
+                current_size = 0
+                with contextlib.suppress(OSError):
+                    current_size = int(output_path.stat().st_size)
+                if current_size > last_size:
+                    last_size = current_size
+                    last_growth = time.time()
+                    continue
+                if (time.time() - last_growth) >= stall_seconds:
+                    with contextlib.suppress(Exception):
+                        process.kill()
+                    with contextlib.suppress(Exception):
+                        await process.wait()
+                    with contextlib.suppress(Exception):
+                        task.cancel()
+                    return False
+            with contextlib.suppress(Exception):
+                await task
+        finally:
+            if not task.done():
+                with contextlib.suppress(Exception):
+                    task.cancel()
+        return True
 
     @staticmethod
     def _resample_audio(

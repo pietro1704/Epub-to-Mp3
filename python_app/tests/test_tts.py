@@ -639,12 +639,14 @@ class TestPiperTTSEngine(unittest.IsolatedAsyncioTestCase):
         with patch("src.tts.piper_engine.asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock successful piper process
             mock_process = AsyncMock()
-            mock_process.communicate.return_value = (b"success", b"")
             mock_process.returncode = 0
-            mock_subprocess.return_value = mock_process
 
-            # Create output file (simulating successful synthesis)
-            output_path.write_text("A" * 2000)
+            async def _communicate(input=None):
+                output_path.write_text("A" * 2000)
+                return (b"success", b"")
+
+            mock_process.communicate.side_effect = _communicate
+            mock_subprocess.return_value = mock_process
 
             result = await engine.synthesize_async("Hello world", output_path)
 
@@ -708,6 +710,76 @@ class TestPiperTTSEngine(unittest.IsolatedAsyncioTestCase):
             result = await engine.synthesize_async("Hello world", output_path)
 
             self.assertIsNone(result)
+
+    async def test_synthesize_chunked_reuses_existing_chunks(self):
+        """Chunked synthesis should resume from existing chunk WAVs when present."""
+        from src.tts.piper_engine import PiperTTSEngine
+
+        engine = PiperTTSEngine(self.model_path)
+        output_path = Path(self.temp_dir) / "chunked.wav"
+        existing_chunk = Path(self.temp_dir) / "piper_chunk000_resume.wav"
+        existing_chunk.write_bytes(b"RIFF" + b"\x00" * 300)
+
+        async def fake_synthesize_single(text, path, model_path):
+            Path(path).write_bytes(b"RIFF" + b"\x00" * 300)
+            return Path(path)
+
+        ffmpeg_calls = {"count": 0}
+
+        def fake_run(*args, **kwargs):
+            ffmpeg_calls["count"] += 1
+            out = Path(args[0][-1])
+            out.write_bytes(b"RIFF" + b"\x00" * 300)
+            return types.SimpleNamespace(returncode=0)
+
+        with patch("src.tts.piper_engine._split_text_into_chunks", return_value=["a", "b"]):
+            with patch.object(
+                engine, "_synthesize_single", side_effect=fake_synthesize_single
+            ) as mock_single:
+                with patch("src.tts.piper_engine.subprocess.run", side_effect=fake_run):
+                    result = await engine._synthesize_chunked(
+                        "ab",
+                        output_path,
+                        self.model_path,
+                    )
+
+        self.assertEqual(result, output_path)
+        self.assertEqual(ffmpeg_calls["count"], 1)
+        # Only missing chunk should be synthesized; chunk 0 reused from disk.
+        self.assertEqual(mock_single.call_count, 1)
+
+    async def test_synthesize_single_retries_after_failed_attempt(self):
+        """Single chunk synthesis should retry when first subprocess attempt fails."""
+        from src.tts.piper_engine import PiperTTSEngine
+
+        engine = PiperTTSEngine(self.model_path)
+        output_path = Path(self.temp_dir) / "retry.wav"
+        calls = {"count": 0}
+
+        def _build_process(return_code: int):
+            proc = AsyncMock()
+            proc.returncode = return_code
+
+            async def _communicate(input=None):
+                calls["count"] += 1
+                if return_code == 0:
+                    output_path.write_bytes(b"RIFF" + b"\x00" * 300)
+                return (b"", b"")
+
+            proc.communicate.side_effect = _communicate
+            return proc
+
+        with patch.dict(
+            os.environ, {"PIPER_CHUNK_STALL_SECONDS": "0", "PIPER_CHUNK_MAX_RETRIES": "1"}
+        ):
+            with patch(
+                "src.tts.piper_engine.asyncio.create_subprocess_exec",
+                side_effect=[_build_process(1), _build_process(0)],
+            ):
+                result = await engine._synthesize_single("retry text", output_path, self.model_path)
+
+        self.assertEqual(result, output_path)
+        self.assertEqual(calls["count"], 2)
 
 
 if __name__ == "__main__":

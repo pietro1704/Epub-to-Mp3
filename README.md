@@ -160,6 +160,13 @@ Useful options:
 - `--job-timeout-seconds S` to abort a stuck book and move to next worker slot
 - `--json-report path.json` to persist per-book execution stats
 
+For long offline runs, use the overnight preset (Piper + staged pipeline + minimal validation):
+
+```bash
+python -m python_app.main convert ~/Downloads/book.epub --overnight \
+  --piper-workers 4 --piper-chunk-chars 2200
+```
+
 Arguments such as `--engine`, `--voice`, and formatting options apply to every book in the queue. `--batch` and `--batch-file` remain handy for folders, glob patterns, or long manifests. By default the converter continues after failures; add `--stop-on-error` to abort the batch on the first unsuccessful conversion.
 
 On the Hugging Face Space, **Step 1** (“Preparar conversão”) now accepts multiple EPUB/PDF uploads at once. Drop every book into the queue, drag or use the arrows to reorder, then click “Converter” and the backend will process them sequentially using the same settings. While Step 2 is running you can drop extra files in the “Adicionar livros” card and they’ll join the queue automatically.
