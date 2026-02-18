@@ -226,6 +226,66 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(self.converter._resource_snapshot.call_count, 1)
 
+    def test_startup_guardrail_applies_when_last_run_regressed(self):
+        cfg = ConversionConfig(
+            engine="piper",
+            output_dir=self.temp_dir,
+            book_title="Guardrail Book",
+            piper_max_procs=4,
+            piper_chunk_chars=3000,
+            validate_audio=False,
+            validate_text=False,
+        )
+        guardrail_path = Path(self.temp_dir) / "startup-guardrail.json"
+        self.converter._startup_guardrail_path = guardrail_path
+        key = self.converter._eta_baseline_key_for_config(cfg)
+        guardrail_path.write_text(
+            json.dumps({key: {"baseline_cps": 200.0, "last_cps": 120.0}}),
+            encoding="utf-8",
+        )
+        with patch.dict(os.environ, {}, clear=True):
+            self.converter._apply_startup_guardrail(cfg)
+            self.assertEqual(cfg.extra.get("startup_guardrail"), "1")
+            self.assertEqual(cfg.piper_max_procs, 3)
+            self.assertEqual(cfg.piper_chunk_chars, 2700)
+
+    async def test_startup_canary_selects_faster_profile(self):
+        cfg = ConversionConfig(
+            engine="piper",
+            output_dir=self.temp_dir,
+            book_title="Canary Book",
+            piper_max_procs=2,
+            piper_chunk_chars=3000,
+            validate_audio=False,
+            validate_text=False,
+        )
+
+        class _Engine:
+            def __init__(self):
+                self.calls = 0
+
+            async def synthesize_async(self, text, output_path):
+                self.calls += 1
+                # First candidate slower than second candidate.
+                if self.calls == 1:
+                    await asyncio.sleep(0.03)
+                else:
+                    await asyncio.sleep(0.005)
+                Path(output_path).write_bytes(b"RIFF" + b"\x00" * 512)
+                return Path(output_path)
+
+        engine = _Engine()
+        await self.converter._maybe_run_piper_canary(
+            tts_engine=engine,
+            config=cfg,
+            chapter_text="x" * 2000,
+            output_dir=Path(self.temp_dir),
+            chapter_index=1,
+        )
+        self.assertEqual(cfg.piper_max_procs, 3)
+        self.assertEqual(cfg.piper_chunk_chars, 2700)
+        self.assertTrue(self.converter._canary_profile_done)
+
     def test_stage_pipeline_toggle_from_config_extra(self):
         self.config.extra["stage_pipeline"] = "1"
         self.assertTrue(self.converter._is_stage_pipeline_enabled(self.config))

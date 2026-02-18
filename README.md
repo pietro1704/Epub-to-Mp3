@@ -167,6 +167,10 @@ python -m python_app.main convert ~/Downloads/book.epub --overnight \
   --piper-workers 4 --piper-chunk-chars 2200
 ```
 
+Startup optimizations now include:
+- `startup guardrail`: if the previous run regressed heavily vs local baseline, the app auto-reduces aggressive settings on boot.
+- `canary profile`: for Piper, a short startup probe can test 2 profiles and lock the faster one for the rest of the run.
+
 Arguments such as `--engine`, `--voice`, and formatting options apply to every book in the queue. `--batch` and `--batch-file` remain handy for folders, glob patterns, or long manifests. By default the converter continues after failures; add `--stop-on-error` to abort the batch on the first unsuccessful conversion.
 
 On the Hugging Face Space, **Step 1** (“Preparar conversão”) now accepts multiple EPUB/PDF uploads at once. Drop every book into the queue, drag or use the arrows to reorder, then click “Converter” and the backend will process them sequentially using the same settings. While Step 2 is running you can drop extra files in the “Adicionar livros” card and they’ll join the queue automatically.

@@ -307,6 +307,11 @@ class AudioConverter:
         self._warm_start_path = self._best_param_store.path.with_name("engine-warm-start.json")
         self._eta_baseline_path = self._best_param_store.path.with_name("eta-baselines.json")
         self._eta_baseline_key: Optional[str] = None
+        self._startup_guardrail_path = self._best_param_store.path.with_name(
+            "startup-guardrail.json"
+        )
+        self._startup_guardrail_applied = False
+        self._canary_profile_done = False
         self._chapter_prefetch_enabled = _env_bool("CHAPTER_PREFETCH_ENABLED", True)
         self._adaptive_checkpoint_enabled = _env_bool("ADAPTIVE_STATE_CHECKPOINT_ENABLED", True)
         self._adaptive_checkpoint_interval = max(
@@ -1188,6 +1193,190 @@ class AudioConverter:
         }
         with contextlib.suppress(Exception):
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    def _apply_startup_guardrail(self, config: Optional[ConversionConfig]) -> None:
+        """Reduce aggressive settings when previous run regressed versus baseline."""
+        if self._startup_guardrail_applied or not config:
+            return
+        if not _env_bool("STARTUP_GUARDRAIL_ENABLED", True):
+            self._startup_guardrail_applied = True
+            return
+        threshold = max(5.0, _env_float("STARTUP_GUARDRAIL_DROP_PCT", 20.0))
+        key = self._eta_baseline_key_for_config(config)
+        path = self._startup_guardrail_path
+        payload: Dict[str, Any] = {}
+        if path.exists():
+            with contextlib.suppress(Exception):
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    payload.update(loaded)
+        row = payload.get(key) if isinstance(payload.get(key), dict) else {}
+        baseline = float((row or {}).get("baseline_cps", 0.0) or 0.0)
+        last = float((row or {}).get("last_cps", 0.0) or 0.0)
+        self._startup_guardrail_applied = True
+        if baseline <= 1.0 or last <= 1.0:
+            return
+        if last >= baseline * (1.0 - (threshold / 100.0)):
+            return
+
+        engine = (config.engine or "").lower()
+        if engine == "piper":
+            workers = max(
+                1, int(getattr(config, "piper_max_procs", 0) or os.getenv("PIPER_MAX_PROCS", "2"))
+            )
+            chunk = max(
+                1800,
+                int(
+                    getattr(config, "piper_chunk_chars", 0)
+                    or os.getenv("PIPER_CHUNK_CHARS", "3000")
+                ),
+            )
+            config.piper_max_procs = max(1, workers - 1)
+            config.piper_chunk_chars = max(1800, chunk - 300)
+            os.environ["PIPER_MAX_PROCS"] = str(config.piper_max_procs)
+            os.environ["PIPER_CHUNK_CHARS"] = str(config.piper_chunk_chars)
+        elif engine == "edge":
+            config.edge_enable_parallel = False
+            config.edge_chunk_chars = max(
+                4000, int((getattr(config, "edge_chunk_chars", 12000) or 12000) * 0.8)
+            )
+            os.environ["EDGE_CHUNK_CHARS"] = str(config.edge_chunk_chars)
+        if getattr(config, "extra", None) is None:
+            config.extra = {}
+        config.extra["startup_guardrail"] = "1"
+        self._append_runtime_metric(
+            {
+                "event": "startup_guardrail_applied",
+                "baseline_cps": round(baseline, 3),
+                "last_cps": round(last, 3),
+                "threshold_pct": threshold,
+                "engine": engine,
+            },
+            output_dir=self._last_output_dir,
+        )
+
+    def _update_startup_guardrail(
+        self, config: Optional[ConversionConfig], chapter_cps: float
+    ) -> None:
+        cps = max(0.0, float(chapter_cps or 0.0))
+        if cps <= 1.0:
+            return
+        key = self._eta_baseline_key_for_config(config)
+        path = self._startup_guardrail_path
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload: Dict[str, Any] = {}
+        if path.exists():
+            with contextlib.suppress(Exception):
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    payload.update(loaded)
+        row = payload.get(key) if isinstance(payload.get(key), dict) else {}
+        prev_baseline = float((row or {}).get("baseline_cps", 0.0) or 0.0)
+        baseline = cps if prev_baseline <= 0 else max(prev_baseline * 0.99, cps)
+        payload[key] = {
+            "baseline_cps": round(baseline, 3),
+            "last_cps": round(cps, 3),
+            "updated_at": time.time(),
+            "samples": int(float((row or {}).get("samples", 0) or 0) + 1),
+        }
+        with contextlib.suppress(Exception):
+            path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    async def _maybe_run_piper_canary(
+        self,
+        *,
+        tts_engine: object,
+        config: Optional[ConversionConfig],
+        chapter_text: str,
+        output_dir: Path,
+        chapter_index: int,
+    ) -> None:
+        """Probe two Piper profiles on a short sample and lock the best one."""
+        if self._canary_profile_done:
+            return
+        if not _env_bool("STARTUP_CANARY_ENABLED", True):
+            self._canary_profile_done = True
+            return
+        if not config or (config.engine or "").lower() != "piper":
+            self._canary_profile_done = True
+            return
+        text = str(chapter_text or "").strip()
+        if len(text) < 800:
+            self._canary_profile_done = True
+            return
+
+        sample = text[: min(len(text), _env_int("STARTUP_CANARY_SAMPLE_CHARS", 1400))]
+        base_workers = max(
+            1,
+            int(getattr(config, "piper_max_procs", 0) or os.getenv("PIPER_MAX_PROCS", "2") or "2"),
+        )
+        base_chunk = max(
+            1800,
+            int(
+                getattr(config, "piper_chunk_chars", 0)
+                or os.getenv("PIPER_CHUNK_CHARS", "3000")
+                or "3000"
+            ),
+        )
+        candidates = [
+            (base_workers, base_chunk),
+            (min(8, base_workers + 1), max(1800, base_chunk - 300)),
+        ]
+        if candidates[1] == candidates[0]:
+            candidates = [candidates[0]]
+
+        results: List[tuple[int, int, float]] = []
+        for idx, (workers, chunk_chars) in enumerate(candidates):
+            probe_path = output_dir / f"_canary_{chapter_index}_{idx}.wav"
+            with contextlib.suppress(Exception):
+                probe_path.unlink(missing_ok=True)
+            os.environ["PIPER_MAX_PROCS"] = str(workers)
+            os.environ["PIPER_CHUNK_CHARS"] = str(chunk_chars)
+            with contextlib.suppress(Exception):
+                setattr(tts_engine, "_semaphore", asyncio.Semaphore(max(1, workers)))
+            with contextlib.suppress(Exception):
+                setattr(tts_engine, "_chunk_char_limit", int(chunk_chars))
+            started = time.time()
+            try:
+                out = await tts_engine.synthesize_async(sample, probe_path)
+            except Exception:
+                out = None
+            elapsed = max(0.001, time.time() - started)
+            if out is not None and Path(out).exists():
+                results.append((workers, chunk_chars, elapsed))
+            with contextlib.suppress(Exception):
+                probe_path.unlink(missing_ok=True)
+
+        if not results:
+            self._canary_profile_done = True
+            return
+        best_workers, best_chunk, best_elapsed = min(results, key=lambda item: item[2])
+        config.piper_max_procs = int(best_workers)
+        config.piper_chunk_chars = int(best_chunk)
+        os.environ["PIPER_MAX_PROCS"] = str(best_workers)
+        os.environ["PIPER_CHUNK_CHARS"] = str(best_chunk)
+        with contextlib.suppress(Exception):
+            setattr(tts_engine, "_semaphore", asyncio.Semaphore(max(1, int(best_workers))))
+        with contextlib.suppress(Exception):
+            setattr(tts_engine, "_chunk_char_limit", int(best_chunk))
+        self._canary_profile_done = True
+        self._append_runtime_metric(
+            {
+                "event": "startup_canary_selected",
+                "chapter": chapter_index,
+                "workers": int(best_workers),
+                "chunk_chars": int(best_chunk),
+                "elapsed_s": round(float(best_elapsed), 4),
+                "candidates": len(results),
+            },
+            output_dir=output_dir,
+        )
+        if self.verbose:
+            print(
+                "🧪 Startup canary selected Piper profile: "
+                f"workers={best_workers}, chunk={best_chunk} "
+                f"(sample {best_elapsed:.2f}s)"
+            )
 
     @staticmethod
     def _failure_checkpoint_path(output_dir: Optional[Path]) -> Optional[Path]:
@@ -5660,6 +5849,9 @@ class AudioConverter:
         # Enable verbose mode if requested
         self.verbose = getattr(config, "verbose", False)
         self._active_config = config
+        self._startup_guardrail_applied = False
+        self._canary_profile_done = False
+        self._eta_recent_cps = []
         # Show TTS output only in verbose mode
         self.show_tts_output = self.verbose
         if not getattr(config, "log_callback", None):
@@ -5738,6 +5930,7 @@ class AudioConverter:
         # Setup temporary directory for conversion (uses .cache)
         temp_dir = self._setup_temp_directory(config)
         self._apply_runtime_feature_overrides(config)
+        self._apply_startup_guardrail(config)
         self._load_adaptive_state_checkpoint(temp_dir)
         chapters = list(
             reader.get_chapter_structure(preserve_all=config.preserve_all_chapters) or []
@@ -7976,6 +8169,15 @@ class AudioConverter:
                         cfg=engine_config,
                         output_dir=output_dir,
                     )
+                    if (current_engine_label or "").lower() == "piper":
+                        with contextlib.suppress(Exception):
+                            await self._maybe_run_piper_canary(
+                                tts_engine=tts_engine,
+                                config=engine_config,
+                                chapter_text=speech_text,
+                                output_dir=output_dir,
+                                chapter_index=chapter_num,
+                            )
                     try:
                         if current_engine_label == "edge":
                             plan_segments = self._load_segment_plan(
@@ -8803,6 +9005,7 @@ class AudioConverter:
                                 if len(self._eta_recent_cps) > 12:
                                     del self._eta_recent_cps[0 : len(self._eta_recent_cps) - 12]
                                 self._save_eta_baseline(config, cps)
+                                self._update_startup_guardrail(config, cps)
                             engine_display = (current_engine_label or "engine").upper()
                             print(
                                 f"⏱️ [{engine_display}] Chapter {chapter_num} → "
