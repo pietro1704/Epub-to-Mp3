@@ -56,6 +56,11 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 # If Edge returns no audio at all, it's often a connectivity / service issue.
 # Use a short circuit-breaker to avoid spending minutes retrying the same request.
 EDGE_NOAUDIO_COOLDOWN_SECONDS = float(os.getenv("EDGE_NOAUDIO_COOLDOWN_SECONDS", "60"))
+EDGE_SEGMENT_MAX_RETRIES = max(1, int(os.getenv("EDGE_SEGMENT_MAX_RETRIES", "1") or "1"))
+EDGE_NETWORK_ABORT_AFTER_FAILS = max(
+    1, int(os.getenv("EDGE_NETWORK_ABORT_AFTER_FAILS", "1") or "1")
+)
+EDGE_STREAM_MAX_RETRIES = max(1, int(os.getenv("EDGE_STREAM_MAX_RETRIES", "1") or "1"))
 
 # Import SSL/Certificate error types
 try:
@@ -1035,8 +1040,8 @@ class EdgeTTSEngine:
                     if self.verbose:
                         self._log(f"   ❌ FAILED: {self.last_error}")
 
-                    # Retry with shorter exponential backoff (1s, 2s)
-                    if failed_segments <= 2:
+                    # Retry with shorter exponential backoff.
+                    if failed_segments <= EDGE_SEGMENT_MAX_RETRIES:
                         backoff = min(1.0 * (2 ** (failed_segments - 1)), 3.0)
                         if self.verbose:
                             self._log(f"   🔄 Retrying after {backoff}s...")
@@ -1059,8 +1064,8 @@ class EdgeTTSEngine:
                                 self._log("   ✅ Success on retry")
                             failed_segments = max(0, failed_segments - 1)
 
-                    # Fail if more than 2 consecutive segments failed
-                    if failed_segments > 2:
+                    # Fail if too many consecutive segments failed
+                    if failed_segments > EDGE_SEGMENT_MAX_RETRIES:
                         last_error_text = (self.last_error or "").lower()
                         is_network_like = any(
                             token in last_error_text
@@ -1073,7 +1078,12 @@ class EdgeTTSEngine:
                                 "network",
                             )
                         )
-                        if is_network_like:
+                        # DNS failures rarely recover quickly; abort immediately and let
+                        # converter fallback to local engine.
+                        if "clientconnectordnserror" in last_error_text and failed_segments >= 1:
+                            self._log("❌ Edge TTS: DNS failure detected, aborting fast")
+                            raise RuntimeError("edge_network_abort")
+                        if is_network_like and failed_segments >= EDGE_NETWORK_ABORT_AFTER_FAILS:
                             self._log(
                                 f"❌ Edge TTS: consecutive network/SSL failures ({failed_segments}), aborting"
                             )
@@ -2133,7 +2143,7 @@ class EdgeTTSEngine:
                         await stream.aclose()
 
             synthesis_start = asyncio.get_event_loop().time()
-            max_retries = 3
+            max_retries = EDGE_STREAM_MAX_RETRIES
             retry_count = 0
 
             try:
@@ -2193,11 +2203,20 @@ class EdgeTTSEngine:
 
                     except Exception as exc:
                         synthesis_time = asyncio.get_event_loop().time() - synthesis_start
+                        exc_text = str(exc or "").lower()
 
                         if self.verbose:
                             self._log(
                                 f"   ⚠️ Exception ({exc.__class__.__name__}) after {synthesis_time:.1f}s: {exc}"
                             )
+                        if "clientconnectordnserror" in exc_text or (
+                            "nodename nor servname provided" in exc_text
+                        ):
+                            # DNS outage won't recover with immediate retries; fail fast
+                            # so converter can switch engine quickly.
+                            self.last_error = f"{exc.__class__.__name__}: {exc}"
+                            self._log("   ❌ DNS resolution failure - aborting fast")
+                            return False
 
                         is_rate_limit = _is_rate_limit_error(exc)
                         is_cert_error = (

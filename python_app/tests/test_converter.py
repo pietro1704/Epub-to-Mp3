@@ -595,6 +595,20 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.converter._apply_chapter_engine_preferences(config, stats)
         self.assertEqual(config.engine, "coqui")
 
+    @patch("src.converter._has_piper_support", return_value=True)
+    @patch("src.converter._has_coqui_support", return_value=True)
+    def test_resolve_offline_fallback_prefers_piper(self, mock_coqui, mock_piper):
+        choice = self.converter._resolve_offline_fallback_engine({"edge", "piper", "coqui"})
+        self.assertEqual(choice, "piper")
+
+    def test_should_preempt_edge_timeout_for_long_chapter(self):
+        self.converter._segment_adaptive_state["engine_cps"] = {"edge": [70.0, 72.0, 68.0]}
+        reason = self.converter._should_preempt_edge_timeout(
+            chapter_chars=120_000,
+            estimated_seconds=400.0,
+        )
+        self.assertIsNotNone(reason)
+
     def test_spot_check_text_against_epub(self):
         """Spot-check should ensure snippets from EPUB exist in payload."""
         epub_text = (
@@ -608,6 +622,44 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(
             AudioConverter._spot_check_text_against_epub(epub_text, payload_missing_mid)
         )
+
+    def test_resolve_problem_chapter_indices_supports_decimal_labels(self):
+        chapters = [
+            Chapter("4.1", "Cap 4.1", "c41.xhtml", "texto 41"),
+            Chapter("4.2", "Cap 4.2", "c42.xhtml", "texto 42"),
+            Chapter("5.0", "Cap 5.0", "c50.xhtml", "texto 50"),
+            Chapter("6", "Cap 6", "c6.xhtml", "texto 6"),
+        ]
+
+        mapped = self.converter._resolve_problem_chapter_indices(chapters, ["4.2", "5.0"])
+        self.assertEqual(mapped, ["4.2", "5.0"])
+
+    def test_resolve_problem_chapter_indices_does_not_collapse_decimal_to_integer(self):
+        chapters = [
+            Chapter("4.2", "Cap 4.2", "c42.xhtml", "texto 42"),
+            Chapter("4", "Cap 4", "c4.xhtml", "texto 4"),
+        ]
+
+        mapped = self.converter._resolve_problem_chapter_indices(chapters, ["4"])
+        self.assertEqual(mapped, ["4"])
+
+    def test_categorize_problems_treats_missing_cache_as_full_reconvert(self):
+        issues = [
+            "Chapter 4.2: Missing cache files",
+            "Chapter 4.2: Missing MP3 file",
+            "Chapter 5.0: Missing cache files",
+            "Chapter 5.1: Missing MP3 file",
+            "Chapter 6.1: Duration mismatch (+45%)",
+        ]
+        problem_chapters = ["4.2", "5.0", "5.1", "6.1"]
+
+        missing_mp3_only, duration_only = self.converter._categorize_problems(
+            issues, problem_chapters
+        )
+
+        # 4.2 and 5.0 require full reconversion (not quick synthesis)
+        self.assertEqual(missing_mp3_only, ["5.1"])
+        self.assertEqual(duration_only, ["6.1"])
 
     def test_init(self):
         """Test AudioConverter initialization"""

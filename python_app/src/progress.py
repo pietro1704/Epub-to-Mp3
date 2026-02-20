@@ -39,8 +39,13 @@ class ProgressTracker:
         self._spinner_index: int = 0
         self._last_progress_pct: float = -1.0
         self._last_activity_time: float = time.time()
+        self._last_real_progress_time: float = self._last_activity_time
         self._eta_remaining_chars_hint: int = 0
         self._eta_chars_per_sec_hint: float = 0.0
+        self._eta_hint_updated_at: float = 0.0
+        self._eta_hint_max_age_seconds: float = float(
+            os.getenv("ETA_HINT_MAX_AGE_SECONDS", "45") or "45"
+        )
 
         # **NEW**: Character/sentence tracking for granular progress display
         self.total_chars: int = 0
@@ -77,8 +82,10 @@ class ProgressTracker:
         self._spinner_index = 0
         self._last_progress_pct = -1.0
         self._last_activity_time = time.time()
+        self._last_real_progress_time = self._last_activity_time
         self._eta_remaining_chars_hint = 0
         self._eta_chars_per_sec_hint = 0.0
+        self._eta_hint_updated_at = 0.0
         if self.total_chapters == 0:
             self._render("No chapters available", force=True)
 
@@ -88,6 +95,7 @@ class ProgressTracker:
         self.current_index = index
         self._chapter_start_time = time.time()
         self._phase_start_time = self._chapter_start_time
+        self._last_real_progress_time = self._chapter_start_time
 
         # **NEW**: Reset character counters for new chapter
         self.processed_chars = 0
@@ -104,6 +112,7 @@ class ProgressTracker:
         """Inject a chapter-size-aware ETA hint from converter telemetry."""
         self._eta_remaining_chars_hint = max(0, int(remaining_chars or 0))
         self._eta_chars_per_sec_hint = max(0.0, float(chars_per_second or 0.0))
+        self._eta_hint_updated_at = time.time()
 
     def complete_chapter(self, status: str = "") -> None:
         """Mark chapter completion and refresh the progress bar."""
@@ -111,6 +120,7 @@ class ProgressTracker:
             self.completed_chapters = min(self.completed_chapters + 1, self.total_chapters)
         else:
             self.completed_chapters += 1
+        self._last_real_progress_time = time.time()
         self._render(status)
 
     def update_chars_progress(self, text: str, total_chars: int = 0) -> None:
@@ -133,6 +143,7 @@ class ProgressTracker:
         else:
             self.processed_chars += len(text)
         self.sentences_processed += 1
+        self._last_real_progress_time = time.time()
 
         # **THROTTLE**: Only update every 0.5s to avoid overhead
         now = time.time()
@@ -167,10 +178,21 @@ class ProgressTracker:
         # chunk_index é zero-based
         self.processed_chunks = max(self.processed_chunks, chunk_index + 1)
         self.total_chunks = max(self.total_chunks, chunk_index + 1)
+        self._last_real_progress_time = time.time()
         if self.total_chars > 0:
-            # Estimate fraction with dampening to avoid hitting 100% too early
-            denom = max(self.total_chunks + 2, 1)
-            estimated_fraction = min(0.95, self.processed_chunks / denom)
+            # Conservative estimate when total chunk count is unknown.
+            # This avoids "ETA 1m" illusions on long chapters where chunks keep growing.
+            if self._chunks_confident and self.total_chunks > 0:
+                denom = max(self.total_chunks + 2, 1)
+            else:
+                # Rough baseline: ~2500 chars/chunk for local engines, plus safety headroom.
+                guessed_total = max(
+                    self.processed_chunks + 8,
+                    int(max(self.total_chars, 1) / 2500),
+                    12,
+                )
+                denom = guessed_total
+            estimated_fraction = min(0.90, self.processed_chunks / max(denom, 1))
             self.processed_chars = max(
                 self.processed_chars, int(self.total_chars * estimated_fraction)
             )
@@ -185,6 +207,10 @@ class ProgressTracker:
         if self.total_chapters and self.completed_chapters >= self.total_chapters:
             return
         self._render(status or self._last_status, force=True)
+
+    def mark_activity(self) -> None:
+        """Mark real progress/activity to reset stall timers between retries/engine switches."""
+        self._last_real_progress_time = time.time()
 
     def finish(self) -> None:
         """Print final summary and release the line."""
@@ -291,15 +317,24 @@ class ProgressTracker:
         return min(100.0, max(0.0, progress))
 
     def seconds_since_activity(self) -> float:
-        return max(0.0, time.time() - self._last_activity_time)
+        return max(0.0, time.time() - self._last_real_progress_time)
 
     def _eta_seconds(self, elapsed: float) -> float:
         if self.total_chapters <= 0:
             return 0.0
 
         # Prefer explicit telemetry ETA when converter can estimate remaining chars.
-        if self._eta_remaining_chars_hint > 0 and self._eta_chars_per_sec_hint > 1.0:
+        hint_age = time.time() - (self._eta_hint_updated_at or 0.0)
+        if (
+            self._eta_remaining_chars_hint > 0
+            and self._eta_chars_per_sec_hint > 1.0
+            and hint_age <= self._eta_hint_max_age_seconds
+        ):
             return self._eta_remaining_chars_hint / self._eta_chars_per_sec_hint
+
+        # If we have no real progress for a while, suppress misleading short ETA.
+        if self.seconds_since_activity() >= 60.0:
+            return 0.0
 
         # Use fractional progress (including current chapter) to avoid ETA explosion early on.
         partial = 0.0

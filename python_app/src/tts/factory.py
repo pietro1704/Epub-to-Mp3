@@ -276,13 +276,34 @@ class TTSFactory:
         python_root = Path(__file__).resolve().parents[1]
         candidate_dirs.append(python_root / "models")
 
+        preferred = (preferred_code or "").split("-", 1)[0].strip().lower()
+        preferred_prefixes = []
+        if preferred:
+            preferred_prefixes.append(preferred)
+            preferred_prefixes.append(f"{preferred}_")
+            if preferred == "pt":
+                preferred_prefixes.extend(["pt_br", "pt-br", "ptbr"])
+            elif preferred == "en":
+                preferred_prefixes.extend(["en_us", "en-us", "enus", "en_gb", "en-gb", "engb"])
+
         for search_dir in dict.fromkeys(candidate_dirs):
             if not search_dir.exists() or not search_dir.is_dir():
                 continue
 
-            for candidate in sorted(search_dir.glob("*.onnx")):
-                if candidate.is_file():
-                    return candidate
+            candidates = [
+                candidate for candidate in sorted(search_dir.glob("*.onnx")) if candidate.is_file()
+            ]
+            if not candidates:
+                continue
+
+            if preferred_prefixes:
+                for candidate in candidates:
+                    name = candidate.stem.lower()
+                    if any(name.startswith(prefix) for prefix in preferred_prefixes):
+                        return candidate
+
+            # Fallback to first available model in directory
+            return candidates[0]
 
         downloaded = self._download_default_piper_model(preferred_code)
         if downloaded:

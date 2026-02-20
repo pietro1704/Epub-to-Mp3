@@ -376,6 +376,7 @@ class ConverterApplication:
 
             range_start = getattr(args, "from_chapter_to_end", None)
             range_span = getattr(args, "from_chapter_to_chapter", None)
+            subset_requested = bool(range_start or range_span)
             if range_start and range_span:
                 print("❌ Use apenas --from-chapter-to-end ou --from-chapter-to-chapter.")
                 return 1
@@ -402,6 +403,8 @@ class ConverterApplication:
             selectors: List[str] = []
             selectors.extend(self._expand_selector_args(getattr(args, "chapters", []) or []))
             selectors.extend(self._expand_selector_args(getattr(args, "sections", []) or []))
+            if selectors:
+                subset_requested = True
 
             structure_items, filtered = self._filter_structure_selection(
                 structure_items, selectors if selectors else None
@@ -516,10 +519,11 @@ class ConverterApplication:
                 return 1
             config.verbose = self._resolve_verbose(args)
             self._announce_footnote_mode(config)
-            if selectors:
+            if subset_requested:
                 selected_indices = [str(item.index) for item in structure_items]
                 if selected_indices:
                     config.extra["selected_indices"] = ",".join(selected_indices)
+                config.extra["partial_selection"] = "1"
 
             # Configurar o diretório temporário usando o método existente com `config`
             temp_dir = self.converter._setup_temp_directory(config)
