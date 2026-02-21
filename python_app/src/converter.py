@@ -17,6 +17,7 @@ import platform
 import re
 import resource
 import shutil
+import socket
 import subprocess
 import sys
 import threading
@@ -3148,7 +3149,7 @@ class AudioConverter:
                 45, int(os.getenv("GENERIC_QUICK_SYNTH_TIMEOUT", "240") or "240")
             )
             quick_synth_max_chars = max(
-                5000, int(os.getenv("QUICK_SYNTH_MAX_CHARS", "60000") or "60000")
+                5000, int(os.getenv("QUICK_SYNTH_MAX_CHARS", "300000") or "300000")
             )
 
             def _is_edge_network_failure(exc: BaseException) -> bool:
@@ -7984,6 +7985,17 @@ class AudioConverter:
         ):
             edge_stable_mode = True
 
+        # Preflight: detect DNS issues, but do not bypass Edge entirely.
+        # Product requirement: always attempt Edge at least once before offline fallback.
+        if (config.engine or "").lower() == "edge":
+            try:
+                socket.getaddrinfo("speech.platform.bing.com", 443, proto=socket.IPPROTO_TCP)
+            except Exception:
+                if self.verbose:
+                    print(
+                        "🛟 Edge DNS indisponível no preflight; ainda assim tentando Edge 1x antes do fallback offline"
+                    )
+
         # Compat: aceitar um engine direto em vez de um pool
         if hasattr(engine_pool, "synthesize_async") and not hasattr(engine_pool, "acquire"):
             engine_instance = engine_pool
@@ -8090,6 +8102,7 @@ class AudioConverter:
         edge_unavailable_hits = 0
         auto_engine_pool = auto_engine_pool or {}
         unavailable_engines: Set[str] = set()
+        edge_globally_blocked = False
         edge_blocked_chapters_global: Set[str] = set()
         if getattr(config, "extra", None):
             raw_blocked = config.extra.get("edge_blocked_chapters") or []
@@ -8363,21 +8376,21 @@ class AudioConverter:
                 and (edge_switched_to_kokoro or edge_switched_to_monolingual)
             ):
                 if can_use_piper():
+                    piper_language = self._effective_primary_language(config)
                     current_label = "Kokoro" if current_engine == "kokoro" else "Edge"
                     print(
                         f"\n🔄 {current_label} com {edge_consecutive_failures} failures consecutive"
                     )
-                    print(
-                        f"   🛟 Mudando para Piper (offline) com language: {config.primary_language}"
-                    )
+                    print(f"   🛟 Mudando para Piper (offline) com language: {piper_language}")
                     from .config import VoiceConfigProvider
 
                     voice_provider = VoiceConfigProvider()
-                    piper_model = voice_provider.get_voice("piper", config.primary_language)
+                    piper_model = voice_provider.get_voice("piper", piper_language)
                     if piper_model:
                         config = replace(
                             config,
                             engine="piper",
+                            primary_language=piper_language,
                             model_path=Path(piper_model) if piper_model else None,
                         )
                         engine_pool.register_engine("piper", config)
@@ -8600,6 +8613,8 @@ class AudioConverter:
             forced_auto_engine: Optional[str] = None
             blocked_engines_for_chapter: Set[str] = set()
             edge_connectivity_recorded = False
+            if edge_globally_blocked or "__ALL__" in edge_blocked_chapters_global:
+                blocked_engines_for_chapter.add("edge")
             if str(chapter_num) in edge_blocked_chapters_global:
                 blocked_engines_for_chapter.add("edge")
             if chapter_label in edge_blocked_chapters_global:
@@ -8638,9 +8653,12 @@ class AudioConverter:
                 def _block_edge_connectivity(last_error: Optional[str]) -> None:
                     nonlocal forced_auto_engine
                     nonlocal edge_connectivity_recorded
+                    nonlocal edge_globally_blocked
+                    nonlocal config
                     blocked_engines_for_chapter.add("edge")
                     # Keep Edge unavailable for the remainder of this sequential pass.
                     unavailable_engines.add("edge")
+                    edge_globally_blocked = True
                     _trip_edge_circuit("network")
                     if not edge_connectivity_recorded:
                         self.speed_controller.record_connectivity_failure("edge")
@@ -8657,6 +8675,7 @@ class AudioConverter:
                     )
                     edge_blocked_chapters_global.update(
                         {
+                            "__ALL__",
                             str(chapter_num),
                             str(chapter_label or "").strip(),
                             str(getattr(chapter, "name", "") or "").strip(),
@@ -8677,6 +8696,19 @@ class AudioConverter:
                         },
                         output_dir=output_dir,
                     )
+                    with contextlib.suppress(Exception):
+                        from .config import VoiceConfigProvider
+
+                        if can_use_piper():
+                            piper_language = self._effective_primary_language(config)
+                            piper_model = VoiceConfigProvider().get_voice("piper", piper_language)
+                            config = replace(
+                                config,
+                                engine="piper",
+                                primary_language=piper_language,
+                                model_path=Path(piper_model) if piper_model else config.model_path,
+                            )
+                            engine_pool.register_engine("piper", config)
                     if (engine_tracker.get("label") or "").lower() in {"piper", "coqui", "kokoro"}:
                         forced_auto_engine = (engine_tracker.get("label") or "").lower()
 
@@ -8754,9 +8786,27 @@ class AudioConverter:
                             chapter_error = _error_text(chapter_error)
                             self.progress.complete_chapter(f"❌ {chapter_error}")
                             break
+                        must_try_edge_first = (
+                            "edge" in pool_view
+                            and "edge" not in blocked_engines_for_chapter
+                            and "edge" not in attempted_auto
+                        )
+                        if must_try_edge_first:
+                            picked_engine = "edge"
+                            auto_order = [
+                                name
+                                for name in self._preferred_auto_engine_order(pool_view)
+                                if name not in blocked_engines_for_chapter
+                            ]
+                            if self.verbose:
+                                print("   ⚡ AUTO: forcing first attempt on edge for this chapter")
                         if forced_auto_engine and forced_auto_engine in blocked_engines_for_chapter:
                             forced_auto_engine = None
-                        if forced_auto_engine and forced_auto_engine in pool_view:
+                        if (
+                            not must_try_edge_first
+                            and forced_auto_engine
+                            and forced_auto_engine in pool_view
+                        ):
                             picked_engine = forced_auto_engine
                             auto_order = self._preferred_auto_engine_order(pool_view)
                             if picked_engine in auto_order:
@@ -9002,7 +9052,7 @@ class AudioConverter:
                         with contextlib.suppress(Exception):
                             setattr(tts_engine, "_semaphore", asyncio.Semaphore(target_workers))
                         piper_min_timeout = float(
-                            os.getenv("PIPER_LARGE_TIMEOUT_MIN", "420") or "420"
+                            os.getenv("PIPER_LARGE_TIMEOUT_MIN", "900") or "900"
                         )
                         if chapter_chars >= 200000:
                             piper_timeout_cap = float(
@@ -9031,14 +9081,14 @@ class AudioConverter:
                                 f"workers={target_workers}, timeout={int(timeout_seconds)}s"
                             )
                     timeout_seconds = int(timeout_seconds)
-                    stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "60") or "60")
+                    stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "120") or "120")
                     if stall_seconds < 0:
                         stall_seconds = 0.0
                     # Avoid false "stuck" detection on large local chapters (Piper/Coqui):
                     # synthesis can take >45-60s before first progress callback.
                     if current_engine_label in {"piper", "coqui"} and chapter_chars >= 50000:
                         local_floor = float(
-                            os.getenv("LOCAL_ENGINE_STALL_MIN_SECONDS", "240") or "240"
+                            os.getenv("LOCAL_ENGINE_STALL_MIN_SECONDS", "600") or "600"
                         )
                         proportional = max(
                             local_floor,

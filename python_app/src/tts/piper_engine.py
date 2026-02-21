@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import platform
 import re
@@ -13,10 +14,18 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 _IS_MACOS = platform.system().lower() == "darwin"
+
+# Piper can emit very noisy per-token warnings (e.g. missing phoneme IDs),
+# which significantly slows long chapter synthesis due to terminal I/O.
+with contextlib.suppress(Exception):
+    logging.getLogger("piper.phoneme_ids").setLevel(logging.ERROR)
+with contextlib.suppress(Exception):
+    logging.getLogger("piper").setLevel(logging.ERROR)
 
 # Chunk size for parallel Piper synthesis (env-configurable)
 _PIPER_CHUNK_CHARS = int(os.environ.get("PIPER_CHUNK_CHARS", "3000"))
@@ -57,6 +66,18 @@ def _split_text_into_chunks(text: str, max_chars: int) -> List[str]:
         remaining = remaining[split_pos:].lstrip()
 
     return chunks
+
+
+def _sanitize_text_for_piper(text: str) -> str:
+    """Normalize text and drop problematic combining marks before Piper."""
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFC", text)
+    # After NFC, most Latin accents are precomposed. Remaining isolated combining
+    # marks tend to trigger Piper "missing phoneme" warnings and add heavy overhead.
+    cleaned = "".join(ch for ch in normalized if unicodedata.category(ch) != "Mn")
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip()
 
 
 _DISABLE_NATIVE_DEPENDENCIES = _IS_MACOS and os.environ.get("FORCE_PIPER_NATIVE_DEPS", "0") != "1"
@@ -245,6 +266,8 @@ class PiperTTSEngine:
                 text = formatter.clean_tts_text(text)
         else:
             text = text.strip()
+
+        text = _sanitize_text_for_piper(text)
 
         contains_markup = LanguageMarkup is not None and "[[lang:" in text.lower()
         default_language = (
@@ -533,6 +556,8 @@ class PiperTTSEngine:
                     process = await asyncio.create_subprocess_exec(
                         *command,
                         stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL,
                     )
                     if stall_seconds > 0:
                         ok = await self._communicate_with_stall_watchdog(

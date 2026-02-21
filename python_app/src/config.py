@@ -44,7 +44,7 @@ class ConversionConfig:
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
-    auto_validate_output: bool = True  # Run post-validation (validate_conversion) automatically
+    auto_validate_output: bool = False  # Run heavy post-validation only when explicitly enabled
     auto_fix_output: bool = True  # Auto-reconvert (cache clean) if validation fails
     validate_text: bool = True  # Validate parsed/pre-tts text during conversion
     validate_audio: bool = True  # Validate MP3 integrity/duration after synthesis
@@ -420,10 +420,16 @@ class VoiceConfigProvider:
                 continue
             for path in sorted(directory.glob("*.onnx")):
                 name = path.stem
+                lower_name = name.lower()
+                # Prefer quality-first PT-BR (Faber medium) and stable English default.
+                # If Faber is unavailable, _resolve_piper_model still falls back to another PT-BR model.
+                recommended = (
+                    "pt_br" in lower_name and "faber" in lower_name
+                ) or lower_name.startswith("en_us-lessac")
                 discovered[name] = {
                     "name": name,
                     "path": path,
-                    "recommended": name.lower().startswith("faber"),
+                    "recommended": recommended,
                 }
         return discovered
 
@@ -716,7 +722,7 @@ class AppConfig:
         validate_audio = bool(kwargs.pop("validate_audio", True))
         strict_validate = bool(kwargs.pop("strict_validate", False))
         deep_validate = bool(kwargs.pop("deep_validate", ConversionConfig.deep_validate))
-        auto_validate_output = bool(kwargs.pop("auto_validate_output", True))
+        auto_validate_output = bool(kwargs.pop("auto_validate_output", False))
         auto_fix_output = bool(kwargs.pop("auto_fix_output", True))
 
         config = ConversionConfig(

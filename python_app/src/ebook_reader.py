@@ -55,6 +55,8 @@ class Chapter:
     formatting_segments: Optional[List[FormattingSegment]] = None
     speech_text: Optional[str] = None
     footnotes: Optional[List[Dict[str, str]]] = None
+    _progress_index: Optional[int] = None
+    _deferred_safe_pass: bool = False
 
 
 @dataclass(slots=True)
@@ -249,7 +251,7 @@ class TextProcessor:
             fragment = href.split("#", 1)[-1] if "#" in href else ""
             return fragment.strip()
 
-        def looks_like_noteref(anchor, target_text: str) -> bool:
+        def looks_like_noteref(anchor, target_text: str, note_node=None) -> bool:
             if anchor is None or not hasattr(anchor, "get"):
                 return False
             anchor_text = (anchor.get_text(" ", strip=True) or "").strip()
@@ -265,6 +267,33 @@ class TextProcessor:
                 safe_get(anchor, "href", "") or safe_get(anchor, "xlink:href", "") or ""
             ).lower()
             anchor_id = (safe_get(anchor, "id", "") or "").lower()
+            fragment_value = href_value.split("#", 1)[-1] if "#" in href_value else ""
+            parent_name = (getattr(getattr(anchor, "parent", None), "name", "") or "").lower()
+            is_superscript = parent_name == "sup"
+
+            target_tag = (getattr(note_node, "name", "") or "").lower() if note_node else ""
+            target_role = (safe_get(note_node, "role", "") or "").lower() if note_node else ""
+            target_epub_type = ""
+            if note_node is not None:
+                for attr_name in ("epub:type", "epub-type", "type"):
+                    value = safe_get(note_node, attr_name)
+                    if value:
+                        target_epub_type = str(value).lower()
+                        break
+            target_classes = (
+                normalise_classes(safe_get(note_node, "class", [])) if note_node else []
+            )
+
+            explicit_href_hint = bool(
+                re.search(r"(?:^|[#/_-])(foot|fn|note|rodape|rodapé)\w*", href_value)
+            )
+            explicit_target_hint = bool(
+                target_tag in {"aside", "li"}
+                or "footnote" in target_role
+                or "footnote" in target_epub_type
+                or any("footnote" in cls or "nota" in cls for cls in target_classes)
+                or re.search(r"(foot|fn|note|rodape|rodapé)\w*", fragment_value)
+            )
 
             if (
                 "noteref" in classes
@@ -276,10 +305,14 @@ class TextProcessor:
                 or "idfootnotelink" in classes
             ):
                 return True
+            if explicit_target_hint or explicit_href_hint:
+                return True
             if anchor_text:
                 digits_only = "".join(ch for ch in anchor_text if ch.isdigit())
                 if digits_only.isdigit():
-                    return True
+                    # Do not treat any numeric internal link as footnote; this
+                    # can remove legitimate section numbers (e.g. chapter starts with "1").
+                    return is_superscript
             if target_text and any(
                 token in target_text.lower() for token in ("nota", "footnote", "rodapé", "rodape")
             ):
@@ -385,7 +418,7 @@ class TextProcessor:
             note_text = extract_note_text(note_node)
             if not note_text:
                 continue
-            if not looks_like_noteref(anchor, note_text):
+            if not looks_like_noteref(anchor, note_text, note_node):
                 continue
 
             label = anchor.get_text(" ", strip=True)
@@ -487,7 +520,15 @@ class TextProcessor:
                 return match.group(0)
             lookup_key = fragment if fragment in footnote_map else fragment_key
             label = TextProcessor.html_to_plain_text(match.group("label"))
-            digits = "".join(ch for ch in label if ch.isdigit())
+            label_digits = "".join(ch for ch in label if ch.isdigit())
+            is_superscript = bool(match.group(1))
+            fragment_hint = bool(
+                re.search(r"(foot|fn|note|rodape|rodapé)\w*", fragment_key, re.IGNORECASE)
+            )
+            if label_digits.isdigit() and not is_superscript and not fragment_hint:
+                # Numeric internal links can be section anchors, not footnotes.
+                return match.group(0)
+            digits = label_digits
             if fragment_key in note_numbers:
                 number = note_numbers[fragment_key]
             else:

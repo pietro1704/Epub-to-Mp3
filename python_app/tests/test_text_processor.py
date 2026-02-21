@@ -206,6 +206,22 @@ class TestTextProcessor(unittest.TestCase):
 
         self.assertIn("nota de rodapé 1", rendered.lower())
 
+    def test_inject_footnotes_preserves_numeric_internal_section_link(self):
+        """Numeric internal links (section anchors) must not be treated as footnotes."""
+        markup = (
+            '<h2><a href="#sec1">1</a></h2>'
+            '<div id="sec1"><p>Primeira seção do capítulo.</p></div>'
+        )
+
+        processed_markup, footnotes = TextProcessor.inject_footnotes(markup)
+
+        self.assertEqual(footnotes, [])
+        self.assertIn(">1<", processed_markup)
+
+        plain_text, _ = TextProcessor.html_to_plain_text_with_formatting(processed_markup)
+        self.assertIn("1", plain_text)
+        self.assertIn("Primeira seção do capítulo", plain_text)
+
 
 if __name__ == "__main__":
     unittest.main()
