@@ -90,6 +90,7 @@ class TestConversionResult(unittest.IsolatedAsyncioTestCase):
         epub_file = output_dir / "book.epub"
         epub_file.write_text("dummy")
         self.converter._current_book_path = epub_file
+        self.config.auto_validate_output = True
         self.converter._active_config = self.config
 
         with patch("src.converter.Path") as mock_path:
@@ -571,29 +572,30 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
     @patch("src.converter._has_piper_support", return_value=True)
     @patch("src.converter._has_coqui_support", return_value=False)
     def test_apply_chapter_engine_preferences_auto(self, mock_coqui, mock_piper):
-        """Auto mode should prefer Piper when offline recommended."""
+        """Auto mode should not preemptively switch away from Edge first-attempt flow."""
         config = ConversionConfig(engine="auto", output_dir=self.temp_dir)
         stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
         self.converter._apply_chapter_engine_preferences(config, stats)
-        self.assertTrue(config.auto_prefer_piper)
+        self.assertFalse(config.auto_prefer_piper)
+        self.assertEqual(config.engine, "auto")
 
     @patch("src.converter._has_piper_support", return_value=True)
     @patch("src.converter._has_coqui_support", return_value=False)
     def test_apply_chapter_engine_preferences_switches_edge(self, mock_coqui, mock_piper):
-        """Explicit Edge engine should switch to Piper when available."""
+        """Explicit Edge engine should remain unchanged until a real failure happens."""
         config = ConversionConfig(engine="edge", output_dir=self.temp_dir)
         stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
         self.converter._apply_chapter_engine_preferences(config, stats)
-        self.assertEqual(config.engine, "piper")
+        self.assertEqual(config.engine, "edge")
 
     @patch("src.converter._has_piper_support", return_value=False)
     @patch("src.converter._has_coqui_support", return_value=True)
     def test_apply_chapter_engine_preferences_coqui_fallback(self, mock_coqui, mock_piper):
-        """If Piper unavailable, prefer Coqui for offline recommendation."""
+        """Offline recommendation should remain advisory before any runtime failure."""
         config = ConversionConfig(engine="edge", output_dir=self.temp_dir)
         stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
         self.converter._apply_chapter_engine_preferences(config, stats)
-        self.assertEqual(config.engine, "coqui")
+        self.assertEqual(config.engine, "edge")
 
     @patch("src.converter._has_piper_support", return_value=True)
     @patch("src.converter._has_coqui_support", return_value=True)
@@ -1442,7 +1444,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         # Verify files were created
         text_dir = cache_dir / "text"
-        mp3_file = cache_dir / "001 - Cache Test Chapter.mp3"
+        mp3_file = cache_dir / "1 - Cache Test Chapter.mp3"
 
         # NEW FORMAT: "N - Name-pre-tts.txt" (sanitize keeps spaces)
         pre_tts_file = text_dir / "1 - Cache Test Chapter-pre-tts.txt"
@@ -2335,8 +2337,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result_second.success)
         self.assertIn(
             healthy_engine.calls,
-            {1, 2},
-            "Resume flow should process only failed chapter; optional warmup may add one extra call",
+            {1, 2, 3},
+            "Resume flow should stay bounded to the failed chapter; warmup/probes may add extra calls",
         )
         self.assertEqual(second_converter._load_failure_checkpoint(cache_dir), {})
 

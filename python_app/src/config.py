@@ -423,9 +423,7 @@ class VoiceConfigProvider:
                 lower_name = name.lower()
                 # Prefer quality-first PT-BR (Faber medium) and stable English default.
                 # If Faber is unavailable, _resolve_piper_model still falls back to another PT-BR model.
-                recommended = (
-                    "pt_br" in lower_name and "faber" in lower_name
-                ) or lower_name.startswith("en_us-lessac")
+                recommended = ("faber" in lower_name) or lower_name.startswith("en_us-lessac")
                 discovered[name] = {
                     "name": name,
                     "path": path,
