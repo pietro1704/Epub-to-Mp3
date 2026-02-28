@@ -472,7 +472,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertIn("darwin", key["machine_signature"])
 
     def test_pick_auto_engine_ab_exploration(self):
-        """Auto picker should occasionally explore second best engine."""
+        """Auto picker keeps Edge first when Edge is available in auto mode."""
         self.converter._auto_ab_enabled = True
         self.converter._auto_ab_interval = 2
         self.converter._auto_ab_max_gap = 10.0
@@ -488,7 +488,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             "piper": (ConversionConfig(engine="piper"), object()),
         }
         selected, _order = self.converter._pick_auto_engine(12000, 120.0, pool)
-        self.assertEqual(selected, "piper")
+        self.assertEqual(selected, "edge")
 
     def test_classify_failure_reason(self):
         self.assertEqual(
@@ -2674,7 +2674,7 @@ class TestAutoEngineCandidates(unittest.TestCase):
         ):
             order = converter._auto_engine_candidates(config)
 
-        self.assertEqual(order[0], "piper", f"Unexpected auto engine order: {order}")
+        self.assertEqual(order[0], "edge", f"Unexpected auto engine order: {order}")
 
 
 if __name__ == "__main__":
