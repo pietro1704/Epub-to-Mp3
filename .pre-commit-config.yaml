@@ -17,11 +17,13 @@ repos:
     rev: v9.17.0
     hooks:
       - id: eslint
-        args: ["--fix", "--config", "web/.eslintrc.cjs", "--ext", ".ts,.tsx", "--max-warnings=0", "web/src"]
+        args: ["--fix", "--config", "web/eslint.config.js", "--max-warnings=0", "web/src"]
         additional_dependencies:
-          - "eslint@8.57.0"
-          - "@typescript-eslint/parser@8.15.0"
-          - "@typescript-eslint/eslint-plugin@8.15.0"
+          - "eslint@9.39.3"
+          - "@eslint/js@9.39.1"
+          - "@typescript-eslint/parser@8.56.1"
+          - "@typescript-eslint/eslint-plugin@8.56.1"
           - "eslint-plugin-react@7.37.2"
-          - "eslint-plugin-react-hooks@4.6.2"
-          - "eslint-config-prettier@9.1.0"
+          - "eslint-plugin-react-hooks@7.0.1"
+          - "eslint-config-prettier@10.1.8"
+          - "globals@16.4.0"

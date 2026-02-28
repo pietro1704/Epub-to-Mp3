@@ -35,7 +35,7 @@ export default function StreamingAudioPlayer({
   const audioRef = useRef<HTMLAudioElement>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [currentSegmentText, setCurrentSegmentText] = useState<string>("");
-  const pollTimeoutRef = useRef<number>();
+  const pollTimeoutRef = useRef<number | null>(null);
 
   // Get sorted chapters
   const sortedChapters = useMemo(() => {
