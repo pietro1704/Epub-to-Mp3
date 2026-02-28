@@ -1,7 +1,6 @@
 import js from "@eslint/js";
 import tsParser from "@typescript-eslint/parser";
 import tsPlugin from "@typescript-eslint/eslint-plugin";
-import reactPlugin from "eslint-plugin-react";
 import reactHooksPlugin from "eslint-plugin-react-hooks";
 import prettier from "eslint-config-prettier";
 import globals from "globals";
@@ -27,15 +26,10 @@ export default [
     },
     plugins: {
       "@typescript-eslint": tsPlugin,
-      react: reactPlugin,
       "react-hooks": reactHooksPlugin,
-    },
-    settings: {
-      react: { version: "detect" },
     },
     rules: {
       ...tsPlugin.configs.recommended.rules,
-      ...reactPlugin.configs.recommended.rules,
       ...reactHooksPlugin.configs.recommended.rules,
       ...prettier.rules,
       "no-undef": "off",
@@ -51,7 +45,7 @@ export default [
       "react-hooks/exhaustive-deps": "off",
       "react-hooks/immutability": "off",
       "react-hooks/purity": "off",
-      "react/react-in-jsx-scope": "off",
+      "react-hooks/refs": "off",
       "react-hooks/set-state-in-effect": "off",
     },
   },
