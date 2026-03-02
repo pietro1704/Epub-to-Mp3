@@ -218,8 +218,15 @@ const isNetworkError = (error: unknown): boolean => {
   if (!(error instanceof Error)) {
     return false;
   }
+  const status = (error as Error & { status?: number }).status;
+  if (typeof status === "number") {
+    return status === 429 || status >= 500;
+  }
   const message = error.message.toLowerCase();
   return (
+    message.includes("429") ||
+    message.includes("rate limit") ||
+    message.includes("too many requests") ||
     message.includes("failed to fetch") ||
     message.includes("network") ||
     message.includes("timeout")

@@ -278,6 +278,9 @@ export function normalizeErrorMessage(
   statusText: string | undefined,
   body: string | undefined,
 ): string {
+  if (status === 429) {
+    return "The server is rate-limiting requests right now. On shared Hugging Face Spaces this usually means the instance is saturated. Please wait a bit and try again.";
+  }
   const trimmedBody = body?.trim() ?? "";
   const statusLabel = statusText ? `${status} ${statusText}` : `${status}`;
   const fallback =
