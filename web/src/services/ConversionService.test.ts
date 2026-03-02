@@ -20,12 +20,12 @@ describe("normalizeErrorMessage", () => {
     expect(message).toContain("internal error");
   });
 
-  it("returns plain text body when not HTML", () => {
+  it("returns friendly guidance for rate limiting", () => {
     const message = normalizeErrorMessage(
       429,
       "Too Many Requests",
       "Rate limit exceeded",
     );
-    expect(message).toBe("Rate limit exceeded");
+    expect(message).toContain("rate-limiting requests");
   });
 });
