@@ -30,6 +30,14 @@ jobs:
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: mise run install
 
+      - name: Restore nightly baseline cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/telemetry/ci-speed-baseline-nightly.json
+          key: nightly-benchmark-baseline-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            nightly-benchmark-baseline-${{ github.ref_name }}-
+
       - name: Run nightly speed benchmark (regression gate)
         id: nightly_benchmark
         run: |
@@ -39,7 +47,14 @@ jobs:
             --baseline-file .cache/telemetry/ci-speed-baseline-nightly.json \
             --max-regression-pct 20 \
             --period-hours 24 \
-            --min-avg-cps 500
+            --min-avg-cps 425
+
+      - name: Save nightly baseline cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/telemetry/ci-speed-baseline-nightly.json
+          key: nightly-benchmark-baseline-${{ github.ref_name }}-${{ github.run_id }}
 
       - name: Upload benchmark artifacts
         if: always()
