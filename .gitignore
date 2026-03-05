@@ -59,6 +59,14 @@ venv.bak/
 
 # Caches and temp files
 .cache/
+.jobs/
+.uploads/
+.job_inputs/
+.source_backups/
+output/.jobs/
+output/.uploads/
+output/.job_inputs/
+output/.source_backups/
 .mise-cache/
 *.log
 *.tmp

@@ -54,7 +54,14 @@ from src.engine_pool import JobEnginePool, ResourceSnapshot
 from src.hardware_detector import HardwareDetector, HardwareProfile
 from src.job_manager import JobManager
 from src.language import LanguageProfile
-from src.paths import OUTPUT_DIR, PERSISTENT_ROOT
+from src.paths import (
+    JOB_INPUTS_DIR,
+    JOBS_DIR,
+    OUTPUT_DIR,
+    PERSISTENT_ROOT,
+    SOURCE_BACKUPS_DIR,
+    UPLOADS_DIR,
+)
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.coqui_guard import is_coqui_supported_environment
@@ -244,7 +251,15 @@ if frontend_url:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
+    # Dev-friendly local origins (localhost, loopback and private LAN IPs)
+    allow_origin_regex=(
+        r"^https?://("
+        r"localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|::1|"
+        r"10(?:\.\d{1,3}){3}|"
+        r"192\.168(?:\.\d{1,3}){2}|"
+        r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}"
+        r")(:\d+)?$"
+    ),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -331,12 +346,9 @@ def _utcnow_iso() -> str:
 output_dir = OUTPUT_DIR
 persistent_root = PERSISTENT_ROOT
 
-uploads_dir = persistent_root / ".uploads"
-uploads_dir.mkdir(exist_ok=True, parents=True)
-job_inputs_dir = persistent_root / ".job_inputs"
-job_inputs_dir.mkdir(exist_ok=True, parents=True)
-source_backups_dir = persistent_root / ".source_backups"
-source_backups_dir.mkdir(exist_ok=True, parents=True)
+uploads_dir = UPLOADS_DIR
+job_inputs_dir = JOB_INPUTS_DIR
+source_backups_dir = SOURCE_BACKUPS_DIR
 
 # Cache persistente para textos extraídos de capítulos - sobrevive restarts
 persistent_cache_dir = CACHE_DIR
@@ -438,7 +450,7 @@ def _save_cover_cache(index: Dict[str, dict]) -> None:
 cover_cache_index = _load_cover_cache()
 
 # Initialize job manager with persistence
-jobs_state_dir = persistent_root / ".jobs"
+jobs_state_dir = JOBS_DIR
 job_manager = JobManager(jobs_state_dir)
 _restart_marker_path = persistent_root / ".restart_marker.json"
 _skip_resume_on_startup = False

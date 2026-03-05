@@ -48,6 +48,7 @@ from src.language import (
     LanguageProfile,
     get_language_detector,
 )
+from src.paths import JOB_INPUTS_DIR, JOBS_DIR, UPLOADS_DIR
 from src.text_formatting import PRESERVE_TTS_LAYOUT, TextFormattingProcessor
 from src.ui.menu import MenuInterface
 from src.utils import FileManager, resolve_cache_root
@@ -2188,9 +2189,21 @@ class ConverterApplication:
                 print(f"   ⚠️ Error removing output: {e}")
 
         # Remover filas/estados persistentes
-        residual_dirs = [Path.cwd() / ".jobs", Path.cwd() / ".uploads", Path.cwd() / ".job_inputs"]
+        residual_dirs = [
+            JOBS_DIR,
+            UPLOADS_DIR,
+            JOB_INPUTS_DIR,
+            Path.cwd() / ".jobs",
+            Path.cwd() / ".uploads",
+            Path.cwd() / ".job_inputs",
+        ]
         residual_removed = 0
+        seen_residual_dirs: Set[str] = set()
         for residual in residual_dirs:
+            key = str(residual.resolve()) if residual.exists() else str(residual)
+            if key in seen_residual_dirs:
+                continue
+            seen_residual_dirs.add(key)
             if residual.exists():
                 try:
                     shutil.rmtree(residual, ignore_errors=True)

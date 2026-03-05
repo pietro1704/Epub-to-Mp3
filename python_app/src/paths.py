@@ -78,11 +78,19 @@ def _resolve_cache_dir() -> Path:
 CACHE_DIR = _resolve_cache_dir()  # Apenas para dados temporários de livros
 OUTPUT_DIR = _resolve_output_dir()
 MODELS_DIR = PROJECT_ROOT / "models"  # Modelos TTS (Piper, Coqui, etc.)
+JOBS_DIR = PERSISTENT_ROOT / ".jobs"
+UPLOADS_DIR = PERSISTENT_ROOT / ".uploads"
+JOB_INPUTS_DIR = PERSISTENT_ROOT / ".job_inputs"
+SOURCE_BACKUPS_DIR = PERSISTENT_ROOT / ".source_backups"
 
 # Cria os diretórios se não existirem
 CACHE_DIR.mkdir(exist_ok=True, parents=True)
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 MODELS_DIR.mkdir(exist_ok=True, parents=True)
+JOBS_DIR.mkdir(exist_ok=True, parents=True)
+UPLOADS_DIR.mkdir(exist_ok=True, parents=True)
+JOB_INPUTS_DIR.mkdir(exist_ok=True, parents=True)
+SOURCE_BACKUPS_DIR.mkdir(exist_ok=True, parents=True)
 
 # Subdiretórios para modelos específicos (dentro de root/models)
 COQUI_MODELS_DIR = MODELS_DIR / "coqui"

@@ -7,6 +7,8 @@ Roda em background e alerta sobre problemas automaticamente
 
 import gc
 import json
+import os
+import platform
 import threading
 import time
 import traceback
@@ -86,6 +88,41 @@ class HealthMonitor:
 
         # Lock para thread safety
         self._lock = threading.Lock()
+        self._torch_probe_done = False
+        self._torch_enabled = False
+        self._torch_probe_error: Optional[str] = None
+
+    def _ensure_torch_probe(self) -> bool:
+        """Detecta uma vez se torch pode ser usado sem poluir logs."""
+        if self._torch_probe_done:
+            return self._torch_enabled
+
+        self._torch_probe_done = True
+
+        disable_torch = str(os.getenv("DISABLE_TORCH", "")).strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if platform.system().lower() == "darwin":
+            # Em macOS o monitor roda em CPU-only e evita warnings de torch/numpy.
+            disable_torch = True
+        if disable_torch:
+            self._torch_enabled = False
+            self._torch_probe_error = "disabled-by-env-or-platform"
+            return False
+
+        try:
+            import torch  # noqa: F401
+
+            self._torch_enabled = True
+            return True
+        except Exception as exc:
+            self._torch_enabled = False
+            self._torch_probe_error = str(exc)
+            print(f"⚠️ [HealthMonitor] GPU monitor desativado (torch indisponível): {exc}")
+            return False
 
     def start(self) -> None:
         """Inicia monitoramento em background."""
@@ -171,46 +208,47 @@ class HealthMonitor:
         gpu_utilization = 0.0
 
         try:
-            import torch
+            if self._ensure_torch_probe():
+                import torch
 
-            if torch.cuda.is_available():
-                gpu_available = True
-                gpu_memory_used_mb = torch.cuda.memory_allocated(0) / (1024 * 1024)
-                gpu_memory_total_mb = torch.cuda.get_device_properties(0).total_memory / (
-                    1024 * 1024
-                )
+                if torch.cuda.is_available():
+                    gpu_available = True
+                    gpu_memory_used_mb = torch.cuda.memory_allocated(0) / (1024 * 1024)
+                    gpu_memory_total_mb = torch.cuda.get_device_properties(0).total_memory / (
+                        1024 * 1024
+                    )
 
-                if gpu_memory_total_mb > 0:
-                    gpu_utilization = (gpu_memory_used_mb / gpu_memory_total_mb) * 100
+                    if gpu_memory_total_mb > 0:
+                        gpu_utilization = (gpu_memory_used_mb / gpu_memory_total_mb) * 100
 
-                    # Alertas GPU
-                    if gpu_utilization > self.thresholds["gpu_memory_critical"]:
-                        alerts.append(
-                            HealthAlert(
-                                timestamp=time.time(),
-                                severity="critical",
-                                category="gpu",
-                                message=f"GPU memory crítica: {gpu_utilization:.1f}%",
-                                details={
-                                    "used_mb": gpu_memory_used_mb,
-                                    "total_mb": gpu_memory_total_mb,
-                                },
+                        # Alertas GPU
+                        if gpu_utilization > self.thresholds["gpu_memory_critical"]:
+                            alerts.append(
+                                HealthAlert(
+                                    timestamp=time.time(),
+                                    severity="critical",
+                                    category="gpu",
+                                    message=f"GPU memory crítica: {gpu_utilization:.1f}%",
+                                    details={
+                                        "used_mb": gpu_memory_used_mb,
+                                        "total_mb": gpu_memory_total_mb,
+                                    },
+                                )
                             )
-                        )
-                    elif gpu_utilization > self.thresholds["gpu_memory_warning"]:
-                        alerts.append(
-                            HealthAlert(
-                                timestamp=time.time(),
-                                severity="warning",
-                                category="gpu",
-                                message=f"GPU memory alta: {gpu_utilization:.1f}%",
-                                details={
-                                    "used_mb": gpu_memory_used_mb,
-                                    "total_mb": gpu_memory_total_mb,
-                                },
+                        elif gpu_utilization > self.thresholds["gpu_memory_warning"]:
+                            alerts.append(
+                                HealthAlert(
+                                    timestamp=time.time(),
+                                    severity="warning",
+                                    category="gpu",
+                                    message=f"GPU memory alta: {gpu_utilization:.1f}%",
+                                    details={
+                                        "used_mb": gpu_memory_used_mb,
+                                        "total_mb": gpu_memory_total_mb,
+                                    },
+                                )
                             )
-                        )
-        except ImportError:
+        except Exception:
             pass
 
         # Heap Status
