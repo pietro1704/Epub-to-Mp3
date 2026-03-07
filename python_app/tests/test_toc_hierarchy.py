@@ -921,5 +921,353 @@ class TestItAcoisaSimulation(unittest.TestCase):
             self.assertEqual(ch.level, 1, f"{ch.name} should be L1 (not in TOC)")
 
 
+class TestParseNavHtmlEdgeCases(unittest.TestCase):
+    """Additional edge cases for _parse_nav_html."""
+
+    def test_span_instead_of_a(self):
+        """<span> used as heading placeholder (no href); item should still be created with title."""
+        nav = _nav_xhtml("""
+            <li><span>Part One</span>
+              <ol>
+                <li><a href="ch1.xhtml">Chapter 1</a></li>
+              </ol>
+            </li>
+        """)
+        items = EpubParser._parse_nav_html(nav)
+        # The span-only li has title but empty href; children should be nested
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].title, "Part One")
+        self.assertEqual(items[0].href, "")
+        self.assertEqual(len(items[0].children), 1)
+        self.assertEqual(items[0].children[0].title, "Chapter 1")
+        self.assertEqual(items[0].children[0].level, 2)
+
+    def test_landmarks_and_toc_nav_toc_wins(self):
+        """When document has both landmarks and toc <nav>, the toc nav is used."""
+        nav = """<?xml version="1.0" encoding="utf-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml"
+      xmlns:epub="http://www.idpf.org/2007/ops">
+<head><title>nav</title></head>
+<body>
+<nav epub:type="landmarks">
+  <ol>
+    <li><a href="text.xhtml#start">Begin Reading</a></li>
+  </ol>
+</nav>
+<nav epub:type="toc">
+  <ol>
+    <li><a href="ch1.xhtml">Chapter 1</a></li>
+    <li><a href="ch2.xhtml">Chapter 2</a></li>
+  </ol>
+</nav>
+</body></html>"""
+        items = EpubParser._parse_nav_html(nav)
+        self.assertEqual(len(items), 2)
+        self.assertEqual(items[0].href, "ch1.xhtml")
+        self.assertEqual(items[1].href, "ch2.xhtml")
+
+    def test_li_with_no_a_and_no_span_is_skipped(self):
+        """<li> with only a <p> child (neither <a> nor <span>) should be skipped."""
+        nav = _nav_xhtml("""
+            <li><p>Not a link</p></li>
+            <li><a href="ch1.xhtml">Chapter 1</a></li>
+        """)
+        items = EpubParser._parse_nav_html(nav)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].href, "ch1.xhtml")
+
+    def test_nested_only_items_no_top_anchor(self):
+        """Top li has no anchor, only a nested ol. Children are still parsed."""
+        nav = _nav_xhtml("""
+            <li><span>Untitled Part</span>
+              <ol>
+                <li><a href="ch1.xhtml">Chapter 1</a></li>
+                <li><a href="ch2.xhtml">Chapter 2</a></li>
+                <li><a href="ch3.xhtml">Chapter 3</a></li>
+              </ol>
+            </li>
+        """)
+        items = EpubParser._parse_nav_html(nav)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(len(items[0].children), 3)
+        for child in items[0].children:
+            self.assertEqual(child.level, 2)
+
+    def test_whitespace_in_title(self):
+        """Nav titles with surrounding whitespace and newlines are stripped."""
+        nav = _nav_xhtml("""
+            <li><a href="ch1.xhtml">
+                Chapter  1
+            </a></li>
+        """)
+        items = EpubParser._parse_nav_html(nav)
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0].title, "Chapter  1")
+
+    def test_four_level_nav(self):
+        """4-level hierarchy: Vol > Book > Part > Chapter."""
+        nav = _nav_xhtml("""
+            <li><a href="vol1.xhtml">Volume I</a>
+              <ol>
+                <li><a href="book1.xhtml">Book I</a>
+                  <ol>
+                    <li><a href="part1.xhtml">Part I</a>
+                      <ol>
+                        <li><a href="ch1.xhtml">Chapter 1</a></li>
+                      </ol>
+                    </li>
+                  </ol>
+                </li>
+              </ol>
+            </li>
+        """)
+        items = EpubParser._parse_nav_html(nav)
+        self.assertEqual(items[0].level, 1)
+        self.assertEqual(items[0].children[0].level, 2)
+        self.assertEqual(items[0].children[0].children[0].level, 3)
+        self.assertEqual(items[0].children[0].children[0].children[0].level, 4)
+        self.assertEqual(items[0].children[0].children[0].children[0].href, "ch1.xhtml")
+
+
+class TestBuildTocLevelMapEdgeCases(unittest.TestCase):
+    """Additional edge cases for _build_toc_level_map."""
+
+    def test_items_with_empty_href_are_ignored(self):
+        """TocItems with empty href (span-only nav entries) must not create map keys."""
+        toc = [
+            TocItem(
+                "Part One",
+                "",
+                level=1,
+                children=[
+                    TocItem("Ch 1", "ch1.xhtml", level=2),
+                ],
+            ),
+        ]
+        result = EpubParser._build_toc_level_map(toc)
+        self.assertNotIn("", result)
+        self.assertEqual(result.get("ch1.xhtml"), 2)
+
+    def test_same_file_at_three_depths_keeps_minimum(self):
+        """File referenced at L1, L2, and L3 → map value is 1."""
+        toc = [
+            TocItem(
+                "Top",
+                "shared.xhtml#top",
+                level=1,
+                children=[
+                    TocItem(
+                        "Mid",
+                        "shared.xhtml#mid",
+                        level=2,
+                        children=[
+                            TocItem("Deep", "shared.xhtml#deep", level=3),
+                        ],
+                    ),
+                ],
+            ),
+        ]
+        result = EpubParser._build_toc_level_map(toc)
+        self.assertEqual(result.get("shared.xhtml"), 1)
+
+
+class TestFourLevelEpub(unittest.TestCase):
+    """4-level EPUB: Volume > Book > Part > Chapter."""
+
+    def setUp(self):
+        self.tmp = tempfile.mktemp(suffix=".epub")
+
+    def tearDown(self):
+        if os.path.exists(self.tmp):
+            os.unlink(self.tmp)
+
+    def test_four_levels_ncx(self):
+        ncx = _ncx(
+            _nav_point(
+                "vol1",
+                "Volume I",
+                "vol1.xhtml",
+                children=_nav_point(
+                    "book1",
+                    "Book I",
+                    "book1.xhtml",
+                    children=_nav_point(
+                        "part1",
+                        "Part I",
+                        "part1.xhtml",
+                        children=(
+                            _nav_point("ch1", "Chapter 1", "ch1.xhtml")
+                            + _nav_point("ch2", "Chapter 2", "ch2.xhtml")
+                        ),
+                    ),
+                ),
+            )
+        )
+        (
+            EpubBuilder()
+            .set_ncx(ncx)
+            .add_spine_file("vol1", "<h1>Volume I</h1>")
+            .add_spine_file("book1", "<h2>Book I</h2>")
+            .add_spine_file("part1", "<h3>Part I</h3>")
+            .add_spine_file("ch1", "<h4>Chapter 1</h4><p>Text.</p>")
+            .add_spine_file("ch2", "<h4>Chapter 2</h4><p>Text.</p>")
+            .write(self.tmp)
+        )
+        book = EpubParser(self.tmp).parse()
+        self.assertEqual(len(book.chapters), 5)
+        levels = [ch.level for ch in book.chapters]
+        self.assertEqual(levels, [1, 2, 3, 4, 4])
+
+    def test_four_levels_nav_xhtml(self):
+        nav = _nav_xhtml("""
+            <li><a href="vol1.xhtml">Volume I</a>
+              <ol>
+                <li><a href="book1.xhtml">Book I</a>
+                  <ol>
+                    <li><a href="part1.xhtml">Part I</a>
+                      <ol>
+                        <li><a href="ch1.xhtml">Chapter 1</a></li>
+                      </ol>
+                    </li>
+                  </ol>
+                </li>
+              </ol>
+            </li>
+        """)
+        (
+            EpubBuilder()
+            .set_nav(nav)
+            .add_spine_file("vol1", "<h1>Volume I</h1>")
+            .add_spine_file("book1", "<h2>Book I</h2>")
+            .add_spine_file("part1", "<h3>Part I</h3>")
+            .add_spine_file("ch1", "<h4>Chapter 1</h4><p>Text.</p>")
+            .write(self.tmp)
+        )
+        book = EpubParser(self.tmp).parse()
+        levels = [ch.level for ch in book.chapters]
+        self.assertEqual(levels, [1, 2, 3, 4])
+
+
+class TestNcxFallbackToNav(unittest.TestCase):
+    """When NCX is malformed/missing navMap, EPUB3 nav.xhtml fallback is used."""
+
+    def setUp(self):
+        self.tmp = tempfile.mktemp(suffix=".epub")
+
+    def tearDown(self):
+        if os.path.exists(self.tmp):
+            os.unlink(self.tmp)
+
+    def _write_epub_with_broken_ncx(self, ncx_content, nav_content):
+        nav = _nav_xhtml(nav_content)
+        spine_ids = ["ch1", "ch2"]
+        nav_manifest = (
+            '<item id="nav" href="nav.xhtml" '
+            'media-type="application/xhtml+xml" properties="nav"/>'
+        )
+        opf_content = _opf(spine_ids, manifest_extra=nav_manifest, version="3.0")
+        with zipfile.ZipFile(self.tmp, "w") as zf:
+            zf.writestr("META-INF/container.xml", _container_xml())
+            zf.writestr("OEBPS/content.opf", opf_content)
+            zf.writestr("OEBPS/toc.ncx", ncx_content)
+            zf.writestr("OEBPS/nav.xhtml", nav)
+            zf.writestr("OEBPS/ch1.xhtml", _xhtml("<h2>Ch 1</h2><p>Text.</p>"))
+            zf.writestr("OEBPS/ch2.xhtml", _xhtml("<h2>Ch 2</h2><p>Text.</p>"))
+
+    def test_malformed_ncx_falls_back_to_nav(self):
+        """Completely malformed NCX XML triggers ParseError → falls back to nav.xhtml."""
+        self._write_epub_with_broken_ncx(
+            ncx_content="<<<not valid xml at all>>>",
+            nav_content='<li><a href="ch1.xhtml">Ch 1</a></li>'
+            '<li><a href="ch2.xhtml">Ch 2</a></li>',
+        )
+        book = EpubParser(self.tmp).parse()
+        # Nav.xhtml flat hierarchy: both chapters level 1
+        self.assertEqual(len(book.toc), 2)
+        for ch in book.chapters:
+            self.assertEqual(ch.level, 1)
+
+    def test_ncx_without_navmap_falls_back_to_nav(self):
+        """Valid NCX XML but missing <navMap> falls back to nav.xhtml hierarchy."""
+        ncx_no_navmap = """<?xml version="1.0"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head><meta name="dtb:uid" content="uid"/></head>
+  <docTitle><text>Test</text></docTitle>
+</ncx>"""
+        nav_hierarchical = (
+            '<li><a href="ch1.xhtml">Part</a>'
+            '  <ol><li><a href="ch2.xhtml">Chapter</a></li></ol>'
+            "</li>"
+        )
+        self._write_epub_with_broken_ncx(ncx_no_navmap, nav_hierarchical)
+        book = EpubParser(self.tmp).parse()
+        self.assertEqual(len(book.toc), 1)
+        self.assertEqual(book.toc[0].level, 1)
+        self.assertEqual(book.toc[0].children[0].level, 2)
+        # ch1 = L1 (Part), ch2 = L2 (Chapter)
+        levels = [ch.level for ch in book.chapters]
+        self.assertEqual(levels, [1, 2])
+
+
+class TestParseNavTocFromOpf(unittest.TestCase):
+    """Unit tests for EpubParser._parse_nav_toc_from_opf edge cases."""
+
+    def _make_zip(self, files: dict) -> zipfile.ZipFile:
+        """Build an in-memory ZipFile from a dict of path→content."""
+        import io
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            for path, content in files.items():
+                zf.writestr(path, content)
+        buf.seek(0)
+        return zipfile.ZipFile(buf, "r")
+
+    def test_no_nav_item_in_manifest_returns_empty(self):
+        """OPF without a nav item in manifest returns empty list."""
+        opf = _opf(["ch1"], version="3.0")  # no nav manifest item
+        zf = self._make_zip({"OEBPS/content.opf": opf})
+        result = EpubParser._parse_nav_toc_from_opf(zf, "OEBPS/content.opf", "OEBPS")
+        self.assertEqual(result, [])
+
+    def test_nav_file_missing_from_zip_returns_empty(self):
+        """OPF declares nav.xhtml but file is absent from ZIP → empty list."""
+        nav_manifest = (
+            '<item id="nav" href="nav.xhtml" '
+            'media-type="application/xhtml+xml" properties="nav"/>'
+        )
+        opf = _opf(["ch1"], manifest_extra=nav_manifest, version="3.0")
+        zf = self._make_zip({"OEBPS/content.opf": opf})
+        result = EpubParser._parse_nav_toc_from_opf(zf, "OEBPS/content.opf", "OEBPS")
+        self.assertEqual(result, [])
+
+    def test_malformed_opf_returns_empty(self):
+        """Malformed OPF XML returns empty list without raising."""
+        zf = self._make_zip({"OEBPS/content.opf": "<<<broken xml>>>"})
+        result = EpubParser._parse_nav_toc_from_opf(zf, "OEBPS/content.opf", "OEBPS")
+        self.assertEqual(result, [])
+
+    def test_valid_opf_with_nav_returns_items(self):
+        """OPF with nav item + valid nav.xhtml returns correct TocItems."""
+        nav_manifest = (
+            '<item id="nav" href="nav.xhtml" '
+            'media-type="application/xhtml+xml" properties="nav"/>'
+        )
+        opf = _opf(["ch1", "ch2"], manifest_extra=nav_manifest, version="3.0")
+        nav = _nav_xhtml(
+            '<li><a href="ch1.xhtml">Ch 1</a></li>' '<li><a href="ch2.xhtml">Ch 2</a></li>'
+        )
+        zf = self._make_zip(
+            {
+                "OEBPS/content.opf": opf,
+                "OEBPS/nav.xhtml": nav,
+            }
+        )
+        result = EpubParser._parse_nav_toc_from_opf(zf, "OEBPS/content.opf", "OEBPS")
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0].title, "Ch 1")
+        self.assertEqual(result[1].href, "ch2.xhtml")
+
+
 if __name__ == "__main__":
     unittest.main()
