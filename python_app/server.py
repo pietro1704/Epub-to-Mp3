@@ -586,6 +586,9 @@ def _resolve_max_chapter_limit() -> int:
 
 
 MAX_CHAPTERS_PER_JOB = _resolve_max_chapter_limit()
+# Skip chapters larger than this (0 = disabled). Prevents footnote-container files
+# that embed the entire book text from blocking conversion for hours.
+MAX_CHAPTER_CHARS = _env_int("MAX_CHAPTER_CHARS", 0)
 
 
 def _cleanup_pending_uploads() -> None:
@@ -4662,6 +4665,19 @@ async def process_conversion(job_id: str) -> None:
                     return
 
                 clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
+
+                if MAX_CHAPTER_CHARS > 0 and len(clean_text) > MAX_CHAPTER_CHARS:
+                    _append_event(
+                        job,
+                        f"⏭️ Skipping chapter {idx} ({len(clean_text):,} chars >"
+                        f" MAX_CHAPTER_CHARS={MAX_CHAPTER_CHARS:,}): {chapter_name[:60]}",
+                    )
+                    _set_chapter_status(job, idx, "skipped")
+                    _refresh_chapter_completion()
+                    _complete_chapter_progress(idx)
+                    _update_job_activity(job, stage=f"chapter_{idx}_skipped_oversized")
+                    return
+
                 preview = _build_text_preview(clean_text)
                 if preview:
                     _append_event(job, f"📝 Excerpt: {preview}")
