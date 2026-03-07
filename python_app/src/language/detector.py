@@ -69,15 +69,15 @@ class LanguageDetector:
         text: str,
         *,
         min_segment_chars: int = 100,  # **OPTIMIZED**: Segmentos maiores (frases)
-        min_probability: float = 0.7,  # **OPTIMIZED**: Maior confiança
-        timeout_seconds: float = 2.0,  # **NEW**: Timeout para cada detecção
+        min_probability: float = 0.7,  # **OPTIMIZED**: Higher confidence threshold
+        timeout_seconds: float = 2.0,  # **NEW**: Timeout per detection
         fallback_language: str = "pt",  # **NEW**: Idioma de fallback
-        primary_language: Optional[str] = None,  # **NEW**: Idioma primário para priorização
+        primary_language: Optional[str] = None,  # **NEW**: Primary language for prioritization
     ) -> List[LanguageSegment]:
         if not text or detect_langs is None:
             return [LanguageSegment(language="unknown", text=text)]
 
-        # **OPTIMIZED**: Processar por parágrafos ao invés de frases individuais
+        # **OPTIMIZED**: Process by paragraph instead of individual sentences
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         if not paragraphs:
             paragraphs = [text]
@@ -87,7 +87,7 @@ class LanguageDetector:
         buffer: List[str] = []
 
         for paragraph in paragraphs:
-            # Só detectar idioma em parágrafos com tamanho mínimo
+            # Only detect language in paragraphs that meet minimum length
             if len(paragraph.strip()) < min_segment_chars:
                 buffer.append(paragraph)
                 continue
@@ -109,7 +109,7 @@ class LanguageDetector:
                 continue
 
             if candidate_lang != current_lang and buffer:
-                merged = "\n".join(buffer).strip()  # **CHANGED**: Manter quebras de parágrafo
+                merged = "\n".join(buffer).strip()  # **CHANGED**: Preserve paragraph breaks
                 if merged:
                     segments.append(LanguageSegment(language=current_lang, text=merged))
                 buffer = [paragraph]
@@ -118,7 +118,7 @@ class LanguageDetector:
                 buffer.append(paragraph)
 
         if buffer:
-            merged = "\n".join(buffer).strip()  # **CHANGED**: Manter quebras de parágrafo
+            merged = "\n".join(buffer).strip()  # **CHANGED**: Preserve paragraph breaks
             if merged:
                 language = current_lang or "unknown"
                 segments.append(LanguageSegment(language=language, text=merged))
@@ -186,7 +186,7 @@ class LanguageDetector:
         timeout_seconds: float = 2.0,
         fallback_language: str = "pt",
         primary_language: Optional[str] = None,
-        ambiguity_threshold: float = 0.15,  # **NEW**: Diferença máxima para considerar ambíguo
+        ambiguity_threshold: float = 0.15,  # **NEW**: Max difference to consider ambiguous
     ) -> str:
         """Detect language with timeout, fallback, and primary language prioritization.
 

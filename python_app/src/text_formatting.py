@@ -159,7 +159,7 @@ class TextFormattingProcessor:
         # **NOVO**: Extrair atributos lang e converter para [[lang:xx]]
         text = self._extract_language_attributes(text)
 
-        # Processar cada tipo de formatação
+        # Process each formatting type
         for fmt_type, patterns in self.compiled_patterns.items():
             marker_template = self.INTERNAL_MARKERS[fmt_type]
 
@@ -167,13 +167,13 @@ class TextFormattingProcessor:
 
                 def replace_with_marker(match):
                     content = match.group(1)
-                    # Remover tags HTML internas mas preservar conteúdo
+                    # Remove inner HTML tags but preserve content
                     clean_content = re.sub(r"<[^>]+>", "", content)
                     return marker_template.format(clean_content)
 
                 text = pattern.sub(replace_with_marker, text)
 
-        # **NOVO**: Adicionar marcadores para aspas inline e travessão de diálogo
+        # Add markers for inline quotes and dialogue dashes
         text = self._add_inline_emphasis_markers(text)
 
         return text
@@ -185,7 +185,7 @@ class TextFormattingProcessor:
 
         segments = []
 
-        # Padrão para encontrar marcadores internos
+        # Pattern to find internal markers
         marker_pattern = re.compile(r"\[\[fmt:(\w+)\]\](.*?)\[\[/fmt\]\]", re.DOTALL)
 
         last_end = 0
@@ -213,7 +213,7 @@ class TextFormattingProcessor:
             if remaining_text:
                 segments.append(FormattingSegment(remaining_text, "normal"))
 
-        # Se não há formatação, retornar texto completo como normal
+        # No formatting: return full text as normal
         if not segments and text.strip():
             segments.append(FormattingSegment(text.strip(), "normal"))
 
@@ -235,7 +235,7 @@ class TextFormattingProcessor:
             text = self._escape_ssml(segment.text)
 
             if segment.formatting == "italic":
-                # Itálico: tom mais alto, mais lento e volume reduzido para destacar
+                # Italic: higher pitch, slower and lower volume to stand out
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<prosody rate="-20%" pitch="+15%" volume="-5%">{text}</prosody>'
@@ -249,7 +249,7 @@ class TextFormattingProcessor:
                     f"</voice>"
                 )
             elif segment.formatting == "emphasis":
-                # Ênfase: pausa antes e depois, tom diferente
+                # Emphasis: pause before and after, different pitch
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<break time="200ms"/>'
@@ -258,7 +258,7 @@ class TextFormattingProcessor:
                     f"</voice>"
                 )
             elif segment.formatting == "code":
-                # Código: mais monótono e pausado
+                # Code: more monotone and slower
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<break time="100ms"/>'
@@ -267,7 +267,7 @@ class TextFormattingProcessor:
                     f"</voice>"
                 )
             elif segment.formatting == "quote":
-                # Citação: pausa e tom diferente
+                # Quote: pause and different pitch
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<break time="300ms"/>'
@@ -276,14 +276,14 @@ class TextFormattingProcessor:
                     f"</voice>"
                 )
             elif segment.formatting == "small":
-                # Texto pequeno: mais rápido e baixo
+                # Small text: faster and quieter
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<prosody rate="+10%" volume="-10%">{text}</prosody>'
                     f"</voice>"
                 )
             elif segment.formatting == "lower":
-                # Tom mais baixo (para parênteses)
+                # Lower pitch (for parentheses)
                 ssml_parts.append(
                     f'<voice name="{voice}">'
                     f'<prosody pitch="-15%" volume="-5%">{text}</prosody>'
@@ -393,17 +393,17 @@ class TextFormattingProcessor:
         # Remove marcadores [[fmt:...]]
         cleaned = cls.remove_formatting_markers(text)
 
-        # Remove Markdown usando regexes pré-compiladas
+        # Remove Markdown using pre-compiled regexes
         cleaned = cls._BOLD_ASTERISK_RE.sub(r"\1", cleaned)  # **texto**
         cleaned = cls._BOLD_UNDERSCORE_RE.sub(r"\1", cleaned)  # __texto__
         cleaned = cls._ITALIC_UNDERSCORE_RE.sub(r"\1", cleaned)  # _texto_
-        cleaned = cls._CODE_RE.sub(r"\1", cleaned)  # `código`
+        cleaned = cls._CODE_RE.sub(r"\1", cleaned)  # `code`
 
         # Limpar asteriscos e underscores soltos
         cleaned = cls._LOOSE_ASTERISKS_RE.sub("", cleaned)
         cleaned = cls._LOOSE_UNDERSCORES_RE.sub("", cleaned)
 
-        # Normalizar espaços
+        # Normalize whitespace
         cleaned = cls._MULTI_SPACES_RE.sub(" ", cleaned)
         cleaned = cls._MULTI_NEWLINES_RE.sub("\n\n", cleaned)
 
@@ -425,13 +425,13 @@ class TextFormattingProcessor:
         if not text:
             return ""
 
-        # Remove linhas que contêm apenas números seguidos de ponto (seções)
-        # Padrão: início de linha, opcionalmente espaços, dígitos, ponto, opcionalmente espaços, fim de linha
+        # Remove lines containing only a number followed by a period (section markers)
+        # Pattern: line start, optional spaces, digits, period, optional spaces, line end
         lines = text.split("\n")
         cleaned_lines = []
 
         for line in lines:
-            # Se a linha é apenas um número seguido de ponto, pula ela
+            # If the line is just a number followed by a period, skip it
             if re.match(r"^\s*\d+\.\s*$", line):
                 continue
             cleaned_lines.append(line)
@@ -459,7 +459,7 @@ class TextFormattingProcessor:
         if not text:
             return ""
 
-        # Split por quebras duplas para preservar seções
+        # Split on double line breaks to preserve sections
         sections = re.split(r"\n\n+", text)
         consolidated_sections = []
 
@@ -476,10 +476,10 @@ class TextFormattingProcessor:
                 if not line:
                     continue
 
-                # Se a linha começa com travessão (diálogo), trata separadamente
+                # If the line starts with a dash (dialogue), handle separately
                 is_dialogue = line.startswith("—") or line.startswith("-")
 
-                # Se a linha é longa OU é diálogo, flush buffer e adiciona a linha
+                # If the line is long OR is dialogue, flush buffer and add the line
                 if len(line) > max_line_length or is_dialogue:
                     if buffer:
                         consolidated_lines.append(" ".join(buffer))
@@ -497,7 +497,7 @@ class TextFormattingProcessor:
             if consolidated_lines:
                 consolidated_sections.append("\n".join(consolidated_lines))
 
-        # Junta as seções com quebra dupla
+        # Join sections with double line break
         return "\n\n".join(consolidated_sections)
 
     @classmethod
@@ -521,7 +521,7 @@ class TextFormattingProcessor:
             return ""
 
         # Calcula densidade de frases curtas (frases por 1000 caracteres)
-        # Pontuação de fim de frase: . ! ?
+        # Sentence-ending punctuation: . ! ?
         sentence_endings = text.count(".") + text.count("!") + text.count("?")
         text_length = len(text)
 
@@ -533,9 +533,9 @@ class TextFormattingProcessor:
 
         # Se densidade > 10 frases/1000 chars, aplicar prosody
         # Edge-TTS insere pausas longas mesmo com densidade moderada (10-15)
-        # Capítulos com muito diálogo/narrativa curta podem ter 15-30+
+        # Chapters with heavy dialogue/short narrative may have 15-30+
         if sentence_density > 10:
-            # Aplica prosody rate para acelerar o áudio
+            # Apply prosody rate to speed up the audio
             # Isso compensa as pausas longas do Edge-TTS entre frases
             return f'<prosody rate="{rate_increase}">{text}</prosody>'
 
@@ -682,26 +682,26 @@ class TextFormattingProcessor:
             return text
 
         # Detectar texto entre aspas duplas (curvas ou retas)
-        # Ignora se já há marcador [[fmt:...]]
+        # Skip if already has a [[fmt:...]] marker
         quote_pattern = re.compile(r'(?<!\[\[fmt:)"([^"]{10,}?)"(?!\]\])', re.UNICODE)
 
         def add_quote_marker(match):
             content = match.group(1)
-            # Não marcar se já tem marcador interno
+            # Skip if already has an internal marker
             if "[[fmt:" in content:
                 return match.group(0)
             return f"[[fmt:quote]]{content}[[/fmt]]"
 
         text = quote_pattern.sub(add_quote_marker, text)
 
-        # Detectar travessão de diálogo (— ou --) no início de parágrafo/linha
-        # Adiciona ênfase para diferenciar narração de diálogo
+        # Detect dialogue dash (— or --) at the start of a paragraph/line
+        # Add emphasis to distinguish narration from dialogue
         dash_pattern = re.compile(r"^(—|--)\s*(.+?)$", re.MULTILINE)
 
         def add_dash_emphasis(match):
             dash = match.group(1)
             content = match.group(2)
-            # Não marcar se já tem marcador
+            # Skip if already has a marker
             if "[[fmt:" in content:
                 return match.group(0)
             return f"{dash} [[fmt:emphasis]]{content}[[/fmt]]"
@@ -736,7 +736,7 @@ class TextFormattingProcessor:
         if not html_text:
             return html_text
 
-        # Tags estruturais que devem ser ignoradas (não adicionar [[lang:]])
+        # Structural tags that should be ignored (no [[lang:]] added)
         structural_tags = {
             "html",
             "body",
@@ -749,12 +749,12 @@ class TextFormattingProcessor:
             "nav",
         }
 
-        # Processar múltiplas vezes para capturar tags aninhadas
-        # Começar das mais internas (menor distância entre abertura e fechamento)
+        # Process multiple times to capture nested tags
+        # Start from the innermost (smallest distance between open and close)
         max_iterations = 10
         for _ in range(max_iterations):
-            # Padrão para detectar tags com atributo lang
-            # Captura: <tag lang="xx" ...> conteúdo </tag>
+            # Pattern to detect tags with lang attribute
+            # Captures: <tag lang="xx" ...> content </tag>
             lang_pattern = re.compile(
                 r'<(\w+)\s+([^>]*?)(?:lang|xml:lang)=["\']([a-zA-Z\-]+)["\']([^>]*?)>(.*?)</\1>',
                 re.IGNORECASE | re.DOTALL,
@@ -770,9 +770,9 @@ class TextFormattingProcessor:
             attrs_after = match.group(4)
             content = match.group(5)
 
-            # **NOVO**: Ignorar tags estruturais para evitar quebrar capítulos
+            # Ignore structural tags to avoid breaking chapters
             if tag_name in structural_tags:
-                # Remover apenas o atributo lang, mas não adicionar [[lang:]]
+                # Remove only the lang attribute, do not add [[lang:]]
                 attrs = (attrs_before + attrs_after).strip()
                 if attrs:
                     new_tag = f"<{tag_name} {attrs}>"
@@ -790,10 +790,10 @@ class TextFormattingProcessor:
             else:
                 new_tag = f"<{tag_name}>"
 
-            # Adicionar marcadores de idioma em torno do conteúdo
+            # Add language markers around the content
             replacement = f"{new_tag}[[lang:{lang_code}]]{content}[[/lang]]</{tag_name}>"
 
-            # Substituir apenas a primeira ocorrência (mais interna)
+            # Replace only the first (innermost) occurrence
             html_text = html_text[: match.start()] + replacement + html_text[match.end() :]
 
         return html_text
@@ -803,13 +803,13 @@ class TextFormattingProcessor:
         if not text:
             return text
 
-        # Primeiro extrair formatação
+        # First extract formatting
         text_with_markers = self.extract_formatting(text)
 
         # Remover tags HTML restantes
         clean_text = re.sub(r"<[^>]+>", "", text_with_markers)
 
-        # Limpar espaços múltiplos
+        # Clean up multiple spaces
         clean_text = re.sub(r"\s+", " ", clean_text)
 
         return clean_text.strip()

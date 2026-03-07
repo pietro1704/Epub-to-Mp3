@@ -74,17 +74,17 @@ class LanguageMarkup:
         default_language = (default_language or "unknown").lower()
         default_short = default_language.split("-", 1)[0]
 
-        # **OPTIMIZED**: Pular detecção automática para textos complexos ou muito longos
+        # **OPTIMIZED**: Skip auto-detection for complex or very long texts
         if len(text) > 15000:  # Textos muito longos
             return text
 
-        # Contar tags de idioma existentes - se muitas, provavelmente já processado
+        # Count existing language tags — if many, probably already processed
         existing_tags = text.lower().count("[[lang:")
-        if existing_tags > 20:  # Se já tem muitas tags, não reprocessar
+        if existing_tags > 20:  # Already has many tags, skip reprocessing
             return text
 
         try:
-            # **TIMEOUT**: Aplicar timeout na detecção de perfil
+            # **TIMEOUT**: Apply timeout to profile detection
             import concurrent.futures
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
@@ -135,7 +135,7 @@ class LanguageMarkup:
             return text
 
         try:
-            # **TIMEOUT**: Aplicar timeout na segmentação
+            # **TIMEOUT**: Apply timeout to segmentation
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 primary_language = default_short if prioritize_primary_language else None
                 future = executor.submit(
@@ -183,10 +183,10 @@ class LanguageMarkup:
             if not segment.text:
                 continue
             segment_lang = (segment.language or "unknown").split("-", 1)[0]
-            # **OPTIMIZED**: Só aplicar marcação em segmentos grandes e confiáveis
+            # **OPTIMIZED**: Only apply markup to large, confident segments
             if segment_lang not in {"unknown", default_short}:
-                # Verificar se o segmento é grande o suficiente para marcação
-                if len(segment.text.strip()) < 150:  # **CHANGED**: Mínimo 150 chars (era 40)
+                # Check if the segment is large enough for markup
+                if len(segment.text.strip()) < 150:  # **CHANGED**: Minimum 150 chars (was 40)
                     segment_lang = default_short
                 else:
                     # **TIMEOUT**: Confirmar com timeout para evitar travamento

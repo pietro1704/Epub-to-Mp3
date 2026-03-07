@@ -55,7 +55,7 @@ class TuningProfile:
 class AutoTuner:
     """Auto-tuner de performance."""
 
-    # Perfis pré-configurados
+    # Pre-configured profiles
     PROFILES: Dict[str, TuningProfile] = {
         "conservative": TuningProfile(
             name="Conservative",
@@ -282,7 +282,7 @@ class AutoTuner:
             else:
                 score += 1
         else:
-            score += 2  # Assume médio se não medido
+            score += 2  # Assume medium if not measured
 
         # Seleciona perfil baseado em score
         # 0-4: conservative
@@ -298,7 +298,7 @@ class AutoTuner:
         else:
             profile = self.PROFILES["conservative"]
 
-        # Ajustes finos baseados em características específicas
+        # Fine-tuning based on specific characteristics
         profile = self._adjust_profile(profile, hw, network)
 
         return profile
@@ -307,7 +307,7 @@ class AutoTuner:
         self, profile: TuningProfile, hw: HardwareSpecs, network: Optional[NetworkStats]
     ) -> TuningProfile:
         """Ajusta perfil baseado em características específicas."""
-        # Cria cópia modificada
+        # Create modified copy
         from copy import deepcopy
 
         adjusted = deepcopy(profile)
@@ -317,7 +317,7 @@ class AutoTuner:
             adjusted.edge_safe_chapter_parallel = max(1, adjusted.edge_safe_chapter_parallel // 2)
             adjusted.coqui_max_workers = max(1, adjusted.coqui_max_workers // 2)
 
-        # Aumenta workers se GPU disponível
+        # Increase workers if GPU is available
         if hw.gpu_available and hw.gpu_type == "cuda":
             adjusted.coqui_max_workers = min(6, adjusted.coqui_max_workers + 1)
             adjusted.kokoro_max_workers = min(6, adjusted.kokoro_max_workers + 1)
@@ -428,7 +428,7 @@ class AutoTuner:
         # Seleciona perfil otimizado
         profile = self.select_profile(hw, network)
 
-        # Aplica configurações
+        # Apply settings
         self.apply_profile(profile, force=force)
         self._save_cached_profile(profile)
 

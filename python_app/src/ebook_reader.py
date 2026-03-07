@@ -1298,47 +1298,47 @@ class EpubParser:
                 removed_chapters.append(chapter)
                 continue
 
-            # Verificar se este capítulo tem conteúdo único significativo
+            # Check if this chapter has unique significant content
             has_unique_content = True
 
-            # Extrair "núcleo" do capítulo (primeiros 500 chars após limpeza)
+            # Extract chapter "core" (first 500 chars after cleaning)
             core_content = current_norm[:500] if len(current_norm) > 500 else current_norm
 
-            # Extrair várias "janelas" do texto para comparação
-            # Isso detecta conteúdo repetido mesmo com prefixos diferentes
+            # Extract multiple text "windows" for comparison
+            # Detects repeated content even with different prefixes
             windows = []
             window_size = 300
             step = 150  # Janelas sobrepostas
             for start in range(0, len(current_norm) - window_size, step):
                 windows.append(current_norm[start : start + window_size])
 
-            # Verificar se o núcleo aparece em outros capítulos (anteriores ou posteriores)
+            # Check if the core appears in other chapters (before or after)
             for j, other_chapter in enumerate(chapters):
                 if i == j:
                     continue
 
                 other_norm = normalized_texts[j]
 
-                # Se outro capítulo é maior e contém nosso núcleo
+                # If another chapter is larger and contains our core
                 if len(other_norm) > len(current_norm) and core_content in other_norm:
-                    # Este capítulo é subset de outro maior
+                    # This chapter is a subset of a larger one
                     has_unique_content = False
                     break
 
-                # Verificar se QUALQUER janela significativa do texto aparece em outro capítulo
+                # Check if ANY significant text window appears in another chapter
                 if len(other_norm) > len(current_norm):
                     for window in windows:
                         if len(window) >= 200 and window in other_norm:
-                            # Uma porção significativa do texto está repetida
+                            # A significant portion of the text is repeated
                             has_unique_content = False
                             break
                     if not has_unique_content:
                         break
 
-                # Se outro capítulo é do mesmo tamanho (±30%) e tem alta sobreposição
+                # If another chapter is similar in size (±30%) and has high overlap
                 if abs(len(other_norm) - len(current_norm)) < len(current_norm) * 0.3:
                     overlap = self._calculate_text_overlap(current_norm, other_norm)
-                    if overlap > 0.6:  # 60% de sobreposição
+                    if overlap > 0.6:  # 60% overlap
                         # Manter o que veio primeiro (ou o maior)
                         if j < i or len(other_norm) > len(current_norm):
                             has_unique_content = False
@@ -1349,7 +1349,7 @@ class EpubParser:
             else:
                 removed_chapters.append(chapter)
 
-        # Verificação de integridade: garantir que nenhum conteúdo foi perdido
+        # Integrity check: ensure no content was lost
         self._verify_content_integrity(chapters, chapters_to_keep, removed_chapters)
 
         return chapters_to_keep
@@ -1359,7 +1359,7 @@ class EpubParser:
         if not text1 or not text2:
             return 0.0
 
-        # Usar 3-gramas (sequências de 3 palavras)
+        # Use 3-grams (sequences of 3 words)
         words1 = text1.split()
         words2 = text2.split()
 
@@ -1379,7 +1379,7 @@ class EpubParser:
         if not ngrams1 or not ngrams2:
             return 0.0
 
-        # Calcular sobreposição (Jaccard similarity)
+        # Compute overlap (Jaccard similarity)
         intersection = ngrams1 & ngrams2
         union = ngrams1 | ngrams2
 
@@ -1390,16 +1390,16 @@ class EpubParser:
         if not text:
             return ""
 
-        # Remover marcações markdown
+        # Remove Markdown markup
         cleaned = re.sub(r"\*+", "", text)  # Remove asteriscos
         cleaned = re.sub(r"_+", "", cleaned)  # Remove underscores
         cleaned = re.sub(r"\[\[.*?\]\]", "", cleaned)  # Remove marcadores [[...]]
-        cleaned = re.sub(r"§\s*\d+", "", cleaned)  # Remove seções §1, §2, etc.
+        cleaned = re.sub(r"§\s*\d+", "", cleaned)  # Remove sections §1, §2, etc.
 
-        # Normalizar espaços
+        # Normalize whitespace
         cleaned = " ".join(cleaned.split())
 
-        # Remover pontuação comum no início
+        # Remove common leading punctuation
         cleaned = cleaned.lstrip(" .-:")
 
         return cleaned.lower()
@@ -1414,16 +1414,16 @@ class EpubParser:
 
         Compara o conteúdo total para garantir que nenhum texto foi perdido.
         """
-        # Extrair todo o texto único do original (normalizado para ignorar formatação)
+        # Extract all unique words from the original (normalized to ignore formatting)
         original_words = set()
         for chapter in original_chapters:
             normalized = self._normalize_for_comparison(chapter.text.strip())
             words = normalized.split()
-            # Filtrar palavras muito curtas (provavelmente marcações)
+            # Filter out very short words (likely markup)
             words = [w for w in words if len(w) > 2]
             original_words.update(words)
 
-        # Extrair todo o texto único dos capítulos filtrados
+        # Extract all unique words from filtered chapters
         filtered_words = set()
         for chapter in filtered_chapters:
             normalized = self._normalize_for_comparison(chapter.text.strip())
@@ -1431,13 +1431,13 @@ class EpubParser:
             words = [w for w in words if len(w) > 2]
             filtered_words.update(words)
 
-        # Verificar se há palavras faltando
+        # Check for missing words
         missing_words = original_words - filtered_words
 
-        # Filtrar palavras que são apenas marcações ou números isolados
+        # Filter out words that are only markup or isolated numbers
         significant_missing = set()
         for word in missing_words:
-            # Ignorar números puros, palavras muito curtas, ou marcações
+            # Ignore pure numbers, very short words, or markup
             if word.isdigit() or len(word) <= 3:
                 continue
             # Ignorar palavras com muitos caracteres especiais
@@ -1447,18 +1447,18 @@ class EpubParser:
             significant_missing.add(word)
 
         if significant_missing:
-            # Há conteúdo significativo faltando! Isso é um problema.
+            # Significant content is missing — this is a problem.
             missing_sample = list(significant_missing)[:20]
             print("⚠️ AVISO: Detectado conteúdo possivelmente perdido na filtragem de duplicatas!")
             print(f"   Palavras faltando (amostra): {' '.join(missing_sample)}")
             print(f"   Total de palavras únicas faltando: {len(significant_missing)}")
 
-            # Identificar quais capítulos removidos tinham conteúdo único
+            # Identify which removed chapters had unique content
             for removed in removed_chapters:
                 removed_normalized = self._normalize_for_comparison(removed.text.strip())
                 removed_words = set(w for w in removed_normalized.split() if len(w) > 3)
                 removed_unique = removed_words - filtered_words
-                # Filtrar marcações
+                # Filter out markup
                 removed_unique = set(
                     w
                     for w in removed_unique
@@ -1469,8 +1469,8 @@ class EpubParser:
                         f"   ❌ Capítulo '{removed.name}' tinha {len(removed_unique)} palavras únicas perdidas"
                     )
 
-            # Restaurar capítulos removidos que tinham conteúdo único
-            # NÃO fazer isso automaticamente - apenas alertar
+            # Restore removed chapters that had unique content
+            # Do NOT do this automatically — only warn
             raise ValueError(
                 f"Falha na verificação de integridade: {len(significant_missing)} palavras únicas perdidas. "
                 "O algoritmo de remoção de duplicatas precisa ser ajustado."
@@ -1759,7 +1759,7 @@ class PdfParser:
                     )
                     continue
 
-                # Primeiro junta linhas quebradas, depois normaliza espaços
+                # First join broken lines, then normalize whitespace
                 joined_text = TextProcessor.join_broken_lines(raw_text)
                 cleaned = TextProcessor.normalise_whitespace(joined_text)
                 if not cleaned:

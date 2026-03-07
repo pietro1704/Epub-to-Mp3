@@ -154,15 +154,15 @@ class AudioProcessor:
             "-b:a",
             bitrate,  # Bitrate constante (CBR)
             "-minrate",
-            bitrate,  # Bitrate mínimo
+            bitrate,  # Minimum bitrate
             "-maxrate",
-            bitrate,  # Bitrate máximo
+            bitrate,  # Maximum bitrate
             "-ar",
             "16000",  # Sample rate 16kHz (ideal para voz)
             "-ac",
-            "1",  # Mono (audiobooks não precisam stereo)
+            "1",  # Mono (audiobooks do not need stereo)
             "-cutoff",
-            "8000",  # Cortar frequências acima de 8kHz (suficiente para voz)
+            "8000",  # Cut frequencies above 8 kHz (sufficient for voice)
             str(output_path),
         )
         command_fallback = (

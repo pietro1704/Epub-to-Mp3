@@ -50,12 +50,12 @@ class VerificationResult:
 _TTS_CUE_PATTERNS = [
     r"\[\[lang:\w[\w-]*\]\]",  # [[lang:en]], [[lang:pt-BR]]
     r"\[\[/lang\]\]",  # [[/lang]]
-    r"\bem\s+itálico\s*:\s*",  # "em itálico:"
-    r"\bfim\s+do\s+itálico\b\.?",  # "fim do itálico"
+    r"\bem\s+itálico\s*:\s*",  # "em itálico:" (italics marker spoken aloud)
+    r"\bfim\s+do\s+itálico\b\.?",  # "fim do itálico" (end-of-italics spoken aloud)
     r"\bem\s+negrito\s*:\s*",  # "em negrito:"
     r"\bfim\s+do\s+negrito\b\.?",  # "fim do negrito"
-    r"\bnota\s+de\s+rodapé\s*\d*\s*:",  # "nota de rodapé 1:"
-    r"\bfim\s+da\s+nota\s+de\s+rodapé\b\.?",  # "fim da nota de rodapé"
+    r"\bnota\s+de\s+rodapé\s*\d*\s*:",  # "nota de rodapé N:" (footnote marker spoken aloud)
+    r"\bfim\s+da\s+nota\s+de\s+rodapé\b\.?",  # "fim da nota de rodapé" (end-of-footnote spoken aloud)
 ]
 _TTS_CUE_RE = re.compile("|".join(_TTS_CUE_PATTERNS), re.IGNORECASE)
 

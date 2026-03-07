@@ -3260,7 +3260,7 @@ class AudioConverter:
                         source_tag = "parsed fallback" if using_parsed_fallback else "pre-tts"
                         print(f"   🎙️  Chapter {chapter_num}: synthesizing MP3 ({source_tag})...")
 
-                    # Sintetizar áudio
+                    # Synthesize audio
                     wav_file = None
                     try:
                         synth_task = tts_engine.synthesize_async(
@@ -3325,7 +3325,7 @@ class AudioConverter:
                     mp3_path = output_dir / f"{chapter_name}.mp3"
                     await audio_processor.convert_to_mp3(Path(wav_file), mp3_path)
 
-                    # Limpar WAV temporário
+                    # Clean up temporary WAV
                     Path(wav_file).unlink(missing_ok=True)
 
                     if mp3_path.exists():
@@ -3449,7 +3449,7 @@ class AudioConverter:
                             if self.verbose:
                                 print("\n🔄 Trying automatic fallback to Piper...")
 
-                            # Verificar se Piper está available
+                            # Check if Piper is available
                             try:
                                 from .tts.factory import TTSFactory
 
@@ -3467,7 +3467,7 @@ class AudioConverter:
                                     missing_chapters = []
                                     for issue in issues:
                                         if "Missing MP3" in issue:
-                                            # Extrair número do chapter
+                                            # Extract chapter number
                                             import re
 
                                             match = re.search(r"Chapter (\d+(?:\.\d+)?)", issue)
@@ -3529,7 +3529,7 @@ class AudioConverter:
                                 if self.verbose:
                                     print(f"   ⚠️  Error no fallback: {fallback_exc}")
 
-                        # Se ainda há problems after fallback, exibir error claro
+                        # If problems remain after fallback, show a clear error
                         if not success and self.verbose:
                             print(
                                 "\n❌ INCOMPLETE CONVERSION: Alguns chapters not foram convertidos"
@@ -7630,7 +7630,7 @@ class AudioConverter:
                 else:
                     base_cache = base_cache / "conversion"
             except (RuntimeError, OSError) as e:
-                # Fallback para diretório temporário do sistema
+                # Fallback to system temp directory
                 import tempfile
 
                 print(f"⚠️ Cache unavailable: {e}")
@@ -8742,7 +8742,7 @@ class AudioConverter:
                 engine_config: Optional[ConversionConfig] = None
 
                 try:
-                    # Conversion para diretório temporário
+                    # Conversion to temp directory
                     output_path = self._expected_output_path(chapter, chapter_num, output_dir)
 
                     # Check if MP3 already exists and is valid (size > 1KB)
@@ -9001,7 +9001,7 @@ class AudioConverter:
                     # Timeout otimizado: agressivo, mas com teto maior para chapters longos no Edge
                     # Base: duration estimada * 1.5 + 30s buffer
                     base_timeout = estimated_seconds * 1.5 + 30.0
-                    timeout_seconds = max(base_timeout, 60.0)  # Mínimo 60s
+                    timeout_seconds = max(base_timeout, 60.0)  # Minimum 60s
                     max_timeout = 600.0  # Default: up to 10 min
                     if current_engine_label == "edge":
                         if chapter_chars >= 80000:
@@ -9263,7 +9263,7 @@ class AudioConverter:
                                 segment_text: Optional[str] = None,
                             ) -> None:
                                 segment_progress_state["hits"] += 1
-                                # Atualiza barra com chunks concluídos
+                                # Update bar with completed chunks
                                 if hasattr(self, "progress"):
                                     try:
                                         self.progress.update_chunk_progress(segment_index)
@@ -9340,7 +9340,7 @@ class AudioConverter:
                                             f"   ⚠️ Failure ao salvar chunk {segment_index}: {exc}"
                                         )
 
-                            # Só usar callback/chunking quando há diretório de resume available
+                            # Only use callback/chunking when a resume directory is available
                             chunk_callback = on_chunk_ready if chunk_root else None
                             primary_chunk_callback = chunk_callback
                             primary_chunk_root = chunk_root if chunk_root else None
@@ -11070,7 +11070,7 @@ class AudioConverter:
                 status_holder["text"] = self.loc.t("status_synthesizing")
                 self._announce_stage(index, chapter_label, status_holder["text"])
 
-                # **UPDATED**: Estratégia de fallback and timeouts baseados em duration estimada
+                # **UPDATED**: Fallback strategy and timeouts based on estimated duration
                 char_count = len(chapter_payload or "")
                 lang_tag_count = chapter_payload.lower().count("[[lang:") if chapter_payload else 0
 
@@ -11108,7 +11108,7 @@ class AudioConverter:
                         if self.verbose:
                             print(f"[DEBUG] Chapter {index} FALLBACK: LanguageMarkup not available")
 
-                # Recalcular métricas after fallback
+                # Recompute metrics after fallback
                 char_count = len(chapter_payload or "")
                 lang_tag_count = chapter_payload.lower().count("[[lang:") if chapter_payload else 0
                 estimated_seconds = TextValidator.estimate_duration(chapter_payload)
