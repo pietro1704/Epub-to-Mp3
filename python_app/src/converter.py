@@ -157,6 +157,9 @@ EXPECTED_WPM = _env_int(
     "EXPECTED_WPM", 200
 )  # Expected words per minute for TTS (Edge-TTS neural voices ~200 WPM)
 CHARS_PER_WORD = _env_float("CHARS_PER_WORD", 5.0)  # Average characters per word
+# Chapters larger than this are skipped entirely (0 = disabled).
+# Useful for EPUBs with footnote-container files that hold the entire book text.
+MAX_CHAPTER_CHARS = _env_int("MAX_CHAPTER_CHARS", 0)
 
 
 def validate_audio_completeness(mp3_path: Path, text_length: int) -> tuple[bool, float]:
@@ -8594,6 +8597,16 @@ class AudioConverter:
                 _launch_prefetch(idx + 1)
             current_payload: Optional[str] = speech_text
             chapter_chars = len(speech_text or "")
+            # Skip chapters that exceed the configured size limit (e.g. footnote-container
+            # files that hold the entire book text as annotation content).
+            if MAX_CHAPTER_CHARS > 0 and chapter_chars > MAX_CHAPTER_CHARS:
+                print(
+                    f"\n⏭️  Skipping chapter {chapter_num} ({chapter_chars:,} chars >"
+                    f" MAX_CHAPTER_CHARS={MAX_CHAPTER_CHARS:,}): {chapter.name[:60]}"
+                )
+                self.progress.complete_chapter(f"⏭️ Skipped ({chapter_chars:,} chars, oversized)")
+                converted_files.append(None)  # placeholder so indices stay aligned
+                continue
             deferred_safe_pass = bool(getattr(chapter, "_deferred_safe_pass", False))
             remaining_chars_estimate = max(
                 0,
@@ -8887,6 +8900,7 @@ class AudioConverter:
                                     engine_config.engine or current_engine_label
                                 ).lower()
                                 current_engine_label = engine_tracker["label"]
+                            self.progress.set_active_engine(current_engine_label)
                             break
                         except Exception as exc:
                             unavailable_engines.add(current_engine_label)

@@ -56,6 +56,9 @@ class ProgressTracker:
         self.total_chunks: int = 0
         self.processed_chunks: int = 0
         self._chunks_confident: bool = False
+        # Parallel chapter tracking: index → short label
+        self._active_chapters: dict[int, str] = {}
+        self._active_engine: str = ""
 
     def start(self, total_chapters: int, description: Optional[str] = None) -> None:
         """Reset tracker for a new run."""
@@ -105,6 +108,8 @@ class ProgressTracker:
         self.total_chunks = 0
         self.processed_chunks = 0
         self._chunks_confident = False
+        self._active_chapters[index] = chapter_name
+        self._active_engine = ""
 
         print(f"\n🎧 [{index}/{max(self.total_chapters, 1)}] {chapter_name}")
 
@@ -114,12 +119,19 @@ class ProgressTracker:
         self._eta_chars_per_sec_hint = max(0.0, float(chars_per_second or 0.0))
         self._eta_hint_updated_at = time.time()
 
+    def set_active_engine(self, engine: str) -> None:
+        """Record the TTS engine currently in use (for display in progress bar)."""
+        self._active_engine = (engine or "").lower().strip()
+
     def complete_chapter(self, status: str = "") -> None:
         """Mark chapter completion and refresh the progress bar."""
         if self.total_chapters:
             self.completed_chapters = min(self.completed_chapters + 1, self.total_chapters)
         else:
             self.completed_chapters += 1
+        # Remove completed chapter from active set (remove by current index)
+        if self.current_index is not None:
+            self._active_chapters.pop(self.current_index, None)
         self._last_real_progress_time = time.time()
         self._render(status)
 
@@ -255,10 +267,23 @@ class ProgressTracker:
         total_display = (
             self.total_chapters if self.total_chapters else max(self.completed_chapters, 1)
         )
+        # Build compact "active chapter" label for display in the progress bar.
+        # When multiple chapters run in parallel show the most recently started one + count.
+        active_label = ""
+        if self._active_chapters:
+            # Most recently started = highest index key
+            latest_idx = max(self._active_chapters)
+            latest_name = self._active_chapters[latest_idx]
+            abbrev = latest_name[:28] + "…" if len(latest_name) > 28 else latest_name
+            extra = len(self._active_chapters) - 1
+            active_label = f" 📖 {abbrev}" + (f" +{extra}" if extra > 0 else "")
+            if self._active_engine:
+                active_label += f" [{self._active_engine}]"
+
         message = (
             f"{self.description}: [{bar}] {progress_pct:.2f}% "
             f"({self.completed_chapters}/{total_display}) "
-            f"time remaining: {eta_str}"
+            f"time remaining: {eta_str}{active_label}"
         )
         if display_status:
             chapter_elapsed = TimeFormatter.format_time(now - self._chapter_start_time)
