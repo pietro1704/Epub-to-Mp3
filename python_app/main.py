@@ -251,7 +251,7 @@ class ConverterApplication:
                 print(f"⚠️ Nenhum EPUB/PDF encontrado em {resolved}")
             return files
 
-        print(f"⚠️ Caminho inválido: {resolved}")
+        print(f"⚠️ Invalid path: {resolved}")
 
         return []
 
@@ -288,10 +288,10 @@ class ConverterApplication:
             else:
                 exit_code = exit_code or result or 1
                 if stop_on_error:
-                    print("🛑 Processamento interrompido após falha.")
+                    print("🛑 Processing interrupted after failure.")
                     break
 
-        print(f"\n📚 Batch concluído: {successes}/{total} livro(s) com sucesso.")
+        print(f"\n📚 Batch complete: {successes}/{total} book(s) succeeded.")
         return exit_code
 
     @staticmethod
@@ -300,7 +300,7 @@ class ConverterApplication:
             return []
         manifest_path = Path(manifest).expanduser()
         if not manifest_path.exists():
-            print(f"⚠️ Arquivo de lista não encontrado: {manifest_path}")
+            print(f"⚠️ List file not found: {manifest_path}")
             return []
         entries: List[str] = []
         try:
@@ -349,7 +349,7 @@ class ConverterApplication:
             suffix = input_path.suffix.lower()
             if suffix not in {".epub", ".pdf"}:
                 friendly = suffix or "(sem extensão)"
-                print(f"❌ Formato não suportado: {friendly}. Envie um arquivo .epub ou .pdf.")
+                print(f"❌ Unsupported format: {friendly}. Please provide an .epub or .pdf file.")
                 return 1
 
             # Load ebook
@@ -425,7 +425,7 @@ class ConverterApplication:
                     else None
                 )
                 if input_path:
-                    # Limpar cache E output do livro específico
+                    # Clear cache AND output for the specific book
                     display_name = reader.title or input_path.stem
                     print()
                     print(f"🗑️  Removendo cache e output para: {display_name}")
@@ -440,7 +440,7 @@ class ConverterApplication:
                     output_base = Path(getattr(args, "output_dir", None) or OUTPUT_DIR)
                     sanitized_title = FileManager.sanitize_filename(display_name)
 
-                    # Procurar por todos os diretórios que começam com o título do livro
+                    # Look for all directories that start with the book title
                     # (ex: "Book_edge", "Book_piper", "Book_coqui")
                     removed_count = 0
                     if output_base.exists():
@@ -456,7 +456,7 @@ class ConverterApplication:
                                     print(f"   ⚠️  Erro ao limpar {output_dir.name}: {e}")
 
                     if removed_count > 0:
-                        print(f"   ✅ Output removido ({removed_count} diretório(s))")
+                        print(f"   ✅ Output removed ({removed_count} director(ies))")
                     else:
                         print("   ℹ️  Nenhum output encontrado")
 
@@ -465,34 +465,34 @@ class ConverterApplication:
 
                     print()
                     print(f"✅ Limpeza concluída para: {display_name}")
-                    print("🔄 Iniciando conversão...")
+                    print("🔄 Starting conversion...")
                     print()
                 else:
-                    # Sem arquivo especificado - pedir confirmação e remover tudo
+                    # No file specified — confirm and remove everything
                     return self._handle_clear_cache()
 
             cache_dir = self._resolve_cache_dir(reader)
             cache_dir.mkdir(parents=True, exist_ok=True)
             setattr(args, "cache_dir", cache_dir)
 
-            # Corrigir diretório temporário para usar .cache/{nome do livro}
+            # Set temp directory to .cache/{book name}
             book_name = Path(args.input_file).stem
             temp_dir = self.cache_root / book_name
 
             if getattr(args, "no_cache", False):
-                # Limpar completamente o diretório .cache
+                # Completely clear the .cache directory
                 if self.cache_root.exists():
                     shutil.rmtree(self.cache_root)
                 self.cache_root.mkdir(exist_ok=True)
-                print("🗑️ Diretório .cache limpo devido ao uso de --no-cache")
+                print("🗑️ .cache directory cleared due to --no-cache")
 
-            # Garantir que o diretório temporário esteja dentro de .cache
+            # Ensure the temp directory is inside .cache
             book_name = Path(args.input_file).stem
             temp_dir = self.cache_root / book_name
             temp_dir.mkdir(parents=True, exist_ok=True)
 
-            # Cache automático: conversão retoma automaticamente se arquivos .txt existirem
-            # Não precisa mais perguntar ao usuário - sistema detecta automaticamente
+            # Auto-cache: conversion resumes automatically if .txt files exist
+            # No longer need to ask the user — system detects automatically
 
             self._interactive_mode = bool(getattr(args, "menu", False))
 
@@ -530,15 +530,15 @@ class ConverterApplication:
                     config.extra["selected_indices"] = ",".join(selected_indices)
                 config.extra["partial_selection"] = "1"
 
-            # Configurar o diretório temporário usando o método existente com `config`
+            # Configure temp directory using the existing method with `config`
             temp_dir = self.converter._setup_temp_directory(config)
 
             print(f"📁 Cache: {temp_dir}")
             if temp_dir.exists() and (temp_dir / "text").exists():
                 txt_files = list((temp_dir / "text").glob("*_tts_input.txt"))
                 if txt_files:
-                    print(f"♻️ Cache detectado: {len(txt_files)} capítulos processados")
-                    print("   Capítulos já convertidos serão pulados automaticamente")
+                    print(f"♻️ Cache detected: {len(txt_files)} chapters already processed")
+                    print("   Already converted chapters will be skipped automatically")
 
             structure_items = self._apply_text_transforms(structure_items, config, reader)
             self._apply_structure_to_reader(reader, structure_items)
@@ -547,7 +547,7 @@ class ConverterApplication:
             result = asyncio.run(self.converter.convert(reader, config))
 
             elapsed = time.time() - conversion_start
-            print(f"⏱️ Tempo total de conversão: {self._format_hms(elapsed)}")
+            print(f"⏱️ Total conversion time: {self._format_hms(elapsed)}")
             if getattr(args, "show_metrics_summary", False):
                 self._print_metrics_summary(temp_dir)
             if getattr(args, "show_metrics_dashboard", False):
@@ -590,11 +590,11 @@ class ConverterApplication:
         cache_dir = Path(config.cache_dir) if getattr(config, "cache_dir", None) else None
 
         if not output_dir.exists():
-            print(f"❌ Output não encontrado para validação: {output_dir}")
-            print("   Execute uma conversão primeiro ou ajuste --output-dir.")
+            print(f"❌ Output not found for validation: {output_dir}")
+            print("   Run a conversion first or adjust --output-dir.")
             return 1
 
-        print("🔍 Modo verificação: nenhum áudio novo será gerado.")
+        print("🔍 Verify mode: no new audio will be generated.")
         print(f"📁 Output: {output_dir}")
         if cache_dir:
             print(f"📁 Cache: {cache_dir}")
@@ -607,9 +607,9 @@ class ConverterApplication:
             return 1
 
         if issues:
-            print(f"❌ Verificação falhou: {len(issues)} problema(s) encontrado(s).")
+            print(f"❌ Verification failed: {len(issues)} issue(s) found.")
             return 1
-        print("✅ Verificação concluída sem divergências.")
+        print("✅ Verification completed with no issues.")
         return 0
 
     @staticmethod
@@ -1203,9 +1203,9 @@ class ConverterApplication:
 
         if diff == 1:
             # Small difference (likely cover page, title page, etc.) - just warn
-            print(f"\nℹ️  TOC: {expected_count} capítulos | Detectados: {actual_count} capítulos")
+            print(f"\nℹ️  TOC: {expected_count} chapters | Detected: {actual_count} chapters")
             if actual_count < expected_count:
-                print(f"💡 Diferença: {diff} (provavelmente folha de rosto ou capa ignorada)")
+                print(f"💡 Difference: {diff} (likely cover page or title page ignored)")
             return chapters, False
 
         # Significant count mismatch - attempt auto-correction
@@ -1218,7 +1218,7 @@ class ConverterApplication:
             print(
                 f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata"
             )
-            print("💡 Motivo: deduplicação causou perda de capítulos válidos")
+            print("💡 Reason: deduplication removed valid chapters")
 
             # Return the chapters WITHOUT deduplication
             # Note: we need to re-generate or get the original list
@@ -1227,10 +1227,10 @@ class ConverterApplication:
 
         # If actual > expected, deduplication might help
         if actual_count > expected_count:
-            print(f"💡 Detectados {actual_count - expected_count} capítulos a mais que o esperado")
-            print("✓ Mantendo resultado atual (possível subcapítulos no TOC)")
+            print(f"💡 Detected {actual_count - expected_count} more chapters than expected")
+            print("✓ Keeping current result (possible sub-chapters in TOC)")
         else:
-            print(f"⚠️  Faltam {expected_count - actual_count} capítulos!")
+            print(f"⚠️  Missing {expected_count - actual_count} chapter(s)!")
             print("💡 Verifique se o EPUB tem estrutura complexa ou TOC incorreto")
 
         return chapters, False
@@ -1564,7 +1564,7 @@ class ConverterApplication:
             if item.text_override is not None:
                 raw_html = None
 
-            # Reutiliza o texto já enriquecido com notas quando o modo é inline
+            # Reuse text already enriched with footnotes when mode is inline
             if footnote_mode == "inline" and chapter_footnotes:
                 raw_html = None
 
@@ -1574,7 +1574,7 @@ class ConverterApplication:
                 or (item.index if isinstance(item.index, str) else None)
                 or ""
             )
-            # Mostrar número ordinal (1/179) + identificador estrutural (4.23)
+            # Show ordinal number (1/179) + structural identifier (4.23)
             index_display = (
                 f"{chapter_num}/{len(items)} [{item.index}]"
                 if item.index
@@ -1688,7 +1688,7 @@ class ConverterApplication:
             processor.apply_inline_formatting(final_text)
             speech_text = processor.strip_inline_markdown(final_text)
 
-            # **NEW**: Aplicar detecção automática de idioma se habilitado
+            # **NEW**: Apply automatic language detection if enabled
             if getattr(config, "use_language_detection", True):
                 try:
                     from src.language import LanguageMarkup
@@ -1702,9 +1702,9 @@ class ConverterApplication:
                         ),
                     )
                 except (ImportError, Exception) as e:
-                    # Falha silenciosa - continua sem detecção
+                    # Silent failure — continue without detection
                     if config.verbose:
-                        print(f"⚠️ Detecção de idioma desativada: {e}")
+                        print(f"⚠️ Language detection disabled: {e}")
 
             chapter.speech_text = speech_text  # Clean text for TTS
 
@@ -1845,15 +1845,15 @@ class ConverterApplication:
         print(self.localization.t("language_profile_start"), flush=True)
         sample_texts: List[str] = []
 
-        # **FIXED**: Melhorar detecção de idioma para livros com capítulos vazios/curtos
-        # Coletar textos até ter pelo menos 2000 chars ou 20 capítulos
+        # **FIXED**: Improve language detection for books with empty/short chapters
+        # Collect text until we have at least 2000 chars or 20 chapters
         total_chars = 0
         items_checked = 0
-        max_items = min(20, len(items))  # Até 20 capítulos
+        max_items = min(20, len(items))  # Up to 20 chapters
         # IMPROVED: Increased minimum chars for more confident detection (was 2000)
         # This ensures we have enough text to reliably detect the book's primary language
-        min_chars = 5000  # Mínimo 5000 chars para detecção mais confiável
-        min_chapters = 5  # Mínimo 5 capítulos (was 3)
+        min_chars = 5000  # Minimum 5000 chars for more reliable detection
+        min_chapters = 5  # Minimum 5 chapters (was 3)
 
         total_items = len(items)
         if total_items <= max_items:
@@ -1879,7 +1879,7 @@ class ConverterApplication:
                 total_chars += len(source_text)
                 items_checked += 1
 
-                # Parar se já temos caracteres suficientes E capítulos suficientes
+                # Stop if we already have enough characters AND enough chapters
                 if total_chars >= min_chars and items_checked >= min_chapters:
                     break
 
@@ -2382,7 +2382,7 @@ class ConverterApplication:
         cache_root = resolve_cache_root()
         output_dir = OUTPUT_DIR
 
-        # Calcular informações sobre o que será removido
+        # Calculate what will be removed
         cache_info = cache_manager.get_cache_info()
         total_cache_mb = cache_info.get("cache_size_mb", 0)
         total_books = cache_info.get("total_cached_books", 0)
@@ -2399,7 +2399,7 @@ class ConverterApplication:
             except Exception:
                 pass
 
-        # Mostrar o que será removido
+        # Show what will be removed
         print("╔══════════════════════════════════════════════════════════╗")
         print("║  🗑️  Complete Cache and Output Cleanup                 ║")
         print("╚══════════════════════════════════════════════════════════╝")
@@ -2662,7 +2662,7 @@ class ConverterApplication:
 
         structure_items, duplicates_removed = deduplicate_chapters_by_content(structure_items)
         if duplicates_removed:
-            print(f"🧹 {duplicates_removed} capítulo(s) duplicado(s) ocultados")
+            print(f"🧹 {duplicates_removed} duplicate chapter(s) hidden")
 
         # Validate chapter count against TOC
         structure_items, was_corrected = self._validate_chapter_count(
@@ -2672,20 +2672,20 @@ class ConverterApplication:
         # If correction was needed, restore original without deduplication
         if was_corrected:
             print(
-                f"✅ Restaurando {duplicates_removed} capítulo(s) - usando versão sem deduplicação\n"
+                f"✅ Restoring {duplicates_removed} chapter(s) — using version without deduplication\n"
             )
             structure_items = original_items
 
         print(f"{self.localization.t('chapters_label')}: {len(structure_items)}")
 
-        # **Salvar cache txt** ao mostrar estrutura
+        # **Save text cache** when showing structure
         from src.cache_manager import CacheManager
 
         cache_manager = CacheManager(cache_dir=self.cache_root)
 
         chapters_data = {
-            "title": reader.title or "Livro",
-            "author": reader.author or "Desconhecido",
+            "title": reader.title or "Unknown",
+            "author": reader.author or "Unknown",
             "chapters": [],
         }
 
@@ -2698,18 +2698,18 @@ class ConverterApplication:
                 )
             )
 
-            # Adicionar capítulo ao cache data
+            # Add chapter to cache data
             chapters_data["chapters"].append({"title": item.display_name, "text": cleaned_text})
 
-        # Salvar no cache
+        # Save to cache
         if hasattr(reader, "file_path") and reader.file_path:
             success = cache_manager.save_chapters_to_cache(reader.file_path, chapters_data)
             if success:
-                # **CORRIGIDO**: Não usar override_name para evitar pastas duplicadas
+                # **FIXED**: Do not use override_name to avoid duplicate directories
                 cache_txt_path = cache_manager._get_cache_path(Path(reader.file_path)) / "txt"
-                print(f"\n💾 Cache txt salvo em: {cache_txt_path}")
+                print(f"\n💾 Text cache saved to: {cache_txt_path}")
             else:
-                print("\n⚠️  Erro ao salvar cache txt")
+                print("\n⚠️  Error saving text cache")
 
     def _should_skip_chapter(
         self,
@@ -2963,7 +2963,7 @@ class ConverterApplication:
             r"book\s+[ivx]+",
             r"parte\s+[ivx\d]+",
             r"seção\s+[ivx\d]+",
-            r"capítulo\s+\d+",  # Capítulo 1, 2, etc.
+            r"capítulo\s+\d+",  # Matches "Capítulo 1", "Capítulo 2", etc.
             r"chapter\s+\d+",  # Chapter 1, 2, etc.
         ]
 
@@ -3116,14 +3116,14 @@ class ConverterApplication:
 
             # Extract key parts of the clean name for removal
             if "§" in clean_name:
-                # For sections like "§1 Introdução", remove both "introdução" and section references
+                # For sections like "§1 Introdução", remove both the heading and section references
                 section_parts = clean_name.split(" ")
                 for part in section_parts:
                     if len(part) > 3 and part not in ["§1", "§2", "§3", "§4", "§5"]:
                         patterns_to_remove.append(re.escape(part.lower()))
 
             if "Capítulo" in clean_name:
-                # Remove "capítulo X" references
+                # Remove "capítulo X" (chapter heading) references
                 patterns_to_remove.append(r"capítulo\s+\d+")
 
         # Always strip generic "capitulo X" patterns from previews
@@ -3168,7 +3168,7 @@ class ConverterApplication:
 
         # Chapter count
         chapters = list(reader.get_chapters())
-        print(f"📊 Capítulos: {len(chapters)}")
+        print(f"📊 Chapters: {len(chapters)}")
 
         # Calculate total text statistics
         total_chars = sum(len(chapter.text or "") for chapter in chapters)
@@ -3181,14 +3181,14 @@ class ConverterApplication:
         if reader.file_path:
             file_size = reader.file_path.stat().st_size
             file_size_mb = file_size / (1024 * 1024)
-            print(f"💾 Tamanho do arquivo: {file_size_mb:.1f} MB")
+            print(f"💾 File size: {file_size_mb:.1f} MB")
             print(f"🗺 Formato: {reader.file_path.suffix.upper()[1:]}")
 
         # TOC info
         try:
             toc_items = list(reader.get_toc())
             if toc_items:
-                print(f"🗺 Índice: {len(toc_items)} entradas")
+                print(f"🗺 TOC: {len(toc_items)} entries")
         except Exception:
             pass
 
@@ -3198,7 +3198,7 @@ class ConverterApplication:
     def _update_metadata_display_language(self) -> None:
         """Update the terminal with language detection results."""
         if self.language_profile:
-            print("🌐 DETECÇÃO DE IDIOMA")
+            print("🌐 LANGUAGE DETECTION")
             print("-" * 30)
             if self.language_profile.primary:
                 confidence = "Alta" if self.language_profile.is_confident else "Baixa"
@@ -3207,12 +3207,12 @@ class ConverterApplication:
                 )
                 if len(self.language_profile.predictions) > 0:
                     best_prediction = self.language_profile.predictions[0]
-                    print(f"   Precisão: {best_prediction.probability:.1%}")
+                    print(f"   Accuracy: {best_prediction.probability:.1%}")
                 if len(self.language_profile.languages) > 1:
                     other_langs = ", ".join(
                         self.language_profile.languages[1:3]
                     )  # Show up to 2 more
-                    print(f"🌍 Idiomas secundários: {other_langs}")
+                    print(f"🌍 Secondary languages: {other_langs}")
             print(f"🔍 Caracteres analisados: {self.language_profile.analysed_chars:,}")
             print()
 

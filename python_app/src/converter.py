@@ -5402,17 +5402,40 @@ class AudioConverter:
         long_count = sum(1 for value in lengths if value >= long_threshold)
         stats["long_ratio"] = long_count / len(lengths)
 
+        # Detect outlier chapters: chapters that are >5× the median size.
+        # These are typically footnote-container files that embed the entire book text.
+        sorted_lengths = sorted(lengths)
+        median_chars = sorted_lengths[len(sorted_lengths) // 2] if sorted_lengths else 0
+        outlier_threshold = max(median_chars * 5, 50_000)
+        outlier_indices = [i for i, v in enumerate(lengths) if v > outlier_threshold and v > 50_000]
+        stats["median_chars"] = float(median_chars)
+        stats["outlier_indices"] = outlier_indices  # type: ignore[assignment]
+        if outlier_indices:
+            outlier_max = max(lengths[i] for i in outlier_indices)
+            stats["outlier_max_chars"] = float(outlier_max)
+            # Warn the user so they know they can skip this chapter.
+            for idx in outlier_indices:
+                ch = chapters[idx]
+                ch_chars = lengths[idx]
+                ratio = ch_chars // max(median_chars, 1)
+                suggested_limit = (ch_chars // 1000) * 1000  # round down to nearest 1K
+                print(
+                    f"\n⚠️  Oversized chapter: \"{getattr(ch, 'name', '?')[:70]}\""
+                    f" ({ch_chars:,} chars = {ratio}× median)"
+                    f"\n   → To skip it: MAX_CHAPTER_CHARS={suggested_limit:,}"
+                )
+
         prefer_offline = False
         reasons: List[str] = []
         if stats["max_chars"] >= EDGE_OFFLINE_LONG_CHARS:
             prefer_offline = True
-            reasons.append(f"chapter com ~{stats['max_chars']:,} chars")
+            reasons.append(f"chapter with ~{stats['max_chars']:,} chars")
         if stats["long_ratio"] >= EDGE_OFFLINE_LONG_RATIO:
             prefer_offline = True
             reasons.append(f"{int(stats['long_ratio'] * 100)}% of chapters are too long")
         if stats["total_chars"] >= EDGE_OFFLINE_TOTAL_CHARS:
             prefer_offline = True
-            reasons.append(f"{stats['total_chars']:,} chars totais")
+            reasons.append(f"{stats['total_chars']:,} total chars")
         stats["prefer_offline_engine"] = prefer_offline
         if prefer_offline and reasons:
             stats["offline_reason"] = "; ".join(reasons)
@@ -5427,9 +5450,7 @@ class AudioConverter:
             return
         reason = stats.get("offline_reason")
         if reason:
-            print(
-                f"🎯 Chapters longos detectados ({reason}) – mantendo Edge como primeira tentativa."
-            )
+            print(f"🎯 Long chapters detected ({reason}) — keeping Edge as first attempt.")
         # Product decision: do not switch to offline engines preemptively.
         # Offline engines must be used only after real Edge failures/timeouts.
 
