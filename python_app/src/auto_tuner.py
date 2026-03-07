@@ -382,7 +382,7 @@ class AutoTuner:
         print("=" * 70)
         print(f"🎯 PERFIL DE PERFORMANCE AUTO-CONFIGURADO: {profile.name.upper()}")
         print("=" * 70)
-        print(f"Descrição: {profile.description}\n")
+        print(f"Description: {profile.description}\n")
         print("Edge-TTS:")
         print(f"  EDGE_MAX_CONCURRENCY: {profile.edge_max_concurrency}")
         print(f"  EDGE_CHUNK_CHARS: {profile.edge_chunk_chars}")

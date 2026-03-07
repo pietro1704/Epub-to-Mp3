@@ -324,16 +324,16 @@ class TextIntegrityValidator:
             print(f"❌ Chapters with issues: {invalid_chapters}")
 
             if has_cache_corruption:
-                print("\n⚠️  ATENÇÃO: Cache corrompido detectado!")
-                print("O texto em cache NÃO corresponde ao EPUB atual.")
+                print("\n⚠️  WARNING: Corrupted cache detected!")
+                print("The cached text does NOT match the current EPUB.")
                 print("Isso pode indicar:")
-                print("  • Cache de conversão anterior com engine diferente")
-                print("  • EPUB foi modificado após última conversão")
-                print("  • Corrupção de dados no cache")
+                print("  • Cache from a previous conversion with a different engine")
+                print("  • EPUB was modified after the last conversion")
+                print("  • Data corruption in the cache")
 
             if cache_engine_mismatch:
-                print("\n⚠️  ATENÇÃO: Cache de engine diferente detectado!")
-                print("O cache parece ser de uma conversão anterior com outra engine.")
+                print("\n⚠️  WARNING: Cache from a different engine detected!")
+                print("The cache appears to be from a previous conversion with a different engine.")
 
             print("=" * 70 + "\n")
 

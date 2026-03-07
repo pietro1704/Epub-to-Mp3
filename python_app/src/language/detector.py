@@ -241,11 +241,11 @@ class LanguageDetector:
 
                 except concurrent.futures.TimeoutError:
                     print(
-                        f"⚠️ Timeout na detecção de idioma ({timeout_seconds}s) - usando fallback: {fallback_language}"
+                        f"⚠️ Language detection timeout ({timeout_seconds}s) — using fallback: {fallback_language}"
                     )
                     return fallback_language
         except Exception as e:
-            print(f"⚠️ Erro na detecção de idioma: {e} - usando fallback: {fallback_language}")
+            print(f"⚠️ Language detection error: {e} — using fallback: {fallback_language}")
             return fallback_language
 
     @staticmethod

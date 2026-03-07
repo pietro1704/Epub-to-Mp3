@@ -362,7 +362,7 @@ class NetworkTuner:
             and self.config.concurrency >= self.config.max_concurrency
         ):
             if self.recovery_mode:
-                self._log("🚀 Velocidade máxima recuperada!")
+                self._log("🚀 Maximum speed recovered!")
                 self.recovery_mode = False
 
         self.consecutive_successes = 0
@@ -424,7 +424,7 @@ class NetworkTuner:
         return (
             f"{icon} Rede: {self.condition.value} | "
             f"Taxa: {success_rate:.0f}% | "
-            f"Latência: {avg_latency:.1f}s | "
+            f"Latency: {avg_latency:.1f}s | "
             f"Config: {self.config.chunk_size} chars, "
             f"{self.config.concurrency} parallel"
         )

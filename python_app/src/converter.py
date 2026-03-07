@@ -3227,7 +3227,7 @@ class AudioConverter:
                             sample_files: List[str] = []
                             for files in pre_tts_map.values():
                                 sample_files.extend([f.name[:50] for f in files[:2]])
-                            print(f"      Arquivos disponíveis: {sample_files[:6]}")
+                            print(f"      Available files: {sample_files[:6]}")
                         continue
 
                     # Ler text
@@ -3457,7 +3457,7 @@ class AudioConverter:
                                 available_engines = factory.available_engines()
 
                                 if "piper" in available_engines:
-                                    # Obter chapters com problems
+                                    # Get chapters with problems
                                     from validate_conversion import validate_book
 
                                     stats, issues = validate_book(
@@ -3562,7 +3562,7 @@ class AudioConverter:
             # Just report validation results (no auto-fix when it's disabled)
             if self.verbose and has_problems:
                 print(
-                    f"[DEBUG] Auto-validate ({stage}): validation com problems mas auto-fix desabilitado"
+                    f"[DEBUG] Auto-validate ({stage}): validation has problems but auto-fix is disabled"
                 )
             if stage == "final":
                 self._final_validation_passed = not has_problems
@@ -4366,7 +4366,7 @@ class AudioConverter:
             audio.save()
         except Exception:
             if self.verbose:
-                print(f"   ⚠️ Failure ao embutir metadados ID3 em {mp3_path.name}")
+                print(f"   ⚠️ Failure embedding ID3 metadata in {mp3_path.name}")
 
     @staticmethod
     def _title_from_filename(mp3_path: Path) -> str:
@@ -5786,7 +5786,7 @@ class AudioConverter:
             "agradecimentos",
             "folha de rosto",
             "sumário",
-            "índice",
+            "indice",
             "capas",
         ]
         min_chars = int(os.getenv("AUTO_SKIP_MIN_CHARS", "400").strip() or "400")
@@ -6576,7 +6576,7 @@ class AudioConverter:
         self._optimize_memory_settings()
 
         if self.verbose:
-            print("[DEBUG] AudioConverter.convert() iniciado")
+            print("[DEBUG] AudioConverter.convert() started")
             print(f"[DEBUG] Config: engine={getattr(config, 'engine', 'unknown')}, mode=sequential")
 
         # Setup paths
@@ -6601,7 +6601,7 @@ class AudioConverter:
                     self.cache_manager.clear_cache(title=reader.title)
             except Exception as exc:
                 if self.verbose:
-                    print(f"⚠️ Failure ao limpar cache: {exc}")
+                    print(f"⚠️ Failure clearing cache: {exc}")
             try:
                 if output_dir.exists():
                     shutil.rmtree(output_dir, ignore_errors=True)
@@ -6789,7 +6789,7 @@ class AudioConverter:
 
                 print("✅ Cache cleaned! Proceeding with full conversion.\n")
             except Exception as exc:
-                print(f"❌ Failure ao limpar cache: {exc}")
+                print(f"❌ Failure clearing cache: {exc}")
                 print("⚠️  Continuando com conversion mas pode haver problems.\n")
 
         # Save parsed text for all chapters (creates baseline for validation)
@@ -7012,9 +7012,9 @@ class AudioConverter:
         if self.verbose:
             if engine_seeds:
                 sample_engine = next(iter(engine_seeds.values()))
-                print(f"[DEBUG] Engine configurado: {type(sample_engine).__name__}")
+                print(f"[DEBUG] Engine configured: {type(sample_engine).__name__}")
             else:
-                print("[DEBUG] Engine configurado: AUTO")
+                print("[DEBUG] Engine configured: AUTO")
 
         has_edge_engine = (config.engine or "").lower() == "edge"
         if is_auto_engine and auto_engine_pool:
@@ -9357,9 +9357,7 @@ class AudioConverter:
                                     )
                                 except Exception as exc:
                                     if self.verbose:
-                                        print(
-                                            f"   ⚠️ Failure ao salvar chunk {segment_index}: {exc}"
-                                        )
+                                        print(f"   ⚠️ Failure saving chunk {segment_index}: {exc}")
 
                             # Only use callback/chunking when a resume directory is available
                             chunk_callback = on_chunk_ready if chunk_root else None
@@ -9542,7 +9540,7 @@ class AudioConverter:
                                 bitrate=config.bitrate,
                             )
                             if self.verbose and converted is None:
-                                print("[DEBUG] Failure ao converter WAV→MP3 (ffmpeg)")
+                                print("[DEBUG] Failure converting WAV→MP3 (ffmpeg)")
                                 self._append_runtime_metric(
                                     {
                                         "event": "transcode_failed",
@@ -9684,7 +9682,7 @@ class AudioConverter:
                                         bitrate=config.bitrate,
                                     )
                                     if self.verbose and converted is None:
-                                        print("[DEBUG] Failure ao converter WAV→MP3 (fallback)")
+                                        print("[DEBUG] Failure converting WAV→MP3 (fallback)")
                                         self._append_runtime_metric(
                                             {
                                                 "event": "transcode_failed",
@@ -9970,7 +9968,7 @@ class AudioConverter:
                             chapter_success = True
 
                             if self.verbose:
-                                print(f"   📊 Arquivo gerado: {file_size} bytes")
+                                print(f"   📊 File generated: {file_size} bytes")
                             self.progress.complete_chapter(f"✅ Success ({file_size} bytes)")
                             chapter_elapsed = time.time() - start_time
                             current_engine_label = (
@@ -11686,7 +11684,7 @@ class AudioConverter:
 
         except Exception as exc:
             if self.verbose:
-                print(f"⚠️ Failure ao gerar text complete do livro: {exc}")
+                print(f"⚠️ Failure generating complete book text: {exc}")
             return None
 
     async def _report_results(self, result: ConversionResult) -> None:

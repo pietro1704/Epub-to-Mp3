@@ -246,7 +246,7 @@ class EdgeTTSAutoTuner:
                             self.profile.parallel_max, self.profile.parallel_slots + 1
                         )
                         self._log(
-                            f"🔺 Performance estável, aumentando paralelismo: {old_slots} → {self.profile.parallel_slots}"
+                            f"🔺 Stable performance, increasing parallelism: {old_slots} → {self.profile.parallel_slots}"
                         )
                         self.profile.consecutive_successes = 0
 

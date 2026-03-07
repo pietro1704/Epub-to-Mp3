@@ -74,8 +74,8 @@ class SimpleAudioConverter:
         total_chapters = len(chapters)
 
         if self.verbose:
-            print(f"🔍 [VERBOSE] Total de capítulos: {total_chapters}")
-            print(f"🔍 [VERBOSE] Diretório de saída: {output_dir}")
+            print(f"🔍 [VERBOSE] Total chapters: {total_chapters}")
+            print(f"🔍 [VERBOSE] Output directory: {output_dir}")
 
         try:
             # Setup TTS engine
@@ -99,7 +99,7 @@ class SimpleAudioConverter:
                 # Simple cache check: skip if MP3 already exists
                 if output_path.exists() and not getattr(config, "force_reprocess", False):
                     if self.verbose:
-                        print(f"✅ Capítulo {chapter_num} já existe: {output_path}")
+                        print(f"✅ Chapter {chapter_num} already exists: {output_path}")
                     self.progress.tick("✅ Já existe (cache)")
                     self.progress.complete_chapter("✅ Cache")
                     output_paths.append(output_path)
@@ -120,16 +120,16 @@ class SimpleAudioConverter:
                         self.progress.complete_chapter("✅ Completo")
 
                         if self.verbose:
-                            print(f"✅ Capítulo {chapter_num} convertido: {output_path}")
+                            print(f"✅ Chapter {chapter_num} converted: {output_path}")
                     else:
                         self.progress.complete_chapter("❌ Falha na validação")
                         if self.verbose:
-                            print(f"❌ Falha na validação do capítulo {chapter_num}")
+                            print(f"❌ Validation failed for chapter {chapter_num}")
 
                 except Exception as e:
                     self.progress.complete_chapter(f"❌ Erro: {str(e)[:30]}")
                     if self.verbose:
-                        print(f"❌ Erro no capítulo {chapter_num}: {e}")
+                        print(f"❌ Error in chapter {chapter_num}: {e}")
                     continue
 
             # Calculate total duration (simplified)

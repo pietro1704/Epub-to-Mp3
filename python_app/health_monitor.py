@@ -64,7 +64,7 @@ class HealthMonitor:
         self._thread: Optional[threading.Thread] = None
         self._snapshots: List[HealthSnapshot] = []
         self._alerts: List[HealthAlert] = []
-        self._max_snapshots = 180  # Últimos ~30min com interval=10s (reduzido de 1000)
+        self._max_snapshots = 180  # Last ~30min at 10s interval (reduced from 1000)
         self._max_alerts = 100  # Reduzido de 500
         self._start_time = time.time()
         self._last_leak_alert_ts: Optional[float] = None
@@ -121,13 +121,13 @@ class HealthMonitor:
         except Exception as exc:
             self._torch_enabled = False
             self._torch_probe_error = str(exc)
-            print(f"⚠️ [HealthMonitor] GPU monitor desativado (torch indisponível): {exc}")
+            print(f"⚠️ [HealthMonitor] GPU monitor disabled (torch unavailable): {exc}")
             return False
 
     def start(self) -> None:
         """Inicia monitoramento em background."""
         if self.running:
-            print("⚠️ [HealthMonitor] Já está rodando")
+            print("⚠️ [HealthMonitor] Already running")
             return
 
         self.running = True
@@ -181,7 +181,7 @@ class HealthMonitor:
         """Coleta snapshot de saúde atual."""
         alerts: List[HealthAlert] = []
 
-        # CPU e Memory básicos
+        # Basic CPU and memory
         try:
             import psutil
 
@@ -279,13 +279,13 @@ class HealthMonitor:
                 )
             )
 
-        # Detectar memory leak (crescimento rápido)
+        # Detect memory leak (rapid growth)
         if (
             self._baseline_memory_mb
             and len(self._snapshots) > 30
             and (time.time() - self._start_time) > self.thresholds["leak_warmup_seconds"]
         ):
-            # Últimos 60s (30 snapshots * 2s)
+            # Last 60s (30 snapshots × 2s)
             recent_snapshots = self._snapshots[-30:]
             if recent_snapshots:
                 old_memory = recent_snapshots[0].memory_mb
@@ -367,7 +367,7 @@ class HealthMonitor:
 
             latest = self._snapshots[-1]
 
-            # Médias dos últimos 30 snapshots
+            # Averages over the last 30 snapshots
             recent = self._snapshots[-30:]
             avg_cpu = sum(s.cpu_percent for s in recent) / len(recent)
             avg_memory = sum(s.memory_mb for s in recent) / len(recent)
@@ -414,7 +414,7 @@ class HealthMonitor:
             }
 
         output_path.write_text(json.dumps(report, indent=2))
-        print(f"📊 [HealthMonitor] Relatório exportado: {output_path}")
+        print(f"📊 [HealthMonitor] Report exported: {output_path}")
 
 
 # Global monitor instance
@@ -457,10 +457,10 @@ if __name__ == "__main__":
         print("\n🛑 Parando monitor...")
         monitor.stop()
 
-        # Exportar relatório final
+        # Export final report
         report_path = Path("health_report.json")
         monitor.export_report(report_path)
-        print(f"✅ Relatório salvo em: {report_path}")
+        print(f"✅ Report saved to: {report_path}")
 
 
 # Compatibility adapter for server.py

@@ -97,7 +97,7 @@ class LanguageMarkup:
                     )
                     return text
         except Exception as e:
-            print(f"⚠️ Erro na detecção de perfil: {e} - usando idioma padrão: {default_short}")
+            print(f"⚠️ Profile detection error: {e} — using default language: {default_short}")
             return text
 
         def _short(code: Optional[str]) -> str:
@@ -153,7 +153,7 @@ class LanguageMarkup:
                     )
                     return text
         except Exception as e:
-            print(f"⚠️ Erro na segmentação: {e} - usando idioma padrão: {default_short}")
+            print(f"⚠️ Segmentation error: {e} — using default language: {default_short}")
             return text
 
         languages = {

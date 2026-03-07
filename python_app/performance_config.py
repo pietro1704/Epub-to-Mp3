@@ -27,12 +27,12 @@ def _skip_numpy_tuning() -> bool:
 def configure_numpy_performance():
     """Configure NumPy para usar BLAS otimizado e threading."""
     if _skip_numpy_tuning():
-        print("⚠️ [NumPy] Otimizações desativadas (macOS/Intel ou override)")
+        print("⚠️ [NumPy] Optimizations disabled (macOS/Intel or override)")
         return
     try:
         import numpy as np
 
-        # **PERFORMANCE**: Usar todos os cores disponíveis
+        # **PERFORMANCE**: Use all available cores
         cpu_count = multiprocessing.cpu_count()
         optimal_threads = max(1, cpu_count)
 
@@ -44,7 +44,7 @@ def configure_numpy_performance():
 
         print(f"🚀 [NumPy] BLAS threads: {optimal_threads}")
 
-        # **PERFORMANCE**: Configurar alocador de memória otimizado
+        # **PERFORMANCE**: Configure optimized memory allocator
         if hasattr(np, "set_printoptions"):
             np.set_printoptions(threshold=1000)  # Reduzir output verboso
 
@@ -74,30 +74,30 @@ def configure_torch_performance():
             return
         if not os.path.exists("/dev/shm") and not allow_no_shm:
             print("⚠️ [Torch] /dev/shm ausente - pulando init para evitar crash do OpenMP")
-            print("   Defina ALLOW_TORCH_NO_SHM=1 para forçar.")
+            print("   Set ALLOW_TORCH_NO_SHM=1 to force.")
             return
 
         import torch
 
         # **GPU ACCELERATION**: Configurar CUDA
         if torch.cuda.is_available():
-            # Número de GPUs disponíveis
+            # Number of available GPUs
             gpu_count = torch.cuda.device_count()
-            print(f"🚀 [Torch] GPUs disponíveis: {gpu_count}")
+            print(f"🚀 [Torch] Available GPUs: {gpu_count}")
 
             for i in range(gpu_count):
                 gpu_name = torch.cuda.get_device_name(i)
                 gpu_memory = torch.cuda.get_device_properties(i).total_memory / (1024**3)
                 print(f"🚀 [GPU {i}] {gpu_name} - {gpu_memory:.1f} GB")
 
-            # **PERFORMANCE**: Otimizações CUDA
+            # **PERFORMANCE**: CUDA optimizations
             torch.backends.cudnn.enabled = True
             torch.backends.cudnn.benchmark = True  # Auto-tune kernels
-            torch.backends.cudnn.deterministic = False  # Mais rápido mas não determinístico
-            torch.backends.cuda.matmul.allow_tf32 = True  # TensorFloat-32 (3-8x mais rápido)
+            torch.backends.cudnn.deterministic = False  # Faster but non-deterministic
+            torch.backends.cuda.matmul.allow_tf32 = True  # TensorFloat-32 (3-8× faster)
             torch.backends.cudnn.allow_tf32 = True
 
-            # **MEMORY**: Configurar alocador de memória CUDA
+            # **MEMORY**: Configure CUDA memory allocator
             os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:128"
 
             # **PERFORMANCE**: JIT compilation
@@ -105,7 +105,7 @@ def configure_torch_performance():
 
             print("✅ [Torch] CUDA otimizado: cuDNN benchmark + TF32 habilitado")
         else:
-            print("⚠️ [Torch] CUDA não disponível - usando CPU")
+            print("⚠️ [Torch] CUDA not available — using CPU")
 
             # **CPU OPTIMIZATION**: Configurar threads CPU
             cpu_count = multiprocessing.cpu_count()
@@ -116,8 +116,8 @@ def configure_torch_performance():
                 torch.set_num_interop_threads(optimal_threads)
                 print(f"🚀 [Torch] CPU threads: {optimal_threads}")
             except RuntimeError:
-                # Já foi inicializado, ignorar
-                print("⚠️ [Torch] Threads já configurados anteriormente")
+                # Already initialized, skip
+                print("⚠️ [Torch] Threads already configured")
 
             # **CPU OPTIMIZATION**: MKL optimizations
             if hasattr(torch, "_C") and hasattr(torch._C, "_jit_set_profiling_mode"):
@@ -131,9 +131,9 @@ def configure_torch_performance():
 def configure_python_allocator():
     """Configure Python memory allocator para melhor performance."""
     # **MEMORY**: Usar pymalloc (alocador otimizado do Python)
-    # Já habilitado por padrão em Python 3.x
+    # Already enabled by default in Python 3.x
 
-    # **MEMORY**: Não limitar memória virtual; apenas ajustar file descriptors se possível
+    # **MEMORY**: Do not limit virtual memory; only adjust file descriptors if possible
     try:
         import resource
 
@@ -144,7 +144,7 @@ def configure_python_allocator():
             print(f"📂 [FD] Limite de file descriptors: {target_fd}")
 
     except (ImportError, ValueError, OSError) as e:
-        print(f"⚠️ [Memory] Não foi possível configurar limites: {e}")
+        print(f"⚠️ [Memory] Could not configure limits: {e}")
 
 
 def configure_gc_optimization():
@@ -153,16 +153,16 @@ def configure_gc_optimization():
 
     # **MEMORY**: Configurar thresholds do GC
     # (threshold0, threshold1, threshold2)
-    # threshold0: número de alocações antes de gen0 collection
-    # threshold1: número de gen0 collections antes de gen1 collection
-    # threshold2: número de gen1 collections antes de gen2 collection
+    # threshold0: number of allocations before gen0 collection
+    # threshold1: number of gen0 collections before gen1 collection
+    # threshold2: number of gen1 collections before gen2 collection
 
-    # Valores otimizados para workloads com muita alocação temporária
+    # Tuned for workloads with heavy temporary allocation
     gc.set_threshold(1000, 15, 15)  # Mais agressivo em gen0, menos em gen1/2
 
-    # **PERFORMANCE**: Desabilitar GC durante operações críticas
-    # (será re-habilitado manualmente quando necessário)
-    # gc.disable()  # Comentado - pode causar memory leaks se não for cuidadoso
+    # **PERFORMANCE**: Disable GC during critical operations
+    # (will be re-enabled manually when needed)
+    # gc.disable()  # Commented out — can cause memory leaks if not careful
 
     print(f"🗑️ [GC] Thresholds otimizados: {gc.get_threshold()}")
 
@@ -172,14 +172,14 @@ def configure_asyncio_performance():
     try:
         import asyncio
 
-        # **PERFORMANCE**: Usar uvloop se disponível (2-4x mais rápido)
+        # **PERFORMANCE**: Use uvloop if available (2-4× faster)
         try:
             import uvloop
 
             asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-            print("🚀 [AsyncIO] uvloop habilitado (2-4x mais rápido)")
+            print("🚀 [AsyncIO] uvloop enabled (2-4× faster)")
         except ImportError:
-            print("⚠️ [AsyncIO] uvloop não disponível - usando asyncio padrão")
+            print("⚠️ [AsyncIO] uvloop not available — using standard asyncio")
 
     except ImportError:
         pass
@@ -190,7 +190,7 @@ def configure_threading_performance():
     # **THREADING**: Limitar threads do sistema
     cpu_count = multiprocessing.cpu_count()
 
-    # Configurar variáveis de ambiente para bibliotecas C
+    # Configure environment variables for C libraries
     optimal_threads = max(1, cpu_count)
 
     os.environ["OMP_NUM_THREADS"] = str(optimal_threads)
@@ -203,7 +203,7 @@ def configure_threading_performance():
 def apply_all_optimizations():
     """Aplica todas as otimizações de performance."""
     print("=" * 80)
-    print("🚀 APLICANDO OTIMIZAÇÕES DE PERFORMANCE")
+    print("🚀 APPLYING PERFORMANCE OPTIMIZATIONS")
     print("=" * 80)
 
     configure_python_allocator()
@@ -214,23 +214,23 @@ def apply_all_optimizations():
     configure_asyncio_performance()
 
     print("=" * 80)
-    print("✅ OTIMIZAÇÕES APLICADAS COM SUCESSO")
+    print("✅ OPTIMIZATIONS APPLIED SUCCESSFULLY")
     print("=" * 80)
 
 
-# Auto-aplicar otimizações quando módulo é importado
+# Auto-apply optimizations when module is imported
 if __name__ != "__main__":
-    # Apenas aplicar se não estiver sendo executado diretamente
+    # Only apply if not running directly
     apply_all_optimizations()
 
 
 if __name__ == "__main__":
-    # Se executado diretamente, mostrar relatório de performance
+    # If run directly, show performance report
     apply_all_optimizations()
 
-    # Mostrar informações do sistema
+    # Show system information
     print("\n" + "=" * 80)
-    print("📊 INFORMAÇÕES DO SISTEMA")
+    print("📊 SYSTEM INFORMATION")
     print("=" * 80)
 
     import platform
@@ -243,11 +243,11 @@ if __name__ == "__main__":
         import psutil
 
         memory = psutil.virtual_memory()
-        print(f"Memória Total: {memory.total / (1024**3):.1f} GB")
-        print(f"Memória Disponível: {memory.available / (1024**3):.1f} GB")
-        print(f"Memória Usada: {memory.percent}%")
+        print(f"Total Memory: {memory.total / (1024**3):.1f} GB")
+        print(f"Available Memory: {memory.available / (1024**3):.1f} GB")
+        print(f"Memory Used: {memory.percent}%")
     except ImportError:
-        print("psutil não disponível - instale para ver estatísticas de memória")
+        print("psutil not available — install it to see memory statistics")
 
     try:
         import torch
@@ -257,7 +257,7 @@ if __name__ == "__main__":
             for i in range(torch.cuda.device_count()):
                 print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
                 props = torch.cuda.get_device_properties(i)
-                print(f"    Memória: {props.total_memory / (1024**3):.1f} GB")
+                print(f"    Memory: {props.total_memory / (1024**3):.1f} GB")
                 print(f"    Compute Capability: {props.major}.{props.minor}")
     except ImportError:
         pass

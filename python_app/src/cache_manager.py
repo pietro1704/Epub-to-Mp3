@@ -382,7 +382,7 @@ class CacheManager:
         try:
             temp_dir = Path(checkpoint.temp_dir)
             if not temp_dir.exists():
-                print(f"⚠️ Diretório temporário não encontrado: {temp_dir}")
+                print(f"⚠️ Temp directory not found: {temp_dir}")
                 return False
 
             for chapter_idx in checkpoint.completed_chapters:
@@ -390,17 +390,17 @@ class CacheManager:
                 if not expected_files:
                     expected_files = list(temp_dir.glob(f"{chapter_idx:03d}_*.mp3"))
                 if not expected_files:
-                    print(f"⚠️ Arquivo do capítulo {chapter_idx} não encontrado")
+                    print(f"⚠️ Chapter file {chapter_idx} not found")
                     return False
 
             if checkpoint.conversion_config.get("engine") != current_config.get("engine"):
-                print("⚠️ Engine TTS diferente - checkpoint incompatível")
+                print("⚠️ Different TTS engine — checkpoint incompatible")
                 return False
 
             return True
 
         except Exception as e:
-            print(f"⚠️ Erro na validação do checkpoint: {e}")
+            print(f"⚠️ Error validating checkpoint: {e}")
             return False
 
     def get_resume_info(self, checkpoint: ConversionCheckpoint) -> Dict[str, Any]:

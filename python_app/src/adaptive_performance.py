@@ -293,7 +293,7 @@ class AdaptivePerformanceController:
 
         if self.verbose and applied:
             print(f"\n⚡ AJUSTE ADAPTATIVO: {adjustment.action}")
-            print(f"   Razão: {adjustment.reason}")
+            print(f"   Reason: {adjustment.reason}")
             for change in applied:
                 print(f"   • {change}")
 

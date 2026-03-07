@@ -1449,9 +1449,9 @@ class EpubParser:
         if significant_missing:
             # Significant content is missing — this is a problem.
             missing_sample = list(significant_missing)[:20]
-            print("⚠️ AVISO: Detectado conteúdo possivelmente perdido na filtragem de duplicatas!")
+            print("⚠️ WARNING: Possibly lost content detected during duplicate filtering!")
             print(f"   Palavras faltando (amostra): {' '.join(missing_sample)}")
-            print(f"   Total de palavras únicas faltando: {len(significant_missing)}")
+            print(f"   Total unique words missing: {len(significant_missing)}")
 
             # Identify which removed chapters had unique content
             for removed in removed_chapters:

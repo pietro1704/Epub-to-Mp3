@@ -238,7 +238,7 @@ class ConverterApplication:
         if resolved.is_file():
             if resolved.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES:
                 return [resolved]
-            print(f"⚠️ Ignorando arquivo não suportado: {resolved.name}")
+            print(f"⚠️ Skipping unsupported file: {resolved.name}")
             return []
 
         if resolved.is_dir():
@@ -464,7 +464,7 @@ class ConverterApplication:
                     cache_manager.clear_checkpoint(input_path)
 
                     print()
-                    print(f"✅ Limpeza concluída para: {display_name}")
+                    print(f"✅ Cleanup complete for: {display_name}")
                     print("🔄 Starting conversion...")
                     print()
                 else:
@@ -3163,7 +3163,7 @@ class ConverterApplication:
         print("=" * 60)
 
         # Basic metadata
-        print(f"📜 Título: {reader.title or 'N/A'}")
+        print(f"📜 Title: {reader.title or 'N/A'}")
         print(f"✍️ Autor: {reader.author or 'N/A'}")
 
         # Chapter count

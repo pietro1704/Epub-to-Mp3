@@ -3,24 +3,24 @@
 
 from __future__ import annotations
 
-# **PERFORMANCE**: Aplicar otimizações de sistema ANTES de imports pesados
+# **PERFORMANCE**: Apply system optimizations BEFORE heavy imports
 import os
 
-# Auto-aceitar licença Coqui TTS (CPML não-comercial) - necessário para HF Space
+# Auto-accept Coqui TTS license (CPML non-commercial) — required for HF Space
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
-# **CPU FIRST**: Forçar modo CPU em ambientes sem GPU (HF Spaces zero-GPU)
+# **CPU FIRST**: Force CPU mode in environments without GPU (HF Spaces zero-GPU)
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 os.environ.setdefault("FORCE_CUDA", "0")
 os.environ.setdefault("FORCE_CPU_ONLY", "1")
 os.environ.setdefault("TTS_USE_GPU", "0")
 
-# Configurar otimizações de performance antes de qualquer import
+# Configure performance optimizations before any imports
 try:
     from performance_config import apply_all_optimizations
 
     apply_all_optimizations()
 except ImportError:
-    print("⚠️ [Performance] Módulo de otimização não encontrado")
+    print("⚠️ [Performance] Optimization module not found")
 
 import asyncio
 import contextlib
@@ -129,7 +129,7 @@ async def _lifespan(app: FastAPI):
     if os.getenv("ENABLE_AUTO_TUNING", "1").lower() in ("1", "true", "yes"):
         _auto_tuner = AutoTuner(verbose=True)
         try:
-            # Não medir rede no server startup (pode travar por timeout)
+            # Do not measure network at server startup (may block on timeout)
             await _auto_tuner.auto_configure(force=False, measure_network=False)
         except Exception as exc:
             logger.warning(f"Auto-tuning failed (using defaults): {exc}")
@@ -197,8 +197,8 @@ TURBO_SLOT_MULTIPLIER = max(
     1, int(os.getenv("FORCE_TURBO_SLOT_MULTIPLIER", "3") or "3")
 )  # 3x para igualar CLI
 WORKER_MAX = max(1, int(os.getenv("JOB_WORKERS_MAX", "16") or "16"))
-# **PERFORMANCE**: Usar mesmas configurações agressivas do CLI
-# Desabilitar auto-tune conservador para máxima velocidade
+# **PERFORMANCE**: Use the same aggressive settings as the CLI
+# Disable conservative auto-tune for maximum speed
 EDGE_AUTO_TUNE = os.getenv("EDGE_AUTO_TUNE", "false").strip().lower() in {"1", "true", "yes", "on"}
 EDGE_MIN_CHARS_PER_SECOND = float(os.getenv("EDGE_MIN_CHARS_PER_SECOND", "45") or "45")
 EDGE_SLOW_RATIO_THRESHOLD = float(os.getenv("EDGE_SLOW_RATIO_THRESHOLD", "2.5") or "2.5")
@@ -207,7 +207,7 @@ EDGE_SAFE_CHUNK_CHARS = max(3000, int(os.getenv("EDGE_SAFE_CHUNK_CHARS", "8000")
 EDGE_SAFE_MAX_SEGMENT_SECONDS = max(
     30, int(os.getenv("EDGE_SAFE_MAX_SEGMENT_SECONDS", "300") or "300")
 )
-# **PERFORMANCE**: Aumentar paralelismo de capítulos para igualar CLI
+# **PERFORMANCE**: Increase chapter parallelism to match the CLI
 EDGE_SAFE_CHAPTER_PARALLEL = max(1, int(os.getenv("EDGE_SAFE_CHAPTER_PARALLEL", "8") or "8"))
 EDGE_SAFE_TIMEOUT_MAX = max(90.0, float(os.getenv("EDGE_SAFE_TIMEOUT_MAX", "360") or "360"))
 # **PERFORMANCE**: Caps mais agressivos para todas as redes
@@ -350,11 +350,11 @@ uploads_dir = UPLOADS_DIR
 job_inputs_dir = JOB_INPUTS_DIR
 source_backups_dir = SOURCE_BACKUPS_DIR
 
-# Cache persistente para textos extraídos de capítulos - sobrevive restarts
+# Persistent cache for extracted chapter texts — survives restarts
 persistent_cache_dir = CACHE_DIR
 persistent_cache_dir.mkdir(exist_ok=True, parents=True)
 
-# CacheManager singleton com diretório persistente
+# CacheManager singleton with persistent directory
 _persistent_cache_manager: Optional[CacheManager] = None
 
 
@@ -2101,7 +2101,7 @@ def _pick_auto_engine(
         if candidate in pool and candidate not in order:
             order.append(candidate)
 
-    # Ordem do mais rápido para mais lento: edge > coqui
+    # Order from fastest to slowest: edge > coqui
     order: list[str] = []
     if telemetry_speeds:
         ranked = sorted(
@@ -2791,7 +2791,7 @@ async def restart_backend(request: Request) -> dict:
     print(f"\n{'=' * 60}")
     print("🔄 RESTART SOLICITADO")
     print(f"   Manter cache: {keep_cache}")
-    print(f"   Manter concluídos: {keep_finished}")
+    print(f"   Keep completed: {keep_finished}")
     print(f"{'=' * 60}")
     logger.warning(
         "Restart requested via API (keep_cache=%s, keep_finished=%s)",
@@ -2814,7 +2814,7 @@ async def restart_backend(request: Request) -> dict:
         _clear_all_caches()
         print("   ✓ Cache limpo")
     print(f"{'=' * 60}")
-    print("✅ LIMPEZA CONCLUÍDA - Reiniciando servidor...")
+    print("✅ CLEANUP COMPLETE — Restarting server...")
     print(f"{'=' * 60}\n")
     asyncio.create_task(_schedule_restart())
     return {
@@ -4803,7 +4803,7 @@ async def process_conversion(job_id: str) -> None:
                     engine_config,
                 ) -> bool:
                     nonlocal retry_count, parallel_slots, engine_index
-                    # Se existe engine de fallback disponível, prefira trocar em vez de insistir
+                    # If a fallback engine is available, prefer switching instead of retrying
                     if engine_index + 1 < len(engine_chain):
                         return False
                     if _CHAPTER_RETRY_MAX <= 0 or retry_count >= _CHAPTER_RETRY_MAX:
@@ -5621,7 +5621,7 @@ async def process_conversion(job_id: str) -> None:
                 zip_archive.close()
             zip_open = False
 
-        # Rebuild ZIP to include todos os capítulos disponíveis (inclusive retomados)
+        # Rebuild ZIP to include all available chapters (including resumed ones)
         _append_event(job, "📦 Packing chapters into final ZIP...")
         _update_job_activity(job, stage="building_zip")
         _persist_job(job_id, force=True)

@@ -575,7 +575,7 @@ class DeepValidator:
             duplicates = []  # Clear duplicates after correction
 
         # Compare each chapter
-        print("\n📊 Comparando capítulos (início/meio/final + caracteres)...")
+        print("\n📊 Comparing chapters (start/middle/end + characters)...")
         comparisons: List[ChapterComparison] = []
 
         for i, parsed_file in enumerate(parsed_files, 1):

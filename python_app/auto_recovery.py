@@ -79,17 +79,17 @@ class AutoRecoverySystem:
             prefix.strip().lower() for prefix in ignored_env.split(",") if prefix.strip()
         ]
 
-        # Thresholds para detecção
+        # Detection thresholds
         self.thresholds = {
             "thread_stuck_cycles": 3,  # Quantos ciclos antes de considerar stuck
             "memory_critical_percent": 95.0,
-            "gc_thrashing_collections_per_sec": 1000.0,  # TTS carrega modelos grandes, GC é esperado
+            "gc_thrashing_collections_per_sec": 1000.0,  # TTS loads large models, GC is expected
             "event_loop_stuck_seconds": 30.0,
             "thread_starvation_cpu_percent": 10.0,
             "thread_starvation_cycles": 3,
             "thread_starvation_log_cooldown": 60.0,
             "thread_starvation_threads_min": max(32, self._cpu_count * 4),
-            "thread_hard_restart_cycles": 2,  # Após quantas recuperações insistir em restart
+            "thread_hard_restart_cycles": 2,  # How many recoveries before forcing restart
         }
 
         # Estado do sistema
@@ -105,7 +105,7 @@ class AutoRecoverySystem:
     def start(self) -> None:
         """Inicia sistema de auto-recovery."""
         if self.running:
-            print("⚠️ [AutoRecovery] Já está rodando")
+            print("⚠️ [AutoRecovery] Already running")
             return
 
         self.running = True
@@ -154,7 +154,7 @@ class AutoRecoverySystem:
 
         stack_text = "\n".join(stack_frames)
 
-        # Padrões de threads idle (comportamento esperado)
+        # Idle thread patterns (expected behaviour)
         idle_patterns = [
             "work_queue.get(block=True)",  # ThreadPoolExecutor esperando trabalho
             "self.work_queue.get(block=True)",
@@ -183,7 +183,7 @@ class AutoRecoverySystem:
             "starlette/routing.py",
         ]
         if any(marker in stack_text for marker in event_loop_markers):
-            # Threads de loop podem ficar estáveis por muito tempo sem estarem travadas.
+            # Loop threads can stay stable for a long time without being stuck.
             return True
         return False
 
@@ -232,7 +232,7 @@ class AutoRecoverySystem:
                     self._thread_activities[thread_id].stuck_count = 0
                 continue
 
-            # Verificar se thread está presa no mesmo lugar
+            # Check if thread is stuck in the same place
             if thread_id in self._thread_activities:
                 prev_activity = self._thread_activities[thread_id]
                 current_cpu = cpu_times.get(thread_id, prev_activity.last_cpu_time)
@@ -268,16 +268,16 @@ class AutoRecoverySystem:
         """Tenta recuperar thread travada."""
         print(f"🚨 [AutoRecovery] Thread travada detectada: {thread.name}")
         print("   Stack trace:")
-        for line in activity.stack_frames[-5:]:  # Últimas 5 linhas
+        for line in activity.stack_frames[-5:]:  # Last 5 lines
             print(f"   {line.strip()}")
 
-        # Ações de recovery
+        # Recovery actions
         action_taken = "none"
         success = False
         interrupted = False
 
-        # 1. Tentar forçar GC (pode liberar locks)
-        print("   → Tentando GC forçado...")
+        # 1. Try forcing GC (may release locks)
+        print("   → Trying forced GC...")
         gc.collect()
         action_taken = "gc_collect"
         success = True
@@ -285,31 +285,31 @@ class AutoRecoverySystem:
         # 2. Boost de prioridade do processo para evitar starvation de CPU
         self._boost_process_priority()
 
-        # 3. Injetar exceção na thread para destravar bloqueios
+        # 3. Inject exception into thread to release locks
         interrupted = self._interrupt_thread(activity.thread_id)
         if interrupted:
             action_taken = "interrupt_thread"
             success = True
-            print(f"   ✅ Interrupção solicitada para thread {thread.name}")
+            print(f"   ✅ Interrupt requested for thread {thread.name}")
         else:
-            print(f"   ⚠️ Não foi possível interromper thread {thread.name}")
+            print(f"   ⚠️ Could not interrupt thread {thread.name}")
 
-        # 2. Se thread não é daemon e está travada, alertar
+        # 2. If thread is not a daemon and is stuck, alert
         if not thread.daemon:
             activity.recoveries += 1
-            print(f"   ⚠️ Thread não-daemon travada: {thread.name}")
+            print(f"   ⚠️ Non-daemon thread stuck: {thread.name}")
             threshold = self.thresholds.get("thread_hard_restart_cycles", 2)
             if activity.recoveries >= threshold:
-                print("   ⏱️ Recuperação falhou mais de uma vez – solicitando restart suave")
+                print("   ⏱️ Recovery failed more than once — requesting soft restart")
                 self._request_process_restart(
                     reason="thread_deadlock",
                     thread_name=thread.name,
                     thread_id=activity.thread_id,
                 )
             else:
-                print("   → Nova tentativa automática em breve")
+                print("   → Automatic retry soon")
 
-        # Registrar ação
+        # Record action
         self._log_recovery_action(
             problem="thread_deadlock",
             action=action_taken,
@@ -330,7 +330,7 @@ class AutoRecoverySystem:
     def _check_thread_starvation(self) -> None:
         """Detecta starvation de threads (threads não conseguindo CPU)."""
         try:
-            # Verificar CPU per-thread (se disponível)
+            # Check per-thread CPU usage (if available)
             active_work = True
             if self._activity_provider is not None:
                 try:
@@ -355,11 +355,11 @@ class AutoRecoverySystem:
                 now = time.time()
                 cooldown = self.thresholds.get("thread_starvation_log_cooldown", 60.0)
                 if now - self._last_starvation_log >= cooldown:
-                    print("⚠️ [AutoRecovery] Possível thread starvation detectado")
+                    print("⚠️ [AutoRecovery] Possible thread starvation detected")
                     print(f"   Threads: {thread_count}, CPU: {cpu_percent:.1f}%")
                     self._last_starvation_log = now
 
-                # Recovery: reduzir threads se possível
+                # Recovery: reduce threads if possible
                 self._log_recovery_action(
                     problem="thread_starvation",
                     action="alert_only",
@@ -415,7 +415,7 @@ class AutoRecoverySystem:
 
     def _request_process_restart(self, reason: str, thread_name: str, thread_id: int) -> None:
         """Solicita reinício suave do processo para recuperar de deadlock."""
-        print(f"   🔁 Reinício solicitado ({reason}) para thread {thread_name} ({thread_id})")
+        print(f"   🔁 Restart requested ({reason}) for thread {thread_name} ({thread_id})")
         self._log_recovery_action(
             problem=reason,
             action="process_restart_requested",
@@ -440,7 +440,7 @@ class AutoRecoverySystem:
             memory_percent = self._process.memory_percent()
 
             if memory_percent > self.thresholds["memory_critical_percent"]:
-                print(f"🚨 [AutoRecovery] CRISE DE MEMÓRIA: {memory_percent:.1f}%")
+                print(f"🚨 [AutoRecovery] MEMORY CRISIS: {memory_percent:.1f}%")
 
                 # Recovery actions
                 print("   → Executando GC emergencial...")
@@ -465,7 +465,7 @@ class AutoRecoverySystem:
                     / (1024 * 1024 * 100)
                 )
 
-                print(f"   → Memória liberada: ~{freed_mb:.1f} MB")
+                print(f"   → Memory freed: ~{freed_mb:.1f} MB")
 
                 self._log_recovery_action(
                     problem="memory_crisis",
@@ -479,7 +479,7 @@ class AutoRecoverySystem:
                 )
 
         except Exception as e:
-            print(f"   ❌ Erro ao verificar memória: {e}")
+            print(f"   ❌ Error checking memory: {e}")
 
     def _check_gc_thrashing(self) -> None:
         """
@@ -488,19 +488,19 @@ class AutoRecoverySystem:
         NOTA: Desabilitado para aplicações TTS que carregam modelos grandes.
         GC frequente é esperado durante carregamento de modelos.
         """
-        # Atualizar estado mas não alertar
+        # Update state but do not alert
         current_gc = gc.get_count()
         current_time = time.time()
 
         self._last_gc_count = current_gc
         self._last_gc_time = current_time
 
-        # GC thrashing detection desabilitado - não é útil para TTS
+        # GC thrashing detection disabled — not useful for TTS
         return
 
     def _check_event_loop(self) -> None:
         """Detecta event loop travado (asyncio)."""
-        # Verificar se há event loop rodando
+        # Check if an event loop is running
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
@@ -587,16 +587,16 @@ if __name__ == "__main__":
             time.sleep(10)
             stats = recovery.get_stats()
             print(f"\n{'=' * 80}")
-            print(f"📊 ESTATÍSTICAS DE RECOVERY ({datetime.now().strftime('%H:%M:%S')})")
+            print(f"📊 RECOVERY STATISTICS ({datetime.now().strftime('%H:%M:%S')})")
             print(f"{'=' * 80}")
-            print(f"Total de ações: {stats['total_actions']}")
+            print(f"Total actions: {stats['total_actions']}")
             print(f"Taxa de sucesso: {stats['success_rate']:.1f}%")
             print(f"Threads ativas: {stats['active_threads']}")
             print(f"Problemas detectados: {stats['problems_detected']}")
 
             recent = recovery.get_recent_actions(5)
             if recent:
-                print("\nÚltimas ações:")
+                print("\nRecent actions:")
                 for action in recent:
                     status = "✅" if action.success else "❌"
                     timestamp = datetime.fromtimestamp(action.timestamp).strftime("%H:%M:%S")
