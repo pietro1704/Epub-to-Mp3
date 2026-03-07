@@ -48,7 +48,7 @@ from src.language import (
     LanguageProfile,
     get_language_detector,
 )
-from src.paths import JOB_INPUTS_DIR, JOBS_DIR, UPLOADS_DIR
+from src.paths import JOB_INPUTS_DIR, JOBS_DIR, OUTPUT_DIR, UPLOADS_DIR
 from src.text_formatting import PRESERVE_TTS_LAYOUT, TextFormattingProcessor
 from src.ui.menu import MenuInterface
 from src.utils import FileManager, resolve_cache_root
@@ -437,7 +437,7 @@ class ConverterApplication:
                         print("   ✅ Cache removido")
 
                     # Limpar output do livro (todos os engines)
-                    output_base = Path(getattr(args, "output_dir", None) or (Path.cwd() / "output"))
+                    output_base = Path(getattr(args, "output_dir", None) or OUTPUT_DIR)
                     sanitized_title = FileManager.sanitize_filename(display_name)
 
                     # Procurar por todos os diretórios que começam com o título do livro
@@ -520,6 +520,10 @@ class ConverterApplication:
                 return 1
             config.verbose = self._resolve_verbose(args)
             self._announce_footnote_mode(config)
+
+            if getattr(args, "verify_only", False):
+                return self._run_verify_only(input_path, config)
+
             if subset_requested:
                 selected_indices = [str(item.index) for item in structure_items]
                 if selected_indices:
@@ -578,6 +582,35 @@ class ConverterApplication:
             parts.append(f"{minutes:02d}m")
         parts.append(f"{secs:02d}s")
         return " ".join(parts)
+
+    def _run_verify_only(self, input_path: Path, config: ConversionConfig) -> int:
+        """Validate existing output/cache against the source EPUB without synthesizing audio."""
+        safe_name = self.converter.file_manager.sanitize_filename(config.book_title or "default")
+        output_dir = Path(config.output_dir) / safe_name
+        cache_dir = Path(config.cache_dir) if getattr(config, "cache_dir", None) else None
+
+        if not output_dir.exists():
+            print(f"❌ Output não encontrado para validação: {output_dir}")
+            print("   Execute uma conversão primeiro ou ajuste --output-dir.")
+            return 1
+
+        print("🔍 Modo verificação: nenhum áudio novo será gerado.")
+        print(f"📁 Output: {output_dir}")
+        if cache_dir:
+            print(f"📁 Cache: {cache_dir}")
+        try:
+            from validate_conversion import validate_book
+
+            _, issues = validate_book(input_path, output_dir=output_dir, cache_dir=cache_dir)
+        except Exception as exc:
+            print(f"❌ Falha ao validar: {exc}")
+            return 1
+
+        if issues:
+            print(f"❌ Verificação falhou: {len(issues)} problema(s) encontrado(s).")
+            return 1
+        print("✅ Verificação concluída sem divergências.")
+        return 0
 
     @staticmethod
     def _print_metrics_summary(temp_dir: Optional[Path]) -> None:
@@ -726,12 +759,15 @@ class ConverterApplication:
         book_title = reader.title
         book_author = reader.author
         toc_map = self._build_toc_map(reader)
+        toc_outline_map = self._build_toc_outline_map(reader)
+        toc_outline_enabled = bool(toc_outline_map)
 
         structure_items: List[ChapterStructureItem] = []
         division_counters: Dict[int, int] = {}
         fallback_division = 0
         fallback_counter = 0
         fallback_label: Optional[str] = None
+        last_toc_split_group: Optional[str] = None
 
         division_remap: Dict[int, int] = {}
         next_division_index = 1
@@ -759,7 +795,57 @@ class ConverterApplication:
                 continue
 
             href_key = self._normalize_href(str(getattr(chapter, "source_path", "")))
+            split_group_key = self._split_group_key(href_key)
+            toc_outline_entries = self._resolve_toc_outline_entries(href_key, toc_outline_map)
+            if toc_outline_entries:
+                generated_items = self._create_items_from_toc_outline_entries(
+                    chapter,
+                    toc_outline_entries,
+                    book_title,
+                    book_author,
+                )
+                if generated_items:
+                    structure_items.extend(generated_items)
+                    last_toc_split_group = split_group_key
+                    last_item = generated_items[-1]
+                    try:
+                        division_index = int(str(last_item.index).split(".", 1)[0])
+                    except (ValueError, TypeError):
+                        division_index = fallback_division
+                    fallback_division = division_index
+                    fallback_counter = division_counters.get(division_index, fallback_counter)
+                    fallback_label = last_item.main_title
+                    continue
+                if toc_outline_enabled:
+                    continue
+            elif (
+                split_group_key
+                and last_toc_split_group
+                and split_group_key == last_toc_split_group
+                and structure_items
+            ):
+                # Some EPUBs have extra split files with no TOC entry.
+                # To keep numbering equal to TOC, append this content to the
+                # last TOC chapter in the same split group instead of creating
+                # a synthetic chapter label.
+                extra_text = str(getattr(chapter, "text", "") or "").strip()
+                if extra_text:
+                    last_item = structure_items[-1]
+                    base_text = (
+                        str(last_item.text_override)
+                        if last_item.text_override is not None
+                        else str(getattr(last_item.chapter, "text", "") or "")
+                    ).strip()
+                    last_item.text_override = (
+                        f"{base_text}\n\n{extra_text}" if base_text else extra_text
+                    )
+                continue
+            elif toc_outline_enabled:
+                # When TOC exists, keep output strictly aligned with TOC labels.
+                continue
+
             toc_entries = self._resolve_toc_entries(href_key, toc_map)
+            last_toc_split_group = None
 
             if toc_entries:
                 generated_items = self._create_items_from_toc_entries(
@@ -888,7 +974,7 @@ class ConverterApplication:
         return structure_items
 
     def _count_toc_chapters(self, reader: EbookReader) -> int:
-        """Count expected chapters from TOC (top-level divisions)"""
+        """Count expected chapters from TOC (leaf entries with href)."""
         get_toc = getattr(reader, "get_toc", None)
         if not callable(get_toc):
             return 0
@@ -898,20 +984,201 @@ class ConverterApplication:
         except Exception:
             return 0
 
-        # Count only top-level entries (divisions)
         count = 0
 
-        def walk(entries, is_top_level=True):
+        def walk(entries):
             nonlocal count
             for entry in entries:
-                if is_top_level:
+                children = list(getattr(entry, "children", []) or [])
+                if getattr(entry, "href", "") and not children:
                     count += 1
-                # Recursively count children
-                if hasattr(entry, "children") and entry.children:
-                    walk(entry.children, is_top_level=False)
+                if children:
+                    walk(children)
 
-        walk(toc_entries, is_top_level=True)
+        walk(toc_entries)
         return count
+
+    def _build_toc_outline_map(self, reader: EbookReader) -> Dict[str, List[Dict[str, Any]]]:
+        """Build href -> hierarchical TOC entries map with full numbering path."""
+        mapping: Dict[str, List[Dict[str, Any]]] = {}
+        get_toc = getattr(reader, "get_toc", None)
+        if not callable(get_toc):
+            return mapping
+
+        try:
+            toc_entries = list(get_toc() or [])
+        except Exception:
+            return mapping
+
+        def register(href: str, payload: Dict[str, Any]) -> None:
+            if not href:
+                return
+            keys = {href}
+            name = Path(href).name
+            if name:
+                keys.add(name.lower())
+            for key in keys:
+                mapping.setdefault(key, []).append(payload)
+
+        def walk(entries, path_indices: Tuple[int, ...], path_titles: Tuple[str, ...]) -> None:
+            for position, entry in enumerate(entries, start=1):
+                title = (getattr(entry, "title", "") or "").strip()
+                href = self._normalize_href(str(getattr(entry, "href", "") or ""))
+                current_indices = path_indices + (position,)
+                current_titles = path_titles + ((title,) if title else tuple())
+
+                payload: Dict[str, Any] = {
+                    "path_indices": current_indices,
+                    "path_titles": current_titles,
+                    "title": title,
+                    "level": len(current_indices),
+                }
+                if href:
+                    register(href, payload)
+
+                children = list(getattr(entry, "children", []) or [])
+                if children:
+                    walk(children, current_indices, current_titles)
+
+        walk(toc_entries, tuple(), tuple())
+        return mapping
+
+    def _resolve_toc_outline_entries(
+        self, href_key: str, outline_map: Dict[str, List[Dict[str, Any]]]
+    ) -> Optional[List[Dict[str, Any]]]:
+        if not href_key:
+            return None
+
+        candidates = []
+        lowered = href_key.lower()
+        candidates.append(lowered)
+        if "/" in lowered:
+            parts = lowered.split("/")
+            for start in range(1, len(parts)):
+                candidates.append("/".join(parts[start:]))
+        candidates.append(Path(lowered).name)
+
+        seen = set()
+        for candidate in candidates:
+            candidate = candidate.strip()
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            entries = outline_map.get(candidate)
+            if entries:
+                return entries
+        return None
+
+    def _create_items_from_toc_outline_entries(
+        self,
+        chapter: Chapter,
+        toc_outline_entries: List[Dict[str, Any]],
+        book_title: str,
+        book_author: str = "",
+    ) -> List[ChapterStructureItem]:
+        """Expand chapter entries preserving exact TOC hierarchy (1, 1.2, 1.2.3...)."""
+        text = str(getattr(chapter, "text", ""))
+        if not toc_outline_entries:
+            return []
+
+        deduped: List[Dict[str, Any]] = []
+        seen_paths: set[Tuple[int, ...]] = set()
+        for entry in toc_outline_entries:
+            path = tuple(entry.get("path_indices") or tuple())
+            if not path or path in seen_paths:
+                continue
+            seen_paths.add(path)
+            deduped.append(entry)
+        if not deduped:
+            return []
+
+        path_set = {tuple(entry.get("path_indices") or tuple()) for entry in deduped}
+
+        # Skip parent entries if descendants share the same href; this avoids duplicate content.
+        leaf_entries: List[Dict[str, Any]] = []
+        for entry in deduped:
+            path = tuple(entry.get("path_indices") or tuple())
+            has_descendant = any(
+                other != path and len(other) > len(path) and other[: len(path)] == path
+                for other in path_set
+            )
+            if has_descendant:
+                continue
+            leaf_entries.append(entry)
+
+        if not leaf_entries:
+            leaf_entries = deduped
+
+        titles_for_split = [str(entry.get("title", "") or "").strip() for entry in leaf_entries]
+        valid_titles = [title for title in titles_for_split if title]
+        segments_by_title: Dict[str, str] = {}
+        if len(valid_titles) > 1 and text:
+            segments = self._split_text_by_titles(text, valid_titles)
+            for title, segment in zip(valid_titles, segments):
+                if title and segment:
+                    segments_by_title[title] = segment
+
+        items: List[ChapterStructureItem] = []
+        for entry in leaf_entries:
+            path = tuple(entry.get("path_indices") or tuple())
+            if not path:
+                continue
+            title = str(entry.get("title", "") or "").strip()
+            titles_path = tuple(entry.get("path_titles") or tuple())
+            index = ".".join(str(part) for part in path)
+
+            segment_text = segments_by_title.get(title) if title else None
+            if not segment_text:
+                segment_text = text
+            if not str(segment_text).strip():
+                segment_text = title or str(getattr(chapter, "name", "") or "")
+            if not str(segment_text).strip():
+                continue
+
+            main_name = str(titles_path[0]).strip() if titles_path else title
+            sub_parts = [str(part).strip() for part in titles_path[1:] if str(part).strip()]
+            sub_name = " - ".join(sub_parts) if sub_parts else None
+
+            clean_name = self._clean_chapter_name(title or getattr(chapter, "name", ""))
+            preview = self._extract_smart_first_words(
+                segment_text,
+                clean_name,
+                main_name,
+                max_words=self.PREVIEW_WORD_LIMIT,
+            )
+
+            main_name, sub_name, preview = self._sanitize_display_values(
+                main_name, sub_name, preview, book_title, book_author
+            )
+            preview = self._remove_duplicate_prefix(preview, main_name, sub_name)
+
+            display_name = index
+            ordered_values = [value for value in (main_name, sub_name, preview) if value]
+            for idx_value, value in enumerate(ordered_values):
+                separator = " - "
+                if idx_value == len(ordered_values) - 1 and value[:1].islower():
+                    separator = " "
+                if value[:1] in {",", ";", ":", ".", "!", "?"}:
+                    separator = " "
+                if separator == " ":
+                    display_name = f"{display_name} {value}"
+                else:
+                    display_name = f"{display_name}{separator}{value}"
+
+            items.append(
+                ChapterStructureItem(
+                    chapter=chapter,
+                    index=index,
+                    main_title=main_name,
+                    sub_title=sub_name,
+                    preview=preview,
+                    display_name=display_name,
+                    text_override=segment_text,
+                    speak_heading=True,
+                )
+            )
+
+        return items
 
     def _validate_chapter_count(
         self, chapters: List[Any], reader: EbookReader, duplicates_removed: int = 0
@@ -983,6 +1250,10 @@ class ConverterApplication:
             return []
 
         text = str(getattr(chapter, "text", ""))
+        has_child_entries = any(
+            entry[2] is not None and str(entry[2]).strip() and str(entry[2]).lower() != "none"
+            for entry in toc_entries
+        )
 
         # Filter entries that have child_title (excluding None and 'None' string)
         entries_with_titles = [
@@ -1015,6 +1286,11 @@ class ConverterApplication:
         items: List[ChapterStructureItem] = []
 
         for division_index, division_label, child_title in toc_entries:
+            # When TOC has parent + children pointing to the same file, keeping the
+            # parent item duplicates the first child segment. Skip the parent item.
+            if has_child_entries and not child_title:
+                continue
+
             normalized_division = remap_division(division_index)
             division_counters.setdefault(normalized_division, 0)
 
@@ -1036,6 +1312,8 @@ class ConverterApplication:
                 segment_text = segments_map.get(division_label)
             if not segment_text:
                 segment_text = text
+            if not str(segment_text).strip():
+                continue
 
             clean_name = self._clean_chapter_name(child_title or getattr(chapter, "name", ""))
             main_name = division_label or clean_name
@@ -1522,11 +1800,12 @@ class ConverterApplication:
             if not text:
                 continue
 
-            # **NEW**: Preserve chapters with .0 index (main chapters) even if small
+            # Preserve top-level chapters ("1") and legacy ".0" main chapters.
             item = data["item"]
-            is_main_chapter = item.index.endswith(".0")
+            item_index = str(getattr(item, "index", "") or "")
+            is_main_chapter = ("." not in item_index) or item_index.endswith(".0")
 
-            # **NEW**: Skip length filter for main chapters to preserve all content
+            # Skip length filter for main chapters to preserve all content
             if not is_main_chapter and len(text) < 20:
                 continue
 
@@ -1534,7 +1813,7 @@ class ConverterApplication:
 
             text_signature = self._text_signature(text)
 
-            # **NEW**: Less aggressive filtering for main chapters (.0)
+            # Less aggressive filtering for main chapters.
             if not is_main_chapter:
                 if text_signature == self._text_signature(item.display_name):
                     continue
@@ -2090,16 +2369,8 @@ class ConverterApplication:
         return "inline"
 
     def _resolve_cache_dir(self, reader: EbookReader) -> Path:
-        """Resolve cache directory path using file name (not book title)
-
-        IMPORTANTE: Usa sempre o nome do arquivo, NÃO o título do livro,
-        para evitar criar pastas duplicadas
-        """
-        file_path = getattr(reader, "file_path", None)
-        if file_path:
-            base_name = Path(file_path).stem
-        else:
-            base_name = "livro"
+        """Resolve shared cache directory path for this book."""
+        base_name = getattr(reader, "title", None) or getattr(reader, "file_path", None) or "livro"
         sanitized = FileManager.sanitize_filename(base_name) or "livro"
         return resolve_cache_root() / sanitized
 
@@ -2109,7 +2380,7 @@ class ConverterApplication:
 
         cache_manager = CacheManager(cache_dir=resolve_cache_root())
         cache_root = resolve_cache_root()
-        output_dir = Path.cwd() / "output"
+        output_dir = OUTPUT_DIR
 
         # Calcular informações sobre o que será removido
         cache_info = cache_manager.get_cache_info()
@@ -2598,6 +2869,15 @@ class ConverterApplication:
         normalized = normalized.strip()
         normalized = unquote(normalized)
         return normalized.lower()
+
+    @staticmethod
+    def _split_group_key(href_key: str) -> Optional[str]:
+        if not href_key:
+            return None
+        match = re.search(r"^(.*)_split_\d{3}(\.[a-z0-9]+)$", href_key, flags=re.IGNORECASE)
+        if not match:
+            return None
+        return f"{match.group(1)}{match.group(2)}".lower()
 
     def _resolve_toc_entries(
         self, href_key: str, toc_map: Dict[str, List[Tuple[int, str, Optional[str]]]]
@@ -3299,7 +3579,7 @@ class ConverterApplication:
             engine=args.engine or "edge",
             voice=args.voice,
             model=args.model,
-            output_dir=args.output_dir or str(Path.cwd() / "output"),
+            output_dir=args.output_dir or str(OUTPUT_DIR),
             book_title=reader.title,
             preserve_all_chapters=not getattr(args, "filter_chapters", False),
             use_simple_converter=False,
@@ -3751,6 +4031,13 @@ def _add_conversion_arguments(
         action="store_false",
         default=None,
         help="Ignore failure checkpoint and process selected chapters normally",
+    )
+    parser.add_argument(
+        "--verify",
+        "--verify-only",
+        dest="verify_only",
+        action="store_true",
+        help="Validate existing output/cache against EPUB only (no new conversion)",
     )
     parser.add_argument(
         "--verify-transcription",

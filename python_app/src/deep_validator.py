@@ -369,7 +369,7 @@ class DeepValidator:
 
         Returns the label string (e.g. ``"5.4"``) or ``None``.
         """
-        m = re.match(r"^(\d+(?:\.\d+)?)\s*-\s*", filename)
+        m = re.match(r"^(\d+(?:\.\d+)*)\s*-\s*", filename)
         return m.group(1) if m else None
 
     def compare_chapter(

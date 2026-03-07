@@ -246,6 +246,9 @@ class TestDeepValidator(unittest.TestCase):
         """Test extracting chapter index from parsed filenames."""
         self.assertEqual(DeepValidator._extract_chapter_index("1 - Chapter One-parsed.txt"), "1")
         self.assertEqual(DeepValidator._extract_chapter_index("5.4 - Part Five-parsed.txt"), "5.4")
+        self.assertEqual(
+            DeepValidator._extract_chapter_index("7.10.3 - Subsubchapter-parsed.txt"), "7.10.3"
+        )
         self.assertEqual(DeepValidator._extract_chapter_index("12 - Epilogue-parsed.txt"), "12")
         self.assertIsNone(DeepValidator._extract_chapter_index("no-number-parsed.txt"))
 

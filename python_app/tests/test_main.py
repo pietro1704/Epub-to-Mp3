@@ -560,6 +560,137 @@ class TestConverterApplication(unittest.TestCase):
         result2 = self.app._deduplicate_heading(text2, "")
         self.assertEqual(result2, "Prólogo\nTexto")
 
+    def test_run_verify_only_success(self):
+        import shutil
+
+        from src.config import ConversionConfig
+
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=Path(self.temp_dir),
+            cache_dir=Path(self.temp_dir),
+            book_title="test",
+        )
+        output_dir = Path(self.temp_dir) / "test"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        try:
+            with patch("validate_conversion.validate_book", return_value=({}, [])):
+                result = self.app._run_verify_only(Path(self.test_file), config)
+        finally:
+            shutil.rmtree(output_dir, ignore_errors=True)
+
+        self.assertEqual(result, 0)
+
+    def test_create_items_from_toc_entries_skips_parent_when_children_exist(self):
+        chapter = Chapter(
+            index=1,
+            name="I.",
+            source_path="text/ch1.html",
+            text="A chegada\nTexto da chegada\nNº 34\nTexto do quarto",
+        )
+        toc_entries = [
+            (4, "I.", None),
+            (4, "I.", "A chegada"),
+            (4, "I.", "Nº 34"),
+        ]
+        division_counters = {}
+
+        def remap_division(value):
+            return value
+
+        items = self.app._create_items_from_toc_entries(
+            chapter,
+            toc_entries,
+            "Book",
+            division_counters,
+            remap_division,
+            "Author",
+        )
+
+        self.assertEqual([item.index for item in items], ["4.1", "4.2"])
+        self.assertTrue(all(not item.index.endswith(".0") for item in items))
+
+    def test_create_items_from_toc_entries_skips_empty_segments(self):
+        chapter = Chapter(
+            index=1,
+            name="Rosto",
+            source_path="text/front.html",
+            text="",
+        )
+        toc_entries = [(1, "Rosto", None)]
+        division_counters = {}
+
+        def remap_division(value):
+            return value
+
+        items = self.app._create_items_from_toc_entries(
+            chapter,
+            toc_entries,
+            "Book",
+            division_counters,
+            remap_division,
+            "Author",
+        )
+
+        self.assertEqual(items, [])
+
+    def test_build_toc_outline_map_preserves_hierarchy(self):
+        toc = [
+            SimpleNamespace(
+                title="Parte I",
+                href="text/p1.html#top",
+                children=[
+                    SimpleNamespace(
+                        title="Capítulo 1",
+                        href="text/p1.html#c1",
+                        children=[
+                            SimpleNamespace(
+                                title="Seção A",
+                                href="text/p1.html#s1",
+                                children=[],
+                            )
+                        ],
+                    )
+                ],
+            )
+        ]
+        reader = SimpleNamespace(get_toc=lambda: toc)
+        outline = self.app._build_toc_outline_map(reader)
+        entries = self.app._resolve_toc_outline_entries("text/p1.html", outline)
+        self.assertIsNotNone(entries)
+        labels = [".".join(str(p) for p in entry["path_indices"]) for entry in entries]
+        self.assertEqual(labels, ["1", "1.1", "1.1.1"])
+
+    def test_create_items_from_toc_outline_entries_uses_deep_index(self):
+        chapter = Chapter(
+            index=1,
+            name="Capítulo 1",
+            source_path="text/p1.html",
+            text="Seção A\nConteúdo A\nSeção B\nConteúdo B",
+        )
+        toc_outline_entries = [
+            {
+                "path_indices": (2, 3, 1),
+                "path_titles": ("Parte II", "Capítulo 3", "Seção A"),
+                "title": "Seção A",
+                "level": 3,
+            },
+            {
+                "path_indices": (2, 3, 2),
+                "path_titles": ("Parte II", "Capítulo 3", "Seção B"),
+                "title": "Seção B",
+                "level": 3,
+            },
+        ]
+        items = self.app._create_items_from_toc_outline_entries(
+            chapter,
+            toc_outline_entries,
+            "Book",
+            "Author",
+        )
+        self.assertEqual([item.index for item in items], ["2.3.1", "2.3.2"])
+
 
 class TestArgumentParser(unittest.TestCase):
     """Test cases for argument parser"""
@@ -635,6 +766,10 @@ class TestArgumentParser(unittest.TestCase):
         self.assertEqual(args.piper_chunk_chars, 2200)
         args = parser.parse_args(["convert", "test.epub", "--overnight"])
         self.assertTrue(args.overnight)
+        args = parser.parse_args(["convert", "test.epub", "--verify"])
+        self.assertTrue(args.verify_only)
+        args = parser.parse_args(["convert", "test.epub", "--verify-only"])
+        self.assertTrue(args.verify_only)
 
     def test_parser_engine_choices(self):
         """Test engine choices validation"""

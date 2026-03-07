@@ -381,10 +381,6 @@ def _book_slug(title: Optional[str], fallback: Optional[str] = None) -> str:
     return FileManager.sanitize_filename(stem)
 
 
-def _engine_slug(engine: Optional[str]) -> str:
-    return FileManager.sanitize_filename((engine or "edge").lower())
-
-
 def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = False) -> Path:
     """Resolve the canonical output directory for a job.
 
@@ -406,8 +402,7 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
             book_title = job_data.get("bookTitle") or job_data.get("fileName") or ""
             file_name = job_data.get("file_path") or ""
             book_slug = _book_slug(book_title, file_name)
-            engine_slug = _engine_slug(job_data.get("engine"))
-            target = output_dir / book_slug / engine_slug
+            target = output_dir / book_slug
 
             # If legacy dir already exists with data, prefer it to avoid breaking older jobs
             if legacy_dir.exists() and any(legacy_dir.iterdir()):
@@ -2423,14 +2418,11 @@ async def convert_ebook(
     if not book_title:
         book_title = Path(temp_file.name).stem
     book_author = book_author or (reuse_upload.get("book_author") if reuse_upload else None)
-    engine_slug = _engine_slug(engine)
     book_slug = _book_slug(book_title, temp_file.name)
-    output_base = output_dir / book_slug
-    output_engine_dir = output_base / engine_slug
-    output_engine_dir.mkdir(parents=True, exist_ok=True)
+    output_book_dir = output_dir / book_slug
+    output_book_dir.mkdir(parents=True, exist_ok=True)
     cache_base = CACHE_DIR / book_slug
-    cache_engine_dir = cache_base / engine_slug
-    cache_engine_dir.mkdir(parents=True, exist_ok=True)
+    cache_base.mkdir(parents=True, exist_ok=True)
 
     parallel_slots_value = parallel_slots_override
     if not disable_parallel and max_performance_enabled and parallel_slots_value is None:
@@ -2461,8 +2453,8 @@ async def convert_ebook(
         "outputs": [],
         "bookTitle": book_title,
         "bookAuthor": book_author,
-        "outputDir": str(output_engine_dir),
-        "cacheDir": str(cache_engine_dir),
+        "outputDir": str(output_book_dir),
+        "cacheDir": str(cache_base),
         "cover": {"name": cover_name, "url": cover_url, "mimeType": cover_mime}
         if cover_name
         else None,
@@ -3797,9 +3789,8 @@ async def process_conversion(job_id: str) -> None:
 
         # Resolve per-book/per-engine roots
         book_slug = _book_slug(job.get("bookTitle"), job.get("file_path"))
-        engine_slug = _engine_slug(job.get("engine"))
-        output_root = Path(job.get("outputDir") or (output_dir / book_slug / engine_slug))
-        cache_root = Path(job.get("cacheDir") or (CACHE_DIR / book_slug / engine_slug))
+        output_root = Path(job.get("outputDir") or (output_dir / book_slug))
+        cache_root = Path(job.get("cacheDir") or (CACHE_DIR / book_slug))
 
         # Create TTS engine using factory with optimized compression
         model_path = Path(job.get("model")) if job.get("model") else None
@@ -4561,9 +4552,15 @@ async def process_conversion(job_id: str) -> None:
             safe_name = FileManager.sanitize_filename(chapter_name)
             return job_output_dir / f"{chapter_index:03d} - {safe_name}.mp3"
 
+        def _chapter_requires_audio(chapter_obj) -> bool:
+            chapter_text = getattr(chapter_obj, "speech_text", None) or chapter_obj.text or ""
+            return bool(chapter_text and chapter_text.strip())
+
         def _collect_missing_chapters() -> list[tuple[int, object]]:
             missing: list[tuple[int, object]] = []
             for idx, chapter in enumerate(chapters, 1):
+                if not _chapter_requires_audio(chapter):
+                    continue
                 output_file = _expected_output_path(idx, chapter)
                 try:
                     if not output_file.exists() or output_file.stat().st_size <= 0:
@@ -5520,7 +5517,7 @@ async def process_conversion(job_id: str) -> None:
             failed_chapters = _collect_failed_chapters()
             missing_chapters = _collect_missing_chapters()
             if missing_chapters:
-                expected_count = len(chapters)
+                expected_count = sum(1 for chapter in chapters if _chapter_requires_audio(chapter))
                 actual_count = len(
                     [
                         path

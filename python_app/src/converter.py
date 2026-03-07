@@ -9043,8 +9043,12 @@ class AudioConverter:
                         if deferred_safe_pass:
                             retry_tier = max(retry_tier, 3)
                         if retry_tier > 0:
-                            target_chunk = max(900, int(target_chunk * (0.82**retry_tier)))
-                            target_workers = max(1, min(target_workers, 4 - retry_tier))
+                            # Keep Piper fallback retries conservative but avoid collapsing
+                            # to single-worker mode, which can make very large chapters
+                            # impractically slow on CPU-only environments.
+                            capped_tier = min(retry_tier, 2)
+                            target_chunk = max(1200, int(target_chunk * (0.86**capped_tier)))
+                            target_workers = max(2, min(target_workers, 4 - capped_tier))
                         os.environ["PIPER_CHUNK_CHARS"] = str(target_chunk)
                         os.environ["PIPER_MAX_PROCS"] = str(target_workers)
                         with contextlib.suppress(Exception):
