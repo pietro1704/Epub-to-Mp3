@@ -56,23 +56,23 @@ class AdaptivePerformanceController:
         self.verbose = verbose
         self.system_monitor = SystemMonitor(verbose=False)
 
-        # Estado inicial
+        # Initial baselines
         self._baseline_concurrency = 4
         self._baseline_chunk_size = 8000
         self._baseline_parallel = 2
 
-        # Histórico de métricas
+        # Metrics history
         self._metrics_history: List[ConversionMetrics] = []
         self._adjustment_history: List[PerformanceAdjustment] = []
 
-        # Estado de conversão
+        # Conversion state
         self._conversion_start_time: Optional[float] = None
         self._total_chars_processed = 0
         self._total_chapters_completed = 0
         self._total_errors = 0
         self._total_throttles = 0
 
-        # Limites de segurança
+        # Safety limits
         self._max_concurrency = 16
         self._min_concurrency = 1
         self._max_chunk_size = 15000
@@ -80,18 +80,14 @@ class AdaptivePerformanceController:
         self._max_parallel = 8
         self._min_parallel = 1
 
-        # Contadores para decisões
+        # Decision counters
         self._consecutive_successes = 0
         self._consecutive_failures = 0
         self._last_adjustment_time = 0.0
-        self._adjustment_cooldown = (
-            15.0  # segundos entre ajustes (reduzido de 30 para mais responsividade)
-        )
-        self._fast_adjustment_threshold = (
-            5  # Ajustes rápidos após 5 sucessos (antes era implícito em 10)
-        )
+        self._adjustment_cooldown = 15.0  # seconds between adjustments
+        self._fast_adjustment_threshold = 5  # fast adjustments after N successes
 
-        # Melhor configuração encontrada
+        # Best configuration found
         self._best_throughput = 0.0
         self._best_config = {
             "concurrency": self._baseline_concurrency,
@@ -125,7 +121,7 @@ class AdaptivePerformanceController:
         error: Optional[str] = None,
         throttled: bool = False,
     ):
-        """Registra conclusão de um capítulo."""
+        """Record completion of a chapter."""
         self._total_chars_processed += chars_processed
         if success:
             self._total_chapters_completed += 1
@@ -180,8 +176,8 @@ class AdaptivePerformanceController:
             }
 
     def should_adjust(self) -> bool:
-        """Verifica se deve fazer ajuste agora."""
-        # Precisa de pelo menos 2 capítulos para tomar decisões (reduzido de 3 para mais responsividade)
+        """Check whether a parameter adjustment should be made now."""
+        # Need at least 2 completed chapters to make decisions
         if self._total_chapters_completed < 2:
             return False
 
@@ -308,7 +304,7 @@ class AdaptivePerformanceController:
         return True
 
     def get_summary(self) -> Dict:
-        """Retorna sumário da conversão."""
+        """Return a summary of the conversion performance."""
         if not self._metrics_history:
             return {}
 
@@ -331,36 +327,36 @@ class AdaptivePerformanceController:
         }
 
     def print_summary(self):
-        """Imprime sumário formatado."""
+        """Print a formatted performance summary."""
         summary = self.get_summary()
         if not summary:
             return
 
         print("\n" + "=" * 70)
-        print("📊 SUMÁRIO DE PERFORMANCE ADAPTATIVA")
+        print("📊 ADAPTIVE PERFORMANCE SUMMARY")
         print("=" * 70)
         print(
-            f"Total processado: {summary['total_chars']:,} caracteres em {summary['total_chapters']} capítulos"
+            f"Total processed: {summary['total_chars']:,} chars in {summary['total_chapters']} chapters"
         )
-        print(f"Tempo total: {summary['elapsed_seconds']:.1f}s")
+        print(f"Total time: {summary['elapsed_seconds']:.1f}s")
         print(
-            f"Throughput médio: {summary['chars_per_second']:.0f} chars/s ({summary['chapters_per_minute']:.1f} cap/min)"
+            f"Avg throughput: {summary['chars_per_second']:.0f} chars/s ({summary['chapters_per_minute']:.1f} ch/min)"
         )
-        print(f"Erros: {summary['total_errors']} | Throttles: {summary['total_throttles']}")
-        print(f"Ajustes realizados: {summary['adjustments_made']}")
-        print(f"\nMelhor throughput: {summary['best_throughput']:.0f} chars/s")
+        print(f"Errors: {summary['total_errors']} | Throttles: {summary['total_throttles']}")
+        print(f"Adjustments made: {summary['adjustments_made']}")
+        print(f"\nBest throughput: {summary['best_throughput']:.0f} chars/s")
         print(
-            f"Melhor config: concurrency={summary['best_config']['concurrency']}, "
+            f"Best config: concurrency={summary['best_config']['concurrency']}, "
             f"chunk={summary['best_config']['chunk_size']}"
         )
         print(
-            f"Config final: concurrency={summary['final_config']['concurrency']}, "
+            f"Final config: concurrency={summary['final_config']['concurrency']}, "
             f"chunk={summary['final_config']['chunk_size']}"
         )
         print("=" * 70 + "\n")
 
     def _get_current_env_int(self, key: str, default: int) -> int:
-        """Obtém valor atual de env var."""
+        """Get current value of an environment variable as int."""
         import os
 
         try:

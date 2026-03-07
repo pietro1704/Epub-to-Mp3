@@ -53,7 +53,7 @@ class SegmentRecord:
 
 @dataclass
 class ValidationReport:
-    """Relatório de validação de um capítulo."""
+    """Validation report for a chapter's synthesis segments."""
 
     is_valid: bool
     total_segments: int
@@ -66,25 +66,22 @@ class ValidationReport:
     validation_errors: List[str]
 
     def to_dict(self) -> Dict[str, Any]:
-        """Converte para dicionário."""
         return asdict(self)
 
     def save(self, path: Path) -> None:
-        """Salva relatório em arquivo JSON."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
 
     @staticmethod
     def load(path: Path) -> "ValidationReport":
-        """Carrega relatório de arquivo JSON."""
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return ValidationReport(**data)
 
 
 class SynthesisTracker:
-    """Rastreador de segmentos de síntese de TTS."""
+    """Tracks TTS synthesis segments for a chapter."""
 
     def __init__(self, chapter_title: str = "Unknown"):
         self.chapter_title = chapter_title
@@ -101,26 +98,23 @@ class SynthesisTracker:
         error: Optional[str] = None,
     ) -> None:
         """
-        Registra um segmento de texto.
+        Record a text segment.
 
         Args:
-            index: Índice do segmento
-            text: Texto do segmento
-            audio_path: Caminho do arquivo de áudio (se gerado)
-            duration: Duração real do áudio em segundos
-            status: Status do segmento ("pending", "success", "failed", "skipped")
-            error: Mensagem de erro (se houver)
+            index: Segment index
+            text: Segment text
+            audio_path: Path to generated audio file (if available)
+            duration: Actual audio duration in seconds
+            status: Segment status ("pending", "success", "failed", "skipped")
+            error: Error message (if any)
         """
         if index not in self._segment_map:
-            # Criar novo registro
             segment = SegmentRecord.create(index, text)
             self.segments.append(segment)
             self._segment_map[index] = segment
         else:
-            # Atualizar registro existente
             segment = self._segment_map[index]
 
-        # Atualizar campos
         segment.status = status
         segment.error = error
 
@@ -131,26 +125,26 @@ class SynthesisTracker:
             segment.actual_duration_seconds = duration
 
     def get_segment(self, index: int) -> Optional[SegmentRecord]:
-        """Retorna o registro de um segmento específico."""
+        """Return the record for a specific segment."""
         return self._segment_map.get(index)
 
     def get_missing_segments(self) -> List[SegmentRecord]:
-        """Retorna lista de segmentos que falharam ou não foram processados."""
+        """Return segments that failed or were not processed."""
         return [s for s in self.segments if s.status in ("failed", "pending")]
 
     def get_successful_segments(self) -> List[SegmentRecord]:
-        """Retorna lista de segmentos processados com sucesso."""
+        """Return segments that were processed successfully."""
         return [s for s in self.segments if s.status == "success"]
 
     def validate_completeness(self, tolerance: float = 0.15) -> ValidationReport:
         """
-        Valida se todos os segmentos foram processados corretamente.
+        Validate that all segments were processed correctly.
 
         Args:
-            tolerance: Tolerância para diferença de duração (default: 15%)
+            tolerance: Allowed duration difference (default: 15%)
 
         Returns:
-            ValidationReport com resultados da validação
+            ValidationReport with validation results
         """
         total_segments = len(self.segments)
         successful = self.get_successful_segments()
@@ -159,20 +153,17 @@ class SynthesisTracker:
         failed_count = len(failed)
         missing_indices = [s.index for s in failed]
 
-        # Calcular duração esperada vs. real
         expected_duration = sum(s.estimated_duration_seconds for s in self.segments)
         actual_duration = sum(
             s.actual_duration_seconds for s in successful if s.actual_duration_seconds is not None
         )
 
-        # Calcular diferença percentual
         duration_diff_percent = 0.0
         if expected_duration > 0:
             duration_diff_percent = (
                 (actual_duration - expected_duration) / expected_duration
             ) * 100
 
-        # Validar
         validation_errors = []
 
         if failed_count > 0:
@@ -201,7 +192,7 @@ class SynthesisTracker:
         )
 
     def export_to_json(self, path: Path) -> None:
-        """Exporta todos os registros para arquivo JSON."""
+        """Export all segment records to a JSON file."""
         path.parent.mkdir(parents=True, exist_ok=True)
 
         data = {
@@ -215,7 +206,7 @@ class SynthesisTracker:
 
     @staticmethod
     def load_from_json(path: Path) -> "SynthesisTracker":
-        """Carrega tracker de arquivo JSON."""
+        """Load tracker state from a JSON file."""
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
 
@@ -229,7 +220,7 @@ class SynthesisTracker:
         return tracker
 
     def get_synthesis_log(self) -> List[Dict[str, Any]]:
-        """Retorna log de síntese em formato de dicionário."""
+        """Return synthesis log as a list of dicts."""
         return [asdict(s) for s in self.segments]
 
     def __repr__(self) -> str:
