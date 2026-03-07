@@ -934,10 +934,14 @@ class EpubParser:
             opf_path = self._find_opf_path(archive)
             manifest, spine_ids, title, author, language = self._parse_opf(archive, opf_path)
             base_dir = self._opf_dir(opf_path)
-            toc = self._parse_toc(archive, base_dir)
+            toc = self._parse_toc(archive, base_dir, opf_path=opf_path)
 
-            # Use spine-based method (old method, more reliable)
+            # Use spine-based method (reliable, preserves all content)
             chapters = self._extract_chapters(archive, manifest, spine_ids, base_dir)
+
+        # Assign hierarchy levels from TOC so callers can distinguish
+        # top-level parts (level=1) from subchapters (level=2, 3, …).
+        self._assign_levels_from_toc(chapters, toc, base_dir)
 
         title = title or self.path.stem
         author = author or ""
@@ -1472,48 +1476,223 @@ class EpubParser:
                 "O algoritmo de remoção de duplicatas precisa ser ajustado."
             )
 
-    def _parse_toc(self, archive: zipfile.ZipFile, base_dir: str) -> List[TocItem]:
+    def _parse_toc(
+        self,
+        archive: zipfile.ZipFile,
+        base_dir: str,
+        *,
+        opf_path: Optional[str] = None,
+    ) -> List[TocItem]:
+        """Parse the table of contents, trying NCX (EPUB2) then nav.xhtml (EPUB3)."""
+        # --- EPUB2: NCX ---
         candidates = [name for name in archive.namelist() if name.lower().endswith(".ncx")]
-        if not candidates:
+        if candidates:
+            try:
+                raw = self._read_zip_text(archive, candidates[0])
+                tree = ET.fromstring(raw)
+                nav_map = tree.find("ncx:navMap", XML_NS)
+                if nav_map is not None:
+
+                    def build(entries, level=1):
+                        items = []
+                        for nav_point in entries:
+                            label_elem = nav_point.find("ncx:navLabel/ncx:text", XML_NS)
+                            content_elem = nav_point.find("ncx:content", XML_NS)
+                            title = (
+                                label_elem.text.strip()
+                                if label_elem is not None and label_elem.text
+                                else ""
+                            )
+                            href = (
+                                content_elem.attrib.get("src", "")
+                                if content_elem is not None
+                                else ""
+                            )
+                            children_points = nav_point.findall("ncx:navPoint", XML_NS)
+                            items.append(
+                                TocItem(
+                                    title=title,
+                                    href=href,
+                                    level=level,
+                                    children=build(children_points, level + 1),
+                                )
+                            )
+                        return items
+
+                    top_level_points = nav_map.findall("ncx:navPoint", XML_NS)
+                    return build(top_level_points, level=1)
+            except (ET.ParseError, KeyError):
+                pass
+
+        # --- EPUB3: nav.xhtml (fallback) ---
+        if opf_path:
+            nav_items = self._parse_nav_toc_from_opf(archive, opf_path, base_dir)
+            if nav_items:
+                return nav_items
+
+        return []
+
+    @staticmethod
+    def _parse_nav_toc_from_opf(
+        archive: zipfile.ZipFile,
+        opf_path: str,
+        base_dir: str,
+    ) -> List[TocItem]:
+        """Locate and parse the EPUB3 nav document declared in the OPF manifest."""
+        try:
+            opf_content = EpubParser._read_zip_text(archive, opf_path)
+            opf_tree = ET.fromstring(opf_content)
+        except Exception:
             return []
 
-        try:
-            raw = self._read_zip_text(archive, candidates[0])
-        except KeyError:
+        nav_href: Optional[str] = None
+        for item in opf_tree.findall("opf:manifest/opf:item", XML_NS):
+            props = item.attrib.get("properties", "")
+            if "nav" in props.lower().split():
+                nav_href = item.attrib.get("href", "") or None
+                break
+
+        if not nav_href:
             return []
 
+        nav_path = EpubParser._join_path(base_dir, nav_href)
         try:
-            tree = ET.fromstring(raw)
+            nav_content = EpubParser._read_zip_text(archive, nav_path)
+        except (KeyError, Exception):
+            return []
+
+        return EpubParser._parse_nav_html(nav_content)
+
+    @staticmethod
+    def _parse_nav_html(nav_content: str) -> List[TocItem]:
+        """Parse an EPUB3 nav.xhtml document and return a TocItem hierarchy."""
+        EPUB_NS_URI = "http://www.idpf.org/2007/ops"
+
+        # Strip DOCTYPE which ElementTree cannot handle
+        cleaned = re.sub(r"<!DOCTYPE[^>]*>", "", nav_content, count=1)
+        try:
+            root = ET.fromstring(cleaned)
         except ET.ParseError:
             return []
 
-        nav_map = tree.find("ncx:navMap", XML_NS)
+        def _tag_local(elem) -> str:
+            tag = elem.tag
+            return tag.split("}", 1)[-1] if "}" in tag else tag
 
-        if nav_map is None:
+        def _find_toc_nav(node) -> Optional[ET.Element]:
+            """Find <nav epub:type="toc"> anywhere in the tree."""
+            if _tag_local(node) == "nav":
+                epub_type = (
+                    node.attrib.get(f"{{{EPUB_NS_URI}}}type") or node.attrib.get("epub:type") or ""
+                )
+                if "toc" in epub_type.lower():
+                    return node
+            for child in node:
+                found = _find_toc_nav(child)
+                if found is not None:
+                    return found
+            return None
+
+        toc_nav = _find_toc_nav(root)
+        if toc_nav is None:
             return []
 
-        def build(entries, level=1):
-            items = []
-            for nav_point in entries:
-                label_elem = nav_point.find("ncx:navLabel/ncx:text", XML_NS)
-                content_elem = nav_point.find("ncx:content", XML_NS)
-                title = (
-                    label_elem.text.strip() if label_elem is not None and label_elem.text else ""
-                )
-                href = content_elem.attrib.get("src", "") if content_elem is not None else ""
-                children_points = nav_point.findall("ncx:navPoint", XML_NS)
-                items.append(
-                    TocItem(
-                        title=title,
-                        href=href,
-                        level=level,
-                        children=build(children_points, level + 1),
-                    )
-                )
+        def parse_ol(ol_elem, level: int) -> List[TocItem]:
+            items: List[TocItem] = []
+            for child in ol_elem:
+                if _tag_local(child) != "li":
+                    continue
+                href = ""
+                title = ""
+                children: List[TocItem] = []
+                for sub in child:
+                    local = _tag_local(sub)
+                    if local == "a":
+                        href = sub.attrib.get("href", "")
+                        title = "".join(sub.itertext()).strip()
+                    elif local == "span":
+                        # Some nav docs use <span> instead of <a> for headings
+                        if not title:
+                            title = "".join(sub.itertext()).strip()
+                    elif local == "ol":
+                        children = parse_ol(sub, level + 1)
+                if href or title:
+                    items.append(TocItem(title=title, href=href, level=level, children=children))
             return items
 
-        top_level_points = nav_map.findall("ncx:navPoint", XML_NS)
-        return build(top_level_points, level=1)
+        for child in toc_nav:
+            if _tag_local(child) == "ol":
+                return parse_ol(child, level=1)
+
+        return []
+
+    @staticmethod
+    def _build_toc_level_map(toc: List[TocItem]) -> Dict[str, int]:
+        """Return a map from file path (anchor stripped) to its minimum TOC level.
+
+        When the same file appears at multiple levels (e.g. a split file referenced
+        at L1 with one anchor and at L2 with another anchor), the *minimum* (highest
+        in the hierarchy) level wins.
+        """
+        level_map: Dict[str, int] = {}
+
+        def walk(items: List[TocItem]) -> None:
+            for item in items:
+                href = item.href
+                if href:
+                    file_path = href.split("#")[0] if "#" in href else href
+                    if file_path:
+                        prev = level_map.get(file_path)
+                        level_map[file_path] = (
+                            min(prev, item.level) if prev is not None else item.level
+                        )
+                walk(item.children)
+
+        walk(toc)
+        return level_map
+
+    def _assign_levels_from_toc(
+        self,
+        chapters: List[Chapter],
+        toc: List[TocItem],
+        base_dir: str,
+    ) -> None:
+        """Set chapter.level for every chapter based on its position in the TOC.
+
+        Chapters whose source file is not found in the TOC keep their default
+        level (1).  When a file is referenced at multiple TOC depths (e.g. an
+        anchor-split file) the shallowest (lowest numeric) level is used.
+        """
+        if not toc:
+            return
+        level_map = self._build_toc_level_map(toc)
+        if not level_map:
+            return
+
+        # Pre-compute normalised keys once to avoid repeated work.
+        # TOC hrefs are relative to the OPF dir (base_dir); chapter source_paths
+        # are stored as full archive paths (base_dir/relative).
+        def _relative(source_path: str) -> str:
+            """Strip base_dir prefix so the key matches TOC hrefs."""
+            prefix = base_dir.rstrip("/") + "/"
+            if source_path.startswith(prefix):
+                return source_path[len(prefix) :]
+            return source_path
+
+        for chapter in chapters:
+            src = chapter.source_path
+            # Strip any trailing anchor from the source_path (rare, but safe)
+            src_file = src.split("#")[0] if "#" in src else src
+            rel = _relative(src_file)
+
+            level = level_map.get(rel)
+            if level is None:
+                # Basename-only fallback (handles books where base_dir is unknown)
+                basename = rel.split("/")[-1] if "/" in rel else rel
+                level = level_map.get(basename)
+
+            if level is not None:
+                chapter.level = level
 
     @staticmethod
     def _opf_dir(opf_path: str) -> str:
