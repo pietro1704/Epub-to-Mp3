@@ -34,13 +34,13 @@ def get_project_root() -> Path:
         "CLAUDE.md",
     ]
 
-    # Sobe na hierarquia até encontrar um marcador ou chegar na raiz do sistema
+    # Walk up until a root marker is found or filesystem root is reached
     while current != current.parent:
         if any((current / marker).exists() for marker in root_markers):
             return current
         current = current.parent
 
-    # Fallback: assume que estamos em python_app/src e a raiz é 2 níveis acima
+    # Fallback: assume we're in python_app/src and the project root is 2 levels up
     return Path(__file__).resolve().parent.parent.parent
 
 
@@ -74,16 +74,16 @@ def _resolve_cache_dir() -> Path:
     return PROJECT_ROOT / ".cache"
 
 
-# Diretórios sempre na raiz do projeto (com overrides compartilhados)
-CACHE_DIR = _resolve_cache_dir()  # Apenas para dados temporários de livros
+# Directories rooted at the project root (with shared overrides)
+CACHE_DIR = _resolve_cache_dir()  # Temporary per-book data only
 OUTPUT_DIR = _resolve_output_dir()
-MODELS_DIR = PROJECT_ROOT / "models"  # Modelos TTS (Piper, Coqui, etc.)
+MODELS_DIR = PROJECT_ROOT / "models"  # TTS models (Piper, Coqui, etc.)
 JOBS_DIR = PERSISTENT_ROOT / ".jobs"
 UPLOADS_DIR = PERSISTENT_ROOT / ".uploads"
 JOB_INPUTS_DIR = PERSISTENT_ROOT / ".job_inputs"
 SOURCE_BACKUPS_DIR = PERSISTENT_ROOT / ".source_backups"
 
-# Cria os diretórios se não existirem
+# Create directories if they don't exist
 CACHE_DIR.mkdir(exist_ok=True, parents=True)
 OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
 MODELS_DIR.mkdir(exist_ok=True, parents=True)
@@ -92,7 +92,7 @@ UPLOADS_DIR.mkdir(exist_ok=True, parents=True)
 JOB_INPUTS_DIR.mkdir(exist_ok=True, parents=True)
 SOURCE_BACKUPS_DIR.mkdir(exist_ok=True, parents=True)
 
-# Subdiretórios para modelos específicos (dentro de root/models)
+# Subdirectories for specific model types (inside root/models)
 COQUI_MODELS_DIR = MODELS_DIR / "coqui"
 PIPER_MODELS_DIR = MODELS_DIR / "piper"
 COQUI_MODELS_DIR.mkdir(exist_ok=True, parents=True)
@@ -102,16 +102,16 @@ PIPER_MODELS_DIR.mkdir(exist_ok=True, parents=True)
 COQUI_CACHE_DIR = COQUI_MODELS_DIR
 PIPER_MODEL_CACHE_DIR = PIPER_MODELS_DIR
 
-# Telemetria pode ficar em .cache (dados temporários)
+# Telemetry lives in .cache (temporary data)
 TELEMETRY_DIR = CACHE_DIR / "telemetry"
 TELEMETRY_DIR.mkdir(exist_ok=True, parents=True)
 
-# Força bibliotecas externas a usarem o diretório de modelos na raiz do projeto
+# Point external libraries to the project-root model directory
 os.environ.setdefault("TTS_HOME", str(COQUI_MODELS_DIR))
 os.environ.setdefault("COQUI_TTS_CACHE_DIR", str(COQUI_MODELS_DIR))
 os.environ.setdefault("PIPER_MODEL_DIR", str(PIPER_MODELS_DIR))
 
-# Auto-aceitar licença Coqui TTS (CPML não-comercial)
+# Auto-accept Coqui TTS license (CPML non-commercial)
 os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
 

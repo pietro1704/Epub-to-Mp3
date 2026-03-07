@@ -187,7 +187,7 @@ class ProgressTracker:
         Update progress based on completed audio chunks.
         Uses chunk count as a more accurate signal that text was synthesized.
         """
-        # chunk_index é zero-based
+        # chunk_index is zero-based
         self.processed_chunks = max(self.processed_chunks, chunk_index + 1)
         self.total_chunks = max(self.total_chunks, chunk_index + 1)
         self._last_real_progress_time = time.time()

@@ -193,5 +193,5 @@ class AudioValidator:
                 error_message=f"Audio file is corrupted or missing: {audio_path.name}",
             )
 
-        # Validar duração
+        # Validate duration
         return self.validate_duration(chapter_text, audio_path)

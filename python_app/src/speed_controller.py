@@ -186,7 +186,7 @@ class AdaptiveSpeedController:
         elif chapter_chars >= 24000:
             scale = 1.15
 
-        # Coqui é mais lento em CPU: nunca reduzir e aumente para capítulos curtos
+        # Coqui is slower on CPU: never reduce, and scale up for short chapters
         if engine == "coqui":
             if chapter_chars <= 8000:
                 scale = max(scale, 1.6)

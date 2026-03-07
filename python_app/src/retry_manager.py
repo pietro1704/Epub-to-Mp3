@@ -132,7 +132,7 @@ class RetryManager:
                                 "audio_path": str(temp_path),
                             }
                         )
-                        break  # Sucesso, passar para próximo segmento
+                        break  # Success, move to next segment
 
                 except Exception as e:
                     logger.warning(
@@ -153,7 +153,7 @@ class RetryManager:
                     }
                 )
 
-        # Estatísticas
+        # Statistics
         successful_retries = len([r for r in retry_results if r.get("status") == "success"])
 
         report = RetryReport(

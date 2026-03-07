@@ -734,7 +734,7 @@ class CoquiTTSEngine:
                                 gen_cfg.pad_token_id = pad_id
                                 gen_cfg.eos_token_id = gen_cfg.eos_token_id or eos_id or pad_id
                 except Exception:
-                    # Best effort para reduzir ruído de warning
+                    # Best effort to suppress warning noise
                     pass
 
             except ImportError as e:
@@ -1228,7 +1228,7 @@ class CoquiTTSEngine:
                 print("🔍 [VERBOSE] Coqui VITS PT usando speaker: 0")
             return
 
-        # Para outros modelos, tente opções comuns (sem forçar "0" para XTTS)
+        # For other models, try common options (without forcing "0" for XTTS)
         common_speakers = ["default", "speaker_0", "ljspeech", "p225"]
         kwargs["speaker"] = common_speakers[0]
         if self.verbose:

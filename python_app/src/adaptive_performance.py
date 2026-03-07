@@ -135,12 +135,12 @@ class AdaptivePerformanceController:
         if throttled:
             self._total_throttles += 1
 
-        # Calcula métricas atuais
+        # Compute current metrics
         elapsed = time.time() - (self._conversion_start_time or time.time())
         chars_per_sec = self._total_chars_processed / elapsed if elapsed > 0 else 0
         chapters_per_min = (self._total_chapters_completed / elapsed) * 60 if elapsed > 0 else 0
 
-        # Hardware não muda durante conversão - removido detect_hardware() para performance
+        # Hardware does not change during conversion — skipping detect_hardware() for performance
 
         metrics = ConversionMetrics(
             timestamp=time.time(),
@@ -157,14 +157,14 @@ class AdaptivePerformanceController:
             ),
             errors_count=self._total_errors,
             throttle_events=self._total_throttles,
-            cpu_percent=0.0,  # Será preenchido se disponível
+            cpu_percent=0.0,  # filled if available
             memory_percent=0.0,
             network_latency_ms=0.0,
         )
 
         self._metrics_history.append(metrics)
 
-        # Atualiza melhor throughput
+        # Update best throughput record
         if chars_per_sec > self._best_throughput:
             self._best_throughput = chars_per_sec
             self._best_config = {
@@ -181,15 +181,15 @@ class AdaptivePerformanceController:
         if self._total_chapters_completed < 2:
             return False
 
-        # Se há muitos sucessos consecutivos, permite ajuste rápido (ignorar cooldown)
+        # Many consecutive successes → allow fast adjustment (bypass cooldown)
         if self._consecutive_successes >= self._fast_adjustment_threshold:
             return True
 
-        # Se há erros ou throttling, permite ajuste imediato
+        # Errors or throttling → allow immediate adjustment
         if self._consecutive_failures >= 2 or self._total_throttles > 0:
             return True
 
-        # Respeita cooldown entre ajustes normais
+        # Respect cooldown between normal adjustments
         time_since_last = time.time() - self._last_adjustment_time
         if time_since_last < self._adjustment_cooldown:
             return False
@@ -197,11 +197,9 @@ class AdaptivePerformanceController:
         return True
 
     def calculate_adjustment(self) -> PerformanceAdjustment:
-        """Calcula ajuste necessário baseado em métricas."""
+        """Calculate the required parameter adjustment based on current metrics."""
         if not self.should_adjust():
-            return PerformanceAdjustment(
-                action="no_change", reason="Cooldown ou dados insuficientes"
-            )
+            return PerformanceAdjustment(action="no_change", reason="Cooldown or insufficient data")
 
         current_concurrency = self._get_current_env_int(
             "EDGE_MAX_CONCURRENCY", self._baseline_concurrency
@@ -209,68 +207,66 @@ class AdaptivePerformanceController:
         current_chunk = self._get_current_env_int("EDGE_CHUNK_CHARS", self._baseline_chunk_size)
         self._get_current_env_int("EDGE_SAFE_CHAPTER_PARALLEL", self._baseline_parallel)
 
-        # Análise de tendência
+        # Trend analysis
         recent_metrics = (
             self._metrics_history[-5:] if len(self._metrics_history) >= 5 else self._metrics_history
         )
         if len(recent_metrics) < 2:
-            return PerformanceAdjustment(action="no_change", reason="Dados insuficientes")
+            return PerformanceAdjustment(action="no_change", reason="Insufficient data")
 
         avg_throughput = sum(m.chars_per_second for m in recent_metrics) / len(recent_metrics)
         error_rate = self._total_errors / max(1, self._total_chapters_completed)
         throttle_rate = self._total_throttles / max(1, self._total_chapters_completed)
 
-        # DECISÃO 1: Se muitos erros ou throttling, REDUZIR
+        # DECISION 1: High errors or throttling → REDUCE concurrency
         if error_rate > 0.2 or throttle_rate > 0.3:
             if current_concurrency > self._min_concurrency:
                 return PerformanceAdjustment(
                     action="decrease_concurrency",
-                    reason=f"Alta taxa de erros ({error_rate:.1%}) ou throttling ({throttle_rate:.1%})",
+                    reason=f"High error rate ({error_rate:.1%}) or throttling ({throttle_rate:.1%})",
                     edge_max_concurrency=max(self._min_concurrency, current_concurrency - 2),
                 )
 
-        # DECISÃO 2: Se muitos throttles mas poucos erros, reduzir chunk
+        # DECISION 2: Heavy throttling but few errors → reduce chunk size
         if throttle_rate > 0.3 and error_rate < 0.1:
             if current_chunk > self._min_chunk_size:
                 return PerformanceAdjustment(
                     action="decrease_chunk",
-                    reason=f"Throttling detectado ({throttle_rate:.1%})",
+                    reason=f"Throttling detected ({throttle_rate:.1%})",
                     edge_chunk_chars=max(self._min_chunk_size, current_chunk - 2000),
                 )
 
-        # DECISÃO 3: Se indo bem, tentar AUMENTAR concurrency gradualmente
-        # Mais agressivo: requer menos sucessos e aumenta mais rápido
+        # DECISION 3: Doing well → gradually INCREASE concurrency
         if self._consecutive_successes >= 3 and error_rate < 0.05 and throttle_rate < 0.1:
             if current_concurrency < self._max_concurrency:
-                # Aumento mais agressivo quando performance é excelente
                 increment = 3 if self._consecutive_successes >= 5 else 2
                 new_concurrency = min(self._max_concurrency, current_concurrency + increment)
                 return PerformanceAdjustment(
                     action="increase_concurrency",
-                    reason=f"Performance estável ({self._consecutive_successes} sucessos, taxa erro {error_rate:.1%})",
+                    reason=f"Stable performance ({self._consecutive_successes} successes, error rate {error_rate:.1%})",
                     edge_max_concurrency=new_concurrency,
                 )
 
-        # DECISÃO 4: Se throughput baixo mas sem erros, aumentar chunk
+        # DECISION 4: Low throughput but no errors → increase chunk size
         if avg_throughput < self._best_throughput * 0.7 and error_rate < 0.05:
             if current_chunk < self._max_chunk_size:
                 return PerformanceAdjustment(
                     action="increase_chunk",
-                    reason=f"Throughput abaixo do melhor ({avg_throughput:.0f} vs {self._best_throughput:.0f} chars/s)",
+                    reason=f"Throughput below peak ({avg_throughput:.0f} vs {self._best_throughput:.0f} chars/s)",
                     edge_chunk_chars=min(self._max_chunk_size, current_chunk + 2000),
                 )
 
-        # DECISÃO 5: Se performance piorou muito, voltar para melhor config
+        # DECISION 5: Performance degraded severely → revert to best known config
         if avg_throughput < self._best_throughput * 0.5 and self._best_throughput > 0:
             return PerformanceAdjustment(
                 action="decrease_concurrency",
-                reason="Performance muito abaixo do pico, voltando para melhor config",
+                reason="Performance far below peak, reverting to best config",
                 edge_max_concurrency=self._best_config["concurrency"],
                 edge_chunk_chars=self._best_config["chunk_size"],
                 edge_safe_chapter_parallel=self._best_config["parallel"],
             )
 
-        return PerformanceAdjustment(action="no_change", reason="Performance estável")
+        return PerformanceAdjustment(action="no_change", reason="Performance stable")
 
     def apply_adjustment(self, adjustment: PerformanceAdjustment) -> bool:
         """Aplica ajuste de performance."""

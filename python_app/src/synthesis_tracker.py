@@ -38,7 +38,7 @@ class SegmentRecord:
         words = re.findall(r"\b\w+\b", text)
         word_count = len(words)
 
-        # Estimar duração (palavras / palavras_por_minuto * 60)
+        # Estimate duration: words / words_per_minute * 60
         estimated_duration = (word_count / words_per_minute) * 60 if word_count > 0 else 0.0
 
         return SegmentRecord(
