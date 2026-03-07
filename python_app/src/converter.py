@@ -153,7 +153,9 @@ ENGINE_WARM_START_TTL_SECONDS = max(60.0, _env_float("ENGINE_WARM_START_TTL_SECO
 TRUNCATION_THRESHOLD_PERCENT = _env_float(
     "TRUNCATION_THRESHOLD_PERCENT", 10.0
 )  # Consider truncated if >10% missing
-EXPECTED_WPM = _env_int("EXPECTED_WPM", 160)  # Expected words per minute for TTS
+EXPECTED_WPM = _env_int(
+    "EXPECTED_WPM", 200
+)  # Expected words per minute for TTS (Edge-TTS neural voices ~200 WPM)
 CHARS_PER_WORD = _env_float("CHARS_PER_WORD", 5.0)  # Average characters per word
 
 
