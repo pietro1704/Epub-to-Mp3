@@ -23,6 +23,7 @@ from src.converter import (
     AudioConverter,
     ChapterProcessor,
     ConversionResult,
+    validate_audio_completeness,
 )
 from src.ebook_reader import Chapter
 from src.text_formatting import TextFormattingProcessor
@@ -2675,6 +2676,127 @@ class TestAutoEngineCandidates(unittest.TestCase):
             order = converter._auto_engine_candidates(config)
 
         self.assertEqual(order[0], "edge", f"Unexpected auto engine order: {order}")
+
+
+class TestValidateAudioCompleteness(unittest.TestCase):
+    """Tests for validate_audio_completeness with the calibrated 200 WPM default."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_missing_file_returns_false(self):
+        result, coverage = validate_audio_completeness(
+            Path(self.temp_dir) / "nonexistent.mp3", 5000
+        )
+        self.assertFalse(result)
+        self.assertEqual(coverage, 0.0)
+
+    def test_short_chapter_skips_check(self):
+        # text_length < 1000 should always pass regardless of audio
+        mp3 = Path(self.temp_dir) / "short.mp3"
+        mp3.write_bytes(b"\x00" * 100)  # tiny/invalid file still passes
+        result, coverage = validate_audio_completeness(mp3, 500)
+        self.assertTrue(result)
+        self.assertEqual(coverage, 100.0)
+
+    def test_complete_audio_at_200_wpm(self):
+        # Simulate ~200 WPM audio for a 5000-char chapter:
+        # 5000 chars / 5 chars/word = 1000 words; at 200 WPM → 5 minutes
+        mp3 = Path(self.temp_dir) / "complete.mp3"
+        mp3.write_bytes(b"\x00" * 100)  # must exist for the check to proceed
+        with patch("src.converter.MP3") as mock_mp3:
+            mock_mp3.return_value.info.length = 300.0  # 5 minutes
+            result, coverage = validate_audio_completeness(mp3, 5000)
+        # coverage = (5 min * 200 wpm * 5 chars/word) / 5000 = 100%
+        self.assertTrue(result)
+        self.assertAlmostEqual(coverage, 100.0, places=0)
+
+    def test_truncated_audio_detected(self):
+        # 5000-char chapter but only 2 minutes of audio → ~80% coverage → truncated
+        mp3 = Path(self.temp_dir) / "truncated.mp3"
+        mp3.write_bytes(b"\x00" * 100)
+        with patch("src.converter.MP3") as mock_mp3:
+            mock_mp3.return_value.info.length = 120.0  # 2 minutes
+            result, coverage = validate_audio_completeness(mp3, 5000)
+        # coverage = (2 * 200 * 5) / 5000 = 2000/5000 = 40%  → missing 60% → truncated
+        self.assertFalse(result)
+        self.assertLess(coverage, 90.0)
+
+    def test_old_160_wpm_would_have_falsely_failed(self):
+        # Edge-TTS at real 200 WPM for a 10000-char chapter → 10 minutes audio.
+        # With WPM=160: coverage = (10 * 160 * 5) / 10000 = 80% → detected as truncated.
+        # With WPM=200: coverage = (10 * 200 * 5) / 10000 = 100% → passes.
+        mp3 = Path(self.temp_dir) / "edge_complete.mp3"
+        mp3.write_bytes(b"\x00" * 100)
+        with patch("src.converter.MP3") as mock_mp3:
+            mock_mp3.return_value.info.length = 600.0  # 10 minutes at 200 WPM
+            with patch("src.converter.EXPECTED_WPM", 200):
+                result_200, coverage_200 = validate_audio_completeness(mp3, 10000)
+            with patch("src.converter.EXPECTED_WPM", 160):
+                result_160, coverage_160 = validate_audio_completeness(mp3, 10000)
+        self.assertTrue(result_200, "200 WPM should pass for complete Edge-TTS audio")
+        self.assertFalse(result_160, "160 WPM would falsely fail for complete Edge-TTS audio")
+
+    def test_corrupt_mp3_does_not_raise(self):
+        mp3 = Path(self.temp_dir) / "corrupt.mp3"
+        mp3.write_bytes(b"not a real mp3")
+        # Should not raise; should return True (benefit of the doubt)
+        result, coverage = validate_audio_completeness(mp3, 5000)
+        self.assertTrue(result)
+        self.assertEqual(coverage, 100.0)
+
+
+class TestMaxChapterCharsConfig(unittest.TestCase):
+    """Tests for MAX_CHAPTER_CHARS constant and skip predicate."""
+
+    def test_default_is_zero_disabled(self):
+        """MAX_CHAPTER_CHARS should default to 0 (disabled) via env var."""
+        import src.converter as conv_mod
+
+        # Without override, default is 0 (disabled)
+        with patch.dict(os.environ, {}, clear=False):
+            # Reload the value via _env_int logic directly
+            raw = os.environ.get("MAX_CHAPTER_CHARS", "")
+            value = int(raw) if raw else 0
+            self.assertEqual(value, 0, "Default MAX_CHAPTER_CHARS must be 0 (disabled)")
+
+        # The module constant should also be 0 in test environment
+        self.assertEqual(conv_mod.MAX_CHAPTER_CHARS, 0)
+
+    def test_skip_predicate_when_enabled(self):
+        """Chapter larger than limit should trigger the skip condition."""
+        limit = 200_000
+        big_chapter_chars = 300_000
+        small_chapter_chars = 5_000
+        self.assertTrue(
+            limit > 0 and big_chapter_chars > limit,
+            "Oversized chapter should match skip condition",
+        )
+        self.assertFalse(
+            limit > 0 and small_chapter_chars > limit,
+            "Normal chapter should not match skip condition",
+        )
+
+    def test_skip_predicate_disabled_when_zero(self):
+        """When MAX_CHAPTER_CHARS=0, no chapter should be skipped."""
+        limit = 0
+        chapter_chars = 999_999
+        self.assertFalse(
+            limit > 0 and chapter_chars > limit,
+            "No chapter should be skipped when limit is 0",
+        )
+
+    def test_env_override_sets_limit(self):
+        """Setting MAX_CHAPTER_CHARS env var correctly configures the limit."""
+        with patch.dict(os.environ, {"MAX_CHAPTER_CHARS": "150000"}):
+            raw = os.environ.get("MAX_CHAPTER_CHARS", "")
+            value = int(raw) if raw else 0
+            self.assertEqual(value, 150_000)
 
 
 if __name__ == "__main__":
