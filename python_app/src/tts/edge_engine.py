@@ -241,12 +241,14 @@ async def _record_success() -> None:
 
     _edge_consecutive_successes += 1
 
-    # Scale up after 30 consecutive successes and no recent rate limits
-    if _edge_consecutive_successes >= 30 and _edge_rate_limit_count > 0:
+    # Scale up after 15 consecutive successes and no recent rate limits.
+    # Lower threshold (was 30) means concurrency/chunk-size recovery is faster
+    # after a temporary rate-limit burst.
+    if _edge_consecutive_successes >= 15 and _edge_rate_limit_count > 0:
         now = asyncio.get_event_loop().time()
-        time_since_limit = now - _edge_rate_limit_until + 60  # Add 60s buffer
+        time_since_limit = now - _edge_rate_limit_until + 30  # 30s buffer (was 60s)
 
-        if time_since_limit > 120:
+        if time_since_limit > 60:  # was 120s
             # Scale up parallelism
             if _edge_max_concurrency < _edge_concurrency_cap:
                 _edge_max_concurrency = min(_edge_concurrency_cap, _edge_max_concurrency + 1)

@@ -8667,7 +8667,7 @@ class AudioConverter:
                 chapter_retry = False
                 start_time = time.time()
                 if chapter_attempt > 1:
-                    retry_backoff = min(60, 2 ** min(chapter_attempt, 6))
+                    retry_backoff = min(30, 2 ** min(chapter_attempt, 5))
                     self.progress.tick(
                         f"⏳ Retry backoff {retry_backoff}s (attempt {chapter_attempt}/{max_chapter_attempts})"
                     )

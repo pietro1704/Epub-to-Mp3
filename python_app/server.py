@@ -542,7 +542,7 @@ try:
     )
 except (TypeError, ValueError):
     _CHAPTER_RETRY_BACKOFF_SECONDS = 2.0
-_STALL_THRESHOLD_SECONDS = float(os.getenv("JOB_STALL_THRESHOLD_SECONDS", "480") or "480")
+_STALL_THRESHOLD_SECONDS = float(os.getenv("JOB_STALL_THRESHOLD_SECONDS", "300") or "300")
 _STALL_RECHECK_SECONDS = float(os.getenv("JOB_STALL_RECHECK_SECONDS", "90") or "90")
 _STALL_MAX_AUTO_RETRIES = max(0, int(os.getenv("JOB_STALL_MAX_AUTO_RETRIES", "1") or "1"))
 

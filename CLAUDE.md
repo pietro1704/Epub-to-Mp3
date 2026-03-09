@@ -186,7 +186,7 @@ When using Edge-TTS, the system automatically handles rate limiting and service 
     Scales with consecutive chapter failures: 0.5s → 1s → 2s → 4s → 8s → 16s → 30s
   - **Request-level rate limit backoff** (`edge_engine.py`, starts 5s, cap `60s`):
     Triggered by 403 responses from Edge-TTS: 5s → 10s → 20s → 40s → 60s (capped)
-    Resets automatically after 30 consecutive successes and 120s+ without limits
+    Resets automatically after 15 consecutive successes and 60s+ without limits
 
 ### Tier 2: Edge-TTS Monolingual (after 3 failures)
 - Automatically switches to monolingual (language-specific) voice
