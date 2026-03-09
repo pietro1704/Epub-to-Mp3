@@ -178,10 +178,10 @@ def validate_audio_completeness(mp3_path: Path, text_length: int) -> tuple[bool,
     if not mp3_path.exists():
         return False, 0.0
 
-    # Skip check for short chapters: formatting cues, language markup, and
-    # header text inflate text_length disproportionately for small chapters,
-    # causing false "truncation" detection.
-    if text_length < 1000:
+    # Skip check for short chapters: at low char counts the 10% tolerance
+    # window is only a few seconds of audio, making natural TTS speed variance
+    # (±5-10%) indistinguishable from real truncation. Raised from 1000 to 1500.
+    if text_length < 1500:
         return True, 100.0
 
     try:
