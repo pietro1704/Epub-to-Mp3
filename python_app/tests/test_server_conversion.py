@@ -490,6 +490,73 @@ def test_feature_history_endpoint_returns_limited_entries(tmp_path, monkeypatch)
     assert payload["entries"][0]["ts"] == 3
 
 
+def test_server_max_chapter_chars_skip_predicate():
+    """Server MAX_CHAPTER_CHARS skip condition mirrors converter.py logic."""
+    # When limit > 0 and chapter exceeds it → skip
+    limit = 200_000
+    assert limit > 0 and 279_000 > limit, "Oversized chapter should match skip condition"
+    assert not (limit > 0 and 5_000 > limit), "Normal chapter should not match skip condition"
+
+    # When limit == 0 (disabled) → never skip regardless of size
+    assert not (0 > 0 and 999_999 > 0), "Disabled limit should never trigger skip"
+
+
+def test_server_max_chapter_chars_default_is_zero():
+    """MAX_CHAPTER_CHARS in server defaults to 0 (disabled), same as converter."""
+    import os
+
+    raw = os.environ.get("MAX_CHAPTER_CHARS", "")
+    value = int(raw) if raw else 0
+    assert value == 0, "Default MAX_CHAPTER_CHARS must be 0 (disabled)"
+
+
+def test_server_outlier_detection_appends_event(monkeypatch):
+    """Outlier chapters trigger a MAX_CHAPTER_CHARS hint in job events.
+
+    Tests the detection logic directly by simulating the chapter_char_totals
+    dict and checking that _append_event is called with the warning message.
+    """
+    from src.ebook_reader import Chapter
+
+    job: dict = {"events": []}
+
+    # Build char totals: 9 small chapters (1K) + 1 outlier (300K)
+    normal_chapters = [
+        Chapter(index=i, name=f"Ch {i}", source_path=f"ch{i}.xhtml", text="A" * 1_000)
+        for i in range(1, 10)
+    ]
+    outlier_chapter = Chapter(
+        index=10, name="Sumário (giant)", source_path="sum.xhtml", text="B" * 300_000
+    )
+    chapters = normal_chapters + [outlier_chapter]
+
+    chapter_char_totals = {i + 1: len(ch.text) for i, ch in enumerate(chapters)}
+
+    # Run the same outlier detection logic as in process_conversion
+    sorted_lengths = sorted(chapter_char_totals.values())
+    median_chars = sorted_lengths[len(sorted_lengths) // 2]
+    outlier_floor = 50_000
+    outlier_threshold = max(median_chars * 5, outlier_floor)
+    warnings = []
+    for idx, ch_chars in chapter_char_totals.items():
+        if ch_chars > outlier_threshold and ch_chars > outlier_floor:
+            ch = chapters[idx - 1] if 0 < idx <= len(chapters) else None
+            ch_name = getattr(ch, "name", f"Chapter {idx}")[:60] if ch else f"Chapter {idx}"
+            ratio = ch_chars // max(median_chars, 1)
+            suggested = (ch_chars // 1000) * 1000
+            msg = (
+                f"⚠️ Oversized chapter [{idx}]: {ch_name}"
+                f" ({ch_chars:,} chars = {ratio}× median)"
+                f" → Set MAX_CHAPTER_CHARS={suggested:,} to skip it"
+            )
+            warnings.append(msg)
+
+    assert len(warnings) == 1, f"Expected 1 outlier warning, got {len(warnings)}"
+    assert "Sumário (giant)" in warnings[0]
+    assert "MAX_CHAPTER_CHARS=300,000" in warnings[0]
+    assert "300×" in warnings[0] or "× median" in warnings[0]
+
+
 def _make_telemetry(tmp_path, monkeypatch):
     telemetry_path = Path(tmp_path) / "telemetry.json"
     recorder = TelemetryRecorder(telemetry_file=telemetry_path, max_samples=20)

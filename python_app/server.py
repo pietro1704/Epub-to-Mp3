@@ -70,7 +70,7 @@ from src.tts.factory import TTSFactory
 from src.tts.kokoro_guard import load_kokoro_supports_language
 from src.tts.piper_guard import is_piper_supported_environment
 from src.tts.spark_guard import is_spark_supported_environment
-from src.utils import AudioProcessor, FileManager, TextValidator
+from src.utils import AudioProcessor, FileManager, TextValidator, TimeFormatter
 
 
 def _detect_test_environment() -> bool:
@@ -1145,36 +1145,6 @@ def _collect_recent_job_entries(limit: int = 10) -> list[dict]:
     return summaries
 
 
-def _format_duration(seconds: float) -> str:
-    """Return a ddhhmmss human readable duration."""
-    total = max(0, int(seconds or 0))
-    days, rem = divmod(total, 86400)
-    hours, rem = divmod(rem, 3600)
-    minutes, secs = divmod(rem, 60)
-    parts: list[str] = []
-    if days:
-        parts.append(f"{days}d")
-    if hours or days:
-        parts.append(f"{hours}h")
-    if minutes or hours or days:
-        parts.append(f"{minutes}m")
-    parts.append(f"{secs}s")
-    return " ".join(parts)
-
-
-def _format_hms(seconds: float) -> str:
-    total = max(0, int(seconds or 0))
-    hours, rem = divmod(total, 3600)
-    minutes, secs = divmod(rem, 60)
-    parts: list[str] = []
-    if hours:
-        parts.append(f"{hours:02d}h")
-    if minutes or hours:
-        parts.append(f"{minutes:02d}m")
-    parts.append(f"{secs:02d}s")
-    return " ".join(parts)
-
-
 def _ensure_job(job_id: str) -> dict:
     job = jobs.get(job_id)
     if job:
@@ -1681,7 +1651,7 @@ def _handle_stalled_job(job_id: str, job: dict, inactivity_seconds: float) -> bo
     now = time.time()
     job["_stallHandledAt"] = now
     stage_label = job.get("_lastStage") or job.get("statusHint") or "process"
-    inactivity_label = _format_duration(inactivity_seconds)
+    inactivity_label = TimeFormatter.format_time(inactivity_seconds)
     attempts = job.get("_stallRestartCount", 0)
     job["_run_token"] = str(uuid.uuid4())
     message_prefix = f"⚠️ No progress for {inactivity_label} (stage: {stage_label}). "
@@ -3952,6 +3922,26 @@ async def process_conversion(job_id: str) -> None:
             total_chars += chapter_chars
         job["totalChars"] = total_chars
         job["processedChars"] = 0
+
+        # Detect size outliers (chapters >5× median) and warn before conversion starts.
+        if chapter_char_totals:
+            sorted_lengths = sorted(chapter_char_totals.values())
+            median_chars = sorted_lengths[len(sorted_lengths) // 2]
+            outlier_floor = 50_000
+            outlier_threshold = max(median_chars * 5, outlier_floor)
+            for idx, ch_chars in chapter_char_totals.items():
+                if ch_chars > outlier_threshold and ch_chars > outlier_floor:
+                    ch = chapters[idx - 1] if 0 < idx <= len(chapters) else None
+                    ch_name = getattr(ch, "name", f"Chapter {idx}")[:60] if ch else f"Chapter {idx}"
+                    ratio = ch_chars // max(median_chars, 1)
+                    suggested = (ch_chars // 1000) * 1000
+                    _append_event(
+                        job,
+                        f"⚠️ Oversized chapter [{idx}]: {ch_name}"
+                        f" ({ch_chars:,} chars = {ratio}× median)"
+                        f" → Set MAX_CHAPTER_CHARS={suggested:,} to skip it",
+                    )
+
         job["_chapterCharTotals"] = chapter_char_totals
         job["_chapterCharProcessed"] = {idx: 0 for idx in chapter_char_totals}
         job["_chapterLastProgressUpdate"] = {idx: 0.0 for idx in chapter_char_totals}
@@ -4773,7 +4763,7 @@ async def process_conversion(job_id: str) -> None:
                         est = max(len(clean_text) / 15.0, 30.0)
                     _append_event(
                         job,
-                        f"   ↳ Text: {len(clean_text)} chars, estimated {_format_duration(est)}",
+                        f"   ↳ Text: {len(clean_text)} chars, estimated {TimeFormatter.format_time(est)}",
                     )
 
                 estimated_seconds = TextValidator.estimate_duration(clean_text)
@@ -4878,11 +4868,11 @@ async def process_conversion(job_id: str) -> None:
                                     if local_active_config
                                     else config.engine
                                 ) or "auto"
-                                in_progress = _format_hms(elapsed)
+                                in_progress = TimeFormatter.format_time(elapsed)
                                 remaining = max(0.0, estimated_seconds - elapsed)
-                                hint = f"Chapter {idx}/{len(chapters)}: {chapter_name} for {_format_duration(elapsed)}"
+                                hint = f"Chapter {idx}/{len(chapters)}: {chapter_name} for {TimeFormatter.format_time(elapsed)}"
                                 if remaining > 0:
-                                    hint += f" • estimated remaining {_format_duration(remaining)}"
+                                    hint += f" • estimated remaining {TimeFormatter.format_time(remaining)}"
                                 job["statusHint"] = hint
                                 _append_event(
                                     job,
@@ -5270,7 +5260,8 @@ async def process_conversion(job_id: str) -> None:
                 engine_runtime = max((last_stage_timestamp - synth_started), 0.001)
 
                 _append_event(
-                    job, f"✅ Completed: {output_file.name} (em {_format_hms(chapter_elapsed)})"
+                    job,
+                    f"✅ Completed: {output_file.name} (em {TimeFormatter.format_time(chapter_elapsed)})",
                 )
 
                 # Add download URL to chapter progress
@@ -5702,7 +5693,7 @@ async def process_conversion(job_id: str) -> None:
         _update_job_activity(job, stage="completed_success")
         _append_event(job, "")
         _append_event(job, "✅ Conversion completed successfully")
-        _append_event(job, f"⏱️ Total conversion time: {_format_hms(total_elapsed)}")
+        _append_event(job, f"⏱️ Total conversion time: {TimeFormatter.format_time(total_elapsed)}")
         _append_event(job, f"📁 File available: {zip_file.name} ({len(chapters)} chapters)")
         job["parallelActive"] = 0
         job["resumeRequested"] = False

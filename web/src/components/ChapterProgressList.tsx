@@ -17,7 +17,7 @@ const STATUS_ICONS: Record<ChapterProgressEntry["status"], string> = {
   completed: "✅",
   processing: "⏳",
   pending: "•",
-  skipped: "↷",
+  skipped: "⏭️",
   failed: "⚠️",
   cancelled: "⛔",
   retrying: "🔄",
