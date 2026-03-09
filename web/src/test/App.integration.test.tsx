@@ -7,7 +7,7 @@ import type { ConversionClient } from "../services/ConversionService";
 import type { JobSnapshot } from "../types/conversion";
 
 describe("App integration", () => {
-  it("executa o fluxo completo de conversão com cliente customizado", async () => {
+  it("runs full conversion flow with a custom client", async () => {
     const user = userEvent.setup();
     const submit = vi.fn().mockResolvedValue({ jobId: "job-777" });
     const poll = vi
@@ -20,11 +20,11 @@ describe("App integration", () => {
           options?.onSnapshot?.({
             jobId: "job-777",
             state: "running",
-            events: ["Arquivo carregado", "Sintetizando capítulo 1"],
+            events: ["File loaded", "Synthesizing chapter 1"],
             detectedLanguage: "pt-BR",
             chaptersTotal: 2,
             chaptersCompleted: 1,
-            currentChapter: "Capítulo 1",
+            currentChapter: "Chapter 1",
             progressPercent: 45,
           });
           return {
@@ -32,18 +32,18 @@ describe("App integration", () => {
             state: "finished",
             outputs: [
               {
-                name: "Capítulo 1.mp3",
+                name: "Chapter 1.mp3",
                 url: "https://cdn.example/audio-1.mp3",
               },
               {
-                name: "Capítulo 2.mp3",
+                name: "Chapter 2.mp3",
                 url: "https://cdn.example/audio-2.mp3",
               },
             ],
             detectedLanguage: "pt-BR",
             chaptersTotal: 2,
             chaptersCompleted: 2,
-            currentChapter: "Capítulo 2",
+            currentChapter: "Chapter 2",
             progressPercent: 100,
           } satisfies JobSnapshot;
         },
@@ -78,7 +78,7 @@ describe("App integration", () => {
     );
   });
 
-  it("reaproveita o upload automático e evita reenviar o arquivo", async () => {
+  it("reuses automatic upload and avoids resending the file", async () => {
     const user = userEvent.setup();
     const submit = vi.fn().mockResolvedValue({ jobId: "job-999" });
     const poll = vi.fn().mockResolvedValue({

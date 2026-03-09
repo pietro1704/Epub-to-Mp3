@@ -6,7 +6,7 @@ import type { ConversionFormValues, JobSnapshot } from "../types/conversion";
 import { createProvidersWrapper } from "./testUtils";
 
 describe("useConversionFlow", () => {
-  const file = new File(["dados"], "livro.epub", {
+  const file = new File(["data"], "book.epub", {
     type: "application/epub+zip",
   });
   const request: ConversionFormValues = {
@@ -15,7 +15,7 @@ describe("useConversionFlow", () => {
     footnoteMode: "inline",
   };
 
-  it("realiza a conversão com sucesso e registra eventos", async () => {
+  it("completes conversion successfully and records events", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "123" });
     const poll = vi
       .fn()
@@ -27,7 +27,7 @@ describe("useConversionFlow", () => {
           options?.onSnapshot?.({
             jobId: "123",
             state: "running",
-            events: ["Extraindo capítulos", "Gerando áudio"],
+            events: ["Extracting chapters", "Generating audio"],
           });
           return {
             jobId: "123",
@@ -61,13 +61,13 @@ describe("useConversionFlow", () => {
     expect(messages).toEqual([
       expect.stringMatching(/Enviando arquivo/i),
       expect.stringContaining("Pedido 123"),
-      "Extraindo capítulos",
-      "Gerando áudio",
+      "Extracting chapters",
+      "Generating audio",
       expect.stringContaining("Conversão finalizada"),
     ]);
   });
 
-  it("propaga erro quando a conversão falha", async () => {
+  it("propagates error when conversion fails", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "321" });
     const poll = vi.fn().mockResolvedValue({
       jobId: "321",
@@ -96,7 +96,7 @@ describe("useConversionFlow", () => {
     expect(lastMessage).toContain("Falha");
   });
 
-  it("remove o arquivo do payload quando já existe upload prévio", async () => {
+  it("removes file from payload when a prior upload already exists", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "555" });
     const poll = vi.fn().mockResolvedValue({
       jobId: "555",
@@ -114,13 +114,13 @@ describe("useConversionFlow", () => {
       wrapper: createProvidersWrapper("pt"),
     });
 
-    const file = new File(["dados"], "livro.epub", {
+    const file = new File(["data"], "book.epub", {
       type: "application/epub+zip",
     });
     await act(async () => {
       await result.current.submit({
         file,
-        fileName: "livro.epub",
+        fileName: "book.epub",
         uploadId: "upload-xyz",
         engine: "edge",
         footnoteMode: "inline",
@@ -131,7 +131,7 @@ describe("useConversionFlow", () => {
       expect.objectContaining({
         file: null,
         uploadId: "upload-xyz",
-        fileName: "livro.epub",
+        fileName: "book.epub",
       }),
     );
 

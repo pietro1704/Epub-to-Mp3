@@ -6,12 +6,12 @@ import type { UploadResponse } from "../services/ConversionService";
 import { renderWithProviders } from "./testUtils";
 
 describe("ConversionForm", () => {
-  it("exibe mensagem de erro quando nenhum arquivo é selecionado", async () => {
+  it("shows error message when no file is selected", async () => {
     const user = userEvent.setup();
     const handleSubmit = vi.fn();
     const handleUpload = vi
       .fn()
-      .mockResolvedValue({ uploadId: "test", fileName: "amostra.epub" });
+      .mockResolvedValue({ uploadId: "test", fileName: "sample.epub" });
     renderWithProviders(
       <ConversionForm
         isSubmitting={false}
@@ -30,12 +30,12 @@ describe("ConversionForm", () => {
     expect(handleSubmit).not.toHaveBeenCalled();
   });
 
-  it("envia os valores selecionados usando upload automático", async () => {
+  it("submits selected values using automatic upload", async () => {
     const user = userEvent.setup();
     const handleSubmit = vi.fn().mockResolvedValue(undefined);
     const handleUpload = vi
       .fn()
-      .mockResolvedValue({ uploadId: "test", fileName: "amostra.epub" });
+      .mockResolvedValue({ uploadId: "test", fileName: "sample.epub" });
     renderWithProviders(
       <ConversionForm
         isSubmitting={false}
@@ -44,7 +44,7 @@ describe("ConversionForm", () => {
       />,
     );
 
-    const file = new File(["conteúdo"], "amostra.epub", {
+    const file = new File(["content"], "sample.epub", {
       type: "application/epub+zip",
     });
 
@@ -70,7 +70,7 @@ describe("ConversionForm", () => {
       expect(handleSubmit).toHaveBeenCalledTimes(1);
       expect(handleSubmit.mock.calls[0][0]).toMatchObject({
         file: null,
-        fileName: "amostra.epub",
+        fileName: "sample.epub",
         uploadId: "test",
         engine: "coqui",
         voice: "tts_models/pt/cv/vits",
@@ -81,7 +81,7 @@ describe("ConversionForm", () => {
     });
   });
 
-  it("mostra status enquanto detecta capa automaticamente", async () => {
+  it("shows status while auto-detecting cover", async () => {
     const user = userEvent.setup();
     let resolveUpload: ((value: UploadResponse) => void) | undefined;
     const handleSubmit = vi.fn();
@@ -99,7 +99,7 @@ describe("ConversionForm", () => {
       />,
     );
 
-    const file = new File(["conteúdo"], "amostra.epub", {
+    const file = new File(["content"], "sample.epub", {
       type: "application/epub+zip",
     });
 
@@ -110,7 +110,7 @@ describe("ConversionForm", () => {
       screen.getByRole("button", { name: /converter agora/i }),
     ).toBeDisabled();
 
-    resolveUpload?.({ uploadId: "auto-id", fileName: "amostra.epub" });
+    resolveUpload?.({ uploadId: "auto-id", fileName: "sample.epub" });
     await waitFor(() =>
       expect(screen.getByText(/metadados detectados/i)).toBeInTheDocument(),
     );
