@@ -2799,5 +2799,61 @@ class TestMaxChapterCharsConfig(unittest.TestCase):
             self.assertEqual(value, 150_000)
 
 
+class TestAnalyzeChapterStatsOutliers(unittest.TestCase):
+    """Tests for the outlier-detection logic in _analyze_chapter_stats."""
+
+    def _make_chapters(self, lengths: list[int]) -> list[Chapter]:
+        return [
+            Chapter(index=i, name=f"Chapter {i}", source_path=f"ch{i}.xhtml", text="x" * n)
+            for i, n in enumerate(lengths)
+        ]
+
+    def setUp(self):
+        self.converter = AudioConverter()
+
+    def test_no_outliers_for_uniform_chapters(self):
+        chapters = self._make_chapters([5000] * 10)
+        stats = self.converter._analyze_chapter_stats(chapters)
+        self.assertEqual(stats["outlier_indices"], [])
+
+    def test_detects_single_outlier(self):
+        # One chapter is 15× the median (279K vs ~18K)
+        lengths = [18_000] * 10 + [279_000]
+        chapters = self._make_chapters(lengths)
+        stats = self.converter._analyze_chapter_stats(chapters)
+        self.assertIn(10, stats["outlier_indices"])
+
+    def test_no_outlier_if_below_50k_floor(self):
+        # Even if one chapter is >5× median, skip warning if it's <50K chars
+        lengths = [1_000] * 10 + [8_000]
+        chapters = self._make_chapters(lengths)
+        stats = self.converter._analyze_chapter_stats(chapters)
+        self.assertEqual(stats["outlier_indices"], [])
+
+    def test_median_chars_computed_correctly(self):
+        lengths = [1_000, 2_000, 3_000, 4_000, 5_000]
+        chapters = self._make_chapters(lengths)
+        stats = self.converter._analyze_chapter_stats(chapters)
+        self.assertEqual(stats["median_chars"], 3_000)
+
+    def test_outlier_max_chars_set(self):
+        lengths = [10_000] * 5 + [300_000]
+        chapters = self._make_chapters(lengths)
+        stats = self.converter._analyze_chapter_stats(chapters)
+        self.assertEqual(stats.get("outlier_max_chars"), 300_000)
+
+    def test_outlier_warning_printed(self):
+        lengths = [10_000] * 5 + [300_000]
+        chapters = self._make_chapters(lengths)
+        import io
+
+        buf = io.StringIO()
+        with unittest.mock.patch("sys.stdout", buf):
+            self.converter._analyze_chapter_stats(chapters)
+        output = buf.getvalue()
+        self.assertIn("Oversized chapter", output)
+        self.assertIn("MAX_CHAPTER_CHARS", output)
+
+
 if __name__ == "__main__":
     unittest.main()

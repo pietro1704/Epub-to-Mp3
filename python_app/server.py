@@ -359,7 +359,7 @@ _persistent_cache_manager: Optional[CacheManager] = None
 
 
 def get_cache_manager() -> CacheManager:
-    """Retorna CacheManager singleton using diretório persistente."""
+    """Return the CacheManager singleton using the persistent directory."""
     global _persistent_cache_manager
     if _persistent_cache_manager is None:
         _persistent_cache_manager = CacheManager(cache_dir=persistent_cache_dir)
@@ -707,8 +707,8 @@ def _enforce_chapter_limit(chapter_count: int) -> None:
         raise HTTPException(
             status_code=413,
             detail=(
-                f"Este livro possui {chapter_count} capítulos, mas o limite atual é "
-                f"de {MAX_CHAPTERS_PER_JOB}. Envie trechos menores ou selecione menos capítulos."
+                f"This book has {chapter_count} chapters but the current limit is "
+                f"{MAX_CHAPTERS_PER_JOB}. Upload smaller excerpts or select fewer chapters."
             ),
         )
 
@@ -717,7 +717,7 @@ def _summarize_resume_job(job_id: str, job_data: dict, saved_at: Optional[str] =
     return {
         "jobId": job_id,
         "state": job_data.get("state", "queued"),
-        "bookTitle": job_data.get("bookTitle", "Livro Desconhecido"),
+        "bookTitle": job_data.get("bookTitle", "Unknown Book"),
         "fileName": Path(job_data.get("file_path", "")).name
         if job_data.get("file_path")
         else "unknown",
@@ -2332,7 +2332,7 @@ async def convert_ebook(
         if not parsed_range:
             raise HTTPException(
                 status_code=400,
-                detail="Intervalo inválido. Use A..B (ex.: 5.1..7.3).",
+                detail="Invalid range. Use A..B (e.g. 5.1..7.3).",
             )
     reuse_upload = None
     job_input_dir = None
@@ -4773,7 +4773,7 @@ async def process_conversion(job_id: str) -> None:
                         est = max(len(clean_text) / 15.0, 30.0)
                     _append_event(
                         job,
-                        f"   ↳ Texto: {len(clean_text)} chars, estimado {_format_duration(est)}",
+                        f"   ↳ Text: {len(clean_text)} chars, estimated {_format_duration(est)}",
                     )
 
                 estimated_seconds = TextValidator.estimate_duration(clean_text)
@@ -5068,7 +5068,7 @@ async def process_conversion(job_id: str) -> None:
                                                 f"   ↳ AUTO: switching to {next_engine.upper()} after WAV→MP3 conversion failure",
                                             )
                                             continue
-                                    if _switch_to_next_engine("Conversão WAV→MP3 failed"):
+                                    if _switch_to_next_engine("WAV→MP3 conversion failed"):
                                         local_active_config = active_config
                                         local_engine_name = (
                                             active_config.engine if active_config else config.engine
