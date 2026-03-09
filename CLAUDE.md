@@ -144,6 +144,16 @@ EDGE_KOKORO_THRESHOLD=3         # Switch to Kokoro after N failures (after monol
 EDGE_PIPER_THRESHOLD=3          # Switch to Piper after N failures (after Kokoro)
 ```
 
+### Conversion Limits
+```bash
+MAX_CHAPTER_CHARS=0             # Skip chapters larger than N chars (0=disabled)
+                                # Useful for EPUBs where TOC/footnote files embed the
+                                # entire book text (e.g. Companhia das Letras EPUBs).
+                                # The app auto-detects and warns about outliers (>5× median).
+EXPECTED_WPM=200                # Expected TTS speaking speed for audio validation
+                                # (Edge-TTS neural voices: ~200 WPM)
+```
+
 ### Kokoro Tuning
 ```bash
 KOKORO_CHUNK_CHARS=2000         # Chars per chunk
@@ -171,14 +181,12 @@ When using Edge-TTS, the system automatically handles rate limiting and service 
 ### Tier 1: Edge-TTS Multilingual (Default)
 - Uses multilingual neural voices (e.g., `pt-BR-ThalitaMultilingualNeural`)
 - Best quality but more prone to rate limiting under heavy load
-- Includes **adaptive delays** (exponential backoff):
-  - Failure 1 → 0.5s delay
-  - Failure 2 → 1s delay
-  - Failure 3 → 2s delay
-  - Failure 4 → 4s delay
-  - Failure 5 → 8s delay
-  - Failure 6 → 16s delay
-  - Failure 7+ → 30s delay (capped)
+- **Two independent backoff systems** run simultaneously:
+  - **Chapter-level adaptive delay** (`converter.py`, `base_delay=0.5s`, cap `30s`):
+    Scales with consecutive chapter failures: 0.5s → 1s → 2s → 4s → 8s → 16s → 30s
+  - **Request-level rate limit backoff** (`edge_engine.py`, starts 5s, cap `60s`):
+    Triggered by 403 responses from Edge-TTS: 5s → 10s → 20s → 40s → 60s (capped)
+    Resets automatically after 30 consecutive successes and 120s+ without limits
 
 ### Tier 2: Edge-TTS Monolingual (after 3 failures)
 - Automatically switches to monolingual (language-specific) voice

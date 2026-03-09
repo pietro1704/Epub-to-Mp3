@@ -4878,6 +4878,9 @@ async def process_conversion(job_id: str) -> None:
                                     job,
                                     f"⏳ {chapter_name}: {in_progress} using {engine_label.upper()}",
                                 )
+                                # Keep _lastActivityTs fresh during rate-limit backoff
+                                # so the stall watchdog doesn't trigger false positives.
+                                _update_job_activity(job)
                                 _persist_job(job_id, force=False)
                     finally:
                         job.pop("statusHint", None)

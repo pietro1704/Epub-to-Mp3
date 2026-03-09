@@ -10412,7 +10412,7 @@ class AudioConverter:
                                 "⏭️ Deferred to end for safe offline retry"
                             )
                             break
-                        chapter_error = chapter_error or "Failure persistente"
+                        chapter_error = chapter_error or "Persistent failure"
                         errors.append(f"{chapter.name}: {chapter_error}")
                         chapter_error = _error_text(chapter_error)
                         self.progress.complete_chapter(f"❌ {chapter_error}")
