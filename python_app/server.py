@@ -523,10 +523,10 @@ _pending_uploads: Dict[str, dict] = {}
 _pending_lock = threading.Lock()
 _PENDING_TTL_SECONDS = 3600  # 1 hour
 _PENDING_META_FILENAME = "upload.json"
-_CHAPTER_HEARTBEAT_SECONDS = 45.0
-_CHAPTER_TIMEOUT_FACTOR = 2.5
-_CHAPTER_TIMEOUT_MIN = 120.0
-_CHAPTER_TIMEOUT_MAX = 900.0
+_CHAPTER_HEARTBEAT_SECONDS = 20.0  # was 45s — more frequent activity pings
+_CHAPTER_TIMEOUT_FACTOR = 2.0  # was 2.5 — less overshoot on estimated duration
+_CHAPTER_TIMEOUT_MIN = 60.0  # was 120s — detect stuck chapters faster
+_CHAPTER_TIMEOUT_MAX = 300.0  # was 900s — 5 min hard cap per chapter
 try:
     _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "6") or "6"))
 except (TypeError, ValueError):
@@ -563,14 +563,14 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-_HEALTHCHECK_INTERVAL_SECONDS = _env_float("JOB_HEALTHCHECK_INTERVAL_SECONDS", 30.0)
+_HEALTHCHECK_INTERVAL_SECONDS = _env_float("JOB_HEALTHCHECK_INTERVAL_SECONDS", 15.0)  # was 30s
 _HEALTHCHECK_SLOW_EDGE_CPS = _env_float("JOB_HEALTHCHECK_SLOW_EDGE_CPS", EDGE_MIN_CHARS_PER_SECOND)
 _HEALTHCHECK_SLOW_CPS = _env_float("JOB_HEALTHCHECK_SLOW_CPS", 30.0)
 _HEALTHCHECK_HIGH_CPU = _env_float("JOB_HEALTHCHECK_HIGH_CPU_PERCENT", 85.0)
 _HEALTHCHECK_HIGH_MEM = _env_float("JOB_HEALTHCHECK_HIGH_MEM_PERCENT", 85.0)
 _HEALTHCHECK_OK_CPU = _env_float("JOB_HEALTHCHECK_OK_CPU_PERCENT", 75.0)
 _HEALTHCHECK_OK_MEM = _env_float("JOB_HEALTHCHECK_OK_MEM_PERCENT", 80.0)
-_HEALTHCHECK_SLOW_STREAK = max(1, _env_int("JOB_HEALTHCHECK_SLOW_STREAK", 2))
+_HEALTHCHECK_SLOW_STREAK = max(1, _env_int("JOB_HEALTHCHECK_SLOW_STREAK", 1))  # was 2
 _app_loop: Optional[asyncio.AbstractEventLoop] = None
 
 
@@ -2837,7 +2837,7 @@ async def health_check() -> dict:
 async def health_monitor_status() -> dict:
     """
     **NOVO**: Health Monitor Status
-    Retorna estatísticas detalhadas do monitor de saúde.
+    Returns detailed health monitor statistics.
     """
     from health_monitor import get_health_monitor
 
@@ -2917,7 +2917,7 @@ async def health_monitor_dashboard() -> dict:
 async def health_recovery_stats() -> dict:
     """
     **NOVO**: Auto-Recovery Statistics
-    Retorna estatísticas do sistema de auto-recovery.
+    Returns auto-recovery system statistics.
     """
     from auto_recovery import get_auto_recovery
 
@@ -3733,7 +3733,7 @@ async def process_conversion(job_id: str) -> None:
                 "modelo",
                 "loading",
                 "download",
-                "pronto",
+                "ready",
                 "ready",
                 # Tuning and retry
                 "tuning",
@@ -4104,7 +4104,7 @@ async def process_conversion(job_id: str) -> None:
                     if engine_name:
                         engine_seeds[engine_name] = engine_obj
                     _set_engine_status(job, engine_name, "ready", "Ready")
-                    _append_event(job, f"✅ Engine {candidate.engine} pronto")
+                    _append_event(job, f"✅ Engine {candidate.engine} ready")
                     break
                 except ImportError as exc:
                     _set_engine_status(job, engine_name, "error", str(exc))
@@ -4422,6 +4422,11 @@ async def process_conversion(job_id: str) -> None:
         zip_lock = asyncio.Lock()
         job_failed = {"value": False}
         edge_slow_mode = False
+        # Count consecutive Edge chapter timeouts across all chapters.
+        # After _EDGE_TIMEOUT_DISABLE_THRESHOLD failures, Edge is disabled for the whole job
+        # so subsequent chapters skip the 60s wait and go straight to the next engine.
+        _EDGE_TIMEOUT_DISABLE_THRESHOLD = 2
+        edge_chapter_timeouts = [0]  # mutable container for nonlocal mutation in nested fns
         edge_safe_profile = {
             "chunk_chars": EDGE_SAFE_CHUNK_CHARS,
             "max_segment_seconds": EDGE_SAFE_MAX_SEGMENT_SECONDS,
@@ -4499,8 +4504,8 @@ async def process_conversion(job_id: str) -> None:
         retry_forever = _CHAPTER_RETRY_FOREVER
         max_retry_rounds = _CHAPTER_RETRY_ROUNDS
         max_chapter_attempts = max(1, 1 + max_retry_rounds)
-        max_retry_rounds_label = "ilimitado" if retry_forever else str(max_retry_rounds)
-        max_chapter_attempts_label = "ilimitado" if retry_forever else str(max_chapter_attempts)
+        max_retry_rounds_label = "unlimited" if retry_forever else str(max_retry_rounds)
+        max_chapter_attempts_label = "unlimited" if retry_forever else str(max_chapter_attempts)
         retrying_failed_chapters = False
 
         def _note_chapter_attempt(chapter_index: int) -> int:
@@ -4955,6 +4960,18 @@ async def process_conversion(job_id: str) -> None:
                                 job["statusHint"] = (
                                     f"Chapter {idx}/{len(chapters)} delayed on {use_engine.upper()} (timeout)"
                                 )
+                                # Track consecutive Edge timeouts job-wide so subsequent
+                                # chapters skip the 60s wait if Edge is consistently broken.
+                                if use_engine == "edge":
+                                    edge_chapter_timeouts[0] += 1
+                                    if edge_chapter_timeouts[0] >= _EDGE_TIMEOUT_DISABLE_THRESHOLD:
+                                        unavailable_engines.add("edge")
+                                        _append_event(
+                                            job,
+                                            f"🚫 Edge disabled for job after "
+                                            f"{edge_chapter_timeouts[0]} consecutive timeouts "
+                                            f"— remaining chapters skip Edge",
+                                        )
                                 if await _maybe_retry(
                                     reason=f"timeout on {use_engine}",
                                     engine_label=use_engine,
@@ -5264,8 +5281,11 @@ async def process_conversion(job_id: str) -> None:
 
                 _append_event(
                     job,
-                    f"✅ Completed: {output_file.name} (em {TimeFormatter.format_time(chapter_elapsed)})",
+                    f"✅ Completed: {output_file.name} ({TimeFormatter.format_time(chapter_elapsed)})",
                 )
+                # Successful Edge chapter resets the consecutive timeout counter.
+                if (local_active_config and local_active_config.engine or "").lower() == "edge":
+                    edge_chapter_timeouts[0] = 0
 
                 # Add download URL to chapter progress
                 chapter_output = {
@@ -5444,7 +5464,18 @@ async def process_conversion(job_id: str) -> None:
                 slow_streak = max(0, slow_streak - 1)
 
             if slow_streak >= health_slow_streak_limit and engine_label == "edge":
-                _apply_edge_slow_mode(f"healthcheck low speed ({recent_speed:.1f} chars/s)")
+                if not edge_slow_mode:
+                    _apply_edge_slow_mode(f"healthcheck low speed ({recent_speed:.1f} chars/s)")
+                else:
+                    # Already in slow mode and still slow: disable Edge for the whole job
+                    # so remaining chapters skip directly to the next engine.
+                    if "edge" not in unavailable_engines:
+                        unavailable_engines.add("edge")
+                        _append_event(
+                            job,
+                            f"🚫 Edge persistently slow ({recent_speed:.1f} chars/s in safe mode)"
+                            f" — disabling Edge for remaining chapters",
+                        )
             elif (
                 slow_streak >= health_slow_streak_limit
                 and parallel_slots > 1
@@ -5453,7 +5484,7 @@ async def process_conversion(job_id: str) -> None:
                 new_slots = max(1, parallel_slots - 1)
                 if new_slots != parallel_slots:
                     _append_event(
-                        job, f"🧪 Healthcheck: reduzindo paralelismo {parallel_slots}→{new_slots}"
+                        job, f"🧪 Healthcheck: reducing parallelism {parallel_slots}→{new_slots}"
                     )
                     parallel_slots = new_slots
                     job["parallelSlots"] = new_slots
