@@ -76,11 +76,15 @@ else:
 _base_lifespan = app.router.lifespan_context
 
 
-async def _prewarm_kokoro() -> None:
-    """Download and cache the Kokoro English model in the background.
+async def _prewarm_local_engines() -> None:
+    """Pre-warm local TTS engines so they are ready when Edge-TTS falls back.
 
-    Kokoro is the primary local fallback when Edge-TTS is rate-limited.
-    Pre-warming avoids a cold-start delay on the first conversion.
+    Kokoro supports EN/JA/ZH only — for pt-BR and other languages, Piper is
+    the local fallback and its model is downloaded on first use (cached on /data).
+
+    Engines and their supported languages:
+      - Kokoro: en, ja, zh  (fast neural, ~82M params, CPU-friendly)
+      - Piper:  all languages via ONNX (model downloaded per-language on demand)
     """
     import asyncio
 
@@ -91,13 +95,23 @@ async def _prewarm_kokoro() -> None:
         sys.path.insert(0, str(Path(__file__).parent / "python_app"))
         from src.tts.kokoro_engine import _ensure_kokoro
 
-        logger.info("Pre-warming Kokoro TTS (downloading model if needed)...")
+        logger.info("Pre-warming Kokoro TTS for English (en/ja/zh supported only)...")
         KP = _ensure_kokoro()
-        # Instantiate the English pipeline — this triggers model download/cache
+        # Instantiate the English pipeline — triggers model download/cache
         _ = KP(lang_code="a")  # 'a' = American English
-        logger.info("✅ Kokoro pre-warm complete — local fallback ready")
+        logger.info("✅ Kokoro ready — fallback for EN/JA/ZH books")
     except Exception as exc:
-        logger.warning(f"Kokoro pre-warm skipped: {exc}")
+        logger.warning(f"Kokoro pre-warm skipped (will load on demand): {exc}")
+
+    try:
+        import shutil
+
+        if shutil.which("piper"):
+            logger.info("✅ Piper binary available — fallback for all languages incl. pt-BR")
+        else:
+            logger.warning("⚠️  Piper binary not found in PATH — pt-BR fallback unavailable")
+    except Exception as exc:
+        logger.warning(f"Piper check failed: {exc}")
 
 
 @asynccontextmanager
@@ -113,11 +127,11 @@ async def _hf_lifespan(app):
     logger.info("=" * 60)
     if _base_lifespan:
         async with _base_lifespan(app):
-            # Pre-warm Kokoro in background so it's ready on first conversion
-            asyncio.create_task(_prewarm_kokoro())
+            # Pre-warm local engines in background so they are ready on first conversion
+            asyncio.create_task(_prewarm_local_engines())
             yield
     else:
-        asyncio.create_task(_prewarm_kokoro())
+        asyncio.create_task(_prewarm_local_engines())
         yield
 
 
