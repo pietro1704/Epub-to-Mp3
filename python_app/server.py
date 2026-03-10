@@ -544,11 +544,16 @@ try:
     _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "6") or "6"))
 except (TypeError, ValueError):
     _CHAPTER_RETRY_MAX = 3
-_CHAPTER_RETRY_FOREVER = True
+# Retry forever was causing infinite loops when ALL engines fail (e.g. on HF
+# where fallback engines aren't available). Use a finite retry count instead.
+_CHAPTER_RETRY_FOREVER = False
+_CHAPTER_RETRY_FOREVER_MAX = max(
+    1, int(os.getenv("CHAPTER_RETRY_FOREVER_MAX", "5") or "5")
+)  # hard cap even if retry_forever were re-enabled
 try:
-    _CHAPTER_RETRY_ROUNDS = max(0, int(os.getenv("CHAPTER_RETRY_ROUNDS", "1") or "1"))
+    _CHAPTER_RETRY_ROUNDS = max(0, int(os.getenv("CHAPTER_RETRY_ROUNDS", "3") or "3"))
 except (TypeError, ValueError):
-    _CHAPTER_RETRY_ROUNDS = 1
+    _CHAPTER_RETRY_ROUNDS = 3  # was 1 — give more rounds before giving up
 try:
     _CHAPTER_RETRY_BACKOFF_SECONDS = float(
         os.getenv("CHAPTER_RETRY_BACKOFF_SECONDS", "2.0") or "2.0"
@@ -4563,9 +4568,11 @@ async def process_conversion(job_id: str) -> None:
             return attempt
 
         def _chapter_can_retry(chapter_index: int) -> bool:
+            attempts = chapter_attempts.get(chapter_index, 0)
             if retry_forever:
-                return True
-            return chapter_attempts.get(chapter_index, 0) < max_chapter_attempts
+                # Hard cap prevents infinite loops when all engines fail permanently
+                return attempts < _CHAPTER_RETRY_FOREVER_MAX
+            return attempts < max_chapter_attempts
 
         def _reset_chapter_progress_tracking(chapter_index: int) -> None:
             chapter_processed = job.get("_chapterCharProcessed") or {}
