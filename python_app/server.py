@@ -124,7 +124,7 @@ async def _lifespan(app: FastAPI):
     else:
         asyncio.create_task(_resume_pending_jobs())
 
-    # Initialize auto-tuner (detecta HW e rede, configura flags automaticamente)
+    # Initialize auto-tuner (detects HW and network, sets performance flags automatically)
     global _auto_tuner
     if os.getenv("ENABLE_AUTO_TUNING", "1").lower() in ("1", "true", "yes"):
         _auto_tuner = AutoTuner(verbose=True)
@@ -137,24 +137,32 @@ async def _lifespan(app: FastAPI):
     if not _job_watchdog_task:
         _job_watchdog_task = asyncio.create_task(_job_watchdog())
 
+    # On HF Spaces, ping the health endpoint every 10 minutes to prevent the
+    # Space from hibernating and losing the in-memory job index.  The /data
+    # directory is persistent, so completed outputs survive a restart, but a
+    # sleeping Space means the user's browser gets no response when polling.
+    if os.getenv("SPACE_ID"):
+        _hf_keepalive_task = asyncio.create_task(_hf_keepalive())
+        logger.info("✅ HF Space keep-alive task started (10 min interval)")
+
     try:
         from health_monitor import get_system_monitor_adapter
 
         global system_monitor
         system_monitor = get_system_monitor_adapter()
         system_monitor.start()
-        logger.info("✅ Health Monitor iniciado")
+        logger.info("✅ Health Monitor started")
     except Exception as e:
-        logger.warning(f"⚠️ Falha ao iniciar Health Monitor: {e}")
+        logger.warning(f"⚠️ Failed to start Health Monitor: {e}")
 
     try:
         from auto_recovery import start_auto_recovery
 
         recovery = start_auto_recovery()
         recovery.set_activity_provider(_has_active_jobs)
-        logger.info("✅ Auto-Recovery System iniciado")
+        logger.info("✅ Auto-Recovery System started")
     except Exception as e:
-        logger.warning(f"⚠️ Falha ao iniciar Auto-Recovery: {e}")
+        logger.warning(f"⚠️ Failed to start Auto-Recovery: {e}")
 
     logger.info("Started periodic job cleanup task")
     try:
@@ -219,7 +227,12 @@ EDGE_AUTO_PARALLEL_CAPS = {
 }
 
 # Job cleanup configuration
-COMPLETED_JOB_TTL_HOURS = 1  # Keep completed jobs for 1 hour
+# On HF Spaces, output files live on /data (persistent across restarts), so we
+# keep them much longer by default. Override via COMPLETED_JOB_TTL_HOURS env var.
+_DEFAULT_TTL_HOURS = 48 if os.getenv("SPACE_ID") else 4
+COMPLETED_JOB_TTL_HOURS = float(
+    os.getenv("COMPLETED_JOB_TTL_HOURS", str(_DEFAULT_TTL_HOURS)) or _DEFAULT_TTL_HOURS
+)
 CLEANUP_INTERVAL_SECONDS = 300  # Run cleanup every 5 minutes
 TELEMETRY_RETENTION_HOURS = max(
     24, int(os.getenv("TELEMETRY_RETENTION_HOURS", "720") or "720")
@@ -1428,6 +1441,29 @@ if FORCE_TURBO:
             f"Turbo mode: increasing job workers from {_JOB_WORKERS} to {desired_workers}"
         )
         _JOB_WORKERS = desired_workers
+
+
+async def _hf_keepalive(interval_seconds: float = 600.0) -> None:
+    """Ping the local health endpoint periodically to prevent HF Space hibernation.
+
+    HF free-tier Spaces sleep after ~15 min of inactivity. This keeps the
+    process alive so users can still download completed conversions hours later.
+    Only started when SPACE_ID env var is set (i.e. running on HF Spaces).
+    """
+    import httpx
+
+    # Determine the local server port (default 7860 for HF Spaces).
+    port = int(os.getenv("PORT", "7860"))
+    url = f"http://localhost:{port}/api/health"
+    await asyncio.sleep(60)  # Let the server fully start before first ping
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(url)
+                logger.debug("HF keep-alive ping → %s", resp.status_code)
+        except Exception as exc:
+            logger.debug("HF keep-alive ping failed: %s", exc)
+        await asyncio.sleep(interval_seconds)
 
 
 async def _periodic_job_cleanup():
