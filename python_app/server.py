@@ -208,8 +208,16 @@ WORKER_MAX = max(1, int(os.getenv("JOB_WORKERS_MAX", "16") or "16"))
 # **PERFORMANCE**: Use the same aggressive settings as the CLI
 # Disable conservative auto-tune for maximum speed
 EDGE_AUTO_TUNE = os.getenv("EDGE_AUTO_TUNE", "false").strip().lower() in {"1", "true", "yes", "on"}
-EDGE_MIN_CHARS_PER_SECOND = float(os.getenv("EDGE_MIN_CHARS_PER_SECOND", "45") or "45")
-EDGE_SLOW_RATIO_THRESHOLD = float(os.getenv("EDGE_SLOW_RATIO_THRESHOLD", "2.5") or "2.5")
+# On HF Spaces, Edge-TTS shares egress IPs and runs at 60-120 chars/s even when
+# "working" (vs 200+ locally). Use tighter thresholds so slow mode + engine
+# switch trigger sooner rather than letting each chapter crawl for 3-4 minutes.
+_hf_mode = bool(os.getenv("SPACE_ID"))
+EDGE_MIN_CHARS_PER_SECOND = float(
+    os.getenv("EDGE_MIN_CHARS_PER_SECOND", "100" if _hf_mode else "45") or "45"
+)
+EDGE_SLOW_RATIO_THRESHOLD = float(
+    os.getenv("EDGE_SLOW_RATIO_THRESHOLD", "1.5" if _hf_mode else "2.5") or "2.5"
+)
 # Research-based (Jan 2026): 8k default (safe range 3k-8k, >15k = incomplete)
 EDGE_SAFE_CHUNK_CHARS = max(3000, int(os.getenv("EDGE_SAFE_CHUNK_CHARS", "8000") or "8000"))
 EDGE_SAFE_MAX_SEGMENT_SECONDS = max(
@@ -539,7 +547,9 @@ _PENDING_META_FILENAME = "upload.json"
 _CHAPTER_HEARTBEAT_SECONDS = 20.0  # was 45s — more frequent activity pings
 _CHAPTER_TIMEOUT_FACTOR = 2.0  # was 2.5 — less overshoot on estimated duration
 _CHAPTER_TIMEOUT_MIN = 60.0  # was 120s — detect stuck chapters faster
-_CHAPTER_TIMEOUT_MAX = 300.0  # was 900s — 5 min hard cap per chapter
+# On HF, cap at 120s so slow Edge chapters trigger fallback to Kokoro sooner.
+# Locally keep 300s since Edge is faster and there are no local fallbacks.
+_CHAPTER_TIMEOUT_MAX = 120.0 if _hf_mode else 300.0
 try:
     _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "6") or "6"))
 except (TypeError, ValueError):
