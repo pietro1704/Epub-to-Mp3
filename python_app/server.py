@@ -1480,15 +1480,21 @@ async def _hf_keepalive(interval_seconds: float = 600.0) -> None:
     """
     import httpx
 
-    # Determine the local server port (default 7860 for HF Spaces).
+    # HF sleep detection counts EXTERNAL traffic to the Space's public URL.
+    # Pinging localhost does not reset HF's inactivity timer, so we use the
+    # public URL (SPACE_HOST env var set by HF, e.g. "pi1704-epub-to-mp3.hf.space").
+    space_host = os.getenv("SPACE_HOST", "")
     port = int(os.getenv("PORT", "7860"))
-    url = f"http://localhost:{port}/api/health"
+    if space_host:
+        url = f"https://{space_host}/api/health"
+    else:
+        url = f"http://localhost:{port}/api/health"
     await asyncio.sleep(60)  # Let the server fully start before first ping
     while True:
         try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
                 resp = await client.get(url)
-                logger.debug("HF keep-alive ping → %s", resp.status_code)
+                logger.debug("HF keep-alive ping → %s (%s)", resp.status_code, url)
         except Exception as exc:
             logger.debug("HF keep-alive ping failed: %s", exc)
         await asyncio.sleep(interval_seconds)
