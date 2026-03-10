@@ -1480,20 +1480,12 @@ async def _hf_keepalive(interval_seconds: float = 600.0) -> None:
     """
     import httpx
 
-    # HF sleep detection counts EXTERNAL traffic to the Space's public URL.
-    # Pinging localhost does not reset HF's inactivity timer.
-    # Construct the public URL from SPACE_ID ("owner/repo" → "owner-repo.hf.space")
-    # or SPACE_HOST if set. Fall back to localhost for non-HF environments.
-    space_id = os.getenv("SPACE_ID", "")
-    space_host = os.getenv("SPACE_HOST", "")
+    # Use localhost only — pinging the public URL from within the Space causes
+    # HF's proxy to count those requests against the rate limit, blocking users.
+    # Localhost keeps the Python process and event loop alive without going
+    # through HF's proxy.
     port = int(os.getenv("PORT", "7860"))
-    if space_host:
-        url = f"https://{space_host}/api/health"
-    elif space_id:
-        slug = space_id.replace("/", "-").lower()
-        url = f"https://{slug}.hf.space/api/health"
-    else:
-        url = f"http://localhost:{port}/api/health"
+    url = f"http://localhost:{port}/api/health"
     await asyncio.sleep(60)  # Let the server fully start before first ping
     while True:
         try:
