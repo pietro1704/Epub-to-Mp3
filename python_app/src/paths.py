@@ -17,16 +17,15 @@ def _as_path(value: str | None) -> Path | None:
 
 
 def get_project_root() -> Path:
-    """
-    Detecta a raiz do projeto procurando por marcadores característicos.
-    Sobe na hierarquia de diretórios até encontrar a raiz.
+    """Locate the project root by walking up to the first directory that
+    contains a well-known marker file.
 
     Returns:
-        Path: Caminho absoluto para a raiz do projeto
+        Path: Absolute path to the project root.
     """
     current = Path(__file__).resolve().parent
 
-    # Marcadores que indicam a raiz do projeto
+    # Markers that identify the project root
     root_markers = [
         ".git",
         "pytest.ini",
@@ -44,7 +43,6 @@ def get_project_root() -> Path:
     return Path(__file__).resolve().parent.parent.parent
 
 
-# Raiz do projeto (sempre /path/to/Epub-to-Mp3)
 PROJECT_ROOT = get_project_root()
 
 # Persistent root is configurable so CLI (local) and HF Space share the same tree
@@ -116,33 +114,17 @@ os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
 
 def get_cache_path(*parts: str) -> Path:
-    """
-    Retorna um caminho dentro do diretório de cache do projeto.
-
-    Args:
-        *parts: Componentes do caminho relativo ao cache
-
-    Returns:
-        Path: Caminho completo para o arquivo/diretório de cache
-    """
+    """Return a path inside the project cache directory."""
     return CACHE_DIR.joinpath(*parts)
 
 
 def get_output_path(*parts: str) -> Path:
-    """
-    Retorna um caminho dentro do diretório de output do projeto.
-
-    Args:
-        *parts: Componentes do caminho relativo ao output
-
-    Returns:
-        Path: Caminho completo para o arquivo/diretório de output
-    """
+    """Return a path inside the project output directory."""
     return OUTPUT_DIR.joinpath(*parts)
 
 
 if __name__ == "__main__":
-    print(f"Raiz do projeto: {PROJECT_ROOT}")
+    print(f"Project root: {PROJECT_ROOT}")
     print(f"Cache: {CACHE_DIR}")
     print(f"Output: {OUTPUT_DIR}")
     print(f"Cache exists: {CACHE_DIR.exists()}")

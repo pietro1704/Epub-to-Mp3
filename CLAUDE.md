@@ -1,231 +1,327 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Project instructions for Claude Code. These rules override all defaults.
 
 ## Project Overview
 
-Full-stack EPUB/PDF to MP3 audiobook converter. Python backend with FastAPI server and React/TypeScript frontend. Deployed as Docker container on Hugging Face Spaces.
+Full-stack EPUB/PDF to MP3 audiobook converter. Python backend (FastAPI) + React/TypeScript frontend. Three deployment modes that **share the same cache and output directories**:
 
-**TTS Engines**: Edge-TTS (Microsoft cloud), Coqui TTS (local neural), Kokoro (fast local), Spark-TTS (LLM-based), Piper (local ONNX)
+| Mode | Entry point | Paths |
+|------|-------------|-------|
+| CLI local | `python -m python_app.main convert` | `PROJECT_ROOT/.cache/`, `PROJECT_ROOT/output/` |
+| Web local | `mise run web` / `uvicorn python_app.server:app` | same as CLI |
+| HF Spaces | `hf_app.py` (Docker, port 7860) | `/data/epub-to-mp3/.cache/`, `/data/epub-to-mp3/output/` |
+
+CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `PERSISTENT_ROOT`. To override, set `PERSISTENT_ROOT`, `CACHE_DIR`, or `OUTPUT_DIR` env vars.
+
+**TTS Engines** (fastest → slowest): Edge-TTS (cloud) → Kokoro (local neural, EN/JA/ZH) → Piper (offline ONNX, all languages)
+
+---
+
+## #1 Priority: Speed
+
+**Speed is the most critical requirement.** Every design decision must optimize for maximum throughput:
+
+- Maximize CPU and RAM usage by default — never artificially limit resources
+- Scale chapter parallelism to available CPU cores automatically
+- Use aggressive chunk sizes and concurrency for Edge-TTS
+- Scale Kokoro/Piper workers to match available cores
+- Prefer parallel chapter conversion over sequential when possible
+- Cache parsed text aggressively — never re-parse if cache is valid
+- Skip validation overhead for short chapters (< 1500 chars)
+- Default to `EXPECTED_WPM=200` (Edge-TTS neural voices) for accurate completion detection
+
+---
 
 ## Language Policy
 
-**ALL code, comments, docstrings, log messages, print statements, and UI text MUST be in English.**
-- No Portuguese (or any non-English language) in source code
-- The i18n system handles user-facing translations separately
-- Variable names, function names, and identifiers must be in English
-- Commit messages in English
+**ALL code, comments, docstrings, log messages, and print statements MUST be in English.**
+- No exceptions — not even inline comments
+- The i18n system handles user-facing translations in `web/src/i18n/`
+- Only intentional Portuguese: regex patterns in `transcription_verifier.py` that match Portuguese TTS artifacts spoken aloud
 
-## Performance Policy
+---
 
-**Always maximize CPU and RAM usage by default.** The app should automatically:
-- Scale chapter parallelism to available CPU cores (not conservative defaults)
-- Use aggressive chunk sizes and concurrency for Edge-TTS
-- Scale Piper/Kokoro workers to match available cores
-- Never artificially limit resources unless rate-limited by external services
+## Testing Policy
+
+**Always test after every change.** Before committing:
+```bash
+mise run test           # Full suite: Python + web + lint + build
+# OR individually:
+pytest -v --tb=short    # Python only (581+ tests)
+cd web && npm run test  # Web only (17 tests)
+```
+- Add tests for every new feature or bug fix
+- Critical paths need both unit tests AND integration tests
+- Test edge cases: empty chapters, oversized chapters, engine failures
+- The 2 skipped tests are Coqui GPU tests — acceptable
+
+---
 
 ## Commands
 
-### Python Setup
+### Setup
 ```bash
-# Requires Python 3.11 (Coqui TTS compatibility)
-# Use mise for automatic env setup (recommended):
-mise run install
-
-# Or manually:
-pip install -r requirements.txt
-# FFmpeg required: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)
+mise run install        # Recommended — auto-configures Python 3.11 venv + npm
+# OR manually:
+pip install -r requirements.txt && brew install ffmpeg espeak-ng
 ```
 
-### CLI Usage
-**IMPORTANT**: Always activate venv before running conversions to ensure Piper fallback works:
+### CLI Conversion
 ```bash
-source .venv/bin/activate
+source .venv/bin/activate   # REQUIRED for Piper fallback
 
-# Then run commands:
-python -m python_app.main convert book.epub                    # Basic conversion
-python -m python_app.main convert book.epub --menu             # Interactive engine/voice selection
+python -m python_app.main convert book.epub                    # Basic
 python -m python_app.main convert book.epub --engine edge      # Force Edge-TTS
 python -m python_app.main convert book.epub --chapter 3        # Single chapter
-python -m python_app.main convert book.epub --show-structure   # Preview chapters
-python -m python_app.main convert book.epub --clear-cache      # Reprocess from scratch
-# Batch conversion
+python -m python_app.main convert book.epub --show-structure   # Preview + save cache
+python -m python_app.main convert book.epub --clear-cache      # Force reprocess
 python -m python_app.main convert book1.epub book2.pdf --batch ~/folder/
 ```
 
-### Benchmarking
+### Web Server
 ```bash
-source .venv/bin/activate
-python benchmark_engines.py book.epub --engines edge,piper --chapters 3
+mise run web                                    # Recommended (sets up everything)
+uvicorn python_app.server:app --port 8000       # Direct
+python hf_app.py                                # HF Spaces entry (port 7860)
 ```
 
-### API Server
+### Frontend
 ```bash
-python hf_app.py                                       # HF Spaces entry (port 7860)
-uvicorn python_app.server:app --port 8000              # Direct server
+cd web && npm run dev    # Dev server (Vite, hot reload)
+cd web && npm run build  # Production build
 ```
 
-### Web Frontend
-```bash
-cd web
-npm install
-npm run dev          # Development server (Vite)
-npm run build        # Production build (tsc + vite)
-npm run lint         # ESLint
-npm run test         # Vitest
-```
-
-### Testing
-```bash
-# Python tests
-pytest -v --tb=short
-pytest python_app/tests/test_ebook_reader.py -v       # Single file
-pytest -k "test_chapter_extraction"                    # Single test by name
-
-# Web tests
-cd web && npm run test
-```
+---
 
 ## Architecture
 
+### Dual Conversion Paths — CRITICAL
+
+There are **two completely separate conversion pipelines**:
+
+1. **`converter.py`** — CLI path (`python -m python_app.main convert`)
+   - `AudioConverter._convert_chapters_parallel()` — main chapter loop
+   - Four-tier fallback: Edge multilingual → Edge monolingual → Kokoro → Piper
+   - Adaptive delays, retry backoff, deferred safe pass
+
+2. **`server.py`** — Web/API path (`process_conversion()` → `convert_chapter()`)
+   - Completely separate engine chain, timeout logic, retry logic
+   - `_build_engine_chain()` → `_switch_to_next_engine()` → `_maybe_retry()`
+   - Has its own slow-mode detection, healthcheck, stall watchdog
+
+**Any feature added to one path MUST be mirrored in the other.**
+
 ### Backend (`python_app/`)
 ```
-main.py                # CLI entry point
-server.py              # FastAPI server with job queue
+main.py            CLI entry — argument parsing, book loading, orchestration
+server.py          FastAPI server — job queue, async conversion, SSE streaming
+hf_app.py          HF Spaces wrapper — serves React + API, Kokoro pre-warm
 src/
-├── config.py          # ConversionConfig dataclass
-├── converter.py       # Core conversion orchestration
-├── ebook_reader.py    # EPUB/PDF parsing
-├── cache_manager.py   # Chapter-level caching in .cache/Book_Title/
-├── job_manager.py     # Async job queue for API
-├── engine_pool.py     # TTS engine resource pooling
-├── telemetry.py       # Engine performance tracking
+├── config.py          ConversionConfig dataclass
+├── converter.py       CLI conversion orchestration (DUAL PATH)
+├── ebook_reader.py    EPUB/PDF parsing, TOC hierarchy (NCX + EPUB3 nav)
+├── cache_manager.py   Per-chapter text cache in .cache/Book_Title/
+├── job_manager.py     Async job queue with persistent .jobs/*.json
+├── engine_pool.py     TTS engine resource pooling
+├── progress.py        CLI progress bar — active chapters, engine, ETA
+├── telemetry.py       Engine performance tracking (chars/s per engine)
 └── tts/
-    ├── factory.py      # TTSFactory (factory pattern)
-    ├── base.py         # TTSEngine abstract base
-    ├── edge_engine.py  # Edge-TTS (cloud, 12K char chunks, 12 concurrent, 85s segments)
-    ├── coqui_engine.py # Coqui XTTS (neural local, GPU recommended)
-    ├── kokoro_engine.py# Kokoro (fast local, 82M params, EN/JA/ZH)
-    ├── spark_engine.py # Spark-TTS (LLM-based, voice cloning)
-    └── piper_engine.py # Piper ONNX (basic local)
+    ├── edge_engine.py  Edge-TTS (cloud, 12K chunks, rate-limit backoff)
+    ├── kokoro_engine.py Kokoro (82M params, EN/JA/ZH, needs espeak-ng)
+    ├── piper_engine.py  Piper ONNX (all languages, subprocess-based)
+    └── coqui_engine.py  Coqui XTTS (GPU recommended)
 ```
 
-### Frontend (`web/`)
-React 18 + TypeScript + Vite. Key files:
-- `src/App.tsx` - Main app with lazy-loaded panels
-- `src/hooks/useConversionFlow.ts` - Conversion state machine
-- `src/services/ConversionService.ts` - API client with SSE/polling
-
-### Deployment
-- `Dockerfile` - Multi-stage: Node build → Python runtime
-- `hf_app.py` - Hugging Face Spaces entry point (serves React + API)
-- `.github/workflows/sync-hf.yml` - Auto-deploy to HF on push
-
-## Key API Endpoints
-- `POST /api/convert` - Upload EPUB, start job
-- `GET /api/jobs/{id}` - Job status with chapter progress
-- `GET /api/jobs/{id}/stream` - SSE real-time updates
-- `GET /api/outputs/{id}/{file}` - Download MP3
-- `GET /api/voices` - Available voices by engine
-- `GET /api/telemetry` - Engine performance stats
-
-## Environment Variables
-
-### Edge-TTS Tuning
-```bash
-EDGE_CHUNK_CHARS=12000          # Chars per request (default 12K, max 15K)
-EDGE_MAX_CONCURRENCY=12         # Parallel requests (aggressive default)
-EDGE_MAX_SEGMENT_SECONDS=85     # Max audio segment duration
-EDGE_SAFE_CHAPTER_PARALLEL=8    # Parallel chapters
-CHAPTER_PARALLEL_COUNT=0        # Auto-detect from CPU cores (0=auto)
-# Four-tier fallback system:
-EDGE_MONOLINGUAL_THRESHOLD=3    # Switch to monolingual Edge after N failures
-EDGE_KOKORO_THRESHOLD=3         # Switch to Kokoro after N failures (after monolingual)
-EDGE_PIPER_THRESHOLD=3          # Switch to Piper after N failures (after Kokoro)
+### Frontend (`web/src/`)
 ```
+App.tsx                     Main app, lazy panels
+hooks/useConversionFlow.ts  Conversion state machine
+services/ConversionService.ts API client (SSE + polling)
+components/ChapterProgressList.tsx  Per-chapter status + audio player
+i18n/translations.ts        pt-BR and en-US translations
+```
+
+### Shared Paths (`paths.py`)
+```
+PERSISTENT_ROOT = PROJECT_ROOT (local) | /data/epub-to-mp3 (HF)
+CACHE_DIR       = PERSISTENT_ROOT/.cache/     # Parsed text per book
+OUTPUT_DIR      = PERSISTENT_ROOT/output/     # Final MP3s + ZIPs
+JOBS_DIR        = PERSISTENT_ROOT/.jobs/      # Web job metadata (JSON)
+UPLOADS_DIR     = PERSISTENT_ROOT/.uploads/   # Uploaded EPUBs (web only)
+MODELS_DIR      = PROJECT_ROOT/models/        # TTS model files (always local)
+```
+
+---
+
+## Key Environment Variables
 
 ### Conversion Limits
 ```bash
-MAX_CHAPTER_CHARS=0             # Skip chapters larger than N chars (0=disabled)
-                                # Useful for EPUBs where TOC/footnote files embed the
-                                # entire book text (e.g. Companhia das Letras EPUBs).
-                                # The app auto-detects and warns about outliers (>5× median).
-EXPECTED_WPM=200                # Expected TTS speaking speed for audio validation
-                                # (Edge-TTS neural voices: ~200 WPM)
+MAX_CHAPTER_CHARS=0      # Skip chapters larger than N chars (0=disabled).
+                         # Auto-warns when any chapter is >5× median size.
+                         # Use for EPUBs with footnote-container chapters (e.g.
+                         # Companhia das Letras: Sumário chapter = entire book).
+EXPECTED_WPM=200         # TTS speed for audio validation (Edge neural = ~200 WPM)
+COMPLETED_JOB_TTL_HOURS  # Default: 48h on HF, 4h local. Files persist this long.
 ```
 
-### Kokoro Tuning
+### Edge-TTS Tuning
 ```bash
-KOKORO_CHUNK_CHARS=2000         # Chars per chunk
-KOKORO_MAX_WORKERS=0            # Auto-detect from CPU cores (0=auto, default=cpu/2)
+EDGE_CHUNK_CHARS=12000           # Chars per request (HF: 12K, local: 12K)
+EDGE_MAX_CONCURRENCY=12          # Parallel requests (HF: 1, local: 12)
+EDGE_MAX_SEGMENT_SECONDS=85      # Max audio segment duration
+EDGE_SAFE_CHAPTER_PARALLEL=8     # Parallel chapters in safe mode
+CHAPTER_PARALLEL_COUNT=0         # Auto-detect from CPU cores (0=auto)
+EDGE_MIN_CHARS_PER_SECOND=45     # Slow mode trigger (HF auto-sets to 100)
+EDGE_SLOW_RATIO_THRESHOLD=2.5    # Slow mode trigger ratio (HF auto-sets to 1.5)
 ```
 
-### Piper Tuning
+### Local Engines
 ```bash
-PIPER_MAX_PROCS=0               # Auto-detect from CPU cores (0=auto, default=cpu_count)
+KOKORO_CHUNK_CHARS=2000          # Chars per Kokoro chunk
+KOKORO_MAX_WORKERS=0             # Auto-detect from CPU (0=auto)
+PIPER_MAX_PROCS=0                # Auto-detect from CPU (0=auto)
+SPARK_CHUNK_CHARS=1500           # Chars per Spark chunk
+SPARK_MAX_WORKERS=1              # GPU-bound
 ```
 
-### Spark-TTS Tuning
+### Server Timeouts (auto-tuned by profile)
 ```bash
-SPARK_TTS_MODEL_DIR=pretrained_models/Spark-TTS-0.5B  # Model directory
-SPARK_CHUNK_CHARS=1500          # Chars per chunk
-SPARK_MAX_WORKERS=1             # Workers (GPU-bound)
+_CHAPTER_TIMEOUT_MIN=60          # Min timeout per chapter (was 120s)
+_CHAPTER_TIMEOUT_MAX=120(HF)/300 # Max timeout — HF gets 120s for faster fallback
+_CHAPTER_RETRY_FOREVER=False     # MUST be False — True causes infinite loops
+_CHAPTER_RETRY_ROUNDS=3          # Retry rounds before giving up on a chapter
+JOB_STALL_THRESHOLD_SECONDS=300  # Stall detection (was 480s)
+JOB_HEALTHCHECK_INTERVAL_SECONDS=15 # Slow detection (HF: 10s)
+JOB_HEALTHCHECK_SLOW_STREAK=1    # HF: 1 consecutive slow check triggers slow mode
 ```
 
-## Four-Tier Fallback System & Adaptive Delays
+---
 
-**Edge-TTS Resilience System** (updated Feb 2026):
+## TTS Engine Fallback System
 
-When using Edge-TTS, the system automatically handles rate limiting and service degradation with a **four-tier progressive fallback**:
+### CLI Path (`converter.py`)
+Four-tier progressive fallback per chapter, with adaptive delays:
 
-### Tier 1: Edge-TTS Multilingual (Default)
-- Uses multilingual neural voices (e.g., `pt-BR-ThalitaMultilingualNeural`)
-- Best quality but more prone to rate limiting under heavy load
-- **Two independent backoff systems** run simultaneously:
-  - **Chapter-level adaptive delay** (`converter.py`, `base_delay=0.5s`, cap `30s`):
-    Scales with consecutive chapter failures: 0.5s → 1s → 2s → 4s → 8s → 16s → 30s
-  - **Request-level rate limit backoff** (`edge_engine.py`, starts 5s, cap `60s`):
-    Triggered by 403 responses from Edge-TTS: 5s → 10s → 20s → 40s → 60s (capped)
-    Resets automatically after 15 consecutive successes and 60s+ without limits
+1. **Edge multilingual** — best quality, prone to rate limiting on HF shared IPs
+   - Chapter backoff: 0.5s → 1s → 2s → 4s → 8s → 16s → 30s (cap)
+   - Request backoff: 5s → 10s → 20s → 40s → 60s (cap), resets after 15 successes + 60s
+2. **Edge monolingual** — after `EDGE_MONOLINGUAL_THRESHOLD=3` failures
+3. **Kokoro** — after `EDGE_KOKORO_THRESHOLD=3` more failures (EN/JA/ZH only)
+4. **Piper** — after `EDGE_PIPER_THRESHOLD=3` more failures (all languages)
 
-### Tier 2: Edge-TTS Monolingual (after 3 failures)
-- Automatically switches to monolingual (language-specific) voice
-- Uses non-multilingual voices which may have less rate limiting
-- Maintains cloud quality with potentially better stability
+### Server Path (`server.py`)
+Per-job engine chain + slow detection:
+- `_build_engine_chain()` → `edge → kokoro → piper` (ranked by telemetry speed)
+- Slow mode: if `chars/s < EDGE_MIN_CHARS_PER_SECOND` OR `elapsed > estimated × ratio`
+  → `_apply_edge_slow_mode()` (reduces chunks, disables parallel)
+- **Edge disabled for whole job** if: slow mode active + next healthcheck still slow,
+  OR 2+ consecutive chapter timeouts (`edge_chapter_timeouts` counter)
+- `_CHAPTER_RETRY_FOREVER = False` — prevents infinite loops when all engines fail
 
-### Tier 3: Kokoro Local (after 3 more failures)
-- Falls back to Kokoro (local neural TTS, 82M params)
-- Supports EN/JA/ZH only
-- No rate limits, uses CPU
+### Language Support
+- **Kokoro**: EN, JA, ZH only. For pt-BR → skipped, falls to Piper
+- **Piper**: all languages (model downloaded on first use, cached in `/models/piper/`)
+- **espeak-ng system package** required for Kokoro — must be in Dockerfile
 
-### Tier 4: Piper Offline (after 3 more failures)
-- Falls back to Piper (offline ONNX)
-- Uses detected book language for appropriate model selection
-- Continues conversion with offline engine (no rate limits)
+---
 
-### Language Detection
-- System analyzes **at least 5 chapters** and **5000+ characters** for confident language detection
-- Uses weighted voting across multiple samples
-- Ensures accurate language selection for monolingual and Piper fallbacks
+## HF Spaces Specifics
 
-### Failure Tracking
-- Counts consecutive failures (truncation, validation errors, timeouts)
-- Resets counter on successful chapter conversion
-- Logs detailed failure metrics for debugging
+The Space uses a Docker image (`Dockerfile`). When code changes, GitHub CI syncs to HF, which rebuilds the Docker image.
+
+### Auto-applied HF profile (when `SPACE_ID` is set)
+```
+EDGE_MAX_CONCURRENCY=1    CHAPTER_PARALLEL_MAX=1    EDGE_CHUNK_CHARS=12000
+EDGE_ENABLE_PARALLEL=false   (serial chunks, minimize request count)
+EDGE_MIN_CHARS_PER_SECOND=100  EDGE_SLOW_RATIO_THRESHOLD=1.5
+_CHAPTER_TIMEOUT_MAX=120s      JOB_HEALTHCHECK_INTERVAL_SECONDS=10
+EDGE_SAFE_CHUNK_CHARS=5000     EDGE_SAFE_TIMEOUT_MAX=180
+COMPLETED_JOB_TTL_HOURS=48     (outputs survive overnight on /data)
+```
+
+### Keep-alive
+- Background task pings `http://localhost:{PORT}/api/health` every 10 min
+- Uses localhost only — pinging the public URL causes HF 429 rate limits
+- HF's sleep detection is based on external browser traffic, not internal pings
+
+### Dockerfile requirements
+```dockerfile
+RUN apt-get install -y ffmpeg libsndfile1 espeak-ng
+```
+- `espeak-ng` is required for Kokoro to work (phoneme generation)
+- Without it, Kokoro silently fails and only Piper is available
+
+### Persistent Storage
+- Files on `/data/epub-to-mp3/` survive restarts
+- Jobs (.jobs/), outputs (output/), cache (.cache/) all on `/data`
+- TTL: 48h for completed job outputs, 30 days for telemetry
+
+---
+
+## Quality of Life for Audiobooks
+
+These features exist specifically to improve the audiobook listening experience:
+
+- **TOC hierarchy preserved**: Chapter numbers like `4.1`, `4.2` reflect EPUB TOC structure
+- **Chapter numbering**: NCX (EPUB2) and nav.xhtml (EPUB3) both supported, hierarchy-aware
+- **Oversized chapter detection**: Auto-warns when a chapter is >5× median size with `MAX_CHAPTER_CHARS` suggestion
+- **Streaming playback**: Segments available in web UI as they're synthesized
+- **Per-chapter download**: Individual MP3s + full ZIP + chapter manifest
+- **Retry with deferred safe pass**: Hard chapters deferred to end for offline retry
+- **Audio validation**: Detects truncation using WPM-based duration check (skip if < 1500 chars)
+- **Progress ETA**: Uses per-chapter telemetry + chunk progress for accurate estimates
+- **Skipped chapters**: Shown as ⏭️ in UI (not counted as failures)
+
+---
+
+## EPUB Parsing
+
+- `ebook_reader.py` tries NCX first (EPUB2), then nav.xhtml (EPUB3)
+- TOC hierarchy levels propagate to chapters: level 1 = part, level 2 = chapter, etc.
+- Min-level wins when multiple TOC entries map to same file (anchor sharing)
+- `--show-structure` saves parsed text to `.cache/` for subsequent conversion reuse
+- Duplicate chapter detection: Jaccard 3-gram similarity, removes exact/near-duplicate content
+
+---
+
+## Critical Bugs Fixed (do not reintroduce)
+
+| Bug | Fix |
+|-----|-----|
+| `_CHAPTER_RETRY_FOREVER = True` → infinite loop when all engines fail | Set to `False`, use `_CHAPTER_RETRY_ROUNDS=3` |
+| `EXPECTED_WPM=160` → 80% coverage on complete Edge audio → false truncation | Changed to `200` |
+| Missing `espeak-ng` in Dockerfile → Kokoro fails silently on HF | Added to apt-get |
+| Keep-alive pinging public URL → HF 429 for users | Use localhost only |
+| Edge slow (66 chars/s) never triggered fallback on HF | HF threshold 100 chars/s, 1.5x ratio |
+| Chapter timeout 300s on HF → 5 min per stuck chapter | 120s on HF |
+| `validate_audio_completeness` skip threshold 1000 chars too low | Raised to 1500 chars |
+| `_sort_output_entries` called before definition (false alarm) | Python function scope — OK |
+| Stall watchdog heartbeat not updating `_lastActivityTs` | Added `_update_job_activity()` to heartbeat |
+
+---
 
 ## Design Patterns
-- **Factory**: TTSFactory creates engine instances by name
-- **Job Queue**: JobManager handles async conversion with progress callbacks
-- **Caching**: CacheManager stores parsed text per chapter for resume
-- **Adaptive Resilience**: Exponential backoff + automatic fallback for service degradation
-- **Auto-Scaling**: Workers and parallelism auto-scale to available hardware
 
-## Guidelines
-- **All code and comments in English** - no exceptions
-- Follow existing factory pattern for new TTS engines
-- Preserve chapter structure from EPUB navigation (NCX/nav)
-- Validate engine dependencies before use (ffmpeg, model files)
-- **Always activate venv** before running conversions (required for Piper fallback)
-- Keep changes minimal and focused
-- Default to aggressive performance settings (max CPU/RAM usage)
-- Progress bar denominator should show only chapters to be converted (exclude cached)
+- **Factory**: `TTSFactory` creates engine instances by name
+- **Job Queue**: `JobManager` handles async conversion with persistent JSON state
+- **Caching**: `CacheManager` stores parsed text per chapter in `.cache/Book_Title/`
+- **Adaptive Resilience**: Exponential backoff + automatic engine fallback
+- **Auto-Scaling**: Workers and parallelism auto-scale to available hardware
+- **Progress tracking**: `ProgressTracker` (CLI) with `_active_chapters`, `_active_engine`, ETA hints
+- **Dual path**: Features in `converter.py` must be mirrored in `server.py`
+
+---
+
+## Development Guidelines
+
+- **All code in English** — no exceptions
+- **Test every change** — `mise run test` before commit
+- **Mirror features** — `converter.py` ↔ `server.py` (see Dual Path)
+- Follow factory pattern for new TTS engines
+- Preserve chapter structure from EPUB TOC (NCX/nav)
+- `source .venv/bin/activate` required before CLI conversions (Piper needs it)
+- Default to aggressive performance settings (max CPU/RAM)
+- Progress bar denominator: only chapters to be converted (exclude cached)
+- Commit messages in English, concise, focus on "why"
