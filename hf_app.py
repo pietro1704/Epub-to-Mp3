@@ -76,8 +76,34 @@ else:
 _base_lifespan = app.router.lifespan_context
 
 
+async def _prewarm_kokoro() -> None:
+    """Download and cache the Kokoro English model in the background.
+
+    Kokoro is the primary local fallback when Edge-TTS is rate-limited.
+    Pre-warming avoids a cold-start delay on the first conversion.
+    """
+    import asyncio
+
+    await asyncio.sleep(10)  # Let the server fully start first
+    try:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).parent / "python_app"))
+        from src.tts.kokoro_engine import _ensure_kokoro
+
+        logger.info("Pre-warming Kokoro TTS (downloading model if needed)...")
+        KP = _ensure_kokoro()
+        # Instantiate the English pipeline — this triggers model download/cache
+        _ = KP(lang_code="a")  # 'a' = American English
+        logger.info("✅ Kokoro pre-warm complete — local fallback ready")
+    except Exception as exc:
+        logger.warning(f"Kokoro pre-warm skipped: {exc}")
+
+
 @asynccontextmanager
 async def _hf_lifespan(app):
+    import asyncio
+
     logger.info("=" * 60)
     logger.info("HF App startup complete!")
     logger.info(f"Web dist path: {web_dist}")
@@ -87,8 +113,11 @@ async def _hf_lifespan(app):
     logger.info("=" * 60)
     if _base_lifespan:
         async with _base_lifespan(app):
+            # Pre-warm Kokoro in background so it's ready on first conversion
+            asyncio.create_task(_prewarm_kokoro())
             yield
     else:
+        asyncio.create_task(_prewarm_kokoro())
         yield
 
 
