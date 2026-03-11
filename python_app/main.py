@@ -522,7 +522,10 @@ class ConverterApplication:
             self._announce_footnote_mode(config)
 
             if getattr(args, "verify_only", False):
-                return self._run_verify_only(input_path, config)
+                return self._run_verify_only(input_path, config, interactive=True)
+
+            if getattr(args, "fix_mode", False):
+                return self._run_fix_mode(input_path, config)
 
             if subset_requested:
                 selected_indices = [str(item.index) for item in structure_items]
@@ -583,7 +586,9 @@ class ConverterApplication:
         parts.append(f"{secs:02d}s")
         return " ".join(parts)
 
-    def _run_verify_only(self, input_path: Path, config: ConversionConfig) -> int:
+    def _run_verify_only(
+        self, input_path: Path, config: ConversionConfig, interactive: bool = False
+    ) -> int:
         """Validate existing output/cache against the source EPUB without synthesizing audio."""
         safe_name = self.converter.file_manager.sanitize_filename(config.book_title or "default")
         output_dir = Path(config.output_dir) / safe_name
@@ -603,14 +608,95 @@ class ConverterApplication:
 
             _, issues = validate_book(input_path, output_dir=output_dir, cache_dir=cache_dir)
         except Exception as exc:
-            print(f"❌ Falha ao validar: {exc}")
+            print(f"❌ Validation failed: {exc}")
             return 1
 
         if issues:
             print(f"❌ Verification failed: {len(issues)} issue(s) found.")
+            if interactive:
+                print("\nIssues:")
+                for issue in issues:
+                    print(f"  • {issue}")
+                try:
+                    answer = input("\n🔧 Do you want to fix the issues now? [y/N] ").strip().lower()
+                except (EOFError, KeyboardInterrupt):
+                    answer = ""
+                if answer in ("y", "yes"):
+                    return self._run_fix_mode(input_path, config)
             return 1
         print("✅ Verification completed with no issues.")
         return 0
+
+    def _run_fix_mode(self, input_path: Path, config: ConversionConfig) -> int:
+        """Verify then fix: rename bad files, then reconvert problematic chapters until 100% intact."""
+        import asyncio
+        import os
+
+        safe_name = self.converter.file_manager.sanitize_filename(config.book_title or "default")
+        output_dir = Path(config.output_dir) / safe_name
+        cache_dir = Path(config.cache_dir) if getattr(config, "cache_dir", None) else None
+
+        if not output_dir.exists():
+            print(f"❌ Output not found: {output_dir}")
+            print("   Run a conversion first or adjust --output-dir.")
+            return 1
+
+        print("🔧 Fix mode: validating and fixing the conversion...")
+        print(f"📁 Output: {output_dir}")
+        if cache_dir:
+            print(f"📁 Cache: {cache_dir}")
+
+        # Step 1: Fix file naming issues (HTML in names, illegal characters)
+        try:
+            from validate_conversion import fix_output_filenames
+
+            renamed = fix_output_filenames(output_dir, cache_dir=cache_dir)
+            if renamed:
+                print(f"\n✏️  Fixed {len(renamed)} filename(s) with HTML/invalid characters.")
+        except Exception as exc:
+            print(f"⚠️  Filename fix skipped: {exc}")
+
+        # Step 2: Validate
+        try:
+            from validate_conversion import validate_book
+
+            _, issues = validate_book(input_path, output_dir=output_dir, cache_dir=cache_dir)
+        except Exception as exc:
+            print(f"❌ Validation failed: {exc}")
+            return 1
+
+        if not issues:
+            print("✅ No issues found — book is already 100% intact.")
+            return 0
+
+        print(f"\n🔧 {len(issues)} issue(s) found. Starting reconversion loop...")
+
+        # Step 3: Reconvert bad chapters until clean
+        fix_config = config
+        fix_config.auto_fix_output = False  # prevent re-entry
+        fix_config.auto_validate_output = False
+        self.converter._active_config = fix_config
+
+        try:
+            max_retries = int(os.getenv("MAX_VALIDATION_RETRIES", "8"))
+            success = asyncio.run(
+                self.converter._auto_validate_and_retry_async(
+                    output_dir, input_path, cache_dir, max_retries=max_retries
+                )
+            )
+        except Exception as exc:
+            print(f"❌ Fix failed: {exc}")
+            import traceback
+
+            traceback.print_exc()
+            return 1
+
+        if success:
+            print("\n✅ Fix completed: book is 100% intact!")
+            return 0
+        else:
+            print("\n⚠️  Fix completed with remaining issues. Run --verify to see details.")
+            return 1
 
     @staticmethod
     def _print_metrics_summary(temp_dir: Optional[Path]) -> None:
@@ -3908,6 +3994,7 @@ def _apply_overnight_preset(args: argparse.Namespace) -> None:
     args.validate_audio = False
     args.auto_validate_output = False
     args.auto_fix_output = False
+    args.fix_mode = False
     if getattr(args, "piper_chunk_chars", None) is None:
         args.piper_chunk_chars = 2200
 
@@ -4038,6 +4125,12 @@ def _add_conversion_arguments(
         dest="verify_only",
         action="store_true",
         help="Validate existing output/cache against EPUB only (no new conversion)",
+    )
+    parser.add_argument(
+        "--fix",
+        dest="fix_mode",
+        action="store_true",
+        help="Verify then auto-fix: reconvert problematic chapters until book is 100%% intact",
     )
     parser.add_argument(
         "--verify-transcription",

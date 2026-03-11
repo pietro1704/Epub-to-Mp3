@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Validação completa de uma conversão já concluída (EPUB → MP3) e correção opcional.
+Complete validation of a finished conversion (EPUB → MP3) with optional auto-fix.
 
-Verifica:
-1) Texto original (EPUB) vs texto cached (parsed.txt)
-2) Texto cached (parsed.txt) vs texto enviado para TTS (pre-tts.txt)
-3) Duração estimada do texto vs duração real do MP3
-4) Segmentos ou arquivos faltantes/duplicados/cortados
+Checks:
+1) Original text (EPUB) vs cached text (parsed.txt)
+2) Cached text (parsed.txt) vs text sent to TTS (pre-tts.txt)
+3) Estimated text duration vs actual MP3 duration
+4) Missing/duplicate/truncated segments or files
 
-Opcional (--auto-fix):
- - Reprocessa o livro inteiro com cache limpo para corrigir capítulos faltantes ou divergentes.
+Optional (--auto-fix):
+ - Reprocesses only problematic chapters to fix missing or divergent content.
 """
 
 import asyncio
@@ -382,7 +382,7 @@ def print_chapter_detail(
     short_title = _truncate_for_display(title, 60)
     print(f"  📖 Cap {chapter_num} ({short_title}) [{len(epub_norm):,} chars]")
 
-    section_names = ["INÍCIO", "MEIO", "FINAL"]
+    section_names = ["START", "MIDDLE", "END"]
     connectors = ["├─", "├─", "├─"]
 
     for i, section in enumerate(section_names):
@@ -402,7 +402,7 @@ def print_chapter_detail(
             print(f'  │  Parsed: "{parsed_disp}"')
         else:
             p_match = False
-            print("  │  Parsed: (não encontrado)")
+            print("  │  Parsed: (not found)")
 
         if pretts_text:
             pretts_disp = _truncate_for_display(pretts_s)
@@ -410,16 +410,16 @@ def print_chapter_detail(
             print(f'  │  PreTTS: "{pretts_disp}"')
         else:
             t_match = True  # No pre-tts to compare
-            print("  │  PreTTS: (não encontrado)")
+            print("  │  PreTTS: (not found)")
 
         if p_match and t_match:
-            print("  │  Result: ✅ Correspondem")
+            print("  │  Result: ✅ Match")
         elif p_match:
-            print("  │  Result: ⚠️  PreTTS diverge")
+            print("  │  Result: ⚠️  PreTTS diverges")
         elif t_match:
-            print("  │  Result: ⚠️  Parsed diverge")
+            print("  │  Result: ⚠️  Parsed diverges")
         else:
-            print("  │  Result: ❌ Não correspondem")
+            print("  │  Result: ❌ Mismatch")
 
     # MP3 info
     if mp3_file and mp3_file.exists():
@@ -435,9 +435,9 @@ def print_chapter_detail(
                 f"  └─ 🎵 MP3: {mp3_size_mb:.1f} MB | {duration_min:.1f} min | ~{chars_per_min} chars/min"
             )
         else:
-            print(f"  └─ 🎵 MP3: {mp3_size_mb:.1f} MB | duração indisponível")
+            print(f"  └─ 🎵 MP3: {mp3_size_mb:.1f} MB | duration unavailable")
     else:
-        print("  └─ 🎵 MP3: (não encontrado)")
+        print("  └─ 🎵 MP3: (not found)")
     print()
 
 
@@ -489,6 +489,56 @@ def detect_duplicate_audio_files(output_dir: Path, min_size_bytes: int = 1024) -
             continue
         groups.setdefault(hash_file(mp3), []).append(mp3)
     return [paths for paths in groups.values() if len(paths) > 1]
+
+
+def fix_output_filenames(output_dir: Path, cache_dir: Path | None = None) -> List[str]:
+    """
+    Rename output and cache files that contain HTML markup or illegal characters
+    in their names. Scans output_dir, output_dir/text/, and cache_dir/text/.
+    Returns a list of rename action strings.
+    """
+    import html
+
+    renamed = []
+
+    def _clean_stem(stem: str) -> str:
+        # Unescape HTML entities (e.g. &amp; → &)
+        cleaned = html.unescape(stem)
+        # Strip any remaining HTML tags
+        cleaned = re.sub(r"<[^>]+>", "", cleaned)
+        # Replace characters illegal on most filesystems
+        cleaned = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "-", cleaned)
+        # Collapse whitespace
+        cleaned = re.sub(r"\s+", " ", cleaned).strip()
+        return cleaned
+
+    def _scan_dir(scan_dir: Path) -> None:
+        if not scan_dir.exists():
+            return
+        for fpath in sorted(scan_dir.iterdir()):
+            if not fpath.is_file():
+                continue
+            stem = fpath.stem
+            suffix = fpath.suffix
+            if not contains_html_markup(stem):
+                continue
+            new_stem = _clean_stem(stem)
+            if new_stem == stem:
+                continue
+            new_path = fpath.with_name(new_stem + suffix)
+            if new_path.exists():
+                print(f"  ⚠️  Skipping rename (target exists): {fpath.name}")
+                continue
+            fpath.rename(new_path)
+            renamed.append(f"  Renamed: {fpath.name!r} → {new_path.name!r}")
+            print(f"  ✏️  {fpath.name!r} → {new_path.name!r}")
+
+    _scan_dir(output_dir)
+    _scan_dir(output_dir / "text")
+    if cache_dir is not None:
+        _scan_dir(cache_dir / "text")
+
+    return renamed
 
 
 def compare_texts(original: str, cached: str) -> Tuple[bool, int, str]:
@@ -579,6 +629,7 @@ def validate_book(
         "missing_mp3": 0,
         "duration_mismatch": 0,
         "audio_duplicate": 0,
+        "completo_size_mismatch": 0,
         "perfect": 0,
     }
 
@@ -589,7 +640,7 @@ def validate_book(
     audio_hashes: Dict[str, Dict[str, object]] = {}
 
     print(
-        f"{'Ch':<4} {'Status':<8} {'I/M/F':<7} {'%Text':<6} {'EPUB':<7} {'Parsed':<7} {'PreTTS':<7} {'MP3':<7} {'Issue'}"
+        f"{'Ch':<4} {'Status':<8} {'S/M/E':<7} {'%Text':<6} {'EPUB':<7} {'Parsed':<7} {'PreTTS':<7} {'MP3':<7} {'Issue'}"
     )
     print("-" * 90)
 
@@ -835,7 +886,7 @@ def validate_book(
                         stats["text_mismatch"] += 1
                         if status == "✅":
                             status = "❌"
-                        issue_desc = (issue_desc + " MP3 duplicado").strip()
+                        issue_desc = (issue_desc + " MP3 duplicate").strip()
                         issues.append(
                             "Duplicate audio detected between chapters: "
                             f"{existing.get('chapter')} and {chapter_num}"
@@ -887,25 +938,25 @@ def validate_book(
 
     # Summary
     print("\n" + "=" * 70)
-    print("📊 RESUMO DA VALIDAÇÃO")
+    print("📊 VALIDATION SUMMARY")
     print("=" * 70)
-    print(f"Total de capítulos no EPUB: {stats['total_chapters']}")
-    print(f"✅ Capítulos perfeitos: {stats['perfect']}")
+    print(f"Total chapters in EPUB: {stats['total_chapters']}")
+    print(f"✅ Perfect chapters: {stats['perfect']}")
     if stats["perfect"] > 0:
-        print("   → Todos com Início/Meio/Fim ✓✓✓ e 100% do texto (nenhuma letra faltando)")
-    print(f"⚠️  Cache faltando: {stats['missing_cache']}")
+        print("   → All with Start/Middle/End ✓✓✓ and 100% text (no missing characters)")
+    print(f"⚠️  Missing cache: {stats['missing_cache']}")
     print(f"❌ EPUB ≠ Parsed: {stats['text_mismatch']}")
     print(f"⚠️  Parsed ≠ PreTTS: {stats['parsed_pretts_diff']}")
-    print(f"❌ MP3 faltando: {stats['missing_mp3']}")
-    print(f"⚠️  Duração incorreta: {stats['duration_mismatch']}")
-    print(f"❌ Áudio duplicado: {stats['audio_duplicate']}")
+    print(f"❌ Missing MP3: {stats['missing_mp3']}")
+    print(f"⚠️  Wrong duration: {stats['duration_mismatch']}")
+    print(f"❌ Duplicate audio: {stats['audio_duplicate']}")
 
     # Check if we should suppress error messages (during auto-fix)
     suppress_errors = os.environ.get("SUPPRESS_VALIDATION_ERRORS", "").lower() == "true"
 
     if issues and not suppress_errors:
         print("\n" + "=" * 70)
-        print("🔥 PROBLEMAS CRÍTICOS ENCONTRADOS")
+        print("🔥 CRITICAL ISSUES FOUND")
         print("=" * 70)
         for issue in issues:
             print(f"  • {issue}")
@@ -914,30 +965,30 @@ def validate_book(
     dup_groups = [ch_list for ch_list in text_hashes.values() if len(ch_list) > 1]
     if dup_groups:
         if not suppress_errors:
-            print("\n⚠️  CONTEÚDO DUPLICADO DETECTADO ENTRE CAPÍTULOS")
+            print("\n⚠️  DUPLICATE CONTENT DETECTED BETWEEN CHAPTERS")
             for group in dup_groups:
-                print(f"  • Capítulos: {', '.join(map(str, group))}")
+                print(f"  • Chapters: {', '.join(map(str, group))}")
         stats["text_mismatch"] += len(dup_groups)
-        issues.append("Conteúdo duplicado detectado entre capítulos")
+        issues.append("Duplicate content detected between chapters")
 
     audio_dupes = detect_duplicate_audio_files(output_dir)
     if audio_dupes:
         if not suppress_errors:
-            print("\n⚠️  ÁUDIO DUPLICADO DETECTADO ENTRE ARQUIVOS")
+            print("\n⚠️  DUPLICATE AUDIO DETECTED BETWEEN FILES")
             for group in audio_dupes:
                 labels = ", ".join(path.name for path in group)
-                print(f"  • Arquivos: {labels}")
+                print(f"  • Files: {labels}")
         stats["audio_duplicate"] += len(audio_dupes)
-        issues.append("Arquivos de áudio duplicados detectados (hash match)")
+        issues.append("Duplicate audio files detected (hash match)")
 
     # Validate full book text file
     print("\n" + "=" * 70)
-    print("📖 VALIDAÇÃO DO TXT COMPLETO DO LIVRO")
+    print("📖 FULL BOOK TEXT VALIDATION")
     print("=" * 70)
 
     full_book_files = list(output_dir.glob("*_completo.txt"))
     if not full_book_files:
-        print("⚠️  TXT completo do livro não encontrado")
+        print("⚠️  Complete book text file not found")
         issues.append("Missing complete book text file")
     else:
         full_book_file = full_book_files[0]
@@ -945,7 +996,7 @@ def validate_book(
         full_text_norm = normalize_text(full_text)
 
         # Parse chapter titles from completo.txt to only count converted chapters
-        # Format: "CAPÍTULO 1.0: 1.0 - Capítulo 1 - Começo - ..."
+        # Format: "CAPÍTULO 1.0: 1.0 - Chapter 1 - ..."
         converted_titles = set()
         for match in re.finditer(
             r"^CAPÍTULO\s+\d+(?:\.\d+)?\s*:\s*(.+?)$", full_text, re.MULTILINE
@@ -982,13 +1033,13 @@ def validate_book(
         )
         full_book_chars = len(normalize_text(full_text_without_headers))
 
-        print(f"📄 Arquivo: {full_book_file.name}")
+        print(f"📄 File: {full_book_file.name}")
         print(f"📊 Tamanho: {len(full_text):,} caracteres ({len(full_text_norm):,} normalizados)")
         print(f"📖 EPUB total: {total_epub_chars:,} caracteres normalizados")
 
         # Check if full text contains HTML
         if contains_html_markup(full_text):
-            print("❌ TXT completo contém tags HTML!")
+            print("❌ Complete book text contains HTML tags!")
             issues.append("Complete book text contains HTML markup")
             stats["text_mismatch"] += 1
 
@@ -997,23 +1048,26 @@ def validate_book(
         tolerance = max(500, int(total_epub_chars * 0.05))  # 5% or 500 chars
         if size_diff > tolerance:
             print(
-                f"⚠️  Diferença de tamanho: {size_diff:,} caracteres ({size_diff / total_epub_chars * 100:.1f}%)"
+                f"⚠️  Size difference: {size_diff:,} characters ({size_diff / total_epub_chars * 100:.1f}%)"
             )
+            stats["completo_size_mismatch"] += 1
             issues.append(f"Complete book text size differs by {size_diff} chars from EPUB total")
         else:
-            print("✅ TXT completo válido e completo")
+            print("✅ Complete book text is valid and complete")
 
     if not suppress_errors:
         print("=" * 70)
         if stats["parsed_pretts_diff"] > 0 or stats["text_mismatch"] > 0:
-            print("❌ VALIDAÇÃO FALHOU: Texto foi modificado durante conversão!")
-            print("   O áudio NÃO contém o texto completo do EPUB original.")
+            print("❌ VALIDATION FAILED: Text was modified during conversion!")
+            print("   The audio does NOT contain the complete text from the original EPUB.")
         elif stats["missing_mp3"] > 0:
-            print("⚠️  VALIDAÇÃO INCOMPLETA: Alguns MP3s faltando")
+            print("⚠️  VALIDATION INCOMPLETE: Some MP3 files are missing")
+        elif stats["completo_size_mismatch"] > 0:
+            print("⚠️  VALIDATION WITH WARNINGS: Complete book text size differs from EPUB")
         elif stats["perfect"] == stats["total_chapters"]:
-            print("✅ VALIDAÇÃO PASSOU: Todos os capítulos estão íntegros!")
+            print("✅ VALIDATION PASSED: All chapters are intact!")
         else:
-            print("⚠️  VALIDAÇÃO COM AVISOS: Verifique os detalhes acima")
+            print("⚠️  VALIDATION WITH WARNINGS: Check the details above")
         print("=" * 70 + "\n")
 
     return stats, issues
@@ -1027,11 +1081,11 @@ def auto_fix(
     cache_dir: Path | None = None,
 ):
     """
-    Reprocessa o livro inteiro com cache limpo para corrigir capítulos faltantes/divergentes.
+    Reprocess the entire book with clean cache to fix missing/divergent chapters.
     """
-    print("\n🔄 AUTO-FIX: limpando cache e reconvertendo livro completo...")
+    print("\n🔄 AUTO-FIX: clearing cache and reconverting full book...")
     if cache_dir is None:
-        safe_name = FileManager.sanitize_filename(epub_path.stem) or "livro"
+        safe_name = FileManager.sanitize_filename(epub_path.stem) or "book"
         cache_dir = resolve_cache_root() / safe_name
     reader = EbookReader(str(epub_path))
     config = ConversionConfig(
@@ -1043,8 +1097,8 @@ def auto_fix(
         preserve_all_chapters=True,
         force_reprocess=True,
         clear_cache=True,
-        auto_validate_output=False,  # evita loops
-        auto_fix_output=False,  # evita loops
+        auto_validate_output=False,  # prevent infinite loops
+        auto_fix_output=False,  # prevent infinite loops
     )
     converter = AudioConverter()
     asyncio.run(converter.convert(reader, config))
@@ -1058,8 +1112,8 @@ def extract_problem_chapters(issues: List[str]) -> List[str]:
         for match in re.finditer(r"\bChapter\s+(\d+(?:\.\d+)?)\b", issue):
             chapters.add(match.group(1))
 
-        # Match "Capítulo 9", "Capítulo 1.1", "Capítulos: 1, 2, 3", etc.
-        cap_match = re.search(r"\bCapítulos?:\s*([0-9.,\s]+)", issue)
+        # Match "Chapters: 1, 2, 3" etc.
+        cap_match = re.search(r"\bChapters?:\s*([0-9.,\s]+)", issue)
         if cap_match:
             for part in cap_match.group(1).split(","):
                 part = part.strip()
@@ -1074,7 +1128,7 @@ def extract_problem_chapters(issues: List[str]) -> List[str]:
             chapters.add(dup_match.group(2))
 
         # Match standalone numbers in critical messages (support decimals)
-        if any(keyword in issue.lower() for keyword in ["missing mp3", "duplicado", "duplicate"]):
+        if any(keyword in issue.lower() for keyword in ["missing mp3", "duplicate"]):
             # Extract all numbers that could be chapter references (integers or decimals)
             for num_match in re.finditer(r"(?:^|\s)(\d+(?:\.\d+)?)(?:\s|:|$)", issue):
                 num_str = num_match.group(1)
@@ -1104,9 +1158,9 @@ def auto_fix_partial(
         auto_fix(epub_path, output_dir, engine=engine, voice=voice, cache_dir=cache_dir)
         return
 
-    print(f"\n🔄 AUTO-FIX: reconvertendo {len(chapters)} capítulo(s)...")
+    print(f"\n🔄 AUTO-FIX: reconverting {len(chapters)} chapter(s)...")
     if cache_dir is None:
-        safe_name = FileManager.sanitize_filename(epub_path.stem) or "livro"
+        safe_name = FileManager.sanitize_filename(epub_path.stem) or "book"
         cache_dir = resolve_cache_root() / safe_name
 
     # Read EPUB to map chapter numbers to indices
@@ -1143,10 +1197,10 @@ def auto_fix_partial(
             # Use chapter.index (structured index like "4.1") or sequential number
             idx = getattr(chapter, "index", sequential_num)
             chapter_indices.append(str(idx))
-            print(f"   → Capítulo {epub_idx} (índice {idx}): {chapter.name[:60]}")
+            print(f"   → Chapter {epub_idx} (index {idx}): {chapter.name[:60]}")
 
     if not chapter_indices:
-        print("⚠️  Nenhum capítulo válido encontrado para reconverter")
+        print("⚠️  No valid chapters found to reconvert")
         return
 
     config = ConversionConfig(
@@ -1158,8 +1212,8 @@ def auto_fix_partial(
         preserve_all_chapters=True,
         force_reprocess=True,
         clear_cache=False,
-        auto_validate_output=False,  # evita loops
-        auto_fix_output=False,  # evita loops
+        auto_validate_output=False,  # prevent infinite loops
+        auto_fix_output=False,  # prevent infinite loops
     )
     config.extra["chapter_whitelist"] = ",".join(chapter_indices)
     converter = AudioConverter()
@@ -1173,12 +1227,12 @@ if __name__ == "__main__":
     parser.add_argument("epub_file", type=Path, help="Path to EPUB file")
     parser.add_argument("--output-dir", type=Path, help="Output directory with MP3s")
     parser.add_argument(
-        "--auto-fix", action="store_true", help="Reconvert livro inteiro se houver problemas"
+        "--auto-fix", action="store_true", help="Reconvert entire book if issues found"
     )
     parser.add_argument(
-        "--engine", default="edge", help="Engine TTS para auto-fix (ex: edge, coqui, piper)"
+        "--engine", default="edge", help="TTS engine for auto-fix (e.g.: edge, kokoro, piper)"
     )
-    parser.add_argument("--voice", default=None, help="Voz TTS (opcional) para auto-fix")
+    parser.add_argument("--voice", default=None, help="TTS voice (optional) for auto-fix")
 
     args = parser.parse_args()
 
@@ -1193,5 +1247,5 @@ if __name__ == "__main__":
         if out_dir is None:
             out_dir = Path("output") / args.epub_file.stem
         auto_fix(args.epub_file, out_dir, engine=args.engine, voice=args.voice)
-        print("\n✅ Auto-fix concluído. Reexecutando validação...\n")
+        print("\n✅ Auto-fix completed. Re-running validation...\n")
         validate_book(args.epub_file, out_dir)

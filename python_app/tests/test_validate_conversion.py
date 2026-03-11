@@ -198,7 +198,7 @@ class TestValidateBook(unittest.TestCase):
 
             self.assertGreaterEqual(stats["text_mismatch"], 1)
             self.assertTrue(
-                any("duplicad" in issue.lower() for issue in issues),
+                any("duplicate" in issue.lower() for issue in issues),
                 "Duplicate chapter outputs should be reported as critical issues",
             )
 

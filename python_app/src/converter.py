@@ -2622,6 +2622,7 @@ class AudioConverter:
                         "parsed_pretts_diff",
                         "missing_mp3",
                         "duration_mismatch",
+                        "completo_size_mismatch",
                     )
                 )
             )
