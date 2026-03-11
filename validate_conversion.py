@@ -986,7 +986,10 @@ def validate_book(
     print("📖 FULL BOOK TEXT VALIDATION")
     print("=" * 70)
 
-    full_book_files = list(output_dir.glob("*_completo.txt"))
+    # Support both naming conventions: legacy _completo.txt and current _complete.txt
+    full_book_files = list(output_dir.glob("*_completo.txt")) or list(
+        output_dir.glob("*_complete.txt")
+    )
     if not full_book_files:
         print("⚠️  Complete book text file not found")
         issues.append("Missing complete book text file")
@@ -995,14 +998,13 @@ def validate_book(
         full_text = full_book_file.read_text(encoding="utf-8")
         full_text_norm = normalize_text(full_text)
 
-        # Parse chapter titles from completo.txt to only count converted chapters
-        # Format: "CAPÍTULO 1.0: 1.0 - Chapter 1 - ..."
+        # Parse chapter titles from the full-book file to only count converted chapters.
+        # Supports both legacy "CAPÍTULO X.Y: title" and current "CHAPTER X.Y: title" headers.
         converted_titles = set()
         for match in re.finditer(
-            r"^CAPÍTULO\s+\d+(?:\.\d+)?\s*:\s*(.+?)$", full_text, re.MULTILINE
+            r"^(?:CAPÍTULO|CHAPTER)\s+\d+(?:\.\d+)?\s*:\s*(.+?)$", full_text, re.MULTILINE
         ):
             title = match.group(1).strip()
-            # Normalize title for matching
             converted_titles.add(normalize_title_key(title))
 
         # Calculate expected total ONLY from chapters that were actually converted
@@ -1011,7 +1013,6 @@ def validate_book(
             for _, chapter_title, text in epub_chapters:
                 if not text:
                     continue
-                # Check if this chapter's title matches any converted chapter
                 norm_title = normalize_title_key(chapter_title)
                 if any(
                     norm_title in conv_title or conv_title in norm_title
@@ -1024,18 +1025,22 @@ def validate_book(
                 len(normalize_text(text)) for _, _, text in epub_chapters if text
             )
 
-        # Strip chapter headers from completo.txt for fair comparison
-        # Headers are formatting added by converter, not EPUB content
+        # Strip chapter headers from the file for fair comparison
+        # (headers are formatting added by the converter, not EPUB content)
         full_text_without_headers = "\n".join(
             line
             for line in full_text.split("\n")
-            if not (line.strip().startswith("===") or line.strip().startswith("CAPÍTULO"))
+            if not (
+                line.strip().startswith("===")
+                or line.strip().startswith("CAPÍTULO")
+                or line.strip().startswith("CHAPTER")
+            )
         )
         full_book_chars = len(normalize_text(full_text_without_headers))
 
         print(f"📄 File: {full_book_file.name}")
-        print(f"📊 Tamanho: {len(full_text):,} caracteres ({len(full_text_norm):,} normalizados)")
-        print(f"📖 EPUB total: {total_epub_chars:,} caracteres normalizados")
+        print(f"📊 Size: {len(full_text):,} chars ({len(full_text_norm):,} normalized)")
+        print(f"📖 EPUB total: {total_epub_chars:,} chars normalized")
 
         # Check if full text contains HTML
         if contains_html_markup(full_text):
@@ -1108,33 +1113,22 @@ def extract_problem_chapters(issues: List[str]) -> List[str]:
     """Extract chapter numbers from validation issues (supports decimals like 1.1, 1.2)."""
     chapters: set[str] = set()
     for issue in issues:
-        # Match "Chapter 9", "Chapter 43", "Chapter 1.1", "Chapter 1.2", etc.
+        # Match "Chapter 9", "Chapter 1.1", etc.
         for match in re.finditer(r"\bChapter\s+(\d+(?:\.\d+)?)\b", issue):
             chapters.add(match.group(1))
 
-        # Match "Chapters: 1, 2, 3" etc.
-        cap_match = re.search(r"\bChapters?:\s*([0-9.,\s]+)", issue)
-        if cap_match:
-            for part in cap_match.group(1).split(","):
-                part = part.strip()
-                # Accept integers and decimals
-                if re.match(r"^\d+(?:\.\d+)?$", part):
-                    chapters.add(part)
-
-        # Match duplicates: "between chapters: 9 and 43" or "between chapters: 1.1 and 1.2"
+        # Match duplicate audio: "between chapters: 9 and 43" or "1.1 and 1.2"
         dup_match = re.search(r"between chapters:\s*(\d+(?:\.\d+)?)\s+and\s+(\d+(?:\.\d+)?)", issue)
         if dup_match:
             chapters.add(dup_match.group(1))
             chapters.add(dup_match.group(2))
 
-        # Match standalone numbers in critical messages (support decimals)
+        # Match standalone numbers in missing-MP3 or duplicate messages
         if any(keyword in issue.lower() for keyword in ["missing mp3", "duplicate"]):
-            # Extract all numbers that could be chapter references (integers or decimals)
             for num_match in re.finditer(r"(?:^|\s)(\d+(?:\.\d+)?)(?:\s|:|$)", issue):
                 num_str = num_match.group(1)
                 try:
                     num_val = float(num_str)
-                    # Only add if it's a reasonable chapter number (1-999)
                     if 1 <= num_val <= 999:
                         chapters.add(num_str)
                 except ValueError:

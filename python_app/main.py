@@ -596,7 +596,8 @@ class ConverterApplication:
 
         if not output_dir.exists():
             print(f"❌ Output not found for validation: {output_dir}")
-            print("   Run a conversion first or adjust --output-dir.")
+            print(f"   Expected output directory derived from book title: {output_dir}")
+            print("   Run a conversion first, or pass --output-dir if you used a custom path.")
             return 1
 
         print("🔍 Verify mode: no new audio will be generated.")
@@ -638,13 +639,16 @@ class ConverterApplication:
 
         if not output_dir.exists():
             print(f"❌ Output not found: {output_dir}")
-            print("   Run a conversion first or adjust --output-dir.")
+            print(f"   Expected output directory derived from book title: {output_dir}")
+            print("   Run a conversion first, or pass --output-dir if you used a custom path.")
             return 1
 
         print("🔧 Fix mode: validating and fixing the conversion...")
         print(f"📁 Output: {output_dir}")
         if cache_dir:
             print(f"📁 Cache: {cache_dir}")
+
+        fix_summary: list[str] = []
 
         # Step 1: Fix file naming issues (HTML in names, illegal characters)
         try:
@@ -653,6 +657,7 @@ class ConverterApplication:
             renamed = fix_output_filenames(output_dir, cache_dir=cache_dir)
             if renamed:
                 print(f"\n✏️  Fixed {len(renamed)} filename(s) with HTML/invalid characters.")
+                fix_summary.append(f"Renamed {len(renamed)} file(s) with bad names")
         except Exception as exc:
             print(f"⚠️  Filename fix skipped: {exc}")
 
@@ -666,10 +671,16 @@ class ConverterApplication:
             return 1
 
         if not issues:
-            print("✅ No issues found — book is already 100% intact.")
+            if fix_summary:
+                print("\n✅ Fix completed:")
+                for item in fix_summary:
+                    print(f"   • {item}")
+            else:
+                print("✅ No issues found — book is already 100% intact.")
             return 0
 
-        print(f"\n🔧 {len(issues)} issue(s) found. Starting reconversion loop...")
+        issues_before = len(issues)
+        print(f"\n🔧 {issues_before} issue(s) found. Starting reconversion loop...")
 
         # Step 3: Reconvert bad chapters until clean
         fix_config = config
@@ -691,11 +702,20 @@ class ConverterApplication:
             traceback.print_exc()
             return 1
 
+        print("\n" + "=" * 60)
+        print("🔧 FIX SUMMARY")
+        print("=" * 60)
+        for item in fix_summary:
+            print(f"  • {item}")
         if success:
-            print("\n✅ Fix completed: book is 100% intact!")
+            print(f"  • Resolved {issues_before} validation issue(s) via reconversion")
+            print("=" * 60)
+            print("✅ Fix completed: book is 100% intact!")
             return 0
         else:
-            print("\n⚠️  Fix completed with remaining issues. Run --verify to see details.")
+            print(f"  • Started with {issues_before} issue(s) — some may remain")
+            print("=" * 60)
+            print("⚠️  Fix completed with remaining issues. Run --verify to see details.")
             return 1
 
     @staticmethod

@@ -2737,6 +2737,31 @@ class AudioConverter:
                     print("✅ Validation passed! Conversion 100% correct.")
                 return True
 
+            # If only the complete-book text file has a size mismatch (all chapters are fine),
+            # regenerate it from the cached text files instead of reconverting audio.
+            if stats.get("completo_size_mismatch", 0) > 0 and not any(
+                stats.get(k, 0) > 0
+                for k in (
+                    "missing_cache",
+                    "text_mismatch",
+                    "parsed_pretts_diff",
+                    "missing_mp3",
+                    "duration_mismatch",
+                )
+            ):
+                if self.verbose:
+                    print("📖 Regenerating complete book text file...")
+                try:
+                    reader = EbookReader(str(epub_path))
+                    all_chapters = reader.get_chapter_structure(preserve_all=True)
+                    self._generate_full_book_text(output_dir, all_chapters)
+                    consecutive_failures = 0
+                except Exception as exc:
+                    if self.verbose:
+                        print(f"⚠️  Could not regenerate complete book text: {exc}")
+                    consecutive_failures += 1
+                continue
+
             # Extract chapters with problems
             problem_chapters = extract_problem_chapters(issues)
             last_problem_chapters = list(problem_chapters)
@@ -11633,7 +11658,7 @@ class AudioConverter:
                 text_dir.mkdir(parents=True, exist_ok=True)
 
             # Use book title from config or first chapter
-            book_title = "livro_complete"
+            book_title = "book_complete"
             if self._active_config:
                 book_title = getattr(self._active_config, "book_title", None) or book_title
 
@@ -11678,7 +11703,7 @@ class AudioConverter:
             full_book_file.write_text("".join(full_text_parts), encoding="utf-8")
 
             if self.verbose:
-                print(f"\n📖 text complete do livro gerado: {full_book_file.name}")
+                print(f"\n📖 Complete book text generated: {full_book_file.name}")
                 print(f"   Total: {len(''.join(full_text_parts)):,} chars")
 
             return full_book_file
