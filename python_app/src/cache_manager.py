@@ -364,11 +364,11 @@ class CacheManager:
             return False
 
         except Exception as e:
-            print(f"⚠️ Erro ao remover checkpoint: {e}")
+            print(f"⚠️ Error removing checkpoint: {e}")
             return False
 
     def has_checkpoint(self, book_path: Path) -> bool:
-        """Verifica se existe checkpoint para o livro"""
+        """Check whether a checkpoint exists for the book."""
         checkpoint_path = self._get_checkpoint_path(book_path)
         return checkpoint_path.exists()
 
@@ -504,5 +504,5 @@ class CacheManager:
         safe = re.sub(r"\s+", "_", safe)
         safe = safe.strip("_")
         if not safe:
-            return "livro"
+            return "book"
         return safe[:80]

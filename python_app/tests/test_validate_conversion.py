@@ -265,3 +265,133 @@ class TestValidateBook(unittest.TestCase):
             self.assertEqual(len(groups), 1)
             names = sorted(p.name for p in groups[0])
             self.assertEqual(names, sorted([first.name, second.name]))
+
+
+class TestFixOutputFilenames(unittest.TestCase):
+    def test_renames_html_in_mp3_name(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            output_path = Path(output_dir)
+            bad = output_path / "1 - Chapter &amp; One.mp3"
+            bad.write_bytes(b"audio")
+
+            renamed = vc.fix_output_filenames(output_path)
+
+            self.assertEqual(len(renamed), 1)
+            self.assertFalse(bad.exists())
+            good = output_path / "1 - Chapter & One.mp3"
+            self.assertTrue(good.exists())
+
+    def test_renames_html_entities_in_text_files(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            output_path = Path(output_dir)
+            text_dir = output_path / "text"
+            text_dir.mkdir()
+            bad = text_dir / "1 - Chapter &amp; Two-parsed.txt"
+            bad.write_text("content")
+
+            renamed = vc.fix_output_filenames(output_path)
+
+            self.assertEqual(len(renamed), 1)
+            self.assertFalse(bad.exists())
+            good = text_dir / "1 - Chapter & Two-parsed.txt"
+            self.assertTrue(good.exists())
+
+    def test_renames_in_cache_dir(self):
+        with (
+            tempfile.TemporaryDirectory() as output_dir,
+            tempfile.TemporaryDirectory() as cache_dir,
+        ):
+            output_path = Path(output_dir)
+            cache_text = Path(cache_dir) / "text"
+            cache_text.mkdir()
+            bad = cache_text / "1 - Chapter &amp; One-parsed.txt"
+            bad.write_text("content")
+
+            renamed = vc.fix_output_filenames(output_path, cache_dir=Path(cache_dir))
+
+            self.assertEqual(len(renamed), 1)
+            self.assertFalse(bad.exists())
+
+    def test_clean_names_untouched(self):
+        with tempfile.TemporaryDirectory() as output_dir:
+            output_path = Path(output_dir)
+            good = output_path / "1 - Normal Chapter.mp3"
+            good.write_bytes(b"audio")
+
+            renamed = vc.fix_output_filenames(output_path)
+
+            self.assertEqual(len(renamed), 0)
+            self.assertTrue(good.exists())
+
+
+class TestComplotoSizeMismatchStat(unittest.TestCase):
+    def test_completo_size_mismatch_counted_in_stats(self):
+        """completo_size_mismatch must be > 0 when file content differs from EPUB by > 5%."""
+        with (
+            tempfile.TemporaryDirectory() as output_dir,
+            tempfile.TemporaryDirectory() as cache_dir,
+        ):
+            output_path = Path(output_dir)
+            text_dir = output_path / "text"
+            text_dir.mkdir()
+
+            chapter_text = "A" * 1000
+            parsed = text_dir / "1 - Chapter1-parsed.txt"
+            pretts = text_dir / "1 - Chapter1-pre-tts.txt"
+            parsed.write_text(chapter_text)
+            pretts.write_text(chapter_text)
+
+            mp3 = output_path / "1 - Chapter1.mp3"
+            mp3.write_bytes(b"\xff\xfb" + b"\x00" * 4096)
+
+            # Write completo.txt with only ~10% of the expected content
+            completo = output_path / "book_completo.txt"
+            completo.write_text("CHAPTER 1: Chapter1\n\n" + "A" * 50)
+
+            with patch(
+                "validate_conversion.load_epub_chapters",
+                return_value=[(1, "Chapter1", chapter_text)],
+            ):
+                stats, issues = vc.validate_book(
+                    Path("book.epub"),
+                    output_dir=output_path,
+                    cache_dir=Path(cache_dir),
+                )
+
+            self.assertGreater(stats["completo_size_mismatch"], 0)
+            self.assertTrue(any("size differs" in i for i in issues))
+
+    def test_complete_txt_also_found(self):
+        """validate_book should find *_complete.txt (current naming) as well as *_completo.txt."""
+        with (
+            tempfile.TemporaryDirectory() as output_dir,
+            tempfile.TemporaryDirectory() as cache_dir,
+        ):
+            output_path = Path(output_dir)
+            text_dir = output_path / "text"
+            text_dir.mkdir()
+
+            chapter_text = "B" * 500
+            parsed = text_dir / "1 - Ch1-parsed.txt"
+            pretts = text_dir / "1 - Ch1-pre-tts.txt"
+            parsed.write_text(chapter_text)
+            pretts.write_text(chapter_text)
+
+            mp3 = output_path / "1 - Ch1.mp3"
+            mp3.write_bytes(b"\xff\xfb" + b"\x00" * 4096)
+
+            # Use current naming: *_complete.txt with CHAPTER header
+            complete = output_path / "book_complete.txt"
+            complete.write_text("CHAPTER 1: Ch1\n\n" + chapter_text)
+
+            with patch(
+                "validate_conversion.load_epub_chapters",
+                return_value=[(1, "Ch1", chapter_text)],
+            ):
+                stats, issues = vc.validate_book(
+                    Path("book.epub"),
+                    output_dir=output_path,
+                    cache_dir=Path(cache_dir),
+                )
+
+            self.assertEqual(stats["completo_size_mismatch"], 0)

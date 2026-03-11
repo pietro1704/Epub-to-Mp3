@@ -491,10 +491,19 @@ def detect_duplicate_audio_files(output_dir: Path, min_size_bytes: int = 1024) -
     return [paths for paths in groups.values() if len(paths) > 1]
 
 
+def _stem_needs_fixing(stem: str) -> bool:
+    """Return True if the filename stem contains HTML tags or any HTML entities."""
+    if re.search(r"<[^>]+>", stem):
+        return True
+    if re.search(r"&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);", stem):
+        return True
+    return False
+
+
 def fix_output_filenames(output_dir: Path, cache_dir: Path | None = None) -> List[str]:
     """
-    Rename output and cache files that contain HTML markup or illegal characters
-    in their names. Scans output_dir, output_dir/text/, and cache_dir/text/.
+    Rename output and cache files that contain HTML markup or HTML entities in
+    their names. Scans output_dir, output_dir/text/, and cache_dir/text/.
     Returns a list of rename action strings.
     """
     import html
@@ -502,7 +511,7 @@ def fix_output_filenames(output_dir: Path, cache_dir: Path | None = None) -> Lis
     renamed = []
 
     def _clean_stem(stem: str) -> str:
-        # Unescape HTML entities (e.g. &amp; → &)
+        # Unescape all HTML entities (e.g. &amp; → &, &lt; → <)
         cleaned = html.unescape(stem)
         # Strip any remaining HTML tags
         cleaned = re.sub(r"<[^>]+>", "", cleaned)
@@ -520,7 +529,7 @@ def fix_output_filenames(output_dir: Path, cache_dir: Path | None = None) -> Lis
                 continue
             stem = fpath.stem
             suffix = fpath.suffix
-            if not contains_html_markup(stem):
+            if not _stem_needs_fixing(stem):
                 continue
             new_stem = _clean_stem(stem)
             if new_stem == stem:

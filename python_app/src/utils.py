@@ -116,7 +116,7 @@ class FileManager:
                 shutil.move(str(temp_file), str(final_file))
                 moved_files.append(final_file)
             except Exception as e:
-                print(f"⚠️ Erro ao mover {temp_file.name}: {e}")
+                print(f"⚠️ Error moving {temp_file.name}: {e}")
 
         return moved_files
 

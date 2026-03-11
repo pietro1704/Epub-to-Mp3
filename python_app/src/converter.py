@@ -2095,23 +2095,23 @@ class AudioConverter:
 
         if total > 0 and (failed / max(1, total)) > 0.1:
             recommendations.append(
-                "- Alta taxa de falha: habilite `--engine auto` e mantenha retries automáticos."
+                "- High failure rate: enable `--engine auto` and keep automatic retries."
             )
         if blocked_count > 0:
             recommendations.append(
-                "- Edge bloqueou capítulos: reduza `EDGE_MAX_CONCURRENCY` ou use fallback offline."
+                "- Edge blocked chapters: reduce `EDGE_MAX_CONCURRENCY` or use offline fallback."
             )
         if hit_rate < 0.4:
             recommendations.append(
-                "- Prefetch com baixo aproveitamento: teste `--stage-pipeline` e `--stage-pipeline-depth 3`."
+                "- Low prefetch hit rate: try `--stage-pipeline` and `--stage-pipeline-depth 3`."
             )
         if budget_caps > 3:
             recommendations.append(
-                "- Resource budget reduziu paralelismo várias vezes: reduza `--parallel-slots`."
+                "- Resource budget reduced parallelism multiple times: lower `--parallel-slots`."
             )
         if switches > max(3, total // 2):
             recommendations.append(
-                "- Muitas trocas de engine: fixe engine principal para este livro e compare com A/B."
+                "- Many engine switches: pin the main engine for this book and compare with A/B."
             )
 
         if segment_summary:
@@ -3358,7 +3358,7 @@ class AudioConverter:
                         success_count += 1
                         completed_targets.add(str(chapter_num).strip())
                         if self.verbose:
-                            print(f"   ✅ Chapter {chapter_num}: MP3 gerado")
+                            print(f"   ✅ Chapter {chapter_num}: MP3 generated")
                     else:
                         if self.verbose:
                             print(f"   ❌ Chapter {chapter_num}: MP3 conversion failed")
@@ -3424,7 +3424,7 @@ class AudioConverter:
                     return True
                 if self.verbose:
                     print(
-                        f"\n🔍 Detectada conversion anterior com {len(mp3_files)} MP3(s). Validando antes de reconverter..."
+                        f"\n🔍 Previous conversion detected with {len(mp3_files)} MP3(s). Validating before reconverting..."
                     )
 
             # Add project root to sys.path for validate_conversion import
@@ -6615,11 +6615,11 @@ class AudioConverter:
         output_dir = self._setup_output_directory(config)
         self._last_output_dir = output_dir
 
-        # Honrar --clear-cache/clearCache: remove cache e artefatos do livro antes de continuar
+        # Honor --clear-cache: remove book cache and output artifacts before continuing
         # Must run BEFORE early validation so we don't validate stale output
         if getattr(config, "clear_cache", False):
             if self.verbose:
-                print("🗑️  --clear-cache: removendo cache e output anteriores...")
+                print("🗑️  --clear-cache: removing previous cache and output...")
             try:
                 if self._current_book_path:
                     self.cache_manager.clear_cache(self._current_book_path, title=reader.title)
@@ -8820,7 +8820,7 @@ class AudioConverter:
                                 self._retry_original_texts.pop(chapter_label, None)
                                 break
                         else:
-                            # Arquivo vazio ou corrompido - remover e reconverter
+                            # Empty or corrupted file — remove and reconvert
                             if self.verbose:
                                 print(
                                     f"   🗑️ Removing invalid file ({file_size} bytes): {output_path}"

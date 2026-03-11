@@ -1496,7 +1496,7 @@ class EdgeTTSEngine:
                             pass  # Non-critical
 
                     if self.verbose:
-                        self._log(f"⚠️ [PARALLEL] Retry segmento {fail_idx + 1} falhou: {exc}")
+                        self._log(f"⚠️ [PARALLEL] Retry segment {fail_idx + 1} failed: {exc}")
                     with suppress(OSError):
                         retry_path.unlink()
 
@@ -1528,7 +1528,7 @@ class EdgeTTSEngine:
         except Exception as exc:
             self.last_error = f"concatenation_failed: {exc}"
             if self.verbose:
-                self._log(f"❌ [PARALLEL] Erro ao concatenar: {exc}")
+                self._log(f"❌ [PARALLEL] Error concatenating segments: {exc}")
             # Clean up remaining temp files
             for temp_file in temp_files:
                 with suppress(OSError):
@@ -2099,7 +2099,7 @@ class EdgeTTSEngine:
                         f"{exc.__class__.__name__}: {exc}" if exc else exc.__class__.__name__
                     )
                 if self.verbose:
-                    self._log(f"   ❌ Erro ao obter stream: {self.last_error}")
+                    self._log(f"   ❌ Error obtaining stream: {self.last_error}")
                 return False
 
             try:

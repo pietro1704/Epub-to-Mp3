@@ -107,7 +107,7 @@ class SimpleAudioConverter:
                     continue
 
                 # Convert chapter
-                self.progress.tick(f"🔄 Convertendo capítulo {chapter_num}")
+                self.progress.tick(f"🔄 Converting chapter {chapter_num}")
 
                 try:
                     # Synthesize chapter text to MP3
@@ -122,12 +122,12 @@ class SimpleAudioConverter:
                         if self.verbose:
                             print(f"✅ Chapter {chapter_num} converted: {output_path}")
                     else:
-                        self.progress.complete_chapter("❌ Falha na validação")
+                        self.progress.complete_chapter("❌ Validation failed")
                         if self.verbose:
                             print(f"❌ Validation failed for chapter {chapter_num}")
 
                 except Exception as e:
-                    self.progress.complete_chapter(f"❌ Erro: {str(e)[:30]}")
+                    self.progress.complete_chapter(f"❌ Error: {str(e)[:30]}")
                     if self.verbose:
                         print(f"❌ Error in chapter {chapter_num}: {e}")
                     continue
