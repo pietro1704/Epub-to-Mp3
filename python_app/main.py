@@ -176,7 +176,7 @@ class ConverterApplication:
 
         targets, batch_requested = self._resolve_batch_targets(args)
         if not targets:
-            print("⚠️ Nenhum arquivo EPUB/PDF encontrado para converter.")
+            print("⚠️ No EPUB/PDF files found to convert.")
             return 1
 
         if len(targets) == 1 and not batch_requested:
@@ -248,7 +248,7 @@ class ConverterApplication:
                 if candidate.is_file() and candidate.suffix.lower() in self.SUPPORTED_INPUT_SUFFIXES
             ]
             if not files:
-                print(f"⚠️ Nenhum EPUB/PDF encontrado em {resolved}")
+                print(f"⚠️ No EPUB/PDF files found in {resolved}")
             return files
 
         print(f"⚠️ Invalid path: {resolved}")
@@ -269,11 +269,14 @@ class ConverterApplication:
         *,
         hardware_profile=None,
     ) -> int:
-        """Execute sequential conversions for multiple books."""
+        """Execute sequential conversions (or verify/fix) for multiple books."""
         total = len(targets)
         stop_on_error = bool(getattr(args, "batch_stop_on_error", False))
         successes = 0
         exit_code = 0
+
+        verify_mode = getattr(args, "verify_only", False)
+        fix_mode = getattr(args, "fix_mode", False)
 
         for index, target in enumerate(targets, start=1):
             self._print_batch_header(target, index, total)
@@ -291,7 +294,13 @@ class ConverterApplication:
                     print("🛑 Processing interrupted after failure.")
                     break
 
-        print(f"\n📚 Batch complete: {successes}/{total} book(s) succeeded.")
+        if verify_mode:
+            label = "verified clean"
+        elif fix_mode:
+            label = "fixed successfully"
+        else:
+            label = "succeeded"
+        print(f"\n📚 Batch complete: {successes}/{total} book(s) {label}.")
         return exit_code
 
     @staticmethod
@@ -311,14 +320,14 @@ class ConverterApplication:
                         continue
                     entries.append(stripped)
         except OSError as exc:
-            print(f"⚠️ Falha ao ler lista de batch ({manifest_path}): {exc}")
+            print(f"⚠️ Failed to read batch list ({manifest_path}): {exc}")
         return entries
 
     @staticmethod
     def _print_batch_header(target: Path, index: int, total: int) -> None:
         divider = "=" * 60
         print(f"\n{divider}")
-        print(f"📘 Livro {index}/{total}: {target.name}")
+        print(f"📘 Book {index}/{total}: {target.name}")
         print(f"{divider}")
 
     def _run_single_conversion(
@@ -428,13 +437,13 @@ class ConverterApplication:
                     # Clear cache AND output for the specific book
                     display_name = reader.title or input_path.stem
                     print()
-                    print(f"🗑️  Removendo cache e output para: {display_name}")
+                    print(f"🗑️  Removing cache and output for: {display_name}")
                     print()
 
                     # Limpar cache
                     cleared_cache = cache_manager.clear_cache(input_path, title=reader.title)
                     if cleared_cache:
-                        print("   ✅ Cache removido")
+                        print("   ✅ Cache removed")
 
                     # Limpar output do livro (todos os engines)
                     output_base = Path(getattr(args, "output_dir", None) or OUTPUT_DIR)
@@ -453,12 +462,12 @@ class ConverterApplication:
                                     shutil.rmtree(output_dir, ignore_errors=True)
                                     removed_count += 1
                                 except Exception as e:
-                                    print(f"   ⚠️  Erro ao limpar {output_dir.name}: {e}")
+                                    print(f"   ⚠️  Error removing {output_dir.name}: {e}")
 
                     if removed_count > 0:
                         print(f"   ✅ Output removed ({removed_count} director(ies))")
                     else:
-                        print("   ℹ️  Nenhum output encontrado")
+                        print("   ℹ️  No output directories found")
 
                     # Limpar checkpoint
                     cache_manager.clear_checkpoint(input_path)
@@ -496,6 +505,16 @@ class ConverterApplication:
 
             self._interactive_mode = bool(getattr(args, "menu", False))
 
+            # For verify/fix mode: skip expensive language detection and go straight
+            # to config setup — book title is all we need to locate the output dir.
+            if getattr(args, "verify_only", False) or getattr(args, "fix_mode", False):
+                config = self._get_conversion_config(args, reader)
+                if not config:
+                    return 1
+                if getattr(args, "verify_only", False):
+                    return self._run_verify_only(input_path, config, interactive=True)
+                return self._run_fix_mode(input_path, config)
+
             # Prepare language profile AFTER displaying initial metadata
             verbose = self._resolve_verbose(args)
             language_override = self._normalize_language_override(getattr(args, "language", None))
@@ -520,12 +539,6 @@ class ConverterApplication:
                 return 1
             config.verbose = self._resolve_verbose(args)
             self._announce_footnote_mode(config)
-
-            if getattr(args, "verify_only", False):
-                return self._run_verify_only(input_path, config, interactive=True)
-
-            if getattr(args, "fix_mode", False):
-                return self._run_fix_mode(input_path, config)
 
             if subset_requested:
                 selected_indices = [str(item.index) for item in structure_items]
@@ -1322,7 +1335,7 @@ class ConverterApplication:
         # If we removed duplicates and that caused the mismatch, restore original
         if duplicates_removed > 0 and (actual_count + duplicates_removed) == expected_count:
             print(
-                f"🔄 Auto-correção: restaurando {duplicates_removed} capítulo(s) removido(s) como duplicata"
+                f"🔄 Auto-correction: restoring {duplicates_removed} chapter(s) removed as duplicate"
             )
             print("💡 Reason: deduplication removed valid chapters")
 

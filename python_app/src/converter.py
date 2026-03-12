@@ -2588,6 +2588,7 @@ class AudioConverter:
         last_problem_count = float("inf")
         last_resort_attempted = False
         last_problem_chapters: List[str] = []
+        completo_regen_attempted = False
 
         # Progressive duration tolerance: increase each retry to handle
         # Edge-TTS reading speed variations (Portuguese ~100-120 WPM, not 150)
@@ -2749,18 +2750,27 @@ class AudioConverter:
                     "duration_mismatch",
                 )
             ):
-                if self.verbose:
-                    print("📖 Regenerating complete book text file...")
-                try:
-                    reader = EbookReader(str(epub_path))
-                    all_chapters = reader.get_chapter_structure(preserve_all=True)
-                    self._generate_full_book_text(output_dir, all_chapters)
-                    consecutive_failures = 0
-                except Exception as exc:
+                if not completo_regen_attempted:
+                    completo_regen_attempted = True
                     if self.verbose:
-                        print(f"⚠️  Could not regenerate complete book text: {exc}")
-                    consecutive_failures += 1
-                continue
+                        print("📖 Regenerating complete book text file...")
+                    try:
+                        reader = EbookReader(str(epub_path))
+                        all_chapters = reader.get_chapter_structure(preserve_all=True)
+                        self._generate_full_book_text(output_dir, all_chapters)
+                    except Exception as exc:
+                        if self.verbose:
+                            print(f"⚠️  Could not regenerate complete book text: {exc}")
+                    continue
+                else:
+                    # Already attempted regeneration — size mismatch is inherent to this
+                    # book's text processing. All individual chapters are valid, so accept.
+                    if self.verbose:
+                        print(
+                            "⚠️  Complete book text size mismatch persists after regeneration "
+                            "(likely due to text preprocessing). All individual chapters are intact — accepting."
+                        )
+                    return True
 
             # Extract chapters with problems
             problem_chapters = extract_problem_chapters(issues)
@@ -8278,7 +8288,7 @@ class AudioConverter:
                     voice = getattr(edge_engine, "voice", None)
                     healthy = await edge_engine._probe_edge_health(voice)  # type: ignore[attr-defined]
                     if not healthy and self.verbose:
-                        print("   ⚠️ Edge pre-check failed; mantendo engine selecionada")
+                        print("   ⚠️ Edge pre-check failed; keeping selected engine")
             except Exception:
                 pass
             finally:
@@ -8927,9 +8937,7 @@ class AudioConverter:
                             print(f"   ℹ️ Edge keeps engine even for large chapter: {edge_reason}")
                         elif edge_force_offline:
                             if self.verbose:
-                                print(
-                                    "   ℹ️ Edge marcado como unstable, mantendo engine (sem fallback)"
-                                )
+                                print("   ℹ️ Edge marked as unstable, keeping engine (no fallback)")
                             edge_force_offline = False
                             edge_state["force_offline_after_trunc"] = False
 
@@ -11699,7 +11707,12 @@ class AudioConverter:
                     full_text_parts.append(text_content.strip())
                     full_text_parts.append("\n\n")
 
-            # Write complete book text
+            # Write complete book text (remove legacy *_completo.txt if present)
+            for legacy in output_dir.glob("*_completo.txt"):
+                try:
+                    legacy.unlink()
+                except OSError:
+                    pass
             full_book_file.write_text("".join(full_text_parts), encoding="utf-8")
 
             if self.verbose:

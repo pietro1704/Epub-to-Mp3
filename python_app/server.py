@@ -394,7 +394,7 @@ cover_index_path = cover_cache_dir / "index.json"
 
 # Helpers to resolve per-book/per-engine paths (supports legacy job-id layout)
 def _book_slug(title: Optional[str], fallback: Optional[str] = None) -> str:
-    base = title or fallback or "livro"
+    base = title or fallback or "book"
     try:
         stem = Path(base).stem if base and "." in base else base
     except Exception:
@@ -5821,7 +5821,7 @@ async def process_conversion(job_id: str) -> None:
         job["completedAt"] = time.time()  # Timestamp for cleanup
         job["completedAtIso"] = _utcnow_iso()
         _update_job_activity(job, stage="failed")
-        _append_event(job, f"❌ Erro: {exc}")
+        _append_event(job, f"❌ Error: {exc}")
         job["parallelActive"] = 0
         _persist_job(job_id)
         _persist_job_log(job_id, job)

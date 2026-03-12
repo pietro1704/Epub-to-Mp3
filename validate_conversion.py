@@ -588,7 +588,7 @@ def validate_book(
             If None, uses adaptive defaults (0.40-0.50).
     """
     print("\n" + "=" * 70)
-    print("🔍 VALIDAÇÃO COMPLETA DE CONVERSÃO EPUB → MP3")
+    print("🔍 FULL EPUB → MP3 CONVERSION VALIDATION")
     print("=" * 70 + "\n")
 
     # Find cache directory
