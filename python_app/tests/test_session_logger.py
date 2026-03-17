@@ -331,3 +331,58 @@ class TestSessionsEndpoint:
         assert stats["modes"]["cli"] == 1
         assert stats["total_duration_seconds"] == 170.0
         assert stats["total_chapters_converted"] == 16
+
+
+# ---------------------------------------------------------------------------
+# DELETE /api/sessions endpoint
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteSessionsEndpoint:
+    def _make_client(self):
+        import unittest
+
+        try:
+            from fastapi.testclient import TestClient
+        except ModuleNotFoundError:
+            raise unittest.SkipTest("fastapi not installed")
+        from python_app import server
+
+        return TestClient(server.app), server
+
+    def test_delete_clears_all_sessions(self, monkeypatch, tmp_path):
+        client, _ = self._make_client()
+        fake_log = tmp_path / "conversions.jsonl"
+        lines = [json.dumps({"book_title": f"Book {i}", "outcome": "success"}) for i in range(5)]
+        fake_log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        monkeypatch.setattr("src.session_logger._LOG_FILE", fake_log)
+
+        resp = client.delete("/api/sessions")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["deleted"] == 5
+        assert not fake_log.exists()
+
+    def test_delete_empty_log_returns_zero(self, monkeypatch, tmp_path):
+        client, _ = self._make_client()
+        fake_log = tmp_path / "conversions.jsonl"
+        monkeypatch.setattr("src.session_logger._LOG_FILE", fake_log)
+
+        resp = client.delete("/api/sessions")
+        assert resp.status_code == 200
+        assert resp.json()["deleted"] == 0
+
+    def test_get_after_delete_returns_empty(self, monkeypatch, tmp_path):
+        client, _ = self._make_client()
+        fake_log = tmp_path / "conversions.jsonl"
+        fake_log.write_text(
+            json.dumps({"book_title": "Book", "outcome": "success"}) + "\n", encoding="utf-8"
+        )
+        monkeypatch.setattr("src.session_logger._LOG_FILE", fake_log)
+
+        client.delete("/api/sessions")
+        resp = client.get("/api/sessions")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["sessions"] == []
+        assert data["count"] == 0

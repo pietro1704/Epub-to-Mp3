@@ -104,11 +104,19 @@ There are **two completely separate conversion pipelines**:
    - `AudioConverter._convert_chapters_parallel()` — main chapter loop
    - Four-tier fallback: Edge multilingual → Edge monolingual → Kokoro → Piper
    - Adaptive delays, retry backoff, deferred safe pass
+   - `AudioConverter` uses 8 mixins:
+     `_HealthWatchdogMixin`, `_MetricsReportMixin`, `_OutputFileMixin`, `_CacheMixin`,
+     `_EdgeThrottleMixin`, `_EngineSelectionMixin`, `_RetryMixin`, `_ValidationMixin`
 
 2. **`server.py`** — Web/API path (`process_conversion()` → `convert_chapter()`)
    - Completely separate engine chain, timeout logic, retry logic
    - `_build_engine_chain()` → `_switch_to_next_engine()` → `_maybe_retry()`
    - Has its own slow-mode detection, healthcheck, stall watchdog
+   - Heavy logic extracted into 4 helper submodules in `src/`:
+     - `_server_engine_helpers.py` — engine chain, perf profile, language normalisation
+     - `_server_job_helpers.py` — job persistence, cleanup, progress checkpoints
+     - `_server_audio_helpers.py` — audio hashing, duplicate detection, output sorting
+     - `_server_conversion_helpers.py` — per-chapter progress helpers extracted from `process_conversion`
 
 **Any feature added to one path MUST be mirrored in the other.**
 
@@ -118,14 +126,28 @@ main.py            CLI entry — argument parsing, book loading, orchestration
 server.py          FastAPI server — job queue, async conversion, SSE streaming
 hf_app.py          HF Spaces wrapper — serves React + API, Kokoro pre-warm
 src/
-├── config.py          ConversionConfig dataclass
-├── converter.py       CLI conversion orchestration (DUAL PATH)
+├── config.py                    ConversionConfig dataclass
+├── converter.py                 CLI conversion orchestration (DUAL PATH)
+│   ├── _health_watchdog_mixin.py
+│   ├── _metrics_report_mixin.py
+│   ├── _output_file_mixin.py
+│   ├── _cache_mixin.py
+│   ├── _edge_throttle_mixin.py
+│   ├── _engine_selection_mixin.py
+│   ├── _retry_mixin.py
+│   └── _validation_mixin.py
+├── _server_engine_helpers.py    Engine chain, perf profile, language helpers
+├── _server_job_helpers.py       Job persistence, cleanup, checkpoints
+├── _server_audio_helpers.py     Audio hashing, duplicate detection, output sort
+├── _server_conversion_helpers.py Per-chapter progress helpers
 ├── ebook_reader.py    EPUB/PDF parsing, TOC hierarchy (NCX + EPUB3 nav)
 ├── cache_manager.py   Per-chapter text cache in .cache/Book_Title/
 ├── job_manager.py     Async job queue with persistent .jobs/*.json
 ├── engine_pool.py     TTS engine resource pooling
 ├── progress.py        CLI progress bar — active chapters, engine, ETA
 ├── telemetry.py       Engine performance tracking (chars/s per engine)
+├── session_logger.py  Persistent conversion log (conversions.jsonl)
+├── error_classifier.py TTS error → stable category mapping
 └── tts/
     ├── edge_engine.py  Edge-TTS (cloud, 12K chunks, rate-limit backoff)
     ├── kokoro_engine.py Kokoro (82M params, EN/JA/ZH, needs espeak-ng)

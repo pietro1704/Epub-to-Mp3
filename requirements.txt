@@ -31,7 +31,7 @@ transformers>=4.36.0
 # Ebook Processing
 ebooklib>=0.18
 beautifulsoup4>=4.12.0
-pypdf>=6.7.4
+pypdf>=6.8.0
 lxml>=5.0.0
 
 # Language Detection
@@ -58,6 +58,10 @@ tqdm
 
 # System monitoring
 psutil>=7.2.2
+
+# Security pins (transitive dependency CVE fixes)
+pillow>=12.1.1  # CVE-2026-25990
+werkzeug>=3.1.6  # CVE-2026-27199
 
 # Testing (dev only)
 pytest
