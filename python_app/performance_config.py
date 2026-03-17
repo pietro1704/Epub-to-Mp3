@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Performance Configuration Module
-Otimizações de hardware, threading e alocação de memória
+Hardware, threading and memory allocation tuning.
 """
 
 import multiprocessing
@@ -25,7 +25,7 @@ def _skip_numpy_tuning() -> bool:
 
 
 def configure_numpy_performance():
-    """Configure NumPy para usar BLAS otimizado e threading."""
+    """Configure NumPy to use optimized BLAS and threading."""
     if _skip_numpy_tuning():
         print("⚠️ [NumPy] Optimizations disabled (macOS/Intel or override)")
         return
@@ -46,14 +46,14 @@ def configure_numpy_performance():
 
         # **PERFORMANCE**: Configure optimized memory allocator
         if hasattr(np, "set_printoptions"):
-            np.set_printoptions(threshold=1000)  # Reduzir output verboso
+            np.set_printoptions(threshold=1000)  # Reduce verbose output
 
     except ImportError:
         pass
 
 
 def configure_torch_performance():
-    """Configure PyTorch para máxima performance em GPU/CPU."""
+    """Configure PyTorch for maximum GPU/CPU performance."""
     try:
         disable_torch = str(os.getenv("DISABLE_TORCH", "")).strip().lower() in {
             "1",
@@ -70,16 +70,16 @@ def configure_torch_performance():
             "on",
         }
         if disable_torch:
-            print("⚠️ [Torch] Desativado automaticamente (macOS ou DISABLE_TORCH=1)")
+            print("⚠️ [Torch] Disabled automatically (macOS or DISABLE_TORCH=1)")
             return
         if not os.path.exists("/dev/shm") and not allow_no_shm:
-            print("⚠️ [Torch] /dev/shm ausente - pulando init para evitar crash do OpenMP")
+            print("⚠️ [Torch] /dev/shm missing — skipping init to avoid OpenMP crash")
             print("   Set ALLOW_TORCH_NO_SHM=1 to force.")
             return
 
         import torch
 
-        # **GPU ACCELERATION**: Configurar CUDA
+        # **GPU ACCELERATION**: Configure CUDA
         if torch.cuda.is_available():
             # Number of available GPUs
             gpu_count = torch.cuda.device_count()
@@ -103,11 +103,11 @@ def configure_torch_performance():
             # **PERFORMANCE**: JIT compilation
             torch.jit.enable_onednn_fusion(True)
 
-            print("✅ [Torch] CUDA otimizado: cuDNN benchmark + TF32 habilitado")
+            print("✅ [Torch] CUDA optimized: cuDNN benchmark + TF32 enabled")
         else:
             print("⚠️ [Torch] CUDA not available — using CPU")
 
-            # **CPU OPTIMIZATION**: Configurar threads CPU
+            # **CPU OPTIMIZATION**: Configure CPU threads
             cpu_count = multiprocessing.cpu_count()
             optimal_threads = max(1, cpu_count)
 
@@ -129,8 +129,8 @@ def configure_torch_performance():
 
 
 def configure_python_allocator():
-    """Configure Python memory allocator para melhor performance."""
-    # **MEMORY**: Usar pymalloc (alocador otimizado do Python)
+    """Configure Python memory allocator for better performance."""
+    # **MEMORY**: Use pymalloc (Python's optimized allocator)
     # Already enabled by default in Python 3.x
 
     # **MEMORY**: Do not limit virtual memory; only adjust file descriptors if possible
@@ -141,34 +141,34 @@ def configure_python_allocator():
         target_fd = min(4096, hard_fd)
         if soft_fd < target_fd:
             resource.setrlimit(resource.RLIMIT_NOFILE, (target_fd, hard_fd))
-            print(f"📂 [FD] Limite de file descriptors: {target_fd}")
+            print(f"📂 [FD] File descriptor limit: {target_fd}")
 
     except (ImportError, ValueError, OSError) as e:
         print(f"⚠️ [Memory] Could not configure limits: {e}")
 
 
 def configure_gc_optimization():
-    """Configure garbage collector para otimizar performance."""
+    """Configure garbage collector for optimized performance."""
     import gc
 
-    # **MEMORY**: Configurar thresholds do GC
+    # **MEMORY**: Configure GC thresholds
     # (threshold0, threshold1, threshold2)
     # threshold0: number of allocations before gen0 collection
     # threshold1: number of gen0 collections before gen1 collection
     # threshold2: number of gen1 collections before gen2 collection
 
     # Tuned for workloads with heavy temporary allocation
-    gc.set_threshold(1000, 15, 15)  # Mais agressivo em gen0, menos em gen1/2
+    gc.set_threshold(1000, 15, 15)  # More aggressive in gen0, less in gen1/2
 
     # **PERFORMANCE**: Disable GC during critical operations
     # (will be re-enabled manually when needed)
     # gc.disable()  # Commented out — can cause memory leaks if not careful
 
-    print(f"🗑️ [GC] Thresholds otimizados: {gc.get_threshold()}")
+    print(f"🗑️ [GC] Thresholds configured: {gc.get_threshold()}")
 
 
 def configure_asyncio_performance():
-    """Configure asyncio para máxima performance."""
+    """Configure asyncio for maximum performance."""
     try:
         import asyncio
 
@@ -186,8 +186,8 @@ def configure_asyncio_performance():
 
 
 def configure_threading_performance():
-    """Configure threading limits para evitar overhead excessivo."""
-    # **THREADING**: Limitar threads do sistema
+    """Configure threading limits to avoid excessive overhead."""
+    # **THREADING**: Limit system threads
     cpu_count = multiprocessing.cpu_count()
 
     # Configure environment variables for C libraries
@@ -197,11 +197,11 @@ def configure_threading_performance():
     os.environ["MKL_NUM_THREADS"] = str(optimal_threads)
     os.environ["NUMEXPR_NUM_THREADS"] = str(optimal_threads)
 
-    print(f"🧵 [Threading] Threads globais: {optimal_threads}")
+    print(f"🧵 [Threading] Global threads: {optimal_threads}")
 
 
 def apply_all_optimizations():
-    """Aplica todas as otimizações de performance."""
+    """Apply all performance optimizations."""
     print("=" * 80)
     print("🚀 APPLYING PERFORMANCE OPTIMIZATIONS")
     print("=" * 80)
