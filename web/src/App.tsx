@@ -31,6 +31,9 @@ const ReadyDownloadsList = lazy(() =>
 );
 const QueueDisplay = lazy(() => import("./components/QueueDisplay"));
 const SystemStatsPanel = lazy(() => import("./components/SystemStatsPanel"));
+const ConversionHistoryPanel = lazy(
+  () => import("./components/ConversionHistoryPanel"),
+);
 const ConfirmDialog = lazy(() => import("./components/ConfirmDialog"));
 import { useConversionFlow } from "./hooks/useConversionFlow";
 import { useSystemStats } from "./hooks/useSystemStats";
@@ -1358,6 +1361,11 @@ export default function App(props?: AppProps): JSX.Element {
           </Suspense>
           {renderQueueDisplay({ marginTop: "1rem" })}
         </>
+      )}
+      {showSetupPanels && (
+        <Suspense fallback={null}>
+          <ConversionHistoryPanel />
+        </Suspense>
       )}
       <section className="tabs">
         <div
