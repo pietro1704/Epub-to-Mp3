@@ -146,7 +146,11 @@ pretrained_models/
 
 # Frontend build artifacts
 web/node_modules/
+node_modules/
 web/dist/
+
+# Conversion logs (runtime data)
+.logs/
 
 # Preview and temporary conversion files
 .preview/
