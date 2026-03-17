@@ -1147,6 +1147,7 @@ export default function App(props?: AppProps): JSX.Element {
                 phaseLabelOverride={statusLabelOverride}
                 jobId={state.jobId}
                 error={state.error}
+                errorCategory={state.errorCategory}
                 etaSeconds={state.etaSeconds}
                 showRawLog={showRawLog}
                 onToggleRawLog={() => setShowRawLog((value) => !value)}

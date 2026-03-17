@@ -315,9 +315,14 @@ type Action =
       completedAt?: string;
       totalDurationSeconds?: number;
     }
-  | { type: "fail"; entry: StatusEntry; error: string }
+  | { type: "fail"; entry: StatusEntry; error: string; errorCategory?: string }
   | { type: "cancelling"; entry: StatusEntry }
-  | { type: "cancelled"; entry: StatusEntry; error: string }
+  | {
+      type: "cancelled";
+      entry: StatusEntry;
+      error: string;
+      errorCategory?: string;
+    }
   | {
       type: "update-meta";
       etaSeconds?: number | null;
@@ -422,6 +427,7 @@ function reducer(state: ConversionState, action: Action): ConversionState {
         ...state,
         phase: "error",
         error: action.error,
+        errorCategory: action.errorCategory,
         log: [...state.log, action.entry],
         etaSeconds: 0,
         summary: state.summary,
@@ -437,6 +443,7 @@ function reducer(state: ConversionState, action: Action): ConversionState {
         ...initialState,
         phase: "idle",
         error: action.error,
+        errorCategory: action.errorCategory,
         log: [...state.log, action.entry],
       };
     case "update-meta": {
@@ -1336,6 +1343,7 @@ export function useConversionFlow(
           dispatch({
             type: "fail",
             error: failureMessage,
+            errorCategory: finalSnapshot.errorCategory,
             entry: entryFactoryRef.current(t.flow.failure(failureMessage)),
           });
           startTimeRef.current = null;
@@ -1934,6 +1942,7 @@ export function useConversionFlow(
           dispatch({
             type: "fail",
             error: failureMessage,
+            errorCategory: finalSnapshot.errorCategory,
             entry: entryFactoryRef.current(t.flow.failure(failureMessage)),
           });
           setCachedJobs((prev) =>

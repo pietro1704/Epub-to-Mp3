@@ -2728,6 +2728,22 @@ select {
   overflow-wrap: anywhere;
 }
 
+.status-panel__error-hint {
+  margin: 0.4rem 0 0;
+  padding: 0.55rem 1rem;
+  border-radius: 10px;
+  font-size: 0.83rem;
+  background: rgba(251, 191, 36, 0.1);
+  color: #fcd34d;
+  border-left: 3px solid rgba(251, 191, 36, 0.55);
+}
+
+.theme-light .status-panel__error-hint {
+  background: rgba(251, 191, 36, 0.12);
+  color: #92400e;
+  border-left-color: rgba(180, 83, 9, 0.55);
+}
+
 .cached-jobs-alert {
   background: rgba(99, 102, 241, 0.15);
   border: 1px solid rgba(99, 102, 241, 0.35);

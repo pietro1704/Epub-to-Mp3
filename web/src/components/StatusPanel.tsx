@@ -17,6 +17,7 @@ interface StatusPanelProps {
   phaseLabelOverride?: string;
   jobId?: string;
   error?: string;
+  errorCategory?: string;
   etaSeconds?: number | null;
   showRawLog: boolean;
   onToggleRawLog: () => void;
@@ -39,6 +40,7 @@ export default function StatusPanel({
   phaseLabelOverride,
   jobId,
   error,
+  errorCategory,
   etaSeconds,
   showRawLog,
   onToggleRawLog,
@@ -65,6 +67,10 @@ export default function StatusPanel({
   const errorText = showError
     ? t.status.errorPrefix.replace("{message}", error)
     : null;
+  const errorHint =
+    showError && errorCategory
+      ? (t.status.errorCategoryHints[errorCategory] ?? null)
+      : null;
   const timeLocale = locale === "pt" ? "pt-BR" : "en-US";
   const toggleLabel = showRawLog ? t.status.toggleHide : t.status.toggleShow;
   const etaDisplay = formatEta(phase, etaSeconds, locale, t);
@@ -293,6 +299,7 @@ export default function StatusPanel({
       )}
 
       {errorText && <p className="status-panel__error">{errorText}</p>}
+      {errorHint && <p className="status-panel__error-hint">{errorHint}</p>}
     </div>
   );
 }

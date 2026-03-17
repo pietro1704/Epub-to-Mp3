@@ -170,6 +170,7 @@ export interface JobSnapshot {
   lastActivityAt?: number;
   noParallel?: boolean;
   engineStatus?: EngineStatus;
+  errorCategory?: string;
 }
 
 export interface StatusEntry {
@@ -211,6 +212,7 @@ export interface ConversionState {
   bookAuthor?: string;
   coverUrl?: string;
   rawLog: string[];
+  errorCategory?: string;
   engine?: string;
   voice?: string;
   language?: string;

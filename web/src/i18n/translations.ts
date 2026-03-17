@@ -331,6 +331,7 @@ export interface StatusText {
   bookFallbackTitle: string;
   bookFallbackAuthor: string;
   uploadingFiles: string;
+  errorCategoryHints: Record<string, string>;
 }
 
 export interface ResumableJobsText {
@@ -952,6 +953,23 @@ export const translations: Record<Locale, Translations> = {
       bookFallbackTitle: "Livro carregado",
       bookFallbackAuthor: "Autor desconhecido",
       uploadingFiles: "Enviando livros…",
+      errorCategoryHints: {
+        rate_limit:
+          "Limite de requisições atingido. Tente novamente em alguns minutos.",
+        timeout:
+          "A conversão demorou mais do que o esperado. Tente um engine diferente.",
+        network: "Falha de rede. Verifique sua conexão e tente novamente.",
+        engine_unavailable:
+          "Nenhum engine TTS disponível. Verifique os logs do servidor.",
+        audio_truncation:
+          "Áudio gerado mais curto que o esperado. Tente diminuir o capítulo.",
+        incomplete_segments:
+          "Segmentos de áudio incompletos. O Edge-TTS pode estar sobrecarregado.",
+        invalid_audio: "Arquivo de áudio inválido gerado. Tente outro engine.",
+        cancelled: "Conversão cancelada pelo usuário.",
+        file_not_found: "Arquivo não encontrado. Faça o upload novamente.",
+        auth: "Erro de autenticação com o serviço TTS.",
+      },
     },
     downloads: {
       placeholder:
@@ -1559,6 +1577,20 @@ export const translations: Record<Locale, Translations> = {
       bookFallbackTitle: "Uploaded book",
       bookFallbackAuthor: "Unknown author",
       uploadingFiles: "Uploading books…",
+      errorCategoryHints: {
+        rate_limit: "Rate limit reached. Please try again in a few minutes.",
+        timeout: "Conversion took too long. Try a different engine.",
+        network: "Network error. Check your connection and try again.",
+        engine_unavailable: "No TTS engine available. Check the server logs.",
+        audio_truncation:
+          "Generated audio is shorter than expected. Try a shorter chapter.",
+        incomplete_segments:
+          "Incomplete audio segments. Edge-TTS may be overloaded.",
+        invalid_audio: "Invalid audio file generated. Try a different engine.",
+        cancelled: "Conversion cancelled by user.",
+        file_not_found: "File not found. Please upload again.",
+        auth: "Authentication error with the TTS service.",
+      },
     },
     downloads: {
       placeholder:
