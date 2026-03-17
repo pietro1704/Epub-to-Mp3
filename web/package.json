@@ -10,7 +10,7 @@
     "lint": "eslint --max-warnings=0 .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "vitest run",
+    "test": "NODE_OPTIONS='--max-old-space-size=4096' vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {

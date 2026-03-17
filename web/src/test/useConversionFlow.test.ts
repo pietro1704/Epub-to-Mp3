@@ -138,4 +138,107 @@ describe("useConversionFlow", () => {
     const firstMessage = result.current.state.log[0]?.message ?? "";
     expect(firstMessage).toContain("arquivo já enviado");
   });
+
+  it("reset() returns state to idle and clears log", async () => {
+    const submit = vi.fn().mockResolvedValue({ jobId: "777" });
+    const poll = vi.fn().mockResolvedValue({
+      jobId: "777",
+      state: "finished",
+      outputs: [],
+    } satisfies JobSnapshot);
+
+    const client: ConversionClient = { submit, fetch: vi.fn(), poll };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("pt"),
+    });
+
+    await act(async () => {
+      await result.current.submit(request);
+    });
+
+    expect(result.current.state.phase).toBe("success");
+    expect(result.current.state.log.length).toBeGreaterThan(0);
+
+    act(() => {
+      result.current.reset();
+    });
+
+    expect(result.current.state.phase).toBe("idle");
+    expect(result.current.state.log).toHaveLength(0);
+    expect(result.current.state.error).toBeUndefined();
+  });
+
+  it("records chapter progress updates from snapshot", async () => {
+    const submit = vi.fn().mockResolvedValue({ jobId: "999" });
+    const poll = vi
+      .fn()
+      .mockImplementation(
+        async (
+          _jobId: string,
+          options?: { onSnapshot?: (snapshot: JobSnapshot) => void },
+        ) => {
+          options?.onSnapshot?.({
+            jobId: "999",
+            state: "running",
+            events: [],
+            chapterProgress: [
+              { index: 1, name: "Ch 1", status: "completed", engine: "edge" },
+              { index: 2, name: "Ch 2", status: "processing", engine: "edge" },
+            ],
+          });
+          return {
+            jobId: "999",
+            state: "finished",
+            outputs: [],
+            chapterProgress: [
+              { index: 1, name: "Ch 1", status: "completed", engine: "edge" },
+              { index: 2, name: "Ch 2", status: "completed", engine: "edge" },
+            ],
+          } satisfies JobSnapshot;
+        },
+      );
+
+    const client: ConversionClient = { submit, fetch: vi.fn(), poll };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await result.current.submit(request);
+    });
+
+    expect(result.current.state.phase).toBe("success");
+    const progress = result.current.state.summary?.chapterProgress;
+    expect(progress).toBeDefined();
+    expect(progress?.length).toBe(2);
+    expect(progress?.[0].status).toBe("completed");
+  });
+
+  it("surfaces multiple download assets from finished snapshot", async () => {
+    const submit = vi.fn().mockResolvedValue({ jobId: "multi" });
+    const poll = vi.fn().mockResolvedValue({
+      jobId: "multi",
+      state: "finished",
+      outputs: [
+        { name: "ch-1.mp3", url: "/audio/ch-1.mp3" },
+        { name: "ch-2.mp3", url: "/audio/ch-2.mp3" },
+        { name: "book.zip", url: "/audio/book.zip" },
+      ],
+    } satisfies JobSnapshot);
+
+    const client: ConversionClient = { submit, fetch: vi.fn(), poll };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await result.current.submit(request);
+    });
+
+    expect(result.current.state.phase).toBe("success");
+    expect(result.current.state.downloads).toHaveLength(3);
+    const names = result.current.state.downloads.map((d) => d.name);
+    expect(names).toContain("ch-1.mp3");
+    expect(names).toContain("book.zip");
+  });
 });
