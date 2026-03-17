@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Teste rápido das novas features: extração de capa e detecção inteligente de idioma."""
+"""Quick test of new features: cover extraction and smart language detection."""
 
 import sys
 from pathlib import Path
@@ -12,12 +12,12 @@ from python_app.src.language.detector import LanguageDetector
 
 
 def test_cover_extraction():
-    """Testa extração de capa de EPUB e PDF."""
+    """Test cover extraction from EPUB and PDF."""
     print("=" * 80)
-    print("TESTE 1: EXTRAÇÃO DE CAPA")
+    print("TEST 1: COVER EXTRACTION")
     print("=" * 80)
 
-    # Teste com EPUB
+    # Test with EPUB
     epub_file = (
         "/Users/pietropugliesi/Downloads/Box Dom Quixote de la Mancha - Miguel de Cervantes.epub"
     )
@@ -26,42 +26,42 @@ def test_cover_extraction():
         reader = EbookReader(epub_file)
         cover = reader.extract_cover_image()
         if cover:
-            print("✅ Capa extraída!")
-            print(f"   - Tipo: {cover.media_type}")
-            print(f"   - Extensão: {cover.extension}")
-            print(f"   - Tamanho: {len(cover.data)} bytes")
+            print("✅ Cover extracted!")
+            print(f"   - Type: {cover.media_type}")
+            print(f"   - Extension: {cover.extension}")
+            print(f"   - Size: {len(cover.data)} bytes")
         else:
-            print("❌ Nenhuma capa encontrada")
+            print("❌ No cover found")
     else:
-        print(f"⚠️ Arquivo EPUB não encontrado: {epub_file}")
+        print(f"⚠️ EPUB file not found: {epub_file}")
 
-    # Teste com PDF
+    # Test with PDF
     pdf_file = "/Users/pietropugliesi/Downloads/OlavodeCarvalho-PlanetasnasCasas.pdf"
     if Path(pdf_file).exists():
         print(f"\n📄 Testando PDF: {Path(pdf_file).name}")
         reader = EbookReader(pdf_file)
         cover = reader.extract_cover_image()
         if cover:
-            print("✅ Capa extraída!")
-            print(f"   - Tipo: {cover.media_type}")
-            print(f"   - Extensão: {cover.extension}")
-            print(f"   - Tamanho: {len(cover.data)} bytes")
+            print("✅ Cover extracted!")
+            print(f"   - Type: {cover.media_type}")
+            print(f"   - Extension: {cover.extension}")
+            print(f"   - Size: {len(cover.data)} bytes")
         else:
-            print("❌ Nenhuma capa encontrada (normal para PDFs sem imagens na primeira página)")
+            print("❌ No cover found (normal for PDFs without images on the first page)")
     else:
-        print(f"⚠️ Arquivo PDF não encontrado: {pdf_file}")
+        print(f"⚠️ PDF file not found: {pdf_file}")
 
 
 def test_language_detection():
-    """Testa detecção inteligente de idioma com priorização."""
+    """Test smart language detection with prioritization."""
     print("\n" + "=" * 80)
-    print("TESTE 2: DETECÇÃO INTELIGENTE DE IDIOMA")
+    print("TEST 2: SMART LANGUAGE DETECTION")
     print("=" * 80)
 
     detector = LanguageDetector()
 
-    # Teste 1: PT-BR vs Espanhol (frase ambígua)
-    print("\n📝 Teste 1: PT-BR vs Espanhol")
+    # Test 1: PT-BR vs Spanish (ambiguous sentence)
+    print("\n📝 Test 1: PT-BR vs Spanish")
     print("-" * 80)
 
     text_pt_es = """
@@ -70,20 +70,20 @@ def test_language_detection():
     A literatura portuguesa é muito interessante e diversificada.
     """
 
-    print("Texto:")
+    print("Text:")
     print(text_pt_es.strip())
-    print("\nSem priorização:")
+    print("\nWithout prioritization:")
     segments_no_priority = detector.detect_segments(text_pt_es, primary_language=None)
     for seg in segments_no_priority:
         print(f"  [{seg.language}] {seg.text[:80]}...")
 
-    print("\nCom priorização (primary_language='pt'):")
+    print("\nWith prioritization (primary_language='pt'):")
     segments_with_priority = detector.detect_segments(text_pt_es, primary_language="pt")
     for seg in segments_with_priority:
         print(f"  [{seg.language}] {seg.text[:80]}...")
 
-    # Teste 2: Inglês vs Alemão
-    print("\n📝 Teste 2: Inglês vs Alemão")
+    # Test 2: English vs German
+    print("\n📝 Test 2: English vs German")
     print("-" * 80)
 
     text_en_de = """
@@ -92,54 +92,54 @@ def test_language_detection():
     The English literature is very interesting and diverse throughout history.
     """
 
-    print("Texto:")
+    print("Text:")
     print(text_en_de.strip())
-    print("\nSem priorização:")
+    print("\nWithout prioritization:")
     segments_no_priority = detector.detect_segments(text_en_de, primary_language=None)
     for seg in segments_no_priority:
         print(f"  [{seg.language}] {seg.text[:80]}...")
 
-    print("\nCom priorização (primary_language='en'):")
+    print("\nWith prioritization (primary_language='en'):")
     segments_with_priority = detector.detect_segments(text_en_de, primary_language="en")
     for seg in segments_with_priority:
         print(f"  [{seg.language}] {seg.text[:80]}...")
 
-    # Teste 3: Frase realmente ambígua
-    print("\n📝 Teste 3: Frase ambígua (pt-br vs espanhol)")
+    # Test 3: Genuinely ambiguous sentence
+    print("\n📝 Test 3: Ambiguous sentence (pt-br vs Spanish)")
     print("-" * 80)
 
     ambiguous = "A cultura popular é muito interessante e diversificada em toda América"
 
-    print(f"Texto: '{ambiguous}'")
+    print(f"Text: '{ambiguous}'")
 
-    # Detectar múltiplas línguas
+    # Detect multiple languages
     predictions = detector._detect_languages(ambiguous, top_n=3)
-    print("\nPredições do detector:")
+    print("\nDetector predictions:")
     for pred in predictions:
         print(f"  - {pred.code}: {pred.probability:.2%}")
 
-    # Com priorização pt
+    # With pt prioritization
     result_pt = detector._detect_language_with_timeout(
         ambiguous, primary_language="pt", ambiguity_threshold=0.15
     )
-    print(f"\nCom primary_language='pt': {result_pt}")
+    print(f"\nWith primary_language='pt': {result_pt}")
 
-    # Com priorização es
+    # With es prioritization
     result_es = detector._detect_language_with_timeout(
         ambiguous, primary_language="es", ambiguity_threshold=0.15
     )
-    print(f"Com primary_language='es': {result_es}")
+    print(f"With primary_language='es': {result_es}")
 
 
 if __name__ == "__main__":
-    print("\n🧪 TESTE DAS NOVAS FEATURES\n")
+    print("\n🧪 NEW FEATURES TEST\n")
 
     try:
         test_cover_extraction()
         test_language_detection()
 
         print("\n" + "=" * 80)
-        print("✅ TODOS OS TESTES CONCLUÍDOS!")
+        print("✅ ALL TESTS COMPLETED!")
         print("=" * 80)
 
     except Exception as e:
