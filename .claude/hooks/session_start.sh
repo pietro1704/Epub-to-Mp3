@@ -9,6 +9,30 @@ JOBS_DIR="$PROJECT_DIR/.jobs"
 
 lines=""
 
+# ── Auto-trim log if it exceeds 1000 entries ─────────────────────────────────
+if [[ -f "$LOG_FILE" ]]; then
+    log_lines=$(wc -l < "$LOG_FILE" | tr -d ' ')
+    if [[ "$log_lines" -gt 1000 ]]; then
+        python3 - "$LOG_FILE" <<'PYEOF'
+import sys, json
+path = sys.argv[1]
+records = []
+with open(path, encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        if line:
+            try:
+                records.append(json.loads(line))
+            except Exception:
+                pass
+if len(records) > 500:
+    with open(path, "w", encoding="utf-8") as f:
+        for r in records[-500:]:
+            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+PYEOF
+    fi
+fi
+
 # ── Recent conversions ──────────────────────────────────────────────────────
 if [[ -f "$LOG_FILE" ]]; then
     # Cap at last 500 lines for speed; count total lines with wc for accuracy

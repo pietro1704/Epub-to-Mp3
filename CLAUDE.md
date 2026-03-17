@@ -92,6 +92,13 @@ cd web && npm run dev    # Dev server (Vite, hot reload)
 cd web && npm run build  # Production build
 ```
 
+### Maintenance
+```bash
+mise run trim-log       # Trim conversions.jsonl to last 500 entries
+mise run hooks-test     # Validate Claude Code hook scripts (syntax + permissions)
+mise run audit          # Scan Python dependencies for CVEs (pip-audit)
+```
+
 ---
 
 ## Architecture
