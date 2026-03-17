@@ -259,8 +259,8 @@ async def run_benchmarks(repeat: int, include_multilingual: bool) -> None:
         )
     best = sorted_rows[0]
     print(
-        f"\n🏆 Mais rápido: {best['name']} ({best['engine']}) → {best['chars_per_second']:.1f} chars/s "
-        f"em {best['seconds']:.2f}s ({best['text_variant']})"
+        f"\n🏆 Fastest: {best['name']} ({best['engine']}) → {best['chars_per_second']:.1f} chars/s "
+        f"in {best['seconds']:.2f}s ({best['text_variant']})"
     )
     # Group by engine to show ranking summary
     per_engine: Dict[str, Dict[str, float]] = {}
@@ -269,7 +269,7 @@ async def run_benchmarks(repeat: int, include_multilingual: bool) -> None:
         aggregate["chars"] += row["payload_chars"]
         aggregate["seconds"] += row["seconds"]
         aggregate["runs"] += 1
-    print("\n=== Ranking por engine (média chars/s) ===")
+    print("\n=== Engine ranking (average chars/s) ===")
     for engine, stats in sorted(
         per_engine.items(),
         key=lambda item: (item[1]["chars"] / item[1]["seconds"]) if item[1]["seconds"] else 0.0,
@@ -278,10 +278,10 @@ async def run_benchmarks(repeat: int, include_multilingual: bool) -> None:
         avg = stats["chars"] / stats["seconds"] if stats["seconds"] else 0.0
         print(f" - {engine}: {avg:.1f} chars/s (runs={stats['runs']})")
     if failures:
-        print("\n⚠️  Cenários com erro:")
+        print("\n⚠️  Scenarios with errors:")
         for item in failures:
             print(f"   • {item}")
-    print("\nArquivos de áudio foram deixados em /tmp para verificação manual.")
+    print("\nAudio files left in /tmp for manual inspection.")
 
 
 def main() -> None:
@@ -289,12 +289,12 @@ def main() -> None:
         description="Benchmark Edge/Coqui/Piper engines and multilingual strategies."
     )
     parser.add_argument(
-        "--repeat", type=int, default=2, help="Quantas vezes repetir o texto base em cada teste"
+        "--repeat", type=int, default=2, help="How many times to repeat the base text in each test"
     )
     parser.add_argument(
         "--no-multilingual",
         action="store_true",
-        help="Desabilita cenários com texto multilíngue e LanguageDetector",
+        help="Disable scenarios with multilingual text and LanguageDetector",
     )
     args = parser.parse_args()
     repeat = max(1, args.repeat)

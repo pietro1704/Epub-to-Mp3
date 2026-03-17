@@ -2,18 +2,18 @@
 """
 Benchmark: Edge-TTS vs Coqui-TTS Performance Comparison
 
-Testa ambos os engines com:
-- Diferentes tamanhos de chunks
-- Com e sem paralelismo
-- Multi-idioma (PT-BR e EN-US)
+Tests both engines with:
+- Different chunk sizes
+- With and without parallelism
+- Multilingual (PT-BR and EN-US)
 
-Uso:
+Usage:
     pytest python_app/tests/test_benchmark_engines.py -v -s
 
-    # Apenas benchmark rápido (mocked)
+    # Fast benchmark only (mocked)
     pytest python_app/tests/test_benchmark_engines.py -v -s -k "mock"
 
-    # Benchmark real (requer conexão/modelos)
+    # Real benchmark (requires connection/models)
     BENCHMARK_REAL=1 pytest python_app/tests/test_benchmark_engines.py -v -s -k "real"
 """
 
@@ -33,7 +33,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     raise unittest.SkipTest("pytest not installed; skipping benchmark tests")
 
-# Textos de teste multi-idioma
+# Multilingual test texts
 SAMPLE_TEXT_PT = """
 O Brasil é um país de dimensões continentais, com uma biodiversidade única no mundo.
 A floresta amazônica representa o maior bioma tropical do planeta, abrigando milhões
@@ -58,14 +58,14 @@ this invaluable ecosystem for future generations. Scientists continue to discove
 new species and potential medical compounds within its vast expanse.
 """
 
-# Texto longo para testes de performance mais significativos
+# Long text for more significant performance tests
 SAMPLE_TEXT_LONG_PT = SAMPLE_TEXT_PT * 5
 SAMPLE_TEXT_LONG_EN = SAMPLE_TEXT_EN * 5
 
 
 @dataclass
 class BenchmarkResult:
-    """Resultado de um benchmark individual."""
+    """Result of an individual benchmark run."""
 
     engine: str
     language: str
@@ -90,7 +90,7 @@ class BenchmarkResult:
 
 @dataclass
 class BenchmarkConfig:
-    """Configuração para um teste de benchmark."""
+    """Configuration for a benchmark test run."""
 
     engine: str
     language: str
@@ -101,7 +101,7 @@ class BenchmarkConfig:
 
 
 class BenchmarkRunner:
-    """Executa benchmarks comparativos entre engines TTS."""
+    """Runs comparative benchmarks between TTS engines."""
 
     def __init__(self, output_dir: Optional[Path] = None):
         self.output_dir = output_dir or Path(tempfile.mkdtemp())
@@ -110,7 +110,7 @@ class BenchmarkRunner:
     async def run_edge_benchmark(
         self, config: BenchmarkConfig, mock_synthesis: bool = True
     ) -> BenchmarkResult:
-        """Executa benchmark do Edge-TTS."""
+        """Run Edge-TTS benchmark."""
         os.environ["EDGE_CHUNK_CHARS"] = str(config.chunk_size)
         os.environ["EDGE_MAX_CONCURRENCY"] = str(config.parallelism)
 
@@ -122,14 +122,14 @@ class BenchmarkRunner:
 
         try:
             if mock_synthesis:
-                # Simula síntese com tempo proporcional ao tamanho
-                # Edge é rápido: ~200-400 chars/s dependendo de paralelismo
+                # Simulate synthesis with time proportional to text size
+                # Edge is fast: ~200-400 chars/s depending on parallelism
                 base_speed = 150 if config.parallelism == 1 else 300
                 simulated_time = len(text) / base_speed
-                await asyncio.sleep(min(simulated_time, 0.5))  # Cap para testes rápidos
-                audio_duration = len(text) / 15  # ~15 chars por segundo de áudio
+                await asyncio.sleep(min(simulated_time, 0.5))  # Cap for fast tests
+                audio_duration = len(text) / 15  # ~15 chars per second of audio
             else:
-                # Síntese real
+                # Real synthesis
                 from src.tts.edge_engine import EdgeTTSEngine
 
                 engine = EdgeTTSEngine()
@@ -143,7 +143,7 @@ class BenchmarkRunner:
                 )
                 await engine.synthesize(text, str(output_path), voice=voice)
 
-                # Calcula duração do áudio
+                # Calculate audio duration
                 if output_path.exists():
                     import subprocess
 
@@ -188,7 +188,7 @@ class BenchmarkRunner:
     async def run_coqui_benchmark(
         self, config: BenchmarkConfig, mock_synthesis: bool = True
     ) -> BenchmarkResult:
-        """Executa benchmark do Coqui-TTS."""
+        """Run Coqui-TTS benchmark."""
         os.environ["COQUI_CHUNK_CHARS"] = str(config.chunk_size)
         os.environ["COQUI_MAX_WORKERS"] = str(config.parallelism)
         if config.parallelism == 1:
@@ -204,13 +204,13 @@ class BenchmarkRunner:
 
         try:
             if mock_synthesis:
-                # Simula síntese - Coqui é mais lento: ~50-100 chars/s
+                # Simulate synthesis — Coqui is slower: ~50-100 chars/s
                 base_speed = 40 if config.parallelism == 1 else 80
                 simulated_time = len(text) / base_speed
-                await asyncio.sleep(min(simulated_time, 1.0))  # Cap para testes rápidos
+                await asyncio.sleep(min(simulated_time, 1.0))  # Cap for fast tests
                 audio_duration = len(text) / 15
             else:
-                # Síntese real
+                # Real synthesis
                 from src.tts.coqui_engine import CoquiTTSEngine
 
                 engine = CoquiTTSEngine()
@@ -221,7 +221,7 @@ class BenchmarkRunner:
                 )
                 await engine.synthesize(text, str(output_path), language=config.language)
 
-                # Calcula duração do áudio
+                # Calculate audio duration
                 if output_path.exists():
                     import wave
 
@@ -252,16 +252,16 @@ class BenchmarkRunner:
         return result
 
     def print_summary(self):
-        """Imprime resumo dos resultados."""
+        """Print summary of benchmark results."""
         print("\n" + "=" * 80)
         print("BENCHMARK SUMMARY: Edge-TTS vs Coqui-TTS")
         print("=" * 80)
 
-        # Agrupa por engine
+        # Group by engine
         edge_results = [r for r in self.results if r.engine == "edge" and r.success]
         coqui_results = [r for r in self.results if r.engine == "coqui" and r.success]
 
-        print("\n📊 RESULTADOS POR ENGINE:")
+        print("\n📊 RESULTS BY ENGINE:")
         print("-" * 80)
 
         for result in sorted(
@@ -269,7 +269,7 @@ class BenchmarkRunner:
         ):
             print(result)
 
-        print("\n📈 ESTATÍSTICAS AGREGADAS:")
+        print("\n📈 AGGREGATE STATISTICS:")
         print("-" * 80)
 
         if edge_results:
@@ -290,10 +290,10 @@ class BenchmarkRunner:
 
         if edge_results and coqui_results:
             speedup = avg_edge / avg_coqui if avg_coqui > 0 else 0
-            print(f"\n🏆 Edge-TTS é {speedup:.1f}x mais rápido que Coqui-TTS (média)")
+            print(f"\n🏆 Edge-TTS is {speedup:.1f}x faster than Coqui-TTS (average)")
 
-        # Melhor configuração por engine
-        print("\n🎯 MELHOR CONFIGURAÇÃO POR ENGINE:")
+        # Best configuration per engine
+        print("\n🎯 BEST CONFIGURATION PER ENGINE:")
         print("-" * 80)
 
         if edge_results:
@@ -310,8 +310,8 @@ class BenchmarkRunner:
                 f"→ {best_coqui.chars_per_second:.1f} chars/s"
             )
 
-        # Impacto do paralelismo
-        print("\n⚡ IMPACTO DO PARALELISMO:")
+        # Parallelism impact
+        print("\n⚡ PARALLELISM IMPACT:")
         print("-" * 80)
 
         for engine in ["edge", "coqui"]:
@@ -325,19 +325,19 @@ class BenchmarkRunner:
                 gain = ((avg_parallel - avg_serial) / avg_serial) * 100 if avg_serial > 0 else 0
                 print(
                     f"{engine:8}: serial={avg_serial:.1f} chars/s → parallel={avg_parallel:.1f} chars/s "
-                    f"(+{gain:.0f}% ganho)"
+                    f"(+{gain:.0f}% gain)"
                 )
 
         print("\n" + "=" * 80)
 
 
 # =============================================================================
-# TESTES COM MOCK (rápidos, sem dependências externas)
+# MOCKED TESTS (fast, no external dependencies)
 # =============================================================================
 
 
 class TestBenchmarkMocked:
-    """Testes de benchmark com síntese mockada (rápidos)."""
+    """Benchmark tests with mocked synthesis (fast)."""
 
     @pytest.fixture
     def runner(self, tmp_path):
@@ -345,14 +345,14 @@ class TestBenchmarkMocked:
 
     @pytest.mark.asyncio
     async def test_edge_vs_coqui_mock_pt(self, runner):
-        """Benchmark mockado Edge vs Coqui em Português."""
+        """Mocked benchmark: Edge vs Coqui in Portuguese."""
         configs = [
-            # Edge com diferentes configurações
+            # Edge with different configurations
             BenchmarkConfig("edge", "pt", chunk_size=2000, parallelism=1, text=SAMPLE_TEXT_PT),
             BenchmarkConfig("edge", "pt", chunk_size=4000, parallelism=1, text=SAMPLE_TEXT_PT),
             BenchmarkConfig("edge", "pt", chunk_size=4000, parallelism=4, text=SAMPLE_TEXT_PT),
             BenchmarkConfig("edge", "pt", chunk_size=8000, parallelism=8, text=SAMPLE_TEXT_PT),
-            # Coqui com diferentes configurações
+            # Coqui with different configurations
             BenchmarkConfig("coqui", "pt", chunk_size=1500, parallelism=1, text=SAMPLE_TEXT_PT),
             BenchmarkConfig("coqui", "pt", chunk_size=2800, parallelism=1, text=SAMPLE_TEXT_PT),
             BenchmarkConfig("coqui", "pt", chunk_size=2800, parallelism=4, text=SAMPLE_TEXT_PT),
@@ -366,13 +366,13 @@ class TestBenchmarkMocked:
 
         runner.print_summary()
 
-        # Verificações
+        # Assertions
         assert len(runner.results) == len(configs)
         assert all(r.success for r in runner.results)
 
     @pytest.mark.asyncio
     async def test_edge_vs_coqui_mock_en(self, runner):
-        """Benchmark mockado Edge vs Coqui em Inglês."""
+        """Mocked benchmark: Edge vs Coqui in English."""
         configs = [
             BenchmarkConfig("edge", "en", chunk_size=4000, parallelism=1, text=SAMPLE_TEXT_EN),
             BenchmarkConfig("edge", "en", chunk_size=4000, parallelism=4, text=SAMPLE_TEXT_EN),
@@ -391,7 +391,7 @@ class TestBenchmarkMocked:
 
     @pytest.mark.asyncio
     async def test_parallelism_impact_mock(self, runner):
-        """Testa impacto do paralelismo (mock)."""
+        """Test parallelism impact (mock)."""
         text = SAMPLE_TEXT_LONG_PT
 
         # Edge: serial vs parallel
@@ -416,14 +416,14 @@ class TestBenchmarkMocked:
 
         runner.print_summary()
 
-        # Verifica que paralelismo melhora performance
+        # Verify that parallelism improves performance
         edge_serial = runner.results[0]
         edge_parallel = runner.results[1]
         assert edge_parallel.chars_per_second >= edge_serial.chars_per_second * 0.98
 
     @pytest.mark.asyncio
     async def test_chunk_size_impact_mock(self, runner):
-        """Testa impacto do tamanho de chunk (mock)."""
+        """Test chunk size impact (mock)."""
         text = SAMPLE_TEXT_LONG_PT
 
         chunk_sizes = [2000, 4000, 6000, 8000]
@@ -439,12 +439,12 @@ class TestBenchmarkMocked:
 
 
 # =============================================================================
-# TESTES REAIS (requerem conexão/modelos instalados)
+# REAL TESTS (require connection/models installed)
 # =============================================================================
 
 
 class TestBenchmarkReal:
-    """Testes de benchmark com síntese real."""
+    """Benchmark tests with real synthesis."""
 
     @pytest.fixture
     def runner(self, tmp_path):
@@ -452,7 +452,7 @@ class TestBenchmarkReal:
 
     @pytest.mark.asyncio
     async def test_edge_real_pt(self, runner):
-        """Benchmark real Edge-TTS em Português."""
+        """Real Edge-TTS benchmark in Portuguese."""
         use_real = os.environ.get("BENCHMARK_REAL") == "1"
         configs = [
             BenchmarkConfig("edge", "pt", chunk_size=4000, parallelism=1, text=SAMPLE_TEXT_PT),
@@ -468,7 +468,7 @@ class TestBenchmarkReal:
 
     @pytest.mark.asyncio
     async def test_coqui_real_pt(self, runner):
-        """Benchmark real Coqui-TTS em Português."""
+        """Real Coqui-TTS benchmark in Portuguese."""
         use_real = os.environ.get("BENCHMARK_REAL") == "1"
         configs = [
             BenchmarkConfig(
@@ -487,9 +487,9 @@ class TestBenchmarkReal:
 
     @pytest.mark.asyncio
     async def test_full_comparison_real(self, runner):
-        """Comparação completa real Edge vs Coqui."""
+        """Full real comparison: Edge vs Coqui."""
         use_real = os.environ.get("BENCHMARK_REAL") == "1"
-        text = SAMPLE_TEXT_PT[:800]  # Texto menor para testes reais
+        text = SAMPLE_TEXT_PT[:800]  # Smaller text for real tests
 
         configs = [
             # Edge
@@ -510,19 +510,19 @@ class TestBenchmarkReal:
 
 
 # =============================================================================
-# SCRIPT DE BENCHMARK STANDALONE
+# STANDALONE BENCHMARK SCRIPT
 # =============================================================================
 
 
 async def run_full_benchmark(real: bool = False):
-    """Executa benchmark completo comparativo."""
+    """Run full comparative benchmark."""
     print("\n" + "🔬 " * 20)
     print("BENCHMARK COMPARATIVO: Edge-TTS vs Coqui-TTS")
     print("🔬 " * 20 + "\n")
 
     runner = BenchmarkRunner()
 
-    # Configurações de teste
+    # Test configurations
     languages = [("pt", SAMPLE_TEXT_PT), ("en", SAMPLE_TEXT_EN)]
     edge_configs = [(2000, 1), (4000, 1), (4000, 4), (6000, 4), (8000, 8)]
     coqui_configs = [(1500, 1), (2800, 1), (2800, 2), (2800, 4)]
@@ -531,7 +531,7 @@ async def run_full_benchmark(real: bool = False):
     current = 0
 
     for lang, text in languages:
-        print(f"\n📌 Testando idioma: {lang.upper()}")
+        print(f"\n📌 Testing language: {lang.upper()}")
         print("-" * 40)
 
         # Edge benchmarks
@@ -562,8 +562,8 @@ if __name__ == "__main__":
     real_mode = "--real" in sys.argv or os.environ.get("BENCHMARK_REAL") == "1"
 
     if real_mode:
-        print("⚠️  Modo REAL ativado - requer Edge-TTS online e Coqui instalado")
+        print("⚠️  REAL mode enabled — requires Edge-TTS online and Coqui installed")
     else:
-        print("ℹ️  Modo MOCK - use --real ou BENCHMARK_REAL=1 para testes reais")
+        print("ℹ️  MOCK mode — use --real or BENCHMARK_REAL=1 for real synthesis")
 
     asyncio.run(run_full_benchmark(real=real_mode))
