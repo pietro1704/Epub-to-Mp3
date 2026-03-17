@@ -26,13 +26,15 @@ for name in os.listdir(jobs_dir):
             engine = job.get("engine", "?")
             pct = job.get("progressPercent") or 0
             last_ts = job.get("lastActivityAt") or job.get("last_activity_at") or ""
-            # Detect stall: no activity for >5 min
             stall = ""
             if last_ts:
                 try:
                     from datetime import datetime, timezone
                     dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
                     elapsed = now - dt.timestamp()
+                    if elapsed > 3600:
+                        # Dead job: server crashed without updating status — skip
+                        continue
                     if elapsed > 300:
                         stall = f" ⚠️ stalled {int(elapsed//60)}m ago"
                 except Exception:

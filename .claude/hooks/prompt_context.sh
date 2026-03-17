@@ -50,20 +50,18 @@ PYEOF
     fi
 fi
 
-# Last conversion from log
+# Last conversion from log — read only last 10 lines for speed
 if [[ -f "$LOG_FILE" ]]; then
-    last=$(python3 - "$LOG_FILE" <<'PYEOF'
+    last=$(tail -n 10 "$LOG_FILE" | python3 - <<'PYEOF'
 import json, sys
-path = sys.argv[1]
 last = None
-with open(path, encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if line:
-            try:
-                last = json.loads(line)
-            except Exception:
-                pass
+for line in sys.stdin:
+    line = line.strip()
+    if line:
+        try:
+            last = json.loads(line)
+        except Exception:
+            pass
 if last:
     outcome = last.get("outcome", "?")
     icon = "✅" if outcome == "success" else ("❌" if outcome == "failed" else "⚠️")

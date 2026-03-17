@@ -11,25 +11,30 @@ lines=""
 
 # ── Recent conversions ──────────────────────────────────────────────────────
 if [[ -f "$LOG_FILE" ]]; then
-    counts=$(python3 - "$LOG_FILE" <<'PYEOF'
+    # Cap at last 500 lines for speed; count total lines with wc for accuracy
+    total_lines=$(wc -l < "$LOG_FILE" | tr -d ' ')
+    recent=$(tail -n 500 "$LOG_FILE")
+
+    counts=$(echo "$recent" | python3 - "$total_lines" <<'PYEOF'
 import json, sys
-total = success = failed = 0
-with open(sys.argv[1], encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if not line:
-            continue
-        total += 1
-        try:
-            r = json.loads(line)
-            o = r.get("outcome", "")
-            if o == "success":
-                success += 1
-            elif o == "failed":
-                failed += 1
-        except Exception:
-            pass
-print(f"{total} {success} {failed}")
+total_lines = int(sys.argv[1])
+success = failed = seen = 0
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    seen += 1
+    try:
+        r = json.loads(line)
+        o = r.get("outcome", "")
+        if o == "success":
+            success += 1
+        elif o == "failed":
+            failed += 1
+    except Exception:
+        pass
+# Total from wc -l (accurate), success/failed from last 500
+print(f"{total_lines} {success} {failed}")
 PYEOF
     )
     total=$(echo "$counts" | awk '{print $1}')
@@ -39,20 +44,18 @@ PYEOF
     lines+="## Recent conversions ($total total | $success ✅ $failed ❌)\n"
     lines+="Last 5:\n"
 
-    # Parse last 5 entries with python for reliable JSON handling
-    last5=$(python3 - "$LOG_FILE" <<'PYEOF'
+    # Parse last 5 entries from tail output (no full-file read)
+    last5=$(tail -n 5 "$LOG_FILE" | python3 - <<'PYEOF'
 import json, sys
-path = sys.argv[1]
 records = []
-with open(path, encoding="utf-8") as f:
-    for line in f:
-        line = line.strip()
-        if line:
-            try:
-                records.append(json.loads(line))
-            except Exception:
-                pass
-for r in records[-5:][::-1]:
+for line in sys.stdin:
+    line = line.strip()
+    if line:
+        try:
+            records.append(json.loads(line))
+        except Exception:
+            pass
+for r in records[::-1]:
     outcome = r.get("outcome", "?")
     icon = "✅" if outcome == "success" else ("❌" if outcome == "failed" else "⚠️")
     title = r.get("book_title", "—")[:45]

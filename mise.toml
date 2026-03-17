@@ -136,6 +136,71 @@ fi
 .venv/bin/python -m pytest python_app/tests -k "benchmark"
 """
 
+[tasks."trim-log"]
+description = "Trim conversions.jsonl to last 500 entries to keep it fast"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+LOG_FILE=".logs/conversions.jsonl"
+if [[ ! -f "$LOG_FILE" ]]; then
+    echo "No log file found at $LOG_FILE"
+    exit 0
+fi
+
+python3 - "$LOG_FILE" <<'PY'
+import sys, json
+path = sys.argv[1]
+records = []
+with open(path, encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        if line:
+            try:
+                records.append(json.loads(line))
+            except Exception:
+                pass
+if len(records) <= 500:
+    print(f"Log has {len(records)} entries — no trim needed.")
+    sys.exit(0)
+keep = records[-500:]
+with open(path, "w", encoding="utf-8") as f:
+    for r in keep:
+        f.write(json.dumps(r, ensure_ascii=False) + "\\n")
+print(f"Trimmed {len(records)} → 500 entries.")
+PY
+"""
+
+[tasks."hooks-test"]
+description = "Validate Claude Code hook scripts are syntactically valid and executable"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+HOOKS_DIR=".claude/hooks"
+ok=0
+fail=0
+for script in "$HOOKS_DIR"/*.sh; do
+    name=$(basename "$script")
+    if [[ ! -x "$script" ]]; then
+        echo "❌ $name: not executable"
+        ((fail++)) || true
+        continue
+    fi
+    if bash -n "$script" 2>/tmp/hook_syntax_err; then
+        echo "✅ $name: OK"
+        ((ok++)) || true
+    else
+        echo "❌ $name: syntax error"
+        cat /tmp/hook_syntax_err
+        ((fail++)) || true
+    fi
+done
+echo ""
+echo "Result: $ok OK, $fail failed"
+[[ $fail -eq 0 ]]
+"""
+
 [tasks."test:web"]
 description = "Run web lint + test + build"
 run = """

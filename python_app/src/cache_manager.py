@@ -46,6 +46,8 @@ class CacheManager:
     }
 
     def __init__(self, cache_dir: Optional[Path] = None):
+        # In-memory cache for the current session (avoids redundant disk reads)
+        self._memory_cache: Dict[str, Dict[str, Any]] = {}
         try:
             # Always uses CACHE_DIR from project root, unless explicitly provided
             self.cache_dir = Path(cache_dir) if cache_dir else CACHE_DIR
@@ -87,6 +89,10 @@ class CacheManager:
         if self.cache_dir is None:
             return None
 
+        key = str(ebook_path.resolve())
+        if key in self._memory_cache:
+            return self._memory_cache[key]
+
         cache_path = self._get_cache_path(ebook_path)
         metadata_file = cache_path / "metadata.json"
 
@@ -99,6 +105,7 @@ class CacheManager:
 
             # Validate if cache is still valid
             if self._is_cache_valid(metadata, ebook_path):
+                self._memory_cache[key] = metadata
                 return metadata
             else:
                 # Remove invalid cache
@@ -174,6 +181,7 @@ class CacheManager:
             with open(metadata_file, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
 
+            self._memory_cache[str(ebook_path.resolve())] = metadata
             return True
 
         except Exception as exc:
@@ -227,8 +235,10 @@ class CacheManager:
                 checkpoint_path.unlink()
                 removed_any = True
 
+            self._memory_cache.pop(str(ebook_path.resolve()), None)
             return removed_any
 
+        self._memory_cache.clear()
         for item in self.cache_dir.iterdir():
             if item.name in self._PROTECTED_DIRS:
                 continue
@@ -408,7 +418,7 @@ class CacheManager:
         completed_count = len(checkpoint.completed_chapters)
         remaining_count = checkpoint.total_chapters - completed_count
 
-        elapsed_time = "desconhecido"
+        elapsed_time = "unknown"
         try:
             started = datetime.fromisoformat(checkpoint.started_at)
             last_updated = datetime.fromisoformat(checkpoint.last_updated)
