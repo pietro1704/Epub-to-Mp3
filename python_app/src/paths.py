@@ -104,6 +104,10 @@ PIPER_MODEL_CACHE_DIR = PIPER_MODELS_DIR
 TELEMETRY_DIR = CACHE_DIR / "telemetry"
 TELEMETRY_DIR.mkdir(exist_ok=True, parents=True)
 
+# Persistent conversion session log (never auto-deleted)
+LOGS_DIR = PERSISTENT_ROOT / ".logs"
+LOGS_DIR.mkdir(exist_ok=True, parents=True)
+
 # Point external libraries to the project-root model directory
 os.environ.setdefault("TTS_HOME", str(COQUI_MODELS_DIR))
 os.environ.setdefault("COQUI_TTS_CACHE_DIR", str(COQUI_MODELS_DIR))

@@ -564,6 +564,83 @@ class ConverterApplication:
 
             elapsed = time.time() - conversion_start
             print(f"⏱️ Total conversion time: {self._format_hms(elapsed)}")
+
+            # Log persistent conversion session record
+            try:
+                import json as _json
+                from datetime import datetime, timezone
+
+                from src.session_logger import log_session
+
+                _converted = (
+                    result.converted_chapters if isinstance(result, ConversionResult) else 0
+                )
+                _total = (
+                    result.total_chapters
+                    if isinstance(result, ConversionResult)
+                    else len(structure_items)
+                )
+                _failed = _total - _converted
+                _success = (
+                    result.success
+                    if isinstance(result, ConversionResult)
+                    else (isinstance(result, int) and result == 0)
+                )
+                _outcome = "success" if _success else ("partial" if _converted > 0 else "failed")
+
+                # Read per-chapter details from runtime metrics file
+                _chapter_details: list = []
+                _output_dir = getattr(config, "output_dir", None)
+                if _output_dir:
+                    _metrics_path = Path(_output_dir) / "_runtime_metrics.jsonl"
+                    if _metrics_path.exists():
+                        try:
+                            with open(_metrics_path, encoding="utf-8") as _mf:
+                                for _line in _mf:
+                                    _line = _line.strip()
+                                    if not _line:
+                                        continue
+                                    _ev = _json.loads(_line)
+                                    if _ev.get("event") == "chapter_complete":
+                                        _detail = {
+                                            "index": _ev.get("chapter"),
+                                            "engine": _ev.get("engine", ""),
+                                            "chars": _ev.get("chars"),
+                                            "elapsedSeconds": round(
+                                                float(_ev.get("elapsed_s") or 0), 1
+                                            ),
+                                            "status": "completed"
+                                            if _ev.get("success")
+                                            else "failed",
+                                            "retryCount": max(0, int(_ev.get("attempt", 1)) - 1),
+                                        }
+                                        if _ev.get("error"):
+                                            _detail["error"] = _ev["error"]
+                                        _chapter_details.append(_detail)
+                        except Exception:
+                            pass
+
+                log_session(
+                    book_title=reader.title or Path(args.input_file).stem,
+                    book_author=getattr(reader, "author", "") or "",
+                    language=getattr(self.language_profile, "primary", "")
+                    if self.language_profile
+                    else "",
+                    engine=getattr(config, "engine", ""),
+                    voice=getattr(config, "voice", ""),
+                    chapters_total=_total,
+                    chapters_converted=_converted,
+                    chapters_failed=_failed,
+                    duration_seconds=elapsed,
+                    outcome=_outcome,
+                    output_dir=str(_output_dir or ""),
+                    started_at=datetime.fromtimestamp(
+                        conversion_start, tz=timezone.utc
+                    ).isoformat(),
+                    chapter_details=_chapter_details or None,
+                )
+            except Exception:
+                pass  # Never let logging break a conversion
             if getattr(args, "show_metrics_summary", False):
                 self._print_metrics_summary(temp_dir)
             if getattr(args, "show_metrics_dashboard", False):

@@ -25,11 +25,8 @@ describe("ChapterProgressList", () => {
       { locale: "en" },
     );
 
-    expect(
-      screen.getByText((text) => text.includes("Engine: EDGE")),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText((text) => text.includes("Engine: COQUI")),
-    ).toBeInTheDocument();
+    // Engine badges render the engine name as a pill (lowercase)
+    expect(screen.getAllByText("edge").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("coqui").length).toBeGreaterThan(0);
   });
 });

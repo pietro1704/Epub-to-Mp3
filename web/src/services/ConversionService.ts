@@ -733,10 +733,14 @@ export class HttpConversionClient implements ConversionClient {
         reject(new DOMException("Aborted", "AbortError"));
       };
 
+      // Track the latest full snapshot so chapter_update events can patch it
+      let latestSnapshot: JobSnapshot | null = null;
+
       const handleMessage = (event: MessageEvent) => {
         try {
           const payload = JSON.parse(event.data) as JobSnapshot;
           const snapshot = this.normalizeSnapshot(payload);
+          latestSnapshot = snapshot;
           options.onSnapshot?.(snapshot);
           if (this.isTerminalState(snapshot.state)) {
             finalize(snapshot);
@@ -746,6 +750,25 @@ export class HttpConversionClient implements ConversionClient {
             "[ConversionClient] Failed to parse SSE payload:",
             error,
           );
+        }
+      };
+
+      const handleChapterUpdate = (event: MessageEvent) => {
+        try {
+          if (!latestSnapshot || !Array.isArray(latestSnapshot.chapterProgress))
+            return;
+          const chapter = JSON.parse(event.data) as Record<string, unknown>;
+          const chapterIndex = chapter["index"];
+          const idx = latestSnapshot.chapterProgress.findIndex(
+            (c) => c.index === chapterIndex,
+          );
+          if (idx === -1) return;
+          const updated = [...latestSnapshot.chapterProgress];
+          updated[idx] = { ...updated[idx], ...chapter };
+          latestSnapshot = { ...latestSnapshot, chapterProgress: updated };
+          options.onSnapshot?.(latestSnapshot);
+        } catch {
+          // Ignore malformed chapter_update events
         }
       };
 
@@ -765,6 +788,7 @@ export class HttpConversionClient implements ConversionClient {
       }
 
       source.onmessage = handleMessage;
+      source.addEventListener("chapter_update", handleChapterUpdate);
       source.onerror = handleError;
 
       if (signal) {

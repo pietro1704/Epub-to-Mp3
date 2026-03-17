@@ -135,6 +135,7 @@ export interface FormText {
   errorFileTooLarge: (limitMb: number) => string;
   submitIdle: string;
   submitBusy: string;
+  estimatedDuration: (formatted: string) => string;
   formattingCuesLabel: string;
   formattingCuesDescription: string;
   formattingCuesOn: string;
@@ -744,6 +745,7 @@ export const translations: Record<Locale, Translations> = {
         `Arquivo maior que ${limit} MB. Envie um EPUB/PDF menor para evitar falhas.`,
       submitIdle: "Converter agora",
       submitBusy: "Converter agora",
+      estimatedDuration: (f: string) => `~${f}`,
       formattingCuesLabel: "Narrar formatação (aspas, itálico, negrito)",
       formattingCuesDescription:
         "Fala “entre aspas” e “fim das aspas”, “em negrito”, etc., usando o idioma do site.",
@@ -1360,6 +1362,7 @@ export const translations: Record<Locale, Translations> = {
         `File exceeds the ${limit} MB limit. Please upload a smaller EPUB/PDF.`,
       submitIdle: "Convert now",
       submitBusy: "Convert now",
+      estimatedDuration: (f: string) => `~${f}`,
       formattingCuesLabel: "Narrate formatting (quotes, italics, bold)",
       formattingCuesDescription:
         "Says “quote”, “end quote”, and other cues using the site language.",

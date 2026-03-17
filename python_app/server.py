@@ -164,6 +164,9 @@ async def _lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Auto-Recovery: {e}")
 
+    # Mark process as a web server so session_logger picks the right mode
+    os.environ.setdefault("SERVER_MODE", "1")
+
     logger.info("Started periodic job cleanup task")
     try:
         yield
@@ -912,6 +915,42 @@ def _schedule_job_broadcast(job_id: Optional[str], job_data: Optional[dict]) -> 
     _app_loop.call_soon_threadsafe(_dispatch)
 
 
+async def _broadcast_chapter_event(job_id: str, chapter_data: dict) -> None:
+    """Emit a typed 'chapter_update' SSE event to all SSE clients of job_id."""
+    if job_id not in _sse_clients:
+        return
+    payload = {"_sse_event": "chapter_update", **chapter_data}
+    dead_queues = set()
+    for queue in _sse_clients[job_id]:
+        try:
+            queue.put_nowait(payload)
+        except (asyncio.QueueFull, Exception):
+            dead_queues.add(queue)
+    if dead_queues:
+        _sse_clients[job_id] -= dead_queues
+        if not _sse_clients[job_id]:
+            del _sse_clients[job_id]
+
+
+def _schedule_chapter_broadcast(job_id: Optional[str], chapter_data: Optional[dict]) -> None:
+    """Dispatch a per-chapter SSE event from any thread."""
+    if not job_id or not chapter_data:
+        return
+    if job_id not in _sse_clients:
+        return
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_broadcast_chapter_event(job_id, chapter_data))
+        return
+    except RuntimeError:
+        pass
+    if _app_loop is None or _app_loop.is_closed():
+        return
+    _app_loop.call_soon_threadsafe(
+        lambda: _app_loop.create_task(_broadcast_chapter_event(job_id, chapter_data))
+    )
+
+
 def _job_status_payload(job_data: dict) -> dict:
     payload = dict(job_data)
     payload["rawLog"] = job_data.get("_raw_log", [])
@@ -1224,7 +1263,7 @@ async def _job_worker(worker_id: int) -> None:
                 job = jobs.get(job_id) or job_manager.load_job(job_id)
                 if job is not None:
                     job["state"] = "failed"
-                    job["error"] = str(exc)
+                    _set_job_error(job, str(exc))
                     job["resumeRequested"] = False
                     job["cancelRequested"] = False
                     job["parallelActive"] = 0
@@ -1250,7 +1289,7 @@ async def _resume_pending_jobs() -> None:
         file_path = Path(job.get("file_path") or "")
         if not file_path.exists():
             job["state"] = "interrupted"
-            job["error"] = "Source file was lost after server restart"
+            _set_job_error(job, "Source file was lost after server restart")
             _append_event(job, "❌ Temporary source file not found - upload the EPUB again")
             _persist_job(job_id, force=True)
             continue
@@ -1742,9 +1781,10 @@ def _handle_stalled_job(job_id: str, job: dict, inactivity_seconds: float) -> bo
     job["resumeRequested"] = False
     job["cancelRequested"] = False
     job["statusHint"] = "Conversion interrupted (no progress)"
-    job["error"] = (
+    _set_job_error(
+        job,
         "Conversion automatically interrupted after repeated failures. "
-        "Retry the job or choose another voice engine."
+        "Retry the job or choose another voice engine.",
     )
     job["completedAt"] = now
     _append_event(
@@ -3099,7 +3139,12 @@ async def stream_job_status(job_id: str, request: Request):
                 try:
                     # Wait for next update (with timeout to allow disconnect check)
                     job_data = await asyncio.wait_for(client_queue.get(), timeout=1.0)
-                    yield f"data: {json.dumps(job_data)}\n\n"
+                    sse_event = job_data.get("_sse_event")
+                    if sse_event:
+                        clean = {k: v for k, v in job_data.items() if k != "_sse_event"}
+                        yield f"event: {sse_event}\ndata: {json.dumps(clean)}\n\n"
+                    else:
+                        yield f"data: {json.dumps(job_data)}\n\n"
                 except asyncio.TimeoutError:
                     # Send heartbeat to keep connection alive
                     yield ": heartbeat\n\n"
@@ -3229,6 +3274,152 @@ async def list_available_voices() -> dict:
     }
 
 
+@app.get("/api/estimate")
+async def estimate_conversion(
+    upload_id: str,
+    engine: str = "auto",
+) -> dict:
+    """Estimate conversion time and output size for an uploaded ebook.
+
+    Returns per-engine estimates using observed telemetry throughput,
+    falling back to conservative defaults when no samples are available.
+
+    Args:
+        upload_id: ID returned by POST /api/uploads
+        engine:    TTS engine to estimate for. "auto" returns all engines.
+
+    Response:
+        chapters        Total chapters found
+        total_chars     Total characters to synthesise
+        engine          Engine the primary estimate applies to
+        chars_per_second  Throughput used for the estimate (chars/s)
+        telemetry_based  True if throughput came from real samples
+        estimated_duration_seconds
+        estimated_duration_formatted  Human-readable (e.g. "12 min 34 s")
+        estimated_output_mb  Approximate MP3 size at 128 kbps
+        engine_estimates  Dict of engine → estimate for all engines
+    """
+    # ── Locate the uploaded file ─────────────────────────────────────────
+    with _pending_lock:
+        upload_info = _pending_uploads.get(upload_id)
+
+    file_path: Optional[str] = None
+    if upload_info:
+        file_path = upload_info.get("file_path")
+    else:
+        # Try to find it on disk (upload may have been consumed by convert)
+        upload_dir = uploads_dir / upload_id
+        if upload_dir.exists():
+            for candidate in upload_dir.iterdir():
+                if candidate.suffix.lower() in {".epub", ".pdf"}:
+                    file_path = str(candidate)
+                    break
+
+    if not file_path or not Path(file_path).exists():
+        raise HTTPException(status_code=404, detail="Upload not found or already consumed")
+
+    # ── Count chapters and chars (use cache when pre-warmed by upload) ───
+    total_chars = 0
+    chapter_count = 0
+    chapter_breakdown: list[dict] = []
+
+    try:
+        cache_manager = get_cache_manager()
+        cached = cache_manager.get_cached_chapters(Path(file_path))
+        if cached and cached.get("chapters"):
+            chapters_data = cached["chapters"]
+            for ch in chapters_data:
+                text = ch.get("text", "")
+                chars = len(text)
+                chapter_breakdown.append({"name": ch.get("title", ""), "chars": chars})
+                total_chars += chars
+            chapter_count = len(chapters_data)
+        else:
+            reader = EbookReader(file_path)
+            for ch in reader.get_chapters():
+                text = getattr(ch, "text", "") or ""
+                chars = len(text)
+                chapter_breakdown.append({"name": getattr(ch, "name", ""), "chars": chars})
+                total_chars += chars
+            chapter_count = len(chapter_breakdown)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Failed to parse ebook: {exc}")
+
+    if chapter_count == 0:
+        raise HTTPException(status_code=422, detail="No chapters found in ebook")
+
+    # ── Default throughput per engine (chars/s, conservative) ────────────
+    _DEFAULTS: dict[str, float] = {
+        "edge": 110.0,
+        "kokoro": 35.0,
+        "piper": 25.0,
+        "coqui": 20.0,
+        "auto": 110.0,
+    }
+    # 128 kbps MP3: 16 KB/s
+    _KBPS_BYTES_PER_SECOND = 128 * 1024 / 8
+
+    telem_summary = telemetry.summary()
+
+    def _estimate_for_engine(eng: str) -> dict:
+        telem = telem_summary.get(eng, {})
+        if telem and telem.get("avg_chars_per_second", 0) > 0:
+            cps = float(telem["avg_chars_per_second"])
+            telem_based = True
+            samples = int(telem.get("samples", 0))
+        else:
+            cps = _DEFAULTS.get(eng, _DEFAULTS["edge"])
+            telem_based = False
+            samples = 0
+
+        est_seconds = total_chars / cps if cps > 0 else 0.0
+        est_mb = (est_seconds * _KBPS_BYTES_PER_SECOND) / (1024 * 1024)
+
+        mins, secs = divmod(int(est_seconds), 60)
+        hours, mins = divmod(mins, 60)
+        if hours:
+            formatted = f"{hours}h {mins}m {secs}s"
+        elif mins:
+            formatted = f"{mins}m {secs}s"
+        else:
+            formatted = f"{secs}s"
+
+        result: dict = {
+            "chars_per_second": round(cps, 1),
+            "telemetry_based": telem_based,
+            "telemetry_samples": samples,
+            "estimated_duration_seconds": round(est_seconds),
+            "estimated_duration_formatted": formatted,
+            "estimated_output_mb": round(est_mb, 1),
+        }
+        return result
+
+    known_engines = list(_DEFAULTS.keys() - {"auto"})
+    engine_estimates = {eng: _estimate_for_engine(eng) for eng in known_engines}
+
+    # "auto" picks the best engine with telemetry data, else edge
+    ranked = telemetry.ranked_engines()
+    primary_engine = ranked[0] if ranked else "edge"
+    if engine != "auto" and engine in _DEFAULTS:
+        primary_engine = engine
+
+    primary = _estimate_for_engine(primary_engine)
+
+    return {
+        "chapters": chapter_count,
+        "total_chars": total_chars,
+        "engine": primary_engine,
+        "chars_per_second": primary["chars_per_second"],
+        "telemetry_based": primary["telemetry_based"],
+        "telemetry_samples": primary["telemetry_samples"],
+        "estimated_duration_seconds": primary["estimated_duration_seconds"],
+        "estimated_duration_formatted": primary["estimated_duration_formatted"],
+        "estimated_output_mb": primary["estimated_output_mb"],
+        "engine_estimates": engine_estimates,
+        "chapter_breakdown": chapter_breakdown,
+    }
+
+
 @app.get("/api/telemetry")
 async def get_engine_telemetry() -> dict:
     """Return aggregated throughput data to compare Edge vs Coqui/Piper speeds."""
@@ -3294,6 +3485,52 @@ async def get_feature_ab_history(limit: int = 20) -> dict:
         "entries": entries[:safe_limit],
         "count": len(entries),
         "source": str(history_path),
+    }
+
+
+@app.get("/api/sessions")
+async def get_sessions(last: int = 0) -> dict:
+    """Return conversion session history from the persistent log.
+
+    Query params:
+        last (int): Return only the last N sessions (0 = all, default).
+
+    Returns a list of session records, newest last, plus aggregate stats.
+    """
+    from src.session_logger import read_sessions
+
+    safe_last = max(0, min(1000, int(last or 0)))
+    records = read_sessions(last_n=safe_last)
+
+    # Aggregate stats across returned records
+    total = len(records)
+    outcomes: dict[str, int] = {}
+    engines: dict[str, int] = {}
+    modes: dict[str, int] = {}
+    total_duration = 0.0
+    total_chapters = 0
+
+    for r in records:
+        outcomes[r.get("outcome", "unknown")] = outcomes.get(r.get("outcome", "unknown"), 0) + 1
+        eng = r.get("engine", "")
+        if eng:
+            engines[eng] = engines.get(eng, 0) + 1
+        mode = r.get("mode", "")
+        if mode:
+            modes[mode] = modes.get(mode, 0) + 1
+        total_duration += r.get("duration_seconds", 0.0) or 0.0
+        total_chapters += r.get("chapters_converted", 0) or 0
+
+    return {
+        "sessions": records,
+        "count": total,
+        "stats": {
+            "outcomes": outcomes,
+            "engines": engines,
+            "modes": modes,
+            "total_duration_seconds": round(total_duration, 1),
+            "total_chapters_converted": total_chapters,
+        },
     }
 
 
@@ -3496,7 +3733,7 @@ def _finalize_cancel(job_id: str, job: dict, note: str) -> None:
     job["parallelActive"] = 0
     _append_event(job, "🛑 Conversion cancelled by user")
     job["state"] = "cancelled"
-    job["error"] = "Cancelled by user"
+    _set_job_error(job, "Cancelled by user")
     job["cancelRequested"] = True
     job["resumeRequested"] = False
     job["currentChapter"] = None
@@ -4183,7 +4420,7 @@ async def process_conversion(job_id: str) -> None:
 
             if not engine_seeds or active_config is None:
                 job["state"] = "failed"
-                job["error"] = "No TTS engine available"
+                _set_job_error(job, "No TTS engine available")
                 _append_event(job, "❌ No TTS engine available to start conversion")
                 _persist_job(job_id, force=True)
                 return
@@ -4192,7 +4429,7 @@ async def process_conversion(job_id: str) -> None:
             auto_engine_pool = _prepare_auto_engine_pool(config)
             if not auto_engine_pool:
                 job["state"] = "failed"
-                job["error"] = "No engine available in automatic mode"
+                _set_job_error(job, "No engine available in automatic mode")
                 _append_event(job, "❌ No engine available in automatic mode")
                 _persist_job(job_id, force=True)
                 return
@@ -5390,6 +5627,11 @@ async def process_conversion(job_id: str) -> None:
                 )
                 _persist_job(job_id, force=should_persist)
 
+                # Write a lightweight progress checkpoint every 5 chapters so
+                # _preload_existing_outputs can recover quickly without scanning all MP3s.
+                if should_persist:
+                    _write_progress_checkpoint(job_id, job, job_output_dir)
+
                 outputs.append(chapter_output)
                 if zip_open and output_file.exists():
                     async with zip_lock:
@@ -5674,7 +5916,7 @@ async def process_conversion(job_id: str) -> None:
             if preview:
                 _append_event(job, f"   ↳ Chapters: {preview}")
             job["state"] = "failed"
-            job["error"] = failure_message
+            _set_job_error(job, failure_message)
             job["completedAt"] = time.time()
             job["completedAtIso"] = _utcnow_iso()
             job["parallelActive"] = 0
@@ -5794,6 +6036,32 @@ async def process_conversion(job_id: str) -> None:
         job["completedAtIso"] = _utcnow_iso()
         job["totalElapsedSeconds"] = int(total_elapsed)
         _update_job_activity(job, stage="completed_success")
+
+        # Persistent conversion session log
+        try:
+            from src.session_logger import log_session
+
+            _ch_total = job.get("chaptersTotal") or 0
+            _ch_done = job.get("chaptersCompleted") or 0
+            _chapter_details = _extract_chapter_details(job)
+            log_session(
+                book_title=job.get("bookTitle", ""),
+                book_author=job.get("bookAuthor", ""),
+                language=job.get("detectedLanguage", ""),
+                engine=job.get("engine", ""),
+                voice=job.get("voice", ""),
+                chapters_total=_ch_total,
+                chapters_converted=_ch_done,
+                chapters_failed=_ch_total - _ch_done,
+                duration_seconds=total_elapsed,
+                outcome="success",
+                job_id=job_id,
+                output_dir=str(job.get("outputDir", "")),
+                started_at=job.get("startedAt", ""),
+                chapter_details=_chapter_details or None,
+            )
+        except Exception:
+            pass  # Never let logging break a conversion
         _append_event(job, "")
         _append_event(job, "✅ Conversion completed successfully")
         _append_event(job, f"⏱️ Total conversion time: {TimeFormatter.format_time(total_elapsed)}")
@@ -5817,7 +6085,7 @@ async def process_conversion(job_id: str) -> None:
     except Exception as exc:  # pragma: no cover - defensive handling
         logger.exception("Job %s failed with unhandled error", job_id)
         job["state"] = "failed"
-        job["error"] = str(exc)
+        _set_job_error(job, str(exc))
         job["completedAt"] = time.time()  # Timestamp for cleanup
         job["completedAtIso"] = _utcnow_iso()
         _update_job_activity(job, stage="failed")
@@ -5825,6 +6093,34 @@ async def process_conversion(job_id: str) -> None:
         job["parallelActive"] = 0
         _persist_job(job_id)
         _persist_job_log(job_id, job)
+
+        # Persistent conversion session log
+        try:
+            from src.session_logger import log_session
+
+            _elapsed = time.time() - conversion_started
+            _ch_total = job.get("chaptersTotal") or 0
+            _ch_done = job.get("chaptersCompleted") or 0
+            _chapter_details = _extract_chapter_details(job)
+            log_session(
+                book_title=job.get("bookTitle", ""),
+                book_author=job.get("bookAuthor", ""),
+                language=job.get("detectedLanguage", ""),
+                engine=job.get("engine", ""),
+                voice=job.get("voice", ""),
+                chapters_total=_ch_total,
+                chapters_converted=_ch_done,
+                chapters_failed=_ch_total - _ch_done,
+                duration_seconds=_elapsed,
+                outcome="failed",
+                job_id=job_id,
+                output_dir=str(job.get("outputDir", "")),
+                started_at=job.get("startedAt", ""),
+                chapter_details=_chapter_details or None,
+                extra={"error": str(exc)},
+            )
+        except Exception:
+            pass  # Never let logging break a conversion
 
     finally:
         with contextlib.suppress(Exception):
@@ -5973,6 +6269,7 @@ def _set_chapter_status(
     max_retries: Optional[int] = None,
     retry_reason: Optional[str] = None,
     param_adjustment: Optional[str] = None,
+    error_message: Optional[str] = None,
 ) -> None:
     entries = job.get("chapterProgress")
     if not entries or chapter_index is None:
@@ -6000,6 +6297,25 @@ def _set_chapter_status(
                 if status == "completed":
                     entry.pop("retryReason", None)
                     entry.pop("paramAdjustment", None)
+                # Per-chapter timing timestamps
+                if status == "processing" and "startedAt" not in entry:
+                    entry["startedAt"] = _utcnow_iso()
+                    entry["engineSequence"] = [str(engine_label).lower()] if engine_label else []
+                elif status == "retrying" and engine_label:
+                    seq = entry.setdefault("engineSequence", [])
+                    eng = str(engine_label).lower()
+                    if not seq or seq[-1] != eng:
+                        seq.append(eng)
+                elif status in ("completed", "failed", "skipped"):
+                    entry["completedAt"] = _utcnow_iso()
+                # Structured error classification
+                if status == "failed":
+                    from src.error_classifier import classify_error
+
+                    err_text = error_message or retry_reason or ""
+                    if error_message:
+                        entry["errorMessage"] = error_message
+                    entry["errorCategory"] = classify_error(err_text)
     if isinstance(entries, list):
         processing = sum(
             1
@@ -6007,6 +6323,21 @@ def _set_chapter_status(
             if isinstance(entry, dict) and entry.get("status") in ("processing", "retrying")
         )
         job["parallelActive"] = processing
+
+    # Emit a lean per-chapter SSE event so the frontend can update just that card
+    job_id = job.get("jobId")
+    if job_id and isinstance(entries, list) and chapter_index is not None:
+        idx = max(0, int(chapter_index) - 1)
+        if idx < len(entries) and isinstance(entries[idx], dict):
+            _schedule_chapter_broadcast(job_id, dict(entries[idx]))
+
+
+def _set_job_error(job: dict, message: str) -> None:
+    """Set job error string and auto-classify it into a stable category."""
+    from src.error_classifier import classify_error
+
+    job["error"] = message
+    job["errorCategory"] = classify_error(message)
 
 
 def _set_engine_status(
@@ -6026,14 +6357,108 @@ def _set_engine_status(
     _schedule_job_broadcast(job.get("jobId"), job)
 
 
+_PROGRESS_CHECKPOINT_NAME = "_progress_checkpoint.json"
+
+
+def _write_progress_checkpoint(job_id: str, job: dict, job_output_dir: Path) -> None:
+    """Persist a lightweight checkpoint with completed chapter indices.
+
+    Written every N chapters (same cadence as _persist_job) so that
+    _preload_existing_outputs can recover instantly without scanning MP3 files.
+    """
+    try:
+        entries = job.get("chapterProgress") or []
+        completed = [
+            e.get("index")
+            for e in entries
+            if isinstance(e, dict)
+            and e.get("status") in ("completed", "skipped")
+            and e.get("index") is not None
+        ]
+        record = {
+            "job_id": job_id,
+            "timestamp": _utcnow_iso(),
+            "completed_indices": completed,
+            "last_completed": max(completed) if completed else 0,
+            "total_chapters": job.get("chaptersTotal") or 0,
+            "engine": job.get("engine", ""),
+            "voice": job.get("voice", ""),
+        }
+        checkpoint_path = job_output_dir / _PROGRESS_CHECKPOINT_NAME
+        checkpoint_path.write_text(json.dumps(record, ensure_ascii=False), encoding="utf-8")
+    except Exception:
+        pass  # Checkpoint is best-effort; never break a conversion
+
+
+def _extract_chapter_details(job: dict) -> list[dict]:
+    """Extract per-chapter timing/engine data from job chapterProgress for session log."""
+    entries = job.get("chapterProgress")
+    if not isinstance(entries, list):
+        return []
+    details = []
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        detail: dict = {
+            "index": entry.get("index"),
+            "name": entry.get("name", ""),
+            "status": entry.get("status", ""),
+            "engine": entry.get("engine", ""),
+            "chars": entry.get("textLength") or entry.get("chars"),
+        }
+        if entry.get("startedAt"):
+            detail["startedAt"] = entry["startedAt"]
+        if entry.get("completedAt"):
+            detail["completedAt"] = entry["completedAt"]
+        if entry.get("elapsedSeconds") is not None:
+            detail["elapsedSeconds"] = entry["elapsedSeconds"]
+        if entry.get("charsPerSecond") is not None:
+            detail["charsPerSecond"] = entry["charsPerSecond"]
+        if entry.get("engineSequence"):
+            detail["engineSequence"] = entry["engineSequence"]
+        if entry.get("retryCount"):
+            detail["retryCount"] = entry["retryCount"]
+        if entry.get("retryReason"):
+            detail["retryReason"] = entry["retryReason"]
+        if entry.get("errorCategory"):
+            detail["errorCategory"] = entry["errorCategory"]
+        if entry.get("errorMessage"):
+            detail["errorMessage"] = entry["errorMessage"]
+        # Remove None values to keep log compact
+        details.append({k: v for k, v in detail.items() if v is not None})
+    return details
+
+
 async def _preload_existing_outputs(
     job: dict, chapters: list, job_output_dir: Path
 ) -> tuple[list[dict], set[int]]:
-    """Detect chapters that already have audio on disk (resume support)."""
+    """Detect chapters that already have audio on disk (resume support).
+
+    First checks the progress checkpoint written during a previous run for a
+    fast path: only those chapter indices are verified on disk.  Falls back to
+    scanning all chapter files when no checkpoint exists.
+    """
     existing_outputs: list[dict] = []
     completed_indices: set[int] = set()
     job_id = job.get("jobId")
+
+    # Fast path: use checkpoint to know which indices to verify
+    checkpoint_indices: set[int] = set()
+    checkpoint_path = job_output_dir / _PROGRESS_CHECKPOINT_NAME
+    if checkpoint_path.exists():
+        try:
+            ckpt = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+            checkpoint_indices = {int(i) for i in (ckpt.get("completed_indices") or [])}
+        except Exception:
+            checkpoint_indices = set()
+
+    # Determine which chapter indices to probe
+    all_indices = range(1, len(chapters) + 1)
+    probe_indices = checkpoint_indices if checkpoint_indices else set(all_indices)
+
     for idx, chapter in enumerate(chapters, 1):
+        if idx not in probe_indices:
+            continue
         chapter_name = getattr(chapter, "name", f"Chapter {idx}")
         safe_name = FileManager.sanitize_filename(chapter_name)
         output_file = job_output_dir / f"{idx:03d} - {safe_name}.mp3"
@@ -6056,6 +6481,38 @@ async def _preload_existing_outputs(
             download_url=download_url,
             engine_label=job.get("engine"),
         )
+
+    # If we used checkpoint but some indices are missing on disk, fall back to
+    # a full scan so we don't miss chapters that exist but weren't checkpointed.
+    if checkpoint_indices and len(existing_outputs) < len(checkpoint_indices):
+        for idx, chapter in enumerate(chapters, 1):
+            if idx in completed_indices or idx in probe_indices:
+                continue
+            chapter_name = getattr(chapter, "name", f"Chapter {idx}")
+            safe_name = FileManager.sanitize_filename(chapter_name)
+            output_file = job_output_dir / f"{idx:03d} - {safe_name}.mp3"
+            if not output_file.exists() or output_file.stat().st_size <= 0:
+                continue
+            duration = await _get_audio_duration(output_file)
+            download_url = (
+                f"/api/outputs/{job_id}/{output_file.name}" if job_id else output_file.name
+            )
+            entry = {
+                "name": output_file.name,
+                "url": download_url,
+                "durationSeconds": round(duration, 2),
+                "sizeBytes": output_file.stat().st_size,
+            }
+            existing_outputs.append(entry)
+            completed_indices.add(idx)
+            _set_chapter_status(
+                job,
+                idx,
+                "completed",
+                download_url=download_url,
+                engine_label=job.get("engine"),
+            )
+
     return existing_outputs, completed_indices
 
 
@@ -6067,13 +6524,13 @@ def _record_chapter_failure(
     chapter_index: Optional[int] = None,
     fatal: bool = True,
 ) -> bool:
-    _set_chapter_status(job, chapter_index, "failed")
     last_error = getattr(tts_engine, "last_error", None)
     error_message = str(error) if error else "unknown error"
     if isinstance(error, FileNotFoundError):
         failure_detail = last_error or "Edge TTS did not create an audio file"
     else:
         failure_detail = last_error or error_message
+    _set_chapter_status(job, chapter_index, "failed", error_message=failure_detail)
     _append_event(job, "")
     _append_event(job, f"❌ Chapter synthesis failed for '{chapter_name}': {failure_detail}")
     if error:
@@ -6092,7 +6549,7 @@ def _record_chapter_failure(
     }
     if fatal:
         job["state"] = "failed"
-        job["error"] = f"Chapter synthesis failed for '{chapter_name}': {failure_detail}"
+        _set_job_error(job, f"Chapter synthesis failed for '{chapter_name}': {failure_detail}")
         job.setdefault("outputs", [])
 
         job_id = job.get("jobId")

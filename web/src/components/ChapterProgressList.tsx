@@ -13,6 +13,34 @@ interface ChapterProgressListProps {
   playingSegment?: { chapterIndex: number; segmentIndex: number } | null;
 }
 
+function engineBadgeClass(engine: string): string {
+  const key = engine.toLowerCase().split(/[-_]/)[0];
+  const known = ["edge", "kokoro", "piper", "coqui", "spark"];
+  return known.includes(key)
+    ? `engine-badge engine-badge--${key}`
+    : "engine-badge";
+}
+
+function EngineBadges({ entry }: { entry: ChapterProgressEntry }) {
+  // Prefer engineSequence (full fallback trail) over single engine field
+  const seq = entry.engineSequence?.filter(Boolean);
+  const engines =
+    seq && seq.length > 0 ? seq : entry.engine ? [entry.engine] : [];
+  if (engines.length === 0) return null;
+  // Deduplicate consecutive identical engines
+  const deduped = engines.filter((e, i) => i === 0 || e !== engines[i - 1]);
+  return (
+    <span className="chapter-progress__engine">
+      {deduped.map((eng, i) => (
+        <span key={i}>
+          {i > 0 && <span className="engine-badge-arrow">→</span>}
+          <span className={engineBadgeClass(eng)}>{eng}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 const STATUS_ICONS: Record<ChapterProgressEntry["status"], string> = {
   completed: "✅",
   processing: "⏳",
@@ -566,7 +594,6 @@ export default function ChapterProgressList({
         {entries.map((entry) => {
           const status = entry.status;
           const statusLabel = t.status.chapterStatuses?.[status] ?? status;
-          const entryEngine = entry.engine?.trim();
           const isExpanded = Boolean(expanded[entry.index]);
           const manifest = manifests[entry.index];
           const loading = Boolean(manifestLoading[entry.index]);
@@ -598,13 +625,7 @@ export default function ChapterProgressList({
                   className="chapter-progress__status"
                   aria-label={statusLabel}
                 >
-                  {statusLabel}
-                  {entryEngine && (
-                    <span className="chapter-progress__engine">
-                      {" "}
-                      • {t.status.chapterEngineLabel(entryEngine)}
-                    </span>
-                  )}
+                  {statusLabel} <EngineBadges entry={entry} />
                   {/* Retry information */}
                   {entry.status === "retrying" && (
                     <span className="chapter-progress__retry">

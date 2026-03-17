@@ -105,6 +105,7 @@ export interface ChapterProgressEntry {
   name: string;
   status: ChapterProgressStatus;
   engine?: string;
+  engineSequence?: string[];
   elapsedSeconds?: number;
   charsPerSecond?: number;
   downloadUrl?: string;
@@ -113,6 +114,9 @@ export interface ChapterProgressEntry {
   maxRetries?: number;
   retryReason?: string;
   paramAdjustment?: string;
+  // Error classification
+  errorCategory?: string;
+  errorMessage?: string;
 }
 
 // Engine status for model loading/initialization

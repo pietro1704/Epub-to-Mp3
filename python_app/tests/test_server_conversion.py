@@ -562,3 +562,338 @@ def _make_telemetry(tmp_path, monkeypatch):
     recorder = TelemetryRecorder(telemetry_file=telemetry_path, max_samples=20)
     monkeypatch.setattr(server, "telemetry", recorder)
     return recorder
+
+
+# ---------------------------------------------------------------------------
+# Per-chapter timing: _set_chapter_status timestamps
+# ---------------------------------------------------------------------------
+
+
+def _make_job_with_chapters(n: int = 3) -> dict:
+    return {
+        "chapterProgress": [
+            {"index": i, "name": f"Chapter {i}", "status": "queued"} for i in range(1, n + 1)
+        ]
+    }
+
+
+class TestSetChapterStatusTimestamps:
+    def test_processing_sets_started_at(self):
+        job = _make_job_with_chapters(2)
+        server._set_chapter_status(job, 1, "processing", engine_label="edge")
+        entry = job["chapterProgress"][0]
+        assert "startedAt" in entry
+        assert entry["startedAt"]  # non-empty ISO string
+
+    def test_processing_initialises_engine_sequence(self):
+        job = _make_job_with_chapters(2)
+        server._set_chapter_status(job, 1, "processing", engine_label="edge")
+        entry = job["chapterProgress"][0]
+        assert entry["engineSequence"] == ["edge"]
+
+    def test_processing_started_at_not_overwritten_on_retry(self):
+        job = _make_job_with_chapters(2)
+        server._set_chapter_status(job, 1, "processing", engine_label="edge")
+        first_ts = job["chapterProgress"][0]["startedAt"]
+        server._set_chapter_status(job, 1, "processing", engine_label="edge")
+        assert job["chapterProgress"][0]["startedAt"] == first_ts
+
+    def test_retrying_appends_new_engine_to_sequence(self):
+        job = _make_job_with_chapters(2)
+        server._set_chapter_status(job, 1, "processing", engine_label="edge")
+        server._set_chapter_status(job, 1, "retrying", engine_label="piper")
+        entry = job["chapterProgress"][0]
+        assert "piper" in entry["engineSequence"]
+
+    def test_retrying_does_not_duplicate_same_engine(self):
+        job = _make_job_with_chapters(2)
+        server._set_chapter_status(job, 1, "processing", engine_label="edge")
+        server._set_chapter_status(job, 1, "retrying", engine_label="edge")
+        entry = job["chapterProgress"][0]
+        assert entry["engineSequence"].count("edge") == 1
+
+    def test_completed_sets_completed_at(self):
+        job = _make_job_with_chapters(2)
+        server._set_chapter_status(job, 1, "processing", engine_label="edge")
+        server._set_chapter_status(job, 1, "completed")
+        entry = job["chapterProgress"][0]
+        assert "completedAt" in entry
+
+    def test_failed_sets_completed_at(self):
+        job = _make_job_with_chapters(2)
+        server._set_chapter_status(job, 1, "processing", engine_label="edge")
+        server._set_chapter_status(job, 1, "failed")
+        assert "completedAt" in job["chapterProgress"][0]
+
+    def test_skipped_sets_completed_at(self):
+        job = _make_job_with_chapters(2)
+        server._set_chapter_status(job, 1, "skipped")
+        assert "completedAt" in job["chapterProgress"][0]
+
+
+# ---------------------------------------------------------------------------
+# _extract_chapter_details
+# ---------------------------------------------------------------------------
+
+
+class TestExtractChapterDetails:
+    def test_extracts_fields_from_chapter_progress(self):
+        job = {
+            "chapterProgress": [
+                {
+                    "index": 1,
+                    "name": "Chapter 1",
+                    "status": "completed",
+                    "engine": "edge",
+                    "elapsedSeconds": 42.0,
+                    "charsPerSecond": 110.5,
+                    "engineSequence": ["edge"],
+                    "startedAt": "2026-03-16T10:00:00+00:00",
+                    "completedAt": "2026-03-16T10:00:42+00:00",
+                }
+            ]
+        }
+        details = server._extract_chapter_details(job)
+        assert len(details) == 1
+        d = details[0]
+        assert d["index"] == 1
+        assert d["name"] == "Chapter 1"
+        assert d["engine"] == "edge"
+        assert d["elapsedSeconds"] == 42.0
+        assert d["charsPerSecond"] == 110.5
+        assert d["engineSequence"] == ["edge"]
+        assert d["startedAt"] == "2026-03-16T10:00:00+00:00"
+        assert d["completedAt"] == "2026-03-16T10:00:42+00:00"
+
+    def test_none_values_excluded(self):
+        job = {
+            "chapterProgress": [{"index": 1, "name": "Ch", "status": "completed", "engine": "edge"}]
+        }
+        details = server._extract_chapter_details(job)
+        assert "chars" not in details[0]
+
+    def test_returns_empty_list_when_no_chapter_progress(self):
+        assert server._extract_chapter_details({}) == []
+
+    def test_handles_non_dict_entries_gracefully(self):
+        job = {"chapterProgress": [None, "bad", {"index": 1, "status": "completed"}]}
+        details = server._extract_chapter_details(job)
+        assert len(details) == 1
+
+
+# ---------------------------------------------------------------------------
+# GET /api/estimate
+# ---------------------------------------------------------------------------
+
+
+class TestEstimateEndpoint:
+    def _make_client(self) -> "TestClient":
+        from fastapi.testclient import TestClient
+
+        return TestClient(server.app)
+
+    def _register_upload(self, monkeypatch, tmp_path, chapters: list[dict]) -> tuple[str, Path]:
+        """Register a fake upload and return (upload_id, epub_path)."""
+        import uuid as _uuid
+
+        upload_id = str(_uuid.uuid4())
+        upload_dir = tmp_path / upload_id
+        upload_dir.mkdir()
+        # Create a dummy epub file (content doesn't matter; we bypass EbookReader)
+        epub_path = upload_dir / "book.epub"
+        epub_path.write_bytes(b"fake")
+
+        # Patch _pending_uploads so the endpoint finds the file
+        monkeypatch.setitem(
+            server._pending_uploads,
+            upload_id,
+            {
+                "file_path": str(epub_path),
+                "file_name": "book.epub",
+                "book_title": "Test Book",
+            },
+        )
+
+        # Patch get_cache_manager to return cached chapter data
+        cached_data = {
+            "title": "Test Book",
+            "author": "Test Author",
+            "chapters": chapters,
+            "size": 4,
+            "mtime": epub_path.stat().st_mtime,
+        }
+
+        class _FakeCache:
+            def get_cached_chapters(self, path):
+                return cached_data
+
+        monkeypatch.setattr(server, "get_cache_manager", lambda: _FakeCache())
+
+        return upload_id, epub_path
+
+    def test_returns_estimate_with_cache_hit(self, monkeypatch, tmp_path):
+        chapters = [
+            {"title": "Chapter 1", "text": "a" * 5000},
+            {"title": "Chapter 2", "text": "b" * 7000},
+        ]
+        upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
+
+        monkeypatch.setattr(server, "uploads_dir", tmp_path)
+        client = self._make_client()
+        resp = client.get(f"/api/estimate?upload_id={upload_id}")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["chapters"] == 2
+        assert data["total_chars"] == 12000
+        assert "estimated_duration_seconds" in data
+        assert data["estimated_duration_seconds"] > 0
+        assert "estimated_output_mb" in data
+        assert "engine_estimates" in data
+        assert "edge" in data["engine_estimates"]
+        assert "piper" in data["engine_estimates"]
+        assert "chapter_breakdown" in data
+        assert len(data["chapter_breakdown"]) == 2
+
+    def test_returns_404_for_unknown_upload_id(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(server, "uploads_dir", tmp_path)
+        client = self._make_client()
+        resp = client.get("/api/estimate?upload_id=nonexistent-id")
+        assert resp.status_code == 404
+
+    def test_engine_param_selects_engine(self, monkeypatch, tmp_path):
+        chapters = [{"title": "Ch", "text": "x" * 10000}]
+        upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
+        monkeypatch.setattr(server, "uploads_dir", tmp_path)
+        client = self._make_client()
+
+        resp_edge = client.get(f"/api/estimate?upload_id={upload_id}&engine=edge")
+        resp_piper = client.get(f"/api/estimate?upload_id={upload_id}&engine=piper")
+        assert resp_edge.status_code == 200
+        assert resp_piper.status_code == 200
+        # Piper is slower → longer estimate
+        assert (
+            resp_piper.json()["estimated_duration_seconds"]
+            > resp_edge.json()["estimated_duration_seconds"]
+        )
+
+    def test_telemetry_based_flag_false_with_no_samples(self, monkeypatch, tmp_path):
+        chapters = [{"title": "Ch", "text": "x" * 5000}]
+        upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
+        monkeypatch.setattr(server, "uploads_dir", tmp_path)
+
+        # Empty telemetry
+        from src.telemetry import TelemetryRecorder
+
+        empty_telemetry = TelemetryRecorder(telemetry_file=tmp_path / "empty.json")
+        monkeypatch.setattr(server, "telemetry", empty_telemetry)
+
+        client = self._make_client()
+        resp = client.get(f"/api/estimate?upload_id={upload_id}&engine=edge")
+        data = resp.json()
+        assert data["telemetry_based"] is False
+        assert data["chars_per_second"] == 110.0  # default fallback
+
+    def test_duration_formatted_contains_minutes(self, monkeypatch, tmp_path):
+        # 12 000 chars at 110 chars/s ≈ 109s ≈ 1m 49s
+        chapters = [{"title": "Ch", "text": "x" * 12000}]
+        upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
+        monkeypatch.setattr(server, "uploads_dir", tmp_path)
+
+        from src.telemetry import TelemetryRecorder
+
+        empty_telemetry = TelemetryRecorder(telemetry_file=tmp_path / "empty2.json")
+        monkeypatch.setattr(server, "telemetry", empty_telemetry)
+
+        client = self._make_client()
+        resp = client.get(f"/api/estimate?upload_id={upload_id}&engine=edge")
+        formatted = resp.json()["estimated_duration_formatted"]
+        assert "m" in formatted
+
+
+# ---------------------------------------------------------------------------
+# _set_chapter_status → _schedule_chapter_broadcast (SSE chapter events)
+# ---------------------------------------------------------------------------
+
+
+class TestChapterBroadcastOnStatusChange:
+    """Verify that _set_chapter_status triggers a per-chapter SSE broadcast."""
+
+    def _make_job(self) -> dict:
+        return {
+            "jobId": "job-sse-test",
+            "chapterProgress": [
+                {"index": 1, "name": "Ch 1", "status": "queued"},
+                {"index": 2, "name": "Ch 2", "status": "queued"},
+            ],
+        }
+
+    def test_broadcast_called_on_processing(self, monkeypatch):
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            server,
+            "_schedule_chapter_broadcast",
+            lambda jid, data: calls.append({"jid": jid, "data": data}),
+        )
+
+        job = self._make_job()
+        server._set_chapter_status(job, chapter_index=1, status="processing", engine_label="edge")
+
+        assert len(calls) == 1
+        assert calls[0]["jid"] == "job-sse-test"
+        assert calls[0]["data"]["status"] == "processing"
+        assert calls[0]["data"]["index"] == 1
+
+    def test_broadcast_called_on_completed(self, monkeypatch):
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            server, "_schedule_chapter_broadcast", lambda jid, data: calls.append(data)
+        )
+
+        job = self._make_job()
+        server._set_chapter_status(
+            job, chapter_index=2, status="completed", download_url="/api/files/ch2.mp3"
+        )
+
+        assert len(calls) == 1
+        assert calls[0]["status"] == "completed"
+        assert calls[0]["index"] == 2
+
+    def test_broadcast_called_on_failed(self, monkeypatch):
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            server, "_schedule_chapter_broadcast", lambda jid, data: calls.append(data)
+        )
+
+        job = self._make_job()
+        server._set_chapter_status(job, chapter_index=1, status="failed", error_message="timed out")
+
+        assert len(calls) == 1
+        assert calls[0]["status"] == "failed"
+        assert calls[0].get("errorCategory") == "timeout"
+
+    def test_no_broadcast_without_job_id(self, monkeypatch):
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            server, "_schedule_chapter_broadcast", lambda jid, data: calls.append(data)
+        )
+
+        job = {
+            "chapterProgress": [{"index": 1, "name": "Ch 1", "status": "queued"}],
+        }
+        server._set_chapter_status(job, chapter_index=1, status="processing")
+
+        assert calls == []
+
+    def test_broadcast_payload_is_copy(self, monkeypatch):
+        """Modifying the job after broadcast must not affect the broadcasted payload."""
+        captured: list[dict] = []
+        monkeypatch.setattr(
+            server, "_schedule_chapter_broadcast", lambda jid, data: captured.append(data)
+        )
+
+        job = self._make_job()
+        server._set_chapter_status(job, chapter_index=1, status="processing")
+        # Mutate job after broadcast
+        job["chapterProgress"][0]["status"] = "completed"
+
+        assert captured[0]["status"] == "processing"

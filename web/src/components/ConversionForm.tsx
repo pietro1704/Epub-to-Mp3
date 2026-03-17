@@ -241,6 +241,9 @@ export default function ConversionForm({
   > | null>(null);
   const [voiceLoading, setVoiceLoading] = useState(false);
   const [voiceLoadFailed, setVoiceLoadFailed] = useState(false);
+  const [estimatedDuration, setEstimatedDuration] = useState<string | null>(
+    null,
+  );
   const uploadAttemptRef = useRef(0);
   const fileQueueRef = useRef<QueuedFileEntry[]>([]);
   const setFileQueueSafe = (
@@ -337,6 +340,34 @@ export default function ConversionForm({
       isMounted = false;
     };
   }, []);
+
+  // Fetch pre-conversion duration estimate when a file is ready and engine changes
+  useEffect(() => {
+    const readyEntry = fileQueue.find(
+      (e) => e.status === "ready" && e.uploadId,
+    );
+    if (!readyEntry?.uploadId) {
+      setEstimatedDuration(null);
+      return;
+    }
+    let cancelled = false;
+    const url = resolveApiUrl(
+      `/api/estimate?upload_id=${encodeURIComponent(readyEntry.uploadId)}&engine=${encodeURIComponent(engine)}`,
+    );
+    fetch(url)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { estimated_duration_formatted?: string } | null) => {
+        if (!cancelled && data?.estimated_duration_formatted) {
+          setEstimatedDuration(data.estimated_duration_formatted);
+        }
+      })
+      .catch(() => {
+        // Estimate is best-effort; ignore errors
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fileQueue, engine]);
 
   const engineMeta = useMemo<EngineInsights>(
     () => getEngineMeta(engine),
@@ -1922,6 +1953,11 @@ export default function ConversionForm({
         </p>
       )}
 
+      {estimatedDuration && !isSubmitting && (
+        <p className="form-estimate-hint">
+          {t.form.estimatedDuration(estimatedDuration)}
+        </p>
+      )}
       <button type="submit" disabled={disableSubmit} className="form-submit">
         {isSubmitting || Object.keys(uploadPromisesRef.current).length > 0
           ? t.form.submitBusy
