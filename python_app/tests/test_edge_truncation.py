@@ -37,7 +37,8 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
         # Average word length: 5 chars + 1 space = 6 chars/word
         # Total: 750 * 6 = ~4500 chars
         realistic_text = " ".join(
-            f"Esta é a frase número {i} com conteúdo realista que faz sentido." for i in range(750)
+            f"This is sentence number {i} with realistic content that makes sense."
+            for i in range(750)
         )
 
         output_path = Path(self.temp_dir) / "test_5min.mp3"
@@ -97,9 +98,9 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
         parts = []
         for i in range(5):
             part = (
-                f"PARTE {i} início. "
-                + " ".join(f"Frase {j} da parte {i}." for j in range(80))
-                + f" PARTE {i} fim."
+                f"PART {i} start. "
+                + " ".join(f"Sentence {j} of part {i}." for j in range(80))
+                + f" PART {i} end."
             )
             parts.append(part)
 
@@ -112,7 +113,7 @@ class TestEdgeTruncationBug(unittest.IsolatedAsyncioTestCase):
         async def tracking_synthesize_segment(text, voice, path, append):
             # Record segment index based on content
             for i in range(5):
-                if f"PARTE {i} início" in text:
+                if f"PART {i} start" in text:
                     processed_segments.append(i)
                     break
 
