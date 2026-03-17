@@ -343,7 +343,7 @@ class AutoTuner:
         """
 
         def set_if_not_exists(key: str, value: str) -> bool:
-            """Seta env var se não existir ou se force=True."""
+            """Set env var if not already set, or always if force=True."""
             if force or key not in os.environ:
                 os.environ[key] = value
                 return True

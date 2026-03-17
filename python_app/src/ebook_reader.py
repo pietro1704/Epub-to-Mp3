@@ -1355,7 +1355,7 @@ class EpubParser:
         return chapters_to_keep
 
     def _calculate_text_overlap(self, text1: str, text2: str) -> float:
-        """Calcula porcentagem de sobreposição entre dois textos usando n-gramas."""
+        """Calculate overlap percentage between two texts using n-grams."""
         if not text1 or not text2:
             return 0.0
 
@@ -1386,7 +1386,7 @@ class EpubParser:
         return len(intersection) / len(union) if union else 0.0
 
     def _normalize_for_comparison(self, text: str) -> str:
-        """Normaliza texto para comparação, removendo marcações e formatação."""
+        """Normalise text for comparison by removing markup and formatting."""
         if not text:
             return ""
 
@@ -1410,7 +1410,7 @@ class EpubParser:
         filtered_chapters: List[Chapter],
         removed_chapters: List[Chapter],
     ) -> None:
-        """Verifica que todo o conteúdo original está presente após a filtragem.
+        """Verify that all original content is present after filtering.
 
         Compara o conteúdo total para garantir que nenhum texto foi perdido.
         """

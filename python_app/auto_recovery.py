@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Auto Recovery System - Detecção e correção automática de problemas
+Auto Recovery System - Automatic problem detection and correction
 Detecta deadlocks, starvation, travamentos e corrige automaticamente
 """
 
@@ -38,7 +38,7 @@ class ThreadActivity:
 
 @dataclass
 class RecoveryAction:
-    """Ação de recovery executada."""
+    """Recovery action record."""
 
     timestamp: float
     problem: str
@@ -54,8 +54,8 @@ class AutoRecoverySystem:
     Detecta:
     - Deadlocks (threads travadas esperando locks)
     - Starvation (processos sem recursos)
-    - Memory leaks críticos
-    - Thread hangs (threads não respondendo)
+    - Critical memory leaks
+    - Thread hangs (threads not responding)
     - Event loop blocks (asyncio travado)
     - GC thrashing (garbage collector sobrecarregado)
     """
@@ -148,7 +148,7 @@ class AutoRecoverySystem:
             pass
 
     def _is_idle_worker_thread(self, stack_frames: List[str]) -> bool:
-        """Verifica se thread está idle esperando por trabalho (comportamento normal)."""
+        """Check if thread is idle waiting for work (normal behaviour)."""
         if not stack_frames:
             return False
 
@@ -414,7 +414,7 @@ class AutoRecoverySystem:
             return False
 
     def _request_process_restart(self, reason: str, thread_name: str, thread_id: int) -> None:
-        """Solicita reinício suave do processo para recuperar de deadlock."""
+        """Request a soft process restart to recover from deadlock."""
         print(f"   🔁 Restart requested ({reason}) for thread {thread_name} ({thread_id})")
         self._log_recovery_action(
             problem=reason,
@@ -435,7 +435,7 @@ class AutoRecoverySystem:
             pass  # Ignorar erros de coleta de stats
 
     def _check_memory_crisis(self) -> None:
-        """Detecta e resolve crises de memória."""
+        """Detect and resolve memory crises."""
         try:
             memory_percent = self._process.memory_percent()
 
@@ -485,8 +485,8 @@ class AutoRecoverySystem:
         """
         Detecta GC thrashing (GC rodando excessivamente).
 
-        NOTA: Desabilitado para aplicações TTS que carregam modelos grandes.
-        GC frequente é esperado durante carregamento de modelos.
+        NOTE: Disabled for TTS applications that load large models.
+        Frequent GC is expected during model loading.
         """
         # Update state but do not alert
         current_gc = gc.get_count()
@@ -514,7 +514,7 @@ class AutoRecoverySystem:
     def _log_recovery_action(
         self, problem: str, action: str, success: bool, details: Dict[str, Any]
     ) -> None:
-        """Registra ação de recovery."""
+        """Log a recovery action."""
         with self._lock:
             recovery = RecoveryAction(
                 timestamp=time.time(),

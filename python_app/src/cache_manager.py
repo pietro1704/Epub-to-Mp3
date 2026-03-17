@@ -355,7 +355,7 @@ class CacheManager:
             return None
 
     def clear_checkpoint(self, book_path: Path) -> bool:
-        """Remove checkpoint da conversão"""
+        """Remove conversion checkpoint."""
         try:
             checkpoint_path = self._get_checkpoint_path(book_path)
             if checkpoint_path.exists():
@@ -378,7 +378,7 @@ class CacheManager:
         current_temp_dir: Path,
         current_config: Dict[str, Any],
     ) -> bool:
-        """Valida se checkpoint é compatível com conversão atual"""
+        """Validate that checkpoint is compatible with the current conversion."""
         try:
             temp_dir = Path(checkpoint.temp_dir)
             if not temp_dir.exists():
@@ -427,11 +427,11 @@ class CacheManager:
         }
 
     def mark_conversion_start(self):
-        """Marca início da conversão para controle de tempo"""
+        """Mark the start of conversion for timing control."""
         self._conversion_start_time = datetime.now().isoformat()
 
     def list_checkpoints(self) -> List[Dict[str, Any]]:
-        """Lista todos os checkpoints disponíveis"""
+        """List all available checkpoints."""
         if self.cache_dir is None:
             return []
 

@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RetryReport:
-    """Relatório de tentativas de retry."""
+    """Retry attempt report."""
 
     total_retried: int
     successful: int
@@ -50,7 +50,7 @@ class RetryableEngine(Protocol):
 
 
 class RetryManager:
-    """Gerenciador de retry automático para segmentos faltantes."""
+    """Automatic retry manager for missing segments."""
 
     MAX_RETRIES = 3
 

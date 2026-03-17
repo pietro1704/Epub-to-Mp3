@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Health Monitor - Sistema automático de monitoramento de performance e estabilidade
-Roda em background e alerta sobre problemas automaticamente
+Health Monitor - Automatic performance and stability monitoring system
+Runs in the background and alerts on detected issues.
 """
 
 import gc
@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class HealthAlert:
-    """Alerta de saúde do sistema."""
+    """System health alert."""
 
     timestamp: float
     severity: str  # 'info', 'warning', 'critical'
@@ -31,7 +31,7 @@ class HealthAlert:
 
 @dataclass
 class HealthSnapshot:
-    """Snapshot de saúde do sistema."""
+    """System health snapshot."""
 
     timestamp: float
     cpu_percent: float
@@ -49,7 +49,7 @@ class HealthSnapshot:
 
 class HealthMonitor:
     """
-    Monitor de saúde automático que roda em background.
+    Automatic health monitor that runs in the background.
 
     Features:
     - Detecta heap corruption antes de crashar
@@ -178,7 +178,7 @@ class HealthMonitor:
             pass
 
     def _collect_snapshot(self) -> HealthSnapshot:
-        """Coleta snapshot de saúde atual."""
+        """Collect the current health snapshot."""
         alerts: List[HealthAlert] = []
 
         # Basic CPU and memory
@@ -228,7 +228,7 @@ class HealthMonitor:
                                     timestamp=time.time(),
                                     severity="critical",
                                     category="gpu",
-                                    message=f"GPU memory crítica: {gpu_utilization:.1f}%",
+                                    message=f"GPU memory critical: {gpu_utilization:.1f}%",
                                     details={
                                         "used_mb": gpu_memory_used_mb,
                                         "total_mb": gpu_memory_total_mb,
@@ -241,7 +241,7 @@ class HealthMonitor:
                                     timestamp=time.time(),
                                     severity="warning",
                                     category="gpu",
-                                    message=f"GPU memory alta: {gpu_utilization:.1f}%",
+                                    message=f"GPU memory high: {gpu_utilization:.1f}%",
                                     details={
                                         "used_mb": gpu_memory_used_mb,
                                         "total_mb": gpu_memory_total_mb,
@@ -263,7 +263,7 @@ class HealthMonitor:
                     timestamp=time.time(),
                     severity="critical",
                     category="heap",
-                    message=f"HEAP CRÍTICO: {memory_percent:.1f}% memória usada",
+                    message=f"HEAP CRITICAL: {memory_percent:.1f}% memory used",
                     details={"memory_mb": memory_mb, "memory_percent": memory_percent},
                 )
             )
@@ -274,7 +274,7 @@ class HealthMonitor:
                     timestamp=time.time(),
                     severity="warning",
                     category="memory",
-                    message=f"Memória alta: {memory_percent:.1f}%",
+                    message=f"Memory high: {memory_percent:.1f}%",
                     details={"memory_mb": memory_mb},
                 )
             )
@@ -395,7 +395,7 @@ class HealthMonitor:
             }
 
     def export_report(self, output_path: Path) -> None:
-        """Exporta relatório completo para arquivo."""
+        """Export full report to file."""
         with self._lock:
             report = {
                 "generated_at": datetime.now().isoformat(),
@@ -430,7 +430,7 @@ def get_health_monitor() -> HealthMonitor:
 
 
 def start_monitoring() -> HealthMonitor:
-    """Inicia monitoramento automático."""
+    """Start automatic monitoring."""
     monitor = get_health_monitor()
     monitor.start()
     return monitor

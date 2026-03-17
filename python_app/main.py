@@ -357,7 +357,7 @@ class ConverterApplication:
                 return 1
             suffix = input_path.suffix.lower()
             if suffix not in {".epub", ".pdf"}:
-                friendly = suffix or "(sem extensão)"
+                friendly = suffix or "(no extension)"
                 print(f"❌ Unsupported format: {friendly}. Please provide an .epub or .pdf file.")
                 return 1
 
@@ -394,7 +394,7 @@ class ConverterApplication:
                 parsed = self._parse_range_selector(range_span)
                 if not parsed:
                     print(
-                        "❌ Intervalo inválido. Use 'A..B' (ex.: 5.1..7.3) no "
+                        "❌ Invalid range. Use 'A..B' (e.g. 5.1..7.3) in "
                         "--from-chapter-to-chapter."
                     )
                     return 1
@@ -4262,13 +4262,13 @@ def _add_conversion_arguments(
         action="store_true",
         dest="deep_validate",
         default=None,
-        help="Enable deep validation (comparação texto/áudio completa) após converter",
+        help="Enable deep validation (full text/audio comparison) after converting",
     )
     parser.add_argument(
         "--no-deep-validate",
         action="store_false",
         dest="deep_validate",
-        help="Desabilita a validação profunda (padrão, mais rápido)",
+        help="Disable deep validation (default, faster)",
     )
     parser.add_argument(
         "--validate-during-conversion",

@@ -15,7 +15,7 @@ from python_app.src.hardware_monitor import SystemMonitor
 
 @dataclass
 class ConversionMetrics:
-    """Métricas de conversão em tempo real."""
+    """Real-time conversion metrics."""
 
     timestamp: float
     chars_processed: int
@@ -96,7 +96,7 @@ class AdaptivePerformanceController:
         }
 
     def start_conversion(self):
-        """Inicia monitoramento de uma nova conversão."""
+        """Start monitoring a new conversion."""
         self._conversion_start_time = time.time()
         self._total_chars_processed = 0
         self._total_chapters_completed = 0
