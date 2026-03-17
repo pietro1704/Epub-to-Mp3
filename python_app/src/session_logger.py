@@ -114,3 +114,13 @@ def read_sessions(last_n: int = 0) -> list[dict[str, Any]]:
     if last_n > 0:
         return records[-last_n:]
     return records
+
+
+def clear_sessions() -> int:
+    """Delete all session records. Returns the count of deleted records."""
+    if not _LOG_FILE.exists():
+        return 0
+    records = read_sessions()
+    count = len(records)
+    _LOG_FILE.unlink()
+    return count

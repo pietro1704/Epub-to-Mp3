@@ -1692,6 +1692,71 @@ select {
   text-decoration: underline;
 }
 
+.history-panel__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 1rem;
+  border-top: 1px solid var(--border);
+  gap: 0.5rem;
+}
+
+.history-panel__pagination {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.history-panel__page-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 0.1em 0.4em;
+  transition: background 0.15s;
+}
+
+.history-panel__page-btn:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.history-panel__page-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.history-panel__page-info {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  min-width: 3.5rem;
+  text-align: center;
+}
+
+.history-panel__clear-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: rgba(239, 68, 68, 0.7);
+  font-size: 0.75rem;
+  padding: 0.2em 0.5em;
+  border-radius: 6px;
+  transition: background 0.15s;
+  margin-left: auto;
+}
+
+.history-panel__clear-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+  color: rgba(239, 68, 68, 0.95);
+}
+
+.history-panel__clear-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* ── Form estimate hint ─────────────────────────────────────────────────── */
 
 .form-estimate-hint {

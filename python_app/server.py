@@ -3159,6 +3159,15 @@ async def get_sessions(last: int = 0) -> dict:
     }
 
 
+@app.delete("/api/sessions")
+async def delete_sessions() -> dict:
+    """Delete all session history records."""
+    from src.session_logger import clear_sessions
+
+    deleted = clear_sessions()
+    return {"deleted": deleted}
+
+
 from src._server_job_helpers import (  # noqa: E402
     _cleanup_job_output,
     _cleanup_output_directory,
