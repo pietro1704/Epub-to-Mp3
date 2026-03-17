@@ -3168,6 +3168,29 @@ async def delete_sessions() -> dict:
     return {"deleted": deleted}
 
 
+from src._server_conversion_helpers import (  # noqa: E402
+    advance_chapter_progress,
+    broadcast_progress,
+    chapter_can_retry,
+    chapter_requires_audio,
+    collect_failed_chapters,
+    collect_missing_chapters,
+    complete_chapter_progress,
+    compute_parallel_slots,
+    count_completed_chapters,
+    edge_retry_adjustments,
+    expected_output_path,
+    mark_retry_round,
+    note_chapter_attempt,
+    recalculate_progress,
+    refresh_chapter_completion,
+    reset_chapter_progress_tracking,
+    resolve_recent_speed,
+    resolve_tts_output,
+    sync_soft_failures,
+    update_estimated_chapter_progress,
+    update_job_progress,
+)
 from src._server_job_helpers import (  # noqa: E402
     _cleanup_job_output,
     _cleanup_output_directory,
@@ -3690,119 +3713,36 @@ async def process_conversion(job_id: str) -> None:
         job["_lastProgressBroadcast"] = 0.0
 
         def _recalculate_progress() -> float:
-            total_for_job = job.get("totalChars") or 0
-            processed_for_job = job.get("processedChars") or 0
-            if total_for_job > 0:
-                progress = (processed_for_job / total_for_job) * 100
-            else:
-                completed = max(0, min(len(chapters), job.get("chaptersCompleted", 0)))
-                progress = (completed / max(len(chapters), 1)) * 100
-            progress = max(job.get("progressPercent") or 0.0, min(100.0, max(0.0, progress)))
-            job["progressPercent"] = progress
-            return progress
+            return recalculate_progress(job, len(chapters))
 
         def _broadcast_progress(force: bool = False) -> None:
-            now = time.time()
-            last_emit = job.get("_lastProgressBroadcast") or 0.0
-            if force or (now - last_emit) >= 0.5:
-                job["_lastProgressBroadcast"] = now
-                _schedule_job_broadcast(job.get("jobId"), job)
+            broadcast_progress(job, force=force)
 
         def _update_job_progress(force_broadcast: bool = False) -> None:
-            _recalculate_progress()
-            if force_broadcast:
-                _broadcast_progress(force=True)
+            update_job_progress(job, len(chapters), force_broadcast=force_broadcast)
 
         def _advance_chapter_progress(
             chapter_index: int,
             segment_text: str,
             total_text_chars: Optional[int] = None,
         ) -> None:
-            if not segment_text:
-                return
-            chapter_totals = job.get("_chapterCharTotals") or {}
-            chapter_processed = job.get("_chapterCharProcessed") or {}
-            chapter_total = chapter_totals.get(chapter_index)
-            if total_text_chars and total_text_chars > 0:
-                if chapter_total is None or total_text_chars > chapter_total:
-                    delta_total = total_text_chars - (chapter_total or 0)
-                    chapter_totals[chapter_index] = total_text_chars
-                    job["_chapterCharTotals"] = chapter_totals
-                    job["totalChars"] = max(0, (job.get("totalChars") or 0) + delta_total)
-                    chapter_total = total_text_chars
-            current_processed = int(chapter_processed.get(chapter_index, 0) or 0)
-            delta = len(segment_text)
-            if chapter_total and chapter_total > 0:
-                remaining = max(chapter_total - current_processed, 0)
-                delta = min(delta, remaining)
-            if delta <= 0:
-                return
-            chapter_processed[chapter_index] = current_processed + delta
-            job["_chapterCharProcessed"] = chapter_processed
-            job["processedChars"] = min(
-                job.get("totalChars") or 0, (job.get("processedChars") or 0) + delta
-            )
-            chapter_progress_ts = job.get("_chapterLastProgressUpdate") or {}
-            chapter_progress_ts[chapter_index] = time.time()
-            job["_chapterLastProgressUpdate"] = chapter_progress_ts
             _update_job_activity(job)
-            _update_job_progress()
-            _broadcast_progress()
+            advance_chapter_progress(
+                job, chapter_index, segment_text, len(chapters), total_text_chars
+            )
 
         def _complete_chapter_progress(chapter_index: int, *, broadcast: bool = True) -> None:
-            chapter_totals = job.get("_chapterCharTotals") or {}
-            chapter_processed = job.get("_chapterCharProcessed") or {}
-            chapter_total = int(chapter_totals.get(chapter_index, 0) or 0)
-            if chapter_total > 0:
-                current_processed = int(chapter_processed.get(chapter_index, 0) or 0)
-                if chapter_total > current_processed:
-                    delta = chapter_total - current_processed
-                    chapter_processed[chapter_index] = chapter_total
-                    job["_chapterCharProcessed"] = chapter_processed
-                    job["processedChars"] = min(
-                        job.get("totalChars") or 0, (job.get("processedChars") or 0) + delta
-                    )
-            chapter_progress_ts = job.get("_chapterLastProgressUpdate") or {}
-            chapter_progress_ts[chapter_index] = time.time()
-            job["_chapterLastProgressUpdate"] = chapter_progress_ts
-            _update_job_progress(force_broadcast=broadcast)
+            complete_chapter_progress(job, chapter_index, len(chapters), broadcast=broadcast)
 
         def _update_estimated_chapter_progress(chapter_index: int, ratio: float) -> None:
-            if ratio <= 0:
-                return
-            chapter_totals = job.get("_chapterCharTotals") or {}
-            chapter_processed = job.get("_chapterCharProcessed") or {}
-            chapter_total = int(chapter_totals.get(chapter_index, 0) or 0)
-            if chapter_total <= 0:
-                return
-            clamped_ratio = min(max(ratio, 0.0), 0.97)
-            target = int(chapter_total * clamped_ratio)
-            current_processed = int(chapter_processed.get(chapter_index, 0) or 0)
-            if target <= current_processed:
-                return
-            delta = target - current_processed
-            chapter_processed[chapter_index] = target
-            job["_chapterCharProcessed"] = chapter_processed
-            job["processedChars"] = min(
-                job.get("totalChars") or 0, (job.get("processedChars") or 0) + delta
-            )
-            chapter_progress_ts = job.get("_chapterLastProgressUpdate") or {}
-            chapter_progress_ts[chapter_index] = time.time()
-            job["_chapterLastProgressUpdate"] = chapter_progress_ts
             _update_job_activity(job)
-            _update_job_progress()
-            _broadcast_progress()
+            update_estimated_chapter_progress(job, chapter_index, ratio, len(chapters))
 
         def _refresh_chapter_completion() -> None:
-            job["chaptersCompleted"] = _count_completed_chapters()
+            refresh_chapter_completion(job)
 
         def _count_completed_chapters() -> int:
-            entries = job.get("chapterProgress") or []
-            return sum(
-                1
-                for entry in entries
-                if isinstance(entry, dict) and entry.get("status") in {"completed", "skipped"}
-            )
+            return count_completed_chapters(job)
 
         chapter_progress_entries: list[dict] = []
         for idx, chapter in enumerate(chapters, 1):
@@ -4135,9 +4075,7 @@ async def process_conversion(job_id: str) -> None:
                 job["coverMimeType"] = None
 
         def _resolve_tts_output(target_mp3: Path, engine_name: str) -> tuple[Path, bool]:
-            if engine_name.lower() in {"coqui", "piper"}:
-                return target_mp3.with_suffix(".wav"), True
-            return target_mp3, False
+            return resolve_tts_output(target_mp3, engine_name)
 
         def _switch_to_next_engine(reason: str) -> bool:
             nonlocal engine_index, active_config
@@ -4251,102 +4189,47 @@ async def process_conversion(job_id: str) -> None:
         retrying_failed_chapters = False
 
         def _note_chapter_attempt(chapter_index: int) -> int:
-            attempt = chapter_attempts.get(chapter_index, 0) + 1
-            chapter_attempts[chapter_index] = attempt
-            return attempt
+            return note_chapter_attempt(chapter_attempts, chapter_index)
 
         def _chapter_can_retry(chapter_index: int) -> bool:
-            attempts = chapter_attempts.get(chapter_index, 0)
-            if retry_forever:
-                # Hard cap prevents infinite loops when all engines fail permanently
-                return attempts < _CHAPTER_RETRY_FOREVER_MAX
-            return attempts < max_chapter_attempts
+            return chapter_can_retry(
+                chapter_attempts,
+                chapter_index,
+                retry_forever=retry_forever,
+                max_chapter_attempts=max_chapter_attempts,
+                retry_forever_max=_CHAPTER_RETRY_FOREVER_MAX,
+            )
 
         def _reset_chapter_progress_tracking(chapter_index: int) -> None:
-            chapter_processed = job.get("_chapterCharProcessed") or {}
-            if chapter_index in chapter_processed:
-                chapter_processed[chapter_index] = 0
-                job["_chapterCharProcessed"] = chapter_processed
-                job["processedChars"] = sum(int(value or 0) for value in chapter_processed.values())
-            chapter_progress_ts = job.get("_chapterLastProgressUpdate") or {}
-            chapter_progress_ts[chapter_index] = 0.0
-            job["_chapterLastProgressUpdate"] = chapter_progress_ts
-            _update_job_progress(force_broadcast=True)
+            reset_chapter_progress_tracking(job, chapter_index, len(chapters))
 
         def _collect_failed_chapters() -> list[tuple[int, object]]:
-            entries = job.get("chapterProgress") or []
-            failed: list[tuple[int, object]] = []
-            for entry in entries:
-                if not isinstance(entry, dict):
-                    continue
-                if entry.get("status") != "failed":
-                    continue
-                idx = entry.get("index")
-                if not isinstance(idx, int):
-                    continue
-                if idx < 1 or idx > len(chapters):
-                    continue
-                failed.append((idx, chapters[idx - 1]))
-            return failed
+            return collect_failed_chapters(job, chapters)
 
         def _expected_output_path(chapter_index: int, chapter_obj) -> Path:
-            chapter_name = getattr(chapter_obj, "name", f"Chapter {chapter_index}")
-            safe_name = FileManager.sanitize_filename(chapter_name)
-            return job_output_dir / f"{chapter_index:03d} - {safe_name}.mp3"
+            return expected_output_path(job_output_dir, chapter_index, chapter_obj)
 
         def _chapter_requires_audio(chapter_obj) -> bool:
-            chapter_text = getattr(chapter_obj, "speech_text", None) or chapter_obj.text or ""
-            return bool(chapter_text and chapter_text.strip())
+            return chapter_requires_audio(chapter_obj)
 
         def _collect_missing_chapters() -> list[tuple[int, object]]:
-            missing: list[tuple[int, object]] = []
-            for idx, chapter in enumerate(chapters, 1):
-                if not _chapter_requires_audio(chapter):
-                    continue
-                output_file = _expected_output_path(idx, chapter)
-                try:
-                    if not output_file.exists() or output_file.stat().st_size <= 0:
-                        missing.append((idx, chapter))
-                except OSError:
-                    missing.append((idx, chapter))
-            return missing
+            return collect_missing_chapters(chapters, job_output_dir)
 
         def _sync_soft_failures(failed_indices: set[int]) -> None:
-            if not failed_indices:
-                job["softFailures"] = []
-                job.pop("softFailureCount", None)
-                return
-            soft_failures = job.get("softFailures") or []
-            deduped: list[dict] = []
-            seen: set[int] = set()
-            for entry in reversed(soft_failures):
-                if not isinstance(entry, dict):
-                    continue
-                idx = entry.get("index")
-                if not isinstance(idx, int) or idx not in failed_indices or idx in seen:
-                    continue
-                deduped.append(entry)
-                seen.add(idx)
-            deduped.reverse()
-            job["softFailures"] = deduped
-            job["softFailureCount"] = len(deduped)
+            sync_soft_failures(job, failed_indices)
 
         def _mark_retry_round(round_number: int, total_failed: int) -> None:
             nonlocal parallel_slots, requested_slots, retrying_failed_chapters
-            retrying_failed_chapters = True
-            _append_event(
+            requested_slots, parallel_slots, retrying_failed_chapters = mark_retry_round(
                 job,
-                f"🔁 Reprocessing {total_failed} failed chapter(s) (round {round_number}/{max_retry_rounds_label})",
+                job_id,
+                round_number,
+                total_failed,
+                max_retry_rounds_label,
+                edge_configs,
+                engine_pool,
             )
-            job["statusHint"] = f"Reprocessing failed chapters ({total_failed})"
-            requested_slots = 1
-            parallel_slots = 1
-            job["parallelSlots"] = parallel_slots
-            engine_pool.update_parallel_slots(parallel_slots)
-            for cfg in edge_configs:
-                cfg.edge_enable_parallel = False
             _apply_edge_slow_mode("retry for failed chapters")
-            _persist_job(job_id, force=True)
 
         async def convert_chapter(idx: int, chapter_obj) -> None:
             if job_failed["value"] or _should_abort_current_run():
@@ -4522,17 +4405,7 @@ async def process_conversion(job_id: str) -> None:
                 retry_count = 0
 
                 def _edge_retry_adjustments(edge_config, attempt: int) -> dict[str, float]:
-                    # Research-based default: 8k chars
-                    chunk = int(getattr(edge_config, "edge_chunk_chars", 8000) or 8000)
-                    seg = float(getattr(edge_config, "edge_max_segment_seconds", 75) or 75)
-                    factor = 0.75 ** max(1, attempt)
-                    chunk = max(1200, int(chunk * factor))  # allow deeper retries
-                    seg = max(30.0, min(seg, seg * (0.85 ** max(1, attempt))))
-                    return {
-                        "chunk_char_limit": chunk,
-                        "max_segment_seconds": seg,
-                        "words_per_minute": 160,
-                    }
+                    return edge_retry_adjustments(edge_config, attempt)
 
                 async def _maybe_retry(
                     *,
@@ -5146,17 +5019,14 @@ async def process_conversion(job_id: str) -> None:
         slow_streak = 0
 
         def _compute_parallel_slots() -> int:
-            if force_sequential or retrying_failed_chapters:
-                return 1
-            target_slots = _determine_parallel_slots(requested_slots)
-            if edge_cap > 0:
-                target_slots = min(target_slots, edge_cap)
-            if parallel_slots_cap:
-                target_slots = min(target_slots, parallel_slots_cap)
-            active_jobs = sum(1 for job_data in jobs.values() if job_data.get("state") == "running")
-            if active_jobs > 1:
-                target_slots = max(1, target_slots // active_jobs)
-            return max(1, target_slots)
+            return compute_parallel_slots(
+                force_sequential=force_sequential,
+                retrying_failed_chapters=retrying_failed_chapters,
+                requested_slots=requested_slots,
+                edge_cap=edge_cap,
+                parallel_slots_cap=parallel_slots_cap,
+                jobs=jobs,
+            )
 
         def _maybe_adjust_parallel_slots(force: bool = False) -> None:
             nonlocal parallel_slots, last_parallel_update
@@ -5173,16 +5043,7 @@ async def process_conversion(job_id: str) -> None:
             last_parallel_update = now
 
         def _resolve_recent_speed(engine_name: str) -> float:
-            entries = job.get("chapterProgress") or []
-            for entry in reversed(entries):
-                if isinstance(entry, dict):
-                    value = entry.get("charsPerSecond")
-                    if isinstance(value, (int, float)) and value > 0:
-                        return float(value)
-            summary = telemetry.summary()
-            engine_key = (engine_name or "").lower()
-            stats = summary.get(engine_key) or {}
-            return float(stats.get("avg_chars_per_second") or 0.0)
+            return resolve_recent_speed(job, engine_name)
 
         def _maybe_health_check(force: bool = False) -> None:
             nonlocal \
