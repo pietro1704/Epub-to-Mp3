@@ -147,7 +147,7 @@ class LanguageMarkup:
                     segments = future.result(timeout=5.0)  # 5 segundos max total
                 except concurrent.futures.TimeoutError:
                     print(
-                        f"⚠️ Timeout na segmentação de idioma - usando idioma padrão: {default_short}"
+                        f"⚠️ Language segmentation timeout - using default language: {default_short}"
                     )
                     return text
         except Exception as e:

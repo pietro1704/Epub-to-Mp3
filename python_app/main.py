@@ -3312,7 +3312,7 @@ class ConverterApplication:
 
             # Extract key parts of the clean name for removal
             if "§" in clean_name:
-                # For sections like "§1 Introdução", remove both the heading and section references
+                # For sections like "§1 Introduction", remove both the heading and section references
                 section_parts = clean_name.split(" ")
                 for part in section_parts:
                     if len(part) > 3 and part not in ["§1", "§2", "§3", "§4", "§5"]:
@@ -3397,9 +3397,9 @@ class ConverterApplication:
             print("🌐 LANGUAGE DETECTION")
             print("-" * 30)
             if self.language_profile.primary:
-                confidence = "Alta" if self.language_profile.is_confident else "Baixa"
+                confidence = "High" if self.language_profile.is_confident else "Low"
                 print(
-                    f"🌐 Idioma principal: {self.language_profile.primary} (confiança: {confidence})"
+                    f"🌐 Primary language: {self.language_profile.primary} (confidence: {confidence})"
                 )
                 if len(self.language_profile.predictions) > 0:
                     best_prediction = self.language_profile.predictions[0]

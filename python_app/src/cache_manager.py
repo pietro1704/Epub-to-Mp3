@@ -463,14 +463,14 @@ class CacheManager:
 
     def get_validation_log_path(self, ebook_path: Path, chapter_number: int) -> Path:
         """
-        Retorna path para log de validação de um capítulo.
+        Return the validation log path for a chapter.
 
         Args:
-            ebook_path: Caminho do ebook
-            chapter_number: Número do capítulo
+            ebook_path: Path to the ebook file
+            chapter_number: Chapter number
 
         Returns:
-            Path para o arquivo de log de validação
+            Path to the validation log file
         """
         cache_path = self._get_cache_path(ebook_path)
         logs_dir = cache_path / "validation_logs"
@@ -481,15 +481,15 @@ class CacheManager:
         self, ebook_path: Path, chapter_number: int, chapter_title: str
     ) -> Path:
         """
-        Retorna path para áudio em cache de um capítulo.
+        Return the cached audio path for a chapter.
 
         Args:
-            ebook_path: Caminho do ebook
-            chapter_number: Número do capítulo
-            chapter_title: Título do capítulo
+            ebook_path: Path to the ebook file
+            chapter_number: Chapter number
+            chapter_title: Chapter title
 
         Returns:
-            Path para o arquivo de áudio (pode não existir)
+            Path to the audio file (may not exist yet)
         """
         cache_path = self._get_cache_path(ebook_path)
         audio_dir = cache_path / "audio"
@@ -497,7 +497,7 @@ class CacheManager:
         return audio_dir / f"{chapter_number:03d} - {sanitized_title}.mp3"
 
     def _sanitize_filename(self, filename: str) -> str:
-        """Sanitiza nome de arquivo"""
+        """Sanitize a filename."""
         import re
 
         safe = re.sub(r'[<>:"/\\|?*]', "", filename)

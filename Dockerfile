@@ -3,7 +3,7 @@ FROM node:20-slim AS frontend-builder
 
 WORKDIR /app/web
 COPY web/package*.json ./
-# Usar npm install para atualizar dependências automaticamente
+# Use npm install to update dependencies automatically
 RUN npm install --legacy-peer-deps
 COPY web/ ./
 # Build with error output

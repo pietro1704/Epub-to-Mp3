@@ -1369,11 +1369,7 @@ export default function App(props?: AppProps): JSX.Element {
         </Suspense>
       )}
       <section className="tabs">
-        <div
-          className="tabs__list"
-          role="tablist"
-          aria-label="Fluxo de conversão"
-        >
+        <div className="tabs__list" role="tablist" aria-label="Conversion flow">
           {tabs.map((tab) => {
             const buttonId = `tab-${tab.id}`;
             const panelId = `panel-${tab.id}`;

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Sistema de ajuste adaptativo de performance em tempo real.
+Real-time adaptive performance tuning system.
 
-Monitora conversão e ajusta parâmetros dinamicamente para maximizar velocidade.
+Monitors conversion and dynamically adjusts parameters to maximize throughput.
 """
 
 import time
@@ -34,7 +34,7 @@ class ConversionMetrics:
 
 @dataclass
 class PerformanceAdjustment:
-    """Ajuste de performance a ser aplicado."""
+    """Performance adjustment to be applied."""
 
     action: Literal[
         "increase_concurrency",
@@ -50,7 +50,7 @@ class PerformanceAdjustment:
 
 
 class AdaptivePerformanceController:
-    """Controlador de performance adaptativa em tempo real."""
+    """Real-time adaptive performance controller."""
 
     def __init__(self, verbose: bool = True):
         self.verbose = verbose
@@ -108,9 +108,9 @@ class AdaptivePerformanceController:
         self._consecutive_failures = 0
 
         if self.verbose:
-            print("\n🎯 Adaptive Performance Controller iniciado")
+            print("\n🎯 Adaptive Performance Controller started")
             print(
-                f"   Config inicial: concurrency={self._baseline_concurrency}, "
+                f"   Initial config: concurrency={self._baseline_concurrency}, "
                 f"chunk={self._baseline_chunk_size}, parallel={self._baseline_parallel}"
             )
 
@@ -292,7 +292,7 @@ class AdaptivePerformanceController:
             applied.append(f"EDGE_SAFE_CHAPTER_PARALLEL={adjustment.edge_safe_chapter_parallel}")
 
         if self.verbose and applied:
-            print(f"\n⚡ AJUSTE ADAPTATIVO: {adjustment.action}")
+            print(f"\n⚡ ADAPTIVE ADJUSTMENT: {adjustment.action}")
             print(f"   Reason: {adjustment.reason}")
             for change in applied:
                 print(f"   • {change}")

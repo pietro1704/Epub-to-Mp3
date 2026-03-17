@@ -307,7 +307,7 @@ class TextIntegrityValidator:
                 if validation:
                     validation.is_valid = False
                     if not validation.error_message:
-                        validation.error_message = "Conteúdo duplicado detectado"
+                        validation.error_message = "Duplicate content detected"
 
         # Check if cache is from different engine
         cache_engine_mismatch = self._detect_engine_mismatch()

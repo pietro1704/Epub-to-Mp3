@@ -1593,8 +1593,8 @@ class AudioConverter(
         self, chapters: List[Chapter], output_dir: Path, config: ConversionConfig
     ) -> List[Chapter]:
         """
-        Skip obvious credits/ads ou chapters very short quando not há áudio em cache.
-        Never removes chapters que already have MP3 cacheado.
+        Skip obvious credits/ads or very short chapters when there is no cached audio.
+        Never removes chapters that already have a cached MP3.
         """
         patterns = [
             "créditos",
@@ -1605,7 +1605,7 @@ class AudioConverter(
             "capas",
         ]
         min_chars = int(os.getenv("AUTO_SKIP_MIN_CHARS", "400").strip() or "400")
-        # Default disabled para not skip chapters em scenarios de teste/conversion default
+        # Default disabled to not skip chapters in test/default conversion scenarios
         skip_enabled = os.getenv("AUTO_SKIP_EXTRA", "false").lower() not in {"false", "0", "no"}
 
         if not skip_enabled:
@@ -3135,10 +3135,10 @@ class AudioConverter(
             except Exception:
                 if self.verbose:
                     print(
-                        "🛟 Edge DNS indisponível no preflight; ainda assim tentando Edge 1x antes do fallback offline"
+                        "🛟 Edge DNS unavailable in preflight; still trying Edge 1x before offline fallback"
                     )
 
-        # Compat: aceitar um engine direto em vez de um pool
+        # Compat: accept a direct engine instead of a pool
         if hasattr(engine_pool, "synthesize_async") and not hasattr(engine_pool, "acquire"):
             engine_instance = engine_pool
 

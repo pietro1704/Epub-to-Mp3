@@ -16,10 +16,10 @@ from .paths import CACHE_DIR
 
 def resolve_cache_root() -> Path:
     """
-    DEPRECATED: Agora usamos CACHE_DIR de paths.py que sempre aponta para a raiz do projeto.
+    DEPRECATED: Now uses CACHE_DIR from paths.py which always points to the project root.
 
-    Esta função é mantida apenas para compatibilidade com código legado.
-    Use `from .paths import CACHE_DIR` diretamente.
+    This function is kept only for backward compatibility with legacy code.
+    Use `from .paths import CACHE_DIR` directly.
     """
     return CACHE_DIR
 

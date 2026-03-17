@@ -1,8 +1,8 @@
 """
-Sistema de rastreamento de segmentos de síntese de TTS.
+TTS synthesis segment tracking system.
 
-Este módulo fornece rastreamento detalhado de cada segmento de texto enviado
-para os motores TTS, permitindo validação de integridade e retry seletivo.
+This module provides detailed tracking of each text segment sent to TTS engines,
+enabling integrity validation and selective retry.
 """
 
 import hashlib
@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 
 @dataclass
 class SegmentRecord:
-    """Registro de um segmento de texto processado pelo TTS."""
+    """Record of a text segment processed by TTS."""
 
     index: int
     text: str
@@ -30,11 +30,11 @@ class SegmentRecord:
 
     @staticmethod
     def create(index: int, text: str, words_per_minute: int = 150) -> "SegmentRecord":
-        """Cria um novo registro de segmento."""
+        """Create a new segment record."""
         text_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
         char_count = len(text)
 
-        # Contar palavras
+        # Count words
         words = re.findall(r"\b\w+\b", text)
         word_count = len(words)
 

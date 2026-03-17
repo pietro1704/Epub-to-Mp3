@@ -414,13 +414,13 @@ class TextFormattingProcessor:
         """
         Remove isolated section numbers that cause long TTS pauses.
 
-        Exemplo:
-        "1.\nAlgum texto aqui\n2.\nMais texto"
-        → "Algum texto aqui\nMais texto"
+        Example:
+        "1.\nSome text here\n2.\nMore text"
+        → "Some text here\nMore text"
 
-        Números de seção isolados (como "1.", "2.", etc. em linhas sozinhas)
-        causam pausas extremamente longas no Edge-TTS, aumentando a duração
-        do áudio em mais de 100%. Esta função os remove automaticamente.
+        Isolated section numbers (like "1.", "2.", etc. on their own lines)
+        cause extremely long pauses in Edge-TTS, increasing audio duration
+        by over 100%. This function removes them automatically.
         """
         if not text:
             return ""
@@ -443,18 +443,18 @@ class TextFormattingProcessor:
         """
         Consolidate consecutive short lines to avoid excessive TTS pauses.
 
-        Edge-TTS insere pausas longas entre linhas, especialmente linhas curtas.
-        Esta função junta linhas curtas consecutivas em parágrafos mais longos,
-        reduzindo drasticamente a duração do áudio.
+        Edge-TTS inserts long pauses between lines, especially short lines.
+        This function joins consecutive short lines into longer paragraphs,
+        drastically reducing audio duration.
 
-        Exemplo:
-        "Linha curta 1.\\nLinha curta 2.\\nLinha curta 3.\\n\\nNova seção."
-        → "Linha curta 1. Linha curta 2. Linha curta 3.\\n\\nNova seção."
+        Example:
+        "Short line 1.\\nShort line 2.\\nShort line 3.\\n\\nNew section."
+        → "Short line 1. Short line 2. Short line 3.\\n\\nNew section."
 
-        Preserva:
-        - Quebras de linha duplas (mudança de seção/parágrafo)
-        - Diálogos com travessão no início da linha
-        - Linhas longas (>max_line_length)
+        Preserves:
+        - Double line breaks (section/paragraph changes)
+        - Dialogue lines starting with an em dash
+        - Long lines (>max_line_length)
         """
         if not text:
             return ""
@@ -515,7 +515,7 @@ class TextFormattingProcessor:
             rate_increase: Percentage speech rate increase (e.g. "+20%", "+50%")
 
         Returns:
-            Texto com tags SSML prosody aplicadas se necessário
+            Text with SSML prosody tags applied if necessary
         """
         if not text:
             return ""
@@ -674,7 +674,7 @@ class TextFormattingProcessor:
         """
         Add emphasis markers for common audiobook patterns:
         - "Texto entre aspas duplas" → [[fmt:quote]]..[[/fmt]]
-        - —Diálogo com travessão → [[fmt:emphasis]]..[[/fmt]]
+        - —Dialogue with em dash → [[fmt:emphasis]]..[[/fmt]]
 
         IMPORTANT: Do not add markers for already-processed markdown (_italic_, **bold**)
         """

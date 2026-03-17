@@ -59,7 +59,7 @@ class AutoTuner:
     PROFILES: Dict[str, TuningProfile] = {
         "conservative": TuningProfile(
             name="Conservative",
-            description="Conexão lenta ou hardware limitado (seguro)",
+            description="Slow connection or limited hardware (safe)",
             edge_max_concurrency=2,
             edge_chunk_chars=4000,
             edge_safe_chapter_parallel=1,
@@ -74,7 +74,7 @@ class AutoTuner:
         ),
         "balanced": TuningProfile(
             name="Balanced",
-            description="Conexão média e hardware moderado",
+            description="Average connection and moderate hardware",
             edge_max_concurrency=4,
             edge_chunk_chars=8000,
             edge_safe_chapter_parallel=2,
@@ -89,7 +89,7 @@ class AutoTuner:
         ),
         "performance": TuningProfile(
             name="Performance",
-            description="Boa conexão e hardware potente",
+            description="Good connection and powerful hardware",
             edge_max_concurrency=8,
             edge_chunk_chars=10000,
             edge_safe_chapter_parallel=4,
@@ -104,7 +104,7 @@ class AutoTuner:
         ),
         "maximum": TuningProfile(
             name="Maximum",
-            description="Conexão ultra-rápida e hardware top de linha",
+            description="Ultra-fast connection and top-of-the-line hardware",
             edge_max_concurrency=12,
             edge_chunk_chars=12000,
             edge_safe_chapter_parallel=6,
@@ -232,7 +232,7 @@ class AutoTuner:
         """
         Select the best-fit tuning profile based on hardware and network.
 
-        Lógica:
+        Logic:
         - Conservative: CPU < 4 cores OR RAM < 8GB OR network slow
         - Balanced: CPU 4-8 cores AND RAM 8-16GB AND network medium
         - Performance: CPU > 8 cores OR RAM > 16GB OR network fast
@@ -400,11 +400,11 @@ class AutoTuner:
         self, force: bool = False, measure_network: bool = True
     ) -> TuningProfile:
         """
-        Detecta hardware/rede e configura automaticamente.
+        Detect hardware/network and configure automatically.
 
         Args:
-            force: Sobrescreve configurações existentes
-            measure_network: Se True, mede velocidade de rede (adiciona ~3s)
+            force: Overwrite existing configuration
+            measure_network: If True, measures network speed (adds ~3s)
 
         Returns:
             Applied profile

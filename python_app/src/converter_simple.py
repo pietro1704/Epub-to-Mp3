@@ -100,7 +100,7 @@ class SimpleAudioConverter:
                 if output_path.exists() and not getattr(config, "force_reprocess", False):
                     if self.verbose:
                         print(f"✅ Chapter {chapter_num} already exists: {output_path}")
-                    self.progress.tick("✅ Já existe (cache)")
+                    self.progress.tick("✅ Already exists (cache)")
                     self.progress.complete_chapter("✅ Cache")
                     output_paths.append(output_path)
                     completed_count += 1

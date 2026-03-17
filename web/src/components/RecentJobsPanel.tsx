@@ -29,25 +29,25 @@ export default function RecentJobsPanel({
     new Set(),
   );
 
-  // Agrupar jobs em batches baseado em timestamps próximos (dentro de 5 minutos)
+  // Group jobs into batches based on close timestamps (within 5 minutes)
   const batches = useMemo<JobBatch[]>(() => {
     if (!jobs || jobs.length === 0) return [];
 
-    // Ordenar jobs por timestamp
+    // Sort jobs by timestamp
     const sorted = [...jobs].sort((a, b) => {
       const timeA = Date.parse(a.startedAt || a.savedAt || "");
       const timeB = Date.parse(b.startedAt || b.savedAt || "");
-      return timeB - timeA; // Mais recente primeiro
+      return timeB - timeA; // Most recent first
     });
 
     const result: JobBatch[] = [];
-    const BATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutos
+    const BATCH_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
 
     for (const job of sorted) {
       const jobTime = Date.parse(job.startedAt || job.savedAt || "");
       if (Number.isNaN(jobTime)) continue;
 
-      // Tentar adicionar ao batch mais recente
+      // Try to add to the most recent batch
       const lastBatch = result[0];
       if (lastBatch) {
         const batchTime = Date.parse(lastBatch.startedAt);
@@ -55,10 +55,10 @@ export default function RecentJobsPanel({
           !Number.isNaN(batchTime) &&
           Math.abs(jobTime - batchTime) < BATCH_THRESHOLD_MS
         ) {
-          // Adicionar ao batch existente
+          // Add to existing batch
           lastBatch.jobs.push(job);
 
-          // Atualizar dados do batch
+          // Update batch data
           if (job.completedAt) {
             const completedTime = Date.parse(job.completedAt);
             const currentCompletedTime = lastBatch.completedAt
@@ -80,7 +80,7 @@ export default function RecentJobsPanel({
         }
       }
 
-      // Criar novo batch
+      // Create new batch
       result.unshift({
         batchId: `batch-${jobTime}-${job.jobId}`,
         jobs: [job],
@@ -207,7 +207,7 @@ export default function RecentJobsPanel({
                   key={batch.batchId}
                   className="recent-jobs__item recent-jobs__item--batch"
                 >
-                  {/* Cabeçalho do batch */}
+                  {/* Batch header */}
                   <div
                     className="recent-jobs__batch-header"
                     onClick={() =>
@@ -266,7 +266,7 @@ export default function RecentJobsPanel({
                     </div>
                   </div>
 
-                  {/* Lista de jobs expandida */}
+                  {/* Expanded job list */}
                   {isExpanded && batch.jobs.length > 1 && (
                     <ul className="recent-jobs__batch-items">
                       {batch.jobs.map((job) => (
@@ -319,7 +319,7 @@ export default function RecentJobsPanel({
                     </ul>
                   )}
 
-                  {/* Ações do batch (quando não expandido ou batch único) */}
+                  {/* Batch actions (when collapsed or single-job batch) */}
                   {(!isExpanded || batch.jobs.length === 1) && (
                     <div className="recent-jobs__actions">
                       {batch.jobs.length === 1 &&

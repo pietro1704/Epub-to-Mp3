@@ -630,7 +630,7 @@ class TextProcessor:
             if mode == "chapter_end" and appended_entries:
                 lines = []
                 for number, snippet, note_text in appended_entries:
-                    snippet_part = (snippet or "contexto não identificado").strip()
+                    snippet_part = (snippet or "context not identified").strip()
                     line = chapter_end_template.format(
                         number=number,
                         text=note_text,
@@ -1412,7 +1412,7 @@ class EpubParser:
     ) -> None:
         """Verify that all original content is present after filtering.
 
-        Compara o conteúdo total para garantir que nenhum texto foi perdido.
+        Compares total content to ensure no text was lost.
         """
         # Extract all unique words from the original (normalized to ignore formatting)
         original_words = set()
@@ -1472,8 +1472,8 @@ class EpubParser:
             # Restore removed chapters that had unique content
             # Do NOT do this automatically — only warn
             raise ValueError(
-                f"Falha na verificação de integridade: {len(significant_missing)} palavras únicas perdidas. "
-                "O algoritmo de remoção de duplicatas precisa ser ajustado."
+                f"Integrity check failed: {len(significant_missing)} unique words lost. "
+                "The duplicate removal algorithm needs adjustment."
             )
 
     def _parse_toc(

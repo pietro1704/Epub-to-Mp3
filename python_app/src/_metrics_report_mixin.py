@@ -679,7 +679,7 @@ class _MetricsReportMixin:
                 if ranked:
                     best_name, best_cps = ranked[0]
                     recommendations.append(
-                        f"- Melhor engine nesta execução: `{best_name}` (~{best_cps:.1f} chars/s)."
+                        f"- Best engine this run: `{best_name}` (~{best_cps:.1f} chars/s)."
                     )
                 high_jitter = [
                     (name, float((row or {}).get("jitter_ratio", 0.0) or 0.0))
@@ -702,14 +702,12 @@ class _MetricsReportMixin:
                     slowest = sorted(low_p50, key=lambda item: item[1])[0]
                     if slowest[1] > 0 and slowest[1] < 90:
                         recommendations.append(
-                            f"- P50 baixo em `{slowest[0]}` ({slowest[1]:.1f} chars/s): "
-                            "priorize engine alternativa ou aumente paralelismo."
+                            f"- Low P50 on `{slowest[0]}` ({slowest[1]:.1f} chars/s): "
+                            "consider an alternative engine or increase parallelism."
                         )
 
         if not recommendations:
-            recommendations.append(
-                "- Execução estável; manter perfil atual e repetir benchmark A/B."
-            )
+            recommendations.append("- Stable run; keep current profile and repeat A/B benchmark.")
 
         content = [
             "# Runtime Recommendations",

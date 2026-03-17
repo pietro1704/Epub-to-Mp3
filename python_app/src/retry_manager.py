@@ -1,8 +1,8 @@
 """
-Sistema de retry automático para segmentos faltantes.
+Automatic retry system for missing TTS segments.
 
-Este módulo fornece retry automático para segmentos que falharam durante
-a conversão TTS, tentando reconvertê-los e inserir no lugar correto.
+This module provides automatic retry for segments that failed during TTS
+conversion, attempting to re-synthesize them and insert them in the correct position.
 """
 
 import logging
@@ -27,7 +27,7 @@ class RetryReport:
 
 
 class RetryableEngine(Protocol):
-    """Protocol para engines que suportam retry de segmentos."""
+    """Protocol for engines that support segment retry."""
 
     async def synthesize_segment(
         self,
@@ -36,15 +36,15 @@ class RetryableEngine(Protocol):
         formatting_segments: List[tuple] = None,
     ) -> bool:
         """
-        Sintetiza um único segmento de texto.
+        Synthesize a single text segment.
 
         Args:
-            text: Texto a ser sintetizado
-            output_path: Caminho para salvar o áudio
-            formatting_segments: Segmentos de formatação (opcional)
+            text: Text to synthesize
+            output_path: Path to save the audio file
+            formatting_segments: Formatting segments (optional)
 
         Returns:
-            True se sucesso, False caso contrário
+            True on success, False otherwise
         """
         ...
 
@@ -56,10 +56,10 @@ class RetryManager:
 
     def __init__(self, max_retries: int = MAX_RETRIES):
         """
-        Inicializa o gerenciador de retry.
+        Initialize the retry manager.
 
         Args:
-            max_retries: Número máximo de tentativas por segmento
+            max_retries: Maximum number of retry attempts per segment
         """
         self.max_retries = max_retries
         self.retry_history: List[Dict[str, Any]] = []
@@ -72,16 +72,16 @@ class RetryManager:
         temp_dir: Path,
     ) -> RetryReport:
         """
-        Tenta reconverter segmentos que falharam.
+        Attempt to re-synthesize segments that failed.
 
         Args:
-            engine: Engine TTS a ser usado para retry
-            failed_segments: Lista de segmentos que falharam
-            output_path: Caminho do arquivo MP3 final
-            temp_dir: Diretório temporário para arquivos de retry
+            engine: TTS engine to use for retry
+            failed_segments: List of segments that failed
+            output_path: Path to the final MP3 file
+            temp_dir: Temporary directory for retry files
 
         Returns:
-            RetryReport com resultados das tentativas
+            RetryReport with retry results
         """
         temp_dir.mkdir(parents=True, exist_ok=True)
         retry_results = []
@@ -100,15 +100,15 @@ class RetryManager:
                     f"Retry attempt {attempt}/{self.max_retries} for segment {segment.index}"
                 )
 
-                # Tentar reconverter apenas este segmento
+                # Attempt to re-synthesize only this segment
                 temp_path = temp_dir / f"retry_{segment.index}_{attempt}.mp3"
 
                 try:
-                    # Verificar se engine suporta synthesize_segment
+                    # Check if engine supports synthesize_segment
                     if hasattr(engine, "synthesize_segment"):
                         success = await engine.synthesize_segment(segment.text, temp_path)
                     elif hasattr(engine, "synthesize_async"):
-                        # Fallback: usar synthesize_async
+                        # Fallback: use synthesize_async
                         result = await engine.synthesize_async(
                             segment.text,
                             temp_path,
@@ -173,24 +173,24 @@ class RetryManager:
 
     def _inject_audio_at_position(self, main_file: Path, segment_file: Path, position: int) -> bool:
         """
-        Insere áudio de um segmento no lugar correto do arquivo principal.
+        Insert segment audio at the correct position in the main file.
 
-        NOTA: Esta é uma operação complexa que requer:
-        1. Ler o arquivo principal
-        2. Dividir nas posições corretas
-        3. Inserir o novo segmento
-        4. Concatenar tudo
+        NOTE: This is a complex operation that requires:
+        1. Reading the main file
+        2. Splitting at the correct positions
+        3. Inserting the new segment
+        4. Concatenating everything
 
-        Por enquanto, esta função apenas documenta a interface.
-        A implementação real será feita quando integrarmos com os engines.
+        For now, this function only documents the interface.
+        The real implementation will be done when integrating with the engines.
 
         Args:
-            main_file: Arquivo MP3 principal
-            segment_file: Arquivo do segmento a inserir
-            position: Posição (índice) onde inserir
+            main_file: Main MP3 file
+            segment_file: Segment file to insert
+            position: Position (index) where to insert
 
         Returns:
-            True se sucesso, False caso contrário
+            True on success, False otherwise
         """
         logger.warning(
             "Audio injection not yet implemented. "
