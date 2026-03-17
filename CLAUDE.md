@@ -38,7 +38,12 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 **ALL code, comments, docstrings, log messages, and print statements MUST be in English.**
 - No exceptions — not even inline comments
 - The i18n system handles user-facing translations in `web/src/i18n/`
-- Only intentional Portuguese: regex patterns in `transcription_verifier.py` that match Portuguese TTS artifacts spoken aloud
+- **Intentional Portuguese** (do not translate):
+  - Regex patterns matching Portuguese TTS artifacts spoken aloud (`transcription_verifier.py`)
+  - Portuguese book-structure keywords used for detection: `capítulo`, `prefácio`, `sumário`, `posfácio`, `dedicatória`, `introdução`, `seção`, `página` (`main.py`, `ebook_reader.py`)
+  - Portuguese number words in Coqui pronunciation table: `três`, `três quartos` (`coqui_engine.py`)
+  - PT-BR locale TTS verbal cues in `CUE_LABELS["pt"]`: `em itálico`, `em negrito`, etc. (`text_formatting.py`)
+  - Portuguese sample text in language-detection test fixtures (`test_ambiguous_languages.py`, `test_new_features.py`, `test_benchmark_engines.py`)
 
 ---
 

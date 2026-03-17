@@ -172,19 +172,23 @@ PY
 """
 
 [tasks.audit]
-description = "Scan Python dependencies for known CVEs (requires pip-audit)"
+description = "Scan Python and npm dependencies for known CVEs"
 run = """
 #!/bin/bash
 set -euo pipefail
 
+echo "🔍 Python CVE scan..."
 if ! .venv/bin/python -m pip show pip-audit &>/dev/null; then
     echo "Installing pip-audit..."
     .venv/bin/python -m pip install pip-audit --quiet
 fi
-
-echo "🔍 Scanning dependencies for CVEs..."
 .venv/bin/python -m pip_audit --requirement requirements.txt --requirement python_app/requirements.txt
-echo "✅ No known vulnerabilities found."
+echo "✅ Python: no known vulnerabilities."
+
+echo ""
+echo "🔍 npm CVE scan..."
+(cd web && mise exec -- npm audit --audit-level=moderate)
+echo "✅ npm: no known vulnerabilities."
 """
 
 [tasks."hooks-test"]
