@@ -1,0 +1,425 @@
+"""Engine selection, performance profiles, voice/language configuration helpers.
+
+These are extracted from server.py to reduce its line count.  All server-level
+globals (_has_kokoro_support, _has_piper_support, telemetry, tts_factory, …)
+are accessed via a lazy import to avoid circular-import issues.
+"""
+
+from __future__ import annotations
+
+import os
+from dataclasses import replace
+from typing import Dict, Optional
+
+from src.config import ConversionConfig
+from src.hardware_detector import HardwareProfile
+
+# ---------------------------------------------------------------------------
+# Performance profile helpers
+# ---------------------------------------------------------------------------
+
+
+def _infer_perf_profile(hw: HardwareProfile, choice: str, is_space: bool) -> str:
+    """Infer performance profile automatically (HF vs local vs CLI)."""
+    if choice in {"hf", "local", "cli"}:
+        return choice
+    if is_space:
+        return "hf"
+    # Small CPUs behave like HF; bigger boxes can run CLI mode safely
+    if (hw.cpu_physical or 0) <= 4 and not hw.has_gpu:
+        return "local"
+    return "cli"
+
+
+def _set_default(name: str, value: str) -> None:
+    if not os.getenv(name):
+        os.environ[name] = value
+
+
+def _apply_perf_defaults(profile: str, hw: HardwareProfile) -> None:
+    """Auto-apply sane defaults per profile without overriding explicit envs."""
+    if profile == "hf":
+        # HF Spaces uses shared egress IPs — many Spaces share the same Edge-TTS
+        # rate-limit budget. Minimize request count:
+        #   - 1 concurrent request (no parallel Edge chunks within a chapter)
+        #   - Larger chunks (12K chars) → fewer requests per chapter
+        #   - 1 chapter at a time to avoid compounding rate limits
+        _set_default("EDGE_MAX_CONCURRENCY", "1")
+        _set_default("EDGE_MAX_CONCURRENCY_CAP", "2")
+        _set_default("CHAPTER_PARALLEL_COUNT", "1")
+        _set_default("CHAPTER_PARALLEL_MAX", "1")
+        _set_default("EDGE_CHUNK_CHARS", "12000")  # was 9000 — fewer requests
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "180")
+        _set_default("EDGE_ENABLE_PARALLEL", "false")  # force serial chunks
+        _set_default("COQUI_MAX_WORKERS", "2")
+        _set_default("PIPER_MAX_PROCS", "1")
+        # Healthcheck: detect rate-limit slowdowns faster on HF
+        _set_default("JOB_HEALTHCHECK_INTERVAL_SECONDS", "10")
+        _set_default("JOB_HEALTHCHECK_SLOW_STREAK", "1")
+        # Safe mode (fallback when Edge is slow): use very small chunks on HF
+        # so each request completes quickly and rate limits clear faster.
+        _set_default("EDGE_SAFE_CHUNK_CHARS", "5000")
+        _set_default("EDGE_SAFE_MAX_SEGMENT_SECONDS", "120")
+        _set_default("EDGE_SAFE_TIMEOUT_MAX", "180")
+    elif profile == "cli":
+        # Favor throughput on multi-core hosts while keeping caps sane
+        edge_cap = max(4, min(8, (hw.cpu_physical or 2) * 2))
+        _set_default("EDGE_MAX_CONCURRENCY", str(min(6, edge_cap)))
+        _set_default("EDGE_MAX_CONCURRENCY_CAP", str(edge_cap))
+        _set_default("CHAPTER_PARALLEL_COUNT", str(min(4, max(2, (hw.cpu_physical or 2) // 2 + 1))))
+        _set_default("CHAPTER_PARALLEL_MAX", str(min(6, (hw.cpu_physical or 2) * 2)))
+        _set_default("EDGE_CHUNK_CHARS", "11000")
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "300")
+        _set_default("EDGE_ENABLE_PARALLEL", "true")
+        _set_default("COQUI_MAX_WORKERS", str(min(8, max(4, (hw.cpu_physical or 2) * 2))))
+        _set_default("PIPER_MAX_PROCS", str(min(4, max(2, (hw.cpu_physical or 2) // 2 + 1))))
+    else:  # local (balanced default)
+        edge_cap = max(3, min(6, (hw.cpu_physical or 2) + 2))
+        _set_default("EDGE_MAX_CONCURRENCY", str(edge_cap - 1))
+        _set_default("EDGE_MAX_CONCURRENCY_CAP", str(edge_cap))
+        _set_default("CHAPTER_PARALLEL_COUNT", "2")
+        _set_default("CHAPTER_PARALLEL_MAX", "3")
+        _set_default("EDGE_CHUNK_CHARS", "10000")
+        _set_default("EDGE_MAX_SEGMENT_SECONDS", "240")
+        _set_default("EDGE_ENABLE_PARALLEL", "true")
+        _set_default("COQUI_MAX_WORKERS", str(min(6, max(3, (hw.cpu_physical or 2)))))
+        _set_default("PIPER_MAX_PROCS", "2")
+
+
+# ---------------------------------------------------------------------------
+# Voice / language normalisation
+# ---------------------------------------------------------------------------
+
+
+def _normalise_languages(
+    primary_language: Optional[str], languages: Optional[list[str]] = None
+) -> list[str]:
+    values: list[str] = []
+    if languages:
+        for lang in languages:
+            clean = (lang or "").strip()
+            if clean:
+                values.append(clean)
+    primary = (primary_language or "").strip()
+    if primary and primary.lower() != "auto":
+        values.insert(0, primary)
+    normalised: list[str] = []
+    for lang in values:
+        if lang not in normalised:
+            normalised.append(lang)
+    return normalised
+
+
+def _ensure_voice_and_languages(config: ConversionConfig) -> None:
+    from python_app import server as _srv  # lazy to avoid circular import
+
+    languages = _normalise_languages(config.primary_language, config.languages)
+    config.languages = languages
+    provider = _srv.tts_factory.voice_provider
+    fallback_voice = config.voice or provider.get_voice(config.engine, config.primary_language)
+    if (config.engine or "").lower() == "coqui" and not fallback_voice:
+        fallback_voice = "tts_models/multilingual/multi-dataset/xtts_v2"
+    config.voice = fallback_voice
+    config.language_voices = provider.build_language_voice_map(
+        config.engine,
+        languages,
+        fallback_voice,
+        primary_language=config.primary_language,
+    )
+
+
+def _clone_config_for_engine(base: ConversionConfig, engine_name: str) -> ConversionConfig:
+    cloned = replace(base, engine=engine_name, voice=None, model_path=None)
+    cloned.languages = list(base.languages)
+    cloned.language_voices = {}
+    _ensure_voice_and_languages(cloned)
+    return cloned
+
+
+# ---------------------------------------------------------------------------
+# Engine chain / auto pool
+# ---------------------------------------------------------------------------
+
+
+def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
+    from python_app import server as _srv  # lazy to avoid circular import
+
+    _ensure_voice_and_languages(config)
+    chain = [config]
+
+    def _rank_fallbacks(candidates: list[str]) -> list[str]:
+        summary = _srv.telemetry.summary()
+        ranked = sorted(
+            ((name, summary.get(name, {}).get("avg_chars_per_second", 0.0)) for name in candidates),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        ordered = [name for name, _ in ranked if name in candidates]
+        for name in candidates:
+            if name not in ordered:
+                ordered.append(name)
+        return ordered
+
+    if (config.engine or "").lower() == "edge":
+        fallback_candidates = []
+        if _srv._has_coqui_support():
+            fallback_candidates.append("coqui")
+        fallback_candidates.append("kokoro")
+        if _srv._has_spark_support():
+            fallback_candidates.append("spark")
+        if _srv._has_piper_support():
+            fallback_candidates.append("piper")
+        fallback_engines = _rank_fallbacks(fallback_candidates)
+        for engine_name in fallback_engines:
+            if engine_name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):
+                continue
+            if engine_name == "piper" and not _srv._has_piper_support():
+                continue
+            if engine_name == "spark" and not _srv._has_spark_support():
+                continue
+            if engine_name == "coqui" and not _srv._has_coqui_support():
+                continue
+            clone = _clone_config_for_engine(config, engine_name)
+            if clone.engine.lower() == "edge":
+                clone.edge_aggressive_mode = True
+            chain.append(clone)
+    return chain
+
+
+def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, ConversionConfig]:
+    from python_app import server as _srv  # lazy to avoid circular import
+
+    pool: dict[str, ConversionConfig] = {}
+    # Priority: edge (fast cloud), coqui (quality), kokoro (fast local), spark (LLM-based)
+    # Piper excluded from auto due to lower quality
+    candidate_order = ["edge"]
+    if _srv._has_coqui_support():
+        candidate_order.append("coqui")
+    candidate_order.append("kokoro")
+    if _srv._has_spark_support():
+        candidate_order.append("spark")
+    for name in candidate_order:
+        if name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):
+            continue
+        if name == "coqui" and not _srv._has_coqui_support():
+            continue
+        if name == "spark" and not _srv._has_spark_support():
+            continue
+        try:
+            candidate = _clone_config_for_engine(config, name)
+            pool[name] = candidate
+        except Exception:
+            continue
+    return pool
+
+
+def _auto_tune_engine_pool(
+    pool: dict[str, ConversionConfig],
+    *,
+    hardware_profile: HardwareProfile,
+    network_tier: str,
+    total_chars: int,
+    force_sequential: bool,
+) -> dict[str, dict[str, object]]:
+    from python_app import server as _srv  # lazy to avoid circular import
+
+    def _env_int(name: str) -> Optional[int]:
+        raw = os.getenv(name, "").strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            return None
+
+    def _env_bool(name: str) -> Optional[bool]:
+        raw = os.getenv(name)
+        if raw is None:
+            return None
+        raw = raw.strip().lower()
+        if raw == "":
+            return None
+        return raw in {"1", "true", "yes", "on"}
+
+    summary: dict[str, dict[str, object]] = {}
+    tier = (network_tier or "fast").strip().lower()
+    total_chars = max(int(total_chars or 0), 0)
+    turbo_mode = _srv.FORCE_TURBO or os.getenv("MAX_PERFORMANCE", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+    edge_cfg = pool.get("edge")
+    if edge_cfg:
+        if turbo_mode:
+            # Research-based: 8k chars, 90s segments (safe: 3k-8k)
+            default_chunk, default_seg, default_wpm = 8000, 90, 185
+            if tier == "ultra":
+                default_chunk, default_seg, default_wpm = 24000, 95, 200
+            elif tier == "fast":
+                default_chunk, default_seg, default_wpm = 22000, 90, 190
+            elif tier == "medium":
+                default_chunk, default_seg, default_wpm = 18000, 85, 180
+            elif tier == "slow":
+                default_chunk, default_seg, default_wpm = 14000, 75, 170
+        else:
+            default_chunk, default_seg, default_wpm = 16000, 80, 175
+            if tier == "ultra":
+                # Research-based: 8k chars, 90s segments (safe: 3k-8k)
+                default_chunk, default_seg, default_wpm = 8000, 90, 185
+            elif tier == "fast":
+                default_chunk, default_seg, default_wpm = 18000, 85, 180
+            elif tier == "medium":
+                default_chunk, default_seg, default_wpm = 14000, 75, 170
+            elif tier == "slow":
+                # Turbo mode uses slightly larger chunks
+                default_chunk, default_seg, default_wpm = 10000, 65, 160
+
+        if total_chars and total_chars < 8000:
+            default_chunk = min(default_chunk, 12000)
+            default_seg = min(default_seg, 75)
+
+        chunk_override = _env_int("EDGE_CHUNK_CHARS")
+        seg_override = _env_int("EDGE_MAX_SEGMENT_SECONDS")
+        parallel_override = _env_bool("EDGE_ENABLE_PARALLEL")
+
+        edge_cfg.edge_chunk_chars = int(chunk_override or default_chunk)
+        edge_cfg.edge_max_segment_seconds = int(seg_override or default_seg)
+        # Research-based: safe range 3,000-12,000 chars
+        edge_cfg.edge_chunk_chars = max(3000, min(edge_cfg.edge_chunk_chars, 12000))
+        edge_cfg.edge_max_segment_seconds = max(45, min(edge_cfg.edge_max_segment_seconds, 600))
+        if parallel_override is None:
+            edge_cfg.edge_enable_parallel = not force_sequential
+        else:
+            edge_cfg.edge_enable_parallel = parallel_override and not force_sequential
+
+        edge_cfg.extra = dict(edge_cfg.extra or {})
+        edge_cfg.extra["edge_auto_wpm"] = int(default_wpm)
+        summary["edge"] = {
+            "chunk_chars": edge_cfg.edge_chunk_chars,
+            "max_segment_seconds": edge_cfg.edge_max_segment_seconds,
+            "words_per_minute": int(default_wpm),
+            "parallel": edge_cfg.edge_enable_parallel,
+        }
+
+    coqui_cfg = pool.get("coqui")
+    if coqui_cfg:
+        has_gpu = bool(getattr(hardware_profile, "has_gpu", False))
+        cpu_physical = int(getattr(hardware_profile, "cpu_physical", 2) or 2)
+        ram_total = float(getattr(hardware_profile, "ram_total_gb", 0.0) or 0.0)
+
+        chunk_override = _env_int("COQUI_CHUNK_CHARS")
+        workers_override = _env_int("COQUI_MAX_WORKERS")
+
+        if has_gpu:
+            if turbo_mode:
+                base_chunk = 8000 if ram_total >= 8 else 6500
+                base_workers = 3 if ram_total >= 8 else 2
+            else:
+                base_chunk = 5000 if total_chars < 200000 else 6500
+                base_workers = 2 if ram_total >= 8 else 1
+        else:
+            if cpu_physical >= 8:
+                base_chunk = 6000 if turbo_mode else 3500
+                base_workers = min(12, cpu_physical * (2 if turbo_mode else 1))
+            elif cpu_physical >= 4:
+                base_chunk = 5000 if turbo_mode else 3500
+                base_workers = min(8, cpu_physical * (2 if turbo_mode else 1))
+            else:
+                base_chunk = 3500 if turbo_mode else 2500
+                base_workers = max(2, min(4, cpu_physical + 1))
+
+        coqui_cfg.coqui_chunk_chars = int(chunk_override or base_chunk)
+        coqui_cfg.coqui_max_workers = int(workers_override or base_workers)
+        coqui_cfg.coqui_chunk_chars = max(800, min(coqui_cfg.coqui_chunk_chars, 8000))
+        coqui_cfg.coqui_max_workers = max(1, min(coqui_cfg.coqui_max_workers, 12))
+
+        summary["coqui"] = {
+            "chunk_chars": coqui_cfg.coqui_chunk_chars,
+            "max_workers": coqui_cfg.coqui_max_workers,
+        }
+
+    return summary
+
+
+def _pick_auto_engine(
+    chapter_chars: int,
+    estimated_seconds: float,
+    pool: dict[str, ConversionConfig],
+    telemetry_speeds: Optional[Dict[str, object]] = None,
+    preferred_engine: Optional[str] = None,
+) -> tuple[str, list[str]]:
+    def _speed_value(entry: object) -> float:
+        if isinstance(entry, dict):
+            return float(entry.get("avg_chars_per_second") or 0.0)
+        try:
+            return float(entry or 0.0)
+        except (TypeError, ValueError):
+            return 0.0
+
+    def _sample_count(entry: object) -> int:
+        if isinstance(entry, dict):
+            return int(entry.get("samples") or 0)
+        return 0
+
+    def append(order: list[str], candidate: str) -> None:
+        if candidate in pool and candidate not in order:
+            order.append(candidate)
+
+    # Order from fastest to slowest: edge > coqui
+    order: list[str] = []
+    if telemetry_speeds:
+        ranked = sorted(
+            ((name, _speed_value(telemetry_speeds.get(name, 0.0))) for name in pool.keys()),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        for name, _ in ranked:
+            append(order, name)
+    else:
+        append(order, "edge")
+        append(order, "coqui")
+
+    for name in pool.keys():
+        append(order, name)
+
+    if not order:
+        order = list(pool.keys())
+    if "edge" in order:
+        best_name = order[0]
+        edge_speed = _speed_value(telemetry_speeds.get("edge", 0.0)) if telemetry_speeds else 0.0
+        best_speed = _speed_value(telemetry_speeds.get(best_name, 0.0)) if telemetry_speeds else 0.0
+        edge_samples = _sample_count(telemetry_speeds.get("edge", 0)) if telemetry_speeds else 0
+        best_samples = _sample_count(telemetry_speeds.get(best_name, 0)) if telemetry_speeds else 0
+        prefer_best = (
+            best_name != "edge"
+            and best_samples >= 3
+            and (edge_speed <= 0 or (edge_samples >= 3 and best_speed >= edge_speed * 1.25))
+        )
+        if not prefer_best:
+            order = ["edge"] + [name for name in order if name != "edge"]
+    if preferred_engine:
+        normalized = preferred_engine.lower()
+        if normalized in order:
+            order = [normalized] + [name for name in order if name != normalized]
+
+    selected = order[0]
+    return selected, order
+
+
+def _resolve_auto_preferred_engine(config: ConversionConfig) -> Optional[str]:
+    primary = (config.primary_language or "").lower()
+    if primary.startswith("pt"):
+        return "edge"
+    return None
+
+
+def _next_auto_engine(
+    order: list[str], attempted: set[str], pool: dict[str, ConversionConfig]
+) -> Optional[str]:
+    for name in order:
+        if name in pool and name not in attempted:
+            return name
+    return None
