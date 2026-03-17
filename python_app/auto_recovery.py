@@ -188,7 +188,7 @@ class AutoRecoverySystem:
         return False
 
     def _get_thread_cpu_times(self) -> Dict[int, float]:
-        """Retorna CPU time agregado (user+sys) por thread."""
+        """Return aggregated CPU time (user+sys) per thread."""
         cpu_times: Dict[int, float] = {}
         try:
             for thread_info in self._process.threads():
@@ -282,7 +282,7 @@ class AutoRecoverySystem:
         action_taken = "gc_collect"
         success = True
 
-        # 2. Boost de prioridade do processo para evitar starvation de CPU
+        # 2. Boost process priority to avoid CPU starvation
         self._boost_process_priority()
 
         # 3. Inject exception into thread to release locks
@@ -324,11 +324,11 @@ class AutoRecoverySystem:
             },
         )
 
-        # Reset contador
+        # Reset counter
         activity.stuck_count = 0
 
     def _check_thread_starvation(self) -> None:
-        """Detecta starvation de threads (threads não conseguindo CPU)."""
+        """Detect thread starvation (threads unable to get CPU time)."""
         try:
             # Check per-thread CPU usage (if available)
             active_work = True
@@ -371,7 +371,7 @@ class AutoRecoverySystem:
             pass
 
     def _boost_process_priority(self) -> None:
-        """Tenta aumentar prioridade do processo para liberar CPU."""
+        """Attempt to raise process priority to free up CPU."""
         try:
             proc = self._process
             if sys.platform.startswith("win"):
@@ -382,12 +382,12 @@ class AutoRecoverySystem:
                     pass
             try:
                 current = proc.nice()
-                # Valores menores = mais prioridade em Unix
+                # Lower values = higher priority on Unix
                 target = max(-5, current - 5) if isinstance(current, int) else current
                 if target != current:
                     proc.nice(target)
             except Exception:
-                # Fallback para nice global
+                # Fallback to global nice
                 try:
                     os.nice(-1)
                 except Exception:
@@ -529,12 +529,12 @@ class AutoRecoverySystem:
                 self._recovery_actions.pop(0)
 
     def get_recent_actions(self, max_count: int = 10) -> List[RecoveryAction]:
-        """Retorna ações recentes de recovery."""
+        """Return recent recovery actions."""
         with self._lock:
             return self._recovery_actions[-max_count:]
 
     def get_stats(self) -> Dict[str, Any]:
-        """Retorna estatísticas do sistema de recovery."""
+        """Return recovery system statistics."""
         with self._lock:
             total_actions = len(self._recovery_actions)
             successful_actions = sum(1 for a in self._recovery_actions if a.success)
@@ -561,7 +561,7 @@ _global_recovery: Optional[AutoRecoverySystem] = None
 
 
 def get_auto_recovery() -> AutoRecoverySystem:
-    """Retorna instância global do sistema de recovery."""
+    """Return the global recovery system instance."""
     global _global_recovery
     if _global_recovery is None:
         _global_recovery = AutoRecoverySystem()

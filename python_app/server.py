@@ -228,7 +228,7 @@ EDGE_SAFE_MAX_SEGMENT_SECONDS = max(
 # **PERFORMANCE**: Increase chapter parallelism to match the CLI
 EDGE_SAFE_CHAPTER_PARALLEL = max(1, int(os.getenv("EDGE_SAFE_CHAPTER_PARALLEL", "8") or "8"))
 EDGE_SAFE_TIMEOUT_MAX = max(90.0, float(os.getenv("EDGE_SAFE_TIMEOUT_MAX", "360") or "360"))
-# **PERFORMANCE**: Caps mais agressivos para todas as redes
+# **PERFORMANCE**: More aggressive caps for all network tiers
 EDGE_AUTO_PARALLEL_CAPS = {
     "slow": max(1, int(os.getenv("EDGE_AUTO_PARALLEL_CAP_SLOW", "4") or "4")),
     "medium": max(1, int(os.getenv("EDGE_AUTO_PARALLEL_CAP_MEDIUM", "6") or "6")),
@@ -3151,18 +3151,18 @@ async def process_conversion(job_id: str) -> None:
                 "ready",
                 # Tuning and retry
                 "tuning",
-                "ajust",
+                "adjust",
                 "chunk",
                 "retry",
-                "tentando",
+                "trying",
                 "rate limit",
-                "aguardando",
+                "waiting",
                 "backoff",
-                "dividindo",
-                "recuper",
+                "divid",
+                "recover",
                 "segment",
-                "reduz",
-                "otimiz",
+                "reduc",
+                "optim",
                 # Warmup and config
                 "warmup",
                 "config",

@@ -2206,7 +2206,7 @@ class AudioConverter(
             elif edge_network_tier == "medium" and chapter_parallel_count > 2:
                 chapter_parallel_count = 2
                 self._reset_parallel_state(chapter_parallel_count)
-            print("🌧️ Edge: network unstable detectada → perfil inicial mais conservador")
+            print("🌧️ Edge: unstable network detected → starting with conservative profile")
         self._edge_auto_state = {
             "enabled": edge_auto_enabled,
             "network_tier": edge_network_tier,
@@ -2797,7 +2797,7 @@ class AudioConverter(
         book_author: str = "",
         cover_art: Optional[dict] = None,
     ) -> ConversionResult:
-        """Converte múltiplos chapters em parallel para máxima velocidade."""
+        """Convert multiple chapters in parallel for maximum throughput."""
         chapters_list = list(chapters)
         selected_indices_raw = (config.extra.get("selected_indices") or "").strip()
         if selected_indices_raw:
@@ -3099,7 +3099,7 @@ class AudioConverter(
         book_author: str = "",
         cover_art: Optional[dict] = None,
     ) -> ConversionResult:
-        """Converte chapters sequentialmente, SEM sistema de parallelism."""
+        """Convert chapters sequentially, without parallelism."""
         chapters_list = list(chapters)
         selected_indices_raw = (config.extra.get("selected_indices") or "").strip()
         if selected_indices_raw:
@@ -3490,7 +3490,7 @@ class AudioConverter(
             ):
                 if not _has_kokoro_support(config.primary_language):
                     if self.verbose:
-                        print("   ⚠️ Kokoro not possui voz para este language; pulando fallback")
+                        print("   ⚠️ Kokoro has no voice for this language; skipping fallback")
                     edge_switched_to_kokoro = True
                 else:
                     try:
@@ -3918,7 +3918,7 @@ class AudioConverter(
                             output_path.unlink(missing_ok=True)
                             output_path.with_suffix(".wav").unlink(missing_ok=True)
 
-                    # Sintetizar com heartbeat e timeout (otimizado)
+                    # Synthesize with heartbeat and timeout (optimized)
                     speech_text = speech_text or ""
                     preview = self._chapter_preview(speech_text)
                     if preview:
@@ -4133,7 +4133,7 @@ class AudioConverter(
                         with contextlib.suppress(Exception):
                             setattr(tts_engine, "_auto_tune_enabled", False)
 
-                    # Timeout otimizado: agressivo, mas com teto maior para chapters longos no Edge
+                    # Optimized timeout: aggressive floor, larger ceiling for long Edge chapters
                     # Base: duration estimada * 1.5 + 30s buffer
                     base_timeout = estimated_seconds * 1.5 + 30.0
                     timeout_seconds = max(base_timeout, 60.0)  # Minimum 60s
@@ -4265,7 +4265,7 @@ class AudioConverter(
                         f"🎤 Synthesizing {chapter_chars} chars (timeout: {timeout_seconds}s)..."
                     )
 
-                    # Heartbeat para mostrar progresso (otimizado: 3s em vez de 1s)
+                    # Heartbeat to show progress (optimized: 3s instead of 1s)
                     heartbeat_active = True
                     start_synthesis = time.time()
 
@@ -4744,7 +4744,7 @@ class AudioConverter(
                                 f"🔄 Fallback: {clean_chars} chars (timeout: {fallback_timeout}s)"
                             )
 
-                            # Heartbeat para fallback (otimizado: 3s)
+                            # Heartbeat for fallback engine (optimized: 3s)
                             heartbeat_active = True
                             start_fallback = time.time()
 

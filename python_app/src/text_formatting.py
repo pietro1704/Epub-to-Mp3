@@ -149,14 +149,14 @@ class TextFormattingProcessor:
             ]
 
     def extract_formatting(self, html_text: str) -> str:
-        """Extrai formatação do HTML e converte para marcadores internos"""
+        """Extract HTML formatting and convert to internal markers."""
         if not html_text:
             return html_text
 
         # First process markup tags from LanguageMarkup
         text = self.process_markup_tags(html_text)
 
-        # **NOVO**: Extrair atributos lang e converter para [[lang:xx]]
+        # **NEW**: Extract lang attributes and convert to [[lang:xx]]
         text = self._extract_language_attributes(text)
 
         # Process each formatting type
@@ -179,7 +179,7 @@ class TextFormattingProcessor:
         return text
 
     def parse_formatted_text(self, text: str) -> List[FormattingSegment]:
-        """Converte texto com marcadores internos em segmentos formatados"""
+        """Parse text with internal markers into formatting segments."""
         if not text:
             return []
 
@@ -193,13 +193,13 @@ class TextFormattingProcessor:
         for match in marker_pattern.finditer(text):
             start, end = match.span()
 
-            # Adicionar texto normal antes do marcador
+            # Add normal text before marker
             if start > last_end:
                 normal_text = text[last_end:start].strip()
                 if normal_text:
                     segments.append(FormattingSegment(normal_text, "normal"))
 
-            # Adicionar texto formatado
+            # Add formatted text
             fmt_type = match.group(1)
             fmt_text = match.group(2).strip()
             if fmt_text:
@@ -207,7 +207,7 @@ class TextFormattingProcessor:
 
             last_end = end
 
-        # Adicionar texto restante
+        # Add remaining text
         if last_end < len(text):
             remaining_text = text[last_end:].strip()
             if remaining_text:
@@ -311,7 +311,7 @@ class TextFormattingProcessor:
         return " ".join(part for part in parts if part)
 
     def to_plain_text_with_cues(self, segments: List[FormattingSegment]) -> str:
-        """Converte para texto simples com indicações verbais de formatação"""
+        """Convert to plain text with verbal formatting cues."""
         if not segments:
             return ""
 
@@ -333,7 +333,7 @@ class TextFormattingProcessor:
         return " ".join(parts)
 
     def to_plain_text_with_pauses(self, segments: List[FormattingSegment]) -> str:
-        """Converte para texto simples com pausas para indicar formatação"""
+        """Convert to plain text with pauses to indicate formatting."""
         if not segments:
             return ""
 
@@ -354,7 +354,7 @@ class TextFormattingProcessor:
         return " ".join(parts)
 
     def apply_inline_formatting(self, text: str) -> str:
-        """Substitui marcadores internos por tokens de ênfase inline."""
+        """Replace internal markers with inline emphasis tokens."""
         if not text:
             return ""
 
@@ -375,9 +375,9 @@ class TextFormattingProcessor:
     @classmethod
     def remove_formatting_markers(cls, text: str) -> str:
         """
-        Remove marcadores [[fmt:...]] preservando o conteúdo interno.
+        Remove [[fmt:...]] markers while preserving inner content.
 
-        Mantém espaços e quebras de linha originais.
+        Preserves original spaces and line breaks.
         """
         if not text:
             return ""
@@ -386,11 +386,11 @@ class TextFormattingProcessor:
 
     @classmethod
     def strip_inline_markdown(cls, text: str) -> str:
-        """Remove marcadores Markdown do texto (otimizado com regexes pré-compiladas)."""
+        """Strip Markdown markers from text (optimized with pre-compiled regexes)."""
         if not text:
             return ""
 
-        # Remove marcadores [[fmt:...]]
+        # Remove [[fmt:...]] markers
         cleaned = cls.remove_formatting_markers(text)
 
         # Remove Markdown using pre-compiled regexes
@@ -412,7 +412,7 @@ class TextFormattingProcessor:
     @classmethod
     def remove_isolated_section_numbers(cls, text: str) -> str:
         """
-        Remove números de seção isolados que causam pausas longas no TTS.
+        Remove isolated section numbers that cause long TTS pauses.
 
         Exemplo:
         "1.\nAlgum texto aqui\n2.\nMais texto"
@@ -441,7 +441,7 @@ class TextFormattingProcessor:
     @classmethod
     def consolidate_short_lines(cls, text: str, max_line_length: int = 80) -> str:
         """
-        Consolida linhas curtas consecutivas para evitar pausas excessivas no TTS.
+        Consolidate consecutive short lines to avoid excessive TTS pauses.
 
         Edge-TTS insere pausas longas entre linhas, especialmente linhas curtas.
         Esta função junta linhas curtas consecutivas em parágrafos mais longos,
@@ -486,7 +486,7 @@ class TextFormattingProcessor:
                         buffer = []
                     consolidated_lines.append(line)
                 else:
-                    # Linha curta - adiciona ao buffer
+                    # Short line — add to buffer
                     buffer.append(line)
 
             # Flush remaining buffer
@@ -503,16 +503,16 @@ class TextFormattingProcessor:
     @classmethod
     def apply_prosody_for_short_sentences(cls, text: str, rate_increase: str = "+20%") -> str:
         """
-        Aplica tags SSML prosody para acelerar áudio quando há muitas frases curtas.
+        Apply SSML prosody tags to speed up audio when text has many short sentences.
 
-        Edge-TTS insere pausas longas entre frases curtas, aumentando drasticamente
-        a duração do áudio. Esta função detecta quando o texto tem alta densidade
-        de pontuação (muitas frases curtas) e aplica um aumento na taxa de fala
-        para compensar as pausas excessivas.
+        Edge-TTS inserts long pauses between short sentences, drastically increasing
+        audio duration. This function detects when text has a high density
+        of punctuation (many short sentences) and applies a speech rate increase
+        to compensate for the excessive pauses.
 
         Args:
-            text: Texto a ser processado
-            rate_increase: Aumento percentual na taxa de fala (ex: "+20%", "+50%")
+            text: Text to process
+            rate_increase: Percentage speech rate increase (e.g. "+20%", "+50%")
 
         Returns:
             Texto com tags SSML prosody aplicadas se necessário
@@ -520,7 +520,7 @@ class TextFormattingProcessor:
         if not text:
             return ""
 
-        # Calcula densidade de frases curtas (frases por 1000 caracteres)
+        # Calculate short-sentence density (sentences per 1000 chars)
         # Sentence-ending punctuation: . ! ?
         sentence_endings = text.count(".") + text.count("!") + text.count("?")
         text_length = len(text)
@@ -528,15 +528,15 @@ class TextFormattingProcessor:
         if text_length == 0:
             return text
 
-        # Densidade: quantas frases a cada 1000 caracteres
+        # Density: how many sentences per 1000 chars
         sentence_density = (sentence_endings / text_length) * 1000
 
-        # Se densidade > 10 frases/1000 chars, aplicar prosody
-        # Edge-TTS insere pausas longas mesmo com densidade moderada (10-15)
+        # If density > 10 sentences/1000 chars, apply prosody
+        # Edge-TTS inserts long pauses even at moderate density (10-15)
         # Chapters with heavy dialogue/short narrative may have 15-30+
         if sentence_density > 10:
             # Apply prosody rate to speed up the audio
-            # Isso compensa as pausas longas do Edge-TTS entre frases
+            # Compensates for long Edge-TTS pauses between sentences
             return f'<prosody rate="{rate_increase}">{text}</prosody>'
 
         return text
@@ -544,16 +544,16 @@ class TextFormattingProcessor:
     @classmethod
     def clean_tts_text(cls, text: str, apply_prosody: bool = False) -> str:
         """
-        Remove marcadores internos e markdown, preservando pistas de idioma.
+        Remove internal markers and markdown, preserving language hints.
 
         Args:
-            text: Texto a ser processado
-            apply_prosody: DEPRECATED - prosody agora é aplicado per-chunk no engine TTS
+            text: Text to process
+            apply_prosody: DEPRECATED — prosody is now applied per-chunk in the TTS engine
         """
         if not text:
             return ""
 
-        # Preserve layout faithfully – apenas remove marcadores internos
+        # Preserve layout faithfully — only strip internal markers
         return cls.remove_formatting_markers(text)
 
     @classmethod
@@ -605,7 +605,7 @@ class TextFormattingProcessor:
         formatting_segments: Optional[List[FormattingSegment]] = None,
     ) -> str:
         """
-        Converte o texto em uma versão pronta para o TTS, com pistas audíveis.
+        Convert text to a TTS-ready version with audible cues.
         """
         if not text and not formatting_segments:
             return ""
@@ -672,16 +672,16 @@ class TextFormattingProcessor:
 
     def _add_inline_emphasis_markers(self, text: str) -> str:
         """
-        Adiciona marcadores de ênfase para padrões comuns em audiolivros:
+        Add emphasis markers for common audiobook patterns:
         - "Texto entre aspas duplas" → [[fmt:quote]]..[[/fmt]]
         - —Diálogo com travessão → [[fmt:emphasis]]..[[/fmt]]
 
-        IMPORTANTE: Não adicionar marcadores para markdown já processado (_italic_, **bold**)
+        IMPORTANT: Do not add markers for already-processed markdown (_italic_, **bold**)
         """
         if not text:
             return text
 
-        # Detectar texto entre aspas duplas (curvas ou retas)
+        # Detect text enclosed in double quotes (curly or straight)
         # Skip if already has a [[fmt:...]] marker
         quote_pattern = re.compile(r'(?<!\[\[fmt:)"([^"]{10,}?)"(?!\]\])', re.UNICODE)
 
@@ -726,8 +726,8 @@ class TextFormattingProcessor:
 
     def _extract_language_attributes(self, html_text: str) -> str:
         """
-        Extrai atributos lang/xml:lang de tags HTML e converte para [[lang:xx]]
-        Processa apenas tags de conteúdo (p, div, span), ignorando tags estruturais (html, body)
+        Extract lang/xml:lang attributes from HTML tags and convert to [[lang:xx]].
+        Processes only content tags (p, div, span); ignores structural tags (html, body).
 
         Exemplo:
             <html lang="pt"><p lang="en">Hello</p></html>
@@ -762,7 +762,7 @@ class TextFormattingProcessor:
 
             match = lang_pattern.search(html_text)
             if not match:
-                break  # Nenhuma tag lang encontrada
+                break  # No lang tag found
 
             tag_name = match.group(1).lower()
             attrs_before = match.group(2)
@@ -783,7 +783,7 @@ class TextFormattingProcessor:
                 html_text = html_text[: match.start()] + replacement + html_text[match.end() :]
                 continue
 
-            # Remover atributo lang e reconstruir tag sem ele
+            # Remove lang attribute and reconstruct tag without it
             attrs = (attrs_before + attrs_after).strip()
             if attrs:
                 new_tag = f"<{tag_name} {attrs}>"
@@ -799,14 +799,14 @@ class TextFormattingProcessor:
         return html_text
 
     def clean_html_tags(self, text: str) -> str:
-        """Remove todas as tags HTML do texto"""
+        """Remove all HTML tags from text."""
         if not text:
             return text
 
         # First extract formatting
         text_with_markers = self.extract_formatting(text)
 
-        # Remover tags HTML restantes
+        # Remove remaining HTML tags
         clean_text = re.sub(r"<[^>]+>", "", text_with_markers)
 
         # Clean up multiple spaces

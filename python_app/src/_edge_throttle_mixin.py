@@ -1175,7 +1175,7 @@ class _EdgeThrottleMixin:
                     "sem progresso",
                     "truncated",
                     "truncation",
-                    "file ausente",
+                    "file missing",
                     "file invalid",
                     "file invalido",
                     "failure na synthesis",

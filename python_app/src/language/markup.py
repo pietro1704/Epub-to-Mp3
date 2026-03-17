@@ -92,9 +92,7 @@ class LanguageMarkup:
                 try:
                     profile = future.result(timeout=3.0)  # 3 segundos max
                 except concurrent.futures.TimeoutError:
-                    print(
-                        f"⚠️ Timeout na detecção de perfil de idioma - usando idioma padrão: {default_short}"
-                    )
+                    print(f"⚠️ Timeout detecting language profile - using default: {default_short}")
                     return text
         except Exception as e:
             print(f"⚠️ Profile detection error: {e} — using default language: {default_short}")
@@ -141,7 +139,7 @@ class LanguageMarkup:
                 future = executor.submit(
                     self.detector.detect_segments,
                     text,
-                    timeout_seconds=1.5,  # Timeout mais agressivo para segmentos
+                    timeout_seconds=1.5,  # More aggressive timeout for short segments
                     fallback_language=default_short,
                     primary_language=primary_language,
                 )
@@ -189,7 +187,7 @@ class LanguageMarkup:
                 if len(segment.text.strip()) < 150:  # **CHANGED**: Minimum 150 chars (was 40)
                     segment_lang = default_short
                 else:
-                    # **TIMEOUT**: Confirmar com timeout para evitar travamento
+                    # **TIMEOUT**: Confirm with timeout to avoid deadlock
                     try:
                         import concurrent.futures
 

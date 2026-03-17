@@ -404,7 +404,7 @@ class CacheManager:
             return False
 
     def get_resume_info(self, checkpoint: ConversionCheckpoint) -> Dict[str, Any]:
-        """Retorna informações para retomar conversão"""
+        """Return information needed to resume conversion."""
         completed_count = len(checkpoint.completed_chapters)
         remaining_count = checkpoint.total_chapters - completed_count
 

@@ -337,7 +337,7 @@ class HealthMonitor:
         )
 
     def _print_alert(self, alert: HealthAlert) -> None:
-        """Imprime alerta com formatação."""
+        """Print formatted alert."""
         timestamp = datetime.fromtimestamp(alert.timestamp).strftime("%H:%M:%S")
 
         severity_icons = {"info": "ℹ️", "warning": "⚠️", "critical": "🚨"}
@@ -350,17 +350,17 @@ class HealthMonitor:
             print(f"   Detalhes: {json.dumps(alert.details, indent=2)}")
 
     def get_latest_snapshot(self) -> Optional[HealthSnapshot]:
-        """Retorna snapshot mais recente."""
+        """Return the most recent snapshot."""
         with self._lock:
             return self._snapshots[-1] if self._snapshots else None
 
     def get_recent_alerts(self, max_count: int = 10) -> List[HealthAlert]:
-        """Retorna alertas recentes."""
+        """Return recent alerts."""
         with self._lock:
             return self._alerts[-max_count:]
 
     def get_stats_summary(self) -> Dict[str, Any]:
-        """Retorna sumário de estatísticas."""
+        """Return statistics summary."""
         with self._lock:
             if not self._snapshots:
                 return {}
@@ -422,7 +422,7 @@ _global_monitor: Optional[HealthMonitor] = None
 
 
 def get_health_monitor() -> HealthMonitor:
-    """Retorna instância global do monitor."""
+    """Return the global monitor instance."""
     global _global_monitor
     if _global_monitor is None:
         _global_monitor = HealthMonitor()

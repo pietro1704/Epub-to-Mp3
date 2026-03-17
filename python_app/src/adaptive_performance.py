@@ -269,7 +269,7 @@ class AdaptivePerformanceController:
         return PerformanceAdjustment(action="no_change", reason="Performance stable")
 
     def apply_adjustment(self, adjustment: PerformanceAdjustment) -> bool:
-        """Aplica ajuste de performance."""
+        """Apply performance adjustment."""
         import os
 
         if adjustment.action == "no_change":

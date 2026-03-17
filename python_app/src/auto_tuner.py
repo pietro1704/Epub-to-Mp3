@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Auto-tuner de performance baseado em hardware e rede.
+Auto-tuner based on hardware and network conditions.
 
-Configura automaticamente flags de otimização:
+Automatically configures optimization flags:
 - EDGE_MAX_CONCURRENCY
 - EDGE_CHUNK_CHARS
 - EDGE_SAFE_CHAPTER_PARALLEL
@@ -25,7 +25,7 @@ from python_app.src.paths import TELEMETRY_DIR
 
 @dataclass
 class TuningProfile:
-    """Perfil de configuração otimizada."""
+    """Optimized configuration profile."""
 
     name: str
     description: str
@@ -53,7 +53,7 @@ class TuningProfile:
 
 
 class AutoTuner:
-    """Auto-tuner de performance."""
+    """Performance auto-tuner."""
 
     # Pre-configured profiles
     PROFILES: Dict[str, TuningProfile] = {
@@ -230,7 +230,7 @@ class AutoTuner:
         self, hw: HardwareSpecs, network: Optional[NetworkStats] = None
     ) -> TuningProfile:
         """
-        Seleciona perfil otimizado baseado em hardware e rede.
+        Select the best-fit tuning profile based on hardware and network.
 
         Lógica:
         - Conservative: CPU < 4 cores OR RAM < 8GB OR network slow
@@ -284,7 +284,7 @@ class AutoTuner:
         else:
             score += 2  # Assume medium if not measured
 
-        # Seleciona perfil baseado em score
+        # Select profile based on score
         # 0-4: conservative
         # 5-9: balanced
         # 10-13: performance
@@ -306,13 +306,13 @@ class AutoTuner:
     def _adjust_profile(
         self, profile: TuningProfile, hw: HardwareSpecs, network: Optional[NetworkStats]
     ) -> TuningProfile:
-        """Ajusta perfil baseado em características específicas."""
+        """Adjust profile based on specific hardware/network characteristics."""
         # Create modified copy
         from copy import deepcopy
 
         adjusted = deepcopy(profile)
 
-        # Reduz workers se RAM baixa
+        # Reduce workers if RAM is low
         if hw.ram_available_gb < 4:
             adjusted.edge_safe_chapter_parallel = max(1, adjusted.edge_safe_chapter_parallel // 2)
             adjusted.coqui_max_workers = max(1, adjusted.coqui_max_workers // 2)
@@ -322,12 +322,12 @@ class AutoTuner:
             adjusted.coqui_max_workers = min(6, adjusted.coqui_max_workers + 1)
             adjusted.kokoro_max_workers = min(6, adjusted.kokoro_max_workers + 1)
 
-        # Reduz concurrency se rede lenta
+        # Reduce concurrency for slow networks
         if network and network.tier == "slow":
             adjusted.edge_max_concurrency = max(2, adjusted.edge_max_concurrency // 2)
             adjusted.edge_chunk_chars = max(3000, adjusted.edge_chunk_chars // 2)
 
-        # Aumenta concurrency se rede ultra
+        # Increase concurrency for ultra-fast networks
         if network and network.tier == "ultra":
             adjusted.edge_max_concurrency = min(16, int(adjusted.edge_max_concurrency * 1.5))
 
@@ -335,11 +335,11 @@ class AutoTuner:
 
     def apply_profile(self, profile: TuningProfile, force: bool = False) -> None:
         """
-        Aplica perfil setando variáveis de ambiente.
+        Apply profile by setting environment variables.
 
         Args:
-            profile: Perfil a aplicar
-            force: Se True, sobrescreve vars já setadas
+            profile: Profile to apply
+            force: If True, overwrite already-set vars
         """
 
         def set_if_not_exists(key: str, value: str) -> bool:
@@ -378,9 +378,9 @@ class AutoTuner:
             self._print_applied_profile(profile)
 
     def _print_applied_profile(self, profile: TuningProfile) -> None:
-        """Imprime perfil aplicado."""
+        """Print applied performance profile summary."""
         print("=" * 70)
-        print(f"🎯 PERFIL DE PERFORMANCE AUTO-CONFIGURADO: {profile.name.upper()}")
+        print(f"🎯 AUTO-CONFIGURED PERFORMANCE PROFILE: {profile.name.upper()}")
         print("=" * 70)
         print(f"Description: {profile.description}\n")
         print("Edge-TTS:")
@@ -407,7 +407,7 @@ class AutoTuner:
             measure_network: Se True, mede velocidade de rede (adiciona ~3s)
 
         Returns:
-            Perfil aplicado
+            Applied profile
         """
         if not force:
             cached_profile = self._load_cached_profile()
@@ -425,7 +425,7 @@ class AutoTuner:
         if measure_network:
             network = await self.monitor.classify_network()
 
-        # Seleciona perfil otimizado
+        # Select optimized profile
         profile = self.select_profile(hw, network)
 
         # Apply settings
@@ -435,5 +435,5 @@ class AutoTuner:
         return profile
 
     def get_applied_profile(self) -> Optional[TuningProfile]:
-        """Retorna perfil aplicado atualmente."""
+        """Return the currently applied profile."""
         return self._applied_profile
