@@ -1,7 +1,7 @@
 [tools]
-# Versão exata do Python para Coqui TTS (requer 3.11)
+# Exact Python version required for Coqui TTS (requires 3.11)
 python = { version = "3.11.11", virtualenv = ".venv" }
-# Node LTS para frontend (Vite 7.x requer >=20.19.0)
+# Node LTS for frontend (Vite 7.x requires >=20.19.0)
 node = "20.19.0"
 
 [tasks.dev]
@@ -14,58 +14,58 @@ run = """
 #!/bin/bash
 set -e
 
-echo "🧹 Limpando cache do backend..."
+echo "🧹 Cleaning backend cache..."
 
 # Remove __pycache__ directories
-echo "  → Removendo __pycache__..."
+echo "  → Removing __pycache__..."
 find python_app -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find . -maxdepth 1 -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # Remove .pyc files
-echo "  → Removendo arquivos .pyc..."
+echo "  → Removing .pyc files..."
 find python_app -type f -name "*.pyc" -delete 2>/dev/null || true
 find . -maxdepth 2 -type f -name "*.pyc" -delete 2>/dev/null || true
 
 # Remove pytest cache
-echo "  → Removendo .pytest_cache..."
+echo "  → Removing .pytest_cache..."
 rm -rf .pytest_cache 2>/dev/null || true
 rm -rf python_app/.pytest_cache 2>/dev/null || true
 
 # Remove output directory (completed conversions) and job metadata/uploads
-# Nota: output/.* contém jobs, uploads, inputs que precisam ser limpos
-echo "  → Removendo arquivos de output e jobs..."
+# Note: output/.* contains jobs, uploads, inputs that need to be cleaned
+echo "  → Removing output files and jobs..."
 rm -rf output/* 2>/dev/null || true
 rm -rf output/.jobs output/.uploads output/.job_inputs output/.source_backups 2>/dev/null || true
 rm -rf output/.cover_cache 2>/dev/null || true
-# Limpa também na raiz (caso existam de versões antigas)
+# Also clean from root (may exist from older versions)
 rm -rf .jobs .uploads .job_inputs 2>/dev/null || true
 
 # Remove cached books but keep downloaded models
-echo "  → Limpando cache de livros (preservando modelos)..."
+echo "  → Cleaning book cache (preserving models)..."
 PYTHONPATH=python_app python - <<'PY'
 from src.cache_manager import CacheManager
 
 try:
     manager = CacheManager()
     removed = manager.clear_cache()
-    msg = "    Livros removidos do cache." if removed else "    Nenhum cache de livro encontrado."
+    msg = "    Book cache cleared." if removed else "    No book cache found."
     print(msg)
 except Exception as exc:
-    print(f"    ⚠️ Falha ao limpar cache: {exc}")
+    print(f"    ⚠️ Failed to clear cache: {exc}")
 PY
 
 # Remove mise cache
-echo "  → Removendo .mise-cache..."
+echo "  → Removing .mise-cache..."
 rm -rf .mise-cache 2>/dev/null || true
 
-echo "✅ Limpeza concluída!"
+echo "✅ Clean complete!"
 echo ""
-echo "Diretórios limpos:"
+echo "Cleaned directories:"
 echo "  - __pycache__"
 echo "  - .pyc files"
 echo "  - .pytest_cache"
 echo "  - output/*"
-echo "  - cache de livros (.cache/<livro>), modelos preservados"
+echo "  - book cache (.cache/<book>), models preserved"
 echo "  - .mise-cache"
 """
 
@@ -75,27 +75,27 @@ run = """
 #!/bin/bash
 set -euo pipefail
 
-echo "📦 Instalando dependências com mise..."
+echo "📦 Installing dependencies with mise..."
 mise install
 
-echo "🐍 Criando venv .venv (Python gerenciado pelo mise) se não existir..."
+echo "🐍 Creating .venv (Python managed by mise) if missing..."
 if [ ! -x ".venv/bin/python" ]; then
   mise exec -- python -m venv .venv
 fi
 
-echo "🐍 Instalando dependências Python (root)..."
+echo "🐍 Installing Python dependencies (root)..."
 .venv/bin/python -m pip install -r requirements.txt
 
-echo "🐍 Instalando dependências Python (python_app)..."
+echo "🐍 Installing Python dependencies (python_app)..."
 .venv/bin/python -m pip install -r python_app/requirements.txt
 
-echo "🔍 Instalando ferramentas de lint/format..."
+echo "🔍 Installing lint/format tools..."
 .venv/bin/python -m pip install ruff pre-commit
 
-echo "🎙️ Configurando Piper nativo..."
+echo "🎙️ Configuring native Piper..."
 bash scripts/install_piper_binary.sh
 
-echo "🌐 Instalando dependências web..."
+echo "🌐 Installing web dependencies..."
 (cd web && mise exec -- npm install)
 """
 
