@@ -40,31 +40,31 @@ class Scenario:
 SCENARIOS: Dict[str, Scenario] = {
     "edge_multi": Scenario(
         key="edge_multi",
-        label="Edge multi-idioma",
+        label="Edge multilingual",
         engine="edge",
         mode="edge-multilingual",
-        description="Voz padrão multilíngue com detecção automática [[lang:xx]].",
+        description="Default multilingual voice with automatic language detection [[lang:xx]].",
     ),
     "edge_pt": Scenario(
         key="edge_pt",
-        label="Edge pt-BR monolíngue",
+        label="Edge pt-BR monolingual",
         engine="edge",
         mode="edge-monolingual",
-        description="Força voz pt-BR monolíngue para evitar rate limit multilíngue.",
+        description="Forces pt-BR monolingual voice to avoid multilingual rate limiting.",
     ),
     "piper": Scenario(
         key="piper",
         label="Piper local pt-BR",
         engine="piper",
         mode="piper",
-        description="Síntese offline usando modelo Piper pt-BR recomendado.",
+        description="Offline synthesis using the recommended Piper pt-BR model.",
     ),
 }
 
-# Valores públicos conhecidos na comunidade sobre limites do Edge.
+# Publicly known community values for Edge TTS rate limits.
 EDGE_RATE_LIMIT_HINTS = {
-    "edge-multilingual": 10,  # ~10 req/s para vozes MultilingualNeural
-    "edge-monolingual": 16,  # ~16 req/s para vozes pt-BR Neural tradicionais
+    "edge-multilingual": 10,  # ~10 req/s for MultilingualNeural voices
+    "edge-monolingual": 16,  # ~16 req/s for traditional pt-BR Neural voices
 }
 
 
@@ -82,62 +82,62 @@ class ScenarioResult:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Compara Edge multi-idioma, Edge pt-BR monolíngue e Piper "
-            "convertendo somente 1 capítulo curto de qualquer EPUB/PDF."
+            "Compares Edge multilingual, Edge pt-BR monolingual and Piper "
+            "by converting a single short chapter from any EPUB/PDF."
         )
     )
     parser.add_argument(
         "--book",
         type=str,
-        help="Arquivo/pasta do livro. Quando omitido usa o sample incluído no repositório.",
+        help="Book file or folder. When omitted uses the sample included in the repository.",
     )
     parser.add_argument(
         "--chapter",
         type=str,
         default="auto",
-        help="Índice (1-based) do capítulo. Use 'auto' para deixar o script escolher um capítulo curto.",
+        help="Chapter index (1-based). Use 'auto' to let the script pick a short chapter.",
     )
     parser.add_argument(
         "--scenarios",
         type=str,
         default="edge_multi,edge_pt,piper",
-        help=f"Lista de cenários (opções: {','.join(SCENARIOS)}).",
+        help=f"Comma-separated list of scenarios (options: {','.join(SCENARIOS)}).",
     )
     parser.add_argument(
         "--output-dir",
         type=str,
         default="output/chapter_speedtest",
-        help="Diretório base para salvar os áudios gerados.",
+        help="Base directory to save generated audio files.",
     )
     parser.add_argument(
         "--keep-cache",
         action="store_true",
-        help="Não limpa cache antes de rodar cada cenário (mais rápido, porém menos justo).",
+        help="Do not clear cache before each scenario (faster, but less fair comparison).",
     )
     parser.add_argument(
         "--prefer-short",
         dest="prefer_short",
         action="store_true",
         default=True,
-        help="Prioriza capítulos curtos automaticamente (default).",
+        help="Automatically prefer short chapters (default).",
     )
     parser.add_argument(
         "--no-prefer-short",
         dest="prefer_short",
         action="store_false",
-        help="Desativa a escolha automática de capítulo curto.",
+        help="Disable automatic short chapter selection.",
     )
     parser.add_argument(
         "--short-min-chars",
         type=int,
         default=200,
-        help="Tamanho mínimo (caracteres) para um capítulo ser considerado 'curto'.",
+        help="Minimum size (characters) for a chapter to be considered 'short'.",
     )
     parser.add_argument(
         "--short-max-chars",
         type=int,
         default=1800,
-        help="Tamanho máximo (caracteres) para o capítulo curto.",
+        help="Maximum size (characters) for the short chapter selection.",
     )
     return parser.parse_args()
 
@@ -146,7 +146,7 @@ def resolve_book_path(book_arg: Optional[str]) -> Path:
     candidates: List[Path] = []
     if book_arg:
         candidates.append(Path(book_arg).expanduser())
-    # Exemplos embutidos (não dependem de material protegido)
+    # Built-in examples (do not depend on protected material)
     repo_root = PROJECT_ROOT
     candidates.extend(
         [
@@ -173,7 +173,7 @@ def resolve_book_path(book_arg: Optional[str]) -> Path:
     )
     if generic_download:
         return generic_download
-    raise FileNotFoundError("Livro não encontrado. Informe --book apontando para um EPUB/PDF.")
+    raise FileNotFoundError("Book not found. Use --book pointing to an EPUB/PDF.")
 
 
 def _first_supported_input(target: Path) -> Optional[Path]:
@@ -194,10 +194,10 @@ def parse_scenarios(raw: str) -> List[Scenario]:
     selected: List[Scenario] = []
     for key in [part.strip() for part in raw.split(",") if part.strip()]:
         if key not in SCENARIOS:
-            raise ValueError(f"Cenário desconhecido: {key}. Válidos: {', '.join(SCENARIOS)}")
+            raise ValueError(f"Unknown scenario: {key}. Valid options: {', '.join(SCENARIOS)}")
         selected.append(SCENARIOS[key])
     if not selected:
-        raise ValueError("Informe pelo menos um cenário.")
+        raise ValueError("Provide at least one scenario.")
     return selected
 
 
@@ -209,7 +209,7 @@ def pick_chapter(
     short_range: Tuple[int, int],
 ) -> tuple[Chapter, int]:
     if not chapters:
-        raise ValueError("Nenhum capítulo encontrado no livro.")
+        raise ValueError("No chapters found in the book.")
 
     def _valid_text(chapter: Chapter) -> bool:
         return bool(chapter.text and chapter.text.strip())
@@ -234,7 +234,7 @@ def pick_chapter(
         if _valid_text(chapter):
             return chapter, idx
 
-    raise ValueError("Não foi possível encontrar capítulo com texto.")
+    raise ValueError("Could not find a chapter with text.")
 
 
 def detect_languages(chapter: Chapter) -> tuple[str, List[str]]:
@@ -356,7 +356,7 @@ async def run_scenario(
     if scenario.mode.startswith("edge"):
         hint = EDGE_RATE_LIMIT_HINTS.get(scenario.mode, 0)
         if hint:
-            print(f"   Rate limit estimado: até {hint} requisições/s (Microsoft Edge TTS).")
+            print(f"   Estimated rate limit: up to {hint} req/s (Microsoft Edge TTS).")
     if scenario.mode == "edge-multilingual":
         apply_edge_overrides(config, profile, "edge-multilingual")
     elif scenario.mode == "edge-monolingual":
@@ -407,8 +407,8 @@ async def run_scenario(
                     raise
                 config.edge_max_concurrency = new_limit
                 print(
-                    f"   ⚠️  Edge indisponível, reduzindo EDGE_MAX_CONCURRENCY para {new_limit} "
-                    "e tentando novamente..."
+                    f"   ⚠️  Edge unavailable, reducing EDGE_MAX_CONCURRENCY to {new_limit} "
+                    "and retrying..."
                 )
                 continue
             raise
@@ -416,8 +416,8 @@ async def run_scenario(
     chars = len(chapter_copy.text or "")
     throughput = chars / elapsed if elapsed > 0 else 0.0
 
-    print(f"   Tempo: {elapsed:.1f}s | Throughput: {throughput:.0f} chars/s")
-    print(f"   Sucesso: {result.success} (Capítulos convertidos: {result.converted_chapters})")
+    print(f"   Time: {elapsed:.1f}s | Throughput: {throughput:.0f} chars/s")
+    print(f"   Success: {result.success} (Chapters converted: {result.converted_chapters})")
     for path in result.output_files:
         print(f"   ↳ {path}")
     if result.errors:
@@ -449,7 +449,7 @@ async def async_main() -> None:
         try:
             explicit_index = int(float(args.chapter))
         except ValueError as exc:  # noqa: B904
-            raise ValueError("--chapter deve ser um número ou 'auto'") from exc
+            raise ValueError("--chapter must be a number or 'auto'") from exc
     target_chapter, idx = pick_chapter(
         chapters,
         explicit_index=explicit_index,
@@ -458,9 +458,9 @@ async def async_main() -> None:
     )
 
     chapter_language, languages = detect_languages(target_chapter)
-    print(f"Livro: {book_path}")
-    print(f"Capítulo escolhido: #{idx + 1} – {target_chapter.name}")
-    print(f"Idioma detectado: {chapter_language} (alternativos: {', '.join(languages)})")
+    print(f"Book: {book_path}")
+    print(f"Selected chapter: #{idx + 1} – {target_chapter.name}")
+    print(f"Detected language: {chapter_language} (alternatives: {', '.join(languages)})")
 
     hardware_profile = None
     try:
@@ -468,7 +468,7 @@ async def async_main() -> None:
         HardwareDetector.apply_optimizations(hardware_profile)
         HardwareDetector.print_profile(hardware_profile, verbose=False)
     except Exception as exc:
-        print(f"⚠️  Falha ao detectar hardware: {exc}")
+        print(f"⚠️  Failed to detect hardware: {exc}")
 
     localization = get_localization("pt")
     converter = AudioConverter(localization=localization)
@@ -500,8 +500,8 @@ async def async_main() -> None:
         results.append(scenario_result)
 
     print(f"\n{'='*70}")
-    print("RESUMO")
-    print(f"{'Cenário':<28} {'Tempo':>8} {'Chars/s':>10} {'Sucesso':>9}")
+    print("SUMMARY")
+    print(f"{'Scenario':<28} {'Time':>8} {'Chars/s':>10} {'Success':>9}")
     for result in sorted(results, key=lambda r: r.elapsed):
         label = result.scenario.label
         print(
@@ -510,8 +510,8 @@ async def async_main() -> None:
         )
     fastest = min(results, key=lambda r: r.elapsed)
     print(
-        f"\n🥇 Mais rápido: {fastest.scenario.label} "
-        f"({fastest.elapsed:.1f}s para {fastest.chapter_chars:,} chars)"
+        f"\n🥇 Fastest: {fastest.scenario.label} "
+        f"({fastest.elapsed:.1f}s for {fastest.chapter_chars:,} chars)"
     )
 
 
@@ -519,7 +519,7 @@ def main() -> None:
     try:
         asyncio.run(async_main())
     except KeyboardInterrupt:
-        print("\nInterrompido pelo usuário.")
+        print("\nInterrupted by user.")
 
 
 if __name__ == "__main__":

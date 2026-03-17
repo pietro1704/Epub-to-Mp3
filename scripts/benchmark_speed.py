@@ -88,7 +88,7 @@ async def benchmark_coqui(text: str) -> dict:
             "file_size": file_size,
         }
     except Exception as e:
-        print(f"⚠️ Coqui TTS não disponível: {e}")
+        print(f"⚠️ Coqui TTS not available: {e}")
         return None
 
 
@@ -102,21 +102,21 @@ async def main():
     args = parser.parse_args()
 
     if not Path(args.input_file).exists():
-        print(f"❌ Arquivo não encontrado: {args.input_file}")
+        print(f"❌ File not found: {args.input_file}")
         return 1
 
     print("=" * 80)
-    print("🚀 BENCHMARK DE VELOCIDADE - TTS ENGINES")
+    print("🚀 SPEED BENCHMARK - TTS ENGINES")
     print("=" * 80)
     print()
 
     # Load book
-    print(f"📖 Carregando livro: {Path(args.input_file).name}")
+    print(f"📖 Loading book: {Path(args.input_file).name}")
     reader = EbookReader(args.input_file)
     chapters = list(reader.get_chapters())
 
     if not chapters:
-        print("❌ Nenhum capítulo encontrado")
+        print("❌ No chapters found")
         return 1
 
     # Get sample text from first N chapters
@@ -127,13 +127,13 @@ async def main():
         sample_text += chapter.text + "\n\n"
 
     chars_total = len(sample_text)
-    print(f"📊 Texto de teste: {args.chapters} capítulos, {chars_total:,} caracteres")
+    print(f"📊 Test text: {args.chapters} chapters, {chars_total:,} characters")
     print()
 
     # Run benchmarks
     results = []
 
-    print("⏱️ Testando Edge TTS (modo sequencial)...")
+    print("⏱️ Testing Edge TTS (sequential mode)...")
     result_edge_seq = await benchmark_edge(sample_text, "sequential")
     results.append(result_edge_seq)
     print(
@@ -141,7 +141,7 @@ async def main():
     )
     print()
 
-    print("⏱️ Testando Edge TTS (modo paralelo)...")
+    print("⏱️ Testing Edge TTS (parallel mode)...")
     result_edge_par = await benchmark_edge(sample_text, "parallel")
     results.append(result_edge_par)
     print(
@@ -150,7 +150,7 @@ async def main():
     print()
 
     if not args.skip_coqui:
-        print("⏱️ Testando Coqui TTS...")
+        print("⏱️ Testing Coqui TTS...")
         result_coqui = await benchmark_coqui(sample_text)
         if result_coqui:
             results.append(result_coqui)
@@ -161,11 +161,11 @@ async def main():
 
     # Display results
     print("=" * 80)
-    print("📊 RESULTADOS DO BENCHMARK")
+    print("📊 BENCHMARK RESULTS")
     print("=" * 80)
     print()
 
-    print(f"{'Engine':<20} {'Modo':<15} {'Tempo':<10} {'Chars/s':<12} {'Speedup'}")
+    print(f"{'Engine':<20} {'Mode':<15} {'Time':<10} {'Chars/s':<12} {'Speedup'}")
     print("-" * 80)
 
     baseline = result_edge_seq["duration"]
@@ -180,7 +180,7 @@ async def main():
 
     print()
     print("=" * 80)
-    print("💡 RECOMENDAÇÕES")
+    print("💡 RECOMMENDATIONS")
     print("=" * 80)
     print()
 
@@ -188,19 +188,19 @@ async def main():
     fastest = min(results, key=lambda x: x["duration"])
     improvement = (baseline - fastest["duration"]) / baseline * 100
 
-    print(f"🏆 Engine mais rápido: {fastest['engine']} ({fastest['mode']})")
-    print(f"⚡ Melhoria sobre baseline: {improvement:.1f}%")
+    print(f"🏆 Fastest engine: {fastest['engine']} ({fastest['mode']})")
+    print(f"⚡ Improvement over baseline: {improvement:.1f}%")
     print()
 
     # Recommendations
     if fastest["engine"] == "Edge TTS" and fastest["mode"] == "parallel":
-        print("✅ Recomendação: Use Edge TTS com processamento paralelo (padrão)")
-        print("   - Já ativado por padrão no CLI")
-        print("   - Configuração: edge_enable_parallel=True")
+        print("✅ Recommendation: Use Edge TTS with parallel processing (default)")
+        print("   - Already enabled by default in CLI")
+        print("   - Config: edge_enable_parallel=True")
     elif fastest["engine"] == "Coqui TTS":
-        print("✅ Recomendação: Use Coqui TTS para processamento local rápido")
-        print("   - Não depende de conexão de rede")
-        print("   - Requer instalação: pip install TTS")
+        print("✅ Recommendation: Use Coqui TTS for fast local processing")
+        print("   - Does not depend on network connection")
+        print("   - Requires install: pip install TTS")
 
     print()
     return 0
