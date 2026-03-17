@@ -1,0 +1,53 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/session_start.sh",
+            "timeout": 10,
+            "statusMessage": "Loading conversion history..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/prompt_context.sh",
+            "timeout": 8,
+            "statusMessage": "Checking conversion status..."
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/bash_conversion.sh",
+            "timeout": 8,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/stop_status.sh",
+            "timeout": 8
+          }
+        ]
+      }
+    ]
+  }
+}
