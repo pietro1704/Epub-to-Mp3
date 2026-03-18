@@ -12,6 +12,41 @@ export interface CachedConversion {
 }
 
 export class ConversionCache {
+  private readonly PENDING_BATCH_KEY = "ebook-tts-pending-batch";
+
+  savePendingBatch(queue: unknown[]): void {
+    try {
+      localStorage.setItem(
+        this.PENDING_BATCH_KEY,
+        JSON.stringify({ queue, savedAt: Date.now() }),
+      );
+    } catch (error) {
+      console.warn("[ConversionCache] Failed to save pending batch:", error);
+    }
+  }
+
+  loadPendingBatch(): unknown[] | null {
+    try {
+      const data = localStorage.getItem(this.PENDING_BATCH_KEY);
+      if (!data) return null;
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed?.queue) && parsed.queue.length > 0) {
+        return parsed.queue;
+      }
+    } catch (error) {
+      console.warn("[ConversionCache] Failed to load pending batch:", error);
+    }
+    return null;
+  }
+
+  clearPendingBatch(): void {
+    try {
+      localStorage.removeItem(this.PENDING_BATCH_KEY);
+    } catch (error) {
+      console.warn("[ConversionCache] Failed to clear pending batch:", error);
+    }
+  }
+
   private getKey(jobId: string): string {
     return `${CACHE_KEY_PREFIX}:${jobId}`;
   }

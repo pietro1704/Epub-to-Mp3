@@ -1481,6 +1481,8 @@ export function useConversionFlow(
           console.log("[drainQueue] Queue paused, breaking");
           break;
         }
+        // Persist current + remaining queue before each job starts
+        conversionCache.savePendingBatch(jobQueueRef.current);
         const currentJob = jobQueueRef.current.shift();
         if (!currentJob) {
           console.log("[drainQueue] No current job, breaking");
@@ -1552,6 +1554,7 @@ export function useConversionFlow(
       queueActiveRef.current = false;
       if (jobQueueRef.current.length === 0) {
         setQueuePaused(false);
+        conversionCache.clearPendingBatch();
       }
       processedCountRef.current = 0;
       console.log(
@@ -1574,6 +1577,7 @@ export function useConversionFlow(
       if (queue.length === 0) {
         return;
       }
+      conversionCache.savePendingBatch(queue);
       jobQueueRef.current = queue;
       syncQueueSnapshot();
       setQueuePaused(false);

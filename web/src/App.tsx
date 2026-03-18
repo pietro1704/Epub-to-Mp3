@@ -728,10 +728,7 @@ export default function App(props?: AppProps): JSX.Element {
     }
     if (
       state.phase === "success" ||
-      (hasDownloads && state.phase !== "error") ||
-      (viewingRecentJob &&
-        (viewingRecentJob.outputs?.length || viewingRecentJob.downloadUrl) &&
-        state.phase === "idle")
+      (hasDownloads && state.phase !== "error")
     ) {
       if (activeTab !== "downloads") {
         setActiveTab("downloads");
@@ -751,7 +748,7 @@ export default function App(props?: AppProps): JSX.Element {
     if (state.phase === "polling" && activeTab !== "progress") {
       setActiveTab("progress");
     }
-  }, [state.phase, hasDownloads, activeTab, userSelectedTab, viewingRecentJob]);
+  }, [state.phase, hasDownloads, activeTab, userSelectedTab]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
@@ -1208,7 +1205,13 @@ export default function App(props?: AppProps): JSX.Element {
             description={t.tabs.downloads.panelDescription}
             footer={
               activeTab === "downloads" && (
-                <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    gap: "0.5rem",
+                  }}
+                >
                   <button
                     type="button"
                     className="button-secondary"
@@ -1216,6 +1219,19 @@ export default function App(props?: AppProps): JSX.Element {
                   >
                     ← Voltar
                   </button>
+                  {(state.phase === "polling" ||
+                    state.phase === "submitting") && (
+                    <button
+                      type="button"
+                      className="button-primary"
+                      onClick={() => {
+                        setUserSelectedTab(false);
+                        handleTabChange("progress");
+                      }}
+                    >
+                      Acompanhar conversão →
+                    </button>
+                  )}
                 </div>
               )
             }
@@ -1228,6 +1244,33 @@ export default function App(props?: AppProps): JSX.Element {
                   activeJobId={viewingRecentJob?.jobId}
                   onSelect={handleSelectReadyDownload}
                   onRemove={handleRemoveRecentJob}
+                />
+              </Suspense>
+            )}
+            {(state.phase === "success" ||
+              (state.downloads.length > 0 && Boolean(state.jobId))) && (
+              <Suspense fallback={<ComponentFallback />}>
+                <StatusPanel
+                  entries={state.log}
+                  rawLog={state.rawLog}
+                  phase={state.phase}
+                  phaseLabelOverride={statusLabelOverride}
+                  jobId={state.jobId}
+                  error={state.error}
+                  errorCategory={state.errorCategory}
+                  etaSeconds={state.etaSeconds}
+                  showRawLog={showRawLog}
+                  onToggleRawLog={() => setShowRawLog((value) => !value)}
+                  summary={state.summary}
+                  cliCommand={state.cliCommand}
+                  onCancel={undefined}
+                  onSkip={undefined}
+                  canCancel={false}
+                  canSkip={false}
+                  cancelDisabled={false}
+                  bookTitle={state.bookTitle}
+                  bookAuthor={state.bookAuthor}
+                  coverUrl={state.coverUrl}
                 />
               </Suspense>
             )}
@@ -1265,13 +1308,21 @@ export default function App(props?: AppProps): JSX.Element {
       repeatConfig,
       shareDownloadTitle,
       showRawLog,
+      state.bookAuthor,
+      state.bookTitle,
       state.cliCommand,
+      state.coverUrl,
+      state.downloads,
       state.error,
+      state.errorCategory,
       state.etaSeconds,
       state.jobId,
       state.log,
       state.phase,
+      state.rawLog,
       state.summary,
+      statusLabelOverride,
+      setUserSelectedTab,
       t,
       viewingRecentJob,
     ],
