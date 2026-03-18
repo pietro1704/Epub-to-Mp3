@@ -133,13 +133,13 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         output_file = Path(self.temp_dir) / "output.mp3"
 
         # Create dummy input file
-        input_file.write_text("dummy wav content")
+        input_file.write_bytes(b"RIFF" + b"\x00" * 100)  # minimal valid-sized WAV stub
 
         # Mock ffmpeg subprocess
         with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock successful ffmpeg process
             mock_process = AsyncMock()
-            mock_process.wait.return_value = None
+            mock_process.communicate.return_value = (b"", b"")
             mock_process.returncode = 0
             mock_subprocess.return_value = mock_process
 
@@ -165,12 +165,12 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         input_file = Path(self.temp_dir) / "input.wav"
         output_file = Path(self.temp_dir) / "output.mp3"
 
-        input_file.write_text("dummy wav content")
+        input_file.write_bytes(b"RIFF" + b"\x00" * 100)  # minimal valid-sized WAV stub
 
         with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock failed ffmpeg process
             mock_process = AsyncMock()
-            mock_process.wait.return_value = None
+            mock_process.communicate.return_value = (b"", b"some ffmpeg error")
             mock_process.returncode = 1  # Failure
             mock_subprocess.return_value = mock_process
 
@@ -183,7 +183,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         input_file = Path(self.temp_dir) / "input.wav"
         output_file = Path(self.temp_dir) / "output.mp3"
 
-        input_file.write_text("dummy wav content")
+        input_file.write_bytes(b"RIFF" + b"\x00" * 100)  # minimal valid-sized WAV stub
 
         with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
             mock_subprocess.side_effect = Exception("Test error")
@@ -197,12 +197,12 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         input_file = Path(self.temp_dir) / "input.wav"
         output_file = Path(self.temp_dir) / "output.mp3"
 
-        input_file.write_text("dummy wav content")
+        input_file.write_bytes(b"RIFF" + b"\x00" * 100)  # minimal valid-sized WAV stub
 
         # Mock ffmpeg subprocess
         with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
             mock_process = AsyncMock()
-            mock_process.wait.return_value = None
+            mock_process.communicate.return_value = (b"", b"")
             mock_process.returncode = 0
             mock_subprocess.return_value = mock_process
 

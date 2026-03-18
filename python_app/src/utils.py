@@ -134,6 +134,17 @@ class AudioProcessor:
         if not input_path.exists():
             return None
 
+        # Reject empty or header-only files (WAV header alone is 44 bytes)
+        try:
+            if input_path.stat().st_size < 100:
+                print(
+                    f"[ffmpeg] input too small ({input_path.stat().st_size}B), skipping: {input_path}",
+                    file=sys.stderr,
+                )
+                return None
+        except OSError:
+            return None
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
@@ -194,11 +205,15 @@ class AudioProcessor:
                 process = await subprocess_exec(
                     *positional_args,
                     stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
                 )
-                await process.wait()
+                _, stderr_bytes = await process.communicate()
+                if process.returncode != 0:
+                    stderr_text = (stderr_bytes or b"").decode(errors="replace")[-300:]
+                    print(f"[ffmpeg] rc={process.returncode}: {stderr_text}", file=sys.stderr)
                 return process.returncode == 0
-            except Exception:
+            except Exception as exc:
+                print(f"[ffmpeg] subprocess error: {exc}", file=sys.stderr)
                 return False
 
         ok = await _run_ffmpeg(command_primary)
