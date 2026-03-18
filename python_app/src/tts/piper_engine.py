@@ -405,30 +405,13 @@ class PiperTTSEngine:
             # Fallback: single shot
             return await self._synthesize_single(text, output_path, model_path)
 
-        temp_dir = output_path.parent
+        # Use a per-synthesis isolated temp dir so parallel chapters don't
+        # share piper_chunk files and trigger incorrect resume cross-contamination.
+        temp_dir = Path(tempfile.mkdtemp(prefix="piper_synth_"))
         temp_files: List[Path] = []
         resumed_chunks: set[int] = set()
         try:
-            # Reuse existing chunk files when available (resume after interrupted runs).
-            # This is intentionally best-effort: if a resumed chunk is invalid, ffmpeg
-            # concatenation will fail and caller fallback logic will handle retry.
             for idx in range(len(chunks)):
-                existing_candidates = sorted(
-                    temp_dir.glob(f"piper_chunk{idx:03d}_*.wav"),
-                    key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
-                    reverse=True,
-                )
-                resumed = None
-                for candidate in existing_candidates:
-                    with contextlib.suppress(OSError):
-                        if candidate.is_file() and candidate.stat().st_size > 256:
-                            resumed = candidate
-                            break
-                if resumed is not None:
-                    temp_files.append(resumed)
-                    resumed_chunks.add(idx)
-                    continue
-
                 tf = tempfile.NamedTemporaryFile(
                     delete=False,
                     suffix=".wav",
@@ -527,6 +510,8 @@ class PiperTTSEngine:
             for tf in temp_files:
                 with contextlib.suppress(OSError):
                     tf.unlink()
+            with contextlib.suppress(OSError):
+                shutil.rmtree(temp_dir, ignore_errors=True)
 
     def _resolve_model_for_language(self, language: Optional[str]) -> Path:
         code = (language or "").split("-", 1)[0].lower()
