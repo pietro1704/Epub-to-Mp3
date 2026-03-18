@@ -174,6 +174,47 @@ class TestTTSFactory(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 self.factory._find_piper_model()
 
+    def test_find_piper_model_preferred_language_not_found_downloads_instead_of_wrong_model(self):
+        """When models exist but not for the preferred language, download the right one
+        instead of silently returning a wrong-language model."""
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Test via _download_default_piper_model: "es" → ES model, not EN fallback.
+            # Use PIPER_MODEL_DIR to avoid writing to the real models directory.
+            with patch("urllib.request.urlretrieve") as mock_dl:
+
+                def fake_urlretrieve(url, dest):
+                    Path(dest).write_text("dummy")
+
+                mock_dl.side_effect = fake_urlretrieve
+                with patch.dict("os.environ", {"PIPER_MODEL_DIR": temp_dir}):
+                    result = self.factory._download_default_piper_model("es")
+                    self.assertIsNotNone(result)
+                    self.assertIn("es_ES", str(result))
+
+    def test_find_piper_model_unknown_language_fallback_downloads_english_not_portuguese(self):
+        """Unknown language fallback downloads English model, not Portuguese."""
+        with patch("urllib.request.urlretrieve") as mock_dl:
+            downloaded_paths = []
+
+            def fake_urlretrieve(url, dest):
+                downloaded_paths.append(url)
+                Path(dest).write_text("dummy")
+
+            mock_dl.side_effect = fake_urlretrieve
+            # "xx" is unknown — should fall back to "en", not "pt"
+            with tempfile.TemporaryDirectory() as temp_dir:
+                with patch.dict("os.environ", {"PIPER_MODEL_DIR": temp_dir}):
+                    result = self.factory._download_default_piper_model("xx")
+                    self.assertIsNotNone(result)
+                    self.assertTrue(
+                        any("en_US" in url for url in downloaded_paths),
+                        f"Expected English model download, got: {downloaded_paths}",
+                    )
+                    self.assertFalse(
+                        any("pt_BR" in url for url in downloaded_paths),
+                        f"Should not download Portuguese model for unknown language: {downloaded_paths}",
+                    )
+
     def test_kokoro_rejected_for_portuguese(self):
         """Kokoro should not be used for pt-BR since there is no native voice."""
         config = ConversionConfig(engine="kokoro", primary_language="pt-BR")

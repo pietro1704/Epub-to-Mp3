@@ -4763,8 +4763,6 @@ async def process_conversion(job_id: str) -> None:
 
             if cpu_percent < health_ok_cpu and mem_percent < health_ok_mem and not force_sequential:
                 desired = _compute_parallel_slots()
-                if max_performance:
-                    desired = max(desired, min(_CHAPTER_PARALLEL_MAX, parallel_slots + 1))
                 if desired != parallel_slots:
                     _append_event(
                         job, f"🧪 Healthcheck: adjusting parallelism {parallel_slots}→{desired}"

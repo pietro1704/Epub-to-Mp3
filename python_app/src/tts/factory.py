@@ -46,6 +46,30 @@ DEFAULT_PIPER_SOURCES = {
         "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US-lessac-medium.onnx",
         "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US-lessac-medium.onnx.json",
     },
+    "es": {
+        "model": "es_ES-davefx-medium.onnx",
+        "config": "es_ES-davefx-medium.onnx.json",
+        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES-davefx-medium.onnx",
+        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_ES-davefx-medium.onnx.json",
+    },
+    "fr": {
+        "model": "fr_FR-mls-medium.onnx",
+        "config": "fr_FR-mls-medium.onnx.json",
+        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR-mls-medium.onnx",
+        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/fr/fr_FR-mls-medium.onnx.json",
+    },
+    "de": {
+        "model": "de_DE-mls-medium.onnx",
+        "config": "de_DE-mls-medium.onnx.json",
+        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE-mls-medium.onnx",
+        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/de/de_DE-mls-medium.onnx.json",
+    },
+    "it": {
+        "model": "it_IT-riccardo-x_low.onnx",
+        "config": "it_IT-riccardo-x_low.onnx.json",
+        "model_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/it/it_IT-riccardo-x_low.onnx",
+        "config_url": "https://huggingface.co/rhasspy/piper-voices/resolve/main/it/it_IT-riccardo-x_low.onnx.json",
+    },
 }
 
 
@@ -301,19 +325,29 @@ class TTSFactory:
                     name = candidate.stem.lower()
                     if any(name.startswith(prefix) for prefix in preferred_prefixes):
                         return candidate
+                # Preferred language not found — try downloading before using wrong-language fallback
+                continue
 
-            # Fallback to first available model in directory
+            # No language preference: use first available model in directory
             return candidates[0]
 
         downloaded = self._download_default_piper_model(preferred_code)
         if downloaded:
             return downloaded
 
+        # Last resort: return any model found, even if wrong language
+        for search_dir in dict.fromkeys(candidate_dirs):
+            if not search_dir.exists() or not search_dir.is_dir():
+                continue
+            candidates = [c for c in sorted(search_dir.glob("*.onnx")) if c.is_file()]
+            if candidates:
+                return candidates[0]
+
         raise FileNotFoundError("No Piper models were found")
 
     def _download_default_piper_model(self, preferred_code: Optional[str]) -> Optional[Path]:
         code = (preferred_code or "").split("-", 1)[0].lower()
-        sources = DEFAULT_PIPER_SOURCES.get(code) or DEFAULT_PIPER_SOURCES.get("pt")
+        sources = DEFAULT_PIPER_SOURCES.get(code) or DEFAULT_PIPER_SOURCES.get("en")
         if not sources:
             return None
 
