@@ -316,17 +316,15 @@ class PiperTTSEngine:
             model = self._resolve_model_for_language(default_language)
             return await self._synthesize_single(combined_text, output_path, model)
 
+        temp_seg_dir = Path(tempfile.mkdtemp(prefix="piper_mseg_"))
         temp_files: List[Path] = []
         try:
             for idx, (language, segment_text) in enumerate(segments):
                 segment_text = segment_text.strip()
                 if not segment_text:
                     continue
-                # **FIX**: Use output_path.parent to isolate per book
-                import tempfile
-
                 temp_file = tempfile.NamedTemporaryFile(
-                    delete=False, suffix=".wav", dir=output_path.parent, prefix=f"piper_seg{idx}_"
+                    delete=False, suffix=".wav", dir=temp_seg_dir, prefix=f"piper_seg{idx}_"
                 )
                 temp_file.close()
                 temp_path = Path(temp_file.name)
@@ -373,6 +371,8 @@ class PiperTTSEngine:
             for temp_path in temp_files:
                 with contextlib.suppress(OSError):
                     temp_path.unlink()
+            with contextlib.suppress(OSError):
+                shutil.rmtree(temp_seg_dir, ignore_errors=True)
 
         return output_path if Path(output_path).exists() else None
 
