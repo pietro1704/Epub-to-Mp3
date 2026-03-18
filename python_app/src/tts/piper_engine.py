@@ -406,10 +406,9 @@ class PiperTTSEngine:
             return await self._synthesize_single(text, output_path, model_path)
 
         # Use a per-synthesis isolated temp dir so parallel chapters don't
-        # share piper_chunk files and trigger incorrect resume cross-contamination.
+        # share piper_chunk files and trigger cross-contamination.
         temp_dir = Path(tempfile.mkdtemp(prefix="piper_synth_"))
         temp_files: List[Path] = []
-        resumed_chunks: set[int] = set()
         try:
             for idx in range(len(chunks)):
                 tf = tempfile.NamedTemporaryFile(
@@ -424,8 +423,6 @@ class PiperTTSEngine:
             # Synthesize all chunks in parallel (semaphore limits concurrency)
             tasks: Dict[int, asyncio.Task[Optional[Path]]] = {}
             for idx, (chunk_text, temp_path) in enumerate(zip(chunks, temp_files)):
-                if idx in resumed_chunks:
-                    continue
                 if pre_segment_callback:
                     with contextlib.suppress(Exception):
                         pre_segment_callback(chunk_text, len(text))
@@ -442,10 +439,9 @@ class PiperTTSEngine:
 
             # Check all succeeded
             for idx, file_path in enumerate(temp_files):
-                if idx not in resumed_chunks:
-                    result = task_results.get(idx)
-                    if result is None:
-                        return None
+                result = task_results.get(idx)
+                if result is None:
+                    return None
                 if not file_path.exists():
                     return None
                 with contextlib.suppress(OSError):

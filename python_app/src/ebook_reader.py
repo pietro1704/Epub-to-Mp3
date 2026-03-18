@@ -36,6 +36,24 @@ PAGE_BREAK_RE = re.compile(
     re.I,
 )
 
+# CSS class names (matched as substrings) for section-number paragraphs that
+# open a new subchapter block.  The split point is the number element; the
+# title is taken from the immediately following SUBCHAPTER_TITLE_CLASS element.
+#   class_s3P-0 → first section in a chapter  (e.g. "1" in IT ch.11)
+#   class_s42-0 → subsequent sections          (e.g. "2", "3" … in IT ch.11)
+# Add more names here for other conversion tool artefacts.
+SUBCHAPTER_NUMBER_CLASSES: frozenset = frozenset({"class_s3P-0", "class_s42-0"})
+
+# CSS class name of the title paragraph that immediately follows a section-
+# number paragraph.  Its text content becomes the sub-chapter name
+# (e.g. "Ben Hanscom faz uma retirada").
+SUBCHAPTER_TITLE_CLASS: str = "class_sG5"
+
+# Plain-text character threshold above which a chapter with no CSS subchapter
+# markers is split at paragraph boundaries (double newline) to prevent
+# Edge-TTS timeout on very large chapters.
+SUBCHAPTER_MAX_CHARS: int = 50_000
+
 XML_NS = {
     "ocf": "urn:oasis:names:tc:opendocument:xmlns:container",
     "opf": "http://www.idpf.org/2007/opf",
@@ -1177,6 +1195,126 @@ class EpubParser:
 
         return chapters
 
+    @staticmethod
+    def _split_html_on_subchapter_markers(
+        markup: str,
+        parent_index,
+        number_classes: frozenset,
+        title_class: str,
+    ) -> Optional[List[Tuple[str, str, str]]]:
+        """Split HTML markup at section-number / title element pairs.
+
+        Looks for adjacent paragraph pairs:
+          1. a section-number paragraph whose ``class`` attribute contains any
+             member of *number_classes* (e.g. ``class_s3P-0`` for the first
+             section, ``class_s42-0`` for subsequent sections in IT ch.11).
+          2. a section-title paragraph whose ``class`` attribute contains
+             *title_class* (e.g. ``class_sG5``), appearing within 500 chars
+             after the number element.
+
+        The HTML is split at each number-element position, so the number
+        paragraph itself begins each fragment (not the title paragraph).
+        Everything before the first pair is treated as the chapter preamble and
+        prepended to the first fragment.
+
+        Returns a list of ``(sub_index_str, sub_title, html_fragment)`` tuples
+        ordered by appearance, or ``None`` when no qualifying pairs are found.
+        """
+        if not markup or not number_classes or not title_class:
+            return None
+
+        num_alt = "|".join(re.escape(c) for c in sorted(number_classes))
+        number_re = re.compile(
+            r'<p\b[^>]+\bclass="[^"]*(?:' + num_alt + r')[^"]*"[^>]*>.*?</p>',
+            re.IGNORECASE | re.DOTALL,
+        )
+        title_re = re.compile(
+            r'<p\b[^>]*\bclass="[^"]*' + re.escape(title_class) + r'[^"]*"[^>]*>(.*?)</p>',
+            re.IGNORECASE | re.DOTALL,
+        )
+
+        num_matches = list(number_re.finditer(markup))
+        if not num_matches:
+            return None
+
+        # For each number element look ahead (≤ 500 chars) for an adjacent title.
+        split_points: List[Tuple[int, str]] = []  # (start_pos, title_text)
+        for nm in num_matches:
+            window_start = nm.end()
+            window = markup[window_start : window_start + 500]
+            tm = title_re.search(window)
+            if tm:
+                raw = TAG_RE.sub("", tm.group(1)).strip()
+                split_points.append((nm.start(), raw or f"Section {len(split_points) + 1}"))
+            # If no title follows within the window, skip this number element.
+
+        if not split_points:
+            return None
+
+        parent_idx = str(parent_index)
+        preamble = markup[: split_points[0][0]]
+        result: List[Tuple[str, str, str]] = []
+
+        for i, (start, title) in enumerate(split_points):
+            sub_index = f"{parent_idx}.{i + 1}"
+            frag_end = split_points[i + 1][0] if i + 1 < len(split_points) else len(markup)
+            html_fragment = markup[start:frag_end]
+            if i == 0:
+                # Prepend chapter preamble (title, subtitle, etc.) to first subchapter.
+                html_fragment = preamble + html_fragment
+            result.append((sub_index, title, html_fragment))
+
+        return result
+
+    @staticmethod
+    def _split_text_at_paragraph_boundaries(
+        text: str,
+        max_chars: int,
+        parent_index,
+    ) -> List[Tuple[str, str]]:
+        """Split oversized plain text into chunks at line boundaries.
+
+        EPUB plain text uses a single ``\\n`` between paragraphs (the
+        html-to-text converter joins lines and strips blank lines).  This
+        method splits on any newline, grouping lines until *max_chars* is
+        reached, then flushing at the next line boundary.
+
+        A single line that is longer than *max_chars* is kept whole (we cannot
+        split sub-line).
+
+        Returns a list of ``(index_str, text_fragment)`` tuples.  If no split
+        is needed the list has one element with the original *parent_index*.
+        """
+        if len(text) <= max_chars:
+            return [(str(parent_index), text)]
+
+        parent_idx = str(parent_index)
+        lines = text.split("\n")
+        chunks: List[Tuple[str, str]] = []
+        current_lines: List[str] = []
+        current_len = 0
+        part_num = 1
+
+        for line in lines:
+            line_len = len(line)
+            if current_lines and current_len + line_len + 1 > max_chars:
+                chunks.append((f"{parent_idx}.{part_num}", "\n".join(current_lines)))
+                part_num += 1
+                current_lines = [line]
+                current_len = line_len
+            else:
+                current_lines.append(line)
+                current_len += line_len + 1  # account for the \n separator
+
+        if current_lines:
+            if part_num == 1:
+                # Nothing was flushed — all content fits in a single chunk; keep
+                # the original (non-decimal) index so callers are not surprised.
+                return [(parent_idx, "\n".join(current_lines))]
+            chunks.append((f"{parent_idx}.{part_num}", "\n".join(current_lines)))
+
+        return chunks
+
     def _extract_chapters(
         self,
         archive: zipfile.ZipFile,
@@ -1215,54 +1353,124 @@ class EpubParser:
                 except (KeyError, Exception):
                     return None
 
-            # Process text with formatting awareness
+            # Process footnotes on the full file first so that inline markers
+            # are embedded in the markup before any subchapter split.
             markup_with_markers, footnotes = TextProcessor.inject_footnotes(
                 raw_content, external_file_resolver=resolve_external_file
             )
-            text_with_formatting, formatting_segments = (
-                TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
-            )
-            if footnotes:
-                text_with_footnotes = TextProcessor._render_footnotes(
-                    text_with_formatting,
-                    footnotes,
-                    mode="inline",
-                    context_words=context_words,
-                )
-                formatting_segments = TextProcessor._apply_footnotes_to_segments(
-                    formatting_segments,
-                    footnotes,
-                    mode="inline",
-                    context_words=context_words,
-                )
-            else:
-                text_with_footnotes = text_with_formatting
-            text = TextProcessor.add_pause_before_dash(text_with_footnotes)
-            raw_title = (
-                TextProcessor.extract_title(raw_content, f"Chapter {index_counter}")
-                if text
-                else f"Chapter {index_counter}"
-            )
-            title = TextProcessor.clean_chapter_title(raw_title)
 
-            # Add all chapters, even if empty
-            # IMPORTANT: speech_text should be what will be sent to TTS
-            # - Removes only inline markdown (_italic_, **bold**, `code`)
-            # - PRESERVES [[lang:xx]] tags for multilingual TTS
-            # - PRESERVES formatting markers [[fmt:...]] for emphasis
-            speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
-            chapters.append(
-                Chapter(
-                    index=index_counter,
-                    name=title,
-                    source_path=asset_path,
-                    text=text or "",  # Ensure the text is not None
-                    raw_html=raw_content,
-                    formatting_segments=formatting_segments,
-                    footnotes=list(footnotes) if footnotes else None,
-                    speech_text=speech_text or "",
-                )
+            # --- Subchapter detection ---
+            # Try to split the spine file at known CSS subchapter-title markers.
+            sub_splits = self._split_html_on_subchapter_markers(
+                markup_with_markers,
+                index_counter,
+                SUBCHAPTER_NUMBER_CLASSES,
+                SUBCHAPTER_TITLE_CLASS,
             )
+
+            if sub_splits:
+                # Each CSS-marker fragment becomes an independent Chapter.
+                for sub_index, sub_title, sub_html in sub_splits:
+                    sub_text_fmt, sub_segments = TextProcessor.html_to_plain_text_with_formatting(
+                        sub_html
+                    )
+                    if footnotes:
+                        sub_text_fn = TextProcessor._render_footnotes(
+                            sub_text_fmt,
+                            footnotes,
+                            mode="inline",
+                            context_words=context_words,
+                        )
+                        sub_segments = TextProcessor._apply_footnotes_to_segments(
+                            sub_segments,
+                            footnotes,
+                            mode="inline",
+                            context_words=context_words,
+                        )
+                    else:
+                        sub_text_fn = sub_text_fmt
+                    sub_text = TextProcessor.add_pause_before_dash(sub_text_fn)
+                    sub_speech = self._prepare_speech_text(sub_text_fn, sub_segments)
+                    chapters.append(
+                        Chapter(
+                            index=sub_index,
+                            name=sub_title,
+                            source_path=asset_path,
+                            text=sub_text or "",
+                            raw_html=sub_html,
+                            formatting_segments=sub_segments,
+                            footnotes=list(footnotes) if footnotes else None,
+                            speech_text=sub_speech or "",
+                        )
+                    )
+            else:
+                # No CSS markers — process as a single chapter.
+                text_with_formatting, formatting_segments = (
+                    TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+                )
+                if footnotes:
+                    text_with_footnotes = TextProcessor._render_footnotes(
+                        text_with_formatting,
+                        footnotes,
+                        mode="inline",
+                        context_words=context_words,
+                    )
+                    formatting_segments = TextProcessor._apply_footnotes_to_segments(
+                        formatting_segments,
+                        footnotes,
+                        mode="inline",
+                        context_words=context_words,
+                    )
+                else:
+                    text_with_footnotes = text_with_formatting
+                text = TextProcessor.add_pause_before_dash(text_with_footnotes)
+                raw_title = (
+                    TextProcessor.extract_title(raw_content, f"Chapter {index_counter}")
+                    if text
+                    else f"Chapter {index_counter}"
+                )
+                title = TextProcessor.clean_chapter_title(raw_title)
+
+                # IMPORTANT: speech_text preserves [[lang:xx]] and [[fmt:...]] tags
+                # while stripping only inline markdown (_italic_, **bold**, `code`).
+                speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
+
+                # --- Paragraph-boundary fallback split ---
+                # When a chapter has no CSS subchapter markers but exceeds the size
+                # threshold, split it at paragraph boundaries to prevent Edge-TTS
+                # timeouts on very large chapters.
+                if text and len(text) > SUBCHAPTER_MAX_CHARS:
+                    para_splits = self._split_text_at_paragraph_boundaries(
+                        text, SUBCHAPTER_MAX_CHARS, index_counter
+                    )
+                    for split_idx, split_text in para_splits:
+                        split_speech = self._prepare_speech_text(split_text, formatting_segments)
+                        chapters.append(
+                            Chapter(
+                                index=split_idx,
+                                name=title,
+                                source_path=asset_path,
+                                text=split_text,
+                                raw_html=markup_with_markers,
+                                formatting_segments=formatting_segments,
+                                footnotes=list(footnotes) if footnotes else None,
+                                speech_text=split_speech or "",
+                            )
+                        )
+                else:
+                    chapters.append(
+                        Chapter(
+                            index=index_counter,
+                            name=title,
+                            source_path=asset_path,
+                            text=text or "",
+                            raw_html=raw_content,
+                            formatting_segments=formatting_segments,
+                            footnotes=list(footnotes) if footnotes else None,
+                            speech_text=speech_text or "",
+                        )
+                    )
+
             index_counter += 1
 
         return chapters

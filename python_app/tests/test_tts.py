@@ -711,14 +711,12 @@ class TestPiperTTSEngine(unittest.IsolatedAsyncioTestCase):
 
             self.assertIsNone(result)
 
-    async def test_synthesize_chunked_reuses_existing_chunks(self):
-        """Chunked synthesis should resume from existing chunk WAVs when present."""
+    async def test_synthesize_chunked_synthesizes_all_chunks(self):
+        """Chunked synthesis always synthesizes every chunk in an isolated temp dir."""
         from src.tts.piper_engine import PiperTTSEngine
 
         engine = PiperTTSEngine(self.model_path)
         output_path = Path(self.temp_dir) / "chunked.wav"
-        existing_chunk = Path(self.temp_dir) / "piper_chunk000_resume.wav"
-        existing_chunk.write_bytes(b"RIFF" + b"\x00" * 300)
 
         async def fake_synthesize_single(text, path, model_path):
             Path(path).write_bytes(b"RIFF" + b"\x00" * 300)
@@ -745,8 +743,8 @@ class TestPiperTTSEngine(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, output_path)
         self.assertEqual(ffmpeg_calls["count"], 1)
-        # Only missing chunk should be synthesized; chunk 0 reused from disk.
-        self.assertEqual(mock_single.call_count, 1)
+        # Both chunks must be synthesized; isolated temp dir means no stale reuse.
+        self.assertEqual(mock_single.call_count, 2)
 
     async def test_synthesize_single_retries_after_failed_attempt(self):
         """Single chunk synthesis should retry when first subprocess attempt fails."""
