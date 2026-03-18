@@ -1055,9 +1055,7 @@ export default function App(props?: AppProps): JSX.Element {
                 }}
               >
                 <span style={{ fontSize: "0.9rem" }}>
-                  📋 Fila salva com <strong>{savedBatch.length}</strong> livro
-                  {savedBatch.length !== 1 ? "s" : ""} pendente
-                  {savedBatch.length !== 1 ? "s" : ""}
+                  {t.tabs.setup.savedBatchTitle(savedBatch.length)}
                 </span>
                 <div style={{ display: "flex", gap: "0.5rem" }}>
                   <button
@@ -1065,14 +1063,14 @@ export default function App(props?: AppProps): JSX.Element {
                     className="button-primary"
                     onClick={() => resumeBatch(savedBatch)}
                   >
-                    Retomar fila
+                    {t.tabs.setup.savedBatchResume}
                   </button>
                   <button
                     type="button"
                     className="button-secondary"
                     onClick={dismissSavedBatch}
                   >
-                    Descartar
+                    {t.tabs.setup.savedBatchDismiss}
                   </button>
                 </div>
               </div>
@@ -1169,7 +1167,7 @@ export default function App(props?: AppProps): JSX.Element {
                     className="button-secondary"
                     onClick={() => handleTabChange("setup")}
                   >
-                    ← Voltar
+                    {t.tabs.progress.backButton}
                   </button>
                   {state.phase === "success" && (
                     <button
@@ -1177,7 +1175,7 @@ export default function App(props?: AppProps): JSX.Element {
                       className="button-secondary"
                       onClick={() => handleTabChange("downloads")}
                     >
-                      Ver Downloads →
+                      {t.tabs.progress.viewDownloads}
                     </button>
                   )}
                 </div>
@@ -1257,7 +1255,7 @@ export default function App(props?: AppProps): JSX.Element {
                     className="button-secondary"
                     onClick={() => handleTabChange("progress")}
                   >
-                    ← Voltar
+                    {t.tabs.downloads.backButton}
                   </button>
                   {(state.phase === "polling" ||
                     state.phase === "submitting") && (
@@ -1269,7 +1267,7 @@ export default function App(props?: AppProps): JSX.Element {
                         handleTabChange("progress");
                       }}
                     >
-                      Acompanhar conversão →
+                      {t.tabs.downloads.followConversion}
                     </button>
                   )}
                 </div>

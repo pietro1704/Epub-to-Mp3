@@ -48,6 +48,9 @@ export interface TabsText {
     description: string;
     panelTitle: string;
     panelDescription: string;
+    savedBatchTitle: (count: number) => string;
+    savedBatchResume: string;
+    savedBatchDismiss: string;
   };
   progress: {
     label: string;
@@ -55,6 +58,8 @@ export interface TabsText {
     panelTitle: string;
     panelDescription: string;
     activeBadge?: string;
+    backButton: string;
+    viewDownloads: string;
   };
   downloads: {
     label: string;
@@ -62,6 +67,8 @@ export interface TabsText {
     panelTitle: string;
     panelDescription: string;
     footer: string;
+    backButton: string;
+    followConversion: string;
   };
 }
 
@@ -588,6 +595,10 @@ export const translations: Record<Locale, Translations> = {
         description: "Envie o livro e escolha voz, notas e capítulos.",
         panelTitle: "Envie seu livro",
         panelDescription: "Faça o upload e escolha como o áudio deve soar.",
+        savedBatchTitle: (count: number) =>
+          `📋 Fila salva com ${count} livro${count !== 1 ? "s" : ""} pendente${count !== 1 ? "s" : ""}`,
+        savedBatchResume: "Retomar fila",
+        savedBatchDismiss: "Descartar",
       },
       progress: {
         label: "2. Acompanhar andamento",
@@ -595,6 +606,8 @@ export const translations: Record<Locale, Translations> = {
         panelTitle: "Status da conversão",
         panelDescription: "Aqui ficam as mensagens mais recentes.",
         activeBadge: "Convertendo agora",
+        backButton: "← Voltar",
+        viewDownloads: "Ver Downloads →",
       },
       downloads: {
         label: "3. Ouvir e baixar",
@@ -604,6 +617,8 @@ export const translations: Record<Locale, Translations> = {
         panelDescription:
           "Baixe os capítulos convertidos ou inicie outra conversão.",
         footer: "",
+        backButton: "← Voltar",
+        followConversion: "Acompanhar conversão →",
       },
     },
     activeConversion: {
@@ -1228,6 +1243,10 @@ export const translations: Record<Locale, Translations> = {
         panelTitle: "Upload your book",
         panelDescription:
           "Send the file and define how the audio should sound.",
+        savedBatchTitle: (count: number) =>
+          `📋 Saved queue with ${count} book${count !== 1 ? "s" : ""} pending`,
+        savedBatchResume: "Resume queue",
+        savedBatchDismiss: "Dismiss",
       },
       progress: {
         label: "2. Track progress",
@@ -1235,6 +1254,8 @@ export const translations: Record<Locale, Translations> = {
         panelTitle: "Conversion status",
         panelDescription: "The latest messages show up here.",
         activeBadge: "Running",
+        backButton: "← Back",
+        viewDownloads: "View Downloads →",
       },
       downloads: {
         label: "3. Listen & download",
@@ -1242,6 +1263,8 @@ export const translations: Record<Locale, Translations> = {
         panelTitle: "Your MP3 files",
         panelDescription: "Download the chapters or start another conversion.",
         footer: "",
+        backButton: "← Back",
+        followConversion: "Follow conversion →",
       },
     },
     activeConversion: {
