@@ -354,7 +354,7 @@ class NetworkTuner:
                     changes.append(f"segment: {old_seg:.0f}s→{self.config.segment_seconds:.0f}s")
 
         if changes:
-            self._log(f"✨ Aumentando velocidade: {', '.join(changes)}")
+            self._log(f"✨ Increasing speed: {', '.join(changes)}")
 
         # Check if fully recovered
         if (

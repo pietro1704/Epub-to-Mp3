@@ -764,6 +764,7 @@ class TestEstimateEndpoint:
         chapters = [{"title": "Ch", "text": "x" * 10000}]
         upload_id, _ = self._register_upload(monkeypatch, tmp_path, chapters)
         monkeypatch.setattr(server, "uploads_dir", tmp_path)
+        _make_telemetry(tmp_path, monkeypatch)  # isolate from real telemetry on disk
         client = self._make_client()
 
         resp_edge = client.get(f"/api/estimate?upload_id={upload_id}&engine=edge")

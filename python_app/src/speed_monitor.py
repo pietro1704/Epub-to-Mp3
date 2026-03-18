@@ -231,7 +231,7 @@ class SpeedMonitor:
                     drop_pct = (1 - avg_speed / self.target_speed) * 100
                     jitter_note = " [high-jitter]" if self._high_jitter_mode else ""
                     return (
-                        f"SPEED_DROP: {drop_pct:.0f}% queda ({avg_speed:.0f} chars/s){jitter_note}"
+                        f"SPEED_DROP: {drop_pct:.0f}% drop ({avg_speed:.0f} chars/s){jitter_note}"
                     )
 
         # Check for recovery
@@ -751,7 +751,10 @@ class AdaptiveEdgeTuner:
                 return increased
 
         # If things are good, no tune.
-        if avg_speed >= self._monitor.target_speed and trend_status != "degrading":
+        # Use the same -0.2 threshold as should_tune() to avoid oscillation on natural variance.
+        if avg_speed >= self._monitor.target_speed and not (
+            trend_status == "degrading" and trend < -0.2
+        ):
             return None
 
         # Fall back to monitor suggestion.

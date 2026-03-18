@@ -4288,7 +4288,7 @@ class AudioConverter(
 
                     try:
                         if self.verbose:
-                            print(f"   🔄 Executando comando TTS: {type(tts_engine).__name__}")
+                            print(f"   🔄 Running TTS command: {type(tts_engine).__name__}")
 
                         synthesis_result = None
                         slow_engine_triggered = False
@@ -5148,7 +5148,7 @@ class AudioConverter(
                                     and chapter_elapsed > (estimated_seconds * slow_ratio)
                                 ):
                                     _maybe_apply_edge_slow_mode(
-                                        f"velocidade baixa ({chars_per_second:.1f} chars/s)",
+                                        f"low speed ({chars_per_second:.1f} chars/s)",
                                         engine_obj=tts_engine,
                                     )
                             self._retry_original_texts.pop(chapter_label, None)

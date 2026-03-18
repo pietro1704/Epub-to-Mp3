@@ -443,11 +443,11 @@ class AutoRecoverySystem:
                 print(f"🚨 [AutoRecovery] MEMORY CRISIS: {memory_percent:.1f}%")
 
                 # Recovery actions
-                print("   → Executando GC emergencial...")
+                print("   → Running emergency GC...")
                 gc.collect(generation=2)  # Full GC
 
-                print("   → Liberando caches...")
-                # Tentar liberar caches do sistema
+                print("   → Releasing caches...")
+                # Try to free system caches
                 try:
                     import torch
 

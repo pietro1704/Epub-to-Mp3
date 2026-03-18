@@ -1139,7 +1139,7 @@ class _EdgeThrottleMixin:
 
         if state["recovery_streak"] >= required_hits:
             restored = self._restore_edge_fast_mode(
-                f"velocidade recuperada (~{int(throughput)} chars/s)",
+                f"speed recovered (~{int(throughput)} chars/s)",
                 engine_pool=engine_pool,
                 engine_obj=engine_obj,
             )
