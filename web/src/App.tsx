@@ -248,7 +248,13 @@ export default function App(props?: AppProps): JSX.Element {
     Boolean(state.summary) ||
     Boolean(state.error) ||
     Boolean(state.jobId);
-  const canViewDownloads = hasDownloads || state.phase === "success";
+  const canViewDownloads =
+    hasDownloads ||
+    state.phase === "success" ||
+    Boolean(
+      viewingRecentJob &&
+      (viewingRecentJob.outputs?.length || viewingRecentJob.downloadUrl),
+    );
   const clearRecentJobView = useCallback(() => {
     manualDownloadOverrideRef.current = true;
     setViewingRecentJob(null);
@@ -722,7 +728,10 @@ export default function App(props?: AppProps): JSX.Element {
     }
     if (
       state.phase === "success" ||
-      (hasDownloads && state.phase !== "error")
+      (hasDownloads && state.phase !== "error") ||
+      (viewingRecentJob &&
+        (viewingRecentJob.outputs?.length || viewingRecentJob.downloadUrl) &&
+        state.phase === "idle")
     ) {
       if (activeTab !== "downloads") {
         setActiveTab("downloads");
@@ -742,7 +751,7 @@ export default function App(props?: AppProps): JSX.Element {
     if (state.phase === "polling" && activeTab !== "progress") {
       setActiveTab("progress");
     }
-  }, [state.phase, hasDownloads, activeTab, userSelectedTab]);
+  }, [state.phase, hasDownloads, activeTab, userSelectedTab, viewingRecentJob]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
