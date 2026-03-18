@@ -1519,7 +1519,13 @@ export function useConversionFlow(
               });
               // Continue to next job without pausing
             } else {
-              // Normal cancel: pause queue and drop current job
+              // Normal cancel: pause queue and drop current job.
+              // Update saved batch so the cancelled book is not offered on reload.
+              if (jobQueueRef.current.length > 0) {
+                conversionCache.savePendingBatch(jobQueueRef.current);
+              } else {
+                conversionCache.clearPendingBatch();
+              }
               console.log("[drainQueue] Normal cancel: pausing queue");
               syncQueueSnapshot();
               setQueuePaused(true);
@@ -2359,9 +2365,15 @@ export function useConversionFlow(
   const resumeBatch = useCallback(
     async (queue: ConversionFormValues[]) => {
       if (!queue.length) return;
+      // Items whose File was lost during serialisation and have no uploadId
+      // cannot be converted — skip them silently.
+      const resumable = queue.filter(
+        (item) => item.file instanceof File || Boolean(item.uploadId),
+      );
       conversionCache.clearPendingBatch();
       setSavedBatch(null);
-      const [first, ...rest] = queue;
+      if (!resumable.length) return;
+      const [first, ...rest] = resumable;
       await submit(first, rest.length ? { batchQueue: rest } : undefined);
     },
     [submit],

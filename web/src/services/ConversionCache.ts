@@ -16,9 +16,18 @@ export class ConversionCache {
 
   savePendingBatch(queue: unknown[]): void {
     try {
+      // File objects cannot survive JSON serialisation — replace with null so
+      // the loaded batch clearly shows which books need a new file selection.
+      const serializable = queue.map((item) => {
+        if (item && typeof item === "object" && "file" in item) {
+          const { file: _file, ...rest } = item as Record<string, unknown>;
+          return { ...rest, file: null };
+        }
+        return item;
+      });
       localStorage.setItem(
         this.PENDING_BATCH_KEY,
-        JSON.stringify({ queue, savedAt: Date.now() }),
+        JSON.stringify({ queue: serializable, savedAt: Date.now() }),
       );
     } catch (error) {
       console.warn("[ConversionCache] Failed to save pending batch:", error);

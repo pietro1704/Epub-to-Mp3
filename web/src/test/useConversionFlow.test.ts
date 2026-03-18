@@ -1,11 +1,17 @@
 import { act, renderHook } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import { useConversionFlow } from "../hooks/useConversionFlow";
 import type { ConversionClient } from "../services/ConversionService";
 import type { ConversionFormValues, JobSnapshot } from "../types/conversion";
 import { createProvidersWrapper } from "./testUtils";
+import { conversionCache } from "../services/ConversionCache";
 
 describe("useConversionFlow", () => {
+  beforeEach(() => {
+    // Isolate localStorage from real data
+    localStorage.clear();
+  });
+
   const file = new File(["data"], "book.epub", {
     type: "application/epub+zip",
   });
@@ -240,5 +246,122 @@ describe("useConversionFlow", () => {
     const names = result.current.state.downloads.map((d) => d.name);
     expect(names).toContain("ch-1.mp3");
     expect(names).toContain("book.zip");
+  });
+
+  it("saves pending batch to localStorage during drainQueue and clears on completion", async () => {
+    const saveSpy = vi.spyOn(conversionCache, "savePendingBatch");
+    const clearSpy = vi.spyOn(conversionCache, "clearPendingBatch");
+
+    const submit = vi.fn().mockResolvedValue({ jobId: "persist" });
+    const poll = vi.fn().mockResolvedValue({
+      jobId: "persist",
+      state: "finished",
+      outputs: [],
+    } satisfies JobSnapshot);
+
+    const client: ConversionClient = { submit, fetch: vi.fn(), poll };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await result.current.submit(request);
+    });
+
+    // savePendingBatch called at least once (on submit + before each job)
+    expect(saveSpy).toHaveBeenCalled();
+    // clearPendingBatch called after queue drains
+    expect(clearSpy).toHaveBeenCalled();
+  });
+
+  it("dismissSavedBatch clears state and localStorage", () => {
+    conversionCache.savePendingBatch([
+      { file: null, uploadId: "u1", engine: "edge", footnoteMode: "inline" },
+    ]);
+
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: vi.fn(),
+      poll: vi.fn(),
+    };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    // savedBatch should be populated from localStorage
+    expect(result.current.savedBatch).not.toBeNull();
+
+    act(() => {
+      result.current.dismissSavedBatch();
+    });
+
+    expect(result.current.savedBatch).toBeNull();
+    expect(conversionCache.loadPendingBatch()).toBeNull();
+  });
+
+  it("resumeBatch skips items with no file and no uploadId", async () => {
+    const submitMock = vi.fn().mockResolvedValue({ jobId: "resume1" });
+    const poll = vi.fn().mockResolvedValue({
+      jobId: "resume1",
+      state: "finished",
+      outputs: [],
+    } satisfies JobSnapshot);
+
+    const client: ConversionClient = {
+      submit: submitMock,
+      fetch: vi.fn(),
+      poll,
+    };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    const lostItem: ConversionFormValues = {
+      file: null, // file lost during serialisation
+      engine: "edge",
+      footnoteMode: "inline",
+    };
+    const validItem: ConversionFormValues = {
+      file: null,
+      uploadId: "existing-upload",
+      fileName: "book2.epub",
+      engine: "edge",
+      footnoteMode: "inline",
+    };
+
+    await act(async () => {
+      await result.current.resumeBatch([lostItem, validItem]);
+    });
+
+    // lostItem is skipped; submitMock should be called with validItem
+    expect(submitMock).toHaveBeenCalledWith(
+      expect.objectContaining({ uploadId: "existing-upload" }),
+    );
+    expect(result.current.savedBatch).toBeNull();
+  });
+
+  it("resumeBatch does nothing when all items have no file and no uploadId", async () => {
+    const submitMock = vi.fn();
+    const client: ConversionClient = {
+      submit: submitMock,
+      fetch: vi.fn(),
+      poll: vi.fn(),
+    };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    const lostItem: ConversionFormValues = {
+      file: null,
+      engine: "edge",
+      footnoteMode: "inline",
+    };
+
+    await act(async () => {
+      await result.current.resumeBatch([lostItem]);
+    });
+
+    expect(submitMock).not.toHaveBeenCalled();
+    expect(result.current.savedBatch).toBeNull();
   });
 });

@@ -51,6 +51,7 @@ export interface TabsText {
     savedBatchTitle: (count: number) => string;
     savedBatchResume: string;
     savedBatchDismiss: string;
+    savedBatchNeedsReupload: (count: number) => string;
   };
   progress: {
     label: string;
@@ -599,6 +600,8 @@ export const translations: Record<Locale, Translations> = {
           `📋 Fila salva com ${count} livro${count !== 1 ? "s" : ""} pendente${count !== 1 ? "s" : ""}`,
         savedBatchResume: "Retomar fila",
         savedBatchDismiss: "Descartar",
+        savedBatchNeedsReupload: (count: number) =>
+          `⚠️ ${count} livro${count !== 1 ? "s precisam" : " precisa"} ser reenviado${count !== 1 ? "s" : ""} (arquivo não pode ser salvo)`,
       },
       progress: {
         label: "2. Acompanhar andamento",
@@ -1247,6 +1250,8 @@ export const translations: Record<Locale, Translations> = {
           `📋 Saved queue with ${count} book${count !== 1 ? "s" : ""} pending`,
         savedBatchResume: "Resume queue",
         savedBatchDismiss: "Dismiss",
+        savedBatchNeedsReupload: (count: number) =>
+          `⚠️ ${count} book${count !== 1 ? "s need" : " needs"} to be re-uploaded (file cannot be saved)`,
       },
       progress: {
         label: "2. Track progress",
