@@ -584,6 +584,9 @@ export interface UseConversionFlowApi {
   clearQueue: () => void;
   reorderQueue: (fromIndex: number, toIndex: number) => void;
   restartBackend: (options?: RestartOptions) => Promise<void>;
+  savedBatch: ConversionFormValues[] | null;
+  resumeBatch: (queue: ConversionFormValues[]) => Promise<void>;
+  dismissSavedBatch: () => void;
 }
 
 export function useConversionFlow(

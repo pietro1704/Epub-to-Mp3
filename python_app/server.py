@@ -4629,6 +4629,10 @@ async def process_conversion(job_id: str) -> None:
                     if (
                         edge_auto_tune
                         and (local_active_config.engine or "").lower() == "edge"
+                        # Skip speed judgement for tiny chapters (< 500 chars) — overhead
+                        # dominates and produces artificially low chars/s readings
+                        # (e.g. a "Cover" chapter with 5 chars reads as 3 chars/s).
+                        and len(clean_text) >= 500
                         and (
                             chars_per_second < EDGE_MIN_CHARS_PER_SECOND
                             or (
@@ -4732,15 +4736,17 @@ async def process_conversion(job_id: str) -> None:
                 if not edge_slow_mode:
                     _apply_edge_slow_mode(f"healthcheck low speed ({recent_speed:.1f} chars/s)")
                 else:
-                    # Already in slow mode and still slow: disable Edge for the whole job
-                    # so remaining chapters skip directly to the next engine.
-                    if "edge" not in unavailable_engines:
-                        unavailable_engines.add("edge")
-                        _append_event(
-                            job,
-                            f"🚫 Edge persistently slow ({recent_speed:.1f} chars/s in safe mode)"
-                            f" — disabling Edge for remaining chapters",
-                        )
+                    # Already in slow mode and still slow: require an extra streak hit before
+                    # disabling Edge so that a single-sample blip after safe-mode entry does
+                    # not permanently kill Edge (e.g. small-chapter false-positives).
+                    if slow_streak >= health_slow_streak_limit + 1:
+                        if "edge" not in unavailable_engines:
+                            unavailable_engines.add("edge")
+                            _append_event(
+                                job,
+                                f"🚫 Edge persistently slow ({recent_speed:.1f} chars/s in safe mode)"
+                                f" — disabling Edge for remaining chapters",
+                            )
             elif (
                 slow_streak >= health_slow_streak_limit
                 and parallel_slots > 1

@@ -1045,7 +1045,8 @@ export default function App(props?: AppProps): JSX.Element {
               state.phase === "idle" &&
               (() => {
                 const resumableCount = savedBatch.filter(
-                  (item) => item.file instanceof File || Boolean(item.uploadId),
+                  (item: ConversionFormValues) =>
+                    item.file instanceof File || Boolean(item.uploadId),
                 ).length;
                 const needsReuploadCount = savedBatch.length - resumableCount;
                 return (
