@@ -614,6 +614,9 @@ export function useConversionFlow(
   >([]);
   const [cachedJobsLoading, setCachedJobsLoading] = useState(true);
   const [recentJobs, setRecentJobs] = useState<RecentJobEntry[]>([]);
+  const [savedBatch, setSavedBatch] = useState<ConversionFormValues[] | null>(
+    () => conversionCache.loadPendingBatch() as ConversionFormValues[] | null,
+  );
   const [apiAvailable, setApiAvailable] = useState(true);
   const [healthStatus, setHealthStatus] = useState<
     "unknown" | "ok" | "fail" | "restarting"
@@ -1578,6 +1581,7 @@ export function useConversionFlow(
         return;
       }
       conversionCache.savePendingBatch(queue);
+      setSavedBatch(null);
       jobQueueRef.current = queue;
       syncQueueSnapshot();
       setQueuePaused(false);
@@ -2352,6 +2356,22 @@ export function useConversionFlow(
     state.phase === "polling" ||
     state.phase === "cancelling";
 
+  const resumeBatch = useCallback(
+    async (queue: ConversionFormValues[]) => {
+      if (!queue.length) return;
+      conversionCache.clearPendingBatch();
+      setSavedBatch(null);
+      const [first, ...rest] = queue;
+      await submit(first, rest.length ? { batchQueue: rest } : undefined);
+    },
+    [submit],
+  );
+
+  const dismissSavedBatch = useCallback(() => {
+    conversionCache.clearPendingBatch();
+    setSavedBatch(null);
+  }, []);
+
   return {
     state,
     submit,
@@ -2375,5 +2395,8 @@ export function useConversionFlow(
     clearQueue,
     reorderQueue,
     restartBackend,
+    savedBatch,
+    resumeBatch,
+    dismissSavedBatch,
   };
 }

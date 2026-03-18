@@ -99,6 +99,9 @@ export default function App(props?: AppProps): JSX.Element {
     clearQueue,
     reorderQueue,
     restartBackend,
+    savedBatch,
+    resumeBatch,
+    dismissSavedBatch,
   } = useConversionFlow(client);
   const t = useTranslations();
   const { locale } = useI18n();
@@ -1037,6 +1040,43 @@ export default function App(props?: AppProps): JSX.Element {
             }
           >
             {renderQueueDisplay()}
+            {savedBatch && savedBatch.length > 0 && state.phase === "idle" && (
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "0.75rem",
+                  padding: "0.75rem 1rem",
+                  marginBottom: "1rem",
+                  background: "var(--color-surface-raised, #f0f4ff)",
+                  border: "1px solid var(--color-border, #c8d4f0)",
+                  borderRadius: "8px",
+                }}
+              >
+                <span style={{ fontSize: "0.9rem" }}>
+                  📋 Fila salva com <strong>{savedBatch.length}</strong> livro
+                  {savedBatch.length !== 1 ? "s" : ""} pendente
+                  {savedBatch.length !== 1 ? "s" : ""}
+                </span>
+                <div style={{ display: "flex", gap: "0.5rem" }}>
+                  <button
+                    type="button"
+                    className="button-primary"
+                    onClick={() => resumeBatch(savedBatch)}
+                  >
+                    Retomar fila
+                  </button>
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={dismissSavedBatch}
+                  >
+                    Descartar
+                  </button>
+                </div>
+              </div>
+            )}
             {showActiveConversion && (
               <Suspense fallback={<ComponentFallback />}>
                 <ActiveConversionBanner
