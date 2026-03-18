@@ -1296,6 +1296,12 @@ async def _resume_pending_jobs() -> None:
         job["resumeRequested"] = True
         _append_event(job, "♻️ Conversion resumed after server restart")
         _persist_job(job_id, force=True)
+        # Clean up orphaned Edge-TTS/Piper segment temp files left by the
+        # previous server run before re-enqueuing.
+        try:
+            _cleanup_output_directory(_job_output_dir(job_id, job))
+        except Exception:
+            pass
         if not _enqueue_job(job_id):
             logger.warning("Job queue unavailable during resume, executing inline for %s", job_id)
             asyncio.create_task(process_conversion(job_id))
