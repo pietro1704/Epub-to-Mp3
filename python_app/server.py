@@ -1309,6 +1309,11 @@ async def _resume_pending_jobs() -> None:
             continue
         job["state"] = "queued"
         job["resumeRequested"] = True
+        # Reset chapters stuck in "processing" back to "pending" so they are
+        # re-attempted by the resumed run instead of remaining orphaned.
+        for entry in job.get("chapterProgress") or []:
+            if entry.get("status") == "processing":
+                entry["status"] = "pending"
         _append_event(job, "♻️ Conversion resumed after server restart")
         _persist_job(job_id, force=True)
         # Clean up orphaned Edge-TTS/Piper segment temp files left by the
@@ -5212,7 +5217,13 @@ async def process_conversion(job_id: str) -> None:
             from src.session_logger import log_session
 
             _ch_total = job.get("chaptersTotal") or 0
-            _ch_done = job.get("chaptersCompleted") or 0
+            _cp = job.get("chapterProgress") or []
+            if _cp:
+                _ch_done = sum(1 for c in _cp if c.get("status") == "completed")
+                _ch_failed = sum(1 for c in _cp if c.get("status") in {"failed", "skipped"})
+            else:
+                _ch_done = job.get("chaptersCompleted") or 0
+                _ch_failed = _ch_total - _ch_done
             _chapter_details = _extract_chapter_details(job)
             log_session(
                 book_title=job.get("bookTitle", ""),
@@ -5222,7 +5233,7 @@ async def process_conversion(job_id: str) -> None:
                 voice=job.get("voice", ""),
                 chapters_total=_ch_total,
                 chapters_converted=_ch_done,
-                chapters_failed=_ch_total - _ch_done,
+                chapters_failed=_ch_failed,
                 duration_seconds=total_elapsed,
                 outcome="success",
                 job_id=job_id,
@@ -5270,7 +5281,14 @@ async def process_conversion(job_id: str) -> None:
 
             _elapsed = time.time() - conversion_started
             _ch_total = job.get("chaptersTotal") or 0
-            _ch_done = job.get("chaptersCompleted") or 0
+            _cp = job.get("chapterProgress") or []
+            if _cp:
+                _ch_done = sum(1 for c in _cp if c.get("status") == "completed")
+                _ch_failed = sum(1 for c in _cp if c.get("status") in {"failed", "skipped"})
+            else:
+                _ch_done = job.get("chaptersCompleted") or 0
+                _ch_failed = _ch_total - _ch_done
+            _outcome = "failed" if _ch_done == 0 else "partial"
             _chapter_details = _extract_chapter_details(job)
             log_session(
                 book_title=job.get("bookTitle", ""),
@@ -5280,9 +5298,9 @@ async def process_conversion(job_id: str) -> None:
                 voice=job.get("voice", ""),
                 chapters_total=_ch_total,
                 chapters_converted=_ch_done,
-                chapters_failed=_ch_total - _ch_done,
+                chapters_failed=_ch_failed,
                 duration_seconds=_elapsed,
-                outcome="failed",
+                outcome=_outcome,
                 job_id=job_id,
                 output_dir=str(job.get("outputDir", "")),
                 started_at=job.get("startedAt", ""),
