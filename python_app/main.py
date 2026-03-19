@@ -2101,7 +2101,7 @@ class ConverterApplication:
 
         if verbose:
             print(
-                f"🔍 [VERBOSE] Idioma: analisados {items_checked} capítulos, {total_chars} caracteres"
+                f"🔍 [VERBOSE] Language: analysed {items_checked} chapter(s), {total_chars} chars"
             )
 
         ascii_ratio = self._ascii_ratio(sample_texts)

@@ -1267,20 +1267,51 @@ class EpubParser:
         return result
 
     @staticmethod
+    def _force_split_long_line(line: str, max_chars: int) -> List[str]:
+        """Split a single line that exceeds max_chars at sentence then word boundaries.
+
+        Tries sentence boundaries first ('. ', '! ', '? '), then word boundaries,
+        finally hard-cuts at max_chars if no boundary is found.
+        """
+        if len(line) <= max_chars:
+            return [line]
+        parts: List[str] = []
+        remaining = line
+        while len(remaining) > max_chars:
+            # Try to find a sentence boundary within the window
+            window = remaining[:max_chars]
+            cut = -1
+            for sep in (". ", "! ", "? ", "; ", ", "):
+                pos = window.rfind(sep)
+                if pos > max_chars // 4:  # at least 25% into the chunk
+                    cut = pos + len(sep)
+                    break
+            if cut < 0:
+                # Fall back to last space
+                pos = window.rfind(" ")
+                cut = pos + 1 if pos > 0 else max_chars
+            parts.append(remaining[:cut].rstrip())
+            remaining = remaining[cut:].lstrip()
+        if remaining:
+            parts.append(remaining)
+        return parts
+
+    @staticmethod
     def _split_text_at_paragraph_boundaries(
         text: str,
         max_chars: int,
         parent_index,
     ) -> List[Tuple[str, str]]:
-        """Split oversized plain text into chunks at line boundaries.
+        """Split oversized plain text into chunks at line/sentence boundaries.
 
         EPUB plain text uses a single ``\\n`` between paragraphs (the
         html-to-text converter joins lines and strips blank lines).  This
         method splits on any newline, grouping lines until *max_chars* is
         reached, then flushing at the next line boundary.
 
-        A single line that is longer than *max_chars* is kept whole (we cannot
-        split sub-line).
+        Lines that individually exceed *max_chars* (e.g. a wall of footnotes
+        with no newlines) are further split at sentence, word, or hard-cut
+        boundaries so no chunk ever exceeds *max_chars*.
 
         Returns a list of ``(index_str, text_fragment)`` tuples.  If no split
         is needed the list has one element with the original *parent_index*.
@@ -1295,16 +1326,26 @@ class EpubParser:
         current_len = 0
         part_num = 1
 
+        def _flush() -> None:
+            nonlocal part_num, current_lines, current_len
+            chunks.append((f"{parent_idx}.{part_num}", "\n".join(current_lines)))
+            part_num += 1
+            current_lines = []
+            current_len = 0
+
         for line in lines:
-            line_len = len(line)
-            if current_lines and current_len + line_len + 1 > max_chars:
-                chunks.append((f"{parent_idx}.{part_num}", "\n".join(current_lines)))
-                part_num += 1
-                current_lines = [line]
-                current_len = line_len
-            else:
-                current_lines.append(line)
-                current_len += line_len + 1  # account for the \n separator
+            # Force-split lines that are longer than max_chars on their own.
+            sub_lines = (
+                EbookReader._force_split_long_line(line, max_chars)
+                if len(line) > max_chars
+                else [line]
+            )
+            for sub in sub_lines:
+                sub_len = len(sub)
+                if current_lines and current_len + sub_len + 1 > max_chars:
+                    _flush()
+                current_lines.append(sub)
+                current_len += sub_len + 1  # account for the \n separator
 
         if current_lines:
             if part_num == 1:
@@ -1391,18 +1432,42 @@ class EpubParser:
                         sub_text_fn = sub_text_fmt
                     sub_text = TextProcessor.add_pause_before_dash(sub_text_fn)
                     sub_speech = self._prepare_speech_text(sub_text_fn, sub_segments)
-                    chapters.append(
-                        Chapter(
-                            index=sub_index,
-                            name=sub_title,
-                            source_path=asset_path,
-                            text=sub_text or "",
-                            raw_html=sub_html,
-                            formatting_segments=sub_segments,
-                            footnotes=list(footnotes) if footnotes else None,
-                            speech_text=sub_speech or "",
+
+                    # A CSS sub-chapter can still be very long (e.g. a long
+                    # chapter with no further heading markers).  Apply the same
+                    # paragraph-boundary split so no single chapter exceeds the
+                    # max size threshold.
+                    if sub_text and len(sub_text) > SUBCHAPTER_MAX_CHARS:
+                        para_splits = self._split_text_at_paragraph_boundaries(
+                            sub_text, SUBCHAPTER_MAX_CHARS, sub_index
                         )
-                    )
+                        for p_idx, p_text in para_splits:
+                            p_speech = self._prepare_speech_text(p_text, sub_segments)
+                            chapters.append(
+                                Chapter(
+                                    index=p_idx,
+                                    name=sub_title,
+                                    source_path=asset_path,
+                                    text=p_text,
+                                    raw_html=sub_html,
+                                    formatting_segments=sub_segments,
+                                    footnotes=list(footnotes) if footnotes else None,
+                                    speech_text=p_speech or "",
+                                )
+                            )
+                    else:
+                        chapters.append(
+                            Chapter(
+                                index=sub_index,
+                                name=sub_title,
+                                source_path=asset_path,
+                                text=sub_text or "",
+                                raw_html=sub_html,
+                                formatting_segments=sub_segments,
+                                footnotes=list(footnotes) if footnotes else None,
+                                speech_text=sub_speech or "",
+                            )
+                        )
             else:
                 # No CSS markers — process as a single chapter.
                 text_with_formatting, formatting_segments = (

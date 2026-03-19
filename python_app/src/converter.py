@@ -1411,11 +1411,11 @@ class AudioConverter(
                 ch = chapters[idx]
                 ch_chars = lengths[idx]
                 ratio = ch_chars // max(median_chars, 1)
-                suggested_limit = (ch_chars // 1000) * 1000  # round down to nearest 1K
+                (ch_chars // 1000) * 1000  # round down to nearest 1K
                 print(
                     f'\n⚠️  Oversized chapter: "{getattr(ch, "name", "?")[:70]}"'
                     f" ({ch_chars:,} chars = {ratio}× median)"
-                    f"\n   → To skip it: MAX_CHAPTER_CHARS={suggested_limit:,}"
+                    f" — conversion will take longer for this chapter"
                 )
 
         prefer_offline = False

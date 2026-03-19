@@ -550,8 +550,11 @@ _CHAPTER_HEARTBEAT_SECONDS = 20.0  # was 45s — more frequent activity pings
 _CHAPTER_TIMEOUT_FACTOR = 2.0  # was 2.5 — less overshoot on estimated duration
 _CHAPTER_TIMEOUT_MIN = 60.0  # was 120s — detect stuck chapters faster
 # On HF, cap at 120s so slow Edge chapters trigger fallback to Kokoro sooner.
-# Locally keep 300s since Edge is faster and there are no local fallbacks.
-_CHAPTER_TIMEOUT_MAX = 120.0 if _hf_mode else 300.0
+# Locally, allow up to 1800s (30 min) for unusually large chapters that the
+# auto-split may have missed (e.g. cached parses from before the split was
+# applied).  The per-chapter synthesis estimate in _resolve_chapter_timeout
+# already bounds this from above based on actual chapter size.
+_CHAPTER_TIMEOUT_MAX = 120.0 if _hf_mode else 1800.0
 try:
     _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "6") or "6"))
 except (TypeError, ValueError):
@@ -785,10 +788,22 @@ def _determine_saved_at(job_data: dict) -> str:
     )
 
 
-def _resolve_chapter_timeout(estimated_seconds: float) -> float:
-    """Return an upper bound for synthesis before forcing fallback."""
+def _resolve_chapter_timeout(estimated_seconds: float, text_chars: int = 0) -> float:
+    """Return an upper bound for synthesis before forcing fallback.
+
+    On HF Spaces the cap is tight (120 s) to trigger engine fallback fast.
+    Locally we allow chapters to run longer; the minimum is also bounded from
+    below by a chars-based synthesis estimate so that unusually large chapters
+    (e.g. footnote-container chapters not yet split by the EPUB reader) are
+    not cut off prematurely.  A conservative Piper rate of 800 chars/s is used
+    so that even slow hardware finishes without a timeout.
+    """
     estimate = max(float(estimated_seconds or 0.0), _CHAPTER_TIMEOUT_MIN)
     timeout = max(_CHAPTER_TIMEOUT_MIN, estimate * _CHAPTER_TIMEOUT_FACTOR)
+    if not _hf_mode and text_chars > 0:
+        # Ensure at least enough time for Piper at a conservative 800 chars/s.
+        synthesis_min = (text_chars / 800.0) * _CHAPTER_TIMEOUT_FACTOR
+        timeout = max(timeout, synthesis_min)
     return min(timeout, _CHAPTER_TIMEOUT_MAX)
 
 
@@ -3092,6 +3107,7 @@ async def process_conversion(job_id: str) -> None:
         language_profile: Optional[LanguageProfile] = None
         detected_lang = None
         job_language = job.get("language")
+        previously_detected = job.get("detectedLanguage")
         if job_language and job_language.lower() not in ("auto", ""):
             detected_lang = job_language
             language_profile = LanguageProfile(
@@ -3101,6 +3117,17 @@ async def process_conversion(job_id: str) -> None:
                 analysed_chars=0,
             )
             _append_event(job, f"🌐 User-selected language: {detected_lang}")
+        elif previously_detected and job.get("resumeRequested"):
+            # Re-use the language detected in the previous run to avoid re-detection
+            # failure (e.g. [Errno 5] I/O error) from causing the resumed job to fail.
+            detected_lang = previously_detected
+            language_profile = LanguageProfile(
+                primary=detected_lang,
+                languages=[detected_lang],
+                predictions=[],
+                analysed_chars=0,
+            )
+            _append_event(job, f"🌐 Resumed with cached language: {detected_lang}")
         elif structure_items:
             _append_event(job, "🔍 Analyzing content to detect language...")
             try:
@@ -3152,12 +3179,9 @@ async def process_conversion(job_id: str) -> None:
             # Show important status messages in UI (model loading, tuning, retry)
             status_keywords = [
                 # Loading/downloading
-                "carregando",
-                "baixando",
-                "modelo",
                 "loading",
                 "download",
-                "ready",
+                "model",
                 "ready",
                 # Tuning and retry
                 "tuning",
@@ -3360,12 +3384,12 @@ async def process_conversion(job_id: str) -> None:
                     ch = chapters[idx - 1] if 0 < idx <= len(chapters) else None
                     ch_name = getattr(ch, "name", f"Chapter {idx}")[:60] if ch else f"Chapter {idx}"
                     ratio = ch_chars // max(median_chars, 1)
-                    suggested = (ch_chars // 1000) * 1000
+                    (ch_chars // 1000) * 1000
                     _append_event(
                         job,
                         f"⚠️ Oversized chapter [{idx}]: {ch_name}"
                         f" ({ch_chars:,} chars = {ratio}× median)"
-                        f" → Set MAX_CHAPTER_CHARS={suggested:,} to skip it",
+                        f" — conversion will take longer for this chapter",
                     )
 
         job["_chapterCharTotals"] = chapter_char_totals
@@ -4167,6 +4191,8 @@ async def process_conversion(job_id: str) -> None:
                 async def _chapter_heartbeat_loop() -> None:
                     progress_tick = 5.0
                     last_log_ts = start_time
+                    last_disk_persist_ts = start_time
+                    _DISK_PERSIST_INTERVAL = 60.0  # Write _lastActivityTs to disk every 60s
                     try:
                         while True:
                             try:
@@ -4178,6 +4204,15 @@ async def process_conversion(job_id: str) -> None:
                             except asyncio.TimeoutError:
                                 now = time.time()
                                 elapsed = now - start_time
+                                # Keep _lastActivityTs fresh in memory so the stall watchdog
+                                # doesn't trigger false positives during active synthesis.
+                                _update_job_activity(job)
+                                # Flush _lastActivityTs to disk periodically so a crash
+                                # during a long chapter doesn't leave a stale timestamp
+                                # that triggers the stall watchdog on the next restart.
+                                if now - last_disk_persist_ts >= _DISK_PERSIST_INTERVAL:
+                                    _persist_job(job_id, force=True)
+                                    last_disk_persist_ts = now
                                 if (now - last_log_ts) < _CHAPTER_HEARTBEAT_SECONDS:
                                     continue
                                 last_log_ts = now
@@ -4196,9 +4231,6 @@ async def process_conversion(job_id: str) -> None:
                                     job,
                                     f"⏳ {chapter_name}: {in_progress} using {engine_label.upper()}",
                                 )
-                                # Keep _lastActivityTs fresh during rate-limit backoff
-                                # so the stall watchdog doesn't trigger false positives.
-                                _update_job_activity(job)
                                 _persist_job(job_id, force=False)
                     finally:
                         job.pop("statusHint", None)
@@ -4218,7 +4250,9 @@ async def process_conversion(job_id: str) -> None:
                     ).lower()
                     synth_started = time.time()
                     last_stage_timestamp = synth_started
-                    chapter_timeout = _resolve_chapter_timeout(estimated_seconds)
+                    chapter_timeout = _resolve_chapter_timeout(
+                        estimated_seconds, text_chars=len(clean_text)
+                    )
                     if edge_slow_mode and engine_name == "edge":
                         chapter_timeout = min(
                             chapter_timeout, float(edge_safe_profile["timeout_max"])

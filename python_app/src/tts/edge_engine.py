@@ -1180,7 +1180,7 @@ class EdgeTTSEngine:
                 f"⚠️ Edge TTS: {failed_segments} segment(s) failed, but {success_rate * 100:.1f}% was generated successfully"
             )
             if self.verbose:
-                self._log(f"   Processados: {total_segments}/{expected_segments} segmentos")
+                self._log(f"   Processed: {total_segments}/{expected_segments} segments")
 
         return output_path
 
@@ -1238,7 +1238,7 @@ class EdgeTTSEngine:
             batch_segments = segments_to_process[batch_start:batch_end]
 
             tasks = []
-            task_metadata = []  # (segment_idx, temp_path)
+            task_metadata: List[Tuple[int, Path]] = []  # (segment_idx, temp_path)
 
             for i, (voice, segment_text) in enumerate(batch_segments, start=batch_start):
                 # **RESUME**: Skip segments that already have files
@@ -1305,7 +1305,15 @@ class EdgeTTSEngine:
                 task_metadata.append((i, temp_path))
 
             # Process batch - gather respects rate limiter without queueing
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            try:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+            except (asyncio.CancelledError, Exception):
+                # Clean up temp files created for this batch before re-raising
+                for _, tmp_path in task_metadata:
+                    if tmp_path not in segment_files.values():
+                        with suppress(OSError):
+                            tmp_path.unlink(missing_ok=True)
+                raise
 
             # Process results
             for (segment_idx, temp_file), result in zip(task_metadata, results):
@@ -1414,7 +1422,7 @@ class EdgeTTSEngine:
         if failed_indices and successful_segments >= total_segments * 0.8:
             if self.verbose:
                 self._log(
-                    f"🔄 [PARALLEL] Tentando {len(failed_indices)} segmentos falhados sequencialmente..."
+                    f"🔄 [PARALLEL] Retrying {len(failed_indices)} failed segment(s) sequentially..."
                 )
 
             for fail_idx in failed_indices:
@@ -1508,7 +1516,7 @@ class EdgeTTSEngine:
             return None
 
         if self.verbose:
-            self._log(f"🔗 [PARALLEL] Concatenando {len(temp_files)} segmentos bem-sucedidos...")
+            self._log(f"🔗 [PARALLEL] Concatenating {len(temp_files)} successful segment(s)...")
 
         try:
             # **OPTIMIZED**: Buffered chunked I/O to reduce memory pressure
@@ -1551,7 +1559,7 @@ class EdgeTTSEngine:
             self._chunk_char_limit = new_chunk
 
             self._log(
-                f"⚠️ Edge TTS Paralelo: apenas {successful_segments}/{total_segments} segmentos ({success_rate * 100:.1f}%)"
+                f"⚠️ Edge TTS parallel: only {successful_segments}/{total_segments} segments succeeded ({success_rate * 100:.1f}%)"
             )
             self.last_error = f"incomplete_segments:{successful_segments}/{total_segments}"
             with suppress(OSError):
