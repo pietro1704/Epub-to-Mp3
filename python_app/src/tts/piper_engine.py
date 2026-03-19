@@ -10,7 +10,6 @@ import os
 import platform
 import re
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
@@ -471,24 +470,29 @@ class PiperTTSEngine:
                 concat_list.close()
 
                 wav_out = output_path.with_suffix(".wav")
-                proc = subprocess.run(
-                    [
-                        "ffmpeg",
-                        "-y",
-                        "-f",
-                        "concat",
-                        "-safe",
-                        "0",
-                        "-i",
-                        str(concat_list.name),
-                        "-c",
-                        "copy",
-                        str(wav_out),
-                    ],
-                    capture_output=True,
-                    timeout=120,
+                ffmpeg_proc = await asyncio.create_subprocess_exec(
+                    "ffmpeg",
+                    "-y",
+                    "-f",
+                    "concat",
+                    "-safe",
+                    "0",
+                    "-i",
+                    str(concat_list.name),
+                    "-c",
+                    "copy",
+                    str(wav_out),
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
                 )
-                if proc.returncode != 0 or not wav_out.exists():
+                try:
+                    await asyncio.wait_for(ffmpeg_proc.wait(), timeout=120.0)
+                except asyncio.TimeoutError:
+                    ffmpeg_proc.kill()
+                    with contextlib.suppress(Exception):
+                        await ffmpeg_proc.wait()
+                    return None
+                if ffmpeg_proc.returncode != 0 or not wav_out.exists():
                     return None
 
                 # If output_path expects wav, we're done

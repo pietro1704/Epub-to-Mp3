@@ -765,17 +765,28 @@ class TestPiperTTSEngine(unittest.IsolatedAsyncioTestCase):
 
         ffmpeg_calls = {"count": 0}
 
-        def fake_run(*args, **kwargs):
+        async def fake_ffmpeg(*args, **kwargs):
             ffmpeg_calls["count"] += 1
-            out = Path(args[0][-1])
+            # Write the output WAV to the last positional arg (output path)
+            out = Path(args[-1])
             out.write_bytes(b"RIFF" + b"\x00" * 300)
-            return types.SimpleNamespace(returncode=0)
+            proc = AsyncMock()
+            proc.returncode = 0
+
+            async def _wait():
+                return 0
+
+            proc.wait.side_effect = _wait
+            return proc
 
         with patch("src.tts.piper_engine._split_text_into_chunks", return_value=["a", "b"]):
             with patch.object(
                 engine, "_synthesize_single", side_effect=fake_synthesize_single
             ) as mock_single:
-                with patch("src.tts.piper_engine.subprocess.run", side_effect=fake_run):
+                with patch(
+                    "src.tts.piper_engine.asyncio.create_subprocess_exec",
+                    side_effect=fake_ffmpeg,
+                ):
                     result = await engine._synthesize_chunked(
                         "ab",
                         output_path,
