@@ -3117,9 +3117,14 @@ async def process_conversion(job_id: str) -> None:
                 analysed_chars=0,
             )
             _append_event(job, f"🌐 User-selected language: {detected_lang}")
-        elif previously_detected and job.get("resumeRequested"):
+        elif (
+            previously_detected
+            and job.get("resumeRequested")
+            and not job.get("_detectedLanguageFallback")
+        ):
             # Re-use the language detected in the previous run to avoid re-detection
             # failure (e.g. [Errno 5] I/O error) from causing the resumed job to fail.
+            # Only reuse if it was set by a successful detection, not a fallback default.
             detected_lang = previously_detected
             language_profile = LanguageProfile(
                 primary=detected_lang,
@@ -3156,6 +3161,8 @@ async def process_conversion(job_id: str) -> None:
                     predictions=[],
                     analysed_chars=0,
                 )
+                # Mark as fallback so next resume re-runs detection instead of reusing
+                job["_detectedLanguageFallback"] = True
         else:
             detected_lang = "pt-BR"
             _append_event(job, f"🌐 Not enough text for detection, using: {detected_lang}")
@@ -3168,6 +3175,10 @@ async def process_conversion(job_id: str) -> None:
 
         converter_app.language_profile = language_profile
         job["detectedLanguage"] = detected_lang
+        # Clear the fallback flag once we have a reliable value (user-selected or
+        # successfully detected); keep it if this run also fell back.
+        if not job.get("_detectedLanguageFallback"):
+            job.pop("_detectedLanguageFallback", None)
         _persist_job(job_id, force=True)  # Persist metadata
         _update_job_activity(job, stage="language_detected")
 
