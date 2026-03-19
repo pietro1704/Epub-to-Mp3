@@ -88,7 +88,8 @@ class EngineInstancePool:
                 return self._queue.get_nowait()
             except asyncio.QueueEmpty:
                 if self._created < self._max_instances:
-                    engine_obj = self._create_engine(self.config)
+                    # Run in thread pool — create_engine may do blocking I/O (model downloads)
+                    engine_obj = await asyncio.to_thread(self._create_engine, self.config)
                     self._created += 1
                     self._adjust_instance(engine_obj)
                     return engine_obj
