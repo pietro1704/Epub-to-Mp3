@@ -3443,13 +3443,15 @@ async def process_conversion(job_id: str) -> None:
         chapter_progress_entries: list[dict] = []
         for idx, chapter in enumerate(chapters, 1):
             chapter_name = getattr(chapter, "name", f"Chapter {idx}")
-            chapter_progress_entries.append(
-                {
-                    "index": idx,
-                    "name": chapter_name,
-                    "status": "pending",
-                }
-            )
+            entry: dict = {
+                "index": idx,
+                "name": chapter_name,
+                "status": "pending",
+            }
+            ch_chars = chapter_char_totals.get(idx)
+            if ch_chars:
+                entry["chars"] = ch_chars
+            chapter_progress_entries.append(entry)
         job["chapterProgress"] = chapter_progress_entries
         _refresh_chapter_completion()
 

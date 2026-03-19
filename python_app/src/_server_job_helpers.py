@@ -40,6 +40,18 @@ def _persist_job(job_id: str, force: bool = True) -> None:
         _srv._schedule_job_broadcast(job_id, job_data)
         return  # Skip for non-critical updates
 
+    # Trim event lists to prevent unbounded growth across many resume cycles.
+    # The full log is preserved in _raw_log; events only need to be recent
+    # enough for SSE replay and UI display.
+    _MAX_EVENTS = 2000
+    _MAX_RAW_LOG = 5000
+    events = job_data.get("events")
+    if isinstance(events, list) and len(events) > _MAX_EVENTS:
+        job_data["events"] = events[-_MAX_EVENTS:]
+    raw_log = job_data.get("_raw_log")
+    if isinstance(raw_log, list) and len(raw_log) > _MAX_RAW_LOG:
+        job_data["_raw_log"] = raw_log[-_MAX_RAW_LOG:]
+
     success = _srv.job_manager.save_job(job_id, job_data)
     if not success:
         logger.error(f"Failed to persist job {job_id} to disk")
