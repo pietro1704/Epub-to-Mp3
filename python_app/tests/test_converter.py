@@ -2852,7 +2852,7 @@ class TestAnalyzeChapterStatsOutliers(unittest.TestCase):
             self.converter._analyze_chapter_stats(chapters)
         output = buf.getvalue()
         self.assertIn("Oversized chapter", output)
-        self.assertIn("MAX_CHAPTER_CHARS", output)
+        self.assertIn("conversion will take longer", output)
 
 
 if __name__ == "__main__":
