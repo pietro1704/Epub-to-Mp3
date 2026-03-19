@@ -886,12 +886,18 @@ def _append_event(job: dict, message: str, *, raw: Optional[str] = None) -> None
     _update_job_activity(job)
 
 
+_SSE_RAW_LOG_CAP = 200  # Limit rawLog in SSE payloads to avoid large messages
+
+
 async def _broadcast_sse_event(job_id: str, job_data: dict) -> None:
     """**OPTIMIZATION #3**: Broadcast job update to all SSE clients."""
     if job_id not in _sse_clients:
         return
 
     payload = _job_status_payload(job_data)
+    raw_log = payload.get("rawLog")
+    if isinstance(raw_log, list) and len(raw_log) > _SSE_RAW_LOG_CAP:
+        payload["rawLog"] = raw_log[-_SSE_RAW_LOG_CAP:]
     dead_queues = set()
 
     for queue in _sse_clients[job_id]:
@@ -2579,12 +2585,14 @@ async def stream_job_status(job_id: str, request: Request):
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
 
     # Create queue for this client
-    client_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=10)
+    client_queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=50)
 
     # Register client
     if job_id not in _sse_clients:
         _sse_clients[job_id] = set()
     _sse_clients[job_id].add(client_queue)
+
+    _terminal_states = {"finished", "failed", "interrupted", "cancelled"}
 
     async def event_stream():
         try:
@@ -2592,6 +2600,8 @@ async def stream_job_status(job_id: str, request: Request):
             if job_id in jobs:
                 initial_data = _job_status_payload(jobs[job_id])
                 yield f"data: {json.dumps(initial_data)}\n\n"
+                if initial_data.get("state") in _terminal_states:
+                    return
 
             # Stream updates
             while True:
@@ -2608,8 +2618,18 @@ async def stream_job_status(job_id: str, request: Request):
                         yield f"event: {sse_event}\ndata: {json.dumps(clean)}\n\n"
                     else:
                         yield f"data: {json.dumps(job_data)}\n\n"
+                    # Close stream once a terminal state is delivered
+                    if job_data.get("state") in _terminal_states:
+                        break
                 except asyncio.TimeoutError:
-                    # Send heartbeat to keep connection alive
+                    # On each heartbeat, check if the job reached a terminal state.
+                    # This recovers from the case where the queue was full and the
+                    # terminal broadcast was dropped, leaving the stream open forever.
+                    current_job = jobs.get(job_id)
+                    if current_job and current_job.get("state") in _terminal_states:
+                        final_data = _job_status_payload(current_job)
+                        yield f"data: {json.dumps(final_data)}\n\n"
+                        break
                     yield ": heartbeat\n\n"
 
         finally:

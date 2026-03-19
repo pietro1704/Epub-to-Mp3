@@ -36,10 +36,9 @@ const Hero = memo(function Hero({
   languageLabel,
   queuePosition,
   queueTotal,
-}: HeroProps): JSX.Element {
+}: HeroProps): JSX.Element | null {
   const t = useTranslations();
   const { locale } = useI18n();
-  const highlights = t.hero.highlights ?? [];
   const [isCollapsed, setIsCollapsed] = useState(false);
   const heroRef = useRef<HTMLElement | null>(null);
   const spacerRef = useRef<HTMLDivElement | null>(null);
@@ -204,6 +203,10 @@ const Hero = memo(function Hero({
     .filter(Boolean)
     .join(" ");
 
+  if (!shouldShowStatusCard) {
+    return null;
+  }
+
   return (
     <>
       <header
@@ -296,25 +299,7 @@ const Hero = memo(function Hero({
               </div>
             </div>
           </div>
-        ) : (
-          <>
-            <div className="hero__copy">
-              <p className="badge">{t.hero.badge}</p>
-              <h1>{t.hero.title}</h1>
-              <p className="hero__subtitle">{t.hero.subtitle}</p>
-            </div>
-            {highlights.length > 0 && (
-              <div className="hero__highlights">
-                {highlights.map((highlight) => (
-                  <article key={highlight.title} className="hero__highlight">
-                    <h3>{highlight.title}</h3>
-                    <p>{highlight.description}</p>
-                  </article>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+        ) : null}
         {shouldShowStatusCard && (
           <div className="hero__collapsed-summary" aria-live="polite">
             <div className="hero__collapsed-cover">
