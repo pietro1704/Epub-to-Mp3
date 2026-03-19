@@ -5007,7 +5007,11 @@ async def process_conversion(job_id: str) -> None:
                         )
                         slot_task_engine[task] = pref or ""
                         running_tasks.add(task)
-                if abort_requested and not running_tasks:
+                if abort_requested:
+                    for task in running_tasks:
+                        task.cancel()
+                    if running_tasks:
+                        await asyncio.gather(*running_tasks, return_exceptions=True)
                     break
                 if not running_tasks:
                     break

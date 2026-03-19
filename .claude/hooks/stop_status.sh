@@ -22,7 +22,11 @@ for name in os.listdir(jobs_dir):
             job = json.load(f)
         # Job files use "state" not "status"
         state = job.get("state", "")
-        if state in ("running", "queued"):
+        if state == "queued":
+            title = (job.get("bookTitle") or job.get("book_title") or name)[:40]
+            engine = job.get("engine", "?")
+            running.append(f"  ⏳ {title} [{engine}] queued")
+        elif state == "running":
             title = (job.get("bookTitle") or job.get("book_title") or name)[:40]
             engine = job.get("engine", "?")
             pct = job.get("progressPercent") or 0
