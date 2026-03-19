@@ -495,20 +495,20 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
 
             engine = EdgeTTSEngine("test-voice")
 
-            # Short text - timeout mínimo de 45s
+            # Short text - minimum 45s timeout
             timeout = engine._calculate_timeout("Hi")
             self.assertEqual(timeout, 45)
 
             # Medium text
             medium_text = "A" * 2000
             timeout = engine._calculate_timeout(medium_text)
-            self.assertGreaterEqual(timeout, 45)  # Mínimo 45s
+            self.assertGreaterEqual(timeout, 45)  # Minimum 45s
 
-            # Long text - máximo de 300s
+            # Long text - maximum 300s
             long_text = "A" * 10000
             timeout = engine._calculate_timeout(long_text)
             self.assertGreaterEqual(timeout, 45)
-            self.assertLessEqual(timeout, 300)  # Máximo 300s
+            self.assertLessEqual(timeout, 300)  # Maximum 300s
 
 
 class TestCoquiTTSEngine(unittest.IsolatedAsyncioTestCase):
