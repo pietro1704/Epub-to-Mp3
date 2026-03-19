@@ -8,7 +8,7 @@ import {
 } from "react";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
 import type { ConversionSummary, ConversionState } from "../types/conversion";
-import { formatEta } from "./StatusPanel";
+import { formatEta } from "../utils/formatEta";
 
 interface HeroProps {
   title?: string;

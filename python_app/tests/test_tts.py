@@ -155,10 +155,8 @@ class TestTTSFactory(unittest.TestCase):
             model_file = models_dir / "test_model.onnx"
             model_file.write_text("dummy model")
 
-            with patch("src.tts.factory.Path") as mock_path:
-                mock_path.return_value = models_dir
-                mock_path.side_effect = lambda x: Path(x) if x == "models" else Path(x)
-
+            # Use PIPER_MODEL_DIR so the factory finds the temp dir first
+            with patch.dict("os.environ", {"PIPER_MODEL_DIR": str(models_dir)}):
                 result = self.factory._find_piper_model()
 
                 self.assertEqual(result.name, "test_model.onnx")

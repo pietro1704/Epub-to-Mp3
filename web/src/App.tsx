@@ -47,7 +47,7 @@ import type {
   ConversionTemplate,
 } from "./types/conversion";
 import type { ReadyDownloadJob } from "./components/ReadyDownloadsList";
-import { formatEta } from "./components/StatusPanel";
+import { formatEta } from "./utils/formatEta";
 import { resolveApiUrl } from "./config";
 
 // Loading fallback component

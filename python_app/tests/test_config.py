@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -188,8 +189,11 @@ class TestVoiceConfigProvider(unittest.TestCase):
 
     def test_get_piper_models_with_files(self):
         """Test getting Piper models with actual model files"""
+        import python_app.src.config as cfg_mod
+
         with tempfile.TemporaryDirectory() as temp_dir:
-            models_dir = Path(temp_dir) / "models"
+            temp_path = Path(temp_dir)
+            models_dir = temp_path / "models"
             models_dir.mkdir()
 
             # Create mock model files
@@ -199,41 +203,53 @@ class TestVoiceConfigProvider(unittest.TestCase):
             model1.write_text("dummy model 1")
             model2.write_text("dummy model 2")
 
+            # Redirect python_root and CWD so only the temp models dir is searched
+            fake_file = str(temp_path / "python_app" / "src" / "config.py")
             original_cwd = os.getcwd()
             try:
                 os.chdir(temp_dir)
-                models = self.provider.get_piper_models()
-
-                self.assertEqual(len(models), 2)
-
-                # Check faber model
-                self.assertIn("faber-medium", models)
-                faber_info = models["faber-medium"]
-                self.assertEqual(faber_info["name"], "faber-medium")
-                self.assertTrue(faber_info["recommended"])
-
-                # Check other model
-                self.assertIn("other-model", models)
-                other_info = models["other-model"]
-                self.assertEqual(other_info["name"], "other-model")
-                self.assertFalse(other_info["recommended"])
-
+                with patch.object(cfg_mod, "__file__", fake_file):
+                    with patch.dict("os.environ", {}, clear=False):
+                        os.environ.pop("PIPER_MODEL_DIR", None)
+                        models = self.provider.get_piper_models(models_dir=models_dir)
             finally:
                 os.chdir(original_cwd)
+
+            self.assertEqual(len(models), 2)
+
+            # Check faber model
+            self.assertIn("faber-medium", models)
+            faber_info = models["faber-medium"]
+            self.assertEqual(faber_info["name"], "faber-medium")
+            self.assertTrue(faber_info["recommended"])
+
+            # Check other model
+            self.assertIn("other-model", models)
+            other_info = models["other-model"]
+            self.assertEqual(other_info["name"], "other-model")
+            self.assertFalse(other_info["recommended"])
 
     def test_get_piper_models_empty_directory(self):
         """Test getting Piper models with empty models directory"""
+        import python_app.src.config as cfg_mod
+
         with tempfile.TemporaryDirectory() as temp_dir:
-            models_dir = Path(temp_dir) / "models"
+            temp_path = Path(temp_dir)
+            models_dir = temp_path / "models"
             models_dir.mkdir()
 
+            # Redirect python_root and CWD so only the empty temp dir is searched
+            fake_file = str(temp_path / "python_app" / "src" / "config.py")
             original_cwd = os.getcwd()
             try:
                 os.chdir(temp_dir)
-                models = self.provider.get_piper_models()
-                self.assertEqual(models, {})
+                with patch.object(cfg_mod, "__file__", fake_file):
+                    with patch.dict("os.environ", {}, clear=False):
+                        os.environ.pop("PIPER_MODEL_DIR", None)
+                        models = self.provider.get_piper_models(models_dir=models_dir)
             finally:
                 os.chdir(original_cwd)
+            self.assertEqual(models, {})
 
     def test_voice_suggestions_shape(self):
         """Ensure voice suggestions list includes known engines."""
