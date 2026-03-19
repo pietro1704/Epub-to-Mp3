@@ -25,6 +25,8 @@ from __future__ import annotations
 
 import json
 import os
+import pathlib
+import tempfile
 import threading
 from datetime import datetime, timezone
 from typing import Any
@@ -32,7 +34,12 @@ from typing import Any
 from .paths import LOGS_DIR
 
 _LOCK = threading.Lock()
-_LOG_FILE = LOGS_DIR / "conversions.jsonl"
+
+# During pytest, write to a temp file so tests never pollute the real log.
+if os.getenv("PYTEST_CURRENT_TEST"):
+    _LOG_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_sessions.jsonl"
+else:
+    _LOG_FILE = LOGS_DIR / "conversions.jsonl"
 
 
 def _detect_mode() -> str:
