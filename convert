@@ -5,6 +5,7 @@
 # Usage:
 #   ./convert book.epub
 #   ./convert "path/to/book.pdf"
+#   ./convert --menu book.epub
 #   ./convert book.epub --chapter 5
 #
 # Features:
@@ -18,7 +19,7 @@ set -euo pipefail  # Exit on error + catch unset vars
 
 MISE_BIN=$(command -v mise || true)
 if [ -z "$MISE_BIN" ]; then
-    echo "❌ mise não encontrado. Instale mise (https://mise.jdx.dev) para usar ./convert."
+    echo "❌ mise not found. Install mise (https://mise.jdx.dev) to use ./convert."
     exit 1
 fi
 
@@ -28,40 +29,40 @@ PIPER_BIN="$VENV_DIR/bin/piper"
 
 # Ensure virtualenv & deps are provisioned via mise
 if [ ! -x "$PYTHON_BIN" ] || [ ! -x "$PIPER_BIN" ]; then
-    echo "📦 Preparando ambiente com mise (tarefa install)..."
+    echo "📦 Preparing environment with mise (install task)..."
     "$MISE_BIN" run install
 fi
 
 # Allow Piper fallback by default (user can override to 0)
 export ENABLE_PIPER="${ENABLE_PIPER:-1}"
 
-PYTHON_CMD=("$MISE_BIN" "exec" "--" "python")
+PYTHON_CMD=("$MISE_BIN" "exec" "--" "python" "python_app/convert")
 
-# Check if special flags or commands (--help, -h, --version, clear-cache)
-if [ "$1" = "--help" ] || [ "$1" = "-h" ] || [ "$1" = "--version" ] || [ "$1" = "clear-cache" ] || [ "$1" = "--clear-cache" ]; then
-    "${PYTHON_CMD[@]}" -m python_app.main "$@"
-    exit 0
-fi
-
-# Check if book path provided
 if [ $# -eq 0 ]; then
-    echo "❌ Error: No book file specified"
+    echo "❌ Error: No arguments provided"
     echo ""
     echo "Usage:"
     echo "  ./convert book.epub"
     echo "  ./convert \"path/to/book.pdf\""
+    echo "  ./convert --menu book.epub"
     echo "  ./convert book.epub --chapter 5"
     echo "  ./convert clear-cache                    # Clear all cache"
     echo ""
     exit 1
 fi
 
-# Check if file exists (expand ~ to $HOME)
-BOOK_PATH="$1"
-BOOK_PATH="${BOOK_PATH/#\~/$HOME}"
-if [ ! -f "$BOOK_PATH" ]; then
-    echo "❌ Error: File not found: $BOOK_PATH"
-    exit 1
+for arg in "$@"; do
+    case "$arg" in
+        -h|--help)
+            "${PYTHON_CMD[@]}" "$@"
+            exit $?
+            ;;
+    esac
+done
+
+if [ "$1" = "clear-cache" ] || [ "$1" = "--clear-cache" ]; then
+    "${PYTHON_CMD[@]}" "$@"
+    exit $?
 fi
 
 # Print header
@@ -93,9 +94,19 @@ if [ "$VERBOSE_PRESENT" -eq 0 ]; then
     EXTRA_ARGS+=(--verbose)
 fi
 
-# Run conversion with optimal settings through mise-managed Python
-# Use expanded BOOK_PATH instead of $1, pass remaining args as-is
-"${PYTHON_CMD[@]}" -m python_app.main convert "$BOOK_PATH" "${@:2}" "${EXTRA_ARGS[@]}"
+exit_code=0
+
+# Run through the dedicated CLI entrypoint so options like --menu can appear
+# before the input path without being mistaken for a filename.
+if "${PYTHON_CMD[@]}" "$@" "${EXTRA_ARGS[@]}"; then
+    exit_code=0
+else
+    exit_code=$?
+fi
+
+if [ "$exit_code" -ne 0 ]; then
+    exit "$exit_code"
+fi
 
 # Print completion
 echo ""

@@ -67,3 +67,5 @@ _epub_convert() {
 # Register completion for both relative and absolute paths
 compdef _epub_convert python_app/convert
 compdef _epub_convert ./python_app/convert
+compdef _epub_convert convert
+compdef _epub_convert ./convert

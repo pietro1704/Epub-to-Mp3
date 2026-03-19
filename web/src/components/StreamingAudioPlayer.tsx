@@ -110,8 +110,10 @@ export default function StreamingAudioPlayer({
       const normalizedManifest = { ...data, chunks: sortedChunks };
       setManifest(normalizedManifest);
 
+      // Exact match only — do not skip ahead to a later segment if the current
+      // one has not been generated yet.  If missing, fall through to re-poll.
       const nextChunk = sortedChunks.find(
-        (chunk) => chunk.index >= currentSegment,
+        (chunk) => chunk.index === currentSegment,
       );
 
       if (nextChunk && nextChunk.url) {
@@ -180,13 +182,30 @@ export default function StreamingAudioPlayer({
   };
 
   const handleEnded = () => {
-    // Try next segment in current chapter
+    const nextSegmentIndex = currentSegment + 1;
+
+    // If the chapter is still being processed, advance to next segment index and
+    // let pollForChunk wait for it — never skip over gaps in segment indices.
+    const chapterDone =
+      currentChapterEntry &&
+      (currentChapterEntry.status === "completed" ||
+        currentChapterEntry.status === "failed" ||
+        currentChapterEntry.status === "skipped" ||
+        currentChapterEntry.status === "cancelled");
+
+    if (!chapterDone) {
+      // Chapter still in progress — move to next index and poll for it
+      setCurrentSegment(nextSegmentIndex);
+      return;
+    }
+
+    // Chapter is done: only advance segment if it already exists in the manifest
     if (manifest && manifest.chunks) {
       const nextSegment = manifest.chunks.find(
-        (chunk) => chunk.index > currentSegment,
+        (chunk) => chunk.index === nextSegmentIndex,
       );
       if (nextSegment) {
-        setCurrentSegment(nextSegment.index);
+        setCurrentSegment(nextSegmentIndex);
         return;
       }
     }

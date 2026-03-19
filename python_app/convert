@@ -4,6 +4,14 @@
 import argparse
 import sys
 from pathlib import Path
+
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = CURRENT_DIR.parent
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+if str(CURRENT_DIR) not in sys.path:
+    sys.path.insert(0, str(CURRENT_DIR))
+
 from src.ui.prompt import TerminalPrompt
 
 from main import (
@@ -97,9 +105,6 @@ def main() -> int:
 
     normalized_args = _normalize_cli_args(sys.argv[1:])
     args = parser.parse_args(normalized_args)
-    # Restore original input file token for downstream use (preserves quoting)
-    if getattr(args, "input_file", None):
-        args.input_file = normalized_args[0]
 
     if not hasattr(args, "extra_inputs"):
         args.extra_inputs = []
@@ -136,6 +141,9 @@ def main() -> int:
     if args.clear_cache and not has_input and not has_batch:
         _clear_cache_all(assume_yes=args.yes)
         return 0
+
+    if args.menu and not has_input and not has_batch:
+        parser.error("--menu requires an EPUB or PDF input file")
 
     if not has_input and not has_batch:
         parser.print_help()

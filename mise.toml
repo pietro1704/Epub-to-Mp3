@@ -2,7 +2,8 @@
 # Exact Python version required for Coqui TTS (requires 3.11)
 python = { version = "3.11.11", virtualenv = ".venv" }
 # Node LTS for frontend (Vite 7.x requires >=20.19.0)
-node = "20.19.0"
+node = "latest"
+npm = "latest"
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"

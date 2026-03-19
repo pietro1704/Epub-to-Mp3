@@ -1470,31 +1470,6 @@ export function useConversionFlow(
     ],
   );
 
-  // Pre-upload remaining queue items to /api/uploads while the current job runs.
-  // This stores an uploadId for each file so they survive a page reload and can
-  // be resumed without re-selecting the files.
-  const preUploadRemaining = useCallback(async () => {
-    if (!api.upload) return;
-    for (let i = 0; i < jobQueueRef.current.length; i++) {
-      const item = jobQueueRef.current[i];
-      if (!(item.file instanceof File) || item.uploadId) continue;
-      try {
-        const { uploadId } = await api.upload(item.file);
-        // Confirm the slot hasn't shifted (another job may have been popped)
-        if (jobQueueRef.current[i]?.file === item.file) {
-          jobQueueRef.current[i] = {
-            ...jobQueueRef.current[i],
-            file: null,
-            uploadId,
-          };
-          conversionCache.savePendingBatch(jobQueueRef.current);
-        }
-      } catch {
-        // Non-fatal — item will upload normally when its turn comes
-      }
-    }
-  }, [api]);
-
   const drainQueue = useCallback(async () => {
     if (queueActiveRef.current || queuePausedRef.current) {
       console.log(
@@ -1528,9 +1503,6 @@ export function useConversionFlow(
         const total = currentIndex + jobQueueRef.current.length;
         const meta = total > 1 ? { index: currentIndex, total } : undefined;
         console.log("[drainQueue] Processing job", currentIndex, "of", total);
-        // Pre-upload remaining files in background while this job runs so they
-        // survive a page reload and can be resumed with their uploadId.
-        void preUploadRemaining();
         const result = await runConversion(currentJob, meta);
         console.log("[drainQueue] Job completed with result:", result);
 
@@ -1608,7 +1580,6 @@ export function useConversionFlow(
     }
   }, [
     dispatch,
-    preUploadRemaining,
     runConversion,
     setQueuePaused,
     state,
