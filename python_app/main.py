@@ -2675,7 +2675,7 @@ class ConverterApplication:
             except Exception as e:
                 print(f"   ⚠️ Error removing output: {e}")
 
-        # Remover filas/estados persistentes
+        # Remove queues/persistent states
         residual_dirs = [
             JOBS_DIR,
             UPLOADS_DIR,

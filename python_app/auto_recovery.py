@@ -504,11 +504,11 @@ class AutoRecoverySystem:
         try:
             loop = asyncio.get_event_loop()
             if loop.is_running():
-                # TODO: Implementar check mais sofisticado
-                # Por enquanto apenas monitora
+                # TODO: Implement more sophisticated check
+                # For now just monitors
                 pass
         except RuntimeError:
-            # Sem event loop, OK
+            # No event loop, OK
             pass
 
     def _log_recovery_action(

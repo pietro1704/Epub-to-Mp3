@@ -3535,7 +3535,7 @@ async def process_conversion(job_id: str) -> None:
 
         _append_event(job, "")
         _append_event(job, f"🎙️ Engine: {active_config.engine}")
-        _append_event(job, f"🗣️ Voz: {active_config.voice or 'default'}")
+        _append_event(job, f"🗣️ Voice: {active_config.voice or 'default'}")
         _update_job_activity(job, stage="tts_ready")
         has_edge_engine = (active_config.engine or "").lower() == "edge"
         if not has_edge_engine and auto_engine_pool:
@@ -3584,7 +3584,7 @@ async def process_conversion(job_id: str) -> None:
         elif edge_auto_tune and parallel_slots_cap:
             _append_event(
                 job,
-                f"🌐 Edge auto-ajuste: limite {parallel_slots_cap} chapter(s) in parallel ({edge_network_tier})",
+                f"🌐 Edge auto-tune: cap {parallel_slots_cap} chapter(s) in parallel ({edge_network_tier})",
             )
         elif parallel_slots > 1:
             _append_event(
