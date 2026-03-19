@@ -2059,7 +2059,7 @@ class EdgeTTSEngine:
                 waiters = getattr(global_limiter, "_waiters", waiters)
             waiters_count = len(waiters) if waiters is not None else 0
             if self.verbose:
-                self._log(f"   ⏳ Aguardando slot livre (fila: {waiters_count})")
+                self._log(f"   ⏳ Waiting for free slot (queue: {waiters_count})")
 
         async with AsyncExitStack() as stack:
             if global_limiter and global_limiter is not self._rate_limiter:

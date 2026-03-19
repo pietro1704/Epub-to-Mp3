@@ -6330,7 +6330,7 @@ class AudioConverter(
                                     )
                                 else:
                                     print(
-                                        f"❌ Chapter {index} transcription FALHOU: "
+                                        f"❌ Chapter {index} transcription FAILED: "
                                         f"{vr.similarity_score:.1%} similarity (minimum {self._transcription_verifier.SIMILARITY_THRESHOLD:.0%})"
                                     )
                                     if self.verbose:

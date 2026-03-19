@@ -1170,16 +1170,11 @@ class _EdgeThrottleMixin:
                     "too many requests",
                     "403",
                     "no audio",
-                    "sem audio",
                     "noaudio",
-                    "sem progresso",
                     "truncated",
                     "truncation",
                     "file missing",
                     "file invalid",
-                    "file invalido",
-                    "failure na synthesis",
-                    "failure na sintese",
                     "edge",
                 )
             ):

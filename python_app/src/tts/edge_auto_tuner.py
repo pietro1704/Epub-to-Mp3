@@ -276,7 +276,7 @@ class EdgeTTSAutoTuner:
         """
         backoff = self.get_current_backoff()
         if backoff > 0:
-            self._log(f"⏸️ Aguardando rate limit: {backoff:.1f}s")
+            self._log(f"⏸️ Waiting for rate limit: {backoff:.1f}s")
             await asyncio.sleep(backoff)
             return True
         return False
