@@ -4378,6 +4378,24 @@ async def process_conversion(job_id: str) -> None:
                                             f"   ↳ AUTO: switching to {next_engine.upper()} after timeout",
                                         )
                                         continue
+                                # If Edge hasn't hit the permanent-disable threshold,
+                                # fall back locally for THIS chapter only — next chapter
+                                # retries Edge.  Only permanently switch after
+                                # _EDGE_TIMEOUT_DISABLE_THRESHOLD consecutive stalls.
+                                if (
+                                    use_engine == "edge"
+                                    and edge_chapter_timeouts[0] < _EDGE_TIMEOUT_DISABLE_THRESHOLD
+                                    and engine_index + 1 < len(engine_chain)
+                                ):
+                                    fallback_cfg = engine_chain[engine_index + 1]
+                                    local_active_config = fallback_cfg
+                                    local_engine_name = (fallback_cfg.engine or "auto").lower()
+                                    _append_event(
+                                        job,
+                                        f"   ↳ Chapter-local fallback to {local_engine_name.upper()} "
+                                        f"(Edge below disable threshold — next chapter retries Edge)",
+                                    )
+                                    continue
                                 if _switch_to_next_engine(
                                     f"Synthesizer {use_engine.upper()} stalled for {int(chapter_timeout)}s"
                                 ):
