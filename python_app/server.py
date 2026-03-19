@@ -3108,6 +3108,7 @@ async def process_conversion(job_id: str) -> None:
 
         language_profile: Optional[LanguageProfile] = None
         detected_lang = None
+        _detection_fell_back = False
         job_language = job.get("language")
         previously_detected = job.get("detectedLanguage")
         if job_language and job_language.lower() not in ("auto", ""):
@@ -3137,6 +3138,7 @@ async def process_conversion(job_id: str) -> None:
             _append_event(job, f"🌐 Resumed with cached language: {detected_lang}")
         elif structure_items:
             _append_event(job, "🔍 Analyzing content to detect language...")
+            _detection_fell_back = False
             try:
                 language_profile = await asyncio.wait_for(
                     asyncio.to_thread(
@@ -3166,6 +3168,7 @@ async def process_conversion(job_id: str) -> None:
                     _append_event(job, f"🌐 Detected language: {detected_lang}")
             else:
                 detected_lang = "pt-BR"
+                _detection_fell_back = True
                 _append_event(job, f"🌐 Using default language: {detected_lang}")
                 language_profile = LanguageProfile(
                     primary=detected_lang,
@@ -3176,6 +3179,7 @@ async def process_conversion(job_id: str) -> None:
                 # Mark as fallback so next resume re-runs detection instead of reusing
                 job["_detectedLanguageFallback"] = True
         else:
+            _detection_fell_back = False
             detected_lang = "pt-BR"
             _append_event(job, f"🌐 Not enough text for detection, using: {detected_lang}")
             language_profile = LanguageProfile(
@@ -3187,9 +3191,14 @@ async def process_conversion(job_id: str) -> None:
 
         converter_app.language_profile = language_profile
         job["detectedLanguage"] = detected_lang
-        # Clear the fallback flag once we have a reliable value (user-selected or
-        # successfully detected); keep it if this run also fell back.
-        if not job.get("_detectedLanguageFallback"):
+        # Clear fallback flag when detection succeeded this run.
+        # Also reset the voice if it was auto-set during a previous fallback run so the
+        # engine can pick the correct voice for the newly detected language.
+        if not _detection_fell_back:
+            if job.get("_voiceFromFallback"):
+                job.pop("voice", None)
+                job.pop("_voiceFromFallback", None)
+                _append_event(job, f"🔄 Voice reset for detected language: {detected_lang}")
             job.pop("_detectedLanguageFallback", None)
         _persist_job(job_id, force=True)  # Persist metadata
         _update_job_activity(job, stage="language_detected")
