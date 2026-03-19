@@ -3136,9 +3136,19 @@ async def process_conversion(job_id: str) -> None:
         elif structure_items:
             _append_event(job, "🔍 Analyzing content to detect language...")
             try:
-                language_profile = converter_app._prepare_language_profile(
-                    reader, structure_items, verbose=verbose_enabled
+                language_profile = await asyncio.wait_for(
+                    asyncio.to_thread(
+                        converter_app._prepare_language_profile,
+                        reader,
+                        structure_items,
+                        verbose_enabled,
+                        allow_prompt=False,
+                    ),
+                    timeout=30.0,
                 )
+            except asyncio.TimeoutError:
+                _append_event(job, "⚠️ Language detection timed out after 30s")
+                language_profile = None
             except Exception as exc:
                 _append_event(job, f"⚠️ Language detection error: {exc}")
                 language_profile = None
