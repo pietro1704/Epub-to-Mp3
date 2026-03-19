@@ -65,7 +65,7 @@ function buildFormData(values: ConversionFormValues): FormData {
   if (uploadId) {
     formData.append("upload_id", uploadId);
   }
-  // Nunca reenvie o arquivo se já houver uploadId
+  // Never re-send the file if an uploadId already exists
   if (values.file && !hasUploadId) {
     formData.append("file", values.file);
   }

@@ -533,7 +533,7 @@ export default function ConversionForm({
   };
 
   const startUploadForEntry = (entryId: string, file: File) => {
-    // Evita reenvio se upload já existe ou está em andamento para este item
+    // Skip if an upload already exists or is in progress for this entry
     if (uploadPromisesRef.current[entryId]) {
       return;
     }
