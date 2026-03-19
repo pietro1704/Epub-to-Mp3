@@ -62,8 +62,9 @@ if os.path.isdir(jobs_dir):
         try:
             with open(os.path.join(jobs_dir, name), encoding="utf-8") as f:
                 job = json.load(f)
-            status = job.get("status", "")
-            if status in ("running", "queued", "pending"):
+            # Job files use "state" not "status"
+            state = job.get("state", "")
+            if state in ("running", "queued", "pending"):
                 title = job.get("bookTitle") or job.get("book_title") or name
                 engine = job.get("engine", "?")
                 pct = job.get("progressPercent", 0)

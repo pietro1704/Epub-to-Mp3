@@ -44,15 +44,16 @@ if os.path.isdir(jobs_dir):
         try:
             with open(os.path.join(jobs_dir, name), encoding="utf-8") as f:
                 job = json.load(f)
-            status = job.get("status", "unknown")
+            # Job files use "state" not "status"
+            state = job.get("state", "unknown")
             title = (job.get("bookTitle") or job.get("book_title") or name)[:40]
             engine = job.get("engine", "?")
             pct = job.get("progressPercent") or 0
             mode = job.get("mode", "?")
             ch_done = job.get("chaptersCompleted") or job.get("chapters_completed") or 0
             ch_total = job.get("chaptersTotal") or job.get("chapters_total") or "?"
-            icon = {"running": "🔄", "queued": "⏳", "completed": "✅",
-                    "failed": "❌", "cancelled": "🚫"}.get(status, "❓")
+            icon = {"running": "🔄", "queued": "⏳", "finished": "✅",
+                    "failed": "❌", "cancelled": "🚫"}.get(state, "❓")
             rows.append(f"  {icon} {title} | {engine} | {mode} | {ch_done}/{ch_total} ch | {pct:.0f}%")
         except Exception:
             pass

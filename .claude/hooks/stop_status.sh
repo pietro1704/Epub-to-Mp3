@@ -20,20 +20,20 @@ for name in os.listdir(jobs_dir):
     try:
         with open(os.path.join(jobs_dir, name), encoding="utf-8") as f:
             job = json.load(f)
-        status = job.get("status", "")
-        if status in ("running", "queued"):
+        # Job files use "state" not "status"
+        state = job.get("state", "")
+        if state in ("running", "queued"):
             title = (job.get("bookTitle") or job.get("book_title") or name)[:40]
             engine = job.get("engine", "?")
             pct = job.get("progressPercent") or 0
-            last_ts = job.get("lastActivityAt") or job.get("last_activity_at") or ""
+            # _lastActivityTs is a Unix float persisted by _update_job_activity
+            last_ts_float = job.get("_lastActivityTs")
             stall = ""
-            if last_ts:
+            if last_ts_float:
                 try:
-                    from datetime import datetime, timezone
-                    dt = datetime.fromisoformat(last_ts.replace("Z", "+00:00"))
-                    elapsed = now - dt.timestamp()
+                    elapsed = now - float(last_ts_float)
                     if elapsed > 3600:
-                        # Dead job: server crashed without updating status — skip
+                        # Dead job: server crashed without updating state — skip
                         continue
                     if elapsed > 300:
                         stall = f" ⚠️ stalled {int(elapsed//60)}m ago"
