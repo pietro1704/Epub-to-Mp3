@@ -20,6 +20,7 @@ import traceback
 import unicodedata
 import zipfile
 from dataclasses import dataclass
+from dataclasses import replace as _dc_replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import unquote
@@ -1167,7 +1168,26 @@ class ConverterApplication:
         if expected_count > 0:
             reader._toc_expected_chapters = expected_count
 
-        return structure_items
+        # Assign unique sub-indices to split chapters that share the same index.
+        # When a large chapter is split at paragraph boundaries or CSS markers, all
+        # resulting parts initially receive the same TOC-derived index (e.g. "4.3").
+        # Rename them to "4.3.1", "4.3.2", etc. so each part has a unique,
+        # addressable index for file naming and resume logic.
+        index_counts: Dict[str, int] = {}
+        for item in structure_items:
+            index_counts[item.index] = index_counts.get(item.index, 0) + 1
+
+        index_seen: Dict[str, int] = {}
+        resolved: List[ChapterStructureItem] = []
+        for item in structure_items:
+            if index_counts[item.index] > 1:
+                index_seen[item.index] = index_seen.get(item.index, 0) + 1
+                new_idx = f"{item.index}.{index_seen[item.index]}"
+                new_display = new_idx + item.display_name[len(item.index) :]
+                item = _dc_replace(item, index=new_idx, display_name=new_display)
+            resolved.append(item)
+
+        return resolved
 
     def _count_toc_chapters(self, reader: EbookReader) -> int:
         """Count expected chapters from TOC (leaf entries with href)."""

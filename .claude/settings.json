@@ -1,4 +1,5 @@
 {
+  "fastMode": true,
   "hooks": {
     "SessionStart": [
       {
@@ -8,6 +9,7 @@
             "type": "command",
             "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/session_start.sh",
             "timeout": 10,
+            "async": true,
             "statusMessage": "Loading conversion history..."
           }
         ]
