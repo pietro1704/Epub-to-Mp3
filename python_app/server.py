@@ -207,6 +207,9 @@ TURBO_SLOT_MULTIPLIER = max(
     1, int(os.getenv("FORCE_TURBO_SLOT_MULTIPLIER", "3") or "3")
 )  # 3x para igualar CLI
 WORKER_MAX = max(1, int(os.getenv("JOB_WORKERS_MAX", "16") or "16"))
+# Hard cap on simultaneous book conversions. Turbo mode scales parallelism
+# *within* a job (chapters/chunks), not the number of concurrent books.
+MAX_CONCURRENT_BOOKS = max(1, int(os.getenv("MAX_CONCURRENT_BOOKS", "1") or "1"))
 # **PERFORMANCE**: Use the same aggressive settings as the CLI
 # Disable conservative auto-tune for maximum speed
 EDGE_AUTO_TUNE = os.getenv("EDGE_AUTO_TUNE", "false").strip().lower() in {"1", "true", "yes", "on"}
@@ -1429,6 +1432,7 @@ _WORKER_CAP = max(
     1,
     min(
         WORKER_MAX,
+        MAX_CONCURRENT_BOOKS,
         max(2, (_hardware_profile.cpu_physical or 1) * TURBO_SLOT_MULTIPLIER),
     ),
 )
@@ -1472,7 +1476,9 @@ class _FallbackSystemMonitor:
 system_monitor = _FallbackSystemMonitor()  # Will be replaced with real monitor on startup
 
 if FORCE_TURBO:
-    desired_workers = max(2, _hardware_profile.cpu_physical or 1)
+    # Turbo scales parallelism within a job, not simultaneous books.
+    # Cap job workers at MAX_CONCURRENT_BOOKS (default 1).
+    desired_workers = min(max(2, _hardware_profile.cpu_physical or 1), MAX_CONCURRENT_BOOKS)
     if desired_workers > _JOB_WORKERS:
         logger.warning(
             f"Turbo mode: increasing job workers from {_JOB_WORKERS} to {desired_workers}"
@@ -1824,7 +1830,7 @@ async def _job_watchdog():
 
 async def _scale_worker_pool(target: int) -> None:
     global _JOB_WORKERS
-    target = max(1, min(target, WORKER_MAX, _WORKER_CAP))
+    target = max(1, min(target, WORKER_MAX, _WORKER_CAP, MAX_CONCURRENT_BOOKS))
     async with _worker_scale_lock:
         current = len(_job_workers)
         if target == current:
