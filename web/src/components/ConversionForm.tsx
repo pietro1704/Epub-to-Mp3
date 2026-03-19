@@ -36,6 +36,7 @@ interface ConversionFormProps {
     language?: string;
     formattingCues?: boolean;
     noParallel?: boolean;
+    multiEngineParallel?: boolean;
   };
 }
 
@@ -200,6 +201,7 @@ export default function ConversionForm({
   );
   const [formattingCues, setFormattingCues] = useState(true);
   const [noParallel, setNoParallel] = useState(false);
+  const [multiEngineParallel, setMultiEngineParallel] = useState(false);
   const [maxPerformance, setMaxPerformance] = useState(true);
   const [parallelSlots, setParallelSlots] = useState("");
   const [chapterStallSeconds, setChapterStallSeconds] = useState("");
@@ -750,6 +752,7 @@ export default function ConversionForm({
           : language,
       formattingCues,
       noParallel,
+      multiEngineParallel,
       maxPerformance,
       parallelSlots: parseOptionalInt(parallelSlots),
       chapterStallSeconds: parseOptionalNumber(chapterStallSeconds),
@@ -1244,6 +1247,29 @@ export default function ConversionForm({
               </span>
             </label>
             <p className="form-hint">{t.form.noParallelDescription}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="multiEngineParallelToggle">
+              {t.form.multiEngineParallelLabel}
+            </label>
+            <label className="form-toggle" htmlFor="multiEngineParallelToggle">
+              <input
+                id="multiEngineParallelToggle"
+                type="checkbox"
+                checked={multiEngineParallel}
+                disabled={isSubmitting}
+                onChange={(event) =>
+                  setMultiEngineParallel(event.target.checked)
+                }
+              />
+              <span>
+                {multiEngineParallel
+                  ? t.form.multiEngineParallelOn
+                  : t.form.multiEngineParallelOff}
+              </span>
+            </label>
+            <p className="form-hint">{t.form.multiEngineParallelDescription}</p>
           </fieldset>
 
           <fieldset className="form-row">

@@ -3999,6 +3999,9 @@ class ConverterApplication:
             os.environ["CHAPTER_PARALLEL_COUNT"] = "1"
             os.environ["CHAPTER_PARALLEL_MAX"] = "1"
 
+        if getattr(args, "multi_engine_parallel", False):
+            config.extra["multi_engine_parallel"] = "1"
+
     def _apply_speed_profile(self, args: argparse.Namespace, config: ConversionConfig) -> None:
         profile_name = str(getattr(args, "profile", "") or "").strip().lower()
         if profile_name != "speed":
@@ -4212,6 +4215,12 @@ def _add_conversion_arguments(
         dest="no_parallel",
         action="store_true",
         help="Disable chapter/segment parallelism (1 chapter at a time)",
+    )
+    parser.add_argument(
+        "--multi-engine",
+        dest="multi_engine_parallel",
+        action="store_true",
+        help="Run Edge and a local engine (Piper/Kokoro) simultaneously on different chapters for maximum throughput. Disabled by default — local engines may misdetect language.",
     )
     parser.add_argument(
         "--no-footnote",

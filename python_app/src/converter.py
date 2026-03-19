@@ -34,6 +34,7 @@ from ._health_watchdog_mixin import _HealthWatchdogMixin
 from ._metrics_report_mixin import _MetricsReportMixin
 from ._output_file_mixin import _OutputFileMixin
 from ._retry_mixin import _RetryMixin
+from ._server_engine_helpers import _build_multi_engine_slot_map
 from ._validation_mixin import _ValidationMixin
 from .adaptive_performance import AdaptivePerformanceController
 from .auto_tuner import AutoTuner
@@ -2898,14 +2899,59 @@ class AudioConverter(
         chapter_iter = iter(chapters_list)
         batch_start = time.time()
 
+        # Compute multi-engine slot affinity (default off; needs explicit opt-in).
+        _me_requested = (
+            bool((config.extra or {}).get("multi_engine_parallel")) and not is_auto_engine
+        )
+        cli_slot_affinity: list[str] = []
+        if _me_requested and not is_auto_engine:
+            _me_engines: list[str] = []
+            if (config.engine or "").lower() not in {"", "auto"}:
+                _me_engines.append((config.engine or "").lower())
+            # Add local engines from auto_engine_pool if available
+            for name in auto_engine_pool or {}:
+                if name not in _me_engines:
+                    _me_engines.append(name)
+            # Dynamic edge fraction: proportional to relative telemetry speed.
+            _tele = getattr(self, "telemetry", None)
+            _tele_summary = _tele.summary() if _tele else {}
+            _edge_spd = float((_tele_summary.get("edge") or {}).get("avg_chars_per_second") or 0.0)
+            _local_spds = [
+                float((_tele_summary.get(e) or {}).get("avg_chars_per_second") or 0.0)
+                for e in _me_engines[1:]
+            ]
+            _best_local = max(_local_spds) if _local_spds else 0.0
+            if _edge_spd > 0 and _best_local > 0:
+                _edge_frac = _edge_spd / (_edge_spd + _best_local)
+                _edge_frac = max(0.50, min(0.85, _edge_frac))
+            else:
+                _edge_frac = float(os.getenv("MULTI_ENGINE_EDGE_FRACTION", "0.67"))
+            cli_slot_affinity = _build_multi_engine_slot_map(
+                recommended,
+                _me_engines,
+                edge_fraction=_edge_frac,
+            )
+            if cli_slot_affinity:
+                counts = {e: cli_slot_affinity.count(e) for e in dict.fromkeys(cli_slot_affinity)}
+                print(
+                    "⚡ Multi-engine parallel: " + ", ".join(f"{e}×{n}" for e, n in counts.items())
+                )
+
         # Helper to create chapter task
-        def create_chapter_task(chapter: Chapter) -> asyncio.Task:
+        def create_chapter_task(
+            chapter: Chapter, preferred_engine: Optional[str] = None
+        ) -> asyncio.Task:
+            task_config = config
+            if preferred_engine and not is_auto_engine:
+                from dataclasses import replace as _dc_replace
+
+                task_config = _dc_replace(config, engine=preferred_engine)
             return asyncio.create_task(
                 self._convert_chapters_sequential(
                     [chapter],
                     engine_pool,
                     output_dir,
-                    config,
+                    task_config,
                     is_auto_engine=is_auto_engine,
                     auto_engine_pool=auto_engine_pool,
                     book_title=book_title,
@@ -2924,20 +2970,25 @@ class AudioConverter(
         total_chars_processed = 0
         batch_errors = 0
         completed_since_tune = 0
+        slot_task_engine: dict[asyncio.Task, str] = {}
 
-        for _ in range(min(parallel_slots, total_chapters)):
+        for slot_idx in range(min(parallel_slots, total_chapters)):
             try:
                 chapter = next(chapter_iter)
-                task = create_chapter_task(chapter)
+                pref = cli_slot_affinity[slot_idx] if slot_idx < len(cli_slot_affinity) else None
+                task = create_chapter_task(chapter, preferred_engine=pref)
                 pending_tasks[task] = chapter
+                slot_task_engine[task] = pref or ""
             except StopIteration:
                 break
 
         while pending_tasks:
             done, _ = await asyncio.wait(pending_tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
 
+            freed_slot_engines: list[str] = []
             for task in done:
                 chapter = pending_tasks.pop(task)
+                freed_slot_engines.append(slot_task_engine.pop(task, ""))
                 chapter_chars = self._estimate_chapter_chars(chapter)
                 batch_chars += chapter_chars
                 total_chars_processed += chapter_chars
@@ -2962,11 +3013,16 @@ class AudioConverter(
                 parallel_slots = max(1, tuned_slots)
                 engine_pool.update_parallel_slots(parallel_slots)
 
-            while len(pending_tasks) < parallel_slots:
+            # Refill freed slots, preserving engine affinity.
+            for freed_engine in freed_slot_engines:
+                if len(pending_tasks) >= parallel_slots:
+                    break
                 try:
                     chapter = next(chapter_iter)
-                    task = create_chapter_task(chapter)
+                    pref = freed_engine if (freed_engine and cli_slot_affinity) else None
+                    task = create_chapter_task(chapter, preferred_engine=pref)
                     pending_tasks[task] = chapter
+                    slot_task_engine[task] = pref or ""
                 except StopIteration:
                     break
 

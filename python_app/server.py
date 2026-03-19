@@ -1337,6 +1337,7 @@ from src._server_engine_helpers import (  # noqa: E402
     _apply_perf_defaults,
     _auto_tune_engine_pool,
     _build_engine_chain,
+    _build_multi_engine_slot_map,
     _infer_perf_profile,
     _next_auto_engine,
     _pick_auto_engine,
@@ -1920,6 +1921,7 @@ async def convert_ebook(
     priority: Optional[str] = Form(None),
     formatting_cues: Optional[str] = Form("on"),
     no_parallel: Optional[str] = Form(None),
+    multi_engine_parallel: Optional[str] = Form(None),
     parallel_slots: Optional[str] = Form(None),
     max_performance: Optional[str] = Form(None),
     chapter_stall_seconds: Optional[str] = Form(None),
@@ -1955,6 +1957,7 @@ async def convert_ebook(
     speak_cues = _parse_form_bool(formatting_cues, True)
     ui_lang = _normalize_locale(ui_language, "pt")
     disable_parallel = _parse_form_bool(no_parallel, False)
+    multi_engine_parallel_flag = _parse_form_bool(multi_engine_parallel, False)
     max_performance_enabled = _parse_form_bool(max_performance, False)
     parallel_slots_override = _parse_form_int(
         parallel_slots,
@@ -2177,6 +2180,7 @@ async def convert_ebook(
         "parallelSlotsRequested": parallel_slots_override,
         "parallelActive": 0,
         "noParallel": disable_parallel,
+        "multiEngineParallel": multi_engine_parallel_flag,
         "maxPerformance": max_performance_enabled,
         "chapterStallSeconds": chapter_stall_override,
         "edgeNetworkTier": edge_network_tier_override,
@@ -3233,6 +3237,8 @@ async def process_conversion(job_id: str) -> None:
             config.edge_auto_tune = bool(edge_auto_tune_override)
         if edge_stable_mode is not None:
             config.extra["edge_stable_mode"] = "1" if edge_stable_mode else "0"
+        if job.get("multiEngineParallel"):
+            config.extra["multi_engine_parallel"] = "1"
         config.extra.setdefault("voice_auto", "1" if job.get("voice") is None else "0")
         converter_app._apply_language_preferences(config)
 
@@ -3416,6 +3422,8 @@ async def process_conversion(job_id: str) -> None:
         engine_index = 0
         active_config: Optional[ConversionConfig] = None
         auto_mode = (config.engine or "").lower() == "auto"
+        slot_affinity: list[str] = []  # populated after parallel_slots is known
+        _multi_engine_requested = bool(config.extra.get("multi_engine_parallel"))
 
         auto_engine_pool: dict[str, ConversionConfig] = {}
         telemetry_speeds: Dict[str, object] = {}
@@ -3457,6 +3465,20 @@ async def process_conversion(job_id: str) -> None:
                 _append_event(job, "❌ No TTS engine available to start conversion")
                 _persist_job(job_id, force=True)
                 return
+
+            # Pre-load secondary engines for multi-engine parallel slots.
+            if _multi_engine_requested:
+                for extra_candidate in engine_chain[engine_index + 1 :]:
+                    extra_name = (extra_candidate.engine or "").lower()
+                    if not extra_name or extra_name in engine_seeds:
+                        continue
+                    try:
+                        extra_obj = tts_factory.create_engine(extra_candidate)
+                        engine_seeds[extra_name] = extra_obj
+                        _set_engine_status(job, extra_name, "ready", "Ready (secondary)")
+                        _append_event(job, f"✅ Pre-loaded {extra_name} for multi-engine parallel")
+                    except Exception as exc:
+                        _append_event(job, f"⚠️ Could not pre-load {extra_name}: {exc}")
         else:
             active_config = config
             auto_engine_pool = _prepare_auto_engine_pool(config)
@@ -3783,7 +3805,12 @@ async def process_conversion(job_id: str) -> None:
         audio_duplicate_tracker = AudioDuplicateTracker()
 
         def _apply_edge_slow_mode(reason: str) -> None:
-            nonlocal parallel_slots, requested_slots, parallel_slots_cap, edge_slow_mode
+            nonlocal \
+                parallel_slots, \
+                requested_slots, \
+                parallel_slots_cap, \
+                edge_slow_mode, \
+                slot_affinity
             if not edge_auto_tune or edge_slow_mode:
                 return
             edge_slow_mode = True
@@ -3806,6 +3833,7 @@ async def process_conversion(job_id: str) -> None:
                 )
                 cfg.edge_enable_parallel = False
             engine_pool.update_parallel_slots(parallel_slots)
+            slot_affinity = []  # disable multi-engine affinity in slow mode
             _append_event(
                 job,
                 f"🧯 Edge safe mode: {reason} → chunk={edge_safe_profile['chunk_chars']} seg={edge_safe_profile['max_segment_seconds']}s parallel={parallel_slots}",
@@ -3886,7 +3914,9 @@ async def process_conversion(job_id: str) -> None:
             )
             _apply_edge_slow_mode("retry for failed chapters")
 
-        async def convert_chapter(idx: int, chapter_obj) -> None:
+        async def convert_chapter(
+            idx: int, chapter_obj, *, preferred_engine: Optional[str] = None
+        ) -> None:
             if job_failed["value"] or _should_abort_current_run():
                 return
 
@@ -4018,6 +4048,17 @@ async def process_conversion(job_id: str) -> None:
                 local_engine_name = (
                     local_active_config.engine if local_active_config else config.engine
                 ) or "auto"
+
+                # Multi-engine parallel: honour slot affinity when the preferred
+                # engine is available and the job is not in auto-mode.
+                if preferred_engine and not auto_mode:
+                    pref_lower = preferred_engine.lower()
+                    if pref_lower not in unavailable_engines:
+                        for _candidate in engine_chain:
+                            if (_candidate.engine or "").lower() == pref_lower:
+                                local_active_config = _candidate
+                                local_engine_name = pref_lower
+                                break
 
                 if auto_mode:
                     available_auto = _available_auto_pool()
@@ -4789,6 +4830,50 @@ async def process_conversion(job_id: str) -> None:
             for idx, chapter in enumerate(chapters, 1)
             if idx not in completed_indices
         ]
+
+        # Compute multi-engine slot affinity for the first pass.
+        # Affinity maps each physical slot to an engine so Edge and a local engine
+        # run simultaneously from chapter 1 rather than waiting for fallback.
+        if _multi_engine_requested and not auto_mode and not force_sequential:
+            _me_raw = [
+                (candidate.engine or "").lower()
+                for candidate in engine_chain
+                if (candidate.engine or "").lower() in registered_engines
+                and (candidate.engine or "").lower() not in unavailable_engines
+            ]
+            _me_seen: set[str] = set()
+            _me_engines: list[str] = []
+            for _e in _me_raw:
+                if _e and _e not in _me_seen:
+                    _me_seen.add(_e)
+                    _me_engines.append(_e)
+            # Dynamic edge fraction: proportional to relative telemetry speed so
+            # the faster engine gets more slots automatically.
+            _edge_spd = float(
+                (telemetry.summary().get("edge") or {}).get("avg_chars_per_second") or 0.0
+            )
+            _local_spds = [
+                float((telemetry.summary().get(e) or {}).get("avg_chars_per_second") or 0.0)
+                for e in _me_engines[1:]
+            ]
+            _best_local = max(_local_spds) if _local_spds else 0.0
+            if _edge_spd > 0 and _best_local > 0:
+                _edge_frac = _edge_spd / (_edge_spd + _best_local)
+                _edge_frac = max(0.50, min(0.85, _edge_frac))
+            else:
+                _edge_frac = float(os.getenv("MULTI_ENGINE_EDGE_FRACTION", "0.67"))
+            slot_affinity = _build_multi_engine_slot_map(
+                parallel_slots,
+                _me_engines,
+                edge_fraction=_edge_frac,
+            )
+            if slot_affinity:
+                counts = {e: slot_affinity.count(e) for e in dict.fromkeys(slot_affinity)}
+                _append_event(
+                    job,
+                    "⚡ Multi-engine parallel: " + ", ".join(f"{e}×{n}" for e, n in counts.items()),
+                )
+
         retry_round = 0
         while pending_chapters:
             if retry_round > 0:
@@ -4798,7 +4883,15 @@ async def process_conversion(job_id: str) -> None:
             _update_job_activity(job, stage="conversion_loop")
             running_tasks: set[asyncio.Task] = set()
             cursor = 0
+            slot_task_engine: dict[asyncio.Task, str] = {}  # task → engine it was assigned
             _maybe_adjust_parallel_slots(force=True)
+
+            def _next_slot_engine() -> Optional[str]:
+                """Return the engine name for the next slot to be filled."""
+                if not slot_affinity:
+                    return None
+                slot_idx = len(running_tasks)
+                return slot_affinity[slot_idx] if slot_idx < len(slot_affinity) else None
 
             while cursor < len(pending_chapters) or running_tasks:
                 abort_requested = job.get("cancelRequested") or job.get("_run_token") != run_token
@@ -4807,7 +4900,12 @@ async def process_conversion(job_id: str) -> None:
                     while len(running_tasks) < parallel_slots and cursor < len(pending_chapters):
                         idx, chapter = pending_chapters[cursor]
                         cursor += 1
-                        running_tasks.add(asyncio.create_task(convert_chapter(idx, chapter)))
+                        pref = _next_slot_engine()
+                        task = asyncio.create_task(
+                            convert_chapter(idx, chapter, preferred_engine=pref)
+                        )
+                        slot_task_engine[task] = pref or ""
+                        running_tasks.add(task)
                 if abort_requested and not running_tasks:
                     break
                 if not running_tasks:
@@ -4820,7 +4918,9 @@ async def process_conversion(job_id: str) -> None:
                 _maybe_health_check()
                 if not done:
                     continue
+                freed_engines: list[str] = []
                 for task in done:
+                    freed_engines.append(slot_task_engine.pop(task, ""))
                     try:
                         task.result()
                     except asyncio.CancelledError:
@@ -4830,6 +4930,16 @@ async def process_conversion(job_id: str) -> None:
                         _append_event(job, f"❌ Unexpected error while converting chapter: {exc}")
                         _persist_job(job_id, force=True)
                 _maybe_adjust_parallel_slots()
+                # Refill slots with the same engine affinity the freed slot had.
+                for freed_engine in freed_engines:
+                    if len(running_tasks) >= parallel_slots or cursor >= len(pending_chapters):
+                        break
+                    idx, chapter = pending_chapters[cursor]
+                    cursor += 1
+                    pref = freed_engine if (freed_engine and slot_affinity) else None
+                    task = asyncio.create_task(convert_chapter(idx, chapter, preferred_engine=pref))
+                    slot_task_engine[task] = pref or ""
+                    running_tasks.add(task)
 
             if job.get("cancelRequested") or job.get("_run_token") != run_token:
                 break

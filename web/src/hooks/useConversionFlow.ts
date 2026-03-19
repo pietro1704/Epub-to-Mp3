@@ -275,6 +275,10 @@ function buildCliCommand(values: ConversionFormValues): string {
     parts.push("--no-parallel");
   }
 
+  if (values.multiEngineParallel) {
+    parts.push("--multi-engine");
+  }
+
   if (values.filterChapters) {
     parts.push("--filter-chapters");
   }

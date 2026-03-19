@@ -152,6 +152,10 @@ export interface FormText {
   noParallelDescription: string;
   noParallelOn: string;
   noParallelOff: string;
+  multiEngineParallelLabel: string;
+  multiEngineParallelDescription: string;
+  multiEngineParallelOn: string;
+  multiEngineParallelOff: string;
   maxPerformanceLabel: string;
   maxPerformanceDescription: string;
   maxPerformanceOn: string;
@@ -775,6 +779,11 @@ export const translations: Record<Locale, Translations> = {
         "Útil para Edge online em redes instáveis; reduz travamentos e pode ser mais rápido.",
       noParallelOn: "Sequencial",
       noParallelOff: "Automático",
+      multiEngineParallelLabel: "Múltiplos engines em paralelo",
+      multiEngineParallelDescription:
+        "Usa Edge e Piper/Kokoro simultaneamente em capítulos diferentes para máxima velocidade. Desligado por padrão — engines locais podem ter erros de detecção de idioma.",
+      multiEngineParallelOn: "Ativado",
+      multiEngineParallelOff: "Desativado",
       maxPerformanceLabel: "Velocidade máxima",
       maxPerformanceDescription:
         "Tenta usar o maior paralelismo e chunks mais longos (pode exigir mais CPU/RAM).",
@@ -1419,6 +1428,11 @@ export const translations: Record<Locale, Translations> = {
         "Useful for online Edge voices on unstable networks; reduces stalls and may be faster.",
       noParallelOn: "Sequential",
       noParallelOff: "Automatic",
+      multiEngineParallelLabel: "Multi-engine parallel",
+      multiEngineParallelDescription:
+        "Runs Edge and Piper/Kokoro simultaneously on different chapters for maximum throughput. Off by default — local engines may misdetect language.",
+      multiEngineParallelOn: "Enabled",
+      multiEngineParallelOff: "Disabled",
       maxPerformanceLabel: "Maximum speed",
       maxPerformanceDescription:
         "Pushes higher parallelism and longer chunks (may use more CPU/RAM).",

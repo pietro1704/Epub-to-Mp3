@@ -103,6 +103,9 @@ function buildFormData(values: ConversionFormValues): FormData {
   if (values.noParallel) {
     formData.append("no_parallel", "on");
   }
+  if (values.multiEngineParallel) {
+    formData.append("multi_engine_parallel", "on");
+  }
   if (typeof values.maxPerformance === "boolean") {
     formData.append("max_performance", values.maxPerformance ? "on" : "off");
   }

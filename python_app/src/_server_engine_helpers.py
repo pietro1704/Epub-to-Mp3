@@ -423,3 +423,33 @@ def _next_auto_engine(
         if name in pool and name not in attempted:
             return name
     return None
+
+
+# ---------------------------------------------------------------------------
+# Multi-engine parallel slot affinity
+# ---------------------------------------------------------------------------
+
+
+def _build_multi_engine_slot_map(
+    parallel_slots: int,
+    available_engines: list[str],
+    *,
+    edge_fraction: float = 0.67,
+) -> list[str]:
+    """Return a slot-to-engine affinity list for multi-engine parallel conversion.
+
+    Each entry is the engine name that slot should prefer.  Edge gets the
+    majority of slots (``edge_fraction``), remaining slots go to the next
+    available engines round-robin.  Returns ``[]`` (disabled) if fewer than
+    two engines are available or ``parallel_slots < 2``.
+    """
+    if len(available_engines) < 2 or parallel_slots < 2:
+        return []
+    primary = available_engines[0]
+    secondary = available_engines[1:]
+    primary_count = max(1, round(parallel_slots * edge_fraction))
+    secondary_count = parallel_slots - primary_count
+    affinity: list[str] = [primary] * primary_count
+    for i in range(secondary_count):
+        affinity.append(secondary[i % len(secondary)])
+    return affinity

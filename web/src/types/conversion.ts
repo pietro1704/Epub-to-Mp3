@@ -17,6 +17,7 @@ export interface ConversionFormValues {
   language?: string;
   formattingCues?: boolean;
   noParallel?: boolean;
+  multiEngineParallel?: boolean;
   maxPerformance?: boolean;
   parallelSlots?: number;
   chapterStallSeconds?: number;
@@ -169,6 +170,7 @@ export interface JobSnapshot {
   uiLanguage?: string;
   lastActivityAt?: number;
   noParallel?: boolean;
+  multiEngineParallel?: boolean;
   engineStatus?: EngineStatus;
   errorCategory?: string;
 }
