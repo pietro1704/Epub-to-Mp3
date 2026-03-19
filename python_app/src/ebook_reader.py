@@ -52,7 +52,7 @@ SUBCHAPTER_TITLE_CLASS: str = "class_sG5"
 # Plain-text character threshold above which a chapter with no CSS subchapter
 # markers is split at paragraph boundaries (double newline) to prevent
 # Edge-TTS timeout on very large chapters.
-SUBCHAPTER_MAX_CHARS: int = 50_000
+SUBCHAPTER_MAX_CHARS: int = 30_000
 
 XML_NS = {
     "ocf": "urn:oasis:names:tc:opendocument:xmlns:container",
