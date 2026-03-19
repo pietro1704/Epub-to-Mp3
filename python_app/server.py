@@ -5141,7 +5141,7 @@ async def process_conversion(job_id: str) -> None:
         except Exception as exc:
             _append_event(job, f"⚠️ Failed to pack ZIP: {exc}")
 
-        # Atualiza tabela de outputs com os arquivos existentes (deduplica por nome)
+        # Update outputs table with existing files (deduplicate by name)
         outputs_map: dict[str, dict] = {}
         for asset in outputs:
             outputs_map[asset["name"]] = asset

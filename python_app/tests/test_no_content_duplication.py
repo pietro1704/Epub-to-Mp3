@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-TDD Tests: Verificar que não há duplicação de conteúdo na conversão
-Test-Driven Development - Estes testes definem o comportamento esperado
+TDD Tests: Verify there is no content duplication in conversion.
+Test-Driven Development - these tests define the expected behavior.
 """
 
 import sys
@@ -17,42 +17,42 @@ from src.ebook_reader import EbookReader
 
 def test_no_duplicate_chapters_in_structure():
     """
-    TDD RED: Teste que verifica se não há capítulos duplicados na estrutura
+    TDD RED: Test that there are no duplicate chapters in the structure.
 
-    Comportamento esperado:
-    - Cada capítulo deve aparecer APENAS UMA VEZ
-    - Nenhum texto deve estar duplicado entre capítulos
+    Expected behavior:
+    - Each chapter must appear ONLY ONCE
+    - No text should be duplicated across chapters
     """
     epub_path = Path(__file__).parent / "fixtures" / "epubs" / "test_multifeature.epub"
-    assert epub_path.exists(), f"EPUB de teste não encontrado: {epub_path}"
+    assert epub_path.exists(), f"Test EPUB not found: {epub_path}"
 
     reader = EbookReader(str(epub_path))
     chapters = reader.get_chapter_structure()
 
-    # Verificar que temos exatamente 2 capítulos
-    assert len(chapters) == 2, f"Esperado 2 capítulos, obtido {len(chapters)}"
+    # Verify we have exactly 2 chapters
+    assert len(chapters) == 2, f"Expected 2 chapters, got {len(chapters)}"
 
-    # Verificar que os nomes são únicos
+    # Verify chapter names are unique
     chapter_names = [ch.name for ch in chapters]
     assert len(chapter_names) == len(
         set(chapter_names)
-    ), f"Nomes de capítulos duplicados: {chapter_names}"
+    ), f"Duplicate chapter names: {chapter_names}"
 
-    # Verificar que os textos NÃO são idênticos
+    # Verify texts are NOT identical
     chapter_texts = [ch.text for ch in chapters]
     for i, text1 in enumerate(chapter_texts):
         for j, text2 in enumerate(chapter_texts):
             if i != j:
-                assert text1 != text2, f"Capítulos {i} e {j} têm texto idêntico (duplicação!)"
+                assert text1 != text2, f"Chapters {i} and {j} have identical text (duplication!)"
 
 
 def test_no_duplicate_content_within_chapter():
     """
-    TDD RED: Teste que verifica se não há frases repetidas dentro do mesmo capítulo
+    TDD RED: Test that there are no repeated sentences within the same chapter.
 
-    Comportamento esperado:
-    - Nenhuma frase com >20 caracteres deve aparecer 2x no mesmo capítulo
-    - Exceção: notas de rodapé podem ter pequenas repetições de contexto
+    Expected behavior:
+    - No sentence with >20 characters should appear twice in the same chapter
+    - Exception: footnotes may have small context repetitions
     """
     epub_path = Path(__file__).parent / "fixtures" / "epubs" / "test_multifeature.epub"
     reader = EbookReader(str(epub_path))
@@ -61,45 +61,45 @@ def test_no_duplicate_content_within_chapter():
     for idx, chapter in enumerate(chapters):
         text = chapter.text
 
-        # Dividir em sentenças (aproximação simples)
+        # Split into sentences (simple approximation)
         sentences = [s.strip() for s in text.split(".") if len(s.strip()) > 20]
 
-        # Verificar duplicatas
+        # Check for duplicates
         seen: Set[str] = set()
         duplicates: List[str] = []
 
         for sentence in sentences:
-            # Normalizar (remover espaços extras, lowcase)
+            # Normalize (remove extra spaces, lowercase)
             normalized = " ".join(sentence.lower().split())
 
             if normalized in seen:
                 duplicates.append(sentence[:80])
             seen.add(normalized)
 
-        # Permitir NO MÁXIMO 1 duplicata (contexto de nota de rodapé)
+        # Allow AT MOST 1 duplicate (footnote context)
         assert len(duplicates) <= 1, (
-            f"Capítulo {idx} ({chapter.name}) tem {len(duplicates)} sentenças duplicadas:\n"
+            f"Chapter {idx} ({chapter.name}) has {len(duplicates)} duplicate sentences:\n"
             + "\n".join(f"  - {d}" for d in duplicates[:3])
         )
 
 
 def test_chapter_text_length_reasonable():
     """
-    TDD RED: Teste que verifica se os capítulos têm tamanho razoável
+    TDD RED: Test that chapter text lengths are within expected bounds.
 
-    Comportamento esperado:
-    - Capítulo 1: ~600-700 caracteres (original tem 618)
-    - Capítulo 2: ~400-500 caracteres (original tem 419)
-    - Se tiver o DOBRO do tamanho, pode ser duplicação!
+    Expected behavior:
+    - Chapter 1: ~600-700 characters (original has 618)
+    - Chapter 2: ~400-500 characters (original has 419)
+    - If DOUBLE the expected size, it may indicate duplication!
     """
     epub_path = Path(__file__).parent / "fixtures" / "epubs" / "test_multifeature.epub"
     reader = EbookReader(str(epub_path))
     chapters = reader.get_chapter_structure()
 
-    # Limites esperados (com margem de 50%)
+    # Expected bounds (with 50% margin)
     expected_lengths = [
-        (600, 900, "Capítulo 1"),  # min, max, nome
-        (400, 600, "Capítulo 2"),
+        (600, 900, "Chapter 1"),  # min, max, name
+        (400, 600, "Chapter 2"),
     ]
 
     for idx, (min_len, max_len, expected_name) in enumerate(expected_lengths):
@@ -110,19 +110,19 @@ def test_chapter_text_length_reasonable():
         actual_len = len(chapter.text)
 
         assert min_len <= actual_len <= max_len, (
-            f"Capítulo {idx} ({chapter.name}) tem {actual_len} chars, "
-            + f"esperado entre {min_len}-{max_len}. "
-            + "Pode haver duplicação se muito maior, ou conteúdo faltando se muito menor!"
+            f"Chapter {idx} ({chapter.name}) has {actual_len} chars, "
+            + f"expected between {min_len}-{max_len}. "
+            + "May indicate duplication if much larger, or missing content if much smaller!"
         )
 
 
 def test_footnote_markers_not_duplicated():
     """
-    TDD RED: Teste que verifica se marcadores de nota de rodapé não estão duplicados
+    TDD RED: Test that footnote markers are not duplicated.
 
-    Comportamento esperado:
-    - Marcadores como [1], [2], etc devem aparecer APENAS UMA VEZ
-    - Cada nota deve ser processada apenas uma vez
+    Expected behavior:
+    - Markers like [1], [2], etc. must appear ONLY ONCE
+    - Each footnote must be processed only once
     """
     epub_path = Path(__file__).parent / "fixtures" / "epubs" / "test_multifeature.epub"
     reader = EbookReader(str(epub_path))
@@ -133,13 +133,13 @@ def test_footnote_markers_not_duplicated():
     for idx, chapter in enumerate(chapters):
         text = chapter.text
 
-        # Encontrar todos os marcadores de nota [N]
+        # Find all footnote markers [N]
         markers = re.findall(r"\[(\d+)\]", text)
 
         if not markers:
-            continue  # Capítulo sem notas
+            continue  # Chapter has no footnotes
 
-        # Verificar se há duplicatas
+        # Check for duplicates
         marker_counts = {}
         for marker in markers:
             marker_counts[marker] = marker_counts.get(marker, 0) + 1
@@ -147,18 +147,18 @@ def test_footnote_markers_not_duplicated():
         duplicates = {m: count for m, count in marker_counts.items() if count > 1}
 
         assert not duplicates, (
-            f"Capítulo {idx} ({chapter.name}) tem marcadores de nota duplicados: {duplicates}\n"
-            + "Isso indica que as notas podem estar sendo processadas múltiplas vezes!"
+            f"Chapter {idx} ({chapter.name}) has duplicate footnote markers: {duplicates}\n"
+            + "This indicates footnotes may be processed multiple times!"
         )
 
 
 def test_no_double_chapter_titles():
     """
-    TDD RED: Teste que verifica se títulos de capítulos não aparecem 2x no texto
+    TDD RED: Test that chapter titles do not appear twice in the text.
 
-    Comportamento esperado:
-    - O título do capítulo deve aparecer APENAS UMA VEZ no início
-    - Não deve ser repetido no meio ou fim do texto
+    Expected behavior:
+    - The chapter title must appear ONLY ONCE at the beginning
+    - It must not be repeated in the middle or end of the text
     """
     epub_path = Path(__file__).parent / "fixtures" / "epubs" / "test_multifeature.epub"
     reader = EbookReader(str(epub_path))
@@ -168,15 +168,15 @@ def test_no_double_chapter_titles():
         title = chapter.name
         text = chapter.text
 
-        # Contar quantas vezes o título aparece no texto
+        # Count how many times the title appears in the text
         title_count = text.count(title)
 
-        # Título deve aparecer NO MÁXIMO 1 vez (no início)
-        # Se aparecer 2x ou mais, há duplicação!
+        # Title must appear AT MOST once (at the start)
+        # If it appears 2+ times, there is content duplication!
         assert title_count <= 1, (
-            f"Capítulo {idx}: título '{title}' aparece {title_count} vezes no texto!\n"
-            + "Isso indica duplicação de conteúdo.\n"
-            + f"Texto: {text[:200]}..."
+            f"Chapter {idx}: title '{title}' appears {title_count} times in text!\n"
+            + "This indicates content duplication.\n"
+            + f"Text: {text[:200]}..."
         )
 
 
@@ -184,12 +184,12 @@ if __name__ == "__main__":
     import pytest
 
     print("=" * 70)
-    print("TESTES TDD: Verificação de Duplicação de Conteúdo")
+    print("TDD TESTS: Content Duplication Check")
     print("=" * 70)
-    print("\nEstes testes definem o comportamento esperado (RED phase).")
-    print("Se falharem, o código precisa ser corrigido (GREEN phase).\n")
+    print("\nThese tests define the expected behavior (RED phase).")
+    print("If they fail, the code needs to be fixed (GREEN phase).\n")
 
-    # Rodar testes
+    # Run tests
     exit_code = pytest.main([__file__, "-v", "--tb=short"])
 
     if exit_code == 0:

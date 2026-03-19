@@ -62,7 +62,7 @@ class TestConversionConfig(unittest.TestCase):
         """Test default values"""
         config = ConversionConfig(engine="test")
 
-        # Audio defaults (otimizado para tamanho)
+        # Audio defaults (optimized for size)
         self.assertEqual(config.bitrate, "8k")
         self.assertEqual(config.sample_rate, 16_000)
         self.assertEqual(config.channels, 1)

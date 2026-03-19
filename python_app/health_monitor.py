@@ -308,7 +308,7 @@ class HealthMonitor:
                                     timestamp=now,
                                     severity="warning",
                                     category="heap",
-                                    message=f"Memory leak detectado: +{growth_rate:.1f} MB/min",
+                                    message=f"Memory leak detected: +{growth_rate:.1f} MB/min",
                                     details={
                                         "growth_mb": growth_mb,
                                         "growth_rate_mb_per_min": growth_rate,

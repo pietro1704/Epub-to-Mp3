@@ -329,7 +329,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             result = await engine.synthesize_async(text, output_path)
 
             self.assertEqual(result, output_path)
-            # Esperamos três segmentos: PT → EN → PT
+            # Expect three segments: PT → EN → PT
             self.assertEqual(len(calls), 3)
             self.assertEqual(calls[0][1], "pt-BR-ThalitaMultilingualNeural")
             self.assertEqual(calls[1][1], "en-US-JennyNeural")
@@ -420,9 +420,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             result = await engine.synthesize_async(text, output_path)
 
             self.assertEqual(result, output_path)
-            self.assertGreater(
-                len(calls), 1, "Texto longo deve ser dividido em múltiplos segmentos"
-            )
+            self.assertGreater(len(calls), 1, "Long text must be split into multiple segments")
 
             aggregated = " ".join(payload for payload, _ in calls)
             expected = TextFormattingProcessor.clean_tts_text(text)
@@ -491,7 +489,7 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(engine.last_error, "no_audio")
 
     def test_calculate_timeout(self):
-        """Test timeout calculation (otimizado para falhar rápido)"""
+        """Test timeout calculation (optimized to fail fast)"""
         with patch("src.tts.edge_engine.edge_tts"):
             from src.tts.edge_engine import EdgeTTSEngine
 

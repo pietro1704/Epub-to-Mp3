@@ -590,9 +590,9 @@ if __name__ == "__main__":
             print(f"📊 RECOVERY STATISTICS ({datetime.now().strftime('%H:%M:%S')})")
             print(f"{'=' * 80}")
             print(f"Total actions: {stats['total_actions']}")
-            print(f"Taxa de sucesso: {stats['success_rate']:.1f}%")
-            print(f"Threads ativas: {stats['active_threads']}")
-            print(f"Problemas detectados: {stats['problems_detected']}")
+            print(f"Success rate: {stats['success_rate']:.1f}%")
+            print(f"Active threads: {stats['active_threads']}")
+            print(f"Problems detected: {stats['problems_detected']}")
 
             recent = recovery.get_recent_actions(5)
             if recent:

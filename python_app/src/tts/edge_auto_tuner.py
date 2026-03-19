@@ -201,7 +201,7 @@ class EdgeTTSAutoTuner:
                     self.profile.parallel_min, self.profile.parallel_slots - 1
                 )
                 self._log(
-                    f"🔻 Rate limit detectado (403), reduzindo paralelismo: {old_slots} → {self.profile.parallel_slots}"
+                    f"🔻 Rate limit detected (403), reducing parallelism: {old_slots} → {self.profile.parallel_slots}"
                 )
 
             # Auto-reduce chunk size if many rate limits
@@ -214,11 +214,11 @@ class EdgeTTSAutoTuner:
                     self.profile.chunk_char_min, int(self.profile.chunk_char_limit * 0.8)
                 )
                 self._log(
-                    f"🔻 Muitos rate limits, reduzindo chunks: {old_chunk} → {self.profile.chunk_char_limit}"
+                    f"🔻 Too many rate limits, reducing chunk size: {old_chunk} → {self.profile.chunk_char_limit}"
                 )
 
             self._log(
-                f"⏳ Backoff recomendado: {backoff:.1f}s (rate limits: {self.profile.rate_limit_count})"
+                f"⏳ Recommended backoff: {backoff:.1f}s (rate limits: {self.profile.rate_limit_count})"
             )
 
             return backoff
@@ -299,7 +299,7 @@ class EdgeTTSAutoTuner:
 
         if self.verbose:
             self._log(
-                f"⚡ Auto-tuner aplicado: chunks={self.profile.chunk_char_limit}, "
+                f"⚡ Auto-tuner applied: chunks={self.profile.chunk_char_limit}, "
                 f"segment={self.profile.max_segment_seconds:.0f}s, "
                 f"parallel={self.profile.parallel_slots}"
             )

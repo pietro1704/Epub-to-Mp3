@@ -4151,9 +4151,7 @@ class AudioConverter(
                             )
                             setattr(tts_engine, "_precomputed_segments", plan_segments or None)
                             if self.verbose and plan_segments:
-                                print(
-                                    f"   ♻️ Plano de segmentos reutilizado: {len(plan_segments)} blocos"
-                                )
+                                print(f"   ♻️ Segment plan reused: {len(plan_segments)} blocks")
                         elif hasattr(tts_engine, "_precomputed_segments"):
                             setattr(tts_engine, "_precomputed_segments", None)
                     except Exception:
