@@ -164,15 +164,16 @@ class TestTTSFactory(unittest.TestCase):
                 self.assertEqual(result.name, "test_model.onnx")
 
     def test_find_piper_model_not_found(self):
-        """Test finding Piper model when none exists"""
+        """Test finding Piper model when none exists and download also fails"""
         with tempfile.TemporaryDirectory() as temp_dir:
             models_dir = Path(temp_dir) / "nonexistent"
 
         with patch("src.tts.factory.Path") as mock_path:
             mock_path.return_value = models_dir
-
-            with self.assertRaises(FileNotFoundError):
-                self.factory._find_piper_model()
+            # Simulate download failure so FileNotFoundError is still raised
+            with patch("urllib.request.urlretrieve", side_effect=OSError("network error")):
+                with self.assertRaises(FileNotFoundError):
+                    self.factory._find_piper_model()
 
     def test_find_piper_model_preferred_language_not_found_downloads_instead_of_wrong_model(self):
         """When models exist but not for the preferred language, download the right one
