@@ -182,7 +182,7 @@ export default function ChapterProgressList({
         }
       } catch (err) {
         const message =
-          err instanceof Error ? err.message : "Falha ao carregar segments";
+          err instanceof Error ? err.message : "Failed to load segments";
         setManifestErrors((prev) => ({ ...prev, [chapterIndex]: message }));
       } finally {
         if (!silent) {
@@ -647,8 +647,7 @@ export default function ChapterProgressList({
                   )}
                   {entry.status === "completed" && (
                     <span className="chapter-progress__time">
-                      {formatChapterDuration(entry.elapsedSeconds, locale) ??
-                        "--"}
+                      {formatChapterDuration(entry.elapsedSeconds) ?? "--"}
                       {typeof entry.charsPerSecond === "number"
                         ? ` • ~${entry.charsPerSecond} chars/s`
                         : ""}
@@ -680,38 +679,26 @@ export default function ChapterProgressList({
                 <div className="chapter-progress__details">
                   {entry.downloadUrl && (
                     <div className="chapter-progress__download-audio">
-                      <strong>
-                        {locale === "pt" ? "Full chapter:" : "Full chapter:"}
-                      </strong>
+                      <strong>{"Full chapter:"}</strong>
                       <audio
                         controls
                         preload="metadata"
                         className="chapter-progress__audio"
                       >
                         <source src={entry.downloadUrl} type="audio/mpeg" />
-                        {locale === "pt"
-                          ? "Your browser does not support audio"
-                          : "Your browser does not support audio"}
+                        {"Your browser does not support audio"}
                       </audio>
                     </div>
                   )}
                   <div className="chapter-progress__segments">
                     <div className="chapter-progress__segments-header">
-                      <strong>
-                        {locale === "pt"
-                          ? "Chapter segments"
-                          : "Chapter segments"}
-                      </strong>
+                      <strong>{"Chapter segments"}</strong>
                       <span className="chapter-progress__segments-meta">
                         {segments.length > 0
                           ? segmentCountLabel(segments.length)
                           : status === "completed" && !loading
-                            ? locale === "pt"
-                              ? "No segments available"
-                              : "No segments available"
-                            : locale === "pt"
-                              ? "Waiting for segments..."
-                              : "Waiting for segments..."}
+                            ? "No segments available"
+                            : "Waiting for segments..."}
                       </span>
                     </div>
                     {manifestError && (
@@ -719,9 +706,7 @@ export default function ChapterProgressList({
                     )}
                     {loading && (
                       <p className="chapter-progress__loading">
-                        {locale === "pt"
-                          ? "Loading segments..."
-                          : "Loading segments..."}
+                        {"Loading segments..."}
                       </p>
                     )}
                     {segments.length > 0 && (
@@ -748,9 +733,7 @@ export default function ChapterProgressList({
                               <div className="chapter-progress__segment-header">
                                 <div className="chapter-progress__segment-meta">
                                   <span className="chapter-progress__segment-title">
-                                    {locale === "pt"
-                                      ? `Segment ${segment.index + 1}`
-                                      : `Segment ${segment.index + 1}`}
+                                    {`Segment ${segment.index + 1}`}
                                   </span>
                                   {segment.durationSeconds !== undefined && (
                                     <span className="chapter-progress__segment-duration">
@@ -771,17 +754,10 @@ export default function ChapterProgressList({
                                       )
                                     }
                                     title={
-                                      locale === "pt"
-                                        ? isTextExpanded
-                                          ? "Hide text"
-                                          : "Show text"
-                                        : isTextExpanded
-                                          ? "Hide text"
-                                          : "Show text"
+                                      isTextExpanded ? "Hide text" : "Show text"
                                     }
                                   >
-                                    {isTextExpanded ? "▾" : "▸"}{" "}
-                                    {locale === "pt" ? "Text" : "Text"}
+                                    {isTextExpanded ? "▾" : "▸"} {"Text"}
                                   </button>
                                 )}
                               </div>
@@ -818,9 +794,7 @@ export default function ChapterProgressList({
                     )}
                     {!loading && segments.length === 0 && (
                       <p className="chapter-progress__empty">
-                        {locale === "pt"
-                          ? "No segments available yet."
-                          : "No segments available yet."}
+                        {"No segments available yet."}
                       </p>
                     )}
                     {!jobId && (
@@ -841,7 +815,7 @@ export default function ChapterProgressList({
   );
 }
 
-function formatChapterDuration(value?: number, locale?: string): string | null {
+function formatChapterDuration(value?: number): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
@@ -857,6 +831,5 @@ function formatChapterDuration(value?: number, locale?: string): string | null {
     parts.push(`${minutes.toString().padStart(2, "0")}m`);
   }
   parts.push(`${seconds.toString().padStart(2, "0")}s`);
-  const prefix = locale === "pt" ? "Completed in" : "Completed in";
-  return `${prefix} ${parts.join(" ")}`;
+  return `Completed in ${parts.join(" ")}`;
 }
