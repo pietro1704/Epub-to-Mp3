@@ -3030,7 +3030,7 @@ async def process_conversion(job_id: str) -> None:
                 cached_cover_path = candidate
 
         if not cached_cover_path:
-            cover_blob = reader.extract_cover_image()
+            cover_blob = await loop.run_in_executor(None, reader.extract_cover_image)
 
         title = reader.title or "Unknown_Book"
         author = reader.author or "Unknown Author"
@@ -3287,14 +3287,21 @@ async def process_conversion(job_id: str) -> None:
         config.extra.setdefault("voice_auto", "1" if job.get("voice") is None else "0")
         converter_app._apply_language_preferences(config)
 
-        chapters = list(reader.get_chapters())
+        chapters = await loop.run_in_executor(None, lambda: list(reader.get_chapters()))
         if structure_items:
-            structure_items = converter_app._apply_text_transforms(structure_items, config, reader)
-            converter_app._apply_structure_to_reader(reader, structure_items)
-            chapters = (
-                reader.get_chapter_structure(preserve_all=config.preserve_all_chapters)
-                or reader.get_chapters()
-            )
+
+            def _apply_transforms() -> list:
+                nonlocal structure_items
+                structure_items = converter_app._apply_text_transforms(
+                    structure_items, config, reader
+                )
+                converter_app._apply_structure_to_reader(reader, structure_items)
+                return (
+                    reader.get_chapter_structure(preserve_all=config.preserve_all_chapters)
+                    or reader.get_chapters()
+                )
+
+            chapters = await loop.run_in_executor(None, _apply_transforms)
         if config.priority_selectors:
             chapters = _apply_priority_order(chapters, config.priority_selectors)
         _append_event(job, f"✅ {len(chapters)} chapters found")
