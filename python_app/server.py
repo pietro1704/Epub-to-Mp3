@@ -4060,6 +4060,10 @@ async def process_conversion(job_id: str) -> None:
                 except Exception:
                     pass
 
+                # In-memory manifest — avoids a read-modify-write per segment
+                _manifest_chunks: dict[int, dict] = {}
+                _manifest_path = chunk_dir / "manifest.json"
+
                 def _chunk_callback(
                     segment_index: int, temp_path: Path, segment_text: str = ""
                 ) -> None:
@@ -4067,31 +4071,24 @@ async def process_conversion(job_id: str) -> None:
                     try:
                         target = chunk_dir / f"chunk_{segment_index:04d}{temp_path.suffix}"
                         shutil.copy2(temp_path, target)
-                        # Update manifest
-                        manifest_path = chunk_dir / "manifest.json"
-                        manifest: dict = {"jobId": job_id, "chapterIndex": idx, "chunks": []}
-                        if manifest_path.exists():
-                            try:
-                                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-                            except Exception:
-                                manifest = {"jobId": job_id, "chapterIndex": idx, "chunks": []}
-                        existing = [
-                            e for e in (manifest.get("chunks") or []) if isinstance(e, dict)
-                        ]
-                        existing = [e for e in existing if e.get("index") != segment_index]
-                        chunk_entry = {
+                        chunk_entry: dict = {
                             "index": segment_index,
                             "file": target.name,
                             "url": f"/api/streams/{job_id}/chapters/{idx}/chunks/{segment_index}",
                         }
-                        # Include segment text for reading mode
                         if segment_text:
                             chunk_entry["text"] = segment_text
-                        existing.append(chunk_entry)
-                        manifest["chunks"] = sorted(existing, key=lambda x: x.get("index", 0))
-                        manifest["updatedAt"] = time.time()
-                        manifest["baseUrl"] = f"/api/streams/{job_id}/chapters/{idx}"
-                        manifest_path.write_text(
+                        _manifest_chunks[segment_index] = chunk_entry
+                        manifest = {
+                            "jobId": job_id,
+                            "chapterIndex": idx,
+                            "chunks": sorted(
+                                _manifest_chunks.values(), key=lambda x: x.get("index", 0)
+                            ),
+                            "updatedAt": time.time(),
+                            "baseUrl": f"/api/streams/{job_id}/chapters/{idx}",
+                        }
+                        _manifest_path.write_text(
                             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
                         )
                     except Exception as exc:
