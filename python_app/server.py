@@ -3048,7 +3048,9 @@ async def process_conversion(job_id: str) -> None:
         converter_app = ConverterApplication()
         converter_app._interactive_mode = False
         try:
-            structure_items = converter_app._generate_structure_items(reader)
+            structure_items = await loop.run_in_executor(
+                None, converter_app._generate_structure_items, reader
+            )
         except Exception:
             structure_items = []
         selector_text = " ".join(
