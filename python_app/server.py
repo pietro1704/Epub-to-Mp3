@@ -4708,6 +4708,7 @@ async def process_conversion(job_id: str) -> None:
             nonlocal \
                 parallel_slots, \
                 last_health_check, \
+                last_parallel_update, \
                 slow_streak, \
                 parallel_slots_cap, \
                 requested_slots
@@ -4761,7 +4762,17 @@ async def process_conversion(job_id: str) -> None:
                     job["parallelSlots"] = new_slots
                     engine_pool.update_parallel_slots(new_slots)
 
-            if cpu_percent < health_ok_cpu and mem_percent < health_ok_mem and not force_sequential:
+            # Only raise parallelism when not in a slow period and enough time has
+            # passed since the last adjustment (shared cooldown with
+            # _maybe_adjust_parallel_slots to prevent oscillation).
+            _PARALLEL_RAISE_COOLDOWN = 30.0
+            if (
+                slow_streak == 0
+                and cpu_percent < health_ok_cpu
+                and mem_percent < health_ok_mem
+                and not force_sequential
+                and (now - last_parallel_update) >= _PARALLEL_RAISE_COOLDOWN
+            ):
                 desired = _compute_parallel_slots()
                 if desired != parallel_slots:
                     _append_event(
@@ -4770,6 +4781,7 @@ async def process_conversion(job_id: str) -> None:
                     parallel_slots = desired
                     job["parallelSlots"] = desired
                     engine_pool.update_parallel_slots(desired)
+                    last_parallel_update = now
             _persist_job(job_id, force=False)
 
         pending_chapters = [

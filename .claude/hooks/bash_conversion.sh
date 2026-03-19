@@ -4,14 +4,9 @@
 # injects the final result from conversions.jsonl as feedback to Claude.
 
 INPUT=$(cat)
-COMMAND=$(echo "$INPUT" | python3 -c "
-import json, sys
-d = json.load(sys.stdin)
-print(d.get('tool_input', {}).get('command', ''))
-" 2>/dev/null)
 
-# Only act on conversion-related commands
-if ! echo "$COMMAND" | grep -qE "python.*main.*convert|mise run (convert|web)|python_app\.main"; then
+# Fast pre-filter before spawning python3
+if ! echo "$INPUT" | grep -qE "python.*main.*convert|mise run (convert|web)|python_app\.main"; then
     exit 0
 fi
 
@@ -22,43 +17,56 @@ if [[ ! -f "$LOG_FILE" ]]; then
     exit 0
 fi
 
-# Read last entry written after the command
-result=$(python3 - "$LOG_FILE" <<'PYEOF'
-import json, sys
-path = sys.argv[1]
-records = []
-with open(path, encoding="utf-8") as f:
-    for line in f:
+# Single python3 invocation: verify command, read log, format + output JSON
+python3 - "$INPUT" "$LOG_FILE" <<'PYEOF'
+import json, re, sys
+
+raw_input, log_file = sys.argv[1], sys.argv[2]
+
+# Confirm the bash command is conversion-related
+try:
+    d = json.loads(raw_input)
+    command = d.get("tool_input", {}).get("command", "")
+except Exception:
+    sys.exit(0)
+
+if not re.search(r"python.*main.*convert|mise run (convert|web)|python_app\.main", command):
+    sys.exit(0)
+
+# Read last entry from log
+try:
+    with open(log_file, encoding="utf-8") as f:
+        lines = f.readlines()[-20:]
+    last = None
+    for line in lines:
         line = line.strip()
         if line:
             try:
-                records.append(json.loads(line))
+                last = json.loads(line)
             except Exception:
                 pass
-if not records:
+except Exception:
     sys.exit(0)
-r = records[-1]
-outcome = r.get("outcome", "?")
-icon = "✅" if outcome == "success" else ("❌" if outcome == "failed" else "⚠️")
-title = r.get("book_title", "—")
-engine = r.get("engine", "?")
-mode = r.get("mode", "?")
-ch_ok = r.get("chapters_converted", 0)
-ch_fail = r.get("chapters_failed", 0)
-ch_total = r.get("chapters_total", 0)
-dur = r.get("duration_seconds", 0)
-dur_str = f"{int(dur//60)}m{int(dur%60)}s" if dur >= 60 else f"{dur:.0f}s"
-voice = r.get("voice", "")
-print(f"{icon} Conversion {outcome}: \"{title}\"")
-print(f"   Engine: {engine}  |  Mode: {mode}  |  Voice: {voice}")
-print(f"   Chapters: {ch_ok} ok / {ch_fail} failed / {ch_total} total  |  Time: {dur_str}")
-PYEOF
-)
 
-if [[ -n "$result" ]]; then
-    python3 -c "
-import json, sys
-msg = sys.argv[1]
-print(json.dumps({'additionalContext': '## Conversion result\n' + msg}))
-" "$result"
-fi
+if not last:
+    sys.exit(0)
+
+outcome = last.get("outcome", "?")
+icon = "✅" if outcome == "success" else ("❌" if outcome == "failed" else "⚠️")
+title = last.get("book_title", "—")
+engine = last.get("engine", "?")
+mode = last.get("mode", "?")
+ch_ok = last.get("chapters_converted", 0)
+ch_fail = last.get("chapters_failed", 0)
+ch_total = last.get("chapters_total", 0)
+dur = last.get("duration_seconds", 0)
+dur_str = f"{int(dur//60)}m{int(dur%60)}s" if dur >= 60 else f"{dur:.0f}s"
+voice = last.get("voice", "")
+
+msg = (
+    f"{icon} Conversion {outcome}: \"{title}\"\n"
+    f"   Engine: {engine}  |  Mode: {mode}  |  Voice: {voice}\n"
+    f"   Chapters: {ch_ok} ok / {ch_fail} failed / {ch_total} total  |  Time: {dur_str}"
+)
+print(json.dumps({"additionalContext": "## Conversion result\n" + msg}))
+PYEOF
