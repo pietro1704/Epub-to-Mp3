@@ -554,6 +554,38 @@ function estimateEtaSeconds(
   return elapsedSeconds * ((1 - progress) / progress);
 }
 
+async function fetchInitialJobSnapshot(
+  api: ConversionClient,
+  jobId: string,
+): Promise<JobSnapshot | null> {
+  if (!api.fetch) {
+    return null;
+  }
+  let attempt = 0;
+  while (attempt < INITIAL_FETCH_RETRY_ATTEMPTS) {
+    try {
+      return await api.fetch(jobId);
+    } catch (error) {
+      const isNotFoundError =
+        error instanceof Error && error.message.includes("404");
+      if (!isNotFoundError) {
+        throw error;
+      }
+      attempt += 1;
+      if (attempt >= INITIAL_FETCH_RETRY_ATTEMPTS) {
+        return null;
+      }
+      const backoff = Math.min(
+        INITIAL_FETCH_RETRY_BASE_DELAY_MS *
+          Math.pow(1.5, Math.max(0, attempt - 1)),
+        INITIAL_FETCH_RETRY_MAX_DELAY_MS,
+      );
+      await sleepMs(backoff);
+    }
+  }
+  return null;
+}
+
 export interface UseConversionFlowApi {
   state: ConversionState;
   submit: (
@@ -1072,11 +1104,12 @@ export function useConversionFlow(
     if (typeof state.etaSeconds !== "number" || state.etaSeconds <= 1) {
       return () => {};
     }
+    const currentEta = state.etaSeconds;
 
     const timeoutId = window.setTimeout(() => {
       dispatch({
         type: "update-meta",
-        etaSeconds: Math.max(0, Math.ceil(state.etaSeconds) - 1),
+        etaSeconds: Math.max(0, Math.ceil(currentEta) - 1),
       });
     }, 1000);
 
@@ -1352,6 +1385,23 @@ export function useConversionFlow(
           jobId,
           entry: entryFactoryRef.current(t.flow.jobCreated(jobId)),
         });
+
+        try {
+          const initialSnapshot = await fetchInitialJobSnapshot(api, jobId);
+          if (initialSnapshot) {
+            lastSnapshotAtRef.current = Date.now();
+            appendSnapshotEvents(initialSnapshot.events);
+            const etaSeconds = estimateEtaSeconds(
+              initialSnapshot,
+              startTimeRef.current,
+            );
+            applySnapshotMeta(initialSnapshot, etaSeconds);
+          }
+        } catch (error) {
+          if (isNetworkError(error)) {
+            markApiOffline();
+          }
+        }
 
         const finalSnapshot = await api.poll(jobId, {
           signal: controller.signal,

@@ -4,11 +4,13 @@ import {
   StatusEntry,
   ConversionSummary,
   EngineStatus,
+  PlaybackIndicator,
 } from "../types/conversion";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
 import type { Locale, Translations } from "../i18n/translations";
 import ChapterProgressList from "./ChapterProgressList";
 import StreamingAudioPlayer from "./StreamingAudioPlayer";
+import EbookReaderPanel from "./EbookReaderPanel";
 import { formatEta } from "../utils/formatEta";
 export { formatEta } from "../utils/formatEta";
 
@@ -61,10 +63,9 @@ export default function StatusPanel({
   const { locale } = useI18n();
   const rawLogRef = useRef<HTMLPreElement>(null);
   const showError = (phase === "error" || phase === "cancelled") && error;
-  const [playingSegment, setPlayingSegment] = useState<{
-    chapterIndex: number;
-    segmentIndex: number;
-  } | null>(null);
+  const [playingSegment, setPlayingSegment] =
+    useState<PlaybackIndicator | null>(null);
+  const [readerStartRequestId, setReaderStartRequestId] = useState(0);
 
   const errorText = showError
     ? t.status.errorPrefix.replace("{message}", error)
@@ -289,15 +290,40 @@ export default function StatusPanel({
         bookTitle={bookTitle}
         bookAuthor={bookAuthor}
         coverUrl={coverUrl}
+        startRequestId={readerStartRequestId}
+        hideStartButton
         onPlayingSegment={(chapterIndex, segmentIndex) =>
-          setPlayingSegment({ chapterIndex, segmentIndex })
+          setPlayingSegment((current) => ({
+            chapterIndex,
+            segmentIndex,
+            segmentText: current?.segmentText,
+            isPlaying: current?.isPlaying ?? false,
+            started: current?.started ?? true,
+            waiting: current?.waiting ?? false,
+          }))
         }
+        onPlaybackStateChange={setPlayingSegment}
+      />
+      <EbookReaderPanel
+        jobId={jobId}
+        bookTitle={bookTitle}
+        bookAuthor={bookAuthor}
+        chapterProgress={chapterProgress}
+        playback={playingSegment}
+        onRequestStart={() => setReaderStartRequestId((current) => current + 1)}
       />
       {chapterProgress && chapterProgress.length > 0 && (
         <ChapterProgressList
           entries={chapterProgress}
           jobId={jobId}
-          playingSegment={playingSegment}
+          playingSegment={
+            playingSegment
+              ? {
+                  chapterIndex: playingSegment.chapterIndex,
+                  segmentIndex: playingSegment.segmentIndex,
+                }
+              : null
+          }
         />
       )}
 

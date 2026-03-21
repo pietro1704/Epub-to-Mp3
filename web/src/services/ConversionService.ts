@@ -4,6 +4,7 @@ import {
   JobSnapshot,
   RecentJobEntry,
   ChapterStreamManifest,
+  BookTextDocument,
 } from "../types/conversion";
 
 export interface PollOptions {
@@ -42,6 +43,7 @@ export interface ConversionClient {
     jobId: string,
     chapterIndex: number,
   ): Promise<ChapterStreamManifest | null>;
+  getJobFullText?(jobId: string): Promise<BookTextDocument | null>;
   cancel?(jobId: string): Promise<{ status: string }>;
   resume?(jobId: string): Promise<{ status: string }>;
   removeJob?(jobId: string): Promise<{ status: string }>;
@@ -657,6 +659,39 @@ export class HttpConversionClient implements ConversionClient {
     }
   }
 
+  async getJobFullText(jobId: string): Promise<BookTextDocument | null> {
+    const url = this.resolve(`/api/jobs/${encodeURIComponent(jobId)}/fulltext`);
+    try {
+      const response = await fetch(url, { method: "GET" });
+      if (!response.ok) {
+        return null;
+      }
+      const payload = (await response.json()) as BookTextDocument;
+      if (!payload || !Array.isArray(payload.chapters)) {
+        return null;
+      }
+      return {
+        ...payload,
+        chapters: payload.chapters.map((chapter, index) => ({
+          index:
+            typeof chapter.index === "number" && Number.isFinite(chapter.index)
+              ? chapter.index
+              : index,
+          name: chapter.name || `Chapter ${index}`,
+          text: chapter.text || "",
+          charCount:
+            typeof chapter.charCount === "number" &&
+            Number.isFinite(chapter.charCount)
+              ? chapter.charCount
+              : (chapter.text || "").length,
+        })),
+      };
+    } catch (error) {
+      console.warn("[ConversionClient] Failed to fetch full text:", error);
+      return null;
+    }
+  }
+
   private async pollWithHttp(
     jobId: string,
     options: PollOptions,
@@ -947,6 +982,10 @@ export class MockConversionClient implements ConversionClient {
     _jobId: string,
     _chapterIndex: number,
   ): Promise<ChapterStreamManifest | null> {
+    return null;
+  }
+
+  async getJobFullText(_jobId: string): Promise<BookTextDocument | null> {
     return null;
   }
 

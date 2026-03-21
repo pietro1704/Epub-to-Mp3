@@ -244,6 +244,37 @@ def test_preserves_reused_upload_inside_job_dir(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
+def test_job_fulltext_uses_file_path_when_input_file_is_missing(tmp_path, monkeypatch):
+    job_id = str(uuid4())
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    upload_path = tmp_path / f"{job_id}_book.epub"
+    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "queued",
+        "events": [],
+        "file_path": str(upload_path),
+        "bookTitle": "Recovered Book",
+        "bookAuthor": "Recovered Author",
+    }
+
+    with TestClient(server.app) as client:
+        response = client.get(f"/api/jobs/{job_id}/fulltext")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["jobId"] == job_id
+    assert payload["bookTitle"] == "Recovered Book"
+    assert payload["bookAuthor"] == "Recovered Author"
+    assert isinstance(payload["chapters"], list)
+    assert len(payload["chapters"]) > 0
+    assert payload["chapters"][0]["index"] == 1
+
+    server.jobs.pop(job_id, None)
+
+
 def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)

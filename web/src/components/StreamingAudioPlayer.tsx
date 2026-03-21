@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { conversionClient } from "../services/ConversionService";
 import {
+  AudioChunkEntry,
   ChapterProgressEntry,
   ChapterStreamManifest,
-  AudioChunkEntry,
+  PlaybackIndicator,
 } from "../types/conversion";
 
 interface StreamingAudioPlayerProps {
@@ -13,6 +14,9 @@ interface StreamingAudioPlayerProps {
   bookAuthor?: string;
   coverUrl?: string;
   onPlayingSegment?: (chapterIndex: number, segmentIndex: number) => void;
+  onPlaybackStateChange?: (state: PlaybackIndicator | null) => void;
+  startRequestId?: number;
+  hideStartButton?: boolean;
 }
 
 const POLL_INTERVAL_MS = 1500;
@@ -24,6 +28,9 @@ export default function StreamingAudioPlayer({
   bookAuthor,
   coverUrl,
   onPlayingSegment,
+  onPlaybackStateChange,
+  startRequestId = 0,
+  hideStartButton = false,
 }: StreamingAudioPlayerProps): JSX.Element | null {
   const [started, setStarted] = useState(false);
   const [currentChapter, setCurrentChapter] = useState<number>(0);
@@ -84,6 +91,32 @@ export default function StreamingAudioPlayer({
       onPlayingSegment(currentChapter, currentSegment);
     }
   }, [isPlaying, currentChapter, currentSegment, onPlayingSegment]);
+
+  useEffect(() => {
+    if (!onPlaybackStateChange) {
+      return;
+    }
+    if (!started) {
+      onPlaybackStateChange(null);
+      return;
+    }
+    onPlaybackStateChange({
+      chapterIndex: currentChapter,
+      segmentIndex: currentSegment,
+      segmentText: currentSegmentText,
+      isPlaying,
+      started,
+      waiting,
+    });
+  }, [
+    currentChapter,
+    currentSegment,
+    currentSegmentText,
+    isPlaying,
+    onPlaybackStateChange,
+    started,
+    waiting,
+  ]);
 
   // Poll for next chunk
   const pollForChunk = useCallback(async () => {
@@ -164,6 +197,13 @@ export default function StreamingAudioPlayer({
       setError(err?.message || "Playback failed");
     });
   }, [src, started]);
+
+  useEffect(() => {
+    if (!startRequestId || started) {
+      return;
+    }
+    handleStart();
+  }, [startRequestId, started]);
 
   const handleStart = () => {
     setError(null);
@@ -281,7 +321,7 @@ export default function StreamingAudioPlayer({
             {currentChapterLabel || "Select a chapter"}
           </div>
         </div>
-        {!started ? (
+        {!started && !hideStartButton ? (
           <button
             type="button"
             className="button"
@@ -290,7 +330,7 @@ export default function StreamingAudioPlayer({
           >
             ▶️ Listen now (sequential streaming)
           </button>
-        ) : (
+        ) : started ? (
           <div className="streaming-player__controls">
             <button
               type="button"
@@ -311,6 +351,12 @@ export default function StreamingAudioPlayer({
             >
               Next chapter ⏭️
             </button>
+          </div>
+        ) : (
+          <div className="streaming-player__controls streaming-player__controls--passive">
+            <span className="streaming-player__hint">
+              Open the reader above to start the book.
+            </span>
           </div>
         )}
       </div>

@@ -338,6 +338,27 @@ export interface StatusText {
   searchCount: (count: number) => string;
   searchPrev: string;
   searchNext: string;
+  readerTitle: string;
+  readerReadButton: string;
+  readerUnavailable: string;
+  readerLoading: string;
+  readerEmpty: string;
+  readerFollowAudioLabel: string;
+  readerFollowAudioOn: string;
+  readerFollowAudioOff: string;
+  readerThemeLabel: string;
+  readerThemePaper: string;
+  readerThemeMist: string;
+  readerThemeInk: string;
+  readerFontSizeLabel: string;
+  readerLineHeightLabel: string;
+  readerWidthLabel: string;
+  readerNowReading: string;
+  readerWaitingSegment: string;
+  readerPlaying: string;
+  readerPaused: string;
+  readerSegmentLabel: (index: number) => string;
+  readerChapterCount: (count: number) => string;
   chapterStatuses: Record<ChapterProgressStatus, string>;
   chapterEngineLabel: (engine: string) => string;
   bookFallbackTitle: string;
@@ -967,6 +988,29 @@ export const translations: Record<Locale, Translations> = {
         count === 1 ? "1 ocorrência" : `${count} ocorrências`,
       searchPrev: "Anterior",
       searchNext: "Próxima",
+      readerTitle: "Leitor sincronizado",
+      readerReadButton: "Ler livro",
+      readerUnavailable:
+        "O texto do livro ainda não está disponível para leitura.",
+      readerLoading: "Carregando texto do EPUB/PDF…",
+      readerEmpty: "Selecione um capítulo para começar a ler.",
+      readerFollowAudioLabel: "Seguir áudio",
+      readerFollowAudioOn: "Seguindo a narração",
+      readerFollowAudioOff: "Leitura manual",
+      readerThemeLabel: "Tema",
+      readerThemePaper: "Papel",
+      readerThemeMist: "Bruma",
+      readerThemeInk: "Tinta",
+      readerFontSizeLabel: "Tamanho da fonte",
+      readerLineHeightLabel: "Espaçamento",
+      readerWidthLabel: "Largura da coluna",
+      readerNowReading: "Trecho em leitura",
+      readerWaitingSegment: "Aguardando próximo segmento",
+      readerPlaying: "Reproduzindo",
+      readerPaused: "Pausado",
+      readerSegmentLabel: (index: number) => `Segmento ${index}`,
+      readerChapterCount: (count: number) =>
+        count === 1 ? "capítulo" : "capítulos",
       chapterStatuses: {
         pending: "Na fila",
         processing: "Convertendo",
@@ -1606,6 +1650,28 @@ export const translations: Record<Locale, Translations> = {
         count === 1 ? "1 match" : `${count} matches`,
       searchPrev: "Previous",
       searchNext: "Next",
+      readerTitle: "Synced reader",
+      readerReadButton: "Read book",
+      readerUnavailable: "Book text is not available yet for reading.",
+      readerLoading: "Loading EPUB/PDF text…",
+      readerEmpty: "Select a chapter to start reading.",
+      readerFollowAudioLabel: "Follow audio",
+      readerFollowAudioOn: "Following narration",
+      readerFollowAudioOff: "Manual reading",
+      readerThemeLabel: "Theme",
+      readerThemePaper: "Paper",
+      readerThemeMist: "Mist",
+      readerThemeInk: "Ink",
+      readerFontSizeLabel: "Font size",
+      readerLineHeightLabel: "Line height",
+      readerWidthLabel: "Column width",
+      readerNowReading: "Now reading",
+      readerWaitingSegment: "Waiting for next segment",
+      readerPlaying: "Playing",
+      readerPaused: "Paused",
+      readerSegmentLabel: (index: number) => `Segment ${index}`,
+      readerChapterCount: (count: number) =>
+        count === 1 ? "chapter" : "chapters",
       chapterStatuses: {
         pending: "Queued",
         processing: "Converting",

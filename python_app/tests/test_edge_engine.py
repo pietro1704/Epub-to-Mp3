@@ -5,7 +5,9 @@ Unit tests focused on the Edge TTS engine segmentation heuristics.
 
 import os
 import sys
+import tempfile
 import unittest
+from pathlib import Path
 from unittest.mock import Mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
@@ -227,6 +229,44 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         rotated = self.engine._rotate_retry_voice("v1")
         self.assertIn(rotated, {"v2", "v3"})
         self.assertNotEqual(rotated, "v1")
+
+    def test_parallel_streaming_retries_first_gap_before_emitting_later_chunks(self):
+        """Streaming must not publish chunk N+1 before the first missing chunk N."""
+
+        async def _run() -> None:
+            self.engine._enable_parallel = True
+            self.engine._parallel_slots = 2
+
+            call_counts = {"segment-0": 0, "segment-1": 0}
+            emitted_indices: list[int] = []
+
+            async def fake_synthesize(text, voice, output_path, append=False):
+                call_counts[text] += 1
+                await asyncio.sleep(0.01 if text == "segment-0" else 0)
+                if text == "segment-0" and call_counts[text] == 1:
+                    return False
+                Path(output_path).write_bytes(b"mp3")
+                return True
+
+            self.engine._synthesize_segment = fake_synthesize  # type: ignore[method-assign]
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                output_path = Path(tmpdir) / "chapter.mp3"
+                result = await self.engine._synthesize_parallel(
+                    output_path,
+                    [("test-voice", "segment-0"), ("test-voice", "segment-1")],
+                    force_plain_segments=False,
+                    chunk_callback=lambda idx, *_args: emitted_indices.append(idx),
+                )
+
+            self.assertIsNotNone(result)
+            self.assertEqual(emitted_indices, [0, 1])
+            self.assertEqual(call_counts["segment-0"], 2)
+            self.assertEqual(call_counts["segment-1"], 1)
+
+        import asyncio
+
+        asyncio.run(_run())
 
 
 if __name__ == "__main__":  # pragma: no cover

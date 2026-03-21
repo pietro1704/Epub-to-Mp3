@@ -95,6 +95,20 @@ export interface ChapterStreamManifest {
   updatedAt?: number;
 }
 
+export interface BookTextChapter {
+  index: number;
+  name: string;
+  text: string;
+  charCount: number;
+}
+
+export interface BookTextDocument {
+  jobId: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+  chapters: BookTextChapter[];
+}
+
 export type ChapterProgressStatus =
   | "pending"
   | "processing"
@@ -121,6 +135,15 @@ export interface ChapterProgressEntry {
   // Error classification
   errorCategory?: string;
   errorMessage?: string;
+}
+
+export interface PlaybackIndicator {
+  chapterIndex: number;
+  segmentIndex: number;
+  segmentText?: string;
+  isPlaying: boolean;
+  started: boolean;
+  waiting: boolean;
 }
 
 // Engine status for model loading/initialization

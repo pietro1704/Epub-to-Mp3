@@ -349,6 +349,40 @@ describe("useConversionFlow", () => {
     vi.useRealTimers();
   });
 
+  it("hydrates next job metadata from the initial fetch before poll completes", async () => {
+    const submit = vi.fn().mockResolvedValue({ jobId: "next-1" });
+    const fetch = vi.fn().mockResolvedValue({
+      jobId: "next-1",
+      state: "running",
+      bookTitle: "Fetched Book",
+      bookAuthor: "Fetched Author",
+      progressPercent: 12,
+      chaptersCompleted: 1,
+      chaptersTotal: 8,
+    } satisfies JobSnapshot);
+    const poll = vi.fn().mockResolvedValue({
+      jobId: "next-1",
+      state: "finished",
+      outputs: [],
+      progressPercent: 100,
+    } satisfies JobSnapshot);
+
+    const client: ConversionClient = { submit, fetch, poll };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await result.current.submit(request);
+    });
+
+    expect(fetch).toHaveBeenCalledWith("next-1");
+    expect(result.current.state.bookTitle).toBe("Fetched Book");
+    expect(result.current.state.bookAuthor).toBe("Fetched Author");
+    expect(result.current.state.summary?.chaptersCompleted).toBe(1);
+    expect(result.current.state.summary?.chaptersTotal).toBe(8);
+  });
+
   it("surfaces multiple download assets from finished snapshot", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "multi" });
     const poll = vi.fn().mockResolvedValue({

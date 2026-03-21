@@ -2448,18 +2448,18 @@ async def get_job_fulltext(job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Job not found")
 
     # Get the source file path
-    input_file = job_data.get("inputFile")
+    input_file = job_data.get("inputFile") or job_data.get("file_path")
     if not input_file or not Path(input_file).exists():
         raise HTTPException(status_code=404, detail="Source file not found")
 
     try:
         # Read the ebook and extract chapter structure
-        reader = EbookReader(input_file)
+        reader = EbookReader(str(input_file))
         book_chapters = reader.get_chapter_structure(preserve_all=True)
 
         # Build response with chapter text
         chapters = []
-        for idx, chapter in enumerate(book_chapters):
+        for idx, chapter in enumerate(book_chapters, 1):
             chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
             clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
 
