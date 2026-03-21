@@ -53,10 +53,12 @@ describe("EbookReaderPanel", () => {
         screen.getByRole("heading", { name: "Capítulo 1" }),
       ).toBeInTheDocument(),
     );
-    const shadowText =
-      container.querySelector(".ebook-reader__content-host")?.shadowRoot
-        ?.textContent ?? "";
-    expect(shadowText).toContain("Segundo trecho em destaque.");
+    await waitFor(() => {
+      const shadowText =
+        container.querySelector(".ebook-reader__content-host")?.shadowRoot
+          ?.textContent ?? "";
+      expect(shadowText).toContain("Segundo trecho em destaque.");
+    });
     expect(screen.getByText(/Segmento 3/i)).toBeInTheDocument();
   });
 
@@ -109,10 +111,12 @@ describe("EbookReaderPanel", () => {
     expect(
       screen.getByRole("heading", { name: "Chapter 0" }),
     ).toBeInTheDocument();
-    const shadowText =
-      container.querySelector(".ebook-reader__content-host")?.shadowRoot
-        ?.textContent ?? "";
-    expect(shadowText).toContain("Alpha text.");
+    await waitFor(() => {
+      const shadowText =
+        container.querySelector(".ebook-reader__content-host")?.shadowRoot
+          ?.textContent ?? "";
+      expect(shadowText).toContain("Alpha text.");
+    });
     expect(screen.getByText(/Manual reading/i)).toBeInTheDocument();
   });
 
