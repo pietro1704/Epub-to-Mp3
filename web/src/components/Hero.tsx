@@ -7,6 +7,7 @@ import {
   useState,
 } from "react";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
+import { reportUiIssue } from "../services/uiIssueMonitor";
 import type { ConversionSummary, ConversionState } from "../types/conversion";
 import { formatEta } from "../utils/formatEta";
 
@@ -40,6 +41,7 @@ const Hero = memo(function Hero({
   const t = useTranslations();
   const { locale } = useI18n();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [coverFailed, setCoverFailed] = useState(false);
   const heroRef = useRef<HTMLElement | null>(null);
   const spacerRef = useRef<HTMLDivElement | null>(null);
   const expandedHeightRef = useRef(0);
@@ -69,7 +71,7 @@ const Hero = memo(function Hero({
   const hasMetadata = Boolean(
     (title && title.trim()) ||
     (author && author.trim()) ||
-    coverUrl ||
+    (coverUrl && !coverFailed) ||
     progressValue !== null ||
     (summary?.currentChapter && summary.currentChapter.trim()),
   );
@@ -218,12 +220,23 @@ const Hero = memo(function Hero({
         {shouldShowStatusCard ? (
           <div className="hero__book">
             <div className="hero__book-cover">
-              {coverUrl ? (
+              {coverUrl && !coverFailed ? (
                 <img
                   src={coverUrl}
                   alt={displayTitle}
                   loading="lazy"
                   decoding="async"
+                  onError={() => {
+                    setCoverFailed(true);
+                    reportUiIssue(
+                      "cover",
+                      "Book cover failed to load in hero",
+                      {
+                        severity: "info",
+                        details: coverUrl,
+                      },
+                    );
+                  }}
                 />
               ) : (
                 <span aria-hidden="true" role="img">
@@ -303,12 +316,23 @@ const Hero = memo(function Hero({
         {shouldShowStatusCard && (
           <div className="hero__collapsed-summary" aria-live="polite">
             <div className="hero__collapsed-cover">
-              {coverUrl ? (
+              {coverUrl && !coverFailed ? (
                 <img
                   src={coverUrl}
                   alt={displayTitle}
                   loading="lazy"
                   decoding="async"
+                  onError={() => {
+                    setCoverFailed(true);
+                    reportUiIssue(
+                      "cover",
+                      "Collapsed hero cover failed to load",
+                      {
+                        severity: "info",
+                        details: coverUrl,
+                      },
+                    );
+                  }}
                 />
               ) : (
                 <span aria-hidden="true">📘</span>

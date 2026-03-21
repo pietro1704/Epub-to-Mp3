@@ -201,11 +201,22 @@ start_backend() {
   BACK_PID=$!
 }
 
+frontend_needs_install() {
+  local node_modules_dir="$PROJECT_ROOT/$FRONTEND_DIR/node_modules"
+  local lockfile="$PROJECT_ROOT/$FRONTEND_DIR/package-lock.json"
+  [[ -d "$node_modules_dir" ]] || return 0
+  [[ -f "$lockfile" ]] || return 1
+  [[ "$lockfile" -nt "$node_modules_dir" ]]
+}
+
 start_frontend() {
   echo "[dev] starting frontend on ${FRONTEND_HOST}"
   (
     cd "$FRONTEND_DIR"
-    npm install >/dev/null 2>&1 || true
+    if frontend_needs_install; then
+      echo "[dev] installing frontend dependencies"
+      npm install
+    fi
     VITE_API_BASE="${VITE_API_BASE:-http://${BACKEND_HOST}:${BACKEND_PORT}}" npm run dev -- --host "$FRONTEND_HOST"
   ) &
   FRONT_PID=$!

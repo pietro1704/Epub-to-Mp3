@@ -2453,6 +2453,25 @@ async def get_job_fulltext(job_id: str) -> dict:
         raise HTTPException(status_code=404, detail="Source file not found")
 
     try:
+        cache_manager = get_cache_manager()
+        cached = cache_manager.get_cached_chapters(Path(input_file))
+        if cached and cached.get("chapters"):
+            chapters = [
+                {
+                    "index": idx,
+                    "name": ch.get("title") or f"Chapter {idx}",
+                    "text": ch.get("text") or "",
+                    "charCount": len(ch.get("text") or ""),
+                }
+                for idx, ch in enumerate(cached.get("chapters") or [], 1)
+            ]
+            return {
+                "jobId": job_id,
+                "bookTitle": job_data.get("bookTitle", "") or cached.get("title", ""),
+                "bookAuthor": job_data.get("bookAuthor", "") or cached.get("author", ""),
+                "chapters": chapters,
+            }
+
         # Read the ebook and extract chapter structure
         reader = EbookReader(str(input_file))
         book_chapters = reader.get_chapter_structure(preserve_all=True)
@@ -2470,6 +2489,18 @@ async def get_job_fulltext(job_id: str) -> dict:
                     "text": clean_text,
                     "charCount": len(clean_text),
                 }
+            )
+
+        with contextlib.suppress(Exception):
+            cache_manager.save_chapters_to_cache(
+                Path(input_file),
+                {
+                    "title": job_data.get("bookTitle", ""),
+                    "author": job_data.get("bookAuthor", ""),
+                    "chapters": [
+                        {"title": chapter["name"], "text": chapter["text"]} for chapter in chapters
+                    ],
+                },
             )
 
         return {

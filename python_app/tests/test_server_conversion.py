@@ -275,6 +275,62 @@ def test_job_fulltext_uses_file_path_when_input_file_is_missing(tmp_path, monkey
     server.jobs.pop(job_id, None)
 
 
+def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
+    job_id = str(uuid4())
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    upload_path = tmp_path / f"{job_id}_book.epub"
+    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "queued",
+        "events": [],
+        "file_path": str(upload_path),
+        "bookTitle": "Cached Book",
+        "bookAuthor": "Cached Author",
+    }
+
+    class FakeCacheManager:
+        def get_cached_chapters(self, ebook_path):
+            assert Path(ebook_path) == upload_path
+            return {
+                "title": "Cached Book",
+                "author": "Cached Author",
+                "chapters": [
+                    {"title": "Cached Chapter", "text": "Cached text body."},
+                ],
+            }
+
+        def save_chapters_to_cache(self, ebook_path, chapters_data):
+            return True
+
+    monkeypatch.setattr(server, "get_cache_manager", lambda: FakeCacheManager())
+
+    def fail_reader(*args, **kwargs):
+        raise AssertionError("EbookReader should not be used when cache is warm")
+
+    monkeypatch.setattr(server, "EbookReader", fail_reader)
+
+    with TestClient(server.app) as client:
+        response = client.get(f"/api/jobs/{job_id}/fulltext")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["bookTitle"] == "Cached Book"
+    assert payload["bookAuthor"] == "Cached Author"
+    assert payload["chapters"] == [
+        {
+            "index": 1,
+            "name": "Cached Chapter",
+            "text": "Cached text body.",
+            "charCount": len("Cached text body."),
+        }
+    ]
+
+    server.jobs.pop(job_id, None)
+
+
 def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)

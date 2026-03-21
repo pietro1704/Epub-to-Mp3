@@ -359,6 +359,11 @@ export interface StatusText {
   readerPaused: string;
   readerSegmentLabel: (index: number) => string;
   readerChapterCount: (count: number) => string;
+  readerRetryLoad: string;
+  uiHealthTitle: string;
+  uiHealthSubtitle: (count: number) => string;
+  uiHealthClear: string;
+  uiHealthDismiss: string;
   chapterStatuses: Record<ChapterProgressStatus, string>;
   chapterEngineLabel: (engine: string) => string;
   bookFallbackTitle: string;
@@ -1011,6 +1016,14 @@ export const translations: Record<Locale, Translations> = {
       readerSegmentLabel: (index: number) => `Segmento ${index}`,
       readerChapterCount: (count: number) =>
         count === 1 ? "capítulo" : "capítulos",
+      readerRetryLoad: "Tentar carregar novamente",
+      uiHealthTitle: "Saúde da interface",
+      uiHealthSubtitle: (count: number) =>
+        count === 1
+          ? "1 problema recente detectado"
+          : `${count} problemas recentes detectados`,
+      uiHealthClear: "Limpar avisos",
+      uiHealthDismiss: "Dispensar aviso",
       chapterStatuses: {
         pending: "Na fila",
         processing: "Convertendo",
@@ -1672,6 +1685,14 @@ export const translations: Record<Locale, Translations> = {
       readerSegmentLabel: (index: number) => `Segment ${index}`,
       readerChapterCount: (count: number) =>
         count === 1 ? "chapter" : "chapters",
+      readerRetryLoad: "Retry loading",
+      uiHealthTitle: "UI health",
+      uiHealthSubtitle: (count: number) =>
+        count === 1
+          ? "1 recent issue detected"
+          : `${count} recent issues detected`,
+      uiHealthClear: "Clear notices",
+      uiHealthDismiss: "Dismiss notice",
       chapterStatuses: {
         pending: "Queued",
         processing: "Converting",

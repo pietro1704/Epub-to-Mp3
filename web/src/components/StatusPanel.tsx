@@ -11,6 +11,7 @@ import type { Locale, Translations } from "../i18n/translations";
 import ChapterProgressList from "./ChapterProgressList";
 import StreamingAudioPlayer from "./StreamingAudioPlayer";
 import EbookReaderPanel from "./EbookReaderPanel";
+import UiHealthPanel from "./UiHealthPanel";
 import { formatEta } from "../utils/formatEta";
 export { formatEta } from "../utils/formatEta";
 
@@ -304,14 +305,19 @@ export default function StatusPanel({
         }
         onPlaybackStateChange={setPlayingSegment}
       />
-      <EbookReaderPanel
-        jobId={jobId}
-        bookTitle={bookTitle}
-        bookAuthor={bookAuthor}
-        chapterProgress={chapterProgress}
-        playback={playingSegment}
-        onRequestStart={() => setReaderStartRequestId((current) => current + 1)}
-      />
+      <UiHealthPanel />
+      {chapterProgress && chapterProgress.length > 0 && (
+        <EbookReaderPanel
+          jobId={jobId}
+          bookTitle={bookTitle}
+          bookAuthor={bookAuthor}
+          chapterProgress={chapterProgress}
+          playback={playingSegment}
+          onRequestStart={() =>
+            setReaderStartRequestId((current) => current + 1)
+          }
+        />
+      )}
       {chapterProgress && chapterProgress.length > 0 && (
         <ChapterProgressList
           entries={chapterProgress}

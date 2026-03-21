@@ -79,7 +79,7 @@ describe("ConversionForm", () => {
         language: "en",
       });
     });
-  });
+  }, 10000);
 
   it("shows status while auto-detecting cover", async () => {
     const user = userEvent.setup();

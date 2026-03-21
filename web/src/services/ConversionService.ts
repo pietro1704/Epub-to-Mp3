@@ -444,7 +444,7 @@ export class HttpConversionClient implements ConversionClient {
     const normalizedBase = this.baseUrl.replace(/\/$/, "");
     const normalizedPath = path.startsWith("/") ? path : `/${path}`;
     if (!normalizedBase) {
-      return normalizedPath;
+      return normalizeAssetUrl("", normalizedPath);
     }
 
     if (/^https?:\/\//i.test(normalizedBase)) {
@@ -455,7 +455,7 @@ export class HttpConversionClient implements ConversionClient {
       return `${normalizedBase}${normalizedPath.substring(4)}`;
     }
 
-    return `${normalizedBase}${normalizedPath}`;
+    return normalizeAssetUrl("", `${normalizedBase}${normalizedPath}`);
   }
 
   private normalizeSnapshot(snapshot: JobSnapshot): JobSnapshot {

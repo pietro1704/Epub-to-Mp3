@@ -12,10 +12,37 @@ import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 router = APIRouter(prefix="/api", tags=["uploads"])
+
+
+def _precache_uploaded_book(upload_path: Path, book_title: str, book_author: str) -> None:
+    """Pre-cache parsed chapters after the upload response returns."""
+    from src.ebook_reader import EbookReader
+
+    import python_app.server as _srv
+
+    try:
+        reader = EbookReader(str(upload_path))
+        chapters_list = list(reader.get_chapters())
+        if not chapters_list:
+            return
+        chapters_data = {
+            "title": book_title,
+            "author": book_author,
+            "chapters": [
+                {
+                    "title": getattr(ch, "name", f"Chapter {i}"),
+                    "text": getattr(ch, "text", ""),
+                }
+                for i, ch in enumerate(chapters_list, 1)
+            ],
+        }
+        _srv.get_cache_manager().save_chapters_to_cache(upload_path, chapters_data)
+    except Exception as cache_error:
+        _srv.logger.warning(f"Failed to cache chapters during upload: {cache_error}")
 
 
 @router.get("/uploads/{upload_id}/{filename}")
@@ -30,7 +57,7 @@ async def serve_uploaded_asset(upload_id: str, filename: str):
 
 
 @router.post("/uploads")
-async def upload_ebook(file: UploadFile = File(...)) -> dict:
+async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = File(...)) -> dict:
     """Upload ebook ahead of conversion to extract metadata/cover."""
     from src.ebook_reader import EbookReader
 
@@ -76,26 +103,6 @@ async def upload_ebook(file: UploadFile = File(...)) -> dict:
             cover_url = f"/api/uploads/{upload_id}/{cover_filename}"
             cover_mime = cover_blob.media_type
 
-        # Pre-cache parsed chapters for faster conversions
-        try:
-            cache_manager = _srv.get_cache_manager()
-            chapters_list = list(reader.get_chapters())
-            if chapters_list:
-                chapters_data = {
-                    "title": book_title,
-                    "author": book_author,
-                    "chapters": [
-                        {
-                            "title": getattr(ch, "name", f"Chapter {i}"),
-                            "text": getattr(ch, "text", ""),
-                        }
-                        for i, ch in enumerate(chapters_list, 1)
-                    ],
-                }
-                cache_manager.save_chapters_to_cache(temp_path, chapters_data)
-        except Exception as cache_error:
-            # Cache is optional, don't fail upload if it fails
-            _srv.logger.warning(f"Failed to cache chapters during upload: {cache_error}")
     except Exception:
         pass
 
@@ -112,6 +119,8 @@ async def upload_ebook(file: UploadFile = File(...)) -> dict:
             "created_at": time.time(),
         }
         _srv._write_pending_upload_metadata(upload_dir, _srv._pending_uploads[upload_id])
+
+    background_tasks.add_task(_precache_uploaded_book, temp_path, book_title, book_author)
 
     return {
         "uploadId": upload_id,

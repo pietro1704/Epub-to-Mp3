@@ -1,6 +1,7 @@
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { conversionClient } from "../services/ConversionService";
+import { reportUiIssue } from "../services/uiIssueMonitor";
 import {
   BookTextDocument,
   ChapterProgressEntry,
@@ -49,6 +50,7 @@ export default function EbookReaderPanel({
   const [document, setDocument] = useState<BookTextDocument | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [selectedChapterIndex, setSelectedChapterIndex] = useState<number>(0);
   const [search, setSearch] = useState("");
   const [prefs, setPrefs] = useState<ReaderPrefs>(DEFAULT_PREFS);
@@ -96,6 +98,10 @@ export default function EbookReaderPanel({
       if (!payload || payload.chapters.length === 0) {
         setDocument(null);
         setLoadError(t.status.readerUnavailable);
+        reportUiIssue("reader", t.status.readerUnavailable, {
+          severity: "warning",
+          details: `job=${jobId}`,
+        });
         setLoading(false);
         return;
       }
@@ -114,7 +120,7 @@ export default function EbookReaderPanel({
     return () => {
       cancelled = true;
     };
-  }, [jobId, t.status.readerUnavailable]);
+  }, [jobId, reloadToken, t.status.readerUnavailable]);
 
   useEffect(() => {
     if (!prefs.followAudio || !playback) {
@@ -326,7 +332,14 @@ export default function EbookReaderPanel({
           )}
           {!loading && loadError && (
             <div className="ebook-reader__state ebook-reader__state--error">
-              {loadError}
+              <div className="ebook-reader__state-copy">{loadError}</div>
+              <button
+                type="button"
+                className="ebook-reader__retry"
+                onClick={() => setReloadToken((current) => current + 1)}
+              >
+                {t.status.readerRetryLoad}
+              </button>
             </div>
           )}
           {!loading && !loadError && (
