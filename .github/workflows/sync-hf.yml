@@ -1,5 +1,8 @@
 name: Sync to Hugging Face Space
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   # Auto-sync only after CI succeeds on master
   workflow_run:
