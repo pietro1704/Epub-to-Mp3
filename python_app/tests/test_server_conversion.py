@@ -260,8 +260,8 @@ def test_job_fulltext_uses_file_path_when_input_file_is_missing(tmp_path, monkey
         "bookAuthor": "Recovered Author",
     }
 
-    with TestClient(server.app) as client:
-        response = client.get(f"/api/jobs/{job_id}/fulltext")
+    client = TestClient(server.app)
+    response = client.get(f"/api/jobs/{job_id}/fulltext")
 
     assert response.status_code == 200
     payload = response.json()
@@ -319,8 +319,8 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
 
     monkeypatch.setattr(server, "EbookReader", fail_reader)
 
-    with TestClient(server.app) as client:
-        response = client.get(f"/api/jobs/{job_id}/fulltext")
+    client = TestClient(server.app)
+    response = client.get(f"/api/jobs/{job_id}/fulltext")
 
     assert response.status_code == 200
     payload = response.json()

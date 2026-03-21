@@ -81,7 +81,7 @@ def _detect_test_environment() -> bool:
     except Exception:
         argv = []
     for arg in argv[:1]:
-        if arg and "pytest" in arg.lower():
+        if isinstance(arg, str) and arg and "pytest" in arg.lower():
             return True
     return False
 

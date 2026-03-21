@@ -1217,18 +1217,6 @@ export default function App(props?: AppProps): JSX.Element {
                 />
               </Suspense>
             )}
-            {readyDownloadJobs.length > 0 && (
-              <div style={{ marginTop: "1.5rem" }}>
-                <Suspense fallback={<ComponentFallback />}>
-                  <ReadyDownloadsList
-                    jobs={readyDownloadJobs}
-                    activeJobId={viewingRecentJob?.jobId}
-                    onSelect={handleSelectReadyDownload}
-                    onRemove={handleRemoveRecentJob}
-                  />
-                </Suspense>
-              </div>
-            )}
           </Panel>
         ),
       },
