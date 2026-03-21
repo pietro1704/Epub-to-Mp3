@@ -12,7 +12,7 @@ import unittest.mock
 from pathlib import Path
 
 from main import ConverterApplication
-from src.ebook_reader import EbookReader, EpubParser
+from src.ebook_reader import EbookReader, EpubParser, TextProcessor
 from src.text_formatting import TextFormattingProcessor
 
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures" / "epubs"
@@ -79,6 +79,37 @@ class TestSampleEpubFeatures(unittest.TestCase):
         self.assertIn("Chapter 1.", speech)
         self.assertIn("THE BOY WHO LIVED.", speech)
         self.assertIn("Mr. and Mrs. Dursley were proud.", speech)
+
+    def test_harry_potter_xhtml_parsing_preserves_heading_pause(self) -> None:
+        source = """<?xml version='1.0' encoding='utf-8'?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-US">
+  <head>
+    <title>Harry Potter and the Sorcerer's Stone - Chapter 1</title>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+    <link rel="stylesheet" type="text/css" href="../stylesheet.css"/>
+    <link rel="stylesheet" type="text/css" href="../page_styles.css"/>
+  </head>
+  <body id="5N3C0-978481787f4f4a3f82b1a28dc677944e" class="calibre4">
+    <h2 class="calibre14" id="calibre_pb_2">THE BOY WHO LIVED</h2>
+    <p class="first"><span class="drop">M</span>r. and Mrs. Dursley, of
+number four, Privet Drive, were proud to say that they were
+perfectly normal, thank you very much. They were the last people</p>
+  </body>
+</html>
+"""
+
+        parsed_text, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(source)
+        speech = EpubParser._prepare_speech_text(parsed_text, formatting_segments)
+
+        self.assertIn("THE BOY WHO LIVED", parsed_text)
+        self.assertIn("Mr. and Mrs. Dursley, of", parsed_text)
+        self.assertIn("number four, Privet Drive", parsed_text)
+        self.assertIn("THE BOY WHO LIVED.", speech)
+        self.assertIn("THE BOY WHO LIVED.\nMr. and Mrs. Dursley, of.", speech)
+        self.assertIn(
+            "Mr. and Mrs. Dursley, of.\nnumber four, Privet Drive, were proud to say that they were.",
+            speech,
+        )
 
     def test_enhance_natural_pauses_handles_heading_breaks_generically(self) -> None:
         source = "12\nA New Beginning\nThe story starts here."
