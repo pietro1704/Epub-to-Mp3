@@ -77,6 +77,18 @@ start_frontend() {
   FRONT_PID=$!
 }
 
+wait_for_any_exit() {
+  while :; do
+    if [[ -n "${BACK_PID:-}" ]] && ! kill -0 "$BACK_PID" 2>/dev/null; then
+      return 0
+    fi
+    if [[ -n "${FRONT_PID:-}" ]] && ! kill -0 "$FRONT_PID" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+  done
+}
+
 shutdown_all() {
   if (( SHUTTING_DOWN )); then
     return
@@ -93,7 +105,7 @@ start_backend
 start_frontend
 
 while :; do
-  wait -n "$BACK_PID" "$FRONT_PID" || true
+  wait_for_any_exit
 
   if (( SHUTTING_DOWN )); then
     break
