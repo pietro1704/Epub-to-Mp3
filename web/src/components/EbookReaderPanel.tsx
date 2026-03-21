@@ -16,6 +16,7 @@ interface EbookReaderPanelProps {
   chapterProgress?: ChapterProgressEntry[] | null;
   playback?: PlaybackIndicator | null;
   onRequestStart?: () => void;
+  compact?: boolean;
 }
 
 type ReaderTheme = "paper" | "mist" | "ink";
@@ -37,6 +38,106 @@ const DEFAULT_PREFS: ReaderPrefs = {
   followAudio: true,
 };
 
+const READER_CONTENT_BASE_CSS = `
+  .reader-root {
+    color: var(--reader-text);
+    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Georgia", serif;
+    font-size: calc(1rem * var(--reader-font-scale, 1.05));
+    line-height: var(--reader-line-height, 1.75);
+    text-rendering: optimizeLegibility;
+    font-kerning: normal;
+    word-break: normal;
+  }
+  .reader-root p,
+  .reader-root blockquote,
+  .reader-root ol,
+  .reader-root ul,
+  .reader-root pre,
+  .reader-root figure {
+    margin: 0 0 1.1rem;
+    text-wrap: pretty;
+  }
+  .reader-root h1,
+  .reader-root h2,
+  .reader-root h3,
+  .reader-root h4,
+  .reader-root h5,
+  .reader-root h6 {
+    margin: 1.65em 0 0.75em;
+    line-height: 1.18;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .reader-root p {
+    text-indent: 1.4em;
+  }
+  .reader-root p:first-child,
+  .reader-root h1 + p,
+  .reader-root h2 + p,
+  .reader-root h3 + p,
+  .reader-root hr + p,
+  .reader-root blockquote + p,
+  .reader-root figure + p {
+    text-indent: 0;
+  }
+  .reader-root blockquote {
+    margin-left: 0;
+    padding: 0.9rem 1rem;
+    border-left: 3px solid color-mix(in srgb, var(--reader-accent) 32%, transparent);
+    background: color-mix(in srgb, var(--reader-panel) 86%, white);
+    border-radius: 0 1rem 1rem 0;
+    color: var(--reader-muted);
+  }
+  .reader-root ol,
+  .reader-root ul {
+    padding-left: 1.6rem;
+  }
+  .reader-root li + li {
+    margin-top: 0.35rem;
+  }
+  .reader-root a {
+    color: inherit;
+    text-decoration-color: color-mix(in srgb, var(--reader-accent) 45%, transparent);
+  }
+  .reader-root hr {
+    border: none;
+    border-top: 1px solid var(--reader-border);
+    margin: 1.75rem auto;
+    width: min(12rem, 32%);
+  }
+  .reader-root code,
+  .reader-root pre {
+    font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+  }
+  .reader-root pre {
+    overflow: auto;
+    padding: 0.9rem 1rem;
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--reader-sidebar) 70%, transparent);
+  }
+  .ebook-reader__media-note {
+    margin: 0 0 1.1rem;
+    padding: 0.8rem 1rem;
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--reader-sidebar) 68%, transparent);
+    color: var(--reader-muted);
+    font-size: 0.94em;
+    text-align: center;
+  }
+  .ebook-reader__inline-highlight {
+    border-radius: 0.32rem;
+    transition: background 0.18s ease;
+    color: inherit;
+  }
+  .ebook-reader__inline-highlight.is-search {
+    background: var(--reader-search);
+  }
+  .ebook-reader__inline-highlight.is-audio {
+    background: var(--reader-audio);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--reader-accent) 24%, transparent);
+  }
+`;
+
 export default function EbookReaderPanel({
   jobId,
   bookTitle,
@@ -44,6 +145,7 @@ export default function EbookReaderPanel({
   chapterProgress,
   playback,
   onRequestStart,
+  compact = false,
 }: EbookReaderPanelProps): JSX.Element | null {
   const t = useTranslations();
   const { locale } = useI18n();
@@ -52,9 +154,10 @@ export default function EbookReaderPanel({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [selectedChapterIndex, setSelectedChapterIndex] = useState<number>(0);
+  const [pageIndex, setPageIndex] = useState(0);
   const [search, setSearch] = useState("");
   const [prefs, setPrefs] = useState<ReaderPrefs>(DEFAULT_PREFS);
-  const activeAudioRef = useRef<HTMLSpanElement | null>(null);
+  const articleHostRef = useRef<HTMLDivElement | null>(null);
   const deferredSearch = useDeferredValue(search.trim());
 
   useEffect(() => {
@@ -130,8 +233,10 @@ export default function EbookReaderPanel({
   }, [prefs.followAudio, playback]);
 
   useEffect(() => {
-    const marker = activeAudioRef.current;
-    if (!marker) {
+    const marker = articleHostRef.current?.shadowRoot?.querySelector(
+      "[data-reader-audio='true']",
+    );
+    if (!marker || typeof (marker as Element).scrollIntoView !== "function") {
       return;
     }
     marker.scrollIntoView({ block: "center", behavior: "smooth" });
@@ -164,15 +269,50 @@ export default function EbookReaderPanel({
     }
     return countMatches(selectedChapter.text, deferredSearch);
   }, [selectedChapter, deferredSearch]);
-  const renderedParagraphs = useMemo(() => {
+  const readerPages = useMemo(() => {
     if (!selectedChapter) {
       return [];
     }
-    return buildParagraphs(selectedChapter.text, {
-      audioText: currentSegmentText,
-      searchText: deferredSearch,
-    });
-  }, [selectedChapter, currentSegmentText, deferredSearch]);
+    return buildReaderPages(
+      selectedChapter.html,
+      selectedChapter.text,
+      {
+        audioText: currentSegmentText,
+        searchText: deferredSearch,
+      },
+      prefs,
+    );
+  }, [selectedChapter, currentSegmentText, deferredSearch, prefs]);
+  const currentPage = readerPages[pageIndex] ?? readerPages[0] ?? null;
+  const renderedCss = useMemo(
+    () => selectedChapter?.css || "",
+    [selectedChapter],
+  );
+
+  useEffect(() => {
+    setPageIndex(0);
+  }, [selectedChapterIndex]);
+
+  useEffect(() => {
+    const nextIndex = readerPages.findIndex((page) => page.hasAudio);
+    if (nextIndex >= 0 && nextIndex !== pageIndex) {
+      setPageIndex(nextIndex);
+    } else if (pageIndex >= readerPages.length && readerPages.length > 0) {
+      setPageIndex(readerPages.length - 1);
+    }
+  }, [pageIndex, readerPages]);
+
+  useEffect(() => {
+    const host = articleHostRef.current;
+    if (!host) {
+      return;
+    }
+    const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+    shadow.innerHTML = `
+      <style>${READER_CONTENT_BASE_CSS}\n${renderedCss}</style>
+      <div class="reader-root">${currentPage?.html || "<p></p>"}</div>
+    `;
+  }, [currentPage?.html, renderedCss]);
 
   const resolvedTitle =
     document?.bookTitle || bookTitle || t.status.bookFallbackTitle;
@@ -186,7 +326,7 @@ export default function EbookReaderPanel({
 
   return (
     <section
-      className={`ebook-reader ebook-reader--${prefs.theme}`}
+      className={`ebook-reader ebook-reader--${prefs.theme} ${compact ? "ebook-reader--compact" : ""}`}
       aria-label={t.status.readerTitle}
     >
       <div className="ebook-reader__hero">
@@ -216,6 +356,11 @@ export default function EbookReaderPanel({
               ? t.status.readerFollowAudioOn
               : t.status.readerFollowAudioOff}
           </span>
+          {readerPages.length > 0 && (
+            <span className="ebook-reader__hero-chip">
+              {t.status.readerPageLabel(pageIndex + 1, readerPages.length)}
+            </span>
+          )}
           {audioChapter && (
             <span className="ebook-reader__hero-chip ebook-reader__hero-chip--live">
               {locale === "pt"
@@ -324,7 +469,7 @@ export default function EbookReaderPanel({
       <div className="ebook-reader__layout">
         <aside className="ebook-reader__chapters">
           <div className="ebook-reader__chapters-header">
-            <h4>{t.status.chapterProgressTitle}</h4>
+            <h4>{t.status.readerChaptersTitle}</h4>
             <span>{chapters.length}</span>
           </div>
           {loading && (
@@ -403,6 +548,38 @@ export default function EbookReaderPanel({
                   </div>
                   <h4>{selectedChapter.name}</h4>
                 </div>
+                {readerPages.length > 0 && (
+                  <div className="ebook-reader__pager">
+                    <button
+                      type="button"
+                      className="ebook-reader__page-button"
+                      onClick={() =>
+                        setPageIndex((current) => Math.max(0, current - 1))
+                      }
+                      disabled={pageIndex <= 0}
+                    >
+                      {t.status.readerPrevPage}
+                    </button>
+                    <span className="ebook-reader__page-label">
+                      {t.status.readerPageLabel(
+                        pageIndex + 1,
+                        readerPages.length,
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      className="ebook-reader__page-button"
+                      onClick={() =>
+                        setPageIndex((current) =>
+                          Math.min(readerPages.length - 1, current + 1),
+                        )
+                      }
+                      disabled={pageIndex >= readerPages.length - 1}
+                    >
+                      {t.status.readerNextPage}
+                    </button>
+                  </div>
+                )}
                 {playback?.chapterIndex === selectedChapter.index && (
                   <div className="ebook-reader__live">
                     <strong>{t.status.readerNowReading}</strong>
@@ -430,37 +607,10 @@ export default function EbookReaderPanel({
                   } as CSSProperties
                 }
               >
-                {(() => {
-                  let audioMarkerAssigned = false;
-                  return renderedParagraphs.map((paragraph, paragraphIndex) => (
-                    <p key={`${selectedChapter.index}-${paragraphIndex}`}>
-                      {paragraph.length === 0 ? <br /> : null}
-                      {paragraph.map((part, partIndex) => {
-                        const className = [
-                          "ebook-reader__fragment",
-                          part.isAudio ? "is-audio" : "",
-                          part.isSearch ? "is-search" : "",
-                        ]
-                          .filter(Boolean)
-                          .join(" ");
-                        const shouldAttachRef =
-                          part.isAudio && !audioMarkerAssigned;
-                        if (shouldAttachRef) {
-                          audioMarkerAssigned = true;
-                        }
-                        return (
-                          <span
-                            key={`${selectedChapter.index}-${paragraphIndex}-${partIndex}`}
-                            className={className}
-                            ref={shouldAttachRef ? activeAudioRef : undefined}
-                          >
-                            {part.text}
-                          </span>
-                        );
-                      })}
-                    </p>
-                  ));
-                })()}
+                <div
+                  ref={articleHostRef}
+                  className="ebook-reader__content-host"
+                />
               </article>
             </>
           ) : (
@@ -472,12 +622,6 @@ export default function EbookReaderPanel({
   );
 }
 
-interface HighlightPart {
-  text: string;
-  isAudio: boolean;
-  isSearch: boolean;
-}
-
 function countMatches(text: string, query: string): number {
   if (!text || !query) {
     return 0;
@@ -487,92 +631,367 @@ function countMatches(text: string, query: string): number {
   return Array.from(text.matchAll(regex)).length;
 }
 
-function buildParagraphs(
-  text: string,
+interface ReaderPage {
+  html: string;
+  hasAudio: boolean;
+}
+
+function buildReaderPages(
+  sourceHtml: string | undefined,
+  fallbackText: string,
   options: { audioText: string; searchText: string },
-): HighlightPart[][] {
-  const source = text || "";
-  const ranges: Array<{
-    start: number;
-    end: number;
-    type: "audio" | "search";
-  }> = [];
-  const audioNeedle = options.audioText.trim();
-  const searchNeedle = options.searchText.trim();
+  prefs: ReaderPrefs,
+): ReaderPage[] {
+  if (typeof window === "undefined") {
+    return [{ html: buildReaderHtmlFallback(fallbackText), hasAudio: false }];
+  }
 
-  if (audioNeedle) {
-    const audioStart = source.indexOf(audioNeedle);
-    if (audioStart >= 0) {
-      ranges.push({
-        start: audioStart,
-        end: audioStart + audioNeedle.length,
-        type: "audio",
+  const parser = new DOMParser();
+  const baseMarkup =
+    sourceHtml?.trim() || buildReaderHtmlFallback(fallbackText);
+  const doc = parser.parseFromString(baseMarkup, "text/html");
+  const root = doc.body;
+
+  sanitizeReaderTree(root, doc);
+  applyReaderHighlight(root, doc, options.audioText.trim(), "audio");
+  applyReaderHighlight(root, doc, options.searchText.trim(), "search");
+  const pages = paginateReaderRoot(root, prefs);
+  return pages.length > 0
+    ? pages
+    : [{ html: buildReaderHtmlFallback(fallbackText), hasAudio: false }];
+}
+
+function buildReaderHtmlFallback(text: string): string {
+  const source = (text || "").trim();
+  if (!source) {
+    return "<p></p>";
+  }
+  return source
+    .split(/\n{2,}/)
+    .map(
+      (paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br />")}</p>`,
+    )
+    .join("");
+}
+
+function paginateReaderRoot(
+  root: HTMLElement,
+  prefs: ReaderPrefs,
+): ReaderPage[] {
+  const pageSource = resolvePaginationSource(root);
+  const blocks = Array.from(pageSource.childNodes)
+    .map((node) => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node.textContent?.trim() || "";
+        return text ? `<p>${escapeHtml(text)}</p>` : "";
+      }
+      return node instanceof Element ? node.outerHTML : "";
+    })
+    .filter(Boolean);
+
+  if (blocks.length === 0) {
+    return [];
+  }
+
+  const charBudget = estimateReaderPageChars(prefs);
+  const pages: ReaderPage[] = [];
+  let currentBlocks: string[] = [];
+  let currentChars = 0;
+  let currentHasAudio = false;
+
+  blocks.forEach((block) => {
+    const blockTextLength = stripHtml(block).length;
+    const nextChars = currentChars + blockTextLength;
+    const blockHasAudio =
+      block.includes("data-reader-audio='true'") ||
+      block.includes('data-reader-audio="true"');
+    if (currentBlocks.length > 0 && nextChars > charBudget) {
+      pages.push({
+        html: currentBlocks.join(""),
+        hasAudio: currentHasAudio,
       });
+      currentBlocks = [];
+      currentChars = 0;
+      currentHasAudio = false;
     }
-  }
+    currentBlocks.push(block);
+    currentChars += blockTextLength;
+    currentHasAudio = currentHasAudio || blockHasAudio;
+  });
 
-  if (searchNeedle) {
-    const regex = new RegExp(escapeRegExp(searchNeedle), "gi");
-    for (const match of source.matchAll(regex)) {
-      const start = match.index ?? -1;
-      if (start < 0) {
-        continue;
-      }
-      ranges.push({
-        start,
-        end: start + match[0].length,
-        type: "search",
-      });
-    }
-  }
-
-  const boundaries = new Set<number>([0, source.length]);
-  for (const range of ranges) {
-    boundaries.add(range.start);
-    boundaries.add(range.end);
-  }
-
-  const sortedBoundaries = [...boundaries].sort((a, b) => a - b);
-  const parts: HighlightPart[] = [];
-  for (let index = 0; index < sortedBoundaries.length - 1; index += 1) {
-    const start = sortedBoundaries[index];
-    const end = sortedBoundaries[index + 1];
-    if (end <= start) {
-      continue;
-    }
-    const chunk = source.slice(start, end);
-    const isAudio = ranges.some(
-      (range) =>
-        range.type === "audio" && range.start <= start && range.end >= end,
-    );
-    const isSearch = ranges.some(
-      (range) =>
-        range.type === "search" && range.start <= start && range.end >= end,
-    );
-    parts.push({ text: chunk, isAudio, isSearch });
-  }
-
-  const paragraphs: HighlightPart[][] = [];
-  let current: HighlightPart[] = [];
-  for (const part of parts) {
-    const pieces = part.text.split("\n\n");
-    pieces.forEach((piece, pieceIndex) => {
-      if (piece) {
-        current.push({
-          ...part,
-          text: piece,
-        });
-      }
-      if (pieceIndex < pieces.length - 1) {
-        paragraphs.push(current);
-        current = [];
-      }
+  if (currentBlocks.length > 0) {
+    pages.push({
+      html: currentBlocks.join(""),
+      hasAudio: currentHasAudio,
     });
   }
-  if (current.length > 0 || paragraphs.length === 0) {
-    paragraphs.push(current);
+
+  return pages;
+}
+
+function resolvePaginationSource(root: HTMLElement): HTMLElement {
+  if (root.children.length !== 1) {
+    return root;
   }
-  return paragraphs;
+  const child = root.firstElementChild;
+  if (
+    child instanceof HTMLElement &&
+    ["section", "article", "div", "main"].includes(
+      child.tagName.toLowerCase(),
+    ) &&
+    child.children.length > 1
+  ) {
+    return child;
+  }
+  return root;
+}
+
+function estimateReaderPageChars(prefs: ReaderPrefs): number {
+  const widthFactor = prefs.widthRem / 48;
+  const fontFactor = 1.05 / prefs.fontScale;
+  const lineFactor = 1.75 / prefs.lineHeight;
+  return Math.max(
+    900,
+    Math.min(4200, Math.round(2200 * widthFactor * fontFactor * lineFactor)),
+  );
+}
+
+function stripHtml(value: string): string {
+  return value
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sanitizeReaderTree(root: HTMLElement, doc: Document): void {
+  const allowedTags = new Set([
+    "a",
+    "blockquote",
+    "br",
+    "code",
+    "div",
+    "em",
+    "figcaption",
+    "figure",
+    "h1",
+    "h2",
+    "h3",
+    "h4",
+    "h5",
+    "h6",
+    "hr",
+    "i",
+    "li",
+    "mark",
+    "ol",
+    "p",
+    "pre",
+    "section",
+    "small",
+    "span",
+    "strong",
+    "sub",
+    "sup",
+    "u",
+    "ul",
+  ]);
+  const allowedStyleProps = new Set([
+    "font-style",
+    "font-weight",
+    "font-family",
+    "font-size",
+    "text-align",
+    "text-decoration",
+    "text-transform",
+    "letter-spacing",
+    "margin-left",
+    "margin-right",
+    "padding-left",
+    "padding-right",
+  ]);
+  const elements = Array.from(root.querySelectorAll("*"));
+
+  elements.forEach((element) => {
+    const tag = element.tagName.toLowerCase();
+    if (tag === "script" || tag === "style" || tag === "iframe") {
+      element.remove();
+      return;
+    }
+    if (tag === "img" || tag === "svg" || tag === "canvas") {
+      const alt = element.getAttribute("alt")?.trim();
+      if (alt) {
+        const fallback = doc.createElement("p");
+        fallback.textContent = alt;
+        fallback.className = "ebook-reader__media-note";
+        element.replaceWith(fallback);
+      } else {
+        element.remove();
+      }
+      return;
+    }
+    if (!allowedTags.has(tag)) {
+      element.replaceWith(...Array.from(element.childNodes));
+      return;
+    }
+
+    Array.from(element.attributes).forEach((attribute) => {
+      const name = attribute.name.toLowerCase();
+      if (name.startsWith("on")) {
+        element.removeAttribute(attribute.name);
+        return;
+      }
+      if (name === "href") {
+        const value = attribute.value.trim();
+        if (
+          value &&
+          !value.startsWith("#") &&
+          !/^https?:\/\//i.test(value) &&
+          !/^mailto:/i.test(value)
+        ) {
+          element.removeAttribute(attribute.name);
+        }
+        return;
+      }
+      if (name === "style") {
+        const style = attribute.value
+          .split(";")
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+          .map((entry) => {
+            const [prop, ...rest] = entry.split(":");
+            return [prop?.trim().toLowerCase(), rest.join(":").trim()] as const;
+          })
+          .filter(
+            ([prop, value]) => prop && value && allowedStyleProps.has(prop),
+          )
+          .map(([prop, value]) => `${prop}: ${value}`);
+        if (style.length > 0) {
+          element.setAttribute("style", style.join("; "));
+        } else {
+          element.removeAttribute("style");
+        }
+        return;
+      }
+      if (name === "class") {
+        return;
+      }
+      if (name === "id") {
+        return;
+      }
+      if (!["href", "style", "title", "class", "id"].includes(name)) {
+        element.removeAttribute(attribute.name);
+      }
+    });
+  });
+}
+
+function applyReaderHighlight(
+  root: HTMLElement,
+  doc: Document,
+  needle: string,
+  kind: "audio" | "search",
+): void {
+  if (!needle) {
+    return;
+  }
+  const matcher =
+    kind === "search" ? new RegExp(escapeRegExp(needle), "gi") : null;
+  const walker = doc.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+
+  let current = walker.nextNode();
+  while (current) {
+    const parent = current.parentElement;
+    if (
+      current.nodeType === Node.TEXT_NODE &&
+      parent &&
+      !parent.closest(".ebook-reader__inline-highlight")
+    ) {
+      textNodes.push(current as Text);
+    }
+    current = walker.nextNode();
+  }
+
+  let audioAssigned = false;
+
+  textNodes.forEach((textNode) => {
+    const source = textNode.textContent || "";
+    if (!source.trim()) {
+      return;
+    }
+
+    const matches =
+      kind === "audio"
+        ? collectAudioMatches(source, needle, audioAssigned)
+        : collectRegexMatches(source, matcher);
+    if (matches.length === 0) {
+      return;
+    }
+
+    const fragment = doc.createDocumentFragment();
+    let cursor = 0;
+
+    matches.forEach((match) => {
+      if (match.start > cursor) {
+        fragment.append(source.slice(cursor, match.start));
+      }
+      const marker = doc.createElement("mark");
+      marker.className = `ebook-reader__inline-highlight is-${kind}`;
+      if (kind === "audio" && !audioAssigned) {
+        marker.setAttribute("data-reader-audio", "true");
+        audioAssigned = true;
+      }
+      marker.textContent = source.slice(match.start, match.end);
+      fragment.append(marker);
+      cursor = match.end;
+    });
+
+    if (cursor < source.length) {
+      fragment.append(source.slice(cursor));
+    }
+
+    textNode.replaceWith(fragment);
+  });
+}
+
+function collectAudioMatches(
+  source: string,
+  needle: string,
+  alreadyAssigned: boolean,
+): Array<{ start: number; end: number }> {
+  if (alreadyAssigned) {
+    return [];
+  }
+  const start = source.indexOf(needle);
+  if (start < 0) {
+    return [];
+  }
+  return [{ start, end: start + needle.length }];
+}
+
+function collectRegexMatches(
+  source: string,
+  matcher: RegExp | null,
+): Array<{ start: number; end: number }> {
+  if (!matcher) {
+    return [];
+  }
+  const matches: Array<{ start: number; end: number }> = [];
+  for (const match of source.matchAll(matcher)) {
+    const start = match.index ?? -1;
+    if (start < 0) {
+      continue;
+    }
+    matches.push({ start, end: start + match[0].length });
+  }
+  return matches;
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
 }
 
 function escapeRegExp(value: string): string {

@@ -99,6 +99,8 @@ export interface BookTextChapter {
   index: number;
   name: string;
   text: string;
+  html?: string;
+  css?: string;
   charCount: number;
 }
 

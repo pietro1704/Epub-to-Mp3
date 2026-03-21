@@ -67,6 +67,8 @@ export default function StatusPanel({
   const [playingSegment, setPlayingSegment] =
     useState<PlaybackIndicator | null>(null);
   const [readerStartRequestId, setReaderStartRequestId] = useState(0);
+  const [readerOpen, setReaderOpen] = useState(false);
+  const [readerPopup, setReaderPopup] = useState(false);
 
   const errorText = showError
     ? t.status.errorPrefix.replace("{message}", error)
@@ -307,16 +309,76 @@ export default function StatusPanel({
       />
       <UiHealthPanel />
       {chapterProgress && chapterProgress.length > 0 && (
-        <EbookReaderPanel
-          jobId={jobId}
-          bookTitle={bookTitle}
-          bookAuthor={bookAuthor}
-          chapterProgress={chapterProgress}
-          playback={playingSegment}
-          onRequestStart={() =>
-            setReaderStartRequestId((current) => current + 1)
-          }
-        />
+        <>
+          <div className="status-panel__reader-actions">
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => {
+                if (readerPopup) {
+                  setReaderPopup(false);
+                }
+                setReaderOpen((current) => !current);
+              }}
+            >
+              {readerOpen ? t.status.readerClose : t.status.readerOpen}
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={() => {
+                setReaderOpen(true);
+                setReaderPopup((current) => !current);
+              }}
+            >
+              {readerPopup
+                ? t.status.readerExitPopup
+                : t.status.readerOpenPopup}
+            </button>
+          </div>
+          {readerOpen && !readerPopup && (
+            <EbookReaderPanel
+              jobId={jobId}
+              bookTitle={bookTitle}
+              bookAuthor={bookAuthor}
+              chapterProgress={chapterProgress}
+              playback={playingSegment}
+              onRequestStart={() =>
+                setReaderStartRequestId((current) => current + 1)
+              }
+              compact
+            />
+          )}
+          {readerOpen && readerPopup && (
+            <div className="reader-modal" role="dialog" aria-modal="true">
+              <div
+                className="reader-modal__backdrop"
+                onClick={() => setReaderPopup(false)}
+              />
+              <div className="reader-modal__panel">
+                <div className="reader-modal__toolbar">
+                  <button
+                    type="button"
+                    className="button-secondary"
+                    onClick={() => setReaderPopup(false)}
+                  >
+                    {t.status.readerExitPopup}
+                  </button>
+                </div>
+                <EbookReaderPanel
+                  jobId={jobId}
+                  bookTitle={bookTitle}
+                  bookAuthor={bookAuthor}
+                  chapterProgress={chapterProgress}
+                  playback={playingSegment}
+                  onRequestStart={() =>
+                    setReaderStartRequestId((current) => current + 1)
+                  }
+                />
+              </div>
+            </div>
+          )}
+        </>
       )}
       {chapterProgress && chapterProgress.length > 0 && (
         <ChapterProgressList

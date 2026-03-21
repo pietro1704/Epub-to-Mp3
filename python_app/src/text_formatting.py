@@ -582,6 +582,7 @@ class TextFormattingProcessor:
         # Enhance paragraph breaks with proper punctuation
         # If paragraph ends without punctuation, add period
         text = re.sub(r"([^\n.!?])\n\n", r"\1.\n\n", text)
+        text = cls._append_pause_after_line_breaks(text)
 
         # Add comma after introductory phrases (more conservative)
         # Only for common Portuguese/English discourse markers, not simple words

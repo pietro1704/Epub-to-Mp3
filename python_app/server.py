@@ -25,6 +25,7 @@ except ImportError:
 import asyncio
 import contextlib
 import hashlib
+import html
 import json
 import logging
 import re
@@ -103,7 +104,7 @@ async def _lifespan(app: FastAPI):
     _app_loop = asyncio.get_running_loop()
     os.environ.setdefault("SERVER_MODE", "1")
 
-    if _IS_TEST_ENV:
+    if _IS_TEST_ENV or _detect_test_environment():
         logger.info("Test environment detected: using lightweight FastAPI lifespan")
         try:
             yield
@@ -820,6 +821,14 @@ def _resolve_chapter_timeout(estimated_seconds: float, text_chars: int = 0) -> f
         synthesis_min = (text_chars / 800.0) * _CHAPTER_TIMEOUT_FACTOR
         timeout = max(timeout, synthesis_min)
     return min(timeout, _CHAPTER_TIMEOUT_MAX)
+
+
+def _chapter_html_fallback(text: str) -> str:
+    paragraphs = [segment.strip() for segment in (text or "").split("\n\n")]
+    blocks = [segment for segment in paragraphs if segment]
+    if not blocks:
+        return "<p></p>"
+    return "".join(f"<p>{html.escape(block).replace(chr(10), '<br />')}</p>" for block in blocks)
 
 
 def _collect_resumable_job_entries() -> list[dict]:
@@ -2467,6 +2476,8 @@ async def get_job_fulltext(job_id: str) -> dict:
                     "index": idx,
                     "name": ch.get("title") or f"Chapter {idx}",
                     "text": ch.get("text") or "",
+                    "html": ch.get("html") or _chapter_html_fallback(ch.get("text") or ""),
+                    "css": ch.get("css") or "",
                     "charCount": len(ch.get("text") or ""),
                 }
                 for idx, ch in enumerate(cached.get("chapters") or [], 1)
@@ -2487,12 +2498,18 @@ async def get_job_fulltext(job_id: str) -> dict:
         for idx, chapter in enumerate(book_chapters, 1):
             chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
             clean_text = TextFormattingProcessor.strip_inline_markdown(chapter_text)
+            chapter_html = (getattr(chapter, "raw_html", None) or "").strip()
+            if not chapter_html:
+                chapter_html = _chapter_html_fallback(clean_text)
+            chapter_css = reader.extract_chapter_stylesheet(chapter)
 
             chapters.append(
                 {
                     "index": idx,
                     "name": chapter.name or f"Chapter {idx}",
                     "text": clean_text,
+                    "html": chapter_html,
+                    "css": chapter_css,
                     "charCount": len(clean_text),
                 }
             )
@@ -2504,7 +2521,13 @@ async def get_job_fulltext(job_id: str) -> dict:
                     "title": job_data.get("bookTitle", ""),
                     "author": job_data.get("bookAuthor", ""),
                     "chapters": [
-                        {"title": chapter["name"], "text": chapter["text"]} for chapter in chapters
+                        {
+                            "title": chapter["name"],
+                            "text": chapter["text"],
+                            "html": chapter["html"],
+                            "css": chapter["css"],
+                        }
+                        for chapter in chapters
                     ],
                 },
             )

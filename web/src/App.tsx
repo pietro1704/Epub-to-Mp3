@@ -1284,33 +1284,6 @@ export default function App(props?: AppProps): JSX.Element {
                 />
               </Suspense>
             )}
-            {(state.phase === "success" ||
-              (state.downloads.length > 0 && Boolean(state.jobId))) && (
-              <Suspense fallback={<ComponentFallback />}>
-                <StatusPanel
-                  entries={state.log}
-                  rawLog={state.rawLog}
-                  phase={state.phase}
-                  phaseLabelOverride={statusLabelOverride}
-                  jobId={state.jobId}
-                  error={state.error}
-                  errorCategory={state.errorCategory}
-                  etaSeconds={state.etaSeconds}
-                  showRawLog={showRawLog}
-                  onToggleRawLog={() => setShowRawLog((value) => !value)}
-                  summary={state.summary}
-                  cliCommand={state.cliCommand}
-                  onCancel={undefined}
-                  onSkip={undefined}
-                  canCancel={false}
-                  canSkip={false}
-                  cancelDisabled={false}
-                  bookTitle={state.bookTitle}
-                  bookAuthor={state.bookAuthor}
-                  coverUrl={state.coverUrl}
-                />
-              </Suspense>
-            )}
             <Suspense fallback={<ComponentFallback />}>
               <DownloadsPanel
                 downloads={displayedDownloads}

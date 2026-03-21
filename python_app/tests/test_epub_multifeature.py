@@ -12,7 +12,7 @@ import unittest.mock
 from pathlib import Path
 
 from main import ConverterApplication
-from src.ebook_reader import EbookReader
+from src.ebook_reader import EbookReader, EpubParser
 from src.text_formatting import TextFormattingProcessor
 
 FIXTURE_ROOT = Path(__file__).resolve().parent / "fixtures" / "epubs"
@@ -70,6 +70,24 @@ class TestSampleEpubFeatures(unittest.TestCase):
         self.assertEqual(len(toc[0].children), 3)
         self.assertEqual(toc[0].children[0].title, "Seção 1 - Diário")
         self.assertEqual(toc[0].children[2].href, "chapter1.xhtml#notas")
+
+    def test_prepare_speech_text_adds_small_pause_on_line_breaks(self) -> None:
+        source = "Chapter 1\nTHE BOY WHO LIVED\nMr. and Mrs. Dursley were proud."
+
+        speech = EpubParser._prepare_speech_text(source, formatting_segments=None)
+
+        self.assertIn("Chapter 1.", speech)
+        self.assertIn("THE BOY WHO LIVED.", speech)
+        self.assertIn("Mr. and Mrs. Dursley were proud.", speech)
+
+    def test_enhance_natural_pauses_handles_heading_breaks_generically(self) -> None:
+        source = "12\nA New Beginning\nThe story starts here."
+
+        enhanced = TextFormattingProcessor.enhance_natural_pauses(source)
+
+        self.assertIn("12.", enhanced)
+        self.assertIn("A New Beginning.", enhanced)
+        self.assertTrue(enhanced.endswith("The story starts here."))
 
     def test_show_structure_generates_cached_text(self) -> None:
         """End-to-end check ensuring cached text matches prepared chapter output."""

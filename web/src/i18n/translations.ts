@@ -343,6 +343,14 @@ export interface StatusText {
   readerUnavailable: string;
   readerLoading: string;
   readerEmpty: string;
+  readerOpen: string;
+  readerClose: string;
+  readerOpenPopup: string;
+  readerExitPopup: string;
+  readerChaptersTitle: string;
+  readerPageLabel: (current: number, total: number) => string;
+  readerPrevPage: string;
+  readerNextPage: string;
   readerFollowAudioLabel: string;
   readerFollowAudioOn: string;
   readerFollowAudioOff: string;
@@ -999,6 +1007,15 @@ export const translations: Record<Locale, Translations> = {
         "O texto do livro ainda não está disponível para leitura.",
       readerLoading: "Carregando texto do EPUB/PDF…",
       readerEmpty: "Selecione um capítulo para começar a ler.",
+      readerOpen: "Abrir leitor",
+      readerClose: "Fechar leitor",
+      readerOpenPopup: "Abrir em popup",
+      readerExitPopup: "Sair do popup",
+      readerChaptersTitle: "Capítulos",
+      readerPageLabel: (current: number, total: number) =>
+        `Página ${current} de ${total}`,
+      readerPrevPage: "Página anterior",
+      readerNextPage: "Próxima página",
       readerFollowAudioLabel: "Seguir áudio",
       readerFollowAudioOn: "Seguindo a narração",
       readerFollowAudioOff: "Leitura manual",
@@ -1668,6 +1685,15 @@ export const translations: Record<Locale, Translations> = {
       readerUnavailable: "Book text is not available yet for reading.",
       readerLoading: "Loading EPUB/PDF text…",
       readerEmpty: "Select a chapter to start reading.",
+      readerOpen: "Open reader",
+      readerClose: "Close reader",
+      readerOpenPopup: "Open popup",
+      readerExitPopup: "Exit popup",
+      readerChaptersTitle: "Chapters",
+      readerPageLabel: (current: number, total: number) =>
+        `Page ${current} of ${total}`,
+      readerPrevPage: "Previous page",
+      readerNextPage: "Next page",
       readerFollowAudioLabel: "Follow audio",
       readerFollowAudioOn: "Following narration",
       readerFollowAudioOff: "Manual reading",

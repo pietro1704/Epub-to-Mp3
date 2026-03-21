@@ -679,6 +679,8 @@ export class HttpConversionClient implements ConversionClient {
               : index,
           name: chapter.name || `Chapter ${index}`,
           text: chapter.text || "",
+          html: typeof chapter.html === "string" ? chapter.html : undefined,
+          css: typeof chapter.css === "string" ? chapter.css : undefined,
           charCount:
             typeof chapter.charCount === "number" &&
             Number.isFinite(chapter.charCount)

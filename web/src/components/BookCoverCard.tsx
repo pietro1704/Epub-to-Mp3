@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import { reportUiIssue } from '../services/uiIssueMonitor';
+import { useEffect, useState } from 'react';
 import type { ConversionState } from '../types/conversion';
 
 interface BookCoverCardProps {
@@ -31,6 +30,11 @@ export default function BookCoverCard({
   phase,
 }: BookCoverCardProps): JSX.Element {
   const [coverFailed, setCoverFailed] = useState(false);
+
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [coverUrl]);
+
   const statusLabel = resolveStatusLabel(phase);
   const resolvedTitle = title || 'Book loaded';
   const resolvedAuthor = author || 'Unknown author';
@@ -45,13 +49,7 @@ export default function BookCoverCard({
             alt={altText}
             loading="lazy"
             decoding="async"
-            onError={() => {
-              setCoverFailed(true);
-              reportUiIssue('cover-card', 'Book cover failed to load', {
-                severity: 'info',
-                details: coverUrl,
-              });
-            }}
+            onError={() => setCoverFailed(true)}
           />
         ) : (
           <div className="cover-card__placeholder" aria-hidden="true">

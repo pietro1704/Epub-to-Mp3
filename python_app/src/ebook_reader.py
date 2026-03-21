@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import mimetypes
+import posixpath
 import re
 import zipfile
 from dataclasses import dataclass, field
@@ -932,20 +933,29 @@ class EpubParser:
         if not text:
             return ""
 
+        prepared_text = text
+        if TextFormattingProcessor:
+            try:
+                prepared_text = TextFormattingProcessor.enhance_natural_pauses(prepared_text)
+            except Exception:
+                prepared_text = text
+
         # Only remove inline markdown that was added by the processor
         # IMPORTANT: Do NOT remove [[lang:]] or [[fmt:]] tags
         if TextFormattingProcessor:
             formatter = TextFormattingProcessor()
             try:
-                processed = formatter.to_audible_text(text, formatting_segments)
+                processed = formatter.to_audible_text(prepared_text, formatting_segments)
                 if processed:
-                    return processed
+                    return TextFormattingProcessor.enhance_natural_pauses(processed)
             except Exception:
                 # Fallback to basic removal if something fails
                 pass
-            return TextFormattingProcessor.strip_inline_markdown(text)
+            return TextFormattingProcessor.enhance_natural_pauses(
+                TextFormattingProcessor.strip_inline_markdown(prepared_text)
+            )
 
-        return text
+        return prepared_text
 
     def parse(self) -> Book:
         with zipfile.ZipFile(self.path, "r") as archive:
@@ -1168,7 +1178,7 @@ class EpubParser:
             chapter_title = TextProcessor.clean_chapter_title(raw_title)
 
             # Prepare speech text
-            speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
+            speech_text = self._prepare_speech_text(text, formatting_segments)
 
             # Create chapter
             chapters.append(
@@ -1431,7 +1441,7 @@ class EpubParser:
                     else:
                         sub_text_fn = sub_text_fmt
                     sub_text = TextProcessor.add_pause_before_dash(sub_text_fn)
-                    sub_speech = self._prepare_speech_text(sub_text_fn, sub_segments)
+                    sub_speech = self._prepare_speech_text(sub_text, sub_segments)
 
                     # A CSS sub-chapter can still be very long (e.g. a long
                     # chapter with no further heading markers).  Apply the same
@@ -1498,7 +1508,7 @@ class EpubParser:
 
                 # IMPORTANT: speech_text preserves [[lang:xx]] and [[fmt:...]] tags
                 # while stripping only inline markdown (_italic_, **bold**, `code`).
-                speech_text = self._prepare_speech_text(text_with_footnotes, formatting_segments)
+                speech_text = self._prepare_speech_text(text, formatting_segments)
 
                 # --- Paragraph-boundary fallback split ---
                 # When a chapter has no CSS subchapter markers but exceeds the size
@@ -2176,6 +2186,51 @@ class EbookReader:
             return self._extract_pdf_cover()
 
         return None
+
+    def extract_chapter_stylesheet(self, chapter: Chapter) -> str:
+        """Return the concatenated CSS referenced by a chapter XHTML file."""
+        if not self.file_path or self.file_path.suffix.lower() != ".epub":
+            return ""
+        raw_html = (chapter.raw_html or "").strip()
+        source_path = (chapter.source_path or "").split("#", 1)[0].strip()
+        if not raw_html or not source_path:
+            return ""
+
+        hrefs = [
+            match.group(1).strip()
+            for match in re.finditer(
+                r"""<link[^>]+rel=["']stylesheet["'][^>]+href=["']([^"']+)["']""",
+                raw_html,
+                re.IGNORECASE,
+            )
+        ]
+        if not hrefs:
+            return ""
+
+        parser = EpubParser(str(self.file_path))
+        css_parts: List[str] = []
+
+        try:
+            with zipfile.ZipFile(self.file_path, "r") as archive:
+                opf_path = parser._find_opf_path(archive)
+                opf_dir = parser._opf_dir(opf_path)
+                chapter_asset = parser._join_path(opf_dir, source_path)
+                chapter_dir = posixpath.dirname(chapter_asset)
+
+                seen_paths: set[str] = set()
+                for href in hrefs:
+                    stylesheet_path = parser._join_path(chapter_dir, href)
+                    if stylesheet_path in seen_paths:
+                        continue
+                    seen_paths.add(stylesheet_path)
+                    try:
+                        css_parts.append(parser._read_zip_text(archive, stylesheet_path))
+                    except Exception:
+                        continue
+        except Exception:
+            return ""
+
+        return "\n\n".join(part for part in css_parts if part.strip())
 
     def _extract_pdf_cover(self) -> Optional[CoverImage]:
         """Extract cover image from PDF's first page."""

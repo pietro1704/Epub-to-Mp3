@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
-import { reportUiIssue } from "../services/uiIssueMonitor";
 import type { ConversionSummary, ConversionState } from "../types/conversion";
 import { formatEta } from "../utils/formatEta";
 
@@ -78,6 +77,10 @@ const Hero = memo(function Hero({
   const shouldShowStatusCard = hasMetadata || phase !== "idle";
   const collapseEnabled = true; // Habilitado para colapsar ao rolar
   const etaDisplay = formatEta(phase, etaSeconds, locale, t);
+
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [coverUrl]);
   const displayTitle = title?.trim() || t.status.bookFallbackTitle;
   const displayAuthor = author?.trim() || t.status.bookFallbackAuthor;
   const displayVoice = voiceLabel ?? "";
@@ -226,17 +229,7 @@ const Hero = memo(function Hero({
                   alt={displayTitle}
                   loading="lazy"
                   decoding="async"
-                  onError={() => {
-                    setCoverFailed(true);
-                    reportUiIssue(
-                      "cover",
-                      "Book cover failed to load in hero",
-                      {
-                        severity: "info",
-                        details: coverUrl,
-                      },
-                    );
-                  }}
+                  onError={() => setCoverFailed(true)}
                 />
               ) : (
                 <span aria-hidden="true" role="img">
@@ -322,17 +315,7 @@ const Hero = memo(function Hero({
                   alt={displayTitle}
                   loading="lazy"
                   decoding="async"
-                  onError={() => {
-                    setCoverFailed(true);
-                    reportUiIssue(
-                      "cover",
-                      "Collapsed hero cover failed to load",
-                      {
-                        severity: "info",
-                        details: coverUrl,
-                      },
-                    );
-                  }}
+                  onError={() => setCoverFailed(true)}
                 />
               ) : (
                 <span aria-hidden="true">📘</span>

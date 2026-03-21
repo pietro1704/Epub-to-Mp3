@@ -271,6 +271,8 @@ def test_job_fulltext_uses_file_path_when_input_file_is_missing(tmp_path, monkey
     assert isinstance(payload["chapters"], list)
     assert len(payload["chapters"]) > 0
     assert payload["chapters"][0]["index"] == 1
+    assert "html" in payload["chapters"][0]
+    assert "css" in payload["chapters"][0]
 
     server.jobs.pop(job_id, None)
 
@@ -298,7 +300,12 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
                 "title": "Cached Book",
                 "author": "Cached Author",
                 "chapters": [
-                    {"title": "Cached Chapter", "text": "Cached text body."},
+                    {
+                        "title": "Cached Chapter",
+                        "text": "Cached text body.",
+                        "html": "<p class='chapter'>Cached text body.</p>",
+                        "css": ".chapter { font-style: italic; }",
+                    },
                 ],
             }
 
@@ -324,6 +331,8 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
             "index": 1,
             "name": "Cached Chapter",
             "text": "Cached text body.",
+            "html": "<p class='chapter'>Cached text body.</p>",
+            "css": ".chapter { font-style: italic; }",
             "charCount": len("Cached text body."),
         }
     ]
