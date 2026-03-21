@@ -1233,6 +1233,48 @@ select {
   font-size: 0.75rem;
 }
 
+.active-conversion__progress {
+  display: grid;
+  gap: 0.35rem;
+  margin-top: 0.35rem;
+  max-width: 24rem;
+}
+
+.active-conversion__progress-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.active-conversion__progress-meta strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
+.active-conversion__progress-count {
+  color: var(--text-muted);
+}
+
+.active-conversion__progress-bar {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--input-bg) 65%, var(--panel-border));
+  border: 1px solid color-mix(in srgb, var(--panel-border) 85%, transparent);
+}
+
+.active-conversion__progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-color), var(--accent-strong));
+  transition: width 0.35s ease;
+}
+
 .active-conversion__actions {
   display: flex;
   gap: 0.5rem;

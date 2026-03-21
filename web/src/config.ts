@@ -4,7 +4,7 @@ const DEFAULT_MAX_UPLOAD_MB = Number(import.meta.env.VITE_MAX_UPLOAD_MB || 100);
 export const API_BASE_URL: string =
   (import.meta.env.VITE_API_BASE as string | undefined) || FALLBACK_API_BASE;
 export const POLL_INTERVAL_MS: number = Number(
-  import.meta.env.VITE_POLL_INTERVAL_MS || 3000,
+  import.meta.env.VITE_POLL_INTERVAL_MS || 1500,
 );
 // Default to SSE enabled; allow explicit disable via env (false/0/no)
 const ENABLE_SSE_RAW = String(

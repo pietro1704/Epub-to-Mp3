@@ -295,6 +295,60 @@ describe("useConversionFlow", () => {
     expect(progress?.[0].status).toBe("completed");
   });
 
+  it("decrements ETA between snapshots while polling", async () => {
+    vi.useFakeTimers();
+    let finishPoll: (() => void) | null = null;
+    const submit = vi.fn().mockResolvedValue({ jobId: "eta-123" });
+    const poll = vi.fn().mockImplementation(
+      async (
+        _jobId: string,
+        options?: { onSnapshot?: (snapshot: JobSnapshot) => void },
+      ) =>
+        new Promise<JobSnapshot>((resolve) => {
+          options?.onSnapshot?.({
+            jobId: "eta-123",
+            state: "running",
+            etaSeconds: 5,
+            progressPercent: 20,
+          });
+          finishPoll = () =>
+            resolve({
+              jobId: "eta-123",
+              state: "finished",
+              outputs: [],
+              progressPercent: 100,
+            } satisfies JobSnapshot);
+        }),
+    );
+
+    const client: ConversionClient = { submit, fetch: vi.fn(), poll };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    let submitPromise: Promise<void> | undefined;
+    await act(async () => {
+      submitPromise = result.current.submit(request);
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.phase).toBe("polling");
+    expect(result.current.state.etaSeconds).toBe(5);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(result.current.state.etaSeconds).toBe(4);
+
+    await act(async () => {
+      finishPoll?.();
+      await submitPromise;
+    });
+
+    vi.useRealTimers();
+  });
+
   it("surfaces multiple download assets from finished snapshot", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "multi" });
     const poll = vi.fn().mockResolvedValue({

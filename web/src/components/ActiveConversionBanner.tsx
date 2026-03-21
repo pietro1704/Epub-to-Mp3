@@ -58,6 +58,16 @@ export default function ActiveConversionBanner({
   summary,
 }: ActiveConversionBannerProps): JSX.Element {
   const currentChapter = summary?.currentChapter;
+  const progressPercent =
+    typeof summary?.progressPercent === "number"
+      ? Math.min(100, Math.max(0, summary.progressPercent))
+      : null;
+  const chapterCounts =
+    typeof summary?.chaptersCompleted === "number" &&
+    typeof summary?.chaptersTotal === "number" &&
+    summary.chaptersTotal > 0
+      ? `${summary.chaptersCompleted}/${summary.chaptersTotal}`
+      : null;
 
   return (
     <section className="active-conversion">
@@ -81,6 +91,29 @@ export default function ActiveConversionBanner({
             <span>{etaLabel}</span>
             <strong>{etaValue}</strong>
           </p>
+          {(progressPercent !== null || chapterCounts) && (
+            <div className="active-conversion__progress">
+              <div className="active-conversion__progress-meta">
+                {progressPercent !== null && (
+                  <strong>{progressPercent.toFixed(1)}%</strong>
+                )}
+                {chapterCounts && (
+                  <span className="active-conversion__progress-count">
+                    {chapterCounts}
+                  </span>
+                )}
+              </div>
+              <div
+                className="active-conversion__progress-bar"
+                aria-hidden="true"
+              >
+                <span
+                  className="active-conversion__progress-fill"
+                  style={{ width: `${progressPercent ?? 0}%` }}
+                />
+              </div>
+            </div>
+          )}
           {(engineValue || voiceValue || languageValue) && (
             <div className="active-conversion__meta">
               {engineValue && (

@@ -1000,8 +1000,8 @@ export function useConversionFlow(
     const jobId = state.jobId;
     let cancelled = false;
     let timeoutId: number | undefined;
-    const intervalMs = 5000;
-    const staleThresholdMs = 10000;
+    const intervalMs = 2000;
+    const staleThresholdMs = 4000;
 
     const tick = async () => {
       if (cancelled) {
@@ -1061,6 +1061,29 @@ export function useConversionFlow(
     state.jobId,
     state.phase,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return () => {};
+    }
+    if (state.phase !== "polling") {
+      return () => {};
+    }
+    if (typeof state.etaSeconds !== "number" || state.etaSeconds <= 1) {
+      return () => {};
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      dispatch({
+        type: "update-meta",
+        etaSeconds: Math.max(0, Math.ceil(state.etaSeconds) - 1),
+      });
+    }, 1000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [state.etaSeconds, state.phase]);
 
   // Cleanup old cache on mount and load cached jobs from backend when supported
   useEffect(() => {
