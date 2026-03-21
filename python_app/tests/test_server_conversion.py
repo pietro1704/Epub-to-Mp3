@@ -274,6 +274,9 @@ def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
     monkeypatch.setattr(server, "tts_factory", dummy_factory)
     monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
+    monkeypatch.setattr(
+        server, "_should_retry_edge_before_fallback", lambda *_args, **_kwargs: False
+    )
 
     asyncio.run(server.process_conversion(job_id))
     job = server.jobs[job_id]
@@ -315,6 +318,9 @@ def test_edge_fallbacks_to_piper_when_coqui_fails(tmp_path, monkeypatch):
     dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
     monkeypatch.setattr(server, "tts_factory", dummy_factory)
     monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
+    monkeypatch.setattr(
+        server, "_should_retry_edge_before_fallback", lambda *_args, **_kwargs: False
+    )
 
     asyncio.run(server.process_conversion(job_id))
     job = server.jobs[job_id]

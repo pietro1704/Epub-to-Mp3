@@ -63,6 +63,15 @@ command_for_pid() {
   ps -o command= -p "$pid" 2>/dev/null
 }
 
+matches_command_pattern() {
+  local pid="$1"
+  local pattern="$2"
+  local cmd
+  cmd="$(command_for_pid "$pid")"
+  [[ -n "$cmd" ]] || return 1
+  [[ "$cmd" =~ $pattern ]]
+}
+
 is_project_process() {
   local pid="$1"
   local pattern="$2"
@@ -85,7 +94,21 @@ cleanup_matching_processes() {
   done < <(ps -axo pid=)
 }
 
+cleanup_port_listeners() {
+  local port="$1"
+  local pattern="$2"
+  local pid=""
+  while read -r pid; do
+    [[ -n "$pid" ]] || continue
+    if matches_command_pattern "$pid" "$pattern"; then
+      echo "[dev] stopping stale listener $pid on :$port: $(command_for_pid "$pid")"
+      stop_process "$pid"
+    fi
+  done < <(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | sort -u)
+}
+
 cleanup_stale_dev_processes() {
+  cleanup_port_listeners "$BACKEND_PORT" 'python .*uvicorn .*python_app\.server:app'
   cleanup_matching_processes 'python .*uvicorn .*python_app\.server:app'
   cleanup_matching_processes 'node .*/vite([^[:alnum:]_]|$)'
   cleanup_matching_processes 'npm run dev -- --host|npm run dev --host'

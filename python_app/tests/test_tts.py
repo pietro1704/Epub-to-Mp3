@@ -777,18 +777,19 @@ class TestPiperTTSEngine(unittest.IsolatedAsyncioTestCase):
             return proc
 
         with patch("src.tts.piper_engine._split_text_into_chunks", return_value=["a", "b"]):
-            with patch.object(
-                engine, "_synthesize_single", side_effect=fake_synthesize_single
-            ) as mock_single:
-                with patch(
-                    "src.tts.piper_engine.asyncio.create_subprocess_exec",
-                    side_effect=fake_ffmpeg,
-                ):
-                    result = await engine._synthesize_chunked(
-                        "ab",
-                        output_path,
-                        self.model_path,
-                    )
+            with patch("src.tts.piper_engine._merge_small_chunks", return_value=["a", "b"]):
+                with patch.object(
+                    engine, "_synthesize_single", side_effect=fake_synthesize_single
+                ) as mock_single:
+                    with patch(
+                        "src.tts.piper_engine.asyncio.create_subprocess_exec",
+                        side_effect=fake_ffmpeg,
+                    ):
+                        result = await engine._synthesize_chunked(
+                            "ab",
+                            output_path,
+                            self.model_path,
+                        )
 
         self.assertEqual(result, output_path)
         self.assertEqual(ffmpeg_calls["count"], 1)
