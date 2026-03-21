@@ -71,16 +71,33 @@ class TestSampleEpubFeatures(unittest.TestCase):
         self.assertEqual(toc[0].children[0].title, "Seção 1 - Diário")
         self.assertEqual(toc[0].children[2].href, "chapter1.xhtml#notas")
 
-    def test_prepare_speech_text_adds_small_pause_on_line_breaks(self) -> None:
-        source = "Chapter 1\nTHE BOY WHO LIVED\nMr. and Mrs. Dursley were proud."
+    def test_prepare_speech_text_uses_html_heading_structure_for_pauses(self) -> None:
+        raw_html = "<section><h2>AN UNUSUAL TITLE</h2><p>The story starts here.</p></section>"
+        source = "AN UNUSUAL TITLE\nThe story starts here."
 
-        speech = EpubParser._prepare_speech_text(source, formatting_segments=None)
+        speech = EpubParser._prepare_speech_text(
+            source,
+            formatting_segments=None,
+            raw_html=raw_html,
+        )
 
-        self.assertIn("Chapter 1.", speech)
-        self.assertIn("THE BOY WHO LIVED.", speech)
-        self.assertIn("Mr. and Mrs. Dursley were proud.", speech)
+        self.assertIn("AN UNUSUAL TITLE.", speech)
+        self.assertIn("AN UNUSUAL TITLE.\nThe story starts here.", speech)
 
-    def test_harry_potter_xhtml_parsing_preserves_heading_pause(self) -> None:
+    def test_prepare_speech_text_uses_toc_title_when_html_has_no_heading(self) -> None:
+        raw_html = "<div><p>The story starts here.</p></div>"
+        source = "The story starts here."
+
+        speech = EpubParser._prepare_speech_text(
+            source,
+            formatting_segments=None,
+            raw_html=raw_html,
+            chapter_title="Chapter Twelve",
+        )
+
+        self.assertTrue(speech.startswith("Chapter Twelve.\nThe story starts here."))
+
+    def test_harry_potter_xhtml_parsing_preserves_structural_pauses(self) -> None:
         source = """<?xml version='1.0' encoding='utf-8'?>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-US">
   <head>
@@ -99,11 +116,17 @@ perfectly normal, thank you very much. They were the last people</p>
 """
 
         parsed_text, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(source)
-        speech = EpubParser._prepare_speech_text(parsed_text, formatting_segments)
+        speech = EpubParser._prepare_speech_text(
+            parsed_text,
+            formatting_segments,
+            raw_html=source,
+            chapter_title="Chapter 1",
+        )
 
         self.assertIn("THE BOY WHO LIVED", parsed_text)
         self.assertIn("Mr. and Mrs. Dursley, of", parsed_text)
         self.assertIn("number four, Privet Drive", parsed_text)
+        self.assertTrue(speech.startswith("Chapter 1.\n"))
         self.assertIn("THE BOY WHO LIVED.", speech)
         self.assertIn("THE BOY WHO LIVED.\nMr. and Mrs. Dursley, of.", speech)
         self.assertIn(
@@ -112,13 +135,13 @@ perfectly normal, thank you very much. They were the last people</p>
         )
 
     def test_enhance_natural_pauses_handles_heading_breaks_generically(self) -> None:
-        source = "12\nA New Beginning\nThe story starts here."
+        source = "Line one\nLine two\nLine three."
 
         enhanced = TextFormattingProcessor.enhance_natural_pauses(source)
 
-        self.assertIn("12.", enhanced)
-        self.assertIn("A New Beginning.", enhanced)
-        self.assertTrue(enhanced.endswith("The story starts here."))
+        self.assertIn("Line one.", enhanced)
+        self.assertIn("Line two.", enhanced)
+        self.assertTrue(enhanced.endswith("Line three."))
 
     def test_show_structure_generates_cached_text(self) -> None:
         """End-to-end check ensuring cached text matches prepared chapter output."""

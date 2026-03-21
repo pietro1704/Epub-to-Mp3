@@ -895,6 +895,71 @@ class TextProcessor:
         return TextProcessor.normalise_whitespace(heading)
 
     @staticmethod
+    def extract_structural_titles(
+        content: Optional[str], chapter_title: Optional[str] = None
+    ) -> List[str]:
+        titles: List[str] = []
+        seen: set[str] = set()
+
+        if content:
+            for match in H_TAG.finditer(content):
+                heading = TAG_RE.sub("", match.group(2))
+                normalised = TextProcessor.normalise_whitespace(heading)
+                key = normalised.casefold()
+                if normalised and key not in seen:
+                    seen.add(key)
+                    titles.append(normalised)
+
+        if chapter_title:
+            normalised = TextProcessor.clean_chapter_title(chapter_title)
+            key = normalised.casefold()
+            if normalised and key not in seen:
+                seen.add(key)
+                titles.append(normalised)
+
+        return titles
+
+    @staticmethod
+    def _first_nonempty_line(text: str) -> str:
+        for line in text.split("\n"):
+            normalised = TextProcessor.normalise_whitespace(line)
+            if normalised:
+                return normalised
+        return ""
+
+    @staticmethod
+    def apply_structural_speech_cues(
+        text: str,
+        raw_html: Optional[str] = None,
+        chapter_title: Optional[str] = None,
+    ) -> str:
+        if not text:
+            return ""
+
+        updated = text
+        titles = TextProcessor.extract_structural_titles(raw_html, chapter_title)
+        if not titles:
+            return updated
+
+        first_line = TextProcessor._first_nonempty_line(updated)
+        toc_title = TextProcessor.clean_chapter_title(chapter_title or "")
+        first_line_key = first_line.rstrip(".!?;:").casefold()
+        toc_title_key = toc_title.rstrip(".!?;:").casefold()
+        if toc_title and first_line_key != toc_title_key:
+            updated = f"{toc_title}\n{updated}"
+
+        title_keys = {title.casefold() for title in titles}
+        adjusted_lines: List[str] = []
+        for line in updated.split("\n"):
+            stripped = TextProcessor.normalise_whitespace(line)
+            if stripped and stripped.rstrip(".!?;:").casefold() in title_keys:
+                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}.")
+            else:
+                adjusted_lines.append(line)
+
+        return "\n".join(adjusted_lines)
+
+    @staticmethod
     def extract_title_from_text(text: Optional[str], max_words: int = 6) -> str:
         if not text:
             return ""
@@ -918,7 +983,11 @@ class EpubParser:
 
     @staticmethod
     def _prepare_speech_text(
-        text: str, formatting_segments: Optional[List[FormattingSegment]]
+        text: str,
+        formatting_segments: Optional[List[FormattingSegment]],
+        *,
+        raw_html: Optional[str] = None,
+        chapter_title: Optional[str] = None,
     ) -> str:
         """
         Prepare text for TTS submission with audible formatting cues.
@@ -947,12 +1016,30 @@ class EpubParser:
             try:
                 processed = formatter.to_audible_text(prepared_text, formatting_segments)
                 if processed:
-                    return TextFormattingProcessor.enhance_natural_pauses(processed)
+                    structured = TextProcessor.apply_structural_speech_cues(
+                        processed,
+                        raw_html=raw_html,
+                        chapter_title=chapter_title,
+                    )
+                    enhanced = TextFormattingProcessor.enhance_natural_pauses(structured)
+                    return TextProcessor.apply_structural_speech_cues(
+                        enhanced,
+                        raw_html=raw_html,
+                        chapter_title=chapter_title,
+                    )
             except Exception:
                 # Fallback to basic removal if something fails
                 pass
-            return TextFormattingProcessor.enhance_natural_pauses(
-                TextFormattingProcessor.strip_inline_markdown(prepared_text)
+            fallback = TextProcessor.apply_structural_speech_cues(
+                TextFormattingProcessor.strip_inline_markdown(prepared_text),
+                raw_html=raw_html,
+                chapter_title=chapter_title,
+            )
+            enhanced_fallback = TextFormattingProcessor.enhance_natural_pauses(fallback)
+            return TextProcessor.apply_structural_speech_cues(
+                enhanced_fallback,
+                raw_html=raw_html,
+                chapter_title=chapter_title,
             )
 
         return prepared_text
@@ -1178,7 +1265,12 @@ class EpubParser:
             chapter_title = TextProcessor.clean_chapter_title(raw_title)
 
             # Prepare speech text
-            speech_text = self._prepare_speech_text(text, formatting_segments)
+            speech_text = self._prepare_speech_text(
+                text,
+                formatting_segments,
+                raw_html=raw_content,
+                chapter_title=chapter_title,
+            )
 
             # Create chapter
             chapters.append(
@@ -1441,7 +1533,12 @@ class EpubParser:
                     else:
                         sub_text_fn = sub_text_fmt
                     sub_text = TextProcessor.add_pause_before_dash(sub_text_fn)
-                    sub_speech = self._prepare_speech_text(sub_text, sub_segments)
+                    sub_speech = self._prepare_speech_text(
+                        sub_text,
+                        sub_segments,
+                        raw_html=sub_html,
+                        chapter_title=sub_title,
+                    )
 
                     # A CSS sub-chapter can still be very long (e.g. a long
                     # chapter with no further heading markers).  Apply the same
@@ -1452,7 +1549,12 @@ class EpubParser:
                             sub_text, SUBCHAPTER_MAX_CHARS, sub_index
                         )
                         for p_idx, p_text in para_splits:
-                            p_speech = self._prepare_speech_text(p_text, sub_segments)
+                            p_speech = self._prepare_speech_text(
+                                p_text,
+                                sub_segments,
+                                raw_html=sub_html,
+                                chapter_title=sub_title,
+                            )
                             chapters.append(
                                 Chapter(
                                     index=p_idx,
@@ -1508,7 +1610,12 @@ class EpubParser:
 
                 # IMPORTANT: speech_text preserves [[lang:xx]] and [[fmt:...]] tags
                 # while stripping only inline markdown (_italic_, **bold**, `code`).
-                speech_text = self._prepare_speech_text(text, formatting_segments)
+                speech_text = self._prepare_speech_text(
+                    text,
+                    formatting_segments,
+                    raw_html=raw_content,
+                    chapter_title=title,
+                )
 
                 # --- Paragraph-boundary fallback split ---
                 # When a chapter has no CSS subchapter markers but exceeds the size
@@ -1519,7 +1626,12 @@ class EpubParser:
                         text, SUBCHAPTER_MAX_CHARS, index_counter
                     )
                     for split_idx, split_text in para_splits:
-                        split_speech = self._prepare_speech_text(split_text, formatting_segments)
+                        split_speech = self._prepare_speech_text(
+                            split_text,
+                            formatting_segments,
+                            raw_html=markup_with_markers,
+                            chapter_title=title,
+                        )
                         chapters.append(
                             Chapter(
                                 index=split_idx,
