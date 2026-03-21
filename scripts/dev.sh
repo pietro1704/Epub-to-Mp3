@@ -6,6 +6,7 @@ BACKEND_HOST="${BACKEND_HOST:-127.0.0.1}"
 BACKEND_RELOAD="${BACKEND_RELOAD:-0}"
 FRONTEND_HOST="${FRONTEND_HOST:-127.0.0.1}"
 FRONTEND_DIR="web"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 BACK_PID=""
 FRONT_PID=""
@@ -57,6 +58,39 @@ stop_process() {
   fi
 }
 
+command_for_pid() {
+  local pid="$1"
+  ps -o command= -p "$pid" 2>/dev/null
+}
+
+is_project_process() {
+  local pid="$1"
+  local pattern="$2"
+  local cmd
+  cmd="$(command_for_pid "$pid")"
+  [[ -n "$cmd" ]] || return 1
+  [[ "$cmd" == *"$PROJECT_ROOT"* ]] || return 1
+  [[ "$cmd" =~ $pattern ]]
+}
+
+cleanup_matching_processes() {
+  local pattern="$1"
+  local pid=""
+  while read -r pid; do
+    [[ -n "$pid" ]] || continue
+    if is_project_process "$pid" "$pattern"; then
+      echo "[dev] stopping stale process $pid: $(command_for_pid "$pid")"
+      stop_process "$pid"
+    fi
+  done < <(ps -axo pid=)
+}
+
+cleanup_stale_dev_processes() {
+  cleanup_matching_processes 'python .*uvicorn .*python_app\.server:app'
+  cleanup_matching_processes 'node .*/vite([^[:alnum:]_]|$)'
+  cleanup_matching_processes 'npm run dev -- --host|npm run dev --host'
+}
+
 start_backend() {
   local -a backend_cmd=(python -m uvicorn python_app.server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT")
   if [[ "$BACKEND_RELOAD" == "1" || "$BACKEND_RELOAD" == "true" || "$BACKEND_RELOAD" == "yes" ]]; then
@@ -97,10 +131,12 @@ shutdown_all() {
   echo "[dev] shutting down"
   stop_process "${BACK_PID:-}"
   stop_process "${FRONT_PID:-}"
+  cleanup_stale_dev_processes
 }
 
 trap 'shutdown_all' INT TERM EXIT
 
+cleanup_stale_dev_processes
 start_backend
 start_frontend
 
