@@ -24,7 +24,7 @@ jobs:
       github.event_name == 'workflow_dispatch'
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           # Avoid LFS fetch (budget exceeded)
