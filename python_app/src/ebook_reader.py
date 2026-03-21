@@ -928,6 +928,23 @@ class TextProcessor:
         return ""
 
     @staticmethod
+    def _first_nonempty_lines(text: str, limit: int = 2) -> List[str]:
+        lines: List[str] = []
+        for line in text.split("\n"):
+            normalised = TextProcessor.normalise_whitespace(line)
+            if normalised:
+                lines.append(normalised)
+                if len(lines) >= limit:
+                    break
+        return lines
+
+    @staticmethod
+    def _structural_key(text: str) -> str:
+        compact = text.casefold()
+        compact = re.sub(r"[^\w\s]", " ", compact)
+        return re.sub(r"\s+", " ", compact).strip()
+
+    @staticmethod
     def apply_structural_speech_cues(
         text: str,
         raw_html: Optional[str] = None,
@@ -942,10 +959,18 @@ class TextProcessor:
             return updated
 
         first_line = TextProcessor._first_nonempty_line(updated)
+        opening_preview = " ".join(TextProcessor._first_nonempty_lines(updated, limit=4))
         toc_title = TextProcessor.clean_chapter_title(chapter_title or "")
-        first_line_key = first_line.rstrip(".!?;:").casefold()
-        toc_title_key = toc_title.rstrip(".!?;:").casefold()
-        if toc_title and first_line_key != toc_title_key:
+        first_line_key = TextProcessor._structural_key(first_line)
+        opening_key = TextProcessor._structural_key(opening_preview)
+        toc_title_key = TextProcessor._structural_key(toc_title)
+        if (
+            toc_title
+            and first_line_key != toc_title_key
+            and not opening_key.startswith(toc_title_key)
+            and not toc_title_key.startswith(opening_key)
+            and toc_title_key not in opening_key
+        ):
             updated = f"{toc_title}\n{updated}"
 
         title_keys = {title.casefold() for title in titles}
@@ -1050,9 +1075,16 @@ class EpubParser:
             manifest, spine_ids, title, author, language = self._parse_opf(archive, opf_path)
             base_dir = self._opf_dir(opf_path)
             toc = self._parse_toc(archive, base_dir, opf_path=opf_path)
+            toc_title_map = self._build_toc_title_map(toc, base_dir)
 
             # Use spine-based method (reliable, preserves all content)
-            chapters = self._extract_chapters(archive, manifest, spine_ids, base_dir)
+            chapters = self._extract_chapters(
+                archive,
+                manifest,
+                spine_ids,
+                base_dir,
+                toc_title_map=toc_title_map,
+            )
 
         # Assign hierarchy levels from TOC so callers can distinguish
         # top-level parts (level=1) from subchapters (level=2, 3, …).
@@ -1464,6 +1496,7 @@ class EpubParser:
         manifest: Dict[str, str],
         spine_ids: Iterable[str],
         base_dir: str,
+        toc_title_map: Optional[Dict[str, str]] = None,
     ) -> List[Chapter]:
         chapters: List[Chapter] = []
         index_counter = 1
@@ -1601,7 +1634,10 @@ class EpubParser:
                 else:
                     text_with_footnotes = text_with_formatting
                 text = TextProcessor.add_pause_before_dash(text_with_footnotes)
-                raw_title = (
+                toc_title = None
+                if toc_title_map:
+                    toc_title = toc_title_map.get(asset_path) or toc_title_map.get(href)
+                raw_title = toc_title or (
                     TextProcessor.extract_title(raw_content, f"Chapter {index_counter}")
                     if text
                     else f"Chapter {index_counter}"
@@ -2045,6 +2081,21 @@ class EpubParser:
 
         walk(toc)
         return level_map
+
+    def _build_toc_title_map(self, toc: List[TocItem], base_dir: str) -> Dict[str, str]:
+        title_map: Dict[str, str] = {}
+
+        def walk(items: List[TocItem]) -> None:
+            for item in items:
+                href = item.href.split("#")[0] if item.href else ""
+                if href and item.title:
+                    asset_path = self._join_path(base_dir, href)
+                    title_map.setdefault(asset_path, item.title.strip())
+                    title_map.setdefault(href, item.title.strip())
+                walk(item.children)
+
+        walk(toc)
+        return title_map
 
     def _assign_levels_from_toc(
         self,

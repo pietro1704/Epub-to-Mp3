@@ -97,6 +97,42 @@ class TestSampleEpubFeatures(unittest.TestCase):
 
         self.assertTrue(speech.startswith("Chapter Twelve.\nThe story starts here."))
 
+    def test_prepare_speech_text_does_not_duplicate_toc_title_already_in_opening_lines(
+        self,
+    ) -> None:
+        raw_html = (
+            "<div><p>Capítulo 4</p><p>Ben Hanscom sofre uma queda</p><p>O texto começa.</p></div>"
+        )
+        source = "Capítulo 4\nBen Hanscom sofre uma queda\nO texto começa."
+
+        speech = EpubParser._prepare_speech_text(
+            source,
+            formatting_segments=None,
+            raw_html=raw_html,
+            chapter_title="Capítulo 4 Ben Hanscom sofre",
+        )
+
+        self.assertEqual(speech.count("Capítulo 4 Ben Hanscom sofre"), 0)
+        self.assertIn("Capítulo 4.\nBen Hanscom sofre uma queda.", speech)
+
+    def test_prepare_speech_text_does_not_duplicate_title_found_later_in_opening_block(
+        self,
+    ) -> None:
+        raw_html = (
+            "<div><p>Capítulo 11</p><p>Caminhadas</p><p>1</p>"
+            "<p>Ben Hanscom faz uma retirada</p><p>O texto começa.</p></div>"
+        )
+        source = "Capítulo 11\nCaminhadas\n1\nBen Hanscom faz uma retirada\nO texto começa."
+
+        speech = EpubParser._prepare_speech_text(
+            source,
+            formatting_segments=None,
+            raw_html=raw_html,
+            chapter_title="Ben Hanscom faz uma retirada",
+        )
+
+        self.assertEqual(speech.count("Ben Hanscom faz uma retirada."), 1)
+
     def test_harry_potter_xhtml_parsing_preserves_structural_pauses(self) -> None:
         source = """<?xml version='1.0' encoding='utf-8'?>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-US">
