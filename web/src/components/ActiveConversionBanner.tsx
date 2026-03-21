@@ -58,6 +58,20 @@ export default function ActiveConversionBanner({
   summary,
 }: ActiveConversionBannerProps): JSX.Element {
   const currentChapter = summary?.currentChapter;
+  const speedSamples =
+    summary?.chapterProgress
+      ?.map((entry) => entry.charsPerSecond)
+      .filter(
+        (value): value is number =>
+          typeof value === "number" && Number.isFinite(value) && value > 0,
+      ) ?? [];
+  const recentSpeed =
+    speedSamples.length > 0 ? speedSamples[speedSamples.length - 1] : null;
+  const averageSpeed =
+    speedSamples.length > 0
+      ? speedSamples.reduce((sum, value) => sum + value, 0) /
+        speedSamples.length
+      : null;
   const progressPercent =
     typeof summary?.progressPercent === "number"
       ? Math.min(100, Math.max(0, summary.progressPercent))
@@ -112,6 +126,16 @@ export default function ActiveConversionBanner({
                   style={{ width: `${progressPercent ?? 0}%` }}
                 />
               </div>
+              {(recentSpeed || averageSpeed) && (
+                <div className="active-conversion__speed">
+                  {recentSpeed ? (
+                    <strong>{Math.round(recentSpeed)} chars/s</strong>
+                  ) : null}
+                  {averageSpeed && speedSamples.length > 1 ? (
+                    <span>avg {Math.round(averageSpeed)} chars/s</span>
+                  ) : null}
+                </div>
+              )}
             </div>
           )}
           {(engineValue || voiceValue || languageValue) && (

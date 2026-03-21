@@ -96,6 +96,23 @@ export default function StatusPanel({
     return null;
   }, [summary]);
   const chapterProgress = summary?.chapterProgress ?? null;
+  const speedSamples = useMemo(
+    () =>
+      (chapterProgress ?? [])
+        .map((entry) => entry.charsPerSecond)
+        .filter(
+          (value): value is number =>
+            typeof value === "number" && Number.isFinite(value) && value > 0,
+        ),
+    [chapterProgress],
+  );
+  const recentSpeed =
+    speedSamples.length > 0 ? speedSamples[speedSamples.length - 1] : null;
+  const averageSpeed =
+    speedSamples.length > 0
+      ? speedSamples.reduce((sum, value) => sum + value, 0) /
+        speedSamples.length
+      : null;
   const timeFormatOptions = useMemo(
     () => ({
       hour: "2-digit" as const,
@@ -221,6 +238,17 @@ export default function StatusPanel({
                   : "—"}
               </dd>
             </div>
+            {(recentSpeed || averageSpeed) && (
+              <div className="status-summary__row">
+                <dt>{locale === "pt" ? "Velocidade" : "Speed"}</dt>
+                <dd>
+                  {recentSpeed ? `${Math.round(recentSpeed)} chars/s` : "—"}
+                  {averageSpeed && speedSamples.length > 1
+                    ? ` • avg ${Math.round(averageSpeed)} chars/s`
+                    : ""}
+                </dd>
+              </div>
+            )}
             {typeof summary.parallelSlots === "number" &&
               summary.parallelSlots > 0 && (
                 <div className="status-summary__row status-summary__row--parallel">

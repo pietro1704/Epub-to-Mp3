@@ -218,19 +218,25 @@ EDGE_AUTO_TUNE = os.getenv("EDGE_AUTO_TUNE", "false").strip().lower() in {"1", "
 # switch trigger sooner rather than letting each chapter crawl for 3-4 minutes.
 _hf_mode = bool(os.getenv("SPACE_ID"))
 EDGE_MIN_CHARS_PER_SECOND = float(
-    os.getenv("EDGE_MIN_CHARS_PER_SECOND", "100" if _hf_mode else "45") or "45"
+    os.getenv("EDGE_MIN_CHARS_PER_SECOND", "100" if _hf_mode else "60") or "60"
 )
 EDGE_SLOW_RATIO_THRESHOLD = float(
-    os.getenv("EDGE_SLOW_RATIO_THRESHOLD", "1.5" if _hf_mode else "2.5") or "2.5"
+    os.getenv("EDGE_SLOW_RATIO_THRESHOLD", "1.5" if _hf_mode else "2.2") or "2.2"
 )
 # Safe mode should be materially more conservative than the normal profile so
 # Edge can survive transient throttling instead of timing out and dropping to Piper.
-EDGE_SAFE_CHUNK_CHARS = max(3000, int(os.getenv("EDGE_SAFE_CHUNK_CHARS", "5000") or "5000"))
-EDGE_SAFE_MAX_SEGMENT_SECONDS = max(
-    30, int(os.getenv("EDGE_SAFE_MAX_SEGMENT_SECONDS", "120") or "120")
+EDGE_SAFE_CHUNK_CHARS = max(
+    2500, int(os.getenv("EDGE_SAFE_CHUNK_CHARS", "5000" if _hf_mode else "4000") or "4000")
 )
-EDGE_SAFE_CHAPTER_PARALLEL = max(1, int(os.getenv("EDGE_SAFE_CHAPTER_PARALLEL", "2") or "2"))
-EDGE_SAFE_TIMEOUT_MAX = max(90.0, float(os.getenv("EDGE_SAFE_TIMEOUT_MAX", "180") or "180"))
+EDGE_SAFE_MAX_SEGMENT_SECONDS = max(
+    30, int(os.getenv("EDGE_SAFE_MAX_SEGMENT_SECONDS", "120" if _hf_mode else "90") or "90")
+)
+EDGE_SAFE_CHAPTER_PARALLEL = max(
+    1, int(os.getenv("EDGE_SAFE_CHAPTER_PARALLEL", "1" if _hf_mode else "1") or "1")
+)
+EDGE_SAFE_TIMEOUT_MAX = max(
+    90.0, float(os.getenv("EDGE_SAFE_TIMEOUT_MAX", "180" if _hf_mode else "120") or "120")
+)
 # **PERFORMANCE**: More aggressive caps for all network tiers
 EDGE_AUTO_PARALLEL_CAPS = {
     "slow": max(1, int(os.getenv("EDGE_AUTO_PARALLEL_CAP_SLOW", "4") or "4")),

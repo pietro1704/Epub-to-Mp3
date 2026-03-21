@@ -1257,6 +1257,19 @@ select {
   color: var(--text-muted);
 }
 
+.active-conversion__speed {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.active-conversion__speed strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+
 .active-conversion__progress-bar {
   position: relative;
   overflow: hidden;
