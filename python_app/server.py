@@ -2930,6 +2930,11 @@ def _store_cover_in_cache(file_hash: Optional[str], cover_blob) -> Optional[Path
         return None
 
 
+def _should_retry_edge_before_fallback(engine_label: Optional[str], edge_slow_mode: bool) -> bool:
+    """Keep Edge alive with one local safe-mode retry before switching offline."""
+    return (engine_label or "").strip().lower() == "edge" and not edge_slow_mode
+
+
 def _persist_job_log(job_id: str, job: dict) -> Optional[Path]:
     job_dir = _job_output_dir(job_id, job, ensure=True)
     if not job_dir.exists():
@@ -4204,8 +4209,12 @@ async def process_conversion(job_id: str) -> None:
                     engine_config,
                 ) -> bool:
                     nonlocal retry_count, parallel_slots, engine_index
-                    # If a fallback engine is available, prefer switching instead of retrying
-                    if engine_index + 1 < len(engine_chain):
+                    # Give Edge one local safe-mode retry before switching to slower
+                    # offline engines. This preserves Edge for as long as possible
+                    # without keeping it enabled after repeated hard failures.
+                    if engine_index + 1 < len(
+                        engine_chain
+                    ) and not _should_retry_edge_before_fallback(engine_label, edge_slow_mode):
                         return False
                     if _CHAPTER_RETRY_MAX <= 0 or retry_count >= _CHAPTER_RETRY_MAX:
                         return False
@@ -4899,17 +4908,17 @@ async def process_conversion(job_id: str) -> None:
                 if not edge_slow_mode:
                     _apply_edge_slow_mode(f"healthcheck low speed ({recent_speed:.1f} chars/s)")
                 else:
-                    # Already in slow mode and still slow: require an extra streak hit before
-                    # disabling Edge so that a single-sample blip after safe-mode entry does
-                    # not permanently kill Edge (e.g. small-chapter false-positives).
-                    if slow_streak >= health_slow_streak_limit + 1:
-                        if "edge" not in unavailable_engines:
-                            unavailable_engines.add("edge")
-                            _append_event(
-                                job,
-                                f"🚫 Edge persistently slow ({recent_speed:.1f} chars/s in safe mode)"
-                                f" — disabling Edge for remaining chapters",
-                            )
+                    # Keep Edge in safe mode on speed-only regressions. Permanent
+                    # disable is reserved for consecutive hard failures such as
+                    # timeouts, so the job can continue benefiting from Edge when
+                    # the slowdown is transient or chapter-specific.
+                    if not job.get("_edgePersistentSlowNoted"):
+                        job["_edgePersistentSlowNoted"] = True
+                        _append_event(
+                            job,
+                            f"🐢 Edge still slow in safe mode ({recent_speed:.1f} chars/s)"
+                            " — keeping Edge enabled until a hard timeout proves it unhealthy",
+                        )
             elif (
                 slow_streak >= health_slow_streak_limit
                 and parallel_slots > 1

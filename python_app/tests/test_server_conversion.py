@@ -151,6 +151,12 @@ def test_build_engine_chain_includes_supported_fallbacks(monkeypatch):
     assert "edge" in engines and "coqui" in engines and "piper" in engines
 
 
+def test_should_retry_edge_before_fallback_prefers_one_local_retry():
+    assert server._should_retry_edge_before_fallback("edge", edge_slow_mode=False) is True
+    assert server._should_retry_edge_before_fallback("EDGE", edge_slow_mode=True) is False
+    assert server._should_retry_edge_before_fallback("piper", edge_slow_mode=False) is False
+
+
 class DummyTTSEngine:
     def __init__(self, name: str, fail_times: int = 0):
         self.name = name
