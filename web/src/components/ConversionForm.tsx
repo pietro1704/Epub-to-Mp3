@@ -161,6 +161,7 @@ interface QueuedFileEntry {
   attemptId?: number;
   bookTitle?: string;
   bookAuthor?: string;
+  coverUrl?: string;
   detectedLanguage?: string;
 }
 
@@ -567,6 +568,7 @@ export default function ConversionForm({
               name: response.fileName || entry.name,
               bookTitle: response.bookTitle,
               bookAuthor: response.bookAuthor,
+              coverUrl: response.coverUrl,
               attemptId: undefined,
             };
           }),
@@ -803,6 +805,9 @@ export default function ConversionForm({
         file: hasUpload ? null : entry.file,
         fileName: entry.file?.name ?? entry.name,
         uploadId: entry.uploadId,
+        bookTitle: entry.bookTitle,
+        bookAuthor: entry.bookAuthor,
+        coverUrl: entry.coverUrl,
       };
     });
     const [first, ...rest] = payloads;

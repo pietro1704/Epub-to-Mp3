@@ -70,6 +70,9 @@ export default function QuickQueueAdder({
           file: null,
           fileName: response.fileName || file.name,
           uploadId: response.uploadId,
+          bookTitle: response.bookTitle,
+          bookAuthor: response.bookAuthor,
+          coverUrl: response.coverUrl,
         });
       }
       if (jobs.length === 0) {

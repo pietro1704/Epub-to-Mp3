@@ -145,6 +145,81 @@ describe("useConversionFlow", () => {
     expect(firstMessage).toContain("arquivo já enviado");
   });
 
+  it("keeps queued upload metadata visible while the next job starts", async () => {
+    const submit = vi
+      .fn()
+      .mockResolvedValueOnce({ jobId: "job-1" })
+      .mockResolvedValueOnce({ jobId: "job-2" });
+    const poll = vi
+      .fn()
+      .mockResolvedValueOnce({
+        jobId: "job-1",
+        state: "finished",
+        outputs: [],
+      } satisfies JobSnapshot)
+      .mockImplementationOnce(
+        async (
+          _jobId: string,
+          options?: { onSnapshot?: (snapshot: JobSnapshot) => void },
+        ) => {
+          options?.onSnapshot?.({
+            jobId: "job-2",
+            state: "running",
+            events: ["Starting queued upload"],
+            progressPercent: 10,
+          });
+          return {
+            jobId: "job-2",
+            state: "finished",
+            outputs: [],
+            progressPercent: 100,
+          } satisfies JobSnapshot;
+        },
+      );
+
+    const client: ConversionClient = {
+      submit,
+      fetch: vi.fn(),
+      poll,
+    };
+
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await result.current.submit(request, {
+        batchQueue: [
+          {
+            file: null,
+            fileName: "queued.epub",
+            uploadId: "upload-queued",
+            bookTitle: "Queued Book",
+            bookAuthor: "Queued Author",
+            coverUrl: "/covers/queued.jpg",
+            engine: "edge",
+            footnoteMode: "inline",
+          },
+        ],
+      });
+    });
+
+    expect(submit).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        file: null,
+        uploadId: "upload-queued",
+        bookTitle: "Queued Book",
+        bookAuthor: "Queued Author",
+        coverUrl: "/covers/queued.jpg",
+      }),
+    );
+    expect(result.current.state.phase).toBe("success");
+    expect(result.current.state.bookTitle).toBe("Queued Book");
+    expect(result.current.state.bookAuthor).toBe("Queued Author");
+    expect(result.current.state.coverUrl).toBe("/covers/queued.jpg");
+  });
+
   it("reset() returns state to idle and clears log", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "777" });
     const poll = vi.fn().mockResolvedValue({

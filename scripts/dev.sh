@@ -157,7 +157,14 @@ shutdown_all() {
   cleanup_stale_dev_processes
 }
 
-trap 'shutdown_all' INT TERM EXIT
+handle_signal() {
+  shutdown_all
+  trap - EXIT
+  exit 0
+}
+
+trap 'handle_signal' INT TERM
+trap 'shutdown_all' EXIT
 
 cleanup_stale_dev_processes
 start_backend

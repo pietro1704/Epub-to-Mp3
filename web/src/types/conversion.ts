@@ -5,6 +5,9 @@ export interface ConversionFormValues {
   file: File | null;
   fileName?: string;
   uploadId?: string;
+  bookTitle?: string;
+  bookAuthor?: string;
+  coverUrl?: string;
   engine: EngineOption;
   voice?: string;
   model?: string;

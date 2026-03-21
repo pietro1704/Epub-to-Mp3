@@ -1311,6 +1311,16 @@ export function useConversionFlow(
         cliCommand,
         startedAt: startedAtIso,
       });
+      if (values.bookTitle || values.bookAuthor || values.coverUrl) {
+        dispatch({
+          type: "update-meta",
+          details: {
+            bookTitle: values.bookTitle,
+            bookAuthor: values.bookAuthor,
+            coverUrl: values.coverUrl,
+          },
+        });
+      }
       try {
         const { jobId } = await api.submit(requestValues);
         markApiOnline();

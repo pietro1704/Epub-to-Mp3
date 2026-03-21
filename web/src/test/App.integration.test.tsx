@@ -89,6 +89,9 @@ describe("App integration", () => {
     const upload = vi.fn().mockResolvedValue({
       uploadId: "upload-123",
       fileName: "historia.pdf",
+      bookTitle: "Historia",
+      bookAuthor: "Autor Teste",
+      coverUrl: "/covers/historia.jpg",
     });
 
     const client: ConversionClient = {
@@ -123,6 +126,9 @@ describe("App integration", () => {
           file: null,
           uploadId: "upload-123",
           fileName: "historia.pdf",
+          bookTitle: "Historia",
+          bookAuthor: "Autor Teste",
+          coverUrl: "/covers/historia.jpg",
         }),
       );
     });
