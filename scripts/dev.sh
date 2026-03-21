@@ -10,7 +10,9 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 BACK_PID=""
 FRONT_PID=""
+BACKEND_WATCH_PID=""
 SHUTTING_DOWN=0
+BACKEND_RESTART_FLAG="${TMPDIR:-/tmp}/epub_to_mp3_backend_restart.flag"
 
 child_pids() {
   local parent_pid="$1"
@@ -114,6 +116,81 @@ cleanup_stale_dev_processes() {
   cleanup_matching_processes 'npm run dev -- --host|npm run dev --host'
 }
 
+backend_watch_targets() {
+  local target=""
+  for target in \
+    "$PROJECT_ROOT/python_app" \
+    "$PROJECT_ROOT/hf_app.py" \
+    "$PROJECT_ROOT/convert"
+  do
+    [[ -e "$target" ]] && printf '%s\n' "$target"
+  done
+}
+
+backend_stat_format() {
+  if stat --version >/dev/null 2>&1; then
+    printf '%s\n' 'gnu'
+  else
+    printf '%s\n' 'bsd'
+  fi
+}
+
+backend_watch_signature() {
+  local stat_flavor
+  stat_flavor="$(backend_stat_format)"
+
+  while read -r target; do
+    [[ -n "$target" ]] || continue
+    if [[ -d "$target" ]]; then
+      if [[ "$stat_flavor" == "gnu" ]]; then
+        find "$target" -type f \
+          \( -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) \
+          -exec stat -c '%Y %n' {} \;
+      else
+        find "$target" -type f \
+          \( -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) \
+          -exec stat -f '%m %N' {} \;
+      fi
+    elif [[ "$stat_flavor" == "gnu" ]]; then
+      stat -c '%Y %n' "$target"
+    else
+      stat -f '%m %N' "$target"
+    fi
+  done < <(backend_watch_targets) | sort
+}
+
+backend_restart_requested() {
+  [[ -f "$BACKEND_RESTART_FLAG" ]]
+}
+
+request_backend_restart() {
+  : > "$BACKEND_RESTART_FLAG"
+}
+
+clear_backend_restart_request() {
+  rm -f "$BACKEND_RESTART_FLAG"
+}
+
+start_backend_watcher() {
+  stop_process "${BACKEND_WATCH_PID:-}"
+  clear_backend_restart_request
+  (
+    local previous_signature=""
+    local current_signature=""
+    previous_signature="$(backend_watch_signature)"
+    while :; do
+      sleep 1
+      current_signature="$(backend_watch_signature)"
+      if [[ "$current_signature" != "$previous_signature" ]]; then
+        echo "[dev] backend file change detected; scheduling restart"
+        previous_signature="$current_signature"
+        request_backend_restart
+      fi
+    done
+  ) &
+  BACKEND_WATCH_PID=$!
+}
+
 start_backend() {
   local -a backend_cmd=(python -m uvicorn python_app.server:app --host "$BACKEND_HOST" --port "$BACKEND_PORT")
   if [[ "$BACKEND_RELOAD" == "1" || "$BACKEND_RELOAD" == "true" || "$BACKEND_RELOAD" == "yes" ]]; then
@@ -136,6 +213,9 @@ start_frontend() {
 
 wait_for_any_exit() {
   while :; do
+    if backend_restart_requested; then
+      return 0
+    fi
     if [[ -n "${BACK_PID:-}" ]] && ! kill -0 "$BACK_PID" 2>/dev/null; then
       return 0
     fi
@@ -152,8 +232,10 @@ shutdown_all() {
   fi
   SHUTTING_DOWN=1
   echo "[dev] shutting down"
+  clear_backend_restart_request
   stop_process "${BACK_PID:-}"
   stop_process "${FRONT_PID:-}"
+  stop_process "${BACKEND_WATCH_PID:-}"
   cleanup_stale_dev_processes
 }
 
@@ -168,6 +250,7 @@ trap 'shutdown_all' EXIT
 
 cleanup_stale_dev_processes
 start_backend
+start_backend_watcher
 start_frontend
 
 while :; do
@@ -175,6 +258,14 @@ while :; do
 
   if (( SHUTTING_DOWN )); then
     break
+  fi
+
+  if backend_restart_requested; then
+    echo "[dev] restarting backend after file change"
+    clear_backend_restart_request
+    stop_process "${BACK_PID:-}"
+    start_backend
+    continue
   fi
 
   if [[ -n "${FRONT_PID:-}" ]] && ! kill -0 "$FRONT_PID" 2>/dev/null; then
