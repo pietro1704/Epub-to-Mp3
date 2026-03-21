@@ -2949,6 +2949,7 @@ from src._server_conversion_helpers import (  # noqa: E402
     complete_chapter_progress,
     compute_parallel_slots,
     count_completed_chapters,
+    count_words,
     edge_retry_adjustments,
     expected_output_path,
     mark_retry_round,
@@ -3573,6 +3574,9 @@ async def process_conversion(job_id: str) -> None:
         chapter_progress_entries: list[dict] = []
         for idx, chapter in enumerate(chapters, 1):
             chapter_name = getattr(chapter, "name", f"Chapter {idx}")
+            chapter_text = (
+                getattr(chapter, "speech_text", None) or getattr(chapter, "text", "") or ""
+            )
             entry: dict = {
                 "index": idx,
                 "name": chapter_name,
@@ -3581,6 +3585,9 @@ async def process_conversion(job_id: str) -> None:
             ch_chars = chapter_char_totals.get(idx)
             if ch_chars:
                 entry["chars"] = ch_chars
+            word_count = count_words(chapter_text)
+            if word_count > 0:
+                entry["wordCount"] = word_count
             chapter_progress_entries.append(entry)
         job["chapterProgress"] = chapter_progress_entries
         _refresh_chapter_completion()

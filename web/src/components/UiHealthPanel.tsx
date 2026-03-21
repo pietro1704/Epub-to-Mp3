@@ -3,6 +3,7 @@ import {
   clearUiIssues,
   dismissUiIssue,
   getUiIssues,
+  shouldShowUiHealthPanel,
   subscribeUiIssues,
 } from "../services/uiIssueMonitor";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
@@ -16,6 +17,10 @@ export default function UiHealthPanel(): JSX.Element | null {
     setIssues(getUiIssues());
     return subscribeUiIssues(() => setIssues(getUiIssues()));
   }, []);
+
+  if (!shouldShowUiHealthPanel()) {
+    return null;
+  }
 
   const visibleIssues = useMemo(() => issues.slice(0, 3), [issues]);
   if (visibleIssues.length === 0) {

@@ -9,9 +9,7 @@ import {
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
 import type { Locale, Translations } from "../i18n/translations";
 import ChapterProgressList from "./ChapterProgressList";
-import StreamingAudioPlayer from "./StreamingAudioPlayer";
 import EbookReaderPanel from "./EbookReaderPanel";
-import UiHealthPanel from "./UiHealthPanel";
 import { formatEta } from "../utils/formatEta";
 export { formatEta } from "../utils/formatEta";
 
@@ -287,27 +285,6 @@ export default function StatusPanel({
           </div>
         </div>
       )}
-      <StreamingAudioPlayer
-        jobId={jobId}
-        chapters={chapterProgress}
-        bookTitle={bookTitle}
-        bookAuthor={bookAuthor}
-        coverUrl={coverUrl}
-        startRequestId={readerStartRequestId}
-        hideStartButton
-        onPlayingSegment={(chapterIndex, segmentIndex) =>
-          setPlayingSegment((current) => ({
-            chapterIndex,
-            segmentIndex,
-            segmentText: current?.segmentText,
-            isPlaying: current?.isPlaying ?? false,
-            started: current?.started ?? true,
-            waiting: current?.waiting ?? false,
-          }))
-        }
-        onPlaybackStateChange={setPlayingSegment}
-      />
-      <UiHealthPanel />
       {chapterProgress && chapterProgress.length > 0 && (
         <>
           <div className="status-panel__reader-actions">
@@ -341,11 +318,24 @@ export default function StatusPanel({
               jobId={jobId}
               bookTitle={bookTitle}
               bookAuthor={bookAuthor}
+              coverUrl={coverUrl}
               chapterProgress={chapterProgress}
               playback={playingSegment}
               onRequestStart={() =>
                 setReaderStartRequestId((current) => current + 1)
               }
+              startRequestId={readerStartRequestId}
+              onPlayingSegment={(chapterIndex, segmentIndex) =>
+                setPlayingSegment((current) => ({
+                  chapterIndex,
+                  segmentIndex,
+                  segmentText: current?.segmentText,
+                  isPlaying: current?.isPlaying ?? false,
+                  started: current?.started ?? true,
+                  waiting: current?.waiting ?? false,
+                }))
+              }
+              onPlaybackStateChange={setPlayingSegment}
               compact
             />
           )}
@@ -369,11 +359,24 @@ export default function StatusPanel({
                   jobId={jobId}
                   bookTitle={bookTitle}
                   bookAuthor={bookAuthor}
+                  coverUrl={coverUrl}
                   chapterProgress={chapterProgress}
                   playback={playingSegment}
                   onRequestStart={() =>
                     setReaderStartRequestId((current) => current + 1)
                   }
+                  startRequestId={readerStartRequestId}
+                  onPlayingSegment={(chapterIndex, segmentIndex) =>
+                    setPlayingSegment((current) => ({
+                      chapterIndex,
+                      segmentIndex,
+                      segmentText: current?.segmentText,
+                      isPlaying: current?.isPlaying ?? false,
+                      started: current?.started ?? true,
+                      waiting: current?.waiting ?? false,
+                    }))
+                  }
+                  onPlaybackStateChange={setPlayingSegment}
                 />
               </div>
             </div>

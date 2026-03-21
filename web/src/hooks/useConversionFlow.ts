@@ -19,6 +19,7 @@ import {
   DownloadAsset,
   StatusEntry,
   JobSnapshot,
+  ChapterProgressEntry,
   ConversionSummary,
   RecentJobEntry,
   SubmitBatchOptions,
@@ -533,8 +534,15 @@ function estimateEtaSeconds(
   snapshot: JobSnapshot,
   startedAt: number | null,
 ): number | undefined {
+  const wordsBasedEta = estimateWordsBasedEtaSeconds(snapshot);
   if (typeof snapshot.etaSeconds === "number") {
+    if (typeof wordsBasedEta === "number") {
+      return Math.max(snapshot.etaSeconds, wordsBasedEta);
+    }
     return snapshot.etaSeconds;
+  }
+  if (typeof wordsBasedEta === "number") {
+    return wordsBasedEta;
   }
   let progress =
     typeof snapshot.progress === "number" ? snapshot.progress : null;
@@ -552,6 +560,137 @@ function estimateEtaSeconds(
     return undefined;
   }
   return elapsedSeconds * ((1 - progress) / progress);
+}
+
+function estimateWordsBasedEtaSeconds(
+  snapshot: JobSnapshot,
+): number | undefined {
+  const entries = snapshot.chapterProgress;
+  if (!Array.isArray(entries) || entries.length === 0) {
+    return undefined;
+  }
+
+  const totals = entries.reduce(
+    (acc, entry) => {
+      if (
+        typeof entry.wordCount === "number" &&
+        Number.isFinite(entry.wordCount) &&
+        entry.wordCount > 0
+      ) {
+        acc.totalWords += entry.wordCount;
+      }
+      if (
+        typeof entry.chars === "number" &&
+        Number.isFinite(entry.chars) &&
+        entry.chars > 0 &&
+        typeof entry.wordCount === "number" &&
+        Number.isFinite(entry.wordCount) &&
+        entry.wordCount > 0
+      ) {
+        acc.totalChars += entry.chars;
+        acc.weightedWords += entry.wordCount;
+      }
+      return acc;
+    },
+    { totalWords: 0, totalChars: 0, weightedWords: 0 },
+  );
+
+  if (
+    totals.totalWords <= 0 ||
+    totals.totalChars <= 0 ||
+    totals.weightedWords <= 0
+  ) {
+    return undefined;
+  }
+
+  const charsPerWord = totals.totalChars / totals.weightedWords;
+  if (!Number.isFinite(charsPerWord) || charsPerWord <= 0) {
+    return undefined;
+  }
+
+  const completedWords = entries.reduce((sum, entry) => {
+    const wordCount =
+      typeof entry.wordCount === "number" && Number.isFinite(entry.wordCount)
+        ? entry.wordCount
+        : 0;
+    if (wordCount <= 0) {
+      return sum;
+    }
+    if (
+      entry.status === "completed" ||
+      entry.status === "skipped" ||
+      entry.status === "cancelled"
+    ) {
+      return sum + wordCount;
+    }
+    if (
+      typeof entry.chars === "number" &&
+      entry.chars > 0 &&
+      typeof entry.charsProcessed === "number" &&
+      entry.charsProcessed > 0
+    ) {
+      const ratio = Math.max(
+        0,
+        Math.min(1, entry.charsProcessed / entry.chars),
+      );
+      return sum + wordCount * ratio;
+    }
+    if (typeof entry.progressRatio === "number" && entry.progressRatio > 0) {
+      return sum + wordCount * Math.max(0, Math.min(1, entry.progressRatio));
+    }
+    return sum;
+  }, 0);
+
+  const remainingWords = Math.max(0, totals.totalWords - completedWords);
+  if (remainingWords <= 0) {
+    return 0;
+  }
+
+  const currentCps = resolveCurrentCharsPerSecond(entries);
+  if (
+    currentCps === undefined ||
+    !Number.isFinite(currentCps) ||
+    currentCps <= 0
+  ) {
+    return undefined;
+  }
+
+  const currentWpm = (currentCps / charsPerWord) * 60;
+  if (!Number.isFinite(currentWpm) || currentWpm <= 0) {
+    return undefined;
+  }
+
+  return Math.ceil((remainingWords / currentWpm) * 60);
+}
+
+function resolveCurrentCharsPerSecond(
+  entries: ChapterProgressEntry[],
+): number | undefined {
+  const inFlight = entries
+    .filter(
+      (entry) =>
+        (entry.status === "processing" || entry.status === "retrying") &&
+        typeof entry.charsPerSecond === "number" &&
+        Number.isFinite(entry.charsPerSecond) &&
+        entry.charsPerSecond > 0,
+    )
+    .map((entry) => entry.charsPerSecond as number);
+  if (inFlight.length > 0) {
+    return inFlight[inFlight.length - 1];
+  }
+
+  const completed = entries
+    .filter(
+      (entry) =>
+        typeof entry.charsPerSecond === "number" &&
+        Number.isFinite(entry.charsPerSecond) &&
+        entry.charsPerSecond > 0,
+    )
+    .map((entry) => entry.charsPerSecond as number);
+  if (completed.length === 0) {
+    return undefined;
+  }
+  return completed[completed.length - 1];
 }
 
 async function fetchInitialJobSnapshot(

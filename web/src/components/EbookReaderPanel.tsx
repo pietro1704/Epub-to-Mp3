@@ -2,6 +2,8 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { conversionClient } from "../services/ConversionService";
 import { reportUiIssue } from "../services/uiIssueMonitor";
+import { safeScrollIntoView } from "../utils/safeScrollIntoView";
+import StreamingAudioPlayer from "./StreamingAudioPlayer";
 import {
   BookTextDocument,
   ChapterProgressEntry,
@@ -15,7 +17,11 @@ interface EbookReaderPanelProps {
   bookAuthor?: string;
   chapterProgress?: ChapterProgressEntry[] | null;
   playback?: PlaybackIndicator | null;
+  coverUrl?: string;
   onRequestStart?: () => void;
+  onPlayingSegment?: (chapterIndex: number, segmentIndex: number) => void;
+  onPlaybackStateChange?: (state: PlaybackIndicator | null) => void;
+  startRequestId?: number;
   compact?: boolean;
 }
 
@@ -144,7 +150,11 @@ export default function EbookReaderPanel({
   bookAuthor,
   chapterProgress,
   playback,
+  coverUrl,
   onRequestStart,
+  onPlayingSegment,
+  onPlaybackStateChange,
+  startRequestId = 0,
   compact = false,
 }: EbookReaderPanelProps): JSX.Element | null {
   const t = useTranslations();
@@ -236,10 +246,10 @@ export default function EbookReaderPanel({
     const marker = articleHostRef.current?.shadowRoot?.querySelector(
       "[data-reader-audio='true']",
     );
-    if (!marker || typeof (marker as Element).scrollIntoView !== "function") {
+    if (!marker) {
       return;
     }
-    marker.scrollIntoView({ block: "center", behavior: "smooth" });
+    safeScrollIntoView(marker, { block: "center", behavior: "smooth" });
   }, [selectedChapterIndex, playback?.chapterIndex, playback?.segmentIndex]);
 
   const chapterStatusMap = useMemo(() => {
@@ -329,46 +339,62 @@ export default function EbookReaderPanel({
       className={`ebook-reader ebook-reader--${prefs.theme} ${compact ? "ebook-reader--compact" : ""}`}
       aria-label={t.status.readerTitle}
     >
-      <div className="ebook-reader__hero">
-        <div>
-          <div className="ebook-reader__eyebrow">{t.status.readerTitle}</div>
-          <h3 className="ebook-reader__title">{resolvedTitle}</h3>
-          <p className="ebook-reader__subtitle">
-            {resolvedAuthor}
-            {document
-              ? ` • ${chapters.length} ${t.status.readerChapterCount(chapters.length)}`
-              : ""}
-          </p>
-        </div>
-        <div className="ebook-reader__hero-meta">
-          {!playbackStarted && onRequestStart && (
-            <button
-              type="button"
-              className="ebook-reader__read-button"
-              onClick={onRequestStart}
-              disabled={loading || Boolean(loadError)}
-            >
-              {t.status.readerReadButton}
-            </button>
-          )}
-          <span className="ebook-reader__hero-chip">
-            {prefs.followAudio
-              ? t.status.readerFollowAudioOn
-              : t.status.readerFollowAudioOff}
-          </span>
-          {readerPages.length > 0 && (
+      <div className="ebook-reader__stage">
+        <div className="ebook-reader__hero">
+          <div>
+            <div className="ebook-reader__eyebrow">{t.status.readerTitle}</div>
+            <h3 className="ebook-reader__title">{resolvedTitle}</h3>
+            <p className="ebook-reader__subtitle">
+              {resolvedAuthor}
+              {document
+                ? ` • ${chapters.length} ${t.status.readerChapterCount(chapters.length)}`
+                : ""}
+            </p>
+          </div>
+          <div className="ebook-reader__hero-meta">
+            {!playbackStarted && onRequestStart && (
+              <button
+                type="button"
+                className="ebook-reader__read-button"
+                onClick={onRequestStart}
+                disabled={loading || Boolean(loadError)}
+              >
+                {t.status.readerReadButton}
+              </button>
+            )}
             <span className="ebook-reader__hero-chip">
-              {t.status.readerPageLabel(pageIndex + 1, readerPages.length)}
+              {prefs.followAudio
+                ? t.status.readerFollowAudioOn
+                : t.status.readerFollowAudioOff}
             </span>
-          )}
-          {audioChapter && (
-            <span className="ebook-reader__hero-chip ebook-reader__hero-chip--live">
-              {locale === "pt"
-                ? `Áudio no cap. ${audioChapter.index}`
-                : `Audio on ch. ${audioChapter.index}`}
-            </span>
-          )}
+            {readerPages.length > 0 && (
+              <span className="ebook-reader__hero-chip">
+                {t.status.readerPageLabel(pageIndex + 1, readerPages.length)}
+              </span>
+            )}
+            {audioChapter && (
+              <span className="ebook-reader__hero-chip ebook-reader__hero-chip--live">
+                {locale === "pt"
+                  ? `Áudio no cap. ${audioChapter.index}`
+                  : `Audio on ch. ${audioChapter.index}`}
+              </span>
+            )}
+          </div>
         </div>
+        {chapterProgress && chapterProgress.length > 0 && (
+          <StreamingAudioPlayer
+            jobId={jobId}
+            chapters={chapterProgress}
+            bookTitle={resolvedTitle}
+            bookAuthor={resolvedAuthor}
+            coverUrl={coverUrl}
+            startRequestId={startRequestId}
+            hideStartButton={Boolean(onRequestStart)}
+            embedded
+            onPlayingSegment={onPlayingSegment}
+            onPlaybackStateChange={onPlaybackStateChange}
+          />
+        )}
       </div>
 
       <div className="ebook-reader__toolbar">

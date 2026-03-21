@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { conversionClient } from "../services/ConversionService";
+import { useI18n } from "../i18n/I18nProvider";
 import {
   AudioChunkEntry,
   ChapterProgressEntry,
@@ -17,6 +18,7 @@ interface StreamingAudioPlayerProps {
   onPlaybackStateChange?: (state: PlaybackIndicator | null) => void;
   startRequestId?: number;
   hideStartButton?: boolean;
+  embedded?: boolean;
 }
 
 const POLL_INTERVAL_MS = 1500;
@@ -31,7 +33,9 @@ export default function StreamingAudioPlayer({
   onPlaybackStateChange,
   startRequestId = 0,
   hideStartButton = false,
+  embedded = false,
 }: StreamingAudioPlayerProps): JSX.Element | null {
+  const { locale } = useI18n();
   const [started, setStarted] = useState(false);
   const [currentChapter, setCurrentChapter] = useState<number>(0);
   const [currentSegment, setCurrentSegment] = useState(0);
@@ -307,18 +311,52 @@ export default function StreamingAudioPlayer({
   const currentProgress = manifest?.chunks
     ? `${currentSegment + 1} / ${manifest.chunks.length}`
     : waiting
-      ? "Waiting..."
-      : "Ready";
+      ? locale === "pt"
+        ? "Aguardando"
+        : "Waiting..."
+      : locale === "pt"
+        ? "Pronto"
+        : "Ready";
+  const title = locale === "pt" ? "Leitura contínua" : "Sequential Player";
+  const idleChapterLabel =
+    locale === "pt" ? "Selecione um capítulo" : "Select a chapter";
+  const listenNowLabel =
+    locale === "pt"
+      ? "Ouvir agora em sequência"
+      : "Listen now (sequential streaming)";
+  const prevChapterLabel =
+    locale === "pt" ? "Capítulo anterior" : "Prev chapter";
+  const nextChapterLabel =
+    locale === "pt" ? "Próximo capítulo" : "Next chapter";
+  const openReaderHint =
+    locale === "pt"
+      ? "Use o leitor para começar a reprodução."
+      : "Open the reader above to start the book.";
+  const waitingLabel =
+    locale === "pt"
+      ? "Aguardando próximo trecho..."
+      : "Waiting for next segment...";
+  const readyLabel = locale === "pt" ? "Pronto para começar" : "Ready to start";
+  const segmentLabel =
+    locale === "pt"
+      ? `Trecho ${currentProgress}`
+      : `Segment ${currentProgress}`;
+  const currentSegmentTextLabel =
+    locale === "pt" ? "Trecho atual" : "Current segment text";
+  const chunksLabel =
+    locale === "pt" ? "Trechos do capítulo atual" : "Current chapter segments";
 
   return (
-    <div className="streaming-player">
+    <div
+      className={`streaming-player${embedded ? " streaming-player--embedded" : ""}`}
+    >
       <div className="streaming-player__header">
         <div>
           <div className="streaming-player__title">
-            {isPlaying ? "▶️" : "⏸️"} Sequential Player
+            {isPlaying ? "▶" : "❚❚"} {title}
           </div>
           <div className="streaming-player__chapter">
-            {currentChapterLabel || "Select a chapter"}
+            {currentChapterLabel || idleChapterLabel}
           </div>
         </div>
         {!started && !hideStartButton ? (
@@ -328,7 +366,7 @@ export default function StreamingAudioPlayer({
             onClick={handleStart}
             disabled={!jobId || sortedChapters.length === 0}
           >
-            ▶️ Listen now (sequential streaming)
+            {listenNowLabel}
           </button>
         ) : started ? (
           <div className="streaming-player__controls">
@@ -338,7 +376,7 @@ export default function StreamingAudioPlayer({
               onClick={handlePrevChapter}
               disabled={currentChapter === sortedChapters[0]?.index}
             >
-              ⏮️ Prev chapter
+              {prevChapterLabel}
             </button>
             <button
               type="button"
@@ -349,14 +387,12 @@ export default function StreamingAudioPlayer({
                 sortedChapters[sortedChapters.length - 1]?.index
               }
             >
-              Next chapter ⏭️
+              {nextChapterLabel}
             </button>
           </div>
         ) : (
           <div className="streaming-player__controls streaming-player__controls--passive">
-            <span className="streaming-player__hint">
-              Open the reader above to start the book.
-            </span>
+            <span className="streaming-player__hint">{openReaderHint}</span>
           </div>
         )}
       </div>
@@ -372,19 +408,15 @@ export default function StreamingAudioPlayer({
         />
         <div className="streaming-player__meta">
           <span>
-            {waiting
-              ? "⏳ Waiting for next segment..."
-              : src
-                ? `🎧 Segment ${currentProgress}`
-                : "Ready to start"}
+            {waiting ? waitingLabel : src ? segmentLabel : readyLabel}
           </span>
-          {error && <span className="streaming-player__error">⚠️ {error}</span>}
+          {error && <span className="streaming-player__error">{error}</span>}
         </div>
 
         {currentSegmentText && (
           <div className="streaming-player__text">
             <div className="streaming-player__text-label">
-              📖 Current segment text:
+              {currentSegmentTextLabel}
             </div>
             <div className="streaming-player__text-content">
               {currentSegmentText}
@@ -395,9 +427,7 @@ export default function StreamingAudioPlayer({
 
       {manifest?.chunks && manifest.chunks.length > 0 && (
         <div className="streaming-player__chunks">
-          <div className="streaming-player__chunks-label">
-            Current chapter segments:
-          </div>
+          <div className="streaming-player__chunks-label">{chunksLabel}</div>
           <div className="streaming-player__chunks-list">
             {manifest.chunks.map((chunk: AudioChunkEntry) => (
               <span

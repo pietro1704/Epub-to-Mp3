@@ -9,6 +9,7 @@ level — the few that are needed are imported lazily inside function bodies).
 
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -19,6 +20,43 @@ if TYPE_CHECKING:
 # ---------------------------------------------------------------------------
 # Progress accounting
 # ---------------------------------------------------------------------------
+
+
+def count_words(text: str) -> int:
+    """Return a language-agnostic word count for ETA calculations."""
+    if not text:
+        return 0
+    return len(re.findall(r"\b\w+\b", text, flags=re.UNICODE))
+
+
+def _sync_entry_progress(job: dict, chapter_index: int) -> None:
+    """Mirror chapter char counters into the public chapterProgress entry."""
+    entries = job.get("chapterProgress")
+    if not isinstance(entries, list):
+        return
+    target = next(
+        (
+            entry
+            for entry in entries
+            if isinstance(entry, dict) and entry.get("index") == chapter_index
+        ),
+        None,
+    )
+    if not isinstance(target, dict):
+        return
+    chapter_totals = job.get("_chapterCharTotals") or {}
+    chapter_processed = job.get("_chapterCharProcessed") or {}
+    total = int(chapter_totals.get(chapter_index, 0) or 0)
+    processed = int(chapter_processed.get(chapter_index, 0) or 0)
+    if total > 0:
+        target["chars"] = total
+    if processed > 0 or "charsProcessed" in target:
+        target["charsProcessed"] = max(0, min(processed, total or processed))
+    if total > 0:
+        target["progressRatio"] = round(
+            max(0.0, min(1.0, (target.get("charsProcessed", 0) or 0) / total)),
+            4,
+        )
 
 
 def recalculate_progress(job: dict, chapters_count: int) -> float:
@@ -103,6 +141,7 @@ def advance_chapter_progress(
     chapter_progress_ts = job.get("_chapterLastProgressUpdate") or {}
     chapter_progress_ts[chapter_index] = time.time()
     job["_chapterLastProgressUpdate"] = chapter_progress_ts
+    _sync_entry_progress(job, chapter_index)
     update_job_progress(job, chapters_count)
     broadcast_progress(job)
 
@@ -130,6 +169,7 @@ def complete_chapter_progress(
     chapter_progress_ts = job.get("_chapterLastProgressUpdate") or {}
     chapter_progress_ts[chapter_index] = time.time()
     job["_chapterLastProgressUpdate"] = chapter_progress_ts
+    _sync_entry_progress(job, chapter_index)
     update_job_progress(job, chapters_count, force_broadcast=broadcast)
 
 
@@ -166,6 +206,7 @@ def update_estimated_chapter_progress(
     chapter_progress_ts = job.get("_chapterLastProgressUpdate") or {}
     chapter_progress_ts[chapter_index] = time.time()
     job["_chapterLastProgressUpdate"] = chapter_progress_ts
+    _sync_entry_progress(job, chapter_index)
     update_job_progress(job, chapters_count)
     broadcast_progress(job)
 
@@ -324,6 +365,7 @@ def reset_chapter_progress_tracking(
     chapter_progress_ts = job.get("_chapterLastProgressUpdate") or {}
     chapter_progress_ts[chapter_index] = 0.0
     job["_chapterLastProgressUpdate"] = chapter_progress_ts
+    _sync_entry_progress(job, chapter_index)
     update_job_progress(job, chapters_count, force_broadcast=True)
 
 

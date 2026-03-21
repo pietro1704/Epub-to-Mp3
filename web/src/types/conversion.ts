@@ -128,6 +128,10 @@ export interface ChapterProgressEntry {
   engineSequence?: string[];
   elapsedSeconds?: number;
   charsPerSecond?: number;
+  chars?: number;
+  charsProcessed?: number;
+  progressRatio?: number;
+  wordCount?: number;
   downloadUrl?: string;
   // Retry information
   retryCount?: number;

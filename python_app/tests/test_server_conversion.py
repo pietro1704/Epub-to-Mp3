@@ -755,6 +755,9 @@ class TestExtractChapterDetails:
                     "engine": "edge",
                     "elapsedSeconds": 42.0,
                     "charsPerSecond": 110.5,
+                    "charsProcessed": 2400,
+                    "progressRatio": 1.0,
+                    "wordCount": 510,
                     "engineSequence": ["edge"],
                     "startedAt": "2026-03-16T10:00:00+00:00",
                     "completedAt": "2026-03-16T10:00:42+00:00",
@@ -769,6 +772,9 @@ class TestExtractChapterDetails:
         assert d["engine"] == "edge"
         assert d["elapsedSeconds"] == 42.0
         assert d["charsPerSecond"] == 110.5
+        assert d["charsProcessed"] == 2400
+        assert d["progressRatio"] == 1.0
+        assert d["wordCount"] == 510
         assert d["engineSequence"] == ["edge"]
         assert d["startedAt"] == "2026-03-16T10:00:00+00:00"
         assert d["completedAt"] == "2026-03-16T10:00:42+00:00"

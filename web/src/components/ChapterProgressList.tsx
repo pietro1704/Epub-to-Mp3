@@ -6,6 +6,7 @@ import {
 } from "../types/conversion";
 import { conversionClient } from "../services/ConversionService";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
+import { safeScrollIntoView } from "../utils/safeScrollIntoView";
 
 interface ChapterProgressListProps {
   entries: ChapterProgressEntry[];
@@ -326,7 +327,7 @@ export default function ChapterProgressList({
       if (marks.length === 0) return;
       const normalized = ((index % marks.length) + marks.length) % marks.length;
       const target = marks[normalized] as HTMLElement;
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
+      safeScrollIntoView(target, { behavior: "smooth", block: "center" });
       setActiveMatchIndex(normalized);
     },
     [setActiveMatchIndex],
@@ -438,7 +439,7 @@ export default function ChapterProgressList({
       );
 
       if (segmentElement) {
-        segmentElement.scrollIntoView({
+        safeScrollIntoView(segmentElement, {
           behavior: "smooth",
           block: "center",
         });

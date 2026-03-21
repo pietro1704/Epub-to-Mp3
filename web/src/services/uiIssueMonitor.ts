@@ -11,7 +11,9 @@ export interface UiIssueEntry {
 
 const STORAGE_KEY = "epub-to-mp3:ui-issues";
 const EVENT_NAME = "epub-to-mp3:ui-issues-updated";
+const DEBUG_PANEL_KEY = "epub-to-mp3:debug-ui-health";
 const MAX_ISSUES = 20;
+const DEDUPE_WINDOW_MS = 30_000;
 
 function canUseBrowserApis(): boolean {
   return (
@@ -50,6 +52,31 @@ function writeIssues(issues: UiIssueEntry[]): void {
   }
 }
 
+function logUiIssue(issue: UiIssueEntry): void {
+  const method =
+    issue.severity === "error"
+      ? console.error
+      : issue.severity === "warning"
+        ? console.warn
+        : console.info;
+  method(`[ui:${issue.scope}] ${issue.message}`, issue.details ?? "");
+}
+
+function findRecentDuplicate(
+  issue: UiIssueEntry,
+  issues: UiIssueEntry[],
+): UiIssueEntry | null {
+  return (
+    issues.find(
+      (entry) =>
+        entry.scope === issue.scope &&
+        entry.message === issue.message &&
+        entry.details === issue.details &&
+        issue.timestamp - entry.timestamp <= DEDUPE_WINDOW_MS,
+    ) ?? null
+  );
+}
+
 export function reportUiIssue(
   scope: string,
   message: string,
@@ -63,7 +90,13 @@ export function reportUiIssue(
     details: options.details,
     timestamp: Date.now(),
   };
-  const issues = [issue, ...readIssues()];
+  const existingIssues = readIssues();
+  const duplicate = findRecentDuplicate(issue, existingIssues);
+  if (duplicate) {
+    return duplicate;
+  }
+  logUiIssue(issue);
+  const issues = [issue, ...existingIssues];
   writeIssues(issues);
   return issue;
 }
@@ -78,6 +111,13 @@ export function clearUiIssues(): void {
 
 export function getUiIssues(): UiIssueEntry[] {
   return readIssues();
+}
+
+export function shouldShowUiHealthPanel(): boolean {
+  if (!canUseBrowserApis()) {
+    return false;
+  }
+  return window.localStorage.getItem(DEBUG_PANEL_KEY) === "true";
 }
 
 export function subscribeUiIssues(listener: () => void): () => void {

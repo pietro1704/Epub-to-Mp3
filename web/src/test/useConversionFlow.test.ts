@@ -349,6 +349,76 @@ describe("useConversionFlow", () => {
     vi.useRealTimers();
   });
 
+  it("estimates ETA from current WPM and remaining book words", async () => {
+    const submit = vi.fn().mockResolvedValue({ jobId: "eta-wpm" });
+    let finishPoll: (() => void) | null = null;
+    const poll = vi.fn().mockImplementation(
+      async (
+        _jobId: string,
+        options?: { onSnapshot?: (snapshot: JobSnapshot) => void },
+      ) =>
+        new Promise<JobSnapshot>((resolve) => {
+          options?.onSnapshot?.({
+            jobId: "eta-wpm",
+            state: "running",
+            progressPercent: 45,
+            chapterProgress: [
+              {
+                index: 1,
+                name: "Chapter 1",
+                status: "completed",
+                chars: 600,
+                charsProcessed: 600,
+                wordCount: 120,
+                charsPerSecond: 10,
+              },
+              {
+                index: 2,
+                name: "Chapter 2",
+                status: "processing",
+                chars: 500,
+                charsProcessed: 250,
+                wordCount: 100,
+                charsPerSecond: 10,
+              },
+              {
+                index: 3,
+                name: "Chapter 3",
+                status: "pending",
+                chars: 400,
+                wordCount: 80,
+              },
+            ],
+          });
+          finishPoll = () =>
+            resolve({
+              jobId: "eta-wpm",
+              state: "finished",
+              outputs: [],
+              progressPercent: 100,
+            } satisfies JobSnapshot);
+        }),
+    );
+
+    const client: ConversionClient = { submit, fetch: vi.fn(), poll };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    let submitPromise: Promise<void> | undefined;
+    await act(async () => {
+      submitPromise = result.current.submit(request);
+      await Promise.resolve();
+    });
+
+    expect(result.current.state.etaSeconds).toBe(65);
+
+    await act(async () => {
+      finishPoll?.();
+      await submitPromise;
+    });
+  });
+
   it("hydrates next job metadata from the initial fetch before poll completes", async () => {
     const submit = vi.fn().mockResolvedValue({ jobId: "next-1" });
     const fetch = vi.fn().mockResolvedValue({

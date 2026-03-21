@@ -146,6 +146,39 @@ describe("EbookReaderPanel", () => {
     expect(onRequestStart).toHaveBeenCalledTimes(1);
   });
 
+  it("renders the sequential player inside the reader", async () => {
+    vi.spyOn(conversionClient, "getJobFullText").mockResolvedValue({
+      jobId: "job-reader",
+      chapters: [
+        {
+          index: 1,
+          name: "Capítulo 1",
+          text: "Texto.",
+          html: "<p>Texto.</p>",
+          charCount: 6,
+        },
+      ],
+    });
+
+    renderWithProviders(
+      <EbookReaderPanel
+        jobId="job-reader"
+        chapterProgress={[
+          {
+            index: 1,
+            name: "Capítulo 1",
+            status: "processing",
+            charCount: 6,
+            completedSegments: 0,
+            totalSegments: 1,
+          },
+        ]}
+      />,
+    );
+
+    expect(await screen.findByText(/Leitura contínua/i)).toBeInTheDocument();
+  });
+
   it("renders sanitized epub formatting in a minimal reading layout", async () => {
     vi.spyOn(conversionClient, "getJobFullText").mockResolvedValue({
       jobId: "job-reader",

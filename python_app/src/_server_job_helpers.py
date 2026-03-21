@@ -346,6 +346,12 @@ def _extract_chapter_details(job: dict) -> list[dict]:
             "engine": entry.get("engine", ""),
             "chars": entry.get("textLength") or entry.get("chars"),
         }
+        if entry.get("charsProcessed") is not None:
+            detail["charsProcessed"] = entry["charsProcessed"]
+        if entry.get("progressRatio") is not None:
+            detail["progressRatio"] = entry["progressRatio"]
+        if entry.get("wordCount") is not None:
+            detail["wordCount"] = entry["wordCount"]
         if entry.get("startedAt"):
             detail["startedAt"] = entry["startedAt"]
         if entry.get("completedAt"):
