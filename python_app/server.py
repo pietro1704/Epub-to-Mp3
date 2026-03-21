@@ -101,6 +101,15 @@ async def _lifespan(app: FastAPI):
         _app_loop, \
         _skip_resume_on_startup
     _app_loop = asyncio.get_running_loop()
+    os.environ.setdefault("SERVER_MODE", "1")
+
+    if _IS_TEST_ENV:
+        logger.info("Test environment detected: using lightweight FastAPI lifespan")
+        try:
+            yield
+        finally:
+            return
+
     _job_queue = asyncio.Queue()
     _job_workers = [asyncio.create_task(_job_worker(idx + 1)) for idx in range(_JOB_WORKERS)]
     _cleanup_task = asyncio.create_task(_periodic_job_cleanup())
@@ -162,9 +171,6 @@ async def _lifespan(app: FastAPI):
         logger.info("✅ Auto-Recovery System started")
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Auto-Recovery: {e}")
-
-    # Mark process as a web server so session_logger picks the right mode
-    os.environ.setdefault("SERVER_MODE", "1")
 
     logger.info("Started periodic job cleanup task")
     try:
