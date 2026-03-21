@@ -127,36 +127,35 @@ backend_watch_targets() {
   done
 }
 
-backend_stat_format() {
-  if stat --version >/dev/null 2>&1; then
-    printf '%s\n' 'gnu'
+backend_watch_files() {
+  if command -v rg >/dev/null 2>&1; then
+    (
+      cd "$PROJECT_ROOT"
+      rg --files python_app \
+        -g '*.py' \
+        -g '*.json' \
+        -g '*.yaml' \
+        -g '*.yml'
+    )
   else
-    printf '%s\n' 'bsd'
+    find "$PROJECT_ROOT/python_app" -type f \
+      \( -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) \
+      -print | sed "s#^$PROJECT_ROOT/##"
   fi
+  [[ -f "$PROJECT_ROOT/hf_app.py" ]] && printf '%s\n' 'hf_app.py'
+  [[ -f "$PROJECT_ROOT/convert" ]] && printf '%s\n' 'convert'
 }
 
 backend_watch_signature() {
-  local stat_flavor
-  stat_flavor="$(backend_stat_format)"
-
-  while read -r target; do
-    [[ -n "$target" ]] || continue
-    if [[ -d "$target" ]]; then
-      if [[ "$stat_flavor" == "gnu" ]]; then
-        find "$target" -type f \
-          \( -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) \
-          -exec stat -c '%Y %n' {} \;
-      else
-        find "$target" -type f \
-          \( -name '*.py' -o -name '*.json' -o -name '*.yaml' -o -name '*.yml' \) \
-          -exec stat -f '%m %N' {} \;
+  (
+    cd "$PROJECT_ROOT"
+    backend_watch_files | while read -r relative_path; do
+      [[ -n "$relative_path" ]] || continue
+      if [[ -e "$relative_path" ]]; then
+        stat -f '%m %N' "$relative_path" 2>/dev/null || true
       fi
-    elif [[ "$stat_flavor" == "gnu" ]]; then
-      stat -c '%Y %n' "$target"
-    else
-      stat -f '%m %N' "$target"
-    fi
-  done < <(backend_watch_targets) | sort
+    done
+  ) | sort
 }
 
 backend_restart_requested() {
@@ -177,9 +176,10 @@ start_backend_watcher() {
   (
     local previous_signature=""
     local current_signature=""
+    sleep 2
     previous_signature="$(backend_watch_signature)"
     while :; do
-      sleep 1
+      sleep 2
       current_signature="$(backend_watch_signature)"
       if [[ "$current_signature" != "$previous_signature" ]]; then
         echo "[dev] backend file change detected; scheduling restart"
