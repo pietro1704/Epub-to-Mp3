@@ -554,6 +554,17 @@ class TestSubchapterDetection(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0][0], "2")
 
+    def test_paragraph_split_long_single_line_uses_epub_parser_splitter(self):
+        """A single oversized line is force-split without calling EbookReader."""
+        text = "word " * 15_000
+
+        result = EpubParser._split_text_at_paragraph_boundaries(text, 50_000, 9)
+
+        self.assertGreater(len(result), 1)
+        for idx, chunk in result:
+            self.assertTrue(idx.startswith("9."), f"Expected decimal index, got {idx!r}")
+            self.assertLessEqual(len(chunk), 50_000)
+
     # ------------------------------------------------------------------ integration tests
 
     def test_epub_with_subchapter_markers_creates_decimal_chapters(self):

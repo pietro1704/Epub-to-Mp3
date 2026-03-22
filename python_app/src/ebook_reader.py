@@ -1470,7 +1470,7 @@ class EpubParser:
         for line in lines:
             # Force-split lines that are longer than max_chars on their own.
             sub_lines = (
-                EbookReader._force_split_long_line(line, max_chars)
+                EpubParser._force_split_long_line(line, max_chars)
                 if len(line) > max_chars
                 else [line]
             )
