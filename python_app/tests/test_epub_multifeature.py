@@ -173,6 +173,38 @@ perfectly normal, thank you very much. They were the last people</p>
         self.assertNotIn("of.\nnumber four", speech)
         self.assertNotIn("of... number four", speech)
 
+    def test_harry_potter_chapter_heading_with_nbsp_gets_long_pause(self) -> None:
+        """HP chapter files have CHAPTER\xa0\xa0ONE (non-breaking spaces) in <h4>.
+        This heading must get a long pause (...) just like regular headings.
+        Regression: \xa0 in raw HTML was not normalized before building title_keys,
+        so 'chapter\xa0\xa0one' never matched 'chapter one' from the processed text.
+        """
+        source = """<?xml version='1.0' encoding='utf-8'?>
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en-US">
+  <body>
+    <h4 class="calibre12">CHAPTER\xa0\xa0ONE</h4>
+    <h2 class="calibre14">THE BOY WHO LIVED</h2>
+    <p class="first"><span class="drop">M</span>r. and Mrs. Dursley, of number four.</p>
+  </body>
+</html>"""
+
+        parsed_text, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(source)
+        speech = EpubParser._prepare_speech_text(
+            parsed_text,
+            formatting_segments,
+            raw_html=source,
+            chapter_title="Chapter 1 - The Boy Who Lived",
+        )
+
+        # Both headings must get long-pause ellipsis
+        self.assertIn("CHAPTER ONE...", speech)
+        self.assertIn("THE BOY WHO LIVED...", speech)
+        # CHAPTER ONE must NOT be concatenated with THE BOY WHO LIVED without pause
+        self.assertNotIn("CHAPTER ONE THE BOY WHO LIVED", speech)
+        self.assertNotIn("CHAPTER ONE. THE BOY WHO LIVED", speech)
+        # Order preserved
+        self.assertLess(speech.index("CHAPTER ONE"), speech.index("THE BOY WHO LIVED"))
+
     def test_it_style_multi_heading_pauses(self) -> None:
         """IT (Stephen King) style: Part/Chapter headings are separate <h*> elements."""
         source = """<body>

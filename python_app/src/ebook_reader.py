@@ -910,6 +910,8 @@ class TextProcessor:
         if content:
             for match in H_TAG.finditer(content):
                 heading = TAG_RE.sub("", match.group(2))
+                # Normalize non-breaking spaces (\xa0) so titles match processed text
+                heading = NBSP_RE.sub(" ", heading)
                 normalised = TextProcessor.normalise_whitespace(heading)
                 key = normalised.casefold()
                 if normalised and key not in seen:
