@@ -18,12 +18,9 @@ export default function UiHealthPanel(): JSX.Element | null {
     return subscribeUiIssues(() => setIssues(getUiIssues()));
   }, []);
 
-  if (!shouldShowUiHealthPanel()) {
-    return null;
-  }
-
   const visibleIssues = useMemo(() => issues.slice(0, 3), [issues]);
-  if (visibleIssues.length === 0) {
+
+  if (!shouldShowUiHealthPanel() || visibleIssues.length === 0) {
     return null;
   }
 
