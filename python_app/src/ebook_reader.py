@@ -27,7 +27,9 @@ except ImportError:  # pragma: no cover - when pypdf is missing
 TAG_RE = re.compile(r"<[^>]+>")
 WHITESPACE_RE = re.compile(r"[ \t\f\v]+")
 NBSP_RE = re.compile(r"(?:&nbsp;|\u00A0)", re.I)
-PARA_BLOCK_RE = re.compile(r"</?(p|div|br|li|tr|td|th|blockquote|section|article|hr)[^>]*>", re.I)
+PARA_BLOCK_RE = re.compile(
+    r"</?(p|div|br|li|tr|td|th|blockquote|section|article|hr|h[1-6])[^>]*>", re.I
+)
 STYLE_RE = re.compile(r"(?is)<style.*?>.*?</style>")
 SCRIPT_RE = re.compile(r"(?is)<script.*?>.*?</script>")
 ARTIFACT_RE = re.compile(r"\b(?:[\w\-/]+\.(?:xhtml|html|opf|ncx|css)|\d+_[\w-]+)\b", re.I)
@@ -137,6 +139,10 @@ class TextProcessor:
         text = ARTIFACT_RE.sub(" ", text)
         text = re.sub(r"(?is)<head.*?>.*?</head>", "", text)
         text = text.replace("\r", "\n")
+        # HTML treats raw newlines inside elements as whitespace. Collapse them
+        # before block-element processing so only actual block boundaries (<p>,
+        # <div>, <br>, etc.) become newlines — not source-level line wraps.
+        text = re.sub(r"\n+", " ", text)
         text = PARA_BLOCK_RE.sub("\n", text)
 
         # Clean remaining HTML tags but preserve formatting markers

@@ -160,15 +160,72 @@ perfectly normal, thank you very much. They were the last people</p>
         )
 
         self.assertIn("THE BOY WHO LIVED", parsed_text)
-        self.assertIn("Mr. and Mrs. Dursley, of", parsed_text)
-        self.assertIn("number four, Privet Drive", parsed_text)
+        # Soft line breaks inside <p> are collapsed to spaces (HTML whitespace rules)
+        self.assertIn("Mr. and Mrs. Dursley, of number four, Privet Drive", parsed_text)
         self.assertTrue(speech.startswith("Chapter 1.\n"))
         self.assertIn("THE BOY WHO LIVED.", speech)
-        self.assertIn("THE BOY WHO LIVED.\nMr. and Mrs. Dursley, of.", speech)
+        # Heading is followed by paragraph content on the next line (no mid-sentence pause)
         self.assertIn(
-            "Mr. and Mrs. Dursley, of.\nnumber four, Privet Drive, were proud to say that they were.",
+            "THE BOY WHO LIVED.\nMr. and Mrs. Dursley, of number four, Privet Drive",
             speech,
         )
+        # Intra-paragraph soft line breaks must NOT create mid-sentence pauses
+        self.assertNotIn("of.\nnumber four", speech)
+
+    def test_it_style_multi_heading_pauses(self) -> None:
+        """IT (Stephen King) style: Part/Chapter headings are separate <h*> elements."""
+        source = """<body>
+<h1>Part One: The Shadow Before</h1>
+<h2>Chapter 1</h2>
+<h3>After the Flood (1957)</h3>
+<p>The terror, which would not end for another twenty-eight years, began with a boat.</p>
+</body>"""
+
+        parsed_text, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(source)
+        speech = EpubParser._prepare_speech_text(
+            parsed_text,
+            formatting_segments,
+            raw_html=source,
+            chapter_title="Chapter 1: After the Flood (1957)",
+        )
+
+        # Each heading must appear on its own line with a trailing pause
+        self.assertIn("Part One: The Shadow Before.", speech)
+        self.assertIn("Chapter 1.", speech)
+        self.assertIn("After the Flood (1957).", speech)
+        # Headings must be on separate lines
+        self.assertIn("Part One: The Shadow Before.\nChapter 1.", speech)
+        # Paragraph content must not be mixed into heading line
+        self.assertNotIn("Chapter 1 After the Flood", speech)
+
+    def test_chapter_number_standalone_gets_pause(self) -> None:
+        """Standalone 'Chapter N' paragraph (no subtitle) gets a pause."""
+        source = "<body><p>Chapter 3</p><p>The adventure continues.</p></body>"
+
+        parsed_text, formatting_segments = TextProcessor.html_to_plain_text_with_formatting(source)
+        speech = EpubParser._prepare_speech_text(
+            parsed_text,
+            formatting_segments,
+            raw_html=source,
+            chapter_title="Chapter 3",
+        )
+
+        self.assertIn("Chapter 3.", speech)
+        self.assertIn("The adventure continues.", speech)
+
+    def test_heading_with_drop_cap_span_collapsed_correctly(self) -> None:
+        """Drop-cap <span> inside <p> must not create a line break inside a word."""
+        source = (
+            "<body><h2>THE TITLE</h2>"
+            '<p><span class="drop">T</span>he quick brown fox jumped over the lazy dog.</p>'
+            "</body>"
+        )
+
+        parsed_text, _ = TextProcessor.html_to_plain_text_with_formatting(source)
+
+        # Drop cap 'T' + rest of word must be on the same line
+        self.assertIn("The quick brown fox", parsed_text)
+        self.assertNotIn("T\nhe quick", parsed_text)
 
     def test_enhance_natural_pauses_handles_heading_breaks_generically(self) -> None:
         source = "Line one\nLine two\nLine three."
