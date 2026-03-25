@@ -1594,7 +1594,7 @@ class EpubParser:
                         for p_idx, p_text in para_splits:
                             p_speech = self._prepare_speech_text(
                                 p_text,
-                                sub_segments,
+                                None,  # re-parse from fragment, not full-chapter segments
                                 raw_html=sub_html,
                                 chapter_title=sub_title,
                             )
@@ -1674,7 +1674,7 @@ class EpubParser:
                     for split_idx, split_text in para_splits:
                         split_speech = self._prepare_speech_text(
                             split_text,
-                            formatting_segments,
+                            None,  # re-parse from fragment, not full-chapter segments
                             raw_html=markup_with_markers,
                             chapter_title=title,
                         )
