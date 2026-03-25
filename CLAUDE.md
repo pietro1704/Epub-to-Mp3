@@ -54,12 +54,31 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 mise run test           # Full suite: Python + web + lint + build
 # OR individually:
 pytest -v --tb=short    # Python only (581+ tests)
+pytest -v --tb=short python_app/tests/test_edge_engine.py  # Single test file
+pytest -v --tb=short -k "test_name"                        # Single test by name
 cd web && npm run test  # Web only (17 tests)
 ```
 - Add tests for every new feature or bug fix
 - Critical paths need both unit tests AND integration tests
 - Test edge cases: empty chapters, oversized chapters, engine failures
 - The 2 skipped tests are Coqui GPU tests — acceptable
+
+---
+
+## CI Monitoring Policy
+
+**After every `git push`, monitor GitHub CI and fix failures before stopping.**
+
+1. After pushing, the `ci_watch.sh` hook (async PostToolUse) auto-watches the run and injects the result.
+2. If CI fails, immediately diagnose via `gh run view <run_id> --log-failed` and push a fix.
+3. Do not consider a task done until CI passes green.
+
+```bash
+gh run list --limit 3                          # List recent runs
+gh run view <run_id>                           # Summary + step status
+gh run view <run_id> --log-failed              # Failed step output
+gh run watch <run_id>                          # Block until run completes
+```
 
 ---
 
