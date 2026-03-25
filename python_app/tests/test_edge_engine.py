@@ -30,6 +30,35 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
     def _normalise(self, text: str) -> str:
         return " ".join((text or "").split())
 
+    def test_sanitize_strips_newlines_but_keeps_structural_periods(self):
+        """
+        _sanitize_for_edge must strip \\n (Edge-TTS chokes on raw newlines) but
+        MUST preserve the trailing period that _append_pause_after_line_breaks
+        added before each \\n.  That period is the actual pause signal for the
+        TTS engine — without it, chapter/heading boundaries become silent gaps.
+        """
+        speech = "Chapter 1.\nTHE BOY WHO LIVED.\nMr. and Mrs. Dursley, of number four."
+
+        sanitized = EdgeTTSEngine._sanitize_for_edge(speech)
+
+        # Newlines must be gone (Edge-TTS uses them for internal framing)
+        self.assertNotIn("\n", sanitized)
+        # The structural periods — pause markers — must survive
+        self.assertIn("Chapter 1.", sanitized)
+        self.assertIn("THE BOY WHO LIVED.", sanitized)
+        # Order preserved
+        self.assertLess(sanitized.index("Chapter 1."), sanitized.index("THE BOY WHO LIVED."))
+
+    def test_sanitize_strips_mid_sentence_newlines_as_spaces(self):
+        """Newlines that survived inside a sentence (edge case) become spaces, not pauses."""
+        speech = "Some text\nmore text without period"
+
+        sanitized = EdgeTTSEngine._sanitize_for_edge(speech)
+
+        self.assertNotIn("\n", sanitized)
+        self.assertIn("Some text", sanitized)
+        self.assertIn("more text", sanitized)
+
     def test_prepare_segments_preserves_text(self):
         """Segmented text should reconstruct the original payload."""
         base_text = " ".join(f"Sentence {i}." for i in range(2000))
