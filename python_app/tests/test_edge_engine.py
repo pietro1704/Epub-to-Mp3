@@ -37,17 +37,20 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         added before each \\n.  That period is the actual pause signal for the
         TTS engine — without it, chapter/heading boundaries become silent gaps.
         """
-        speech = "Chapter 1.\nTHE BOY WHO LIVED.\nMr. and Mrs. Dursley, of number four."
+        # apply_structural_speech_cues adds "..." (long pause) after headings;
+        # enhance_natural_pauses then collapses "...\n" → "... " so by the time
+        # the text reaches _sanitize_for_edge the newlines are already gone.
+        speech = "Chapter 1... THE BOY WHO LIVED... Mr. and Mrs. Dursley, of number four."
 
         sanitized = EdgeTTSEngine._sanitize_for_edge(speech)
 
-        # Newlines must be gone (Edge-TTS uses them for internal framing)
+        # No raw newlines (Edge-TTS uses them for internal framing)
         self.assertNotIn("\n", sanitized)
-        # The structural periods — pause markers — must survive
-        self.assertIn("Chapter 1.", sanitized)
-        self.assertIn("THE BOY WHO LIVED.", sanitized)
+        # The structural ellipses — long-pause markers — must survive intact
+        self.assertIn("Chapter 1...", sanitized)
+        self.assertIn("THE BOY WHO LIVED...", sanitized)
         # Order preserved
-        self.assertLess(sanitized.index("Chapter 1."), sanitized.index("THE BOY WHO LIVED."))
+        self.assertLess(sanitized.index("Chapter 1..."), sanitized.index("THE BOY WHO LIVED..."))
 
     def test_sanitize_strips_mid_sentence_newlines_as_spaces(self):
         """Newlines that survived inside a sentence (edge case) become spaces, not pauses."""

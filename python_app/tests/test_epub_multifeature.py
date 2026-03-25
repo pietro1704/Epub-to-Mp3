@@ -81,8 +81,8 @@ class TestSampleEpubFeatures(unittest.TestCase):
             raw_html=raw_html,
         )
 
-        self.assertIn("AN UNUSUAL TITLE.", speech)
-        self.assertIn("AN UNUSUAL TITLE.\nThe story starts here.", speech)
+        self.assertIn("AN UNUSUAL TITLE...", speech)
+        self.assertIn("AN UNUSUAL TITLE... The story starts here.", speech)
 
     def test_prepare_speech_text_uses_toc_title_when_html_has_no_heading(self) -> None:
         raw_html = "<div><p>The story starts here.</p></div>"
@@ -95,7 +95,7 @@ class TestSampleEpubFeatures(unittest.TestCase):
             chapter_title="Chapter Twelve",
         )
 
-        self.assertTrue(speech.startswith("Chapter Twelve.\nThe story starts here."))
+        self.assertTrue(speech.startswith("Chapter Twelve... The story starts here."))
 
     def test_prepare_speech_text_does_not_duplicate_toc_title_already_in_opening_lines(
         self,
@@ -162,15 +162,16 @@ perfectly normal, thank you very much. They were the last people</p>
         self.assertIn("THE BOY WHO LIVED", parsed_text)
         # Soft line breaks inside <p> are collapsed to spaces (HTML whitespace rules)
         self.assertIn("Mr. and Mrs. Dursley, of number four, Privet Drive", parsed_text)
-        self.assertTrue(speech.startswith("Chapter 1.\n"))
-        self.assertIn("THE BOY WHO LIVED.", speech)
-        # Heading is followed by paragraph content on the next line (no mid-sentence pause)
+        self.assertTrue(speech.startswith("Chapter 1..."))
+        self.assertIn("THE BOY WHO LIVED...", speech)
+        # Heading gets long pause (...) then content — no mid-sentence pause
         self.assertIn(
-            "THE BOY WHO LIVED.\nMr. and Mrs. Dursley, of number four, Privet Drive",
+            "THE BOY WHO LIVED... Mr. and Mrs. Dursley, of number four, Privet Drive",
             speech,
         )
         # Intra-paragraph soft line breaks must NOT create mid-sentence pauses
         self.assertNotIn("of.\nnumber four", speech)
+        self.assertNotIn("of... number four", speech)
 
     def test_it_style_multi_heading_pauses(self) -> None:
         """IT (Stephen King) style: Part/Chapter headings are separate <h*> elements."""
@@ -189,12 +190,12 @@ perfectly normal, thank you very much. They were the last people</p>
             chapter_title="Chapter 1: After the Flood (1957)",
         )
 
-        # Each heading must appear on its own line with a trailing pause
-        self.assertIn("Part One: The Shadow Before.", speech)
-        self.assertIn("Chapter 1.", speech)
-        self.assertIn("After the Flood (1957).", speech)
-        # Headings must be on separate lines
-        self.assertIn("Part One: The Shadow Before.\nChapter 1.", speech)
+        # Each heading gets a long pause (...)
+        self.assertIn("Part One: The Shadow Before...", speech)
+        self.assertIn("Chapter 1...", speech)
+        self.assertIn("After the Flood (1957)...", speech)
+        # Headings appear in order with long pauses between them
+        self.assertIn("Part One: The Shadow Before... Chapter 1...", speech)
         # Paragraph content must not be mixed into heading line
         self.assertNotIn("Chapter 1 After the Flood", speech)
 

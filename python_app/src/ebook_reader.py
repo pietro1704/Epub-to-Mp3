@@ -984,7 +984,9 @@ class TextProcessor:
         for line in updated.split("\n"):
             stripped = TextProcessor.normalise_whitespace(line)
             if stripped and stripped.rstrip(".!?;:").casefold() in title_keys:
-                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}.")
+                # Use ellipsis for a long TTS pause after chapter/section headings.
+                # A single period gives only a brief beat; "..." signals a longer silence.
+                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}...")
             else:
                 adjusted_lines.append(line)
 
