@@ -9,7 +9,7 @@ import re
 import zipfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
 from xml.etree import ElementTree as ET
 
@@ -1114,6 +1114,7 @@ class EpubParser:
                 spine_ids,
                 base_dir,
                 toc_title_map=toc_title_map,
+                toc=toc,
             )
 
         # Assign hierarchy levels from TOC so callers can distinguish
@@ -1360,12 +1361,34 @@ class EpubParser:
         return chapters
 
     @staticmethod
+    def _build_toc_index_map(toc: List["TocItem"]) -> Dict[str, Any]:
+        """Build a file-href → hierarchical index mapping for a nested TOC.
+
+        Level-1 items receive integer indices (1, 2, 3, …).
+        Level-2 children receive string indices ``"N.M"`` where N is the
+        parent's integer index and M is the child's position within that parent.
+        Only the first occurrence of each file wins (URL anchors are stripped).
+
+        Returns an empty dict for flat TOCs that have no nested children.
+        """
+        result: Dict[str, Any] = {}
+        for level1_idx, item in enumerate(toc, 1):
+            file_href = item.href.split("#")[0] if "#" in item.href else item.href
+            if file_href and file_href not in result:
+                result[file_href] = level1_idx
+            for level2_idx, child in enumerate(item.children, 1):
+                child_href = child.href.split("#")[0] if "#" in child.href else child.href
+                if child_href and child_href not in result:
+                    result[child_href] = f"{level1_idx}.{level2_idx}"
+        return result
+
+    @staticmethod
     def _split_html_on_subchapter_markers(
         markup: str,
         parent_index,
         number_classes: frozenset,
         title_class: str,
-    ) -> Optional[List[Tuple[str, str, str]]]:
+    ) -> Optional[List[Tuple[str, str, str, bool]]]:
         """Split HTML markup at section-number / title element pairs.
 
         Looks for adjacent paragraph pairs:
@@ -1396,37 +1419,53 @@ class EpubParser:
             r'<p\b[^>]*\bclass="[^"]*' + re.escape(title_class) + r'[^"]*"[^>]*>(.*?)</p>',
             re.IGNORECASE | re.DOTALL,
         )
+        any_p_re = re.compile(r"<p\b[^>]*>(.*?)</p>", re.IGNORECASE | re.DOTALL)
 
         num_matches = list(number_re.finditer(markup))
         if not num_matches:
             return None
 
-        # For each number element look ahead (≤ 500 chars) for an adjacent title.
-        split_points: List[Tuple[int, str]] = []  # (start_pos, title_text)
+        # For each number element look ahead for an adjacent title.
+        # * Explicit title (class_sG5) is searched within 500 chars — tight window
+        #   so a distant title from the next section is not mistakenly picked up.
+        # * Fallback first-paragraph is searched within 2000 chars — wider window
+        #   so long opening paragraphs (> 500 chars) are still found.
+        # (start_pos, title_text, has_explicit_title)
+        split_points: List[Tuple[int, str, bool]] = []
         for nm in num_matches:
             window_start = nm.end()
-            window = markup[window_start : window_start + 500]
-            tm = title_re.search(window)
+            title_window = markup[window_start : window_start + 500]
+            tm = title_re.search(title_window)
             if tm:
                 raw = TAG_RE.sub("", tm.group(1)).strip()
-                split_points.append((nm.start(), raw or f"Section {len(split_points) + 1}"))
-            # If no title follows within the window, skip this number element.
+                split_points.append((nm.start(), raw or f"Section {len(split_points) + 1}", True))
+            else:
+                # No dedicated title element — derive title from first paragraph content.
+                fallback_window = markup[window_start : window_start + 2000]
+                any_p = any_p_re.search(fallback_window)
+                if any_p:
+                    raw = TAG_RE.sub("", any_p.group(1)).strip()
+                    derived = raw[:57] + "..." if len(raw) > 60 else raw
+                    split_points.append(
+                        (nm.start(), derived or f"Section {len(split_points) + 1}", False)
+                    )
+                # If no paragraph in window at all, skip this number element.
 
         if not split_points:
             return None
 
         parent_idx = str(parent_index)
         preamble = markup[: split_points[0][0]]
-        result: List[Tuple[str, str, str]] = []
+        result: List[Tuple[str, str, str, bool]] = []
 
-        for i, (start, title) in enumerate(split_points):
+        for i, (start, title, has_explicit_title) in enumerate(split_points):
             sub_index = f"{parent_idx}.{i + 1}"
             frag_end = split_points[i + 1][0] if i + 1 < len(split_points) else len(markup)
             html_fragment = markup[start:frag_end]
             if i == 0:
                 # Prepend chapter preamble (title, subtitle, etc.) to first subchapter.
                 html_fragment = preamble + html_fragment
-            result.append((sub_index, title, html_fragment))
+            result.append((sub_index, title, html_fragment, has_explicit_title))
 
         return result
 
@@ -1492,7 +1531,7 @@ class EpubParser:
 
         def _flush() -> None:
             nonlocal part_num, current_lines, current_len
-            chunks.append((f"{parent_idx}.{part_num}", "\n".join(current_lines)))
+            chunks.append((f"{parent_idx}-{part_num}", "\n".join(current_lines)))
             part_num += 1
             current_lines = []
             current_len = 0
@@ -1516,7 +1555,7 @@ class EpubParser:
                 # Nothing was flushed — all content fits in a single chunk; keep
                 # the original (non-decimal) index so callers are not surprised.
                 return [(parent_idx, "\n".join(current_lines))]
-            chunks.append((f"{parent_idx}.{part_num}", "\n".join(current_lines)))
+            chunks.append((f"{parent_idx}-{part_num}", "\n".join(current_lines)))
 
         return chunks
 
@@ -1527,10 +1566,24 @@ class EpubParser:
         spine_ids: Iterable[str],
         base_dir: str,
         toc_title_map: Optional[Dict[str, str]] = None,
+        toc: Optional[List[TocItem]] = None,
     ) -> List[Chapter]:
         chapters: List[Chapter] = []
         index_counter = 1
         context_words = 8
+
+        # When the TOC has nested items (e.g. Part > Chapter), build a
+        # file-href → hierarchical index map so chapters inherit the TOC
+        # hierarchy (e.g. Parte 2 = 5, Capítulo 4 = "5.1").
+        has_nested_toc = toc is not None and any(item.children for item in toc)
+        toc_index_map: Dict[str, Any] = self._build_toc_index_map(toc) if has_nested_toc else {}
+        # Orphan counter for spine items that are not in the TOC index map.
+        # Starts after the last level-1 TOC index to avoid collisions.
+        _max_toc_idx = max(
+            (v for v in toc_index_map.values() if isinstance(v, int)),
+            default=0,
+        )
+        orphan_counter = _max_toc_idx
 
         for item_id in spine_ids:
             href = manifest.get(item_id)
@@ -1565,18 +1618,49 @@ class EpubParser:
                 raw_content, external_file_resolver=resolve_external_file
             )
 
+            # Determine the hierarchical index for this spine file.
+            # When the TOC has nested items, look up the file in the TOC index
+            # map; fall back to a sequential orphan counter for files not in the
+            # TOC (e.g. blank pages, dedication pages).
+            if toc_index_map:
+                chapter_idx: Any = toc_index_map.get(href) or toc_index_map.get(asset_path)
+                if chapter_idx is None:
+                    orphan_counter += 1
+                    chapter_idx = orphan_counter
+            else:
+                chapter_idx = index_counter
+
+            # Look up the TOC title for this file (used for naming derived splits).
+            toc_chapter_title: Optional[str] = None
+            if toc_title_map:
+                toc_chapter_title = toc_title_map.get(asset_path) or toc_title_map.get(href)
+
             # --- Subchapter detection ---
             # Try to split the spine file at known CSS subchapter-title markers.
             sub_splits = self._split_html_on_subchapter_markers(
                 markup_with_markers,
-                index_counter,
+                chapter_idx,
                 SUBCHAPTER_NUMBER_CLASSES,
                 SUBCHAPTER_TITLE_CLASS,
             )
 
             if sub_splits:
                 # Each CSS-marker fragment becomes an independent Chapter.
-                for sub_index, sub_title, sub_html in sub_splits:
+                for sec_num, (sub_index, sub_title, sub_html, has_explicit_title) in enumerate(
+                    sub_splits, 1
+                ):
+                    # When the section has no dedicated title element (class_sG5),
+                    # the title was derived from the first content paragraph.
+                    # Prefix it with the parent chapter title and section number
+                    # so that each file is identifiable without extra context.
+                    if has_explicit_title:
+                        chapter_name = sub_title
+                    else:
+                        if toc_chapter_title:
+                            chapter_name = f"{toc_chapter_title} - {sec_num} - {sub_title}"
+                        else:
+                            chapter_name = f"{sec_num} - {sub_title}"
+
                     sub_text_fmt, sub_segments = TextProcessor.html_to_plain_text_with_formatting(
                         sub_html
                     )
@@ -1600,7 +1684,7 @@ class EpubParser:
                         sub_text,
                         sub_segments,
                         raw_html=sub_html,
-                        chapter_title=sub_title,
+                        chapter_title=chapter_name,
                     )
 
                     # A CSS sub-chapter can still be very long (e.g. a long
@@ -1616,12 +1700,12 @@ class EpubParser:
                                 p_text,
                                 None,  # re-parse from fragment, not full-chapter segments
                                 raw_html=sub_html,
-                                chapter_title=sub_title,
+                                chapter_title=chapter_name,
                             )
                             chapters.append(
                                 Chapter(
                                     index=p_idx,
-                                    name=sub_title,
+                                    name=chapter_name,
                                     source_path=asset_path,
                                     text=p_text,
                                     raw_html=sub_html,
@@ -1634,7 +1718,7 @@ class EpubParser:
                         chapters.append(
                             Chapter(
                                 index=sub_index,
-                                name=sub_title,
+                                name=chapter_name,
                                 source_path=asset_path,
                                 text=sub_text or "",
                                 raw_html=sub_html,
@@ -1664,13 +1748,10 @@ class EpubParser:
                 else:
                     text_with_footnotes = text_with_formatting
                 text = TextProcessor.add_pause_before_dash(text_with_footnotes)
-                toc_title = None
-                if toc_title_map:
-                    toc_title = toc_title_map.get(asset_path) or toc_title_map.get(href)
-                raw_title = toc_title or (
-                    TextProcessor.extract_title(raw_content, f"Chapter {index_counter}")
+                raw_title = toc_chapter_title or (
+                    TextProcessor.extract_title(raw_content, f"Chapter {chapter_idx}")
                     if text
-                    else f"Chapter {index_counter}"
+                    else f"Chapter {chapter_idx}"
                 )
                 title = TextProcessor.clean_chapter_title(raw_title)
 
@@ -1689,7 +1770,7 @@ class EpubParser:
                 # timeouts on very large chapters.
                 if text and len(text) > SUBCHAPTER_MAX_CHARS:
                     para_splits = self._split_text_at_paragraph_boundaries(
-                        text, SUBCHAPTER_MAX_CHARS, index_counter
+                        text, SUBCHAPTER_MAX_CHARS, chapter_idx
                     )
                     for split_idx, split_text in para_splits:
                         split_speech = self._prepare_speech_text(
@@ -1713,7 +1794,7 @@ class EpubParser:
                 else:
                     chapters.append(
                         Chapter(
-                            index=index_counter,
+                            index=chapter_idx,
                             name=title,
                             source_path=asset_path,
                             text=text or "",
