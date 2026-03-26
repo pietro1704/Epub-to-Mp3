@@ -907,23 +907,43 @@ class TextProcessor:
         titles: List[str] = []
         seen: set[str] = set()
 
+        _p_tag = re.compile(r"<p\b[^>]*>(.*?)</p>", re.I | re.DOTALL)
+
+        def _add(raw: str) -> None:
+            norm = TextProcessor.normalise_whitespace(NBSP_RE.sub(" ", TAG_RE.sub("", raw)))
+            key = norm.casefold()
+            if norm and key not in seen:
+                seen.add(key)
+                titles.append(norm)
+
         if content:
             for match in H_TAG.finditer(content):
-                heading = TAG_RE.sub("", match.group(2))
-                # Normalize non-breaking spaces (\xa0) so titles match processed text
-                heading = NBSP_RE.sub(" ", heading)
-                normalised = TextProcessor.normalise_whitespace(heading)
-                key = normalised.casefold()
-                if normalised and key not in seen:
-                    seen.add(key)
-                    titles.append(normalised)
+                _add(match.group(2))
+
+            # EPUBs that use <p> with CSS classes instead of <h1-6> (e.g. pt-BR
+            # IT edition): scan the first few <p> elements and treat any that
+            # look like headings (≤ 8 words, no terminal punctuation) as titles.
+            if H_TAG.search(content) is None:
+                for p_match in _p_tag.finditer(content):
+                    raw = TAG_RE.sub("", p_match.group(1)).strip()
+                    norm = TextProcessor.normalise_whitespace(NBSP_RE.sub(" ", raw))
+                    if norm and len(norm.split()) <= 8 and norm[-1] not in ".!?":
+                        _add(p_match.group(1))
+                    if len(titles) >= 6:
+                        break
 
         if chapter_title:
             normalised = TextProcessor.clean_chapter_title(chapter_title)
-            key = normalised.casefold()
-            if normalised and key not in seen:
-                seen.add(key)
-                titles.append(normalised)
+            _add(normalised)
+            # Also add each segment split on em-dash / colon separators so that
+            # EPUBs using <p> for headings (e.g. pt-BR editions) still get
+            # individual heading lines recognised as title keys.
+            # Example: "Capítulo 3 – Seis telefonemas (1985)" → ["Capítulo 3",
+            #           "Seis telefonemas (1985)"]
+            for part in re.split(r"\s*[–—:]\s*", normalised):
+                part = part.strip()
+                if part and len(part) > 3:
+                    _add(part)
 
         return titles
 

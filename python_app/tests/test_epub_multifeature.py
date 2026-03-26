@@ -113,7 +113,9 @@ class TestSampleEpubFeatures(unittest.TestCase):
         )
 
         self.assertEqual(speech.count("Capítulo 4 Ben Hanscom sofre"), 0)
-        self.assertIn("Capítulo 4.\nBen Hanscom sofre uma queda.", speech)
+        # p-tag heuristic detects these short lines as headings → long pause
+        self.assertIn("Capítulo 4...", speech)
+        self.assertIn("Ben Hanscom sofre uma queda...", speech)
 
     def test_prepare_speech_text_does_not_duplicate_title_found_later_in_opening_block(
         self,
