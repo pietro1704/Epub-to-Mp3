@@ -1032,9 +1032,16 @@ class TextProcessor:
 class EpubParser:
     """Parse a single EPUB file into a :class:`Book` instance."""
 
-    def __init__(self, file_path: str | Path) -> None:
+    def __init__(
+        self,
+        file_path: str | Path,
+        paragraph_split: bool = False,
+        paragraph_split_chars: int = 12_000,
+    ) -> None:
         self.file_path = str(file_path)
         self.path = Path(file_path)
+        self.paragraph_split = paragraph_split
+        self.paragraph_split_chars = paragraph_split_chars
 
     @staticmethod
     def _prepare_speech_text(
@@ -1690,10 +1697,14 @@ class EpubParser:
                     # A CSS sub-chapter can still be very long (e.g. a long
                     # chapter with no further heading markers).  Apply the same
                     # paragraph-boundary split so no single chapter exceeds the
-                    # max size threshold.
-                    if sub_text and len(sub_text) > SUBCHAPTER_MAX_CHARS:
+                    # max size threshold. Only when paragraph_split is enabled.
+                    if (
+                        self.paragraph_split
+                        and sub_text
+                        and len(sub_text) > self.paragraph_split_chars
+                    ):
                         para_splits = self._split_text_at_paragraph_boundaries(
-                            sub_text, SUBCHAPTER_MAX_CHARS, sub_index
+                            sub_text, self.paragraph_split_chars, sub_index
                         )
                         for p_idx, p_text in para_splits:
                             p_speech = self._prepare_speech_text(
@@ -1765,12 +1776,13 @@ class EpubParser:
                 )
 
                 # --- Paragraph-boundary fallback split ---
-                # When a chapter has no CSS subchapter markers but exceeds the size
-                # threshold, split it at paragraph boundaries to prevent Edge-TTS
-                # timeouts on very large chapters.
-                if text and len(text) > SUBCHAPTER_MAX_CHARS:
+                # When paragraph_split is enabled and a chapter has no CSS
+                # subchapter markers but exceeds the size threshold, split it at
+                # paragraph boundaries. This keeps each chunk near Edge-TTS's
+                # chunk limit, improving reliability at the cost of more files.
+                if self.paragraph_split and text and len(text) > self.paragraph_split_chars:
                     para_splits = self._split_text_at_paragraph_boundaries(
-                        text, SUBCHAPTER_MAX_CHARS, chapter_idx
+                        text, self.paragraph_split_chars, chapter_idx
                     )
                     for split_idx, split_text in para_splits:
                         split_speech = self._prepare_speech_text(
@@ -2334,14 +2346,30 @@ class PdfParser:
 class EbookReader:
     """Facade used by the rest of the code base."""
 
-    def __init__(self, file_path: Optional[str | Path] = None) -> None:
+    def __init__(
+        self,
+        file_path: Optional[str | Path] = None,
+        paragraph_split: bool = False,
+        paragraph_split_chars: int = 12_000,
+    ) -> None:
         self.file_path: Optional[Path] = None
         self.book: Optional[Book] = None
+        self._paragraph_split = paragraph_split
+        self._paragraph_split_chars = paragraph_split_chars
         if file_path is not None:
             self.file_path = Path(file_path)
-            self.load(file_path)
+            self.load(
+                file_path,
+                paragraph_split=paragraph_split,
+                paragraph_split_chars=paragraph_split_chars,
+            )
 
-    def load(self, file_path: str | Path) -> None:
+    def load(
+        self,
+        file_path: str | Path,
+        paragraph_split: Optional[bool] = None,
+        paragraph_split_chars: Optional[int] = None,
+    ) -> None:
         path = Path(file_path)
         if not path.exists():
             raise FileNotFoundError(f"File not found: {path}")
@@ -2350,9 +2378,19 @@ class EbookReader:
         if suffix not in {".epub", ".pdf"}:
             raise ValueError(f"Unsupported format: {suffix}")
 
+        ps = paragraph_split if paragraph_split is not None else self._paragraph_split
+        ps_chars = (
+            paragraph_split_chars
+            if paragraph_split_chars is not None
+            else self._paragraph_split_chars
+        )
+        self._paragraph_split = ps
+        self._paragraph_split_chars = ps_chars
         self.file_path = path
         if suffix == ".epub":
-            self.book = EpubParser(str(path)).parse()
+            self.book = EpubParser(
+                str(path), paragraph_split=ps, paragraph_split_chars=ps_chars
+            ).parse()
         else:
             self.book = PdfParser(str(path)).parse()
 

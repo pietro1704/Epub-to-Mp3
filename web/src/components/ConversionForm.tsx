@@ -224,6 +224,7 @@ export default function ConversionForm({
   const [clearCache, setClearCache] = useState(false);
   const [forceReprocess, setForceReprocess] = useState(false);
   const [filterChapters, setFilterChapters] = useState(false);
+  const [paragraphSplit, setParagraphSplit] = useState(false);
   const [verbose, setVerbose] = useState(true);
   const [useLanguageDetection, setUseLanguageDetection] = useState(true);
   const [prioritizePrimaryLanguage, setPrioritizePrimaryLanguage] =
@@ -774,6 +775,7 @@ export default function ConversionForm({
       clearCache,
       forceReprocess,
       filterChapters,
+      paragraphSplit,
       verbose,
       useLanguageDetection,
       prioritizePrimaryLanguage,
@@ -1661,6 +1663,26 @@ export default function ConversionForm({
                 </span>
               </label>
               <p className="form-hint">{t.form.filterChaptersDescription}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="paragraphSplitToggle">
+                {t.form.paragraphSplitLabel}
+              </label>
+              <label className="form-toggle" htmlFor="paragraphSplitToggle">
+                <input
+                  id="paragraphSplitToggle"
+                  type="checkbox"
+                  checked={paragraphSplit}
+                  disabled={isSubmitting}
+                  onChange={(event) => setParagraphSplit(event.target.checked)}
+                />
+                <span>
+                  {paragraphSplit
+                    ? t.form.paragraphSplitOn
+                    : t.form.paragraphSplitOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.paragraphSplitDescription}</p>
             </div>
           </fieldset>
 

@@ -99,13 +99,14 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
+            paragraph_split=False,
             parallel=None,
         )
 
         result = self.app.run(args)
 
         self.assertEqual(result, 0)
-        mock_reader.assert_called_once_with(self.test_file)
+        mock_reader.assert_called_once_with(self.test_file, paragraph_split=False)
         mock_asyncio_run.assert_not_called()
 
     @patch("main.asyncio.run")
@@ -130,6 +131,7 @@ class TestConverterApplication(unittest.TestCase):
             model=None,
             output_dir=None,
             filter_chapters=False,
+            paragraph_split=False,
             parallel=None,
             menu=False,
             listen=False,
@@ -154,7 +156,7 @@ class TestConverterApplication(unittest.TestCase):
                 result = self.app.run(args)
 
         self.assertEqual(result, 0)
-        mock_reader.assert_called_once_with(self.test_file)
+        mock_reader.assert_called_once_with(self.test_file, paragraph_split=False)
         mock_prepare.assert_called_once()
         mock_update.assert_called_once()
         mock_asyncio_run.assert_not_called()

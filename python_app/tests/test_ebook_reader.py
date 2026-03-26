@@ -53,7 +53,9 @@ class TestEbookReader(unittest.TestCase):
         with patch.object(EbookReader, "load") as mock_load:
             reader = EbookReader("test.epub")
             self.assertEqual(reader.file_path, Path("test.epub"))
-            mock_load.assert_called_once_with("test.epub")
+            mock_load.assert_called_once_with(
+                "test.epub", paragraph_split=False, paragraph_split_chars=12000
+            )
 
     def test_init_with_path_object(self):
         """Test EbookReader initialization with Path object"""
@@ -61,7 +63,9 @@ class TestEbookReader(unittest.TestCase):
         with patch.object(EbookReader, "load") as mock_load:
             reader = EbookReader(path_obj)
             self.assertEqual(reader.file_path, path_obj)
-            mock_load.assert_called_once_with(path_obj)
+            mock_load.assert_called_once_with(
+                path_obj, paragraph_split=False, paragraph_split_chars=12000
+            )
 
     @patch.object(EpubParser, "parse")
     def test_load_epub_file(self, mock_parse):
@@ -299,7 +303,9 @@ class TestEbookReader(unittest.TestCase):
             reader = EbookReader()
             reader.load(self.sample_epub_path)
 
-            mock_epub_init.assert_called_once_with(self.sample_epub_path)
+            mock_epub_init.assert_called_once_with(
+                self.sample_epub_path, paragraph_split=False, paragraph_split_chars=12000
+            )
 
     def test_file_path_conversion_string(self):
         """Test file path is properly converted to Path object from string"""
@@ -900,14 +906,16 @@ class TestSubchapterDetection(unittest.TestCase):
         self.assertIn("O som do sino", s2.text)
 
     def test_oversized_css_section_gets_dash_split(self):
-        """A CSS-marker section that exceeds SUBCHAPTER_MAX_CHARS is further split
+        """A CSS-marker section that exceeds paragraph_split_chars is further split
         at paragraph boundaries with a dash suffix: e.g. '5.1.2-1', '5.1.2-2'.
-        This distinguishes char-limit cuts from structural CSS-marker splits."""
-        from python_app.src.ebook_reader import SUBCHAPTER_MAX_CHARS
+        This distinguishes char-limit cuts from structural CSS-marker splits.
+        Requires paragraph_split=True on EbookReader."""
+        # Use a low threshold so the test does not need huge text.
+        _SPLIT_CHARS = 500
 
         # Build a section-2 body that exceeds the char limit.
         long_para = "Palavra " * 400 + "fim."  # ~3 200 chars
-        n_paras = (SUBCHAPTER_MAX_CHARS // len(long_para)) + 2
+        n_paras = (_SPLIT_CHARS // max(len(long_para), 1)) + 2
         section2_body = "".join(f'<p class="class_s3T-0">{long_para}</p>' for _ in range(n_paras))
 
         chapter_html = (
@@ -939,7 +947,8 @@ class TestSubchapterDetection(unittest.TestCase):
             tmp.write(epub_bytes)
             tmp_path = tmp.name
         try:
-            reader = EbookReader(tmp_path)
+            # paragraph_split=True required to trigger oversized-section splitting
+            reader = EbookReader(tmp_path, paragraph_split=True, paragraph_split_chars=500)
             chapters = reader.get_chapters()
         finally:
             os.unlink(tmp_path)
