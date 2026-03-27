@@ -515,4 +515,4 @@ class CacheManager:
         safe = safe.strip("_")
         if not safe:
             return "book"
-        return safe[:80]
+        return safe[:120]

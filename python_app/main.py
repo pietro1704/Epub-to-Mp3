@@ -1183,9 +1183,22 @@ class ConverterApplication:
         for item in structure_items:
             if index_counts[item.index] > 1:
                 index_seen[item.index] = index_seen.get(item.index, 0) + 1
-                new_idx = f"{item.index}.{index_seen[item.index]}"
-                new_display = new_idx + item.display_name[len(item.index) :]
-                item = _dc_replace(item, index=new_idx, display_name=new_display)
+                section_num = str(index_seen[item.index])
+                new_idx = f"{item.index}.{section_num}"
+                # Include the section number as visible text (not just in the
+                # numeric prefix) so it appears in filenames and show-structure.
+                new_sub = f"{item.sub_title} - {section_num}" if item.sub_title else section_num
+                # Rebuild display_name from components using the same separator
+                # rules as the original builder: " - " between title parts,
+                # space before a preview that starts with lowercase or punctuation.
+                parts = [v for v in (item.main_title, new_sub, item.preview) if v]
+                new_display = new_idx
+                for i, val in enumerate(parts):
+                    if (i == len(parts) - 1) and (val[:1].islower() or val[:1] in ",;:.!?"):
+                        new_display = f"{new_display} {val}"
+                    else:
+                        new_display = f"{new_display} - {val}"
+                item = _dc_replace(item, index=new_idx, sub_title=new_sub, display_name=new_display)
             resolved.append(item)
 
         return resolved
