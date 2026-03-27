@@ -198,9 +198,6 @@ function buildFormData(values: ConversionFormValues): FormData {
   if (typeof values.filterChapters === "boolean") {
     formData.append("filter_chapters", values.filterChapters ? "on" : "off");
   }
-  if (typeof values.paragraphSplit === "boolean") {
-    formData.append("paragraph_split", values.paragraphSplit ? "on" : "off");
-  }
   if (typeof values.verbose === "boolean") {
     formData.append("verbose", values.verbose ? "on" : "off");
   }

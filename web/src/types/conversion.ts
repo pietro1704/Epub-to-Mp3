@@ -40,7 +40,6 @@ export interface ConversionFormValues {
   clearCache?: boolean;
   forceReprocess?: boolean;
   filterChapters?: boolean;
-  paragraphSplit?: boolean;
   verbose?: boolean;
   useLanguageDetection?: boolean;
   prioritizePrimaryLanguage?: boolean;

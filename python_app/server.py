@@ -1994,7 +1994,6 @@ async def convert_ebook(
     clear_cache: Optional[str] = Form(None),
     force_reprocess: Optional[str] = Form(None),
     filter_chapters: Optional[str] = Form(None),
-    paragraph_split: Optional[str] = Form(None),
     verbose: Optional[str] = Form(None),
     use_language_detection: Optional[str] = Form(None),
     prioritize_primary_language: Optional[str] = Form(None),
@@ -2042,7 +2041,6 @@ async def convert_ebook(
     clear_cache_flag = _parse_form_bool(clear_cache, False)
     force_reprocess_flag = _parse_form_bool(force_reprocess, False)
     filter_chapters_flag = _parse_form_bool(filter_chapters, False)
-    paragraph_split_flag = _parse_form_bool(paragraph_split, False)
     verbose_flag = _parse_form_optional_bool(verbose)
     use_language_detection_flag = _parse_form_optional_bool(use_language_detection)
     prioritize_primary_flag = _parse_form_optional_bool(prioritize_primary_language)
@@ -2254,7 +2252,6 @@ async def convert_ebook(
         "clearCache": clear_cache_flag,
         "forceReprocess": force_reprocess_flag,
         "filterChapters": filter_chapters_flag,
-        "paragraphSplit": paragraph_split_flag,
         "verbose": verbose_flag,
         "useLanguageDetection": use_language_detection_flag,
         "prioritizePrimaryLanguage": prioritize_primary_flag,
@@ -3058,7 +3055,6 @@ async def process_conversion(job_id: str) -> None:
         file_path = Path(job["file_path"])
         max_performance = bool(job.get("maxPerformance"))
         filter_chapters_flag = bool(job.get("filterChapters"))
-        paragraph_split_flag = bool(job.get("paragraphSplit"))
         clear_cache_flag = bool(job.get("clearCache"))
         force_reprocess_flag = bool(job.get("forceReprocess"))
         verbose_flag = job.get("verbose")
@@ -3122,15 +3118,7 @@ async def process_conversion(job_id: str) -> None:
 
         # **ASYNC OPTIMIZATION**: Run blocking I/O in thread pool
         loop = asyncio.get_event_loop()
-        _ps_chars = int(edge_chunk_override) if edge_chunk_override else 12_000
-        reader = await loop.run_in_executor(
-            None,
-            lambda: EbookReader(
-                str(file_path),
-                paragraph_split=paragraph_split_flag,
-                paragraph_split_chars=_ps_chars,
-            ),
-        )
+        reader = await loop.run_in_executor(None, EbookReader, str(file_path))
 
         _update_job_activity(job, stage="structure_analysis")
         cover_blob = None
@@ -3380,7 +3368,6 @@ async def process_conversion(job_id: str) -> None:
             output_dir=str(output_root),
             cache_dir=str(cache_root),
             preserve_all_chapters=not filter_chapters_flag,
-            paragraph_split=paragraph_split_flag,
             # Optimized compression for web delivery (reduce file size & bandwidth)
             bitrate=job.get("bitrate") or "8k",  # 8 kbps - good quality for voice, ~3.6 MB/hour
             sample_rate=job.get("sampleRate") or 16_000,  # 16 kHz - sufficient for speech

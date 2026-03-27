@@ -236,10 +236,6 @@ export interface FormText {
   filterChaptersDescription: string;
   filterChaptersOn: string;
   filterChaptersOff: string;
-  paragraphSplitLabel: string;
-  paragraphSplitDescription: string;
-  paragraphSplitOn: string;
-  paragraphSplitOff: string;
   languageDetectionLegend: string;
   languageDetectionLabel: string;
   languageDetectionDescription: string;
@@ -919,11 +915,6 @@ export const translations: Record<Locale, Translations> = {
         "Remove trechos muito pequenos ao montar o índice.",
       filterChaptersOn: "Filtrar",
       filterChaptersOff: "Manter",
-      paragraphSplitLabel: "Quebrar capítulos em parágrafos",
-      paragraphSplitDescription:
-        "Divide capítulos longos em partes menores próximas ao limite do Edge-TTS (~12 mil chars). Gera mais arquivos de áudio e deixa a conversão mais lenta.",
-      paragraphSplitOn: "Ativado",
-      paragraphSplitOff: "Desativado",
       languageDetectionLegend: "Detecção de idioma",
       languageDetectionLabel: "Detectar idioma no texto",
       languageDetectionDescription:
@@ -1606,11 +1597,6 @@ export const translations: Record<Locale, Translations> = {
         "Drops tiny sections when building the chapter list.",
       filterChaptersOn: "Filter",
       filterChaptersOff: "Keep",
-      paragraphSplitLabel: "Split chapters at paragraph boundaries",
-      paragraphSplitDescription:
-        "Splits long chapters into smaller parts near Edge-TTS's chunk limit (~12K chars). Produces more audio files and makes conversion slower.",
-      paragraphSplitOn: "Enabled",
-      paragraphSplitOff: "Disabled",
       languageDetectionLegend: "Language detection",
       languageDetectionLabel: "Detect language in text",
       languageDetectionDescription:

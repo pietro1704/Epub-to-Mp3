@@ -52,10 +52,23 @@ SUBCHAPTER_NUMBER_CLASSES: frozenset = frozenset({"class_s3P-0", "class_s42-0"})
 # (e.g. "Ben Hanscom faz uma retirada").
 SUBCHAPTER_TITLE_CLASS: str = "class_sG5"
 
-# Plain-text character threshold above which a chapter with no CSS subchapter
-# markers is split at paragraph boundaries (double newline) to prevent
-# Edge-TTS timeout on very large chapters.
-SUBCHAPTER_MAX_CHARS: int = 30_000
+
+# Plain-text character threshold above which a chapter is split at paragraph
+# boundaries to prevent Edge-TTS timeout on very large chapters.
+# Computed at import time from Edge env vars so the threshold scales with
+# the runtime concurrency profile (e.g. HF vs local).
+# Formula: max(EDGE_CHUNK_CHARS × EDGE_MAX_CONCURRENCY × 2, 20_000)
+#   local  (concurrency=12): 12_000 × 12 × 2 = 288_000  → rarely splits
+#   HF     (concurrency=1 ): 12_000 ×  1 × 2 =  24_000  → splits large chapters
+def _default_split_chars() -> int:
+    import os
+
+    chunk = max(int(os.getenv("EDGE_CHUNK_CHARS", 12_000)), 1_000)
+    concurrency = max(int(os.getenv("EDGE_MAX_CONCURRENCY", 12)), 1)
+    return max(chunk * concurrency * 2, 20_000)
+
+
+SUBCHAPTER_MAX_CHARS: int = _default_split_chars()
 
 XML_NS = {
     "ocf": "urn:oasis:names:tc:opendocument:xmlns:container",
@@ -1035,13 +1048,12 @@ class EpubParser:
     def __init__(
         self,
         file_path: str | Path,
-        paragraph_split: bool = False,
-        paragraph_split_chars: int = 12_000,
+        paragraph_split_chars: int = 0,
     ) -> None:
         self.file_path = str(file_path)
         self.path = Path(file_path)
-        self.paragraph_split = paragraph_split
-        self.paragraph_split_chars = paragraph_split_chars
+        # 0 means "use SUBCHAPTER_MAX_CHARS default computed from env vars"
+        self.paragraph_split_chars = paragraph_split_chars or SUBCHAPTER_MAX_CHARS
 
     @staticmethod
     def _prepare_speech_text(
@@ -1477,6 +1489,68 @@ class EpubParser:
         return result
 
     @staticmethod
+    def _split_html_on_numeric_headings(
+        markup: str,
+        parent_index: Any,
+        heading_tags: tuple = ("h3",),
+    ) -> Optional[List[Tuple[str, str, str, bool]]]:
+        """Split HTML at heading elements whose text is a bare integer.
+
+        Used for EPUBs (e.g. IT) where chapter sections are marked with
+        ``<h3>1</h3>``, ``<h3>2</h3>`` … instead of CSS-class ``<p>`` pairs.
+        Returns the same ``(sub_index, sub_title, html_fragment, has_explicit_title)``
+        format as ``_split_html_on_subchapter_markers``, or ``None`` when fewer
+        than 2 qualifying headings are found (prevents false positives on chapters
+        that happen to have a single numbered heading).
+        """
+        tag_alt = "|".join(re.escape(t) for t in heading_tags)
+        heading_re = re.compile(
+            r"<(" + tag_alt + r")\b[^>]*>(.*?)</\1>",
+            re.IGNORECASE | re.DOTALL,
+        )
+        any_p_re = re.compile(r"<p\b[^>]*>(.*?)</p>", re.IGNORECASE | re.DOTALL)
+
+        num_matches: List[Tuple[int, str]] = []
+        for m in heading_re.finditer(markup):
+            text = TAG_RE.sub("", m.group(2)).strip()
+            if re.fullmatch(r"\d+", text):
+                num_matches.append((m.start(), text))
+
+        if len(num_matches) < 2:
+            return None
+
+        parent_idx = str(parent_index)
+        preamble = markup[: num_matches[0][0]]
+        result: List[Tuple[str, str, str, bool]] = []
+
+        for i, (start, _section_num) in enumerate(num_matches):
+            sub_index = f"{parent_idx}.{i + 1}"
+            frag_end = num_matches[i + 1][0] if i + 1 < len(num_matches) else len(markup)
+            html_fragment = markup[start:frag_end]
+            if i == 0:
+                html_fragment = preamble + html_fragment
+
+            # Derive title from first paragraph after the heading.
+            start + (
+                num_matches[i + 1][0] - start if i + 1 < len(num_matches) else frag_end - start
+            )
+            # Start searching right after the heading tag itself
+            heading_end = markup.find(">", start) + 1
+            heading_close = markup.find(">", heading_end) + 1  # closing tag end
+            fallback_window = markup[heading_close : heading_close + 2000]
+            any_p = any_p_re.search(fallback_window)
+            if any_p:
+                raw = TAG_RE.sub("", any_p.group(1)).strip()
+                derived = raw[:57] + "..." if len(raw) > 60 else raw
+                sub_title = derived or f"Section {i + 1}"
+            else:
+                sub_title = f"Section {i + 1}"
+
+            result.append((sub_index, sub_title, html_fragment, False))
+
+        return result
+
+    @staticmethod
     def _force_split_long_line(line: str, max_chars: int) -> List[str]:
         """Split a single line that exceeds max_chars at sentence then word boundaries.
 
@@ -1650,6 +1724,9 @@ class EpubParser:
                 SUBCHAPTER_NUMBER_CLASSES,
                 SUBCHAPTER_TITLE_CLASS,
             )
+            # Fallback: detect numeric headings (e.g. <h3>1</h3>, <h3>2</h3>...).
+            if sub_splits is None:
+                sub_splits = self._split_html_on_numeric_headings(markup_with_markers, chapter_idx)
 
             if sub_splits:
                 # Each CSS-marker fragment becomes an independent Chapter.
@@ -1687,22 +1764,23 @@ class EpubParser:
                     else:
                         sub_text_fn = sub_text_fmt
                     sub_text = TextProcessor.add_pause_before_dash(sub_text_fn)
+                    # Use only the parent TOC title (not the full chapter_name which
+                    # includes the derived sub_title snippet) so that the first-sentence
+                    # content is not double-spoken: once as a structural heading and
+                    # again as the opening line of the section.
+                    speech_title = toc_chapter_title or chapter_name
                     sub_speech = self._prepare_speech_text(
                         sub_text,
                         sub_segments,
                         raw_html=sub_html,
-                        chapter_title=chapter_name,
+                        chapter_title=speech_title,
                     )
 
                     # A CSS sub-chapter can still be very long (e.g. a long
                     # chapter with no further heading markers).  Apply the same
                     # paragraph-boundary split so no single chapter exceeds the
-                    # max size threshold. Only when paragraph_split is enabled.
-                    if (
-                        self.paragraph_split
-                        and sub_text
-                        and len(sub_text) > self.paragraph_split_chars
-                    ):
+                    # max size threshold.
+                    if sub_text and len(sub_text) > self.paragraph_split_chars:
                         para_splits = self._split_text_at_paragraph_boundaries(
                             sub_text, self.paragraph_split_chars, sub_index
                         )
@@ -1711,7 +1789,7 @@ class EpubParser:
                                 p_text,
                                 None,  # re-parse from fragment, not full-chapter segments
                                 raw_html=sub_html,
-                                chapter_title=chapter_name,
+                                chapter_title=speech_title,
                             )
                             chapters.append(
                                 Chapter(
@@ -1776,11 +1854,10 @@ class EpubParser:
                 )
 
                 # --- Paragraph-boundary fallback split ---
-                # When paragraph_split is enabled and a chapter has no CSS
-                # subchapter markers but exceeds the size threshold, split it at
-                # paragraph boundaries. This keeps each chunk near Edge-TTS's
-                # chunk limit, improving reliability at the cost of more files.
-                if self.paragraph_split and text and len(text) > self.paragraph_split_chars:
+                # When a chapter has no CSS subchapter markers but exceeds the
+                # size threshold (computed from Edge concurrency / timeout),
+                # split at paragraph boundaries to prevent Edge-TTS timeouts.
+                if text and len(text) > self.paragraph_split_chars:
                     para_splits = self._split_text_at_paragraph_boundaries(
                         text, self.paragraph_split_chars, chapter_idx
                     )
@@ -2349,25 +2426,18 @@ class EbookReader:
     def __init__(
         self,
         file_path: Optional[str | Path] = None,
-        paragraph_split: bool = False,
-        paragraph_split_chars: int = 12_000,
+        paragraph_split_chars: int = 0,
     ) -> None:
         self.file_path: Optional[Path] = None
         self.book: Optional[Book] = None
-        self._paragraph_split = paragraph_split
         self._paragraph_split_chars = paragraph_split_chars
         if file_path is not None:
             self.file_path = Path(file_path)
-            self.load(
-                file_path,
-                paragraph_split=paragraph_split,
-                paragraph_split_chars=paragraph_split_chars,
-            )
+            self.load(file_path, paragraph_split_chars=paragraph_split_chars)
 
     def load(
         self,
         file_path: str | Path,
-        paragraph_split: Optional[bool] = None,
         paragraph_split_chars: Optional[int] = None,
     ) -> None:
         path = Path(file_path)
@@ -2378,19 +2448,15 @@ class EbookReader:
         if suffix not in {".epub", ".pdf"}:
             raise ValueError(f"Unsupported format: {suffix}")
 
-        ps = paragraph_split if paragraph_split is not None else self._paragraph_split
         ps_chars = (
             paragraph_split_chars
             if paragraph_split_chars is not None
             else self._paragraph_split_chars
         )
-        self._paragraph_split = ps
         self._paragraph_split_chars = ps_chars
         self.file_path = path
         if suffix == ".epub":
-            self.book = EpubParser(
-                str(path), paragraph_split=ps, paragraph_split_chars=ps_chars
-            ).parse()
+            self.book = EpubParser(str(path), paragraph_split_chars=ps_chars).parse()
         else:
             self.book = PdfParser(str(path)).parse()
 

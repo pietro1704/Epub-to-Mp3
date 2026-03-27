@@ -53,9 +53,7 @@ class TestEbookReader(unittest.TestCase):
         with patch.object(EbookReader, "load") as mock_load:
             reader = EbookReader("test.epub")
             self.assertEqual(reader.file_path, Path("test.epub"))
-            mock_load.assert_called_once_with(
-                "test.epub", paragraph_split=False, paragraph_split_chars=12000
-            )
+            mock_load.assert_called_once_with("test.epub", paragraph_split_chars=0)
 
     def test_init_with_path_object(self):
         """Test EbookReader initialization with Path object"""
@@ -63,9 +61,7 @@ class TestEbookReader(unittest.TestCase):
         with patch.object(EbookReader, "load") as mock_load:
             reader = EbookReader(path_obj)
             self.assertEqual(reader.file_path, path_obj)
-            mock_load.assert_called_once_with(
-                path_obj, paragraph_split=False, paragraph_split_chars=12000
-            )
+            mock_load.assert_called_once_with(path_obj, paragraph_split_chars=0)
 
     @patch.object(EpubParser, "parse")
     def test_load_epub_file(self, mock_parse):
@@ -303,9 +299,7 @@ class TestEbookReader(unittest.TestCase):
             reader = EbookReader()
             reader.load(self.sample_epub_path)
 
-            mock_epub_init.assert_called_once_with(
-                self.sample_epub_path, paragraph_split=False, paragraph_split_chars=12000
-            )
+            mock_epub_init.assert_called_once_with(self.sample_epub_path, paragraph_split_chars=0)
 
     def test_file_path_conversion_string(self):
         """Test file path is properly converted to Path object from string"""
@@ -947,8 +941,8 @@ class TestSubchapterDetection(unittest.TestCase):
             tmp.write(epub_bytes)
             tmp_path = tmp.name
         try:
-            # paragraph_split=True required to trigger oversized-section splitting
-            reader = EbookReader(tmp_path, paragraph_split=True, paragraph_split_chars=500)
+            # paragraph_split_chars=500 triggers auto-split on oversized sections
+            reader = EbookReader(tmp_path, paragraph_split_chars=500)
             chapters = reader.get_chapters()
         finally:
             os.unlink(tmp_path)

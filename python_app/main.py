@@ -362,10 +362,9 @@ class ConverterApplication:
                 print(f"❌ Unsupported format: {friendly}. Please provide an .epub or .pdf file.")
                 return 1
 
-            # Load ebook (paragraph_split controls whether oversized chapters are
-            # split at paragraph boundaries near Edge's chunk limit)
-            paragraph_split_flag = bool(getattr(args, "paragraph_split", False))
-            reader = EbookReader(str(input_path), paragraph_split=paragraph_split_flag)
+            # Load ebook — oversized chapters are auto-split at a threshold
+            # computed from EDGE_CHUNK_CHARS × EDGE_MAX_CONCURRENCY × 2.
+            reader = EbookReader(str(input_path))
 
             # Show structure only
             if args.show_structure:
@@ -3823,7 +3822,6 @@ class ConverterApplication:
         prioritize_primary = getattr(args, "prioritize_primary_language", None)
         if prioritize_primary is not None:
             config.prioritize_primary_language = bool(prioritize_primary)
-        config.paragraph_split = bool(getattr(args, "paragraph_split", False))
         return config
 
     def _apply_cli_overrides(self, args: argparse.Namespace, config: ConversionConfig) -> None:
@@ -4177,15 +4175,6 @@ def _add_conversion_arguments(
         "--filter-chapters",
         action="store_true",
         help="Skip very short chapters when converting",
-    )
-    parser.add_argument(
-        "--paragraph-split",
-        action="store_true",
-        help=(
-            "Split oversized chapters at paragraph boundaries near Edge's chunk limit "
-            "(~12K chars). Creates more audio files and is slower, but improves "
-            "reliability for very long chapters."
-        ),
     )
     verbose_group = parser.add_mutually_exclusive_group()
     verbose_group.add_argument(

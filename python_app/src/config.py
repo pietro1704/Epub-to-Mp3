@@ -44,9 +44,6 @@ class ConversionConfig:
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
-    paragraph_split: bool = (
-        False  # Split oversized chapters at paragraph boundaries near Edge's chunk limit
-    )
     auto_validate_output: bool = False  # Run heavy post-validation only when explicitly enabled
     auto_fix_output: bool = True  # Auto-reconvert (cache clean) if validation fails
     validate_text: bool = True  # Validate parsed/pre-tts text during conversion
