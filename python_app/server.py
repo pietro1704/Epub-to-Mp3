@@ -3943,6 +3943,20 @@ async def process_conversion(job_id: str) -> None:
                     continue
                 _append_event(job, f"   ↳ Activating engine '{candidate.engine}'...")
                 active_config = candidate
+                if engine_name == "piper":
+                    chars = len(getattr(chapter, "text", "") or "")
+                    edge_secs = max(1, chars // 800)
+                    piper_secs = max(1, chars // 100)
+                    time_note = (
+                        f"~{piper_secs}s vs {edge_secs}s on Edge"
+                        if piper_secs < 120
+                        else f"~{piper_secs // 60}min vs {edge_secs}s on Edge"
+                    )
+                    _append_event(
+                        job,
+                        f"   ⚠️ PIPER FALLBACK ({time_note}) — "
+                        "set DISABLE_PIPER_FALLBACK=1 to retry Edge instead",
+                    )
                 _append_event(
                     job,
                     f"   ✅ Now using {candidate.engine.upper()} ({candidate.voice or 'default'})",

@@ -235,6 +235,8 @@ EDGE_SLOW_RATIO_THRESHOLD=2.5    # Slow mode trigger ratio (HF auto-sets to 1.5)
 KOKORO_CHUNK_CHARS=2000          # Chars per Kokoro chunk
 KOKORO_MAX_WORKERS=0             # Auto-detect from CPU (0=auto)
 PIPER_MAX_PROCS=0                # Auto-detect from CPU (0=auto)
+DISABLE_PIPER_FALLBACK=0         # Set to 1 to skip Piper and retry Edge instead
+                                 # (faster for PT-BR where Kokoro is unavailable)
 SPARK_CHUNK_CHARS=1500           # Chars per Spark chunk
 SPARK_MAX_WORKERS=1              # GPU-bound
 ```

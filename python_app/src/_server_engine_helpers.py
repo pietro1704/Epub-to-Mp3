@@ -14,6 +14,11 @@ from typing import Dict, Optional
 from src.config import ConversionConfig
 from src.hardware_detector import HardwareProfile
 
+
+def _piper_fallback_disabled() -> bool:
+    return os.getenv("DISABLE_PIPER_FALLBACK", "").strip().lower() in ("1", "true", "yes")
+
+
 # ---------------------------------------------------------------------------
 # Performance profile helpers
 # ---------------------------------------------------------------------------
@@ -176,7 +181,7 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
         fallback_candidates.append("kokoro")
         if _srv._has_spark_support():
             fallback_candidates.append("spark")
-        if _srv._has_piper_support():
+        if _srv._has_piper_support() and not _piper_fallback_disabled():
             fallback_candidates.append("piper")
         fallback_engines = _rank_fallbacks(fallback_candidates)
         for engine_name in fallback_engines:

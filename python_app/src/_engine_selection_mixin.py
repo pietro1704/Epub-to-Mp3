@@ -23,6 +23,30 @@ def _has_piper_support() -> bool:
     return _conv._has_piper_support()
 
 
+def _piper_fallback_disabled() -> bool:
+    """Return True when the user has opted out of Piper fallback via env var."""
+    return os.getenv("DISABLE_PIPER_FALLBACK", "").strip().lower() in ("1", "true", "yes")
+
+
+def _warn_piper_fallback(chapter_chars: int = 0) -> None:
+    """Print a prominent warning when falling back to Piper (slow local engine)."""
+    # Rough estimates: Edge ~200 WPM → ~800 cpm; Piper ~25 WPM → ~100 cpm
+    if chapter_chars > 0:
+        edge_secs = max(1, chapter_chars // 800)
+        piper_secs = max(1, chapter_chars // 100)
+        time_note = (
+            f" (~{piper_secs}s vs {edge_secs}s on Edge)"
+            if piper_secs < 120
+            else f" (~{piper_secs // 60}min vs {edge_secs}s on Edge)"
+        )
+    else:
+        time_note = " (~10–50× slower than Edge)"
+    print(
+        f"\n⚠️  PIPER FALLBACK: switching to local ONNX engine{time_note}.\n"
+        "   Set DISABLE_PIPER_FALLBACK=1 to skip Piper and retry Edge instead.\n"
+    )
+
+
 def _has_coqui_support() -> bool:
     from . import converter as _conv
 
@@ -226,6 +250,10 @@ class _EngineSelectionMixin:
     ) -> Optional[str]:
         available_set = {str(item).lower() for item in (available or set())}
         if _has_piper_support() and (not available_set or "piper" in available_set):
+            if _piper_fallback_disabled():
+                print("\nℹ️  DISABLE_PIPER_FALLBACK=1: skipping Piper, will retry Edge.\n")
+                return None
+            _warn_piper_fallback()
             return "piper"
         if _has_coqui_support() and (not available_set or "coqui" in available_set):
             return "coqui"
