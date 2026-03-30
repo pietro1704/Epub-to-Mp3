@@ -11,6 +11,7 @@ import {
 import Hero from "./components/Hero";
 import Layout from "./components/Layout";
 import Panel from "./components/Panel";
+import { isTauri, listenTauri } from "./lib/tauri";
 
 // Lazy load heavy components
 const ConversionForm = lazy(() => import("./components/ConversionForm"));
@@ -185,6 +186,8 @@ export default function App(props?: AppProps): JSX.Element {
   const [restartDialog, setRestartDialog] = useState<
     "confirm" | "cache" | "finished" | null
   >(null);
+  // Tauri-specific: tracks whether the Python sidecar failed to start.
+  const [tauriEngineError, setTauriEngineError] = useState<string | null>(null);
   const restartOptionsRef = useRef({ keepCache: false, keepFinished: false });
   const [hiddenRecentIds, setHiddenRecentIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") {
@@ -236,6 +239,31 @@ export default function App(props?: AppProps): JSX.Element {
       JSON.stringify(Array.from(hiddenResumableIds)),
     );
   }, [hiddenResumableIds]);
+
+  // Listen for Tauri sidecar startup events (no-op in browser).
+  useEffect(() => {
+    if (!isTauri()) return;
+    const cleanups: Array<() => void> = [];
+    (async () => {
+      cleanups.push(
+        await listenTauri("tauri-startup-error", (payload) => {
+          setTauriEngineError(
+            typeof payload === "string"
+              ? payload
+              : "Failed to start conversion engine",
+          );
+        }),
+      );
+      cleanups.push(
+        await listenTauri("tauri-startup-timeout", () => {
+          setTauriEngineError(
+            "Engine took too long to start. Check Server Logs or restart the app.",
+          );
+        }),
+      );
+    })();
+    return () => cleanups.forEach((u) => u());
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1363,7 +1391,9 @@ export default function App(props?: AppProps): JSX.Element {
   );
 
   const showSetupPanels = activeTab === "setup" && state.phase === "idle";
-  const showOfflineBanner = showSetupPanels && healthStatus === "fail";
+  // In Tauri mode the banner is replaced by a more specific engine error message.
+  const showOfflineBanner =
+    showSetupPanels && healthStatus === "fail" && !isTauri();
 
   return (
     <Layout>
@@ -1395,6 +1425,18 @@ export default function App(props?: AppProps): JSX.Element {
           <strong>{t.flow.backendOffline}</strong>
           <span>{t.flow.backendOfflineBanner}</span>
           <span>API: {apiHealthLabel}</span>
+        </div>
+      )}
+      {isTauri() && tauriEngineError && showSetupPanels && (
+        <div className="api-offline-banner" role="alert">
+          <strong>Conversion engine error</strong>
+          <span>{tauriEngineError}</span>
+          <span>
+            Rebuild the sidecar:{" "}
+            <code>
+              mise run desktop:sidecar &amp;&amp; mise run desktop:build
+            </code>
+          </span>
         </div>
       )}
       {showSetupPanels &&

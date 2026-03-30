@@ -159,7 +159,7 @@ class ConverterApplication:
     def run(self, args: argparse.Namespace) -> int:
         """Entry point that orchestrates optional batch conversion."""
         if getattr(args, "command", None) == "clear_cache":
-            return self._handle_clear_cache()
+            return self._handle_clear_cache(args)
 
         verbose = self._resolve_verbose(args)
         hardware_profile = None
@@ -2604,9 +2604,13 @@ class ConverterApplication:
         sanitized = FileManager.sanitize_filename(base_name) or "livro"
         return resolve_cache_root() / sanitized
 
-    def _handle_clear_cache(self) -> int:
-        """Handle global cache clearing command with user confirmation"""
+    def _handle_clear_cache(self, args: Optional[argparse.Namespace] = None) -> int:
+        """Clear cache/output for a specific book, or globally with confirmation."""
         from src.cache_manager import CacheManager
+
+        book_arg = getattr(args, "book", None) if args else None
+        if book_arg:
+            return self._handle_clear_cache_for_book(book_arg)
 
         cache_manager = CacheManager(cache_dir=resolve_cache_root())
         cache_root = resolve_cache_root()
@@ -2724,6 +2728,52 @@ class ConverterApplication:
         else:
             print("❌ No items were removed.")
             return 1
+
+    def _handle_clear_cache_for_book(self, book_path_str: str) -> int:
+        """Remove .cache and output entries for a specific book."""
+        import shutil
+
+        from src.cache_manager import CacheManager
+        from src.utils import FileManager
+
+        book_path = Path(book_path_str)
+        if not book_path.exists():
+            print(f"❌ File not found: {book_path}")
+            return 1
+
+        # Try to extract title from EPUB/PDF metadata; fall back to stem
+        title: Optional[str] = None
+        try:
+            from src.ebook_reader import EbookReader
+
+            reader = EbookReader(book_path)
+            title = reader.title or book_path.stem
+        except Exception:
+            title = book_path.stem
+
+        display_name = title or book_path.stem
+        print(f"Removing cache and output for: {display_name}")
+
+        cache_manager = CacheManager(cache_dir=resolve_cache_root())
+        cache_manager.clear_cache(book_path, title=title)
+
+        # Remove output directories that match the sanitized title (with or without engine suffix)
+        output_base = OUTPUT_DIR
+        sanitized_title = FileManager.sanitize_filename(display_name)
+        removed_dirs = 0
+        if output_base.exists():
+            for entry in output_base.iterdir():
+                if entry.is_dir() and (
+                    entry.name == sanitized_title or entry.name.startswith(f"{sanitized_title}_")
+                ):
+                    try:
+                        shutil.rmtree(entry, ignore_errors=True)
+                        removed_dirs += 1
+                    except Exception as e:
+                        print(f"  Warning: could not remove {entry.name}: {e}")
+
+        print(f"Done. {removed_dirs} output director(y/ies) removed.")
+        return 0
 
     @staticmethod
     def _normalize_lookup(value: Optional[str]) -> str:
@@ -4851,8 +4901,14 @@ def create_argument_parser() -> "argparse.ArgumentParser":
     # **NEW**: Clear cache subcommand for global cache cleanup
     cache_parser = subparsers.add_parser(
         "clear-cache",
-        help="Clear all cached ebook data",
+        help="Clear cached ebook data. With a book file: removes only that book. Without: removes all (with confirmation).",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    cache_parser.add_argument(
+        "book",
+        nargs="?",
+        default=None,
+        help="EPUB/PDF file whose cache and output should be removed (optional; omit to clear all)",
     )
     cache_parser.set_defaults(command="clear_cache")
 

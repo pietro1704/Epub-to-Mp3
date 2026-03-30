@@ -8,12 +8,14 @@ accessed via lazy imports inside each handler to avoid circular imports.
 from __future__ import annotations
 
 import hashlib
+import shutil
 import time
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, File, HTTPException, UploadFile
+from fastapi import APIRouter, BackgroundTasks, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 
@@ -125,6 +127,109 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
     return {
         "uploadId": upload_id,
         "fileName": original_name,
+        "bookTitle": book_title,
+        "bookAuthor": book_author,
+        "coverUrl": cover_url,
+        "coverMimeType": cover_mime,
+    }
+
+
+class LocalUploadRequest(BaseModel):
+    path: str
+
+
+_LOCAL_ALLOWED_SUFFIXES = {".epub", ".pdf"}
+_LOCAL_ALLOWED_HOSTS = {"127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"}
+
+
+@router.post("/uploads/local")
+async def upload_ebook_local(
+    body: LocalUploadRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+) -> dict:
+    """Register a local file path as an upload (desktop app, localhost only).
+
+    Equivalent to POST /api/uploads but takes a file-system path instead of
+    multipart data.  Only accepted from loopback addresses so it cannot be
+    exploited by remote callers.
+    """
+    from src.ebook_reader import EbookReader
+
+    import python_app.server as _srv
+
+    # Security: reject non-localhost callers.
+    client_host = (request.client.host if request.client else "") or ""
+    if client_host not in _LOCAL_ALLOWED_HOSTS:
+        raise HTTPException(
+            status_code=403, detail="Local uploads are only available from localhost"
+        )
+
+    src = Path(body.path).resolve()
+    if not src.exists() or not src.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    if src.suffix.lower() not in _LOCAL_ALLOWED_SUFFIXES:
+        raise HTTPException(status_code=400, detail="Only .epub and .pdf files are supported")
+
+    if _srv.MAX_UPLOAD_BYTES and src.stat().st_size > _srv.MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the {_srv.MAX_UPLOAD_MB} MB limit",
+        )
+
+    _srv._cleanup_pending_uploads()
+    upload_id = str(uuid.uuid4())
+    upload_dir = _srv.uploads_dir / upload_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    dest_path = upload_dir / src.name
+    shutil.copy2(src, dest_path)
+
+    file_hash = hashlib.sha1(src.read_bytes()).hexdigest()
+
+    book_title = src.stem
+    book_author = "Unknown Author"
+    cover_url = None
+    cover_mime = None
+    cover_filename = None
+    cover_path = None
+
+    try:
+        reader = EbookReader(str(dest_path))
+        if reader.title:
+            book_title = reader.title
+        if reader.author:
+            book_author = reader.author
+        cover_blob = reader.extract_cover_image()
+        if cover_blob:
+            cover_filename = f"cover{cover_blob.extension}"
+            cover_path = upload_dir / cover_filename
+            cover_path.write_bytes(cover_blob.data)
+            cover_url = f"/api/uploads/{upload_id}/{cover_filename}"
+            cover_mime = cover_blob.media_type
+    except Exception:
+        pass
+
+    with _srv._pending_lock:
+        _srv._pending_uploads[upload_id] = {
+            "file_path": str(dest_path),
+            "file_name": src.name,
+            "book_title": book_title,
+            "book_author": book_author,
+            "cover_filename": cover_filename,
+            "cover_path": str(cover_path) if cover_path else None,
+            "cover_mime": cover_mime,
+            "file_hash": file_hash,
+            "created_at": time.time(),
+        }
+        _srv._write_pending_upload_metadata(upload_dir, _srv._pending_uploads[upload_id])
+
+    background_tasks.add_task(_precache_uploaded_book, dest_path, book_title, book_author)
+
+    return {
+        "uploadId": upload_id,
+        "fileName": src.name,
         "bookTitle": book_title,
         "bookAuthor": book_author,
         "coverUrl": cover_url,

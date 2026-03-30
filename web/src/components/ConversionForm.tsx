@@ -17,6 +17,7 @@ import {
 } from "../types/conversion";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, resolveApiUrl } from "../config";
 import type { UploadResponse } from "../services/ConversionService";
+import { isTauri, listenTauri } from "../lib/tauri";
 
 interface ConversionFormProps {
   isSubmitting: boolean;
@@ -371,6 +372,20 @@ export default function ConversionForm({
       cancelled = true;
     };
   }, [fileQueue, engine]);
+
+  // In Tauri desktop mode, File > Open Books (or Cmd+O) emits "tauri-open-books".
+  // We forward it to the existing hidden file input so the OS dialog opens.
+  useEffect(() => {
+    if (!isTauri()) return;
+    let unlisten: (() => void) | undefined;
+    listenTauri("tauri-open-books", () => {
+      const el = document.getElementById("file") as HTMLInputElement | null;
+      el?.click();
+    }).then((u) => {
+      unlisten = u;
+    });
+    return () => unlisten?.();
+  }, []);
 
   const engineMeta = useMemo<EngineInsights>(
     () => getEngineMeta(engine),
