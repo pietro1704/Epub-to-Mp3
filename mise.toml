@@ -303,6 +303,38 @@ else
 fi
 """
 
+# ── Generate all binaries (local build, macOS only) ──────────────────────────────
+# Android/iOS/Linux/Windows are built by CI (GitHub Actions) and uploaded to Releases.
+# Output locations after this command:
+#   macOS .app/.dmg  → desktop/src-tauri/target/release/bundle/macos/
+#   Docker image     → local Docker daemon (epub-to-mp3:local)
+
+[tasks."generate-binaries"]
+description = "Build all locally-buildable binaries: desktop app + Docker image"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+echo "▶ Building desktop app (macOS)..."
+mise run desktop:build
+
+echo ""
+echo "▶ Building Docker image..."
+mise run docker:build
+
+echo ""
+echo "✅ Done! Binaries:"
+if [[ "$(uname)" == "Darwin" ]]; then
+  echo "   macOS .app  → desktop/src-tauri/target/release/bundle/macos/"
+  DMG=$(find desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
+  [[ -n "$DMG" ]] && echo "   macOS .dmg  → $DMG"
+fi
+echo "   Docker      → epub-to-mp3:local  (run: mise run docker:run)"
+echo ""
+echo "Android/iOS/Linux/Windows are built by CI on every push to master."
+echo "Download from: https://github.com/pietro1704/Epub-to-Mp3/releases"
+"""
+
 # ── Docker ───────────────────────────────────────────────────────────────────────
 
 [tasks."docker:build"]
