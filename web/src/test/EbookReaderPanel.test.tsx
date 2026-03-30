@@ -202,17 +202,23 @@ describe("EbookReaderPanel", () => {
         screen.getByRole("heading", { name: "Capítulo 1" }),
       ).toBeInTheDocument(),
     );
-    const shadowRoot = container.querySelector(
-      ".ebook-reader__content-host",
-    )?.shadowRoot;
-    expect(shadowRoot?.querySelector("em")?.textContent).toBe(
-      "Trecho em itálico",
-    );
-    expect(shadowRoot?.querySelector("strong")?.textContent).toBe("em negrito");
-    expect(shadowRoot?.textContent || "").toContain(
-      "Trecho em itálico e em negrito.",
-    );
-    expect(shadowRoot?.textContent || "").not.toContain("alert('x')");
+    // Shadow DOM is populated in a separate useEffect; wait for it explicitly
+    // so the test doesn't race in slower CI environments.
+    await waitFor(() => {
+      const shadowRoot = container.querySelector(
+        ".ebook-reader__content-host",
+      )?.shadowRoot;
+      expect(shadowRoot?.querySelector("em")?.textContent).toBe(
+        "Trecho em itálico",
+      );
+      expect(shadowRoot?.querySelector("strong")?.textContent).toBe(
+        "em negrito",
+      );
+      expect(shadowRoot?.textContent || "").toContain(
+        "Trecho em itálico e em negrito.",
+      );
+      expect(shadowRoot?.textContent || "").not.toContain("alert('x')");
+    });
   });
 
   it("splits long chapters into pages and lets the user flip them", async () => {
