@@ -33,7 +33,7 @@ jobs:
           mkdir -p .cache/telemetry
           mise exec -- python scripts/benchmark_feature_ab.py \
             --book web/public/sample.epub \
-            --engine piper \
+            --engine edge \
             --workers 2 \
             --output .cache/telemetry/feature-ab-ci.json
 
