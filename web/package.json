@@ -6,14 +6,20 @@
   "scripts": {
     "dev": "vite",
     "build": "npx tsc --noEmit -p tsconfig.build.json && vite build",
+    "build:mobile": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode mobile && npx cap sync",
     "preview": "vite preview",
     "lint": "eslint --max-warnings=0 .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "NODE_OPTIONS='--max-old-space-size=4096' vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "cap:ios": "npx cap open ios",
+    "cap:android": "npx cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "^7",
+    "@capacitor/core": "^7",
+    "@capacitor/ios": "^7",
     "clsx": "^2.1.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
@@ -22,6 +28,7 @@
     "undici": ">=7.24.4"
   },
   "devDependencies": {
+    "@capacitor/cli": "^7",
     "@eslint/js": "^10.0.1",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",

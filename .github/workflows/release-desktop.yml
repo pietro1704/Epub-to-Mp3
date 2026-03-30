@@ -1,0 +1,226 @@
+name: Release Desktop
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  DESKTOP_PORT: "47860"
+
+on:
+  # Versioned release: git tag v1.2.3
+  push:
+    tags:
+      - "v*.*.*"
+
+  # Nightly rolling release: fires after CI passes on master
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+
+  # Manual trigger
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Version tag (e.g. v1.0.0)"
+        required: true
+
+permissions:
+  contents: write
+
+# ── Nightly cleanup — runs before build matrix to avoid race conditions ─────────
+jobs:
+  cleanup-nightly:
+    name: Delete old nightly release
+    if: >
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'master' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete nightly release + tag
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release delete nightly --yes --cleanup-tag --repo ${{ github.repository }} 2>/dev/null || true
+
+  # ── Build matrix ──────────────────────────────────────────────────────────────
+  build:
+    name: ${{ matrix.label }}
+    needs: [cleanup-nightly]
+    # Run when: cleanup succeeded/skipped AND overall conditions met
+    if: >
+      always() &&
+      (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
+      (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'master' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      )
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: macos-arm64
+            os: macos-latest
+            rust-target: aarch64-apple-darwin
+            tauri-args: --target aarch64-apple-darwin
+
+          - label: macos-x64
+            os: macos-13
+            rust-target: x86_64-apple-darwin
+            tauri-args: --target x86_64-apple-darwin
+
+          - label: windows-x64
+            os: windows-latest
+            rust-target: x86_64-pc-windows-msvc
+            tauri-args: ""
+
+          - label: linux-x64
+            os: ubuntu-22.04
+            rust-target: x86_64-unknown-linux-gnu
+            tauri-args: ""
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      # ── Toolchain via mise ──────────────────────────────────────────────────
+      - name: Install mise + toolchain (Rust, Node, Python, tauri-cli)
+        uses: jdx/mise-action@v4
+
+      - name: Rust target (cross-compile)
+        if: matrix.rust-target != ''
+        run: rustup target add ${{ matrix.rust-target }}
+
+      - name: Rust build cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      # ── Linux system deps ───────────────────────────────────────────────────
+      - name: Linux — Tauri system deps
+        if: matrix.os == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      # ── Python sidecar ──────────────────────────────────────────────────────
+      - name: Install Python desktop deps + PyInstaller
+        shell: bash
+        run: |
+          pip install pyinstaller --quiet
+          pip install -r requirements-desktop.txt --quiet
+
+      - name: Build Python sidecar
+        shell: bash
+        run: |
+          pyinstaller desktop.spec --noconfirm --clean
+          TRIPLE="${{ matrix.rust-target }}"
+          mkdir -p desktop/src-tauri/binaries
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cp dist/epub-to-mp3-server.exe \
+               "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}.exe"
+          else
+            cp dist/epub-to-mp3-server \
+               "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
+            chmod +x "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
+          fi
+
+      # ── React frontend ──────────────────────────────────────────────────────
+      - name: Build web frontend
+        working-directory: web
+        shell: bash
+        run: |
+          npm ci --silent
+          VITE_API_BASE="http://127.0.0.1:${{ env.DESKTOP_PORT }}/api" npm run build
+
+      # ── Tauri build ─────────────────────────────────────────────────────────
+      - name: Build Tauri app
+        shell: bash
+        run: cd desktop && tauri build ${{ matrix.tauri-args }}
+
+      # ── Collect artifacts ───────────────────────────────────────────────────
+      - name: Collect build artifacts
+        id: artifacts
+        shell: bash
+        run: |
+          find desktop/src-tauri/target -type f \( \
+            -name "*.dmg" \
+            -o -name "*.msi" \
+            -o -name "*-setup.exe" \
+            -o -name "*.AppImage" \
+            -o -name "*.deb" \
+          \) 2>/dev/null | grep -v "\.cargo" > artifacts.txt || true
+          echo "Found artifacts:"
+          cat artifacts.txt
+
+      # ── Upload to GitHub Release ────────────────────────────────────────────
+      - name: Upload — versioned release (draft)
+        if: github.event_name != 'workflow_run'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.tag }}
+          name: "Epub to Mp3 ${{ github.ref_name || inputs.tag }}"
+          draft: true
+          prerelease: false
+          fail_on_unmatched_files: false
+          body: |
+            ## Desktop app — Edge-TTS (internet connection required)
+
+            | Platform | File |
+            |---|---|
+            | macOS Apple Silicon | `*_aarch64.dmg` |
+            | macOS Intel | `*_x64.dmg` |
+            | Windows | `*_x64-setup.exe` or `*.msi` |
+            | Linux | `*.AppImage` or `*.deb` |
+
+            **First launch**: ffmpeg is downloaded once (~60 MB) on first conversion.
+          files: |
+            desktop/src-tauri/target/**/bundle/dmg/*.dmg
+            desktop/src-tauri/target/**/bundle/msi/*.msi
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/**/bundle/deb/*.deb
+
+      - name: Upload — nightly pre-release
+        if: github.event_name == 'workflow_run'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          name: "Latest Build (nightly)"
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: false
+          body: |
+            Automated build from the latest passing CI on `master`.
+            Commit: ${{ github.event.workflow_run.head_sha }}
+
+            > Pre-release — use a versioned release for stable builds.
+
+            | Platform | File |
+            |---|---|
+            | macOS Apple Silicon | `*_aarch64.dmg` |
+            | macOS Intel | `*_x64.dmg` |
+            | Windows | `*_x64-setup.exe` or `*.msi` |
+            | Linux | `*.AppImage` or `*.deb` |
+          files: |
+            desktop/src-tauri/target/**/bundle/dmg/*.dmg
+            desktop/src-tauri/target/**/bundle/msi/*.msi
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/**/bundle/deb/*.deb

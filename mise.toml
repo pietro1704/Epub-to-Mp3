@@ -4,6 +4,10 @@ python = { version = "3.11.11", virtualenv = ".venv" }
 # Node LTS for frontend (Vite 7.x requires >=20.19.0)
 node = "latest"
 npm = "latest"
+# Rust toolchain for Tauri desktop builds
+rust = "stable"
+# Tauri CLI — installed via mise npm backend, available as `tauri` globally
+"npm:@tauri-apps/cli" = "2"
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"
@@ -221,6 +225,90 @@ echo ""
 echo "Result: $ok OK, $fail failed"
 [[ $fail -eq 0 ]]
 """
+
+# ── Desktop (Tauri) ────────────────────────────────────────────────────────────
+
+[tasks."desktop:server"]
+description = "Start Python backend sidecar locally (Edge-TTS, port 47860)"
+run = """
+#!/bin/bash
+set -euo pipefail
+source .venv/bin/activate
+DISABLE_PIPER_FALLBACK=1 python python_app/desktop_main.py
+"""
+
+[tasks."desktop:sidecar"]
+description = "Build PyInstaller sidecar binary (Edge-TTS only) and place in binaries/"
+run = """
+#!/bin/bash
+set -euo pipefail
+source .venv/bin/activate
+pip install pyinstaller -q
+pip install -r requirements-desktop.txt -q
+pyinstaller desktop.spec --noconfirm --clean
+
+TRIPLE=$(rustc -Vv | grep "^host" | cut -d' ' -f2)
+mkdir -p desktop/src-tauri/binaries
+cp dist/epub-to-mp3-server "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
+chmod +x "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
+echo "Sidecar ready: desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
+"""
+
+[tasks."desktop:web"]
+description = "Build React frontend for desktop (VITE_API_BASE=localhost:47860)"
+dir = "web"
+run = "VITE_API_BASE=http://127.0.0.1:47860/api npm run build"
+
+[tasks."desktop:icons"]
+description = "Generate all icon sizes from desktop/icon-source/icon.png"
+dir = "desktop"
+run = "tauri icon icon-source/icon.png"
+
+[tasks."desktop:build"]
+description = "Full desktop build: sidecar + web frontend + Tauri package"
+run = """
+#!/bin/bash
+set -euo pipefail
+mise run desktop:sidecar
+mise run desktop:web
+cd desktop && tauri build
+"""
+
+[tasks."desktop:dev"]
+description = "Open Tauri dev window (run mise run desktop:server in another terminal first)"
+dir = "desktop"
+run = "VITE_API_BASE=http://127.0.0.1:47860/api tauri dev"
+
+# ── Mobile (Capacitor) ──────────────────────────────────────────────────────────
+
+[tasks."mobile:build"]
+description = "Build mobile app (connects to HF Spaces) and sync to iOS/Android"
+dir = "web"
+run = "npm run build:mobile"
+
+[tasks."mobile:ios"]
+description = "Open iOS project in Xcode (run mobile:build first)"
+dir = "web"
+run = "npx cap open ios"
+
+[tasks."mobile:android"]
+description = "Open Android project in Android Studio (run mobile:build first)"
+dir = "web"
+run = "npx cap open android"
+
+[tasks."mobile:init"]
+description = "Initialize Capacitor iOS + Android platforms (run once)"
+dir = "web"
+run = """
+#!/bin/bash
+set -euo pipefail
+npm install
+npx cap add ios || true
+npx cap add android || true
+npm run build:mobile
+"""
+
+# ── Tests ────────────────────────────────────────────────────────────────────────
 
 [tasks."test:web"]
 description = "Run web lint + test + build"
