@@ -1,7 +1,7 @@
 import type { CapacitorConfig } from "@capacitor/cli";
 
 const config: CapacitorConfig = {
-  appId: "com.epub-to-mp3.app",
+  appId: "com.epubtomp3.app",
   appName: "Epub to Mp3",
   // Picks up the Vite build output (vite build --mode mobile)
   webDir: "dist",

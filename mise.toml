@@ -310,26 +310,42 @@ fi
 #   Docker image     → local Docker daemon (epub-to-mp3:local)
 
 [tasks."generate-binaries"]
-description = "Build all locally-buildable binaries: desktop app + Docker image"
+description = "Build all locally-buildable binaries: desktop app + Docker image; copies artifacts to releases/"
 run = """
 #!/bin/bash
 set -euo pipefail
 
+RELEASES_DIR="$(pwd)/releases"
+mkdir -p "$RELEASES_DIR"
+
 echo "▶ Building desktop app (macOS)..."
 mise run desktop:build
+
+echo ""
+echo "▶ Copying desktop artifacts to releases/..."
+if [[ "$(uname)" == "Darwin" ]]; then
+  DMG=$(find desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
+  if [[ -n "$DMG" ]]; then
+    cp "$DMG" "$RELEASES_DIR/"
+    echo "   Copied: $(basename "$DMG") → releases/"
+  fi
+  APP_TAR="$RELEASES_DIR/Epub-to-Mp3-macOS.tar.gz"
+  APP_DIR="desktop/src-tauri/target/release/bundle/macos"
+  if [[ -d "$APP_DIR" ]]; then
+    tar -czf "$APP_TAR" -C "$APP_DIR" .
+    echo "   Copied: Epub-to-Mp3-macOS.tar.gz → releases/"
+  fi
+fi
 
 echo ""
 echo "▶ Building Docker image..."
 mise run docker:build
 
 echo ""
-echo "✅ Done! Binaries:"
-if [[ "$(uname)" == "Darwin" ]]; then
-  echo "   macOS .app  → desktop/src-tauri/target/release/bundle/macos/"
-  DMG=$(find desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
-  [[ -n "$DMG" ]] && echo "   macOS .dmg  → $DMG"
-fi
-echo "   Docker      → epub-to-mp3:local  (run: mise run docker:run)"
+echo "✅ Done! All artifacts in releases/:"
+ls -lh "$RELEASES_DIR/" 2>/dev/null || echo "   (empty)"
+echo ""
+echo "   Docker image → epub-to-mp3:local  (run: mise run docker:run)"
 echo ""
 echo "Android/iOS/Linux/Windows are built by CI on every push to master."
 echo "Download from: https://github.com/pietro1704/Epub-to-Mp3/releases"

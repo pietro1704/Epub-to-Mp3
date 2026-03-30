@@ -161,3 +161,6 @@ temp_*
 tmp_*
 .cache
 .env.local
+
+# Local build artifacts
+releases/
