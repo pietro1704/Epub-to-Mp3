@@ -3,6 +3,8 @@ name: Release Desktop
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   DESKTOP_PORT: "47860"
+  # Required so mise can activate the .venv from mise.toml (virtualenv feature)
+  MISE_EXPERIMENTAL: "1"
 
 on:
   # Versioned release: git tag v1.2.3
@@ -120,6 +122,11 @@ jobs:
             patchelf
 
       # ── Python sidecar ──────────────────────────────────────────────────────
+      # Create venv expected by mise.toml (virtualenv = ".venv")
+      - name: Create Python venv
+        shell: bash
+        run: python -m venv .venv
+
       - name: Install Python desktop deps + PyInstaller
         shell: bash
         run: |
