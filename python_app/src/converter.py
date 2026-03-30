@@ -1194,17 +1194,36 @@ class AudioConverter(
         def _prepare_payload(chapter_index: str, chapter_obj: Chapter) -> tuple[str, str, str, str]:
             chapter_name_local = getattr(chapter_obj, "name", None) or f"Chapter {chapter_index}"
             parsed_text_local = chapter_obj.text or ""
-            speech_text_local = self._speech_text(chapter_obj)
-            if formatter:
-                formatting_segments_local = getattr(chapter_obj, "formatting_segments", None)
-                if formatting_segments_local or "[[fmt" in (speech_text_local or ""):
-                    pre_tts_text_local = formatter.to_audible_text(
-                        speech_text_local, formatting_segments_local
-                    )
+            # When speech_text was set by _prepare_speech_text at parse time it already has:
+            #   (a) [[fmt:]] markers converted to audible cues
+            #   (b) apply_structural_speech_cues "..." pauses after headings
+            # Re-calling to_audible_text with the original formatting_segments would
+            # reconstruct text from the raw HTML-derived segments, discarding (b).
+            # Fix: process only from speech_text itself, without passing segments.
+            raw_speech = getattr(chapter_obj, "speech_text", None)
+            if raw_speech is not None:
+                if formatter and "[[fmt" in raw_speech:
+                    # Rare: speech_text still has unresolved markers — convert without
+                    # segments so we work from the text (which may already have cues).
+                    pre_tts_text_local = formatter.to_audible_text(raw_speech, None)
+                elif formatter:
+                    pre_tts_text_local = formatter.strip_inline_markdown(raw_speech)
+                else:
+                    pre_tts_text_local = raw_speech
+            else:
+                # Fallback: no pre-processed speech_text — run the full formatting pipeline
+                # using the original HTML-derived segments (no structural cues to preserve).
+                speech_text_local = chapter_obj.text or ""
+                if formatter:
+                    formatting_segments_local = getattr(chapter_obj, "formatting_segments", None)
+                    if formatting_segments_local or "[[fmt" in speech_text_local:
+                        pre_tts_text_local = formatter.to_audible_text(
+                            speech_text_local, formatting_segments_local
+                        )
+                    else:
+                        pre_tts_text_local = speech_text_local
                 else:
                     pre_tts_text_local = speech_text_local
-            else:
-                pre_tts_text_local = speech_text_local
             return (chapter_index, chapter_name_local, parsed_text_local, pre_tts_text_local or "")
 
         files_generated = 0
