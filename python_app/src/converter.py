@@ -1163,36 +1163,19 @@ class AudioConverter(
         text_dir = Path(output_dir) / "text"
         text_dir.mkdir(parents=True, exist_ok=True)
 
-        # **NEW**: Clean up duplicate files before generating new ones
-        # Remove files with pattern "N - M - filename" (duplicate variants)
+        # Clean up legacy duplicate files: old code wrote "N - X.Y.Z - name-parsed.txt"
+        # variants alongside the canonical "X.Y.Z - name-parsed.txt" files.
+        # Use regex to reliably detect the integer-prefix pattern regardless of
+        # how many " - " separators the chapter name itself contains.
+        _int_prefix_re = re.compile(r"^\d+ - \d+(\.\d+)* - ")
         if text_dir.exists():
             duplicates_removed = 0
-            seen_files = {}
-
-            for txt_file in text_dir.glob("*-parsed.txt"):
-                # Normalize filename by removing leading number variants
-                # e.g., "1 - 4.1 - Chapter.txt" -> "4.1 - Chapter.txt"
-                parts = txt_file.name.split(" - ", 2)
-                if len(parts) >= 3:
-                    # Has duplicate prefix (e.g., "1 - 4.1 - ...")
-                    canonical = " - ".join(parts[1:])
-                    if canonical in seen_files:
-                        # Duplicate found, remove it
-                        txt_file.unlink(missing_ok=True)
-                        # Also remove corresponding pre-tts file
-                        pre_tts = txt_file.parent / txt_file.name.replace(
-                            "-parsed.txt", "-pre-tts.txt"
-                        )
-                        pre_tts.unlink(missing_ok=True)
-                        duplicates_removed += 1
-                    else:
-                        seen_files[canonical] = txt_file
-                else:
-                    # Normal file, keep track of it
-                    seen_files[txt_file.name] = txt_file
-
+            for txt_file in sorted(text_dir.glob("*.txt")):
+                if _int_prefix_re.match(txt_file.name):
+                    txt_file.unlink(missing_ok=True)
+                    duplicates_removed += 1
             if duplicates_removed > 0 and not self.verbose:
-                print(f"  🧹 Removed {duplicates_removed} duplicate cached file(s)")
+                print(f"  🧹 Removed {duplicates_removed} legacy duplicate file(s)")
 
         if cleanup_existing and any(text_dir.glob("*.txt")):
             for txt_file in text_dir.glob("*.txt"):
@@ -6494,12 +6477,9 @@ class AudioConverter(
         final_output = self._last_output_dir or (
             Path(self._active_config.output_dir) if self._active_config else None
         )
-        if (
-            final_output
-            and self._active_config
-            and self._last_chapters_for_text
-            and getattr(self._active_config, "auto_validate_output", True)
-        ):
+        # Always regenerate text files in output dir — removes legacy duplicate
+        # variants and ensures content matches the current chapter set.
+        if final_output and self._active_config and self._last_chapters_for_text:
             self._generate_all_text_files(
                 self._last_chapters_for_text,
                 final_output,
