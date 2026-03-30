@@ -47,7 +47,8 @@ jobs:
             --exclude ".pytest_cache" \
             --exclude ".mypy_cache" \
             --exclude ".ruff_cache" \
-            --exclude ".cache"
+            --exclude ".cache" \
+            --exclude "desktop"
           cd "$HF_SYNC_DIR"
           git init
           git config user.name "hf-sync-bot"
