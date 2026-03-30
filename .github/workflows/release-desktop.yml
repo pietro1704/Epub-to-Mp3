@@ -26,6 +26,7 @@ on:
 
 permissions:
   contents: write
+  packages: write   # required for ghcr.io Docker push
 
 # ── Nightly cleanup — runs before build matrix to avoid race conditions ─────────
 jobs:
@@ -45,7 +46,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release delete nightly --yes --cleanup-tag --repo ${{ github.repository }} 2>/dev/null || true
 
-  # ── Build matrix ──────────────────────────────────────────────────────────────
+  # ── Build matrix (desktop) ────────────────────────────────────────────────────
   build:
     name: ${{ matrix.label }}
     needs: [cleanup-nightly]
@@ -116,12 +117,12 @@ jobs:
             librsvg2-dev \
             patchelf
 
-      # ── Python sidecar ──────────────────────────────────────────────────────
-      # Create venv expected by mise.toml (virtualenv = ".venv")
+      # ── Python venv (required by mise virtualenv feature) ──────────────────
       - name: Create Python venv
         shell: bash
         run: python -m venv .venv
 
+      # ── Python sidecar ──────────────────────────────────────────────────────
       - name: Install Python desktop deps + PyInstaller
         shell: bash
         run: |
@@ -186,10 +187,12 @@ jobs:
 
             | Platform | File |
             |---|---|
-            | macOS Apple Silicon | `*_aarch64.dmg` |
-            | macOS Intel | `*_x64.dmg` |
+            | macOS Apple Silicon | `*_aarch64.dmg` or `brew install --cask epub-to-mp3` |
             | Windows | `*_x64-setup.exe` or `*.msi` |
             | Linux | `*.AppImage` or `*.deb` |
+            | Android | `EpubToMp3_android.apk` |
+            | iOS (sideload) | `EpubToMp3_ios.ipa` |
+            | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:${{ github.ref_name || inputs.tag }}` |
 
             **First launch**: ffmpeg is downloaded once (~60 MB) on first conversion.
           files: |
@@ -216,13 +219,299 @@ jobs:
 
             | Platform | File |
             |---|---|
-            | macOS Apple Silicon | `*_aarch64.dmg` |
-            | macOS Intel | `*_x64.dmg` |
+            | macOS Apple Silicon | `*_aarch64.dmg` or `brew install --cask epub-to-mp3` |
             | Windows | `*_x64-setup.exe` or `*.msi` |
             | Linux | `*.AppImage` or `*.deb` |
+            | Android | `EpubToMp3_android.apk` |
+            | iOS (sideload) | `EpubToMp3_ios.ipa` |
+            | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:nightly` |
           files: |
             desktop/src-tauri/target/**/bundle/dmg/*.dmg
             desktop/src-tauri/target/**/bundle/msi/*.msi
             desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
             desktop/src-tauri/target/**/bundle/appimage/*.AppImage
             desktop/src-tauri/target/**/bundle/deb/*.deb
+
+  # ── Docker image → ghcr.io ────────────────────────────────────────────────────
+  docker:
+    name: docker
+    needs: [cleanup-nightly]
+    if: >
+      always() &&
+      (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
+      (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'master' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata (tags + labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/epub-to-mp3
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=nightly,enable=${{ github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.title=Epub to Mp3
+            org.opencontainers.image.description=EPUB/PDF to MP3 audiobook converter
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Android APK ───────────────────────────────────────────────────────────────
+  android:
+    name: android
+    needs: [cleanup-nightly]
+    if: >
+      always() &&
+      (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
+      (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'master' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install mise + toolchain (Node)
+        uses: jdx/mise-action@v4
+
+      - name: Create Python venv (mise virtualenv)
+        run: python -m venv .venv
+
+      - name: Install JS deps
+        working-directory: web
+        run: npm ci --silent
+
+      - name: Build mobile web bundle
+        working-directory: web
+        env:
+          VITE_API_BASE: ""
+        run: npm run build:mobile:bundle
+
+      - name: Add Android platform
+        working-directory: web
+        run: npx cap add android
+
+      - name: Sync assets into Android project
+        working-directory: web
+        run: npx cap sync android
+
+      - name: Build debug APK
+        working-directory: web/android
+        env:
+          ANDROID_HOME: /usr/local/lib/android/sdk
+          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Rename APK
+        run: |
+          cp web/android/app/build/outputs/apk/debug/app-debug.apk EpubToMp3_android.apk
+
+      - name: Upload APK — versioned release
+        if: github.event_name != 'workflow_run'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.tag }}
+          draft: true
+          fail_on_unmatched_files: false
+          files: EpubToMp3_android.apk
+
+      - name: Upload APK — nightly pre-release
+        if: github.event_name == 'workflow_run'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: false
+          files: EpubToMp3_android.apk
+
+  # ── iOS IPA (unsigned — sideloadable via AltStore/Sideloadly) ─────────────────
+  ios:
+    name: ios
+    needs: [cleanup-nightly]
+    if: >
+      always() &&
+      (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
+      (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_branch == 'master' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      )
+    runs-on: macos-latest
+    # Signing cert required for App Store / TestFlight distribution
+    # Unsigned IPA can be sideloaded with AltStore or Sideloadly
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Install mise + toolchain (Node)
+        uses: jdx/mise-action@v4
+
+      - name: Create Python venv (mise virtualenv)
+        run: python -m venv .venv
+
+      - name: Install JS deps
+        working-directory: web
+        run: npm ci --silent
+
+      - name: Build mobile web bundle
+        working-directory: web
+        env:
+          VITE_API_BASE: ""
+        run: npm run build:mobile:bundle
+
+      - name: Add iOS platform
+        working-directory: web
+        run: npx cap add ios
+
+      - name: Sync assets into iOS project
+        working-directory: web
+        run: npx cap sync ios
+
+      - name: Install CocoaPods deps
+        working-directory: web/ios/App
+        run: pod install
+
+      - name: Build iOS archive (unsigned)
+        run: |
+          xcodebuild archive \
+            -workspace web/ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -archivePath "${{ runner.temp }}/App.xcarchive" \
+            -destination generic/platform=iOS \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            SKIP_INSTALL=NO
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p "${{ runner.temp }}/ipa/Payload"
+          APP=$(find "${{ runner.temp }}/App.xcarchive/Products/Applications" -name "*.app" | head -1)
+          cp -r "$APP" "${{ runner.temp }}/ipa/Payload/"
+          cd "${{ runner.temp }}/ipa"
+          zip -r "${{ runner.temp }}/EpubToMp3_ios.ipa" Payload/
+
+      - name: Upload IPA — versioned release
+        if: github.event_name != 'workflow_run'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name || inputs.tag }}
+          draft: true
+          fail_on_unmatched_files: false
+          files: ${{ runner.temp }}/EpubToMp3_ios.ipa
+
+      - name: Upload IPA — nightly pre-release
+        if: github.event_name == 'workflow_run'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: nightly
+          draft: false
+          prerelease: true
+          fail_on_unmatched_files: false
+          files: ${{ runner.temp }}/EpubToMp3_ios.ipa
+
+  # ── Homebrew cask update (versioned releases only) ────────────────────────────
+  homebrew:
+    name: Update Homebrew cask
+    needs: [build]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Compute DMG SHA256
+        id: dmg
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          FILENAME="Epub.to.Mp3_${VERSION}_aarch64.dmg"
+          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${FILENAME}"
+          echo "Downloading $URL to compute SHA256..."
+          SHA=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout Homebrew tap
+        uses: actions/checkout@v5
+        with:
+          repository: pietro1704/homebrew-epub-to-mp3
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Update cask formula
+        run: |
+          F="tap/Casks/epub-to-mp3.rb"
+          VERSION="${{ steps.dmg.outputs.version }}"
+          SHA="${{ steps.dmg.outputs.sha256 }}"
+          sed -i "s|version \".*\"|version \"${VERSION}\"|" "$F"
+          sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" "$F"
+
+      - name: Commit and push
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Casks/epub-to-mp3.rb
+          git diff --quiet --cached || git commit -m "Update epub-to-mp3 to ${{ github.ref_name }}"
+          git push

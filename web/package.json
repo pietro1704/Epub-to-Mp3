@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "npx tsc --noEmit -p tsconfig.build.json && vite build",
     "build:mobile": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode mobile && npx cap sync",
+    "build:mobile:bundle": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode mobile",
     "preview": "vite preview",
     "lint": "eslint --max-warnings=0 .",
     "format": "prettier --write .",

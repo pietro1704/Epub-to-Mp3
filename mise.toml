@@ -303,6 +303,16 @@ else
 fi
 """
 
+# ── Docker ───────────────────────────────────────────────────────────────────────
+
+[tasks."docker:build"]
+description = "Build Docker image for self-hosting (same as HF Spaces)"
+run = "docker build -t epub-to-mp3:local ."
+
+[tasks."docker:run"]
+description = "Run Docker image locally on port 7860"
+run = "docker run --rm -p 7860:7860 epub-to-mp3:local"
+
 # ── Mobile (Capacitor) ──────────────────────────────────────────────────────────
 
 [tasks."mobile:build"]
