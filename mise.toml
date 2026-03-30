@@ -279,6 +279,30 @@ description = "Open Tauri dev window (run mise run desktop:server in another ter
 dir = "desktop"
 run = "VITE_API_BASE=http://127.0.0.1:47860/api tauri dev"
 
+[tasks."desktop:run"]
+description = "Launch the last built desktop app bundle"
+run = """
+#!/bin/bash
+set -euo pipefail
+if [[ "$(uname)" == "Darwin" ]]; then
+  APP="desktop/src-tauri/target/release/bundle/macos/Epub to Mp3.app"
+  if [[ ! -d "$APP" ]]; then
+    echo "App bundle not found. Run: mise run desktop:build"
+    exit 1
+  fi
+  open "$APP"
+elif [[ "$(uname)" == "Linux" ]]; then
+  BIN="desktop/src-tauri/target/release/epub-to-mp3"
+  if [[ ! -f "$BIN" ]]; then
+    echo "Binary not found. Run: mise run desktop:build"
+    exit 1
+  fi
+  "$BIN" &
+else
+  echo "Use the .exe in desktop/src-tauri/target/release/ on Windows"
+fi
+"""
+
 # ── Mobile (Capacitor) ──────────────────────────────────────────────────────────
 
 [tasks."mobile:build"]

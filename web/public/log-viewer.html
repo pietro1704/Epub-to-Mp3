@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Server Logs</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: #0d0d0d;
+        color: #d4d4d4;
+        font-family: "Menlo", "Consolas", "Monaco", monospace;
+        font-size: 12px;
+        line-height: 1.5;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        overflow: hidden;
+      }
+      #toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        background: #1a1a1a;
+        border-bottom: 1px solid #333;
+        flex-shrink: 0;
+      }
+      #toolbar label {
+        color: #888;
+        font-size: 11px;
+      }
+      #filter {
+        flex: 1;
+        background: #252525;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #d4d4d4;
+        padding: 3px 7px;
+        font-family: inherit;
+        font-size: 12px;
+        outline: none;
+      }
+      #filter:focus {
+        border-color: #666;
+      }
+      button {
+        background: #252525;
+        border: 1px solid #444;
+        border-radius: 4px;
+        color: #d4d4d4;
+        padding: 3px 10px;
+        font-size: 11px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #333;
+      }
+      #status {
+        color: #555;
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      #log {
+        flex: 1;
+        overflow-y: auto;
+        padding: 8px 10px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      .line {
+        padding: 1px 0;
+      }
+      .line.err {
+        color: #f87171;
+      }
+      .line.warn {
+        color: #fbbf24;
+      }
+      .line.info {
+        color: #d4d4d4;
+      }
+      #log::-webkit-scrollbar {
+        width: 6px;
+      }
+      #log::-webkit-scrollbar-track {
+        background: #111;
+      }
+      #log::-webkit-scrollbar-thumb {
+        background: #444;
+        border-radius: 3px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="toolbar">
+      <label>Filter:</label>
+      <input id="filter" type="text" placeholder="grep…" />
+      <button id="btn-clear">Clear</button>
+      <button id="btn-scroll">Auto-scroll: ON</button>
+      <span id="status">connecting…</span>
+    </div>
+    <div id="log"></div>
+
+    <script>
+      let allLines = [];
+      let autoScroll = true;
+      let filterText = "";
+
+      const logEl = document.getElementById("log");
+      const filterEl = document.getElementById("filter");
+      const statusEl = document.getElementById("status");
+      const btnScroll = document.getElementById("btn-scroll");
+      const btnClear = document.getElementById("btn-clear");
+
+      btnScroll.addEventListener("click", () => {
+        autoScroll = !autoScroll;
+        btnScroll.textContent = "Auto-scroll: " + (autoScroll ? "ON" : "OFF");
+      });
+
+      btnClear.addEventListener("click", () => {
+        allLines = [];
+        render();
+      });
+
+      filterEl.addEventListener("input", () => {
+        filterText = filterEl.value.toLowerCase();
+        render();
+      });
+
+      function classify(line) {
+        if (line.startsWith("[err]")) return "err";
+        const l = line.toLowerCase();
+        if (
+          l.includes("error") ||
+          l.includes("exception") ||
+          l.includes("traceback")
+        )
+          return "err";
+        if (l.includes("warning") || l.includes("warn")) return "warn";
+        return "info";
+      }
+
+      function render() {
+        const visible = filterText
+          ? allLines.filter((l) => l.toLowerCase().includes(filterText))
+          : allLines;
+        logEl.innerHTML = visible
+          .map((l) => `<div class="line ${classify(l)}">${escHtml(l)}</div>`)
+          .join("");
+        if (autoScroll) logEl.scrollTop = logEl.scrollHeight;
+        statusEl.textContent = `${visible.length} lines`;
+      }
+
+      function escHtml(s) {
+        return s
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      async function poll() {
+        try {
+          const invoke =
+            window.__TAURI__?.core?.invoke ||
+            window.__TAURI_INTERNALS__?.invoke;
+          if (!invoke) {
+            statusEl.textContent = "Tauri API not available";
+            return;
+          }
+          const lines = await invoke("get_server_logs");
+          if (lines.length !== allLines.length) {
+            allLines = lines;
+            render();
+          }
+          statusEl.textContent = `${allLines.length} lines`;
+        } catch (e) {
+          statusEl.textContent = "error: " + e;
+        }
+      }
+
+      // Poll every second.
+      poll();
+      setInterval(poll, 1000);
+    </script>
+  </body>
+</html>
