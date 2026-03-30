@@ -320,7 +320,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: "21"
 
       - name: Install mise + toolchain (Node)
         uses: jdx/mise-action@v4
