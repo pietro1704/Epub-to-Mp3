@@ -380,3 +380,23 @@ These features exist specifically to improve the audiobook listening experience:
 - Default to aggressive performance settings (max CPU/RAM)
 - Progress bar denominator: only chapters to be converted (exclude cached)
 - Commit messages in English, concise, focus on "why"
+
+---
+
+## Tooling Policy
+
+**Always use `mise` for all toolchain management and task execution — never install or invoke tools natively.**
+
+- **All tools** (Python, Node, Rust, tauri-cli, npm packages) are managed via `mise.toml` — never `brew install`, `rustup`, `nvm`, `pip install -g`, or `npm install -g` directly
+- **All project tasks** run via `mise run <task>` — never call `python`, `node`, `cargo`, `tauri`, `pyinstaller`, etc. directly in the terminal
+- Adding a new tool: add it to `[tools]` in `mise.toml`, then `mise install`
+- Adding a new task: add it to `mise.toml` under `[tasks."name"]`, not as a standalone script
+
+### Desktop builds
+- Local: `mise run desktop:build`
+- Dev window: `mise run desktop:server` (terminal 1) + `mise run desktop:dev` (terminal 2)
+- No Xcode or Android Studio required locally — native mobile packages are built by CI (GitHub Actions)
+
+### Mobile builds
+- Web bundle only (no IDE): `mise run mobile:build` — produces `web/dist/` configured for HF Spaces backend
+- Native iOS/Android packages: built automatically by `release-desktop.yml` CI on tag push

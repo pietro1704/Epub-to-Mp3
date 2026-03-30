@@ -282,22 +282,12 @@ run = "VITE_API_BASE=http://127.0.0.1:47860/api tauri dev"
 # ── Mobile (Capacitor) ──────────────────────────────────────────────────────────
 
 [tasks."mobile:build"]
-description = "Build mobile app (connects to HF Spaces) and sync to iOS/Android"
+description = "Build mobile web bundle (HF Spaces backend) — no Xcode/Android Studio needed locally"
 dir = "web"
 run = "npm run build:mobile"
 
-[tasks."mobile:ios"]
-description = "Open iOS project in Xcode (run mobile:build first)"
-dir = "web"
-run = "npx cap open ios"
-
-[tasks."mobile:android"]
-description = "Open Android project in Android Studio (run mobile:build first)"
-dir = "web"
-run = "npx cap open android"
-
 [tasks."mobile:init"]
-description = "Initialize Capacitor iOS + Android platforms (run once)"
+description = "Initialize Capacitor platforms (run once; native .ipa/.apk built by CI, not locally)"
 dir = "web"
 run = """
 #!/bin/bash

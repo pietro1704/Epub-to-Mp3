@@ -27,25 +27,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/bash_conversion.sh",
-            "timeout": 8,
-            "async": true
-          },
-          {
-            "type": "command",
-            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/ci_watch.sh",
-            "timeout": 780,
-            "async": true
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [
