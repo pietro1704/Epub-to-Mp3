@@ -477,6 +477,14 @@ class ConverterApplication:
                                     for f in cache_book_dir.glob(pattern):
                                         f.unlink(missing_ok=True)
                                         cleared_audio += 1
+                            # Remove EdgeTTS stream chunks (prevents chunk resume)
+                            label_safe = chapter_label.replace(".", "_")
+                            stream_dir = (
+                                cache_book_dir / "streams" / "cli" / f"chapter_{label_safe}"
+                            )
+                            if stream_dir.exists():
+                                shutil.rmtree(stream_dir, ignore_errors=True)
+                                cleared_audio += 1
                             # Remove final output MP3 from all engine output dirs
                             if output_base.exists():
                                 for out_dir in output_base.iterdir():

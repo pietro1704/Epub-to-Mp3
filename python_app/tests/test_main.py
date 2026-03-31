@@ -1216,6 +1216,14 @@ class TestChapterSpecificClearCache(unittest.TestCase):
         (self.output_book_dir / "5.1 - Chapter Five One.mp3").write_bytes(b"final")
         (self.output_book_dir / "5.2 - Chapter Five Two.mp3").write_bytes(b"final")
 
+        # EdgeTTS stream chunk dirs (resume cache)
+        self.stream_51 = self.cache_book_dir / "streams" / "cli" / "chapter_5_1"
+        self.stream_52 = self.cache_book_dir / "streams" / "cli" / "chapter_5_2"
+        self.stream_51.mkdir(parents=True)
+        self.stream_52.mkdir(parents=True)
+        (self.stream_51 / "chunk_0000.mp3").write_bytes(b"chunk")
+        (self.stream_52 / "chunk_0000.mp3").write_bytes(b"chunk")
+
     def tearDown(self):
         import shutil
 
@@ -1244,6 +1252,13 @@ class TestChapterSpecificClearCache(unittest.TestCase):
                 ):
                     for f in cache_book_dir.glob(pattern):
                         f.unlink(missing_ok=True)
+            # Remove EdgeTTS stream chunks for this chapter
+            import shutil as _shutil
+
+            label_safe = chapter_label.replace(".", "_")
+            stream_dir = cache_book_dir / "streams" / "cli" / f"chapter_{label_safe}"
+            if stream_dir.exists():
+                _shutil.rmtree(stream_dir, ignore_errors=True)
             if self.output_dir.exists():
                 for out_dir in self.output_dir.iterdir():
                     if out_dir.is_dir() and (
@@ -1309,6 +1324,18 @@ class TestChapterSpecificClearCache(unittest.TestCase):
 
         # Should not raise
         self._run_chapter_specific_clear(["5.1"])
+
+    def test_clears_stream_chunks_for_selected_chapter(self):
+        """chapter-specific clear removes the EdgeTTS stream chunk dir to prevent resume."""
+        self._run_chapter_specific_clear(["5.1"])
+
+        self.assertFalse(self.stream_51.exists())
+
+    def test_preserves_stream_chunks_of_other_chapters(self):
+        """chapter-specific clear must not remove other chapters' stream chunks."""
+        self._run_chapter_specific_clear(["5.1"])
+
+        self.assertTrue(self.stream_52.exists())
 
     def test_clears_output_in_engine_suffix_dirs(self):
         """chapter-specific clear also removes MP3s from engine-suffix output dirs."""
