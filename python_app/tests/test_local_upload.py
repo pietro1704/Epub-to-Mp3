@@ -1,0 +1,203 @@
+"""Tests for the POST /api/uploads/local endpoint (desktop-only, localhost-only)."""
+
+from __future__ import annotations
+
+import unittest
+import zipfile
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+
+def _make_client():
+    try:
+        from fastapi.testclient import TestClient
+    except ModuleNotFoundError:
+        raise unittest.SkipTest("fastapi not installed")
+    from python_app import server
+
+    return TestClient(server.app), server
+
+
+def _minimal_epub(path: Path) -> Path:
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("mimetype", "application/epub+zip")
+        zf.writestr(
+            "META-INF/container.xml",
+            '<?xml version="1.0"?><container version="1.0" '
+            'xmlns="urn:oasis:schemas:container"><rootfiles>'
+            '<rootfile full-path="OEBPS/content.opf" '
+            'media-type="application/oebps-package+xml"/>'
+            "</rootfiles></container>",
+        )
+        zf.writestr(
+            "OEBPS/content.opf",
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<package xmlns="http://www.idpf.org/2007/opf" version="2.0" '
+            'unique-identifier="id">'
+            '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+            "<dc:title>Test Book</dc:title>"
+            "<dc:creator>Test Author</dc:creator>"
+            '<dc:identifier id="id">urn:uuid:test</dc:identifier>'
+            "</metadata>"
+            "<manifest/><spine/>"
+            "</package>",
+        )
+    return path
+
+
+def _fake_reader(title="Test Book", author="Test Author"):
+    r = MagicMock()
+    r.title = title
+    r.author = author
+    r.extract_cover_image.return_value = None
+    return r
+
+
+class TestLocalUploadEndpoint(unittest.TestCase):
+    """POST /api/uploads/local — happy path and security checks."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        self.tmp = Path(tempfile.mkdtemp())
+        self._cleanup = shutil.rmtree
+
+    def tearDown(self):
+        self._cleanup(self.tmp, ignore_errors=True)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _patch_server(self, srv):
+        """Isolate uploads_dir and allow TestClient's loopback hostname."""
+        import src.routes_uploads as mod
+
+        uploads_dir = self.tmp / "uploads"
+        uploads_dir.mkdir()
+        srv.uploads_dir = uploads_dir
+        srv._pending_uploads.clear()
+        srv.MAX_UPLOAD_BYTES = 100 * 1024 * 1024
+        srv.MAX_UPLOAD_MB = 100
+        # TestClient sends requests from host "testclient"; allow it in tests.
+        self._orig_hosts = mod._LOCAL_ALLOWED_HOSTS.copy()
+        mod._LOCAL_ALLOWED_HOSTS.add("testclient")
+
+    def _restore_server(self, srv):
+        import src.routes_uploads as mod
+
+        if hasattr(self, "_orig_hosts"):
+            mod._LOCAL_ALLOWED_HOSTS.clear()
+            mod._LOCAL_ALLOWED_HOSTS.update(self._orig_hosts)
+
+    # ------------------------------------------------------------------
+    # Happy path
+    # ------------------------------------------------------------------
+
+    def test_registers_epub_returns_upload_id(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        epub = _minimal_epub(self.tmp / "mybook.epub")
+
+        with patch(
+            "src.ebook_reader.EbookReader", return_value=_fake_reader("My Book", "Author A")
+        ):
+            resp = client.post("/api/uploads/local", json={"path": str(epub)})
+
+        self._restore_server(srv)
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert data["uploadId"]
+        assert data["fileName"] == "mybook.epub"
+        assert data["bookTitle"] == "My Book"
+        assert data["bookAuthor"] == "Author A"
+        assert data["coverUrl"] is None
+
+    def test_registers_pdf(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        pdf = self.tmp / "report.pdf"
+        pdf.write_bytes(b"%PDF-1.4 placeholder")
+
+        with patch("src.ebook_reader.EbookReader", return_value=_fake_reader("PDF Book")):
+            resp = client.post("/api/uploads/local", json={"path": str(pdf)})
+
+        self._restore_server(srv)
+        assert resp.status_code == 200
+        assert resp.json()["fileName"] == "report.pdf"
+
+    def test_file_is_copied_to_uploads_dir(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        epub = _minimal_epub(self.tmp / "copy_test.epub")
+
+        with patch("src.ebook_reader.EbookReader", return_value=_fake_reader()):
+            resp = client.post("/api/uploads/local", json={"path": str(epub)})
+
+        self._restore_server(srv)
+        assert resp.status_code == 200
+        upload_id = resp.json()["uploadId"]
+        dest = srv.uploads_dir / upload_id / "copy_test.epub"
+        assert dest.exists(), "File should be copied to uploads dir"
+
+    def test_fallback_title_is_stem_when_reader_fails(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        epub = self.tmp / "my_great_book.epub"
+        epub.write_bytes(b"not a real epub")
+
+        with patch("src.ebook_reader.EbookReader", side_effect=Exception("parse error")):
+            resp = client.post("/api/uploads/local", json={"path": str(epub)})
+
+        self._restore_server(srv)
+        assert resp.status_code == 200
+        assert resp.json()["bookTitle"] == "my_great_book"
+
+    # ------------------------------------------------------------------
+    # Validation errors
+    # ------------------------------------------------------------------
+
+    def test_404_for_missing_file(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        resp = client.post("/api/uploads/local", json={"path": str(self.tmp / "ghost.epub")})
+        self._restore_server(srv)
+        assert resp.status_code == 404
+
+    def test_400_for_unsupported_extension(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        txt = self.tmp / "doc.txt"
+        txt.write_text("hello")
+        resp = client.post("/api/uploads/local", json={"path": str(txt)})
+        self._restore_server(srv)
+        assert resp.status_code == 400
+
+    def test_413_when_file_exceeds_size_limit(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        srv.MAX_UPLOAD_BYTES = 5  # 5-byte limit
+        srv.MAX_UPLOAD_MB = 0
+        epub = self.tmp / "big.epub"
+        epub.write_bytes(b"x" * 10)
+        resp = client.post("/api/uploads/local", json={"path": str(epub)})
+        self._restore_server(srv)
+        assert resp.status_code == 413
+
+    # ------------------------------------------------------------------
+    # Security: reject non-localhost callers
+    # ------------------------------------------------------------------
+
+    def test_403_from_non_localhost(self):
+        """Endpoint rejects calls whose client.host is not a loopback address."""
+        client, srv = _make_client()
+        # Do NOT call _patch_server — we want the real allowed-hosts check.
+        epub = self.tmp / "remote.epub"
+        epub.write_bytes(b"dummy epub bytes")
+
+        # TestClient's default client host is "testclient" which is not in
+        # _LOCAL_ALLOWED_HOSTS, so no extra setup is needed to simulate a
+        # non-localhost caller.
+        resp = client.post("/api/uploads/local", json={"path": str(epub)})
+        assert resp.status_code == 403

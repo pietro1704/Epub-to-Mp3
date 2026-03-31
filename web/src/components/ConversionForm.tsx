@@ -17,7 +17,7 @@ import {
 } from "../types/conversion";
 import { MAX_UPLOAD_BYTES, MAX_UPLOAD_MB, resolveApiUrl } from "../config";
 import type { UploadResponse } from "../services/ConversionService";
-import { isTauri, listenTauri } from "../lib/tauri";
+import { invoke, isTauri, listenTauri } from "../lib/tauri";
 
 interface ConversionFormProps {
   isSubmitting: boolean;
@@ -374,13 +374,20 @@ export default function ConversionForm({
   }, [fileQueue, engine]);
 
   // In Tauri desktop mode, File > Open Books (or Cmd+O) emits "tauri-open-books".
-  // We forward it to the existing hidden file input so the OS dialog opens.
+  // We open a native OS dialog via the pick_books Tauri command and register
+  // the selected files through the local-path upload endpoint (no bytes cross
+  // the IPC boundary — much faster for large EPUBs).
   useEffect(() => {
     if (!isTauri()) return;
     let unlisten: (() => void) | undefined;
-    listenTauri("tauri-open-books", () => {
-      const el = document.getElementById("file") as HTMLInputElement | null;
-      el?.click();
+    listenTauri("tauri-open-books", async () => {
+      try {
+        const paths = await invoke<string[]>("pick_books");
+        if (paths.length > 0) addNativePathsRef.current(paths);
+      } catch {
+        // Fallback: click the file input if pick_books is unavailable.
+        (document.getElementById("file") as HTMLInputElement | null)?.click();
+      }
     }).then((u) => {
       unlisten = u;
     });
@@ -681,6 +688,126 @@ export default function ConversionForm({
     setFileQueueSafe((prev) => [...prev, ...additions]);
     additions.forEach((entry) => startUploadForEntry(entry.id, entry.file));
   };
+
+  // ── Tauri desktop: upload via local path ─────────────────────────────────────
+  // Mirrors startUploadForEntry but sends the file-system path to
+  // POST /api/uploads/local instead of transferring bytes via multipart.
+  const startLocalUploadForEntry = (
+    entryId: string,
+    localPath: string,
+    fileName: string,
+  ) => {
+    if (uploadPromisesRef.current[entryId]) return;
+    const existing = fileQueueRef.current.find((e) => e.id === entryId);
+    if (existing?.uploadId && existing.status === "ready") return;
+
+    const attemptId = uploadAttemptRef.current + 1;
+    uploadAttemptRef.current = attemptId;
+    setPendingUploads((count) => count + 1);
+    setFileQueueSafe((prev) =>
+      prev.map((e) =>
+        e.id === entryId
+          ? { ...e, status: "uploading", error: undefined, attemptId }
+          : e,
+      ),
+    );
+
+    const uploadPromise = (async () => {
+      try {
+        const res = await fetch(resolveApiUrl("/api/uploads/local"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ path: localPath }),
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const response: UploadResponse = await res.json();
+        setFileQueueSafe((prev) =>
+          prev.map((e) => {
+            if (e.id !== entryId || e.attemptId !== attemptId) return e;
+            return {
+              ...e,
+              status: "ready",
+              uploadId: response.uploadId,
+              name: response.fileName || fileName,
+              bookTitle: response.bookTitle,
+              bookAuthor: response.bookAuthor,
+              coverUrl: response.coverUrl,
+              attemptId: undefined,
+            };
+          }),
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "Local upload failed";
+        setFileQueueSafe((prev) =>
+          prev.map((e) => {
+            if (e.id !== entryId || e.attemptId !== attemptId) return e;
+            return {
+              ...e,
+              status: "error",
+              error: message,
+              attemptId: undefined,
+            };
+          }),
+        );
+      }
+    })();
+
+    uploadPromisesRef.current[entryId] = uploadPromise;
+    uploadPromise
+      .finally(() => {
+        delete uploadPromisesRef.current[entryId];
+        setPendingUploads((count) => Math.max(0, count - 1));
+        onUploadStateChange?.(
+          fileQueueRef.current.filter((e) => e.status === "uploading").length,
+        );
+      })
+      .catch(() => {
+        delete uploadPromisesRef.current[entryId];
+        setPendingUploads((count) => Math.max(0, count - 1));
+        onUploadStateChange?.(
+          fileQueueRef.current.filter((e) => e.status === "uploading").length,
+        );
+      });
+  };
+
+  // Accepts OS paths returned by pick_books Tauri command and registers them
+  // via the local-path upload endpoint (no bytes cross the IPC boundary).
+  const addNativePathsToQueue = (paths: string[]) => {
+    const genId = () =>
+      typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+        ? crypto.randomUUID()
+        : `queued-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+    const additions: Array<QueuedFileEntry & { localPath: string }> = paths.map(
+      (localPath) => {
+        const fileName = localPath.split(/[\\/]/).pop() ?? "book.epub";
+        return {
+          id: genId(),
+          file: new File([], fileName),
+          name: fileName,
+          size: 0,
+          status: "uploading" as const,
+          localPath,
+        };
+      },
+    );
+    if (additions.length === 0) return;
+    setFileError(null);
+    setShowMissingFileError(false);
+    setFileQueueSafe((prev) => [
+      ...prev,
+      ...additions.map(({ localPath: _lp, ...rest }) => rest),
+    ]);
+    additions.forEach((entry) =>
+      startLocalUploadForEntry(entry.id, entry.localPath, entry.name),
+    );
+  };
+
+  // Keep a stable ref so the Tauri event handler (registered once) always
+  // calls the latest version without needing to re-register.
+  const addNativePathsRef = useRef(addNativePathsToQueue);
+  addNativePathsRef.current = addNativePathsToQueue;
 
   const removeFromQueue = (entryId: string) => {
     setFileQueueSafe((prev) => prev.filter((entry) => entry.id !== entryId));

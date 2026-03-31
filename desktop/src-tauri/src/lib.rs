@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
 
@@ -37,6 +38,28 @@ fn get_server_logs(logs: State<'_, ServerLogs>) -> Vec<String> {
 #[tauri::command]
 fn open_log_window(app: AppHandle) {
     show_log_window(&app);
+}
+
+/// Open a native OS file-picker filtered to EPUB/PDF.
+/// Returns the list of selected absolute paths (empty if cancelled).
+#[tauri::command]
+async fn pick_books(window: tauri::WebviewWindow) -> Vec<String> {
+    let (tx, rx) = tokio::sync::oneshot::channel::<Vec<String>>();
+    window
+        .dialog()
+        .file()
+        .add_filter("Books", &["epub", "pdf", "EPUB", "PDF"])
+        .set_title("Open Books")
+        .pick_files(move |result| {
+            let paths = result
+                .unwrap_or_default()
+                .into_iter()
+                .flat_map(|p| p.into_path().ok())
+                .filter_map(|p| p.to_str().map(String::from))
+                .collect();
+            let _ = tx.send(paths);
+        });
+    rx.await.unwrap_or_default()
 }
 
 // ── Internal helpers ──────────────────────────────────────────────────────────
@@ -109,8 +132,13 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(ServerLogs(Mutex::new(Vec::new())))
-        .invoke_handler(tauri::generate_handler![get_server_logs, open_log_window])
+        .invoke_handler(tauri::generate_handler![
+            get_server_logs,
+            open_log_window,
+            pick_books,
+        ])
         .setup(|app| {
             // ── Menu bar ──────────────────────────────────────────────────────
             let menu = build_menu(app)?;
