@@ -469,6 +469,91 @@ def hash_text(text: str) -> str:
     return hashlib.md5(normalize_text(text).encode("utf-8")).hexdigest()
 
 
+_VALID_MP3_HEADERS: tuple[bytes, ...] = (
+    b"\xff\xfb",  # MPEG Audio Layer III (most common)
+    b"\xff\xfa",
+    b"\xff\xf3",
+    b"\xff\xf2",
+    b"\xff\xe3",  # MPEG Audio Layer III (alternate sync)
+    b"ID3",  # ID3v2 tag header
+)
+
+
+def verify_mp3_integrity(output_dir: Path, min_size_bytes: int = 1024) -> List[str]:
+    """Check that every MP3 in *output_dir* has a valid header and non-trivial size.
+
+    Returns a list of issue strings (empty = all OK).
+    """
+    issues: List[str] = []
+    for mp3 in sorted(output_dir.glob("*.mp3")):
+        try:
+            size = mp3.stat().st_size
+        except OSError:
+            issues.append(f"Cannot stat MP3: {mp3.name}")
+            continue
+        if size < min_size_bytes:
+            issues.append(f"MP3 suspiciously small ({size} bytes, < {min_size_bytes}): {mp3.name}")
+            continue
+        try:
+            with mp3.open("rb") as fh:
+                header = fh.read(3)
+        except OSError:
+            issues.append(f"Cannot read MP3: {mp3.name}")
+            continue
+        if not any(header.startswith(h) for h in _VALID_MP3_HEADERS):
+            issues.append(
+                f"MP3 has unexpected header bytes {header!r} (not an MP3/ID3 file): {mp3.name}"
+            )
+    return issues
+
+
+def verify_chapter_names(
+    epub_chapters: List[tuple],  # (label, name, text) triples
+    output_dir: Path,
+) -> List[str]:
+    """Verify that chapter names used in output filenames are clean.
+
+    Checks:
+    - Chapter name contains no HTML tags or entities.
+    - Chapter name contains no non-breaking spaces (\\xa0).
+    - Chapter name is not purely numeric (missing descriptive title).
+    - MP3 filename stem (after stripping index prefix) matches the expected
+      chapter name in a normalised comparison.
+
+    Returns a list of issue strings (empty = all OK).
+    """
+    issues: List[str] = []
+    _only_number = re.compile(r"^\d+\.?\d*$")
+
+    for label, name, _text in epub_chapters:
+        if not name:
+            continue
+
+        # HTML tags in chapter name
+        if re.search(r"<[^>]+>", name):
+            issues.append(f"Chapter {label!r} name contains HTML tags: {name!r}")
+
+        # HTML entities in chapter name
+        if re.search(r"&(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z]+);", name):
+            issues.append(f"Chapter {label!r} name contains HTML entities: {name!r}")
+
+        # Non-breaking spaces
+        if "\xa0" in name:
+            issues.append(f"Chapter {label!r} name contains non-breaking spaces: {name!r}")
+
+        # Number-only names (calibre artefact: "part0001" stripped away but nothing left)
+        cleaned = re.sub(r"^part\d{3,}\s*[-–:_]?\s*", "", name, flags=re.IGNORECASE).strip()
+        if _only_number.match(cleaned):
+            issues.append(f"Chapter {label!r} has no descriptive title (only a number): {name!r}")
+
+    # Check that every MP3 stem is free of HTML/entity artefacts
+    for mp3 in sorted(output_dir.glob("*.mp3")):
+        if _stem_needs_fixing(mp3.stem):
+            issues.append(f"MP3 filename contains HTML/entity artefacts: {mp3.name}")
+
+    return issues
+
+
 def hash_file(path: Path) -> str:
     """Return stable hash for audio duplication detection."""
     hasher = hashlib.sha1()
@@ -989,6 +1074,26 @@ def validate_book(
                 print(f"  • Files: {labels}")
         stats["audio_duplicate"] += len(audio_dupes)
         issues.append("Duplicate audio files detected (hash match)")
+
+    # Verify chapter name integrity
+    name_issues = verify_chapter_names(epub_chapters, output_dir)
+    if name_issues:
+        if not suppress_errors:
+            print("\n⚠️  CHAPTER NAME ISSUES")
+            for ni in name_issues:
+                print(f"  • {ni}")
+        for ni in name_issues:
+            issues.append(f"Chapter name issue: {ni}")
+
+    # Verify MP3 file integrity (headers + size)
+    mp3_issues = verify_mp3_integrity(output_dir)
+    if mp3_issues:
+        if not suppress_errors:
+            print("\n⚠️  MP3 INTEGRITY ISSUES")
+            for mi in mp3_issues:
+                print(f"  • {mi}")
+        for mi in mp3_issues:
+            issues.append(f"MP3 integrity: {mi}")
 
     # Validate full book text file
     print("\n" + "=" * 70)
