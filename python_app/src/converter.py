@@ -1691,11 +1691,14 @@ class AudioConverter(
         output_dir = self._setup_output_directory(config)
         self._last_output_dir = output_dir
 
-        # Honor --clear-cache: remove book cache and output artifacts before continuing
-        # Must run BEFORE early validation so we don't validate stale output
+        # Honor --clear-cache: skip reading pre-existing cache and overwrite outputs.
+        # Text files are overwritten via cleanup_existing=True in _generate_all_text_files.
+        # Cached MP3s are ignored via ignore_cached_audio in _split_cached_chapters.
+        # In-memory and on-disk chapter cache is bypassed via get_cached_chapters(bypass=True).
+        # Best-effort deletion of stale artifacts (non-fatal if it fails).
         if getattr(config, "clear_cache", False):
             if self.verbose:
-                print("🗑️  --clear-cache: removing previous cache and output...")
+                print("--clear-cache: bypassing pre-existing cache, outputs will be overwritten")
             try:
                 if self._current_book_path:
                     self.cache_manager.clear_cache(self._current_book_path, title=reader.title)
@@ -1703,15 +1706,7 @@ class AudioConverter(
                     self.cache_manager.clear_cache(title=reader.title)
             except Exception as exc:
                 if self.verbose:
-                    print(f"⚠️ Failure clearing cache: {exc}")
-            try:
-                if output_dir.exists():
-                    shutil.rmtree(output_dir, ignore_errors=True)
-                output_dir = self._setup_output_directory(config)
-                self._last_output_dir = output_dir
-            except Exception as exc:
-                if self.verbose:
-                    print(f"⚠️ Failed to clear previous output: {exc}")
+                    print(f"Warning: could not remove cache directory: {exc}")
         else:
             # Only validate previous output when NOT clearing cache
             await self._auto_validate_output(output_dir, stage="initial")

@@ -84,8 +84,19 @@ class CacheManager:
             safe_name = "book"
         return self.cache_dir / safe_name
 
-    def get_cached_chapters(self, ebook_path: Path) -> Optional[Dict[str, Any]]:
-        """Return cached chapters if they exist"""
+    def get_cached_chapters(
+        self, ebook_path: Path, *, bypass: bool = False
+    ) -> Optional[Dict[str, Any]]:
+        """Return cached chapters if they exist.
+
+        Args:
+            ebook_path: Path to the ebook file.
+            bypass: When True, skip all cache reads and return None immediately.
+                    Used by --clear-cache to avoid consuming stale cache even if
+                    deletion of the cache directory failed or is incomplete.
+        """
+        if bypass:
+            return None
         if self.cache_dir is None:
             return None
 

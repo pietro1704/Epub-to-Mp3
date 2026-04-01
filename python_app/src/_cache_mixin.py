@@ -294,7 +294,9 @@ class _CacheMixin:
         cache_index = self._load_cache_index(cache_dir)
         cached_paths: List[Path] = []
         pending: List[Chapter] = []
-        ignore_cached_audio = bool(getattr(config, "force_reprocess", False))
+        ignore_cached_audio = bool(
+            getattr(config, "force_reprocess", False) or getattr(config, "clear_cache", False)
+        )
 
         for idx, chapter in enumerate(chapters, start=1):
             if ignore_cached_audio:

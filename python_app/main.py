@@ -616,11 +616,12 @@ class ConverterApplication:
             temp_dir = self.converter._setup_temp_directory(config)
 
             print(f"📁 Cache: {temp_dir}")
-            if temp_dir.exists() and (temp_dir / "text").exists():
-                txt_files = list((temp_dir / "text").glob("*_tts_input.txt"))
-                if txt_files:
-                    print(f"♻️ Cache detected: {len(txt_files)} chapters already processed")
-                    print("   Already converted chapters will be skipped automatically")
+            if not getattr(args, "clear_cache", False):
+                if temp_dir.exists() and (temp_dir / "text").exists():
+                    txt_files = list((temp_dir / "text").glob("*_tts_input.txt"))
+                    if txt_files:
+                        print(f"♻️ Cache detected: {len(txt_files)} chapters already processed")
+                        print("   Already converted chapters will be skipped automatically")
 
             structure_items = self._apply_text_transforms(structure_items, config, reader)
             self._apply_structure_to_reader(reader, structure_items)
