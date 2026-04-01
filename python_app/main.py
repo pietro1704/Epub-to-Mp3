@@ -3962,7 +3962,11 @@ class ConverterApplication:
         if prioritize_primary is not None:
             config.prioritize_primary_language = bool(prioritize_primary)
 
-        if getattr(args, "force_reprocess", False) or getattr(args, "no_cache", False):
+        if (
+            getattr(args, "force_reprocess", False)
+            or getattr(args, "no_cache", False)
+            or getattr(args, "clear_cache", False)
+        ):
             config.force_reprocess = True
         resume_from_failure = getattr(args, "resume_from_failure", None)
         if resume_from_failure is not None:

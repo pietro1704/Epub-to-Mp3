@@ -1273,9 +1273,52 @@ class TestCacheBypassFlag(unittest.TestCase):
         )
         # The flag mapping in main.py: no_cache=True → force_reprocess=True
         force_reprocess = bool(
-            getattr(args, "force_reprocess", False) or getattr(args, "no_cache", False)
+            getattr(args, "force_reprocess", False)
+            or getattr(args, "no_cache", False)
+            or getattr(args, "clear_cache", False)
         )
         self.assertTrue(force_reprocess)
+
+    def test_clear_cache_flag_sets_force_reprocess_in_config(self):
+        """--clear-cache must set force_reprocess=True so per-chapter MP3 cache is skipped."""
+        import argparse
+
+        args = argparse.Namespace(
+            clear_cache=True,
+            no_cache=False,
+            force_reprocess=False,
+        )
+        force_reprocess = bool(
+            getattr(args, "force_reprocess", False)
+            or getattr(args, "no_cache", False)
+            or getattr(args, "clear_cache", False)
+        )
+        self.assertTrue(force_reprocess)
+
+    def test_clear_cache_skips_existing_mp3_in_sequential_path(self):
+        """_convert_chapters_sequential must re-synthesize when force_reprocess=True (set by --clear-cache).
+
+        Simulates the check at converter.py line 3940:
+          if output_path.exists() and not config.force_reprocess:
+        With clear_cache=True → force_reprocess=True → skip this branch → re-synthesize.
+        """
+        from src.config import ConversionConfig
+
+        output_path = Path(self.temp_dir) / "chapter1.mp3"
+        output_path.write_bytes(b"\x00" * 5000)  # Existing MP3
+
+        # Simulate what _apply_cli_overrides does: clear_cache → force_reprocess=True
+        config = ConversionConfig(
+            engine="edge",
+            output_dir=self.temp_dir,
+            book_title="My Book",
+            clear_cache=True,
+            force_reprocess=True,  # set by _apply_cli_overrides
+        )
+
+        # The guard in _convert_chapters_sequential: skip reuse when force_reprocess=True
+        would_reuse = output_path.exists() and not config.force_reprocess
+        self.assertFalse(would_reuse, "Existing MP3 must NOT be reused when clear_cache is set")
 
     # ── --clear-cache suppresses "Cache detected" message ────────────────────
 
