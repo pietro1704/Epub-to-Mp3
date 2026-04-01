@@ -933,17 +933,24 @@ class TextProcessor:
             for match in H_TAG.finditer(content):
                 _add(match.group(2))
 
-            # EPUBs that use <p> with CSS classes instead of <h1-6> (e.g. pt-BR
-            # IT edition): scan the first few <p> elements and treat any that
-            # look like headings (≤ 8 words, no terminal punctuation) as titles.
-            if H_TAG.search(content) is None:
-                for p_match in _p_tag.finditer(content):
-                    raw = TAG_RE.sub("", p_match.group(1)).strip()
-                    norm = TextProcessor.normalise_whitespace(NBSP_RE.sub(" ", raw))
-                    if norm and len(norm.split()) <= 8 and norm[-1] not in ".!?":
-                        _add(p_match.group(1))
-                    if len(titles) >= 6:
-                        break
+            # Scan <p> elements for structural titles (subtitles, author attributions,
+            # section labels) that look like headings: ≤ 8 words, no terminal punctuation.
+            # When h tags exist, stop at the first paragraph that looks like body text
+            # (long or ends with sentence punctuation) — this captures attribution lines
+            # such as "DE BRUNO TOLENTINO" after an "PREFÁCIO" h1.
+            # When no h tags are present, preserve the original behaviour: scan all
+            # <p> elements up to the 6-title limit (e.g. pt-BR IT edition).
+            _has_h_tags = H_TAG.search(content) is not None
+            for p_match in _p_tag.finditer(content):
+                raw = TAG_RE.sub("", p_match.group(1)).strip()
+                norm = TextProcessor.normalise_whitespace(NBSP_RE.sub(" ", raw))
+                if norm and len(norm.split()) <= 8 and norm[-1] not in ".!?":
+                    _add(p_match.group(1))
+                elif _has_h_tags:
+                    # First body-like paragraph signals end of the opening block.
+                    break
+                if len(titles) >= 6:
+                    break
 
         if chapter_title:
             normalised = TextProcessor.clean_chapter_title(chapter_title)

@@ -82,7 +82,12 @@ class TextFormattingProcessor:
             r"<q\b[^>]*>(.*?)</q>",
         ],
         "small": [
-            r"<small\b[^>]*>(.*?)</small>",
+            # NOTE: <small> is intentionally excluded here.
+            # In EPUBs it is almost always used for typographic small-caps
+            # (e.g. `B<small>RUNO</small>` → "BRUNO"), not semantic "smaller
+            # text".  Extracting it as a formatting segment splits words across
+            # segment boundaries and loses line-structure.  The standard HTML
+            # stripper handles it correctly when left as plain markup.
             r"<sub\b[^>]*>(.*?)</sub>",
             r"<sup\b[^>]*>(.*?)</sup>",
         ],
@@ -323,11 +328,13 @@ class TextFormattingProcessor:
         for segment in segments:
             text = segment.text
 
-            if segment.formatting in {"italic", "bold", "emphasis", "code", "quote", "small"}:
+            if segment.formatting in {"italic", "bold", "emphasis", "code", "quote"}:
                 start, end = self._get_cue_phrases(segment.formatting)
                 formatted = self._render_with_cues(start, text, end)
                 parts.append(formatted)
-            else:  # normal
+            else:
+                # "small" (<small>, <sub>, <sup>) is used for typography/small-caps in EPUBs
+                # and should be read as normal text without verbal cues.
                 parts.append(text)
 
         return " ".join(parts)

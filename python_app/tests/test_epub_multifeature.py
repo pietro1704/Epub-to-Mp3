@@ -452,5 +452,91 @@ class TestMultilangEpubParsing(unittest.TestCase):
         self.assertIn("O destinatário", ch2.text)  # Portuguese
 
 
+class TestJardimDasAflicoesPrefacioParsing(unittest.TestCase):
+    """Regression tests for 'O Jardim das Aflições' chapter 8 (Prefácio de Bruno Tolentino).
+
+    HTML structure:
+        <h1 class="extraCap">PREFÁCIO</h1>
+        <p class="date"><small>DE</small> B<small>RUNO</small> T<small>OLENTINO</small></p>
+        <p class="calibre5">De quando em quando na vida do espírito...</p>
+
+    Expected speech pipeline:
+        PREFÁCIO...           ← long pause after h1 heading
+        DE BRUNO TOLENTINO... ← long pause after author attribution p
+        De quando em quando   ← body text, no additional pause
+    """
+
+    # Exact HTML extracted from part0007.html of the EPUB
+    PREFACIO_HTML = (
+        "<?xml version='1.0' encoding='utf-8'?>"
+        '<html xmlns="http://www.w3.org/1999/xhtml">'
+        "<head><title>Prefácio</title></head>"
+        "<body>"
+        '<h1 class="extraCap" id="_idParaDest-4">PREFÁCIO</h1>'
+        '<p class="date">'
+        '<small class="calibre6">DE</small>'
+        ' B<small class="calibre6">RUNO</small>'
+        ' T<small class="calibre6">OLENTINO</small>'
+        "</p>"
+        '<p class="calibre5">De quando em quando na vida do espírito desanuvia-se aquele céu'
+        " plúmbeo e baixo em que Baudelaire via a tampa da marmita.</p>"
+        "</body></html>"
+    )
+
+    def _prepare(self, chapter_title: str = "Prefácio") -> str:
+        parsed, segments = TextProcessor.html_to_plain_text_with_formatting(self.PREFACIO_HTML)
+        return EpubParser._prepare_speech_text(
+            parsed,
+            formatting_segments=segments,
+            raw_html=self.PREFACIO_HTML,
+            chapter_title=chapter_title,
+        )
+
+    def test_prefacio_heading_gets_long_pause(self) -> None:
+        speech = self._prepare()
+        self.assertIn("PREFÁCIO...", speech)
+
+    def test_author_attribution_gets_long_pause(self) -> None:
+        """'DE BRUNO TOLENTINO' is a <p class='date'> after an h1 — must still get a pause."""
+        speech = self._prepare()
+        self.assertIn("DE BRUNO TOLENTINO...", speech)
+
+    def test_prefacio_before_author_in_speech(self) -> None:
+        speech = self._prepare()
+        self.assertLess(speech.index("PREFÁCIO"), speech.index("DE BRUNO TOLENTINO"))
+
+    def test_author_before_body_text(self) -> None:
+        speech = self._prepare()
+        self.assertLess(speech.index("DE BRUNO TOLENTINO"), speech.index("De quando em quando"))
+
+    def test_body_text_has_no_extra_pause_marker(self) -> None:
+        speech = self._prepare()
+        # First body sentence should appear as plain text without appended '...'
+        self.assertIn("De quando em quando na vida do espírito", speech)
+        # Ensure the body text does NOT get a heading-style pause
+        lines = speech.split("\n")
+        body_lines = [ln for ln in lines if "De quando em quando" in ln]
+        self.assertTrue(body_lines, "Body text not found in speech")
+        self.assertFalse(
+            body_lines[0].rstrip().endswith("..."),
+            f"Body line should not end with '...': {body_lines[0]!r}",
+        )
+
+    def test_structural_titles_contains_both_headings(self) -> None:
+        titles = TextProcessor.extract_structural_titles(self.PREFACIO_HTML, "Prefácio")
+        title_set = {t.casefold() for t in titles}
+        self.assertIn("prefácio", title_set)
+        self.assertIn("de bruno tolentino", title_set)
+
+    def test_structural_titles_does_not_include_body_paragraph(self) -> None:
+        titles = TextProcessor.extract_structural_titles(self.PREFACIO_HTML)
+        title_set = {t.casefold() for t in titles}
+        self.assertNotIn(
+            "de quando em quando na vida do espírito",
+            title_set,
+            "Long body paragraph must not be treated as a structural title",
+        )
+
+
 if __name__ == "__main__":  # pragma: no cover
     unittest.main()
