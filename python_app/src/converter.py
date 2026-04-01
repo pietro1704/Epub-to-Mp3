@@ -1283,7 +1283,10 @@ class AudioConverter(
                 for label in label_variants:
                     parsed_path = text_dir / f"{label} - {safe_name}-parsed.txt"
                     pre_tts_path = text_dir / f"{label} - {safe_name}-pre-tts.txt"
-                    if parsed_path.exists() and pre_tts_path.exists():
+                    force = getattr(config, "force_reprocess", False) or getattr(
+                        config, "clear_cache", False
+                    )
+                    if parsed_path.exists() and pre_tts_path.exists() and not force:
                         continue
                     parsed_path.write_text(parsed_text, encoding="utf-8")
                     pre_tts_path.write_text(pre_tts_text, encoding="utf-8")

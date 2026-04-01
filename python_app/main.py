@@ -2551,10 +2551,17 @@ class ConverterApplication:
 
             if cleaned_lines:
                 last = cleaned_lines[-1]
-                if last and self._heading_contains(line, last):
+                # Only deduplicate short heading-like lines (≤8 words).
+                # Long body sentences may naturally contain the same words as a
+                # preceding heading (e.g. "Quarto de Eddie" followed by
+                # "...subiram para o quarto de Eddie.") — do not drop the heading.
+                _MAX_HEADING_WORDS = 8
+                line_is_heading = len(line.split()) <= _MAX_HEADING_WORDS
+                last_is_heading = len(last.split()) <= _MAX_HEADING_WORDS
+                if last_is_heading and line_is_heading and self._heading_contains(line, last):
                     cleaned_lines[-1] = line
                     continue
-                if line and self._heading_contains(last, line):
+                if last_is_heading and line_is_heading and self._heading_contains(last, line):
                     # Skip current line if previous already more descriptive
                     continue
 

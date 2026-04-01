@@ -82,7 +82,7 @@ class TestSampleEpubFeatures(unittest.TestCase):
         )
 
         self.assertIn("AN UNUSUAL TITLE...", speech)
-        self.assertIn("AN UNUSUAL TITLE... The story starts here.", speech)
+        self.assertIn("AN UNUSUAL TITLE...\nThe story starts here.", speech)
 
     def test_prepare_speech_text_uses_toc_title_when_html_has_no_heading(self) -> None:
         raw_html = "<div><p>The story starts here.</p></div>"
@@ -95,7 +95,7 @@ class TestSampleEpubFeatures(unittest.TestCase):
             chapter_title="Chapter Twelve",
         )
 
-        self.assertTrue(speech.startswith("Chapter Twelve... The story starts here."))
+        self.assertTrue(speech.startswith("Chapter Twelve...\nThe story starts here."))
 
     def test_prepare_speech_text_does_not_duplicate_toc_title_already_in_opening_lines(
         self,
@@ -166,10 +166,9 @@ perfectly normal, thank you very much. They were the last people</p>
         self.assertIn("Mr. and Mrs. Dursley, of number four, Privet Drive", parsed_text)
         self.assertTrue(speech.startswith("Chapter 1..."))
         self.assertIn("THE BOY WHO LIVED...", speech)
-        # Heading gets long pause (...) then content — no mid-sentence pause
+        # Heading is on its own line; body starts on the next line (newline preserved)
         self.assertIn(
-            "THE BOY WHO LIVED... Mr. and Mrs. Dursley, of number four, Privet Drive",
-            speech,
+            "THE BOY WHO LIVED...\nMr. and Mrs. Dursley, of number four, Privet Drive", speech
         )
         # Intra-paragraph soft line breaks must NOT create mid-sentence pauses
         self.assertNotIn("of.\nnumber four", speech)
@@ -228,8 +227,8 @@ perfectly normal, thank you very much. They were the last people</p>
         self.assertIn("Part One: The Shadow Before...", speech)
         self.assertIn("Chapter 1...", speech)
         self.assertIn("After the Flood (1957)...", speech)
-        # Headings appear in order with long pauses between them
-        self.assertIn("Part One: The Shadow Before... Chapter 1...", speech)
+        # Headings appear in order with long pauses between them (each on its own line)
+        self.assertIn("Part One: The Shadow Before...\nChapter 1...", speech)
         # Paragraph content must not be mixed into heading line
         self.assertNotIn("Chapter 1 After the Flood", speech)
 

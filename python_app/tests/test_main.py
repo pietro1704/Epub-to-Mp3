@@ -1864,5 +1864,60 @@ class TestSectionNumberDisplay(unittest.TestCase):
             )
 
 
+class TestPrepareChapterTextHeadingDedup(unittest.TestCase):
+    """Regression tests for _prepare_chapter_text heading deduplication.
+
+    Bug: _heading_contains used substring matching without word-count guards.
+    A short section title like "Quarto de Eddie" was dropped when followed by
+    body text that naturally contained the phrase (e.g. "subiram para o quarto
+    de Eddie"), because the body was seen as "more descriptive".
+
+    Fix: deduplication only applies when BOTH lines are short (<=8 words).
+    """
+
+    def setUp(self):
+        self.app = ConverterApplication()
+
+    def test_short_section_title_not_dropped_when_body_contains_phrase(self):
+        """'Quarto de Eddie' must survive when body text contains 'quarto de Eddie'."""
+        text = (
+            "3\nQuarto de Eddie\n"
+            "Beverly e Bill se vestiram rapidamente, sem falar, e subiram para o quarto de Eddie."
+        )
+        label = (
+            "8.2.3 - Parte 5 – O ritual de Chüd - Capítulo 20 – O círculo se fecha"
+            " - 3 quarto de eddie beverly e bill"
+        )
+        result = self.app._prepare_chapter_text(text, display_name=label, book_title="It: A coisa")
+        self.assertIn("Quarto de Eddie", result)
+        self.assertIn("Beverly e Bill se vestiram", result)
+
+    def test_section_number_preserved_before_title(self):
+        """Section number '3' must appear before 'Quarto de Eddie' in output."""
+        text = (
+            "3\nQuarto de Eddie\n"
+            "Beverly e Bill se vestiram rapidamente, sem falar, e subiram para o quarto de Eddie."
+        )
+        label = "8.2.3 - Capítulo 20 – O círculo se fecha - 3 quarto de eddie"
+        result = self.app._prepare_chapter_text(text, display_name=label, book_title="It: A coisa")
+        idx_3 = result.find("3")
+        idx_title = result.find("Quarto de Eddie")
+        self.assertLess(idx_3, idx_title, "'3' must appear before 'Quarto de Eddie'")
+
+    def test_true_duplicate_heading_still_deduplicated(self):
+        """Actual duplicate headings (same short string twice) are still removed."""
+        text = "Capítulo 20\nCapítulo 20\nBody text here."
+        label = "8.2 - Capítulo 20 body text"
+        result = self.app._prepare_chapter_text(text, display_name=label, book_title="It")
+        self.assertEqual(result.count("Capítulo 20"), 1, "duplicate heading must be removed")
+
+    def test_longer_heading_replaces_shorter_duplicate(self):
+        """When two short headings overlap, the more descriptive one is kept."""
+        text = "Seção\nSeção 1\nBody."
+        label = "1.1 - secao 1"
+        result = self.app._prepare_chapter_text(text, display_name=label, book_title="Book")
+        self.assertIn("Seção 1", result)
+
+
 if __name__ == "__main__":
     unittest.main()
