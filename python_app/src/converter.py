@@ -4420,8 +4420,14 @@ class AudioConverter(
                                 ).strip().lower() in {"1", "true", "yes", "on"}
                                 # Avoid retry loops: after first chapter attempt, discard stale chunks
                                 # so we don't keep replaying the same failing segment payload.
+                                # Also discard when force_reprocess/clear_cache is set — stale chunks
+                                # must not be resumed when the user explicitly requests a fresh run.
                                 resume_allowed = (
-                                    (not disable_resume) and chapter_attempt == 1 and attempt == 0
+                                    (not disable_resume)
+                                    and chapter_attempt == 1
+                                    and attempt == 0
+                                    and not getattr(config, "force_reprocess", False)
+                                    and not getattr(config, "clear_cache", False)
                                 )
                                 if not resume_allowed:
                                     try:
