@@ -223,5 +223,139 @@ class TestTextProcessor(unittest.TestCase):
         self.assertIn("Primeira seção do capítulo", plain_text)
 
 
+class TestEnhanceNaturalPausesNewlines(unittest.TestCase):
+    """Regression tests for enhance_natural_pauses newline preservation.
+
+    Bug: re.sub with greedy whitespace around "..." consumed trailing newlines,
+    collapsing multi-heading chapters onto a single line.  Fix: use [ \\t]*
+    instead of \\s* so newlines are preserved.
+    """
+
+    def setUp(self):
+        from src.text_formatting import TextFormattingProcessor
+
+        self.enhance = TextFormattingProcessor.enhance_natural_pauses
+
+    def test_newline_preserved_after_ellipsis(self):
+        text = "Capítulo 20...\nO círculo se fecha..."
+        result = self.enhance(text)
+        self.assertIn("\n", result, "newline after '...' must be preserved")
+
+    def test_heading_block_stays_multiline(self):
+        text = "Capítulo 20...\nO círculo se fecha...\n1...\nTom...\nTom Rogan estava tendo"
+        result = self.enhance(text)
+        lines = [ln for ln in result.split("\n") if ln.strip()]
+        self.assertGreaterEqual(len(lines), 5, "all heading lines must remain on separate lines")
+
+    def test_section_number_on_own_line(self):
+        text = "Capítulo 20...\nO círculo se fecha...\n1...\nTom...\nBody text here."
+        result = self.enhance(text)
+        self.assertIn("\n1", result, "section number '1' must remain on its own line")
+
+    def test_person_name_heading_on_own_line(self):
+        text = "Capítulo 20...\nO círculo se fecha...\n1...\nTom...\nBody text here."
+        result = self.enhance(text)
+        self.assertIn("\nTom", result, "person name 'Tom' must remain on its own line")
+
+    def test_ellipsis_spacing_normalised(self):
+        text = "Texto com  ...  espaço."
+        result = self.enhance(text)
+        self.assertNotIn("  ...", result)
+        self.assertNotIn("...  ", result)
+
+    def test_paragraph_break_preserved(self):
+        text = "He paused...\n\nNew paragraph starts."
+        result = self.enhance(text)
+        self.assertIn("\n\n", result, "double newline paragraph break must survive")
+
+
+class TestITChapter20SpeechPipeline(unittest.TestCase):
+    """End-to-end tests for the IT ch.20 heading structure.
+
+    HTML structure (pt-BR IT edition, part0037.xhtml):
+      <p class_s3J-0>Capítulo 20</p>
+      <p class_s3M-0>O círculo se fecha</p>
+      <p class_s3P-0>1</p>          ← section number (SUBCHAPTER_NUMBER_CLASSES)
+      <p class_sG5>Tom</p>          ← section title  (SUBCHAPTER_TITLE_CLASS)
+      <p ...>Tom Rogan estava tendo uma porra de sonho louco.</p>
+
+    Expected pre-tts: each structural element on its own line followed by "..."
+    for a natural TTS pause.
+    """
+
+    IT_CH20_HTML = (
+        '<div class="class_s11-0">'
+        '<p class="class_s3J-0">Capítulo 20</p>'
+        '<p class="class_s3M-0">O círculo se fecha</p>'
+        '<p class="class_s3P-0">1</p>'
+        '<p class="class_sG5">Tom</p>'
+        '<p class="class_s1S-0">Tom Rogan estava tendo uma porra de sonho louco.</p>'
+        "</div>"
+    )
+
+    def _speech_text(self, html, chapter_title="Capítulo 20 – O círculo se fecha"):
+        from src.ebook_reader import TextProcessor
+        from src.text_formatting import TextFormattingProcessor
+
+        plain, segs = TextProcessor.html_to_plain_text_with_formatting(html)
+        formatter = TextFormattingProcessor()
+        audible = formatter.to_audible_text(plain, segs)
+        structured = TextProcessor.apply_structural_speech_cues(
+            audible, raw_html=html, chapter_title=chapter_title
+        )
+        return TextFormattingProcessor.enhance_natural_pauses(structured)
+
+    def test_chapter_number_in_speech(self):
+        result = self._speech_text(self.IT_CH20_HTML)
+        self.assertIn("Capítulo 20", result)
+
+    def test_chapter_title_in_speech(self):
+        result = self._speech_text(self.IT_CH20_HTML)
+        self.assertIn("círculo se fecha", result)
+
+    def test_section_number_in_speech(self):
+        result = self._speech_text(self.IT_CH20_HTML)
+        self.assertIn("1", result)
+
+    def test_person_name_in_speech(self):
+        result = self._speech_text(self.IT_CH20_HTML)
+        self.assertIn("Tom", result)
+
+    def test_body_text_in_speech(self):
+        result = self._speech_text(self.IT_CH20_HTML)
+        self.assertIn("Tom Rogan estava tendo", result)
+
+    def test_section_number_on_separate_line(self):
+        result = self._speech_text(self.IT_CH20_HTML)
+        lines = [ln.strip().rstrip(".") for ln in result.split("\n") if ln.strip()]
+        # "1" should appear as its own line (possibly with "..." appended)
+        section_lines = [ln for ln in lines if ln == "1" or ln.startswith("1.")]
+        self.assertTrue(section_lines, f"'1' must be on its own line; got:\n{result}")
+
+    def test_person_name_on_separate_line(self):
+        result = self._speech_text(self.IT_CH20_HTML)
+        lines = [ln.strip() for ln in result.split("\n") if ln.strip()]
+        # "Tom" heading line (NOT the body sentence "Tom Rogan estava...")
+        tom_heading = [ln for ln in lines if ln.rstrip(". ").rstrip(".") == "Tom"]
+        self.assertTrue(tom_heading, f"'Tom' must be on its own line; got:\n{result}")
+
+    def test_headings_not_run_together(self):
+        result = self._speech_text(self.IT_CH20_HTML)
+        # If headings are collapsed, "O círculo se fechaTom Rogan" would appear
+        self.assertNotIn("fechaTom", result)
+        self.assertNotIn("fecha1", result)
+        self.assertNotIn("fecha Tom", result.replace("\n", ""))
+
+    def test_chapter_number_not_duplicated_in_toc_title(self):
+        # When the text already starts with the chapter number heading,
+        # apply_structural_speech_cues must NOT prepend the TOC title again.
+        result = self._speech_text(self.IT_CH20_HTML)
+        self.assertLessEqual(
+            result.lower().count("capítulo 20"),
+            1,
+            "chapter number must not be spoken twice",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

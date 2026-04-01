@@ -594,9 +594,11 @@ class TextFormattingProcessor:
             flags=re.MULTILINE | re.IGNORECASE,
         )
 
-        # Ensure proper spacing around ellipsis for natural pauses
+        # Ensure proper spacing around ellipsis for natural pauses.
+        # Use [ \t]* (not \s*) so newlines are preserved — otherwise heading
+        # lines ending with "...\n" get collapsed onto one line.
         text = re.sub(r"\.{3,}", "...", text)
-        text = re.sub(r"\s*\.\.\.\s*", "... ", text)
+        text = re.sub(r"[ \t]*\.\.\.[ \t]*", "... ", text)
 
         return text
 
