@@ -357,5 +357,82 @@ class TestITChapter20SpeechPipeline(unittest.TestCase):
         )
 
 
+class TestITChapter20Section3SpeechPipeline(unittest.TestCase):
+    """End-to-end tests for IT ch.20 section 3 heading structure.
+
+    HTML structure (pt-BR IT edition, part0037.xhtml):
+      <p class_s42-0>3</p>           ← section number (SUBCHAPTER_NUMBER_CLASSES)
+      <p class_sG5>Quarto de Eddie</p> ← section title  (SUBCHAPTER_TITLE_CLASS)
+      <p class_s1S-0>Beverly e Bill...</p>
+
+    Expected pre-tts: section number and title each on their own line with "..."
+    followed by body text on the next line.
+    """
+
+    IT_CH20_S3_HTML = (
+        '<div class="class_s11-0">'
+        '<p class="class_s42-0">3</p>'
+        '<p class="class_sG5">Quarto de Eddie</p>'
+        '<p class="class_s1S-0">Beverly e Bill se vestiram rapidamente, sem falar, e subiram para o quarto de Eddie.</p>'
+        "</div>"
+    )
+
+    def _speech_text(self, html, chapter_title="Capítulo 20 – O círculo se fecha"):
+        from src.ebook_reader import TextProcessor
+        from src.text_formatting import TextFormattingProcessor
+
+        plain, segs = TextProcessor.html_to_plain_text_with_formatting(html)
+        formatter = TextFormattingProcessor()
+        audible = formatter.to_audible_text(plain, segs)
+        structured = TextProcessor.apply_structural_speech_cues(
+            audible, raw_html=html, chapter_title=chapter_title
+        )
+        return TextFormattingProcessor.enhance_natural_pauses(structured)
+
+    def test_section_number_in_speech(self):
+        result = self._speech_text(self.IT_CH20_S3_HTML)
+        self.assertIn("3", result)
+
+    def test_section_title_in_speech(self):
+        result = self._speech_text(self.IT_CH20_S3_HTML)
+        self.assertIn("Quarto de Eddie", result)
+
+    def test_body_text_in_speech(self):
+        result = self._speech_text(self.IT_CH20_S3_HTML)
+        self.assertIn("Beverly e Bill se vestiram rapidamente", result)
+
+    def test_section_number_on_separate_line(self):
+        result = self._speech_text(self.IT_CH20_S3_HTML)
+        lines = [ln.strip().rstrip(".") for ln in result.split("\n") if ln.strip()]
+        section_lines = [ln for ln in lines if ln == "3" or ln.startswith("3.")]
+        self.assertTrue(section_lines, f"'3' must be on its own line; got:\n{result}")
+
+    def test_section_title_on_separate_line(self):
+        result = self._speech_text(self.IT_CH20_S3_HTML)
+        lines = [ln.strip() for ln in result.split("\n") if ln.strip()]
+        title_lines = [ln for ln in lines if ln.rstrip(". ").rstrip(".") == "Quarto de Eddie"]
+        self.assertTrue(title_lines, f"'Quarto de Eddie' must be on its own line; got:\n{result}")
+
+    def test_headings_not_run_together(self):
+        result = self._speech_text(self.IT_CH20_S3_HTML)
+        # If headings collapse: "3Quarto de Eddie" or "3 Quarto de Eddie" on same line
+        self.assertNotIn("3Quarto", result)
+        flat = result.replace("\n", "")
+        self.assertNotIn("3Quarto", flat)
+        self.assertNotIn("EddieBeverly", flat)
+
+    def test_section_number_before_title(self):
+        result = self._speech_text(self.IT_CH20_S3_HTML)
+        idx_3 = result.find("3")
+        idx_title = result.find("Quarto de Eddie")
+        self.assertLess(idx_3, idx_title, "'3' must appear before 'Quarto de Eddie'")
+
+    def test_title_before_body(self):
+        result = self._speech_text(self.IT_CH20_S3_HTML)
+        idx_title = result.find("Quarto de Eddie")
+        idx_body = result.find("Beverly e Bill se vestiram")
+        self.assertLess(idx_title, idx_body, "'Quarto de Eddie' must appear before body text")
+
+
 if __name__ == "__main__":
     unittest.main()
