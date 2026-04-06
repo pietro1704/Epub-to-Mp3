@@ -565,12 +565,12 @@ _PENDING_META_FILENAME = "upload.json"
 _CHAPTER_HEARTBEAT_SECONDS = 20.0  # was 45s — more frequent activity pings
 _CHAPTER_TIMEOUT_FACTOR = 2.0  # was 2.5 — less overshoot on estimated duration
 _CHAPTER_TIMEOUT_MIN = 60.0  # was 120s — detect stuck chapters faster
-# On HF, cap at 120s so slow Edge chapters trigger fallback to Kokoro sooner.
 # Locally, allow up to 1800s (30 min) for unusually large chapters that the
 # auto-split may have missed (e.g. cached parses from before the split was
-# applied).  The per-chapter synthesis estimate in _resolve_chapter_timeout
-# already bounds this from above based on actual chapter size.
-_CHAPTER_TIMEOUT_MAX = 120.0 if _hf_mode else 1800.0
+# applied).  On HF we use the same cap because Edge is often the only working
+# engine and chapters can be 50–70 K chars (needing 1000+ s at 60 chars/s).
+# _resolve_chapter_timeout scales the effective cap with chapter size.
+_CHAPTER_TIMEOUT_MAX = 1800.0
 try:
     _CHAPTER_RETRY_MAX = max(0, int(os.getenv("CHAPTER_RETRY_MAX", "6") or "6"))
 except (TypeError, ValueError):
@@ -807,18 +807,16 @@ def _determine_saved_at(job_data: dict) -> str:
 def _resolve_chapter_timeout(estimated_seconds: float, text_chars: int = 0) -> float:
     """Return an upper bound for synthesis before forcing fallback.
 
-    On HF Spaces the cap is tight (120 s) to trigger engine fallback fast.
-    Locally we allow chapters to run longer; the minimum is also bounded from
-    below by a chars-based synthesis estimate so that unusually large chapters
-    (e.g. footnote-container chapters not yet split by the EPUB reader) are
-    not cut off prematurely.  A conservative Piper rate of 800 chars/s is used
-    so that even slow hardware finishes without a timeout.
+    The cap scales with chapter size so large chapters (50–70 K chars) get
+    enough time even on HF where Edge synthesises at 50–100 chars/s.  A
+    conservative minimum synthesis speed of 30 chars/s is assumed so the cap
+    never cuts off a chapter that is still making steady progress.
     """
     estimate = max(float(estimated_seconds or 0.0), _CHAPTER_TIMEOUT_MIN)
     timeout = max(_CHAPTER_TIMEOUT_MIN, estimate * _CHAPTER_TIMEOUT_FACTOR)
-    if not _hf_mode and text_chars > 0:
-        # Ensure at least enough time for Piper at a conservative 800 chars/s.
-        synthesis_min = (text_chars / 800.0) * _CHAPTER_TIMEOUT_FACTOR
+    if text_chars > 0:
+        # Floor: enough time for a very slow engine at 30 chars/s with 1.5× margin.
+        synthesis_min = (text_chars / 30.0) * 1.5
         timeout = max(timeout, synthesis_min)
     return min(timeout, _CHAPTER_TIMEOUT_MAX)
 
@@ -4419,9 +4417,13 @@ async def process_conversion(job_id: str) -> None:
                         estimated_seconds, text_chars=len(clean_text)
                     )
                     if edge_slow_mode and engine_name == "edge":
-                        chapter_timeout = min(
-                            chapter_timeout, float(edge_safe_profile["timeout_max"])
-                        )
+                        safe_max = float(edge_safe_profile["timeout_max"])
+                        # Scale the slow-mode cap with chapter size so large
+                        # chapters (50-70 K chars) are not cut off prematurely.
+                        # Conservative slow-mode Edge speed on HF: 30 chars/s.
+                        if len(clean_text) > 0:
+                            safe_max = max(safe_max, len(clean_text) / 30.0 * 1.5)
+                        chapter_timeout = min(chapter_timeout, safe_max)
                     try:
                         async with engine_pool.use(engine_name) as (engine_config, engine_obj):
                             local_active_config = engine_config
@@ -4461,8 +4463,18 @@ async def process_conversion(job_id: str) -> None:
                                 except TypeError:
                                     # Fallback for engines that don't support callbacks
                                     synth_task = engine_obj.synthesize_async(clean_text, tts_path)
-                                await asyncio.wait_for(synth_task, timeout=chapter_timeout)
+                                synth_result = await asyncio.wait_for(
+                                    synth_task, timeout=chapter_timeout
+                                )
                                 last_stage_timestamp = time.time()
+                                # Engines that write WAV (Piper/Coqui) return None on
+                                # failure instead of raising.  Raise here so the
+                                # exception handler can trigger the proper fallback chain
+                                # rather than reaching the WAV→MP3 step with no input.
+                                if needs_transcode and synth_result is None:
+                                    raise RuntimeError(
+                                        f"{engine_config.engine or engine_name} synthesis returned no output"
+                                    )
                             except asyncio.TimeoutError:
                                 use_engine = engine_config.engine or engine_name or "unknown"
                                 _append_event(

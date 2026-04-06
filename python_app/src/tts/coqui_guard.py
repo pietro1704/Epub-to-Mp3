@@ -17,7 +17,18 @@ def is_coqui_supported_environment() -> bool:
     if force_enable in {"1", "true", "yes", "on"}:
         return True
 
-    return is_numpy_safe_environment()
+    if not is_numpy_safe_environment():
+        return False
+
+    # Coqui XTTS requires BeamSearchScorer which was removed from the public
+    # transformers API in newer releases.  Probe the import so we fail fast at
+    # startup instead of crashing mid-conversion.
+    try:
+        from transformers import BeamSearchScorer  # noqa: F401
+    except ImportError:
+        return False
+
+    return True
 
 
 __all__ = ["is_coqui_supported_environment"]
