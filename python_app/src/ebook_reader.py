@@ -376,9 +376,18 @@ class TextProcessor:
         def extract_note_text(node) -> str:
             if node is None:
                 return ""
-            # If node is an empty anchor, use parent instead
-            if node.name == "a" and not node.get_text(strip=True) and node.parent:
-                node = node.parent
+            # If node is an anchor that is empty or contains only a numeric label
+            # (i.e. it's a backlink target, not the actual footnote container),
+            # use the parent element which holds the full note content.
+            if node.name == "a" and node.parent:
+                anchor_text = node.get_text(strip=True)
+                is_numeric_label = anchor_text.isdigit() or (
+                    anchor_text.startswith("[")
+                    and anchor_text.endswith("]")
+                    and anchor_text[1:-1].isdigit()
+                )
+                if not anchor_text or is_numeric_label:
+                    node = node.parent
             for backlink in node.find_all("a"):
                 if backlink is None or not hasattr(backlink, "get"):
                     continue
@@ -425,6 +434,11 @@ class TextProcessor:
 
             return cleaned.strip()
 
+        # Maps fragment id → the soup node to decompose during cleanup.
+        # When the target node is a backlink anchor, its parent container is used
+        # so that the full footnote block is removed (not just the anchor).
+        cleanup_targets: Dict[str, any] = {}
+
         for anchor in list(soup.find_all("a")):
             if anchor is None or not hasattr(anchor, "get"):
                 continue
@@ -452,6 +466,25 @@ class TextProcessor:
                 external_soup = external_footnote_cache.get(external_file)
                 if external_soup:
                     note_node = external_soup.find(id=fragment)
+
+            # Determine the cleanup target before extract_note_text may decompose
+            # the anchor.  When the target is a backlink anchor (contains only a
+            # numeric label or is empty), the actual note content lives in its
+            # parent container — remove that parent during cleanup so no duplicate
+            # text remains in the document.
+            if note_node is not None and note_node.name == "a":
+                anchor_text = note_node.get_text(strip=True)
+                is_numeric_label = anchor_text.isdigit() or (
+                    anchor_text.startswith("[")
+                    and anchor_text.endswith("]")
+                    and anchor_text[1:-1].isdigit()
+                )
+                if not anchor_text or is_numeric_label:
+                    cleanup_targets[fragment] = note_node.parent or note_node
+                else:
+                    cleanup_targets[fragment] = note_node
+            elif note_node is not None:
+                cleanup_targets[fragment] = note_node
 
             note_text = extract_note_text(note_node)
             if not note_text:
@@ -491,9 +524,12 @@ class TextProcessor:
             processed_targets.append(fragment)
 
         for fragment in set(processed_targets):
-            node = soup.find(id=fragment)
+            node = cleanup_targets.get(fragment) or soup.find(id=fragment)
             if node is not None:
-                node.decompose()
+                try:
+                    node.decompose()
+                except Exception:
+                    pass
 
         return str(soup), footnotes
 
@@ -631,13 +667,17 @@ class TextProcessor:
         context_words = max(int(context_words or 0), 0)
 
         phrases = phrases or {}
-        prefix = phrases.get("prefix", "\n")
-        template = phrases.get("template", "nota de rodapé {number}: {text}")
-        suffix_text = phrases.get("suffix_text", " fim da nota de rodapé")
-        closing = phrases.get("closing", "")
+        # Default template uses paragraph breaks and ellipses around footnotes so
+        # the TTS engine produces clear pauses, separating the note from the main
+        # text flow.  "..." signals a long silence to Edge-TTS; the double newlines
+        # create paragraph-level pauses for all engines.
+        prefix = phrases.get("prefix", "\n\n")
+        template = phrases.get("template", "nota de rodapé {number}...\n{text}")
+        suffix_text = phrases.get("suffix_text", "\nfim da nota de rodapé...")
+        closing = phrases.get("closing", "\n\n")
         chapter_end_template = phrases.get(
             "chapter_end_template",
-            "nota de rodapé {number}: {snippet} - {text} fim da nota de rodapé",
+            "nota de rodapé {number}...\n{snippet} — {text}\nfim da nota de rodapé...",
         )
 
         text = base_text
@@ -696,10 +736,10 @@ class TextProcessor:
             return segments
 
         phrases = phrases or {}
-        prefix = phrases.get("prefix", "\n")
-        template = phrases.get("template", "nota de rodapé {number}: {text}")
-        suffix_text = phrases.get("suffix_text", " fim da nota de rodapé")
-        closing = phrases.get("closing", "")
+        prefix = phrases.get("prefix", "\n\n")
+        template = phrases.get("template", "nota de rodapé {number}...\n{text}")
+        suffix_text = phrases.get("suffix_text", "\nfim da nota de rodapé...")
+        closing = phrases.get("closing", "\n\n")
 
         replacements: Dict[str, str] = {}
         for footnote in footnotes:

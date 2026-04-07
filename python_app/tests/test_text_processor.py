@@ -206,6 +206,43 @@ class TestTextProcessor(unittest.TestCase):
 
         self.assertIn("nota de rodapé 1", rendered.lower())
 
+    def test_inject_footnotes_backlink_anchor_as_id_target(self):
+        """Footnote content in sibling span when id is on a backlink anchor (Metro 2033 pattern).
+
+        Structure: <a id="footnote-X">27</a> <span>actual text</span>
+        The anchor is only the backlink target; the real note lives in its parent.
+        """
+        markup = (
+            "<p>Texto do capítulo"
+            '<span><a class="footnote-link" href="#fn-27" id="fn-27-backlink">27</a></span>. Continuação.</p>'
+            '<div class="footnotes"><div class="footnote">'
+            '<p class="Notas-de-rodap-">'
+            '<a class="footnote-anchor" href="#fn-27-backlink" id="fn-27">27</a>'
+            ' <span class="Regular">N.T. – Uniformes cinzentos. Texto da nota.</span>'
+            "</p></div></div>"
+        )
+
+        markup_with_markers, footnotes = TextProcessor.inject_footnotes(markup)
+
+        self.assertEqual(len(footnotes), 1, "Expected exactly one footnote")
+        self.assertIn("N.T.", footnotes[0]["text"], "Note text should contain actual content")
+        self.assertNotEqual(
+            footnotes[0]["text"].strip(), "27", "Note text must not be just the label number"
+        )
+
+        plain_text, _ = TextProcessor.html_to_plain_text_with_formatting(markup_with_markers)
+        rendered = TextProcessor._render_footnotes(
+            plain_text, footnotes, mode="inline", context_words=8
+        )
+
+        self.assertIn("N.T.", rendered)
+        self.assertIn("nota de rodapé 27", rendered.lower())
+        self.assertIn("fim da nota de rodapé", rendered.lower())
+        # Footnote content must not be duplicated
+        self.assertEqual(rendered.lower().count("n.t."), 1, "Note text must appear exactly once")
+        # Main text must survive
+        self.assertIn("Continuação", rendered)
+
     def test_inject_footnotes_preserves_numeric_internal_section_link(self):
         """Numeric internal links (section anchors) must not be treated as footnotes."""
         markup = (
