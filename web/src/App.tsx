@@ -11,7 +11,7 @@ import {
 import Hero from "./components/Hero";
 import Layout from "./components/Layout";
 import Panel from "./components/Panel";
-import { isTauri, listenTauri } from "./lib/tauri";
+import { isTauri, listenTauri, sendNotification } from "./lib/tauri";
 
 // Lazy load heavy components
 const ConversionForm = lazy(() => import("./components/ConversionForm"));
@@ -876,6 +876,10 @@ export default function App(props?: AppProps): JSX.Element {
     });
     manualDownloadOverrideRef.current = false;
     lastCompletedJobIdRef.current = state.jobId;
+    // OS notification when app is in background
+    if (isTauri() && document.hidden) {
+      sendNotification(t.downloads.readyNotificationTitle, resolvedTitle);
+    }
   }, [
     state.bookTitle,
     state.downloads,

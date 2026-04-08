@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::CommandEvent;
@@ -86,7 +86,39 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
 
     let open = MenuItem::with_id(h, "open_books", "Open Books…", true, Some("CmdOrCtrl+O"))?;
     let logs = MenuItem::with_id(h, "show_logs", "Server Logs", true, None::<&str>)?;
-    let view = Submenu::with_items(h, "View", true, &[&logs])?;
+
+    // Theme submenu
+    let theme_auto = CheckMenuItem::with_id(h, "theme_auto", "Auto", true, true, None::<&str>)?;
+    let theme_light =
+        CheckMenuItem::with_id(h, "theme_light", "Light", true, false, None::<&str>)?;
+    let theme_dark =
+        CheckMenuItem::with_id(h, "theme_dark", "Dark", true, false, None::<&str>)?;
+    let theme_sub = Submenu::with_items(
+        h,
+        "Theme",
+        true,
+        &[&theme_auto, &theme_light, &theme_dark],
+    )?;
+
+    // Language submenu
+    let lang_auto = CheckMenuItem::with_id(h, "lang_auto", "Auto", true, true, None::<&str>)?;
+    let lang_pt =
+        CheckMenuItem::with_id(h, "lang_pt", "Português", true, false, None::<&str>)?;
+    let lang_en = CheckMenuItem::with_id(h, "lang_en", "English", true, false, None::<&str>)?;
+    let lang_sub =
+        Submenu::with_items(h, "Language", true, &[&lang_auto, &lang_pt, &lang_en])?;
+
+    let view = Submenu::with_items(
+        h,
+        "View",
+        true,
+        &[
+            &logs,
+            &PredefinedMenuItem::separator(h)?,
+            &theme_sub,
+            &lang_sub,
+        ],
+    )?;
 
     #[cfg(target_os = "macos")]
     let menu = {
@@ -133,6 +165,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(ServerLogs(Mutex::new(Vec::new())))
         .invoke_handler(tauri::generate_handler![
             get_server_logs,
@@ -144,16 +178,51 @@ pub fn run() {
             let menu = build_menu(app)?;
             app.set_menu(menu)?;
 
-            app.on_menu_event(|app_handle, event| match event.id().0.as_str() {
-                // File > Open Books… → tell the frontend to open its file picker.
-                "open_books" => {
-                    if let Some(win) = app_handle.get_webview_window("main") {
-                        let _ = win.emit("tauri-open-books", ());
+            app.on_menu_event(|app_handle, event| {
+                let id = event.id().0.as_str();
+                match id {
+                    // File > Open Books…
+                    "open_books" => {
+                        if let Some(win) = app_handle.get_webview_window("main") {
+                            let _ = win.emit("tauri-open-books", ());
+                        }
                     }
+                    // View > Server Logs
+                    "show_logs" => show_log_window(app_handle),
+
+                    // View > Theme
+                    "theme_auto" | "theme_light" | "theme_dark" => {
+                        let value = id.strip_prefix("theme_").unwrap_or("auto");
+                        // Uncheck siblings, check selected
+                        for tid in ["theme_auto", "theme_light", "theme_dark"] {
+                            if let Some(item) = app_handle.menu().and_then(|m| m.get(tid)) {
+                                if let Ok(check) = item.as_check_menuitem_unchecked() {
+                                    let _ = check.set_checked(tid == id);
+                                }
+                            }
+                        }
+                        if let Some(win) = app_handle.get_webview_window("main") {
+                            let _ = win.emit("tauri-set-theme", value);
+                        }
+                    }
+
+                    // View > Language
+                    "lang_auto" | "lang_pt" | "lang_en" => {
+                        let value = id.strip_prefix("lang_").unwrap_or("auto");
+                        for lid in ["lang_auto", "lang_pt", "lang_en"] {
+                            if let Some(item) = app_handle.menu().and_then(|m| m.get(lid)) {
+                                if let Ok(check) = item.as_check_menuitem_unchecked() {
+                                    let _ = check.set_checked(lid == id);
+                                }
+                            }
+                        }
+                        if let Some(win) = app_handle.get_webview_window("main") {
+                            let _ = win.emit("tauri-set-locale", value);
+                        }
+                    }
+
+                    _ => {}
                 }
-                // View > Server Logs
-                "show_logs" => show_log_window(app_handle),
-                _ => {}
             });
 
             // ── Sidecar startup ───────────────────────────────────────────────

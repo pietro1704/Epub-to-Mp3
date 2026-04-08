@@ -22,9 +22,16 @@ interface TauriEvent {
   ) => Promise<TauriEventUnlisten>;
 }
 
+interface TauriNotification {
+  sendNotification: (options: { title: string; body?: string }) => void;
+  isPermissionGranted: () => Promise<boolean>;
+  requestPermission: () => Promise<string>;
+}
+
 interface TauriGlobal {
   core: TauriCore;
   event: TauriEvent;
+  notification?: TauriNotification;
 }
 
 declare global {
@@ -57,4 +64,25 @@ export async function listenTauri(
 ): Promise<TauriEventUnlisten> {
   if (!window.__TAURI__) return () => {};
   return window.__TAURI__.event.listen(event, (e) => handler(e.payload));
+}
+
+/** Send an OS notification. Only works in Tauri with notification plugin. */
+export async function sendNotification(
+  title: string,
+  body?: string,
+): Promise<void> {
+  const notif = window.__TAURI__?.notification;
+  if (!notif) return;
+  try {
+    let granted = await notif.isPermissionGranted();
+    if (!granted) {
+      const result = await notif.requestPermission();
+      granted = result === "granted";
+    }
+    if (granted) {
+      notif.sendNotification({ title, body });
+    }
+  } catch {
+    // Notification not available — ignore
+  }
 }
