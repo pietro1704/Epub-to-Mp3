@@ -41,8 +41,13 @@ jobs:
           # Find latest version tag
           LAST_TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || echo "")
           if [ -z "$LAST_TAG" ]; then
-            RANGE="HEAD"
-            CURRENT="0.0.0"
+            # First release — use current version from version.py, analyze only last 20 commits
+            RANGE="HEAD~20..HEAD"
+            CURRENT=$(python3 -c "
+import re
+with open('python_app/version.py') as f:
+    print(re.search(r'__version__ = \"(.+)\"', f.read()).group(1))
+")
           else
             RANGE="${LAST_TAG}..HEAD"
             CURRENT="${LAST_TAG#v}"
@@ -149,20 +154,36 @@ jobs:
           OUTPUT: RELEASE_CHANGELOG.md
           GITHUB_REPO: ${{ github.repository }}
 
-      - name: Read changelog body
+      - name: Build release body file
         if: steps.bump.outputs.skip != 'true'
-        id: body
         run: |
-          # Use the generated changelog as release body
+          # Truncate changelog to avoid "Argument list too long" on large histories
           if [ -f RELEASE_CHANGELOG.md ]; then
-            {
-              echo "changelog<<CHANGELOG_EOF"
-              cat RELEASE_CHANGELOG.md
-              echo "CHANGELOG_EOF"
-            } >> "$GITHUB_OUTPUT"
+            head -200 RELEASE_CHANGELOG.md > RELEASE_BODY.md
           else
-            echo "changelog=Release ${{ steps.bump.outputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "Release ${{ steps.bump.outputs.tag }}" > RELEASE_BODY.md
           fi
+
+          cat >> RELEASE_BODY.md <<'FOOTER'
+
+          ---
+
+          ## Install
+
+          | Platform | Install |
+          |---|---|
+          | macOS (Homebrew) | `brew install --cask epub-to-mp3` |
+          | Windows (Winget) | `winget install Pietro1704.EpubToMp3` |
+          | Linux (Flatpak) | Download `.flatpak` below |
+          | Linux (Snap) | Download `.snap` below |
+          | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:TAG` |
+          | Web | [HF Space](https://huggingface.co/spaces/pi1704/epub-to-mp3) |
+
+          > Desktop and mobile binaries are built separately and attached by the Release Desktop workflow.
+          FOOTER
+
+          # Replace TAG placeholder with actual version
+          sed -i "s|epub-to-mp3:TAG|epub-to-mp3:${{ steps.bump.outputs.version }}|" RELEASE_BODY.md
 
       - name: Update full CHANGELOG.md
         if: steps.bump.outputs.skip != 'true'
@@ -200,20 +221,4 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: false
-          body: |
-            ${{ steps.body.outputs.changelog }}
-
-            ---
-
-            ## Install
-
-            | Platform | Install |
-            |---|---|
-            | macOS (Homebrew) | `brew install --cask epub-to-mp3` |
-            | Windows (Winget) | `winget install Pietro1704.EpubToMp3` |
-            | Linux (Flatpak) | Download `.flatpak` below |
-            | Linux (Snap) | Download `.snap` below |
-            | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:${{ steps.bump.outputs.version }}` |
-            | Web | [HF Space](https://huggingface.co/spaces/pi1704/epub-to-mp3) |
-
-            > Desktop and mobile binaries are built separately and attached by the Release Desktop workflow.
+          body_path: RELEASE_BODY.md
