@@ -5401,6 +5401,28 @@ select {
     "Helvetica Neue",
     sans-serif;
   line-height: 1.4;
+  /* Solid surface colors — no transparency */
+  --panel-bg: #1c2333;
+  --surface: #1c2333;
+  --surface-2: #1a2030;
+  --tab-trigger-bg: #1a2030;
+  --tab-active-bg: #2d3555;
+  --input-bg: #151b2a;
+  --terminal-bg: #0d1117;
+  --downloads-item-bg: #1a2030;
+  --topbar-bg: #1c2333;
+}
+
+.theme-light .app-shell--desktop {
+  --panel-bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --tab-trigger-bg: #f8fafc;
+  --tab-active-bg: #eef2ff;
+  --input-bg: #ffffff;
+  --terminal-bg: #f8fafc;
+  --downloads-item-bg: #ffffff;
+  --topbar-bg: #ffffff;
 }
 
 /* Flat background */
@@ -5473,36 +5495,157 @@ body:has(.app-shell--desktop) {
   gap: 0.75rem;
 }
 
-/* Badges: not pills */
-.app-shell--desktop .badge {
-  border-radius: 4px;
+/* Global radius reset — kill all pills and large rounds */
+.app-shell--desktop *:not(img):not(video):not(svg) {
+  border-radius: clamp(0px, var(--_r, 4px), 6px) !important;
 }
 
-/* Form advanced: tight radius */
-.app-shell--desktop .form-advanced {
-  border-radius: 4px;
-}
-
-/* System controls: tight radius */
+/* Explicitly set desired radii */
+.app-shell--desktop .panel,
+.app-shell--desktop .hero--active,
+.app-shell--desktop .hero--collapsed,
 .app-shell--desktop .system-control,
-.app-shell--desktop .system-stats {
-  border-radius: 6px;
+.app-shell--desktop .system-stats,
+.app-shell--desktop .chapter-item,
+.app-shell--desktop .form-advanced,
+.app-shell--desktop .ebook-reader__panel,
+.app-shell--desktop .reader-modal__panel {
+  --_r: 6px;
 }
 
-/* Chapter items: tight */
-.app-shell--desktop .chapter-item {
-  border-radius: 6px;
+.app-shell--desktop .tabs__trigger,
+.app-shell--desktop .badge,
+.app-shell--desktop .form-submit,
+.app-shell--desktop button,
+.app-shell--desktop input,
+.app-shell--desktop select,
+.app-shell--desktop textarea {
+  --_r: 4px;
 }
 
-/* Progress bars: no gradient, flat */
-.app-shell--desktop .hero__progress-fill,
-.app-shell--desktop .hero__collapsed-fill {
-  background: var(--accent);
+/* Kill all decorative shadows globally */
+.app-shell--desktop * {
+  --_native-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
-/* Buttons: no hover float */
-.app-shell--desktop button:hover {
+.app-shell--desktop .panel,
+.app-shell--desktop .hero--active,
+.app-shell--desktop .hero--collapsed {
+  box-shadow: var(--_native-shadow) !important;
+}
+
+.app-shell--desktop .tabs__trigger--active,
+.app-shell--desktop .form-submit,
+.app-shell--desktop .badge,
+.app-shell--desktop button {
+  box-shadow: none !important;
+}
+
+/* Kill all backdrop blur */
+.app-shell--desktop * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Kill all hover transforms globally */
+.app-shell--desktop *:hover,
+.app-shell--desktop *:focus-visible {
   transform: none !important;
+}
+
+/* Progress bars: flat accent */
+.app-shell--desktop .hero__progress-fill,
+.app-shell--desktop .hero__collapsed-fill,
+.app-shell--desktop [class*="progress-fill"],
+.app-shell--desktop [class*="progress__fill"] {
+  background: var(--accent) !important;
+}
+
+/* Kill gradient backgrounds on buttons */
+.app-shell--desktop .form-submit,
+.app-shell--desktop [class*="button-gradient"],
+.app-shell--desktop .whatsapp-share-button,
+.app-shell--desktop .quick-queue__submit {
+  background: var(--accent) !important;
+  box-shadow: none !important;
+}
+
+/* Inputs: native-looking */
+.app-shell--desktop input,
+.app-shell--desktop select,
+.app-shell--desktop textarea {
+  box-shadow: none !important;
+  transition: border-color 0.1s ease !important;
+}
+
+.app-shell--desktop input:focus,
+.app-shell--desktop select:focus,
+.app-shell--desktop textarea:focus {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: -1px !important;
+  box-shadow: none !important;
+}
+
+/* Collapsed hero: compact */
+.app-shell--desktop .hero--collapsed {
+  padding: 0.5rem 1rem !important;
+  box-shadow: var(--_native-shadow) !important;
+}
+
+/* Topbar group (if ever shown): not pills */
+.app-shell--desktop .topbar__group {
+  border-radius: 4px !important;
+}
+
+/* Downloads and misc: tight */
+.app-shell--desktop .downloads-list__item,
+.app-shell--desktop .recent-jobs__card,
+.app-shell--desktop .resumable-job,
+.app-shell--desktop .cached-jobs-alert {
+  border-radius: 6px !important;
+  box-shadow: var(--_native-shadow) !important;
+}
+
+/* Notification toasts: tight */
+.app-shell--desktop .hf-notification {
+  border-radius: 6px !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Modal overlays: tight */
+.app-shell--desktop .reader-modal__overlay {
+  backdrop-filter: none !important;
+}
+
+/* Scrollbar: native thin style */
+.app-shell--desktop ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.app-shell--desktop ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell--desktop ::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+}
+
+.app-shell--desktop ::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* Reduce animation durations for snappier feel */
+.app-shell--desktop * {
+  transition-duration: 0.1s !important;
+}
+
+/* But allow 0 for no-transition cases */
+.app-shell--desktop *[style*="transition: none"],
+.app-shell--desktop .no-transition {
+  transition: none !important;
 }
 
 /* Status bar footer */
