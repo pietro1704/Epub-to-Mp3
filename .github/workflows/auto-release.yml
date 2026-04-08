@@ -43,11 +43,7 @@ jobs:
           if [ -z "$LAST_TAG" ]; then
             # First release — use current version from version.py, analyze only last 20 commits
             RANGE="HEAD~20..HEAD"
-            CURRENT=$(python3 -c "
-import re
-with open('python_app/version.py') as f:
-    print(re.search(r'__version__ = \"(.+)\"', f.read()).group(1))
-")
+            CURRENT=$(python3 -c "import re; f=open('python_app/version.py').read(); print(re.search(r'__version__ = \"(.+)\"', f).group(1))")
           else
             RANGE="${LAST_TAG}..HEAD"
             CURRENT="${LAST_TAG#v}"
@@ -163,27 +159,16 @@ with open('python_app/version.py') as f:
           else
             echo "Release ${{ steps.bump.outputs.tag }}" > RELEASE_BODY.md
           fi
-
-          cat >> RELEASE_BODY.md <<'FOOTER'
-
-          ---
-
-          ## Install
-
-          | Platform | Install |
-          |---|---|
-          | macOS (Homebrew) | `brew install --cask epub-to-mp3` |
-          | Windows (Winget) | `winget install Pietro1704.EpubToMp3` |
-          | Linux (Flatpak) | Download `.flatpak` below |
-          | Linux (Snap) | Download `.snap` below |
-          | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:TAG` |
-          | Web | [HF Space](https://huggingface.co/spaces/pi1704/epub-to-mp3) |
-
-          > Desktop and mobile binaries are built separately and attached by the Release Desktop workflow.
-          FOOTER
-
-          # Replace TAG placeholder with actual version
-          sed -i "s|epub-to-mp3:TAG|epub-to-mp3:${{ steps.bump.outputs.version }}|" RELEASE_BODY.md
+          VER="${{ steps.bump.outputs.version }}"
+          printf '\n---\n\n## Install\n\n' >> RELEASE_BODY.md
+          printf '| Platform | Install |\n|---|---|\n' >> RELEASE_BODY.md
+          printf '| macOS (Homebrew) | `brew install --cask epub-to-mp3` |\n' >> RELEASE_BODY.md
+          printf '| Windows (Winget) | `winget install Pietro1704.EpubToMp3` |\n' >> RELEASE_BODY.md
+          printf '| Linux (Flatpak) | Download `.flatpak` below |\n' >> RELEASE_BODY.md
+          printf '| Linux (Snap) | Download `.snap` below |\n' >> RELEASE_BODY.md
+          printf '| Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:%s` |\n' "$VER" >> RELEASE_BODY.md
+          printf '| Web | [HF Space](https://huggingface.co/spaces/pi1704/epub-to-mp3) |\n\n' >> RELEASE_BODY.md
+          printf '> Desktop and mobile binaries are built separately and attached by the Release Desktop workflow.\n' >> RELEASE_BODY.md
 
       - name: Update full CHANGELOG.md
         if: steps.bump.outputs.skip != 'true'
