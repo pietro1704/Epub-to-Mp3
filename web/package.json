@@ -43,7 +43,7 @@
     "eslint": "^10.0.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-react-hooks": "7.1.0-canary-e0cc7202-20260227",
-    "globals": "^16.4.0",
+    "globals": "^17.4.0",
     "jsdom": "^28.1.0",
     "prettier": "^3.8.1",
     "terser": "^5.46.0",
