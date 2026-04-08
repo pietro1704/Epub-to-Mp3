@@ -23,8 +23,11 @@ async def health_check() -> dict:
     monitor = get_health_monitor()
     latest = monitor.get_latest_snapshot()
 
+    from python_app.version import __version__
+
     health_data = {
         "status": "healthy",
+        "version": __version__,
         "storage": {
             "local_output_dir": str(_srv.output_dir),
         },

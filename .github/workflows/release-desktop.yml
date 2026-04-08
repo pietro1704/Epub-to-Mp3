@@ -208,17 +208,19 @@ jobs:
           fi
 
       # ── Upload to GitHub Release ────────────────────────────────────────────
-      - name: Upload — versioned release (draft)
+      - name: Upload — versioned release
         if: github.event_name != 'workflow_run'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || inputs.tag }}
           name: "Epub to Mp3 ${{ github.ref_name || inputs.tag }}"
-          draft: true
+          draft: false
           prerelease: false
           fail_on_unmatched_files: false
+          # Append binaries to existing release (auto-release creates it first)
+          append_body: true
           body: |
-            ## Desktop app — Edge-TTS (internet connection required)
+            ## Desktop binaries
 
             | Platform | File |
             |---|---|
@@ -228,9 +230,6 @@ jobs:
             | Linux (Snap) | `*.snap` — `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
             | Linux (AppImage) | `*.AppImage` |
             | Linux (deb) | `*.deb` |
-            | Android | `EpubToMp3_android.apk` |
-            | iOS (sideload) | `EpubToMp3_ios.ipa` |
-            | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:${{ github.ref_name || inputs.tag }}` |
 
             **First launch**: ffmpeg is downloaded once (~60 MB) on first conversion.
           files: |
@@ -407,7 +406,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || inputs.tag }}
-          draft: true
+          draft: false
           fail_on_unmatched_files: false
           files: EpubToMp3_android.apk
 
@@ -503,7 +502,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || inputs.tag }}
-          draft: true
+          draft: false
           fail_on_unmatched_files: false
           files: ${{ runner.temp }}/EpubToMp3_ios.ipa
 
@@ -535,13 +534,22 @@ jobs:
       )
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout (for version detection on nightly)
+        if: github.event_name == 'workflow_run'
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          sparse-checkout: desktop/src-tauri/tauri.conf.json
+          sparse-checkout-cone-mode: false
+
       - name: Resolve tag and version
         id: meta
         run: |
           if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
             echo "tag=nightly" >> "$GITHUB_OUTPUT"
             echo "version=nightly" >> "$GITHUB_OUTPUT"
-            echo "filename=Epub.to.Mp3_0.1.0_aarch64.dmg" >> "$GITHUB_OUTPUT"
+            TAURI_VER=$(python3 -c "import json; print(json.load(open('desktop/src-tauri/tauri.conf.json'))['version'])" 2>/dev/null || echo "0.1.0")
+            echo "filename=Epub.to.Mp3_${TAURI_VER}_aarch64.dmg" >> "$GITHUB_OUTPUT"
           else
             TAG="${{ github.ref_name }}"
             VERSION="${TAG#v}"

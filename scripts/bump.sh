@@ -42,6 +42,14 @@ sed -i.bak "0,/^version = \".*\"/{s/^version = \".*\"/version = \"$NEW\"/}" \
   desktop/src-tauri/Cargo.toml
 rm -f desktop/src-tauri/Cargo.toml.bak
 
+# ── Update web/package.json ──────────────────────────────────────────────────
+sed -i.bak "s/\"version\": \".*\"/\"version\": \"$NEW\"/" web/package.json
+rm -f web/package.json.bak
+
+# ── Update python_app/version.py ─────────────────────────────────────────────
+sed -i.bak "s/__version__ = \".*\"/__version__ = \"$NEW\"/" python_app/version.py
+rm -f python_app/version.py.bak
+
 # ── Update Cargo.lock (keep in sync) ─────────────────────────────────────────
 if command -v cargo &>/dev/null; then
   (cd desktop/src-tauri && cargo update --workspace --quiet 2>/dev/null || true)
@@ -65,6 +73,8 @@ fi
 git add \
   desktop/src-tauri/tauri.conf.json \
   desktop/src-tauri/Cargo.toml \
+  web/package.json \
+  python_app/version.py \
   flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml \
   CHANGELOG.md 2>/dev/null || true
 

@@ -1,0 +1,113 @@
+name: Rollback HF Space
+
+# Emergency rollback: re-syncs a known-good commit to HF Space.
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "Commit SHA to roll back to (leave empty for previous release tag)"
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  rollback:
+    name: Rollback HF Space
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target commit
+        id: target
+        run: |
+          if [ -n "${{ inputs.commit_sha }}" ]; then
+            echo "sha=${{ inputs.commit_sha }}" >> "$GITHUB_OUTPUT"
+            echo "Rolling back to commit ${{ inputs.commit_sha }}"
+          else
+            # Find the second-to-last version tag (skip current, use previous)
+            TAGS=$(git ls-remote --tags --sort=-v:refname origin 'refs/tags/v*' | head -5)
+            PREV_TAG=$(echo "$TAGS" | sed -n '2p' | awk '{print $2}' | sed 's|refs/tags/||')
+            if [ -z "$PREV_TAG" ]; then
+              echo "::error::No previous version tag found"
+              exit 1
+            fi
+            SHA=$(echo "$TAGS" | sed -n '2p' | awk '{print $1}')
+            echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+            echo "Rolling back to $PREV_TAG ($SHA)"
+          fi
+
+      - name: Checkout target commit
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.target.outputs.sha }}
+          lfs: false
+
+      - name: Build HF-only repo snapshot
+        run: |
+          set -euo pipefail
+          HF_SYNC_DIR="$(mktemp -d)"
+          echo "HF_SYNC_DIR=$HF_SYNC_DIR" >> "$GITHUB_ENV"
+          rsync -a --delete ./ "$HF_SYNC_DIR/" \
+            --exclude ".git" \
+            --exclude "pretrained_models" \
+            --exclude "voice_samples" \
+            --exclude "output" \
+            --exclude "node_modules" \
+            --exclude "web/node_modules" \
+            --exclude "__pycache__" \
+            --exclude ".pytest_cache" \
+            --exclude ".mypy_cache" \
+            --exclude ".ruff_cache" \
+            --exclude ".cache" \
+            --exclude "desktop"
+          cd "$HF_SYNC_DIR"
+          git init
+          git config user.name "hf-rollback-bot"
+          git config user.email "hf-rollback-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "HF rollback to ${{ steps.target.outputs.sha }}"
+
+      - name: Push rollback to Hugging Face
+        env:
+          HF_SSH_PRIVATE_KEY: ${{ secrets.HF_SSH_PRIVATE_KEY }}
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          cd "$HF_SYNC_DIR"
+
+          if [ -n "${HF_SSH_PRIVATE_KEY:-}" ]; then
+            mkdir -p ~/.ssh
+            echo "$HF_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
+            chmod 600 ~/.ssh/id_rsa
+            eval "$(ssh-agent -s)"
+            ssh-add ~/.ssh/id_rsa
+            ssh-keyscan hf.co >> ~/.ssh/known_hosts
+            REMOTE_URL="git@hf.co:spaces/pi1704/epub-to-mp3"
+          else
+            if [ -z "${HF_TOKEN:-}" ]; then
+              echo "::error::Neither HF_SSH_PRIVATE_KEY nor HF_TOKEN configured"
+              exit 1
+            fi
+            git config --global url."https://user:${HF_TOKEN}@huggingface.co/".insteadOf "https://huggingface.co/"
+            REMOTE_URL="https://huggingface.co/spaces/pi1704/epub-to-mp3"
+          fi
+
+          git remote add hf "$REMOTE_URL" || true
+          git push --force hf "HEAD:refs/heads/master"
+          git push --force hf "HEAD:refs/heads/main"
+
+      - name: Wait and verify rollback
+        run: |
+          sleep 90
+          URL="https://pi1704-epub-to-mp3.hf.space/api/health"
+          for i in $(seq 1 6); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "$URL" --max-time 15 || echo "000")
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Rollback successful — HF Space is healthy"
+              exit 0
+            fi
+            echo "Attempt $i: HTTP $HTTP_CODE, retrying in 30s..."
+            sleep 30
+          done
+          echo "::warning::HF Space may still be rebuilding after rollback"
