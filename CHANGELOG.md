@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1] — 2026-04-08
+
+### Bug Fixes
+
+- Fix YAML syntax in auto-release workflow ([51f9b26](https://github.com/pietro1704/Epub-to-Mp3/commit/51f9b26849ce556a03780fd910223e212a876f79))
+- Auto-release use body_path to avoid arg-too-long, read version from file ([1dfeaba](https://github.com/pietro1704/Epub-to-Mp3/commit/1dfeababf8d14d859df2a43c70536a28d9d4e6ec))
+
 ## [0.1.0] — 2026-04-08
 
 ### Bug Fixes
@@ -3040,6 +3047,10 @@ Signed-off-by: dependabot[bot] <support@github.com> ([b80f688](https://github.co
 - Add .mp3 on gitignore ([a9f04d9](https://github.com/pietro1704/Epub-to-Mp3/commit/a9f04d9160b767054b48303f259ab7d2b94a8699))
 - Added models/ ([9023f84](https://github.com/pietro1704/Epub-to-Mp3/commit/9023f84e67139873a7d80b9875ecf2b1799238db))
 - Initial commit ([babfbaa](https://github.com/pietro1704/Epub-to-Mp3/commit/babfbaa2df66951bc7921a9fb765d130a90d08f6))
+
+### Chores
+
+- Release v0.1.0 [skip ci] ([9da7434](https://github.com/pietro1704/Epub-to-Mp3/commit/9da7434228ca56bfb92f6e943e5af1915f1f0900))
 
 ### Documentation
 
