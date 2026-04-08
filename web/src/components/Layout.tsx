@@ -9,11 +9,10 @@ export default function Layout({ children }: PropsWithChildren): JSX.Element {
     <div className="app-shell">
       <TopBar />
       <main className="content-shell">{children}</main>
-      {footerText && (
-        <footer>
-          <p>{footerText}</p>
-        </footer>
-      )}
+      <footer>
+        {footerText && <p>{footerText}</p>}
+        <p className="app-version">v{__APP_VERSION__}</p>
+      </footer>
     </div>
   );
 }
