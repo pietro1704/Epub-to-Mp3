@@ -67,7 +67,7 @@ pydantic>=2.10.0,<3.0.0
 fsspec>=2023.1.0,<=2025.3.0
 
 # packaging compatível com langfuse
-packaging>=23.2,<24.0
+packaging>=23.2,<27.0
 
 # =============================================================================
 # DESENVOLVIMENTO (OPCIONAL)
