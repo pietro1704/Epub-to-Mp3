@@ -1,0 +1,20 @@
+pkgbase = epub-to-mp3-bin
+	pkgdesc = Convert EPUB/PDF ebooks into MP3 audiobooks using TTS
+	pkgver = 0.1.0
+	pkgrel = 1
+	url = https://github.com/pietro1704/Epub-to-Mp3
+	arch = x86_64
+	license = MIT
+	depends = webkit2gtk
+	depends = libappindicator-gtk3
+	depends = librsvg
+	depends = openssl
+	depends = glibc
+	depends = gcc-libs
+	optdepends = ffmpeg: audio encoding
+	provides = epub-to-mp3
+	conflicts = epub-to-mp3
+	source = Epub.to.Mp3_0.1.0_amd64.deb::https://github.com/pietro1704/Epub-to-Mp3/releases/download/v0.1.0/Epub.to.Mp3_0.1.0_amd64.deb
+	sha256sums = SKIP
+
+pkgname = epub-to-mp3-bin

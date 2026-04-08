@@ -1,0 +1,57 @@
+name: Update AUR package
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  aur:
+    name: Publish epub-to-mp3-bin to AUR
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Compute .deb SHA256
+        id: deb
+        run: |
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/Epub.to.Mp3_${VERSION}_amd64.deb"
+          echo "Waiting for release asset to be available..."
+          for i in $(seq 1 10); do
+            HTTP=$(curl -sI "$URL" -o /dev/null -w "%{http_code}")
+            [[ "$HTTP" == "200" || "$HTTP" == "302" ]] && break
+            echo "  Attempt $i: HTTP $HTTP — waiting 30s..."
+            sleep 30
+          done
+          SHA=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
+          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Update PKGBUILD and .SRCINFO
+        run: |
+          VERSION="${{ steps.deb.outputs.version }}"
+          SHA="${{ steps.deb.outputs.sha256 }}"
+
+          # Update PKGBUILD
+          sed -i "s/pkgver=.*/pkgver=${VERSION}/" aur/PKGBUILD
+          sed -i "s|sha256sums=('SKIP')|sha256sums=('${SHA}')|" aur/PKGBUILD
+          sed -i "s|/releases/download/v[^/]*/|/releases/download/v${VERSION}/|g" aur/PKGBUILD
+
+          # Update .SRCINFO
+          sed -i "s/pkgver = .*/pkgver = ${VERSION}/" aur/.SRCINFO
+          sed -i "s/sha256sums = SKIP/sha256sums = ${SHA}/" aur/.SRCINFO
+          sed -i "s|/releases/download/v[^/]*/|/releases/download/v${VERSION}/|g" aur/.SRCINFO
+
+      - name: Publish to AUR
+        uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: epub-to-mp3-bin
+          pkgbuild: aur/PKGBUILD
+          commit_message: "Update to v${{ steps.deb.outputs.version }}"
+          ssh_private_key: ${{ secrets.AUR_SSH_KEY }}
+          commit_username: "github-actions[bot]"
+          commit_email: "github-actions[bot]@users.noreply.github.com"
+          force_push: true

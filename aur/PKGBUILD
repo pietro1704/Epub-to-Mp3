@@ -1,0 +1,43 @@
+# Maintainer: Pietro Pugliesi <https://github.com/pietro1704>
+pkgname=epub-to-mp3-bin
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Convert EPUB/PDF ebooks into MP3 audiobooks using TTS"
+arch=('x86_64')
+url="https://github.com/pietro1704/Epub-to-Mp3"
+license=('MIT')
+depends=(
+  'webkit2gtk'
+  'libappindicator-gtk3'
+  'librsvg'
+  'openssl'
+  'glibc'
+  'gcc-libs'
+)
+optdepends=(
+  'ffmpeg: audio encoding'
+)
+provides=('epub-to-mp3')
+conflicts=('epub-to-mp3')
+source=("Epub.to.Mp3_${pkgver}_amd64.deb::https://github.com/pietro1704/Epub-to-Mp3/releases/download/v${pkgver}/Epub.to.Mp3_${pkgver}_amd64.deb")
+sha256sums=('SKIP')
+
+package() {
+  cd "${srcdir}"
+
+  # Extract .deb without dpkg dependency
+  ar x "Epub.to.Mp3_${pkgver}_amd64.deb"
+
+  # data.tar may be gz, xz, or zst depending on Tauri version
+  if [[ -f data.tar.gz ]]; then
+    tar -xzf data.tar.gz -C "${pkgdir}/"
+  elif [[ -f data.tar.xz ]]; then
+    tar -xJf data.tar.xz -C "${pkgdir}/"
+  elif [[ -f data.tar.zst ]]; then
+    tar --zstd -xf data.tar.zst -C "${pkgdir}/"
+  fi
+
+  # Correct permissions
+  find "${pkgdir}" -type f -name "*.so*" -exec chmod 755 {} \;
+  find "${pkgdir}" -type d -exec chmod 755 {} \;
+}

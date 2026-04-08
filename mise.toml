@@ -8,6 +8,8 @@ npm = "latest"
 rust = "stable"
 # Tauri CLI — installed via mise npm backend, available as `tauri` globally
 "npm:@tauri-apps/cli" = "2"
+# Changelog generator (conventional commits → CHANGELOG.md)
+"cargo:git-cliff" = "latest"
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"
@@ -396,3 +398,13 @@ fi
 (cd web && mise exec -- npm run test)
 (cd web && mise exec -- npm run build)
 """
+
+# ── Release ───────────────────────────────────────────────────────────────────────
+
+[tasks.bump]
+description = "Bump version (major|minor|patch|X.Y.Z), update changelog, commit and tag"
+run = "bash scripts/bump.sh ${1:-patch}"
+
+[tasks.changelog]
+description = "Regenerate CHANGELOG.md from git history using git-cliff"
+run = "git-cliff -o CHANGELOG.md"

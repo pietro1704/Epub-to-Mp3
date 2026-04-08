@@ -192,6 +192,21 @@ jobs:
           manifest-path: flatpak/io.github.pietro1704.EpubToMp3.yaml
           cache-key: flatpak-${{ hashFiles('flatpak/io.github.pietro1704.EpubToMp3.yaml') }}
 
+      # ── Snap bundle (Linux only) ────────────────────────────────────────────
+      - name: Build Snap bundle
+        if: matrix.os == 'ubuntu-22.04'
+        uses: snapcore/action-build@v1
+        id: snap-build
+
+      - name: Rename Snap artifact
+        if: matrix.os == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          SNAP_FILE="${{ steps.snap-build.outputs.snap }}"
+          if [[ -n "$SNAP_FILE" && -f "$SNAP_FILE" ]]; then
+            cp "$SNAP_FILE" Epub.to.Mp3_x86_64.snap
+          fi
+
       # ── Upload to GitHub Release ────────────────────────────────────────────
       - name: Upload — versioned release (draft)
         if: github.event_name != 'workflow_run'
@@ -210,6 +225,7 @@ jobs:
             | macOS Apple Silicon | `*_aarch64.dmg` or `brew install --cask epub-to-mp3` |
             | Windows | `*_x64-setup.exe` or `*.msi` |
             | Linux (Flatpak) | `*.flatpak` — `flatpak install Epub.to.Mp3_x86_64.flatpak` |
+            | Linux (Snap) | `*.snap` — `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
             | Linux (AppImage) | `*.AppImage` |
             | Linux (deb) | `*.deb` |
             | Android | `EpubToMp3_android.apk` |
@@ -224,6 +240,7 @@ jobs:
             desktop/src-tauri/target/**/bundle/appimage/*.AppImage
             desktop/src-tauri/target/**/bundle/deb/*.deb
             Epub.to.Mp3_x86_64.flatpak
+            Epub.to.Mp3_x86_64.snap
 
       - name: Upload — nightly pre-release
         if: github.event_name == 'workflow_run'
@@ -245,6 +262,7 @@ jobs:
             | macOS Apple Silicon | `*_aarch64.dmg` or `brew install --cask epub-to-mp3` |
             | Windows | `*_x64-setup.exe` or `*.msi` |
             | Linux (Flatpak) | `*.flatpak` — `flatpak install Epub.to.Mp3_x86_64.flatpak` |
+            | Linux (Snap) | `*.snap` — `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
             | Linux (AppImage) | `*.AppImage` |
             | Linux (deb) | `*.deb` |
             | Android | `EpubToMp3_android.apk` |
@@ -257,6 +275,7 @@ jobs:
             desktop/src-tauri/target/**/bundle/appimage/*.AppImage
             desktop/src-tauri/target/**/bundle/deb/*.deb
             Epub.to.Mp3_x86_64.flatpak
+            Epub.to.Mp3_x86_64.snap
 
   # ── Docker image → ghcr.io ────────────────────────────────────────────────────
   docker:
@@ -565,3 +584,33 @@ jobs:
           git add Casks/epub-to-mp3.rb
           git diff --quiet --cached || git commit -m "Update epub-to-mp3 to ${{ steps.meta.outputs.version }}"
           git push
+
+  # ── Winget (versioned releases only) ─────────────────────────────────────────
+  winget:
+    name: Update Winget manifest
+    needs: [build]
+    # Only run on versioned tags — winget-pkgs requires stable versions
+    if: >
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+      needs.build.result == 'success'
+    runs-on: windows-latest
+    steps:
+      - name: Submit to winget-pkgs
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        shell: pwsh
+        run: |
+          $TAG = "${{ github.ref_name }}"
+          $VERSION = $TAG.TrimStart("v")
+          $INSTALLER_URL = "https://github.com/${{ github.repository }}/releases/download/${TAG}/Epub.to.Mp3_${VERSION}_x64-setup.exe"
+
+          # Install wingetcreate
+          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+
+          # Submit update PR to microsoft/winget-pkgs
+          # Note: package 'Pietro1704.EpubToMp3' must be registered first via manual PR
+          .\wingetcreate.exe update Pietro1704.EpubToMp3 `
+            --version $VERSION `
+            --urls $INSTALLER_URL `
+            --submit `
+            --token $env:WINGET_TOKEN

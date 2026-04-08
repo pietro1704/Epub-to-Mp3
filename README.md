@@ -25,7 +25,9 @@ Pre-built desktop app (updated on every commit):
 | **macOS** (Apple Silicon) | `.dmg` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) · `brew install --cask epub-to-mp3` |
 | **Windows** (x64) | `*_x64-setup.exe` or `*.msi` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
 | **Linux** (Flatpak) | `*.flatpak` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) · `flatpak install Epub.to.Mp3_x86_64.flatpak` |
+| **Linux** (Snap) | `*.snap` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) · `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
 | **Linux** (AppImage / deb) | `*.AppImage` or `*.deb` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
+| **Linux** (AUR) | `yay -S epub-to-mp3-bin` |
 | **Android** | `EpubToMp3_android.apk` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
 | **iOS** (sideload) | `EpubToMp3_ios.ipa` — install via AltStore or Sideloadly |
 | **Docker** | `docker pull ghcr.io/pietro1704/epub-to-mp3:latest` |
