@@ -267,13 +267,15 @@ dir = "desktop"
 run = "tauri icon icon-source/icon.png"
 
 [tasks."desktop:build"]
-description = "Full desktop build: sidecar + web frontend + Tauri package"
+description = "Full desktop build for current platform: sidecar + web + Tauri package"
 run = """
 #!/bin/bash
 set -euo pipefail
-mise run desktop:sidecar
-mise run desktop:web
-cd desktop && tauri build
+case "$(uname)" in
+  Darwin) mise run desktop:build:mac ;;
+  Linux)  mise run desktop:build:linux ;;
+  *)      mise run desktop:build:windows ;;
+esac
 """
 
 [tasks."desktop:dev"]
@@ -282,34 +284,92 @@ dir = "desktop"
 run = "VITE_API_BASE=http://127.0.0.1:47860/api tauri dev"
 
 [tasks."desktop:run"]
-description = "Launch the last built desktop app bundle"
+description = "Launch the last built desktop app for current platform"
 run = """
 #!/bin/bash
 set -euo pipefail
-if [[ "$(uname)" == "Darwin" ]]; then
-  APP="desktop/src-tauri/target/release/bundle/macos/Epub to Mp3.app"
-  if [[ ! -d "$APP" ]]; then
-    echo "App bundle not found. Run: mise run desktop:build"
-    exit 1
-  fi
-  open "$APP"
-elif [[ "$(uname)" == "Linux" ]]; then
-  BIN="desktop/src-tauri/target/release/epub-to-mp3"
-  if [[ ! -f "$BIN" ]]; then
-    echo "Binary not found. Run: mise run desktop:build"
-    exit 1
-  fi
-  "$BIN" &
-else
-  echo "Use the .exe in desktop/src-tauri/target/release/ on Windows"
-fi
+case "$(uname)" in
+  Darwin) mise run desktop:run:mac ;;
+  Linux)  mise run desktop:run:linux ;;
+  *)      echo "Use the .exe in desktop/src-tauri/target/release/ on Windows" ;;
+esac
 """
 
-# ── Generate all binaries (local build, macOS only) ──────────────────────────────
-# Android/iOS/Linux/Windows are built by CI (GitHub Actions) and uploaded to Releases.
-# Output locations after this command:
-#   macOS .app/.dmg  → desktop/src-tauri/target/release/bundle/macos/
-#   Docker image     → local Docker daemon (epub-to-mp3:local)
+# ── Desktop — build per platform ──────────────────────────────────────────────
+# macOS: mise run desktop:build → mise run desktop:run
+# Dev:   terminal 1: mise run desktop:server  |  terminal 2: mise run desktop:dev
+
+[tasks."desktop:build:mac"]
+description = "Build macOS desktop app (.app + .dmg)"
+run = """
+#!/bin/bash
+set -euo pipefail
+mise run desktop:sidecar
+mise run desktop:web
+cd desktop && tauri build --target aarch64-apple-darwin
+echo ""
+echo "Done! Artifacts:"
+find desktop/src-tauri/target -name '*.dmg' -o -name '*.app' 2>/dev/null | head -5
+"""
+
+[tasks."desktop:build:linux"]
+description = "Build Linux desktop app (.AppImage + .deb)"
+run = """
+#!/bin/bash
+set -euo pipefail
+mise run desktop:sidecar
+mise run desktop:web
+cd desktop && tauri build
+echo ""
+echo "Done! Artifacts:"
+find desktop/src-tauri/target -name '*.AppImage' -o -name '*.deb' 2>/dev/null | head -5
+"""
+
+[tasks."desktop:build:windows"]
+description = "Build Windows desktop app (.msi + .exe) — run on Windows or cross-compile"
+run = """
+#!/bin/bash
+set -euo pipefail
+mise run desktop:sidecar
+mise run desktop:web
+cd desktop && tauri build
+echo ""
+echo "Done! Artifacts:"
+find desktop/src-tauri/target -name '*.msi' -o -name '*-setup.exe' 2>/dev/null | head -5
+"""
+
+[tasks."desktop:run:mac"]
+description = "Open the built macOS .app bundle"
+run = """
+#!/bin/bash
+set -euo pipefail
+APP="desktop/src-tauri/target/release/bundle/macos/Epub to Mp3.app"
+if [[ ! -d "$APP" ]]; then
+  APP=$(find desktop/src-tauri/target -name "*.app" -type d 2>/dev/null | head -1)
+fi
+if [[ -z "$APP" || ! -d "$APP" ]]; then
+  echo "No .app found. Run: mise run desktop:build:mac"
+  exit 1
+fi
+echo "Opening $APP"
+open "$APP"
+"""
+
+[tasks."desktop:run:linux"]
+description = "Run the built Linux binary"
+run = """
+#!/bin/bash
+set -euo pipefail
+BIN="desktop/src-tauri/target/release/epub-to-mp3"
+if [[ ! -f "$BIN" ]]; then
+  echo "Binary not found. Run: mise run desktop:build:linux"
+  exit 1
+fi
+"$BIN" &
+"""
+
+# ── Generate all binaries (local build) ──────────────────────────────────────
+# Android/iOS/Linux/Windows are built by CI (GitHub Actions).
 
 [tasks."generate-binaries"]
 description = "Build all locally-buildable binaries: desktop app + Docker image; copies artifacts to releases/"
@@ -320,37 +380,27 @@ set -euo pipefail
 RELEASES_DIR="$(pwd)/releases"
 mkdir -p "$RELEASES_DIR"
 
-echo "▶ Building desktop app (macOS)..."
+echo "Building desktop app..."
 mise run desktop:build
 
 echo ""
-echo "▶ Copying desktop artifacts to releases/..."
+echo "Copying desktop artifacts to releases/..."
 if [[ "$(uname)" == "Darwin" ]]; then
   DMG=$(find desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
   if [[ -n "$DMG" ]]; then
     cp "$DMG" "$RELEASES_DIR/"
-    echo "   Copied: $(basename "$DMG") → releases/"
-  fi
-  APP_TAR="$RELEASES_DIR/Epub-to-Mp3-macOS.tar.gz"
-  APP_DIR="desktop/src-tauri/target/release/bundle/macos"
-  if [[ -d "$APP_DIR" ]]; then
-    tar -czf "$APP_TAR" -C "$APP_DIR" .
-    echo "   Copied: Epub-to-Mp3-macOS.tar.gz → releases/"
+    echo "  $(basename "$DMG") → releases/"
   fi
 fi
 
 echo ""
-echo "▶ Building Docker image..."
+echo "Building Docker image..."
 mise run docker:build
 
 echo ""
-echo "✅ Done! All artifacts in releases/:"
-ls -lh "$RELEASES_DIR/" 2>/dev/null || echo "   (empty)"
-echo ""
-echo "   Docker image → epub-to-mp3:local  (run: mise run docker:run)"
-echo ""
-echo "Android/iOS/Linux/Windows are built by CI on every push to master."
-echo "Download from: https://github.com/pietro1704/Epub-to-Mp3/releases"
+echo "Done! Artifacts in releases/:"
+ls -lh "$RELEASES_DIR/" 2>/dev/null || echo "  (empty)"
+echo "Docker image → epub-to-mp3:local  (run: mise run docker:run)"
 """
 
 # ── Docker ───────────────────────────────────────────────────────────────────────
