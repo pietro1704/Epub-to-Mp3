@@ -151,7 +151,7 @@ KOKORO_VOICES = {
 }
 
 # Chunk settings
-DEFAULT_CHUNK_CHARS = int(os.getenv("KOKORO_CHUNK_CHARS", "2000"))
+DEFAULT_CHUNK_CHARS = int(os.getenv("KOKORO_CHUNK_CHARS", "3000"))
 MAX_WORKERS = int(os.getenv("KOKORO_MAX_WORKERS", str(max(2, (os.cpu_count() or 2) // 2))))
 SAMPLE_RATE = 24000
 

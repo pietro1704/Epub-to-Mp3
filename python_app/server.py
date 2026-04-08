@@ -239,7 +239,7 @@ EDGE_SAFE_MAX_SEGMENT_SECONDS = max(
     30, int(os.getenv("EDGE_SAFE_MAX_SEGMENT_SECONDS", "120" if _hf_mode else "90") or "90")
 )
 EDGE_SAFE_CHAPTER_PARALLEL = max(
-    1, int(os.getenv("EDGE_SAFE_CHAPTER_PARALLEL", "1" if _hf_mode else "1") or "1")
+    1, int(os.getenv("EDGE_SAFE_CHAPTER_PARALLEL", "1" if _hf_mode else "8") or "1")
 )
 EDGE_SAFE_TIMEOUT_MAX = max(
     90.0, float(os.getenv("EDGE_SAFE_TIMEOUT_MAX", "180" if _hf_mode else "120") or "120")

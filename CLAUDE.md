@@ -232,8 +232,9 @@ EDGE_SLOW_RATIO_THRESHOLD=2.5    # Slow mode trigger ratio (HF auto-sets to 1.5)
 
 ### Local Engines
 ```bash
-KOKORO_CHUNK_CHARS=2000          # Chars per Kokoro chunk
+KOKORO_CHUNK_CHARS=3000          # Chars per Kokoro chunk (was 2000)
 KOKORO_MAX_WORKERS=0             # Auto-detect from CPU (0=auto)
+PIPER_CHUNK_CHARS=5000           # Chars per Piper chunk (was 3000; fewer subprocess calls)
 PIPER_MAX_PROCS=0                # Auto-detect from CPU (0=auto)
 DISABLE_PIPER_FALLBACK=0         # Set to 1 to skip Piper and retry Edge instead
                                  # (faster for PT-BR where Kokoro is unavailable)

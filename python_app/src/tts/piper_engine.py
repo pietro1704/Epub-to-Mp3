@@ -27,7 +27,7 @@ with contextlib.suppress(Exception):
     logging.getLogger("piper").setLevel(logging.ERROR)
 
 # Chunk size for parallel Piper synthesis (env-configurable)
-_PIPER_CHUNK_CHARS = int(os.environ.get("PIPER_CHUNK_CHARS", "3000"))
+_PIPER_CHUNK_CHARS = int(os.environ.get("PIPER_CHUNK_CHARS", "5000"))
 
 
 def _split_text_into_chunks(text: str, max_chars: int) -> List[str]:
