@@ -178,7 +178,7 @@ jobs:
         shell: bash
         run: |
           mkdir -p flatpak-stage
-          cp desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/epub-to-mp3 flatpak-stage/
+          cp desktop/src-tauri/target/release/epub-to-mp3 flatpak-stage/
           cp desktop/src-tauri/binaries/epub-to-mp3-server-x86_64-unknown-linux-gnu flatpak-stage/epub-to-mp3-server
           cp flatpak/io.github.pietro1704.EpubToMp3.desktop flatpak-stage/
           cp flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml flatpak-stage/
