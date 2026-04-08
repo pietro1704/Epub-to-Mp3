@@ -1,6 +1,25 @@
 # Changelog
 
+## [0.3.0] — 2026-04-08
+
+### CI
+
+- Auto-merge dependabot patch/minor PRs + branch protection on master ([aa66167](https://github.com/pietro1704/Epub-to-Mp3/commit/aa66167dd973cc8488c7cfa7462bf60d26b6c61f))
+
+### Chores
+
+- Add per-platform mise tasks for desktop build and run ([4b7a0c8](https://github.com/pietro1704/Epub-to-Mp3/commit/4b7a0c86d1cb13956978125ada2ed5b1dd2beb64))
+
+### Features
+
+- Aggressive native UI overhaul — kill all web aesthetics ([40410d8](https://github.com/pietro1704/Epub-to-Mp3/commit/40410d8407c3af378464249e46fd0d8efe3de3b0))
+- Native desktop UX — plugins, menus, flat UI, drag-drop, notifications ([d841990](https://github.com/pietro1704/Epub-to-Mp3/commit/d84199030cf2ffb0995523d3ffbec628f4237178))
+
 ## [0.2.0] — 2026-04-08
+
+### Chores
+
+- Release v0.2.0 [skip ci] ([6cf965d](https://github.com/pietro1704/Epub-to-Mp3/commit/6cf965d43a2023eb3930ff89add4c7688b174254))
 
 ### Features
 
