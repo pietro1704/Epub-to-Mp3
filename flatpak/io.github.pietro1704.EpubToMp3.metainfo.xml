@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.pietro1704.EpubToMp3</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Epub to Mp3</name>
+  <summary>Convert EPUB/PDF ebooks into MP3 audiobooks</summary>
+  <description>
+    <p>
+      Epub to Mp3 converts EPUB and PDF ebooks into MP3 audiobooks using neural
+      text-to-speech engines. Supports Edge-TTS (cloud), Kokoro (local neural),
+      and Piper (fully offline) with automatic fallback between engines.
+    </p>
+    <p>Features include:</p>
+    <ul>
+      <li>EPUB and PDF support with full TOC hierarchy</li>
+      <li>Three TTS engines with automatic fallback</li>
+      <li>Smart text cache — repeated conversions skip re-parsing</li>
+      <li>Per-chapter progress tracking and streaming playback</li>
+      <li>Batch conversion of multiple books</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.pietro1704.EpubToMp3.desktop</launchable>
+  <url type="homepage">https://github.com/pietro1704/Epub-to-Mp3</url>
+  <url type="bugtracker">https://github.com/pietro1704/Epub-to-Mp3/issues</url>
+  <screenshots>
+    <screenshot type="default">
+      <caption>Main conversion interface</caption>
+    </screenshot>
+  </screenshots>
+  <releases>
+    <release version="0.1.0" date="2025-01-01">
+      <description>
+        <p>Initial release.</p>
+      </description>
+    </release>
+  </releases>
+  <content_rating type="oars-1.1"/>
+  <developer id="io.github.pietro1704">
+    <name>Pietro Pugliesi</name>
+  </developer>
+</component>

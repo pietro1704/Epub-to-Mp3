@@ -1,0 +1,24 @@
+app-id: io.github.pietro1704.EpubToMp3
+runtime: org.gnome.Platform
+runtime-version: '47'
+sdk: org.gnome.Sdk
+command: epub-to-mp3
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --filesystem=home
+modules:
+  - name: epub-to-mp3
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 epub-to-mp3 /app/bin/epub-to-mp3
+      - install -Dm755 epub-to-mp3-server /app/lib/epub-to-mp3/epub-to-mp3-server
+      - install -Dm644 io.github.pietro1704.EpubToMp3.desktop /app/share/applications/io.github.pietro1704.EpubToMp3.desktop
+      - install -Dm644 io.github.pietro1704.EpubToMp3.metainfo.xml /app/share/metainfo/io.github.pietro1704.EpubToMp3.metainfo.xml
+      - install -Dm644 128x128.png /app/share/icons/hicolor/128x128/apps/io.github.pietro1704.EpubToMp3.png
+    sources:
+      - type: dir
+        path: flatpak-stage

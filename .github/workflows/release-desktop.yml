@@ -172,6 +172,26 @@ jobs:
           echo "Found artifacts:"
           cat artifacts.txt
 
+      # ── Flatpak bundle (Linux only) ─────────────────────────────────────────
+      - name: Stage binaries for Flatpak
+        if: matrix.os == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          mkdir -p flatpak-stage
+          cp desktop/src-tauri/target/x86_64-unknown-linux-gnu/release/epub-to-mp3 flatpak-stage/
+          cp desktop/src-tauri/binaries/epub-to-mp3-server-x86_64-unknown-linux-gnu flatpak-stage/epub-to-mp3-server
+          cp flatpak/io.github.pietro1704.EpubToMp3.desktop flatpak-stage/
+          cp flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml flatpak-stage/
+          cp desktop/src-tauri/icons/128x128.png flatpak-stage/
+
+      - name: Build Flatpak bundle
+        if: matrix.os == 'ubuntu-22.04'
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          bundle: Epub.to.Mp3_x86_64.flatpak
+          manifest-path: flatpak/io.github.pietro1704.EpubToMp3.yaml
+          cache-key: flatpak-${{ hashFiles('flatpak/io.github.pietro1704.EpubToMp3.yaml') }}
+
       # ── Upload to GitHub Release ────────────────────────────────────────────
       - name: Upload — versioned release (draft)
         if: github.event_name != 'workflow_run'
@@ -189,7 +209,9 @@ jobs:
             |---|---|
             | macOS Apple Silicon | `*_aarch64.dmg` or `brew install --cask epub-to-mp3` |
             | Windows | `*_x64-setup.exe` or `*.msi` |
-            | Linux | `*.AppImage` or `*.deb` |
+            | Linux (Flatpak) | `*.flatpak` — `flatpak install Epub.to.Mp3_x86_64.flatpak` |
+            | Linux (AppImage) | `*.AppImage` |
+            | Linux (deb) | `*.deb` |
             | Android | `EpubToMp3_android.apk` |
             | iOS (sideload) | `EpubToMp3_ios.ipa` |
             | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:${{ github.ref_name || inputs.tag }}` |
@@ -201,6 +223,7 @@ jobs:
             desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
             desktop/src-tauri/target/**/bundle/appimage/*.AppImage
             desktop/src-tauri/target/**/bundle/deb/*.deb
+            Epub.to.Mp3_x86_64.flatpak
 
       - name: Upload — nightly pre-release
         if: github.event_name == 'workflow_run'
@@ -221,7 +244,9 @@ jobs:
             |---|---|
             | macOS Apple Silicon | `*_aarch64.dmg` or `brew install --cask epub-to-mp3` |
             | Windows | `*_x64-setup.exe` or `*.msi` |
-            | Linux | `*.AppImage` or `*.deb` |
+            | Linux (Flatpak) | `*.flatpak` — `flatpak install Epub.to.Mp3_x86_64.flatpak` |
+            | Linux (AppImage) | `*.AppImage` |
+            | Linux (deb) | `*.deb` |
             | Android | `EpubToMp3_android.apk` |
             | iOS (sideload) | `EpubToMp3_ios.ipa` |
             | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:nightly` |
@@ -231,6 +256,7 @@ jobs:
             desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
             desktop/src-tauri/target/**/bundle/appimage/*.AppImage
             desktop/src-tauri/target/**/bundle/deb/*.deb
+            Epub.to.Mp3_x86_64.flatpak
 
   # ── Docker image → ghcr.io ────────────────────────────────────────────────────
   docker:
@@ -472,24 +498,48 @@ jobs:
           fail_on_unmatched_files: false
           files: ${{ runner.temp }}/EpubToMp3_ios.ipa
 
-  # ── Homebrew cask update (versioned releases only) ────────────────────────────
+  # ── Homebrew cask update (versioned releases + nightly) ──────────────────────
   homebrew:
     name: Update Homebrew cask
     needs: [build]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    if: >
+      always() &&
+      needs.build.result == 'success' &&
+      (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+        (
+          github.event_name == 'workflow_run' &&
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'master' &&
+          github.event.workflow_run.head_repository.full_name == github.repository
+        )
+      )
     runs-on: ubuntu-latest
     steps:
+      - name: Resolve tag and version
+        id: meta
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            echo "tag=nightly" >> "$GITHUB_OUTPUT"
+            echo "version=nightly" >> "$GITHUB_OUTPUT"
+            echo "filename=Epub.to.Mp3_0.1.0_aarch64.dmg" >> "$GITHUB_OUTPUT"
+          else
+            TAG="${{ github.ref_name }}"
+            VERSION="${TAG#v}"
+            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+            echo "filename=Epub.to.Mp3_${VERSION}_aarch64.dmg" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Compute DMG SHA256
         id: dmg
         run: |
-          TAG="${{ github.ref_name }}"
-          VERSION="${TAG#v}"
-          FILENAME="Epub.to.Mp3_${VERSION}_aarch64.dmg"
+          TAG="${{ steps.meta.outputs.tag }}"
+          FILENAME="${{ steps.meta.outputs.filename }}"
           URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${FILENAME}"
           echo "Downloading $URL to compute SHA256..."
           SHA=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
           echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Checkout Homebrew tap
@@ -502,7 +552,7 @@ jobs:
       - name: Update cask formula
         run: |
           F="tap/Casks/epub-to-mp3.rb"
-          VERSION="${{ steps.dmg.outputs.version }}"
+          VERSION="${{ steps.meta.outputs.version }}"
           SHA="${{ steps.dmg.outputs.sha256 }}"
           sed -i "s|version \".*\"|version \"${VERSION}\"|" "$F"
           sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" "$F"
@@ -513,5 +563,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Casks/epub-to-mp3.rb
-          git diff --quiet --cached || git commit -m "Update epub-to-mp3 to ${{ github.ref_name }}"
+          git diff --quiet --cached || git commit -m "Update epub-to-mp3 to ${{ steps.meta.outputs.version }}"
           git push

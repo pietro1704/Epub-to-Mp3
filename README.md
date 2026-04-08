@@ -16,6 +16,22 @@ Convert EPUB/PDF ebooks into MP3 audiobooks using neural TTS engines.
 
 ---
 
+## Download
+
+Pre-built desktop app (updated on every commit):
+
+| Platform | Download |
+|---|---|
+| **macOS** (Apple Silicon) | `.dmg` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) · `brew install --cask epub-to-mp3` |
+| **Windows** (x64) | `*_x64-setup.exe` or `*.msi` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
+| **Linux** (Flatpak) | `*.flatpak` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) · `flatpak install Epub.to.Mp3_x86_64.flatpak` |
+| **Linux** (AppImage / deb) | `*.AppImage` or `*.deb` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
+| **Android** | `EpubToMp3_android.apk` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
+| **iOS** (sideload) | `EpubToMp3_ios.ipa` — install via AltStore or Sideloadly |
+| **Docker** | `docker pull ghcr.io/pietro1704/epub-to-mp3:latest` |
+
+---
+
 ## Features
 
 - **Three TTS engines**: Edge-TTS (cloud, fastest) → Kokoro (local neural, EN/JA/ZH) → Piper (offline ONNX, all languages)
@@ -225,7 +241,7 @@ Epub-to-Mp3/
 │   │       ├── edge_engine.py
 │   │       ├── kokoro_engine.py
 │   │       └── piper_engine.py
-│   └── tests/              # 580+ tests
+│   └── tests/              # 1070+ tests
 ├── web/                    # React/TypeScript frontend (Vite)
 │   └── src/
 │       ├── hooks/useConversionFlow.ts
