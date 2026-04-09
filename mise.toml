@@ -267,13 +267,13 @@ dir = "desktop"
 run = "tauri icon icon-source/icon.png"
 
 [tasks."desktop:build"]
-description = "Full desktop build for current platform: sidecar + web + Tauri package"
+description = "Full desktop build for current platform + install + open"
 run = """
 #!/bin/bash
 set -euo pipefail
 case "$(uname)" in
   Darwin) mise run desktop:build:mac ;;
-  Linux)  mise run desktop:build:linux ;;
+  Linux)  mise run desktop:build:linux && mise run desktop:run:linux ;;
   *)      mise run desktop:build:windows ;;
 esac
 """
@@ -306,10 +306,18 @@ run = """
 set -euo pipefail
 mise run desktop:sidecar
 mise run desktop:web
-cd desktop && tauri build --target aarch64-apple-darwin
+TRIPLE=$(rustc -Vv | grep "^host" | cut -d' ' -f2)
+# Load updater signing key if available locally
+KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
+if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+fi
+cd desktop && tauri build --target "$TRIPLE"
 echo ""
-echo "Done! Artifacts:"
-find desktop/src-tauri/target -name '*.dmg' -o -name '*.app' 2>/dev/null | head -5
+echo "Done! Installing to /Applications and opening..."
+cd ..
+mise run desktop:run:mac
 """
 
 [tasks."desktop:build:linux"]
@@ -319,6 +327,11 @@ run = """
 set -euo pipefail
 mise run desktop:sidecar
 mise run desktop:web
+KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
+if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+fi
 cd desktop && tauri build
 echo ""
 echo "Done! Artifacts:"
@@ -332,6 +345,11 @@ run = """
 set -euo pipefail
 mise run desktop:sidecar
 mise run desktop:web
+KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
+if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+fi
 cd desktop && tauri build
 echo ""
 echo "Done! Artifacts:"
@@ -339,20 +357,23 @@ find desktop/src-tauri/target -name '*.msi' -o -name '*-setup.exe' 2>/dev/null |
 """
 
 [tasks."desktop:run:mac"]
-description = "Open the built macOS .app bundle"
+description = "Install built .app to /Applications (removing quarantine) and open it"
 run = """
 #!/bin/bash
 set -euo pipefail
-APP="desktop/src-tauri/target/release/bundle/macos/Epub to Mp3.app"
-if [[ ! -d "$APP" ]]; then
-  APP=$(find desktop/src-tauri/target -name "*.app" -type d 2>/dev/null | head -1)
-fi
+APP=$(find desktop/src-tauri/target -name "Epub to Mp3.app" -type d 2>/dev/null | grep -v "[.]cargo" | head -1)
 if [[ -z "$APP" || ! -d "$APP" ]]; then
   echo "No .app found. Run: mise run desktop:build:mac"
   exit 1
 fi
-echo "Opening $APP"
-open "$APP"
+DEST="/Applications/Epub to Mp3.app"
+echo "Installing to $DEST ..."
+rm -rf "$DEST"
+cp -r "$APP" "$DEST"
+# Remove macOS quarantine so the app opens without Gatekeeper prompts
+xattr -rd com.apple.quarantine "$DEST" 2>/dev/null || true
+echo "Opening $DEST"
+open "$DEST"
 """
 
 [tasks."desktop:run:linux"]

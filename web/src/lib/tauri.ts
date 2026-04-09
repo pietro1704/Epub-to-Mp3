@@ -66,6 +66,59 @@ export async function listenTauri(
   return window.__TAURI__.event.listen(event, (e) => handler(e.payload));
 }
 
+type TauriAny = Record<string, unknown>;
+
+/** Check for updates via the Tauri updater plugin. */
+export async function checkForUpdate(): Promise<{
+  available: boolean;
+  version?: string;
+  body?: string;
+}> {
+  if (!window.__TAURI__) return { available: false };
+  try {
+    const tauri = window.__TAURI__ as unknown as TauriAny;
+    const updater = tauri.updater as
+      | {
+          check: () => Promise<{
+            available: boolean;
+            version?: string;
+            body?: string;
+          }>;
+        }
+      | undefined;
+    if (updater) {
+      return await updater.check();
+    }
+  } catch {
+    // Updater not available
+  }
+  return { available: false };
+}
+
+/** Install a pending update via the Tauri updater plugin. */
+export async function installUpdate(): Promise<void> {
+  if (!window.__TAURI__) return;
+  try {
+    const tauri = window.__TAURI__ as unknown as TauriAny;
+    const updater = tauri.updater as
+      | {
+          check: () => Promise<{
+            available: boolean;
+            downloadAndInstall: () => Promise<void>;
+          }>;
+        }
+      | undefined;
+    if (updater) {
+      const update = await updater.check();
+      if (update.available) {
+        await update.downloadAndInstall();
+      }
+    }
+  } catch {
+    // Update failed
+  }
+}
+
 /** Send an OS notification. Only works in Tauri with notification plugin. */
 export async function sendNotification(
   title: string,
