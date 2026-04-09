@@ -2,6 +2,8 @@ name: Auto-merge Dependabot
 
 on:
   pull_request:
+  check_suite:
+    types: [completed]
 
 permissions:
   contents: write
@@ -9,18 +11,30 @@ permissions:
 
 jobs:
   auto-merge:
-    name: Auto-merge patch updates
+    name: Approve and merge dependabot PRs
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]'
+    if: github.actor == 'dependabot[bot]' || github.event_name == 'check_suite'
     steps:
-      - name: Fetch Dependabot metadata
-        id: meta
-        uses: dependabot/fetch-metadata@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Auto-merge all dependabot updates
-        run: gh pr merge "$PR_URL" --auto --squash
+      - name: Find and merge dependabot PRs where CI passed
         env:
-          PR_URL: ${{ github.event.pull_request.html_url }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          # Get all open dependabot PRs
+          PRS=$(gh pr list \
+            --repo "$REPO" \
+            --author "app/dependabot" \
+            --json number,url,mergeable,mergeStateStatus \
+            --jq '.[] | select(.mergeStateStatus == "CLEAN") | .number')
+
+          if [ -z "$PRS" ]; then
+            echo "No dependabot PRs ready to merge"
+            exit 0
+          fi
+
+          for PR in $PRS; do
+            echo "Approving PR #$PR..."
+            gh pr review "$PR" --repo "$REPO" --approve || true
+            echo "Merging PR #$PR..."
+            gh pr merge "$PR" --repo "$REPO" --squash --admin --delete-branch || true
+          done
