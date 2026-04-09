@@ -257,7 +257,7 @@ jobs:
             Epub.to.Mp3_x86_64.snap
 
       - name: Upload updater artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: updater-${{ matrix.label }}
           path: |
