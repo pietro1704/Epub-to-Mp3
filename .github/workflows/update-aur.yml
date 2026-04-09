@@ -10,7 +10,7 @@ jobs:
     name: Publish epub-to-mp3-bin to AUR
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Compute .deb SHA256
         id: deb
