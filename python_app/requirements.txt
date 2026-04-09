@@ -66,8 +66,7 @@ pydantic>=2.10.0,<3.0.0
 # fsspec compatível com datasets
 fsspec>=2023.1.0,<=2025.3.0
 
-# packaging compatível com langfuse
-packaging>=23.2,<24.0
+packaging>=23.2,<27.0
 
 # =============================================================================
 # DESENVOLVIMENTO (OPCIONAL)
@@ -82,7 +81,6 @@ pytest-asyncio
 # ✅ numpy<2.0.0 (vs numpy 2.3.2 que quebra gruut, f5-tts, numba, unstructured)  
 # ✅ pandas>=1.5.0,<4.0.0 (TTS 0.22.x exige pandas<2)
 # ✅ fsspec<=2025.3.0 (vs fsspec 2025.7.0 que quebra datasets)
-# ✅ packaging<24.0 (vs packaging 25.0 que quebra langfuse)
 # ✅ aiohttp compatível (vs aiohttp 3.12.15 que quebra open-webui)
 # ✅ pydantic compatível (vs versões divergentes)
 # ✅ requests compatível (vs versões divergentes)
@@ -91,7 +89,6 @@ pytest-asyncio
 # INSTRUÇÕES DE INSTALAÇÃO:
 # =============================================================================
 # 1. REMOVA conflitos primeiro:
-#    pip uninstall transformers numpy pandas fsspec packaging -y
 #
 # 2. INSTALE versões compatíveis:
 #    pip install -r python_app/requirements.txt
