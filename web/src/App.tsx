@@ -208,6 +208,8 @@ export default function App(props?: AppProps): JSX.Element {
   const [tauriEngineError, setTauriEngineError] = useState<string | null>(null);
   const [tauriStarting, setTauriStarting] = useState<boolean>(isTauri());
   const [tauriStartupLog, setTauriStartupLog] = useState<string[]>([]);
+  const [startupLogsExpanded, setStartupLogsExpanded] =
+    useState<boolean>(false);
   const restartOptionsRef = useRef({ keepCache: false, keepFinished: false });
   const [hiddenRecentIds, setHiddenRecentIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") {
@@ -318,6 +320,22 @@ export default function App(props?: AppProps): JSX.Element {
     })();
     return () => cleanups.forEach((u) => u());
   }, []);
+
+  // Poll buffered server logs every 2 s while startup is in progress.
+  useEffect(() => {
+    if (!isTauri() || !tauriStarting) return;
+    const id = setInterval(async () => {
+      try {
+        const lines = await invoke<string[]>("get_server_logs");
+        if (lines.length > 0) {
+          setTauriStartupLog(lines.length > 200 ? lines.slice(-200) : lines);
+        }
+      } catch {
+        // ignore
+      }
+    }, 2000);
+    return () => clearInterval(id);
+  }, [tauriStarting]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1492,12 +1510,26 @@ export default function App(props?: AppProps): JSX.Element {
             <strong>Starting conversion engine…</strong>
             <span className="startup-log-panel__hint">
               {tauriStartupLog.length === 0
-                ? "First launch downloads ffmpeg (~60 MB)"
+                ? "First launch may download ffmpeg (~60 MB)"
                 : tauriStartupLog[tauriStartupLog.length - 1]}
             </span>
+            <button
+              type="button"
+              className="startup-log-panel__toggle"
+              onClick={() => setStartupLogsExpanded((v) => !v)}
+              aria-expanded={startupLogsExpanded}
+            >
+              {startupLogsExpanded ? "Hide logs ▲" : "Show logs ▼"}
+            </button>
           </div>
-          {tauriStartupLog.length > 0 && (
-            <StartupLogView lines={tauriStartupLog} />
+          {startupLogsExpanded && (
+            <StartupLogView
+              lines={
+                tauriStartupLog.length > 0
+                  ? tauriStartupLog
+                  : ["Waiting for conversion engine to start…"]
+              }
+            />
           )}
         </div>
       )}
