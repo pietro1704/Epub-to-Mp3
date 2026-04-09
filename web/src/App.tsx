@@ -322,16 +322,31 @@ export default function App(props?: AppProps): JSX.Element {
   }, []);
 
   // Poll buffered server logs every 2 s while startup is in progress.
+  // Also check if the server is already up (handles race where tauri-startup-ready
+  // fired before the listener was registered).
   useEffect(() => {
     if (!isTauri() || !tauriStarting) return;
     const id = setInterval(async () => {
+      // Fetch buffered logs from Rust
       try {
         const lines = await invoke<string[]>("get_server_logs");
         if (lines.length > 0) {
           setTauriStartupLog(lines.length > 200 ? lines.slice(-200) : lines);
         }
+      } catch (e) {
+        setTauriStartupLog((prev) => [
+          ...prev,
+          `[startup] invoke error: ${String(e)}`,
+        ]);
+      }
+      // If server is already responding, mark as ready (race-condition guard)
+      try {
+        const r = await fetch("http://127.0.0.1:47860/api/health", {
+          signal: AbortSignal.timeout(800),
+        });
+        if (r.ok) setTauriStarting(false);
       } catch {
-        // ignore
+        // not up yet
       }
     }, 2000);
     return () => clearInterval(id);

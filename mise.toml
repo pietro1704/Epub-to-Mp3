@@ -368,6 +368,13 @@ if [[ -z "$APP" || ! -d "$APP" ]]; then
   exit 1
 fi
 DEST="/Applications/Epub to Mp3.app"
+# Kill existing instance so macOS actually launches the new binary
+if pgrep -f "epub-to-mp3" &>/dev/null; then
+  echo "Quitting existing instance..."
+  osascript -e 'tell application "Epub to Mp3" to quit' 2>/dev/null || true
+  pkill -f "epub-to-mp3" 2>/dev/null || true
+  sleep 1
+fi
 echo "Installing to $DEST ..."
 rm -rf "$DEST"
 cp -r "$APP" "$DEST"
