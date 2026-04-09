@@ -13,6 +13,7 @@
     "core:webview:allow-create-webview-window",
     "dialog:default",
     "notification:default",
+    "updater:default",
     "window-state:default"
   ]
 }
