@@ -189,6 +189,8 @@ export default function ConversionForm({
   const initialMeta = getEngineMeta(initialEngine);
   const [fileQueue, setFileQueue] = useState<QueuedFileEntry[]>([]);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const dragCounter = useRef(0);
   const [engine, setEngine] = useState<EngineOption>(initialEngine);
   const [voice, setVoice] = useState(initialMeta.defaultVoice);
   const [model, setModel] = useState("");
@@ -1012,7 +1014,33 @@ export default function ConversionForm({
   };
 
   return (
-    <form className="conversion-form" onSubmit={handleSubmit}>
+    <form
+      className={`conversion-form${isDragOver ? " conversion-form--drag-over" : ""}`}
+      onSubmit={handleSubmit}
+      onDragEnter={(e) => {
+        e.preventDefault();
+        dragCounter.current++;
+        if (e.dataTransfer.types.includes("Files")) setIsDragOver(true);
+      }}
+      onDragOver={(e) => e.preventDefault()}
+      onDragLeave={(e) => {
+        e.preventDefault();
+        dragCounter.current--;
+        if (dragCounter.current <= 0) {
+          dragCounter.current = 0;
+          setIsDragOver(false);
+        }
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        dragCounter.current = 0;
+        setIsDragOver(false);
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+          addFilesToQueue(files);
+        }
+      }}
+    >
       <input
         ref={folderInputRef}
         type="file"

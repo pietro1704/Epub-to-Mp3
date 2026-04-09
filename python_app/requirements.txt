@@ -51,7 +51,7 @@ python-multipart>=0.0.22
 # DEPENDÊNCIAS DE SISTEMA (versões compatíveis)
 # =============================================================================
 # Pandas <2.0.0 compatível com TTS 0.22.x
-pandas>=1.5.0,<2.0.0
+pandas>=1.5.0,<4.0.0
 
 # Requests compatível com open-webui
 requests>=2.32.0,<3.0.0
@@ -80,7 +80,7 @@ pytest-asyncio
 # =============================================================================
 # ✅ transformers==4.53.0 (vs sentence-transformers que quer >=4.41.0)
 # ✅ numpy<2.0.0 (vs numpy 2.3.2 que quebra gruut, f5-tts, numba, unstructured)  
-# ✅ pandas>=1.5.0,<2.0.0 (TTS 0.22.x exige pandas<2)
+# ✅ pandas>=1.5.0,<4.0.0 (TTS 0.22.x exige pandas<2)
 # ✅ fsspec<=2025.3.0 (vs fsspec 2025.7.0 que quebra datasets)
 # ✅ packaging<24.0 (vs packaging 25.0 que quebra langfuse)
 # ✅ aiohttp compatível (vs aiohttp 3.12.15 que quebra open-webui)

@@ -1,11 +1,21 @@
 # Changelog
 
+## [0.2.0] — 2026-04-08
+
+### Features
+
+- Version in frontend footer, dependabot, auto-close deploy issues ([200ed4f](https://github.com/pietro1704/Epub-to-Mp3/commit/200ed4f315ece9cecaa82c1ebabe332b9504bd25))
+
 ## [0.1.1] — 2026-04-08
 
 ### Bug Fixes
 
 - Fix YAML syntax in auto-release workflow ([51f9b26](https://github.com/pietro1704/Epub-to-Mp3/commit/51f9b26849ce556a03780fd910223e212a876f79))
 - Auto-release use body_path to avoid arg-too-long, read version from file ([1dfeaba](https://github.com/pietro1704/Epub-to-Mp3/commit/1dfeababf8d14d859df2a43c70536a28d9d4e6ec))
+
+### Chores
+
+- Release v0.1.1 [skip ci] ([76d0a3e](https://github.com/pietro1704/Epub-to-Mp3/commit/76d0a3e89a5db2daa37f21f09fe20a84ea47d22a))
 
 ## [0.1.0] — 2026-04-08
 

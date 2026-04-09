@@ -7,6 +7,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { listenTauri } from "../lib/tauri";
 
 export type Theme = "light" | "dark";
 export type ThemeMode = "light" | "dark" | "auto";
@@ -114,6 +115,20 @@ export function ThemeProvider({ children }: PropsWithChildren): JSX.Element {
     },
     [prefersDarkMode],
   );
+
+  // Listen for native menu theme changes
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listenTauri("tauri-set-theme", (payload) => {
+      const value = payload as string;
+      if (value === "auto" || value === "light" || value === "dark") {
+        setMode(value);
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [setMode]);
 
   const setTheme = useCallback((next: Theme) => {
     setModeInternal(next);

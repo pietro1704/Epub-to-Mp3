@@ -13,6 +13,7 @@ import {
   type Locale,
   type Translations,
 } from "./translations";
+import { listenTauri } from "../lib/tauri";
 
 export type LocaleMode = "pt" | "en" | "auto";
 
@@ -94,6 +95,20 @@ export function I18nProvider({
     },
     [browserLocale],
   );
+
+  // Listen for native menu locale changes
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listenTauri("tauri-set-locale", (payload) => {
+      const value = payload as string;
+      if (value === "auto" || value === "pt" || value === "en") {
+        setMode(value as LocaleMode);
+      }
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => unlisten?.();
+  }, [setMode]);
 
   const setLocale = useCallback((next: Locale) => {
     setModeInternal(next);

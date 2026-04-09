@@ -2,6 +2,15 @@
 
 Project instructions for Claude Code. These rules override all defaults.
 
+## Response Style
+
+- **Be maximally concise** — shortest possible answers, minimal tokens
+- No preamble, no filler, no restating what the user said
+- Lead with the action or answer, skip reasoning unless asked
+- One sentence > three. A diff > an explanation
+- Only speak when it adds value: decisions needing input, blockers, errors
+- Default language for conversation: pt-BR (user's preference)
+
 ## Project Overview
 
 Full-stack EPUB/PDF to MP3 audiobook converter. Python backend (FastAPI) + React/TypeScript frontend. Three deployment modes that **share the same cache and output directories**:
