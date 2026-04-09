@@ -18,7 +18,7 @@
     "cap:android": "npx cap open android"
   },
   "dependencies": {
-    "@capacitor/android": "^7",
+    "@capacitor/android": "^8",
     "@capacitor/core": "^7",
     "@capacitor/ios": "^7",
     "clsx": "^2.1.0",
