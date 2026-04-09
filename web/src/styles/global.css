@@ -3464,6 +3464,11 @@ select {
   font-size: 0.9rem;
 }
 
+.api-offline-banner--starting {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.08);
+}
+
 .downloads-panel {
   display: grid;
   gap: 1rem;

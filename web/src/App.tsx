@@ -188,6 +188,7 @@ export default function App(props?: AppProps): JSX.Element {
   >(null);
   // Tauri-specific: tracks whether the Python sidecar failed to start.
   const [tauriEngineError, setTauriEngineError] = useState<string | null>(null);
+  const [tauriStarting, setTauriStarting] = useState<boolean>(isTauri());
   const restartOptionsRef = useRef({ keepCache: false, keepFinished: false });
   const [hiddenRecentIds, setHiddenRecentIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") {
@@ -247,6 +248,7 @@ export default function App(props?: AppProps): JSX.Element {
     (async () => {
       cleanups.push(
         await listenTauri("tauri-startup-error", (payload) => {
+          setTauriStarting(false);
           setTauriEngineError(
             typeof payload === "string"
               ? payload
@@ -256,9 +258,21 @@ export default function App(props?: AppProps): JSX.Element {
       );
       cleanups.push(
         await listenTauri("tauri-startup-timeout", () => {
+          setTauriStarting(false);
           setTauriEngineError(
             "Engine took too long to start. Check Server Logs or restart the app.",
           );
+        }),
+      );
+      cleanups.push(
+        await listenTauri("tauri-startup-ready", () => {
+          setTauriStarting(false);
+        }),
+      );
+      cleanups.push(
+        // Loading events keep tauriStarting=true while showing elapsed time
+        await listenTauri("tauri-startup-loading", () => {
+          setTauriStarting(true);
         }),
       );
     })();
@@ -1431,7 +1445,16 @@ export default function App(props?: AppProps): JSX.Element {
           <span>API: {apiHealthLabel}</span>
         </div>
       )}
-      {isTauri() && tauriEngineError && showSetupPanels && (
+      {isTauri() && tauriStarting && showSetupPanels && (
+        <div
+          className="api-offline-banner api-offline-banner--starting"
+          role="status"
+        >
+          <strong>Starting conversion engine…</strong>
+          <span>Downloading dependencies on first launch. Please wait.</span>
+        </div>
+      )}
+      {isTauri() && !tauriStarting && tauriEngineError && showSetupPanels && (
         <div className="api-offline-banner" role="alert">
           <strong>Conversion engine error</strong>
           <span>{tauriEngineError}</span>

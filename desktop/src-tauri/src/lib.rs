@@ -7,27 +7,14 @@ use tauri_plugin_shell::ShellExt;
 use tauri_plugin_updater::UpdaterExt;
 
 const SERVER_PORT: u16 = 47860;
-const POLL_INTERVAL_MS: u64 = 300;
-/// Generous timeout: PyInstaller onefile extracts on first run.
-const POLL_TIMEOUT_S: u64 = 120;
+const POLL_INTERVAL_MS: u64 = 500;
+/// 5 min: first launch downloads ffmpeg (~60 MB) before server can start.
+const POLL_TIMEOUT_S: u64 = 300;
+/// Emit a "still loading" event every N seconds so the frontend can show progress.
+const LOADING_NOTIFY_INTERVAL_S: u64 = 5;
 
 /// Shared server log buffer (last 2000 lines).
 pub struct ServerLogs(Mutex<Vec<String>>);
-
-async fn wait_for_server(port: u16) -> bool {
-    let addr = format!("127.0.0.1:{port}");
-    let deadline =
-        tokio::time::Instant::now() + tokio::time::Duration::from_secs(POLL_TIMEOUT_S);
-    loop {
-        if tokio::time::Instant::now() >= deadline {
-            return false;
-        }
-        if tokio::net::TcpStream::connect(&addr).await.is_ok() {
-            return true;
-        }
-        tokio::time::sleep(tokio::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
-    }
-}
 
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
@@ -319,13 +306,43 @@ pub fn run() {
                     }
                 });
 
-                // Poll TCP until server is ready, then reveal the window.
-                let ready = wait_for_server(SERVER_PORT).await;
+                // Show window early so user sees loading state.
                 if let Some(win) = handle.get_webview_window("main") {
                     let _ = win.show();
                     let _ = win.set_focus();
-                    if !ready {
-                        // Timeout: signal the frontend so it can show a recovery UI.
+                }
+
+                // Poll TCP; emit loading events every LOADING_NOTIFY_INTERVAL_S.
+                let addr = format!("127.0.0.1:{SERVER_PORT}");
+                let deadline = tokio::time::Instant::now()
+                    + tokio::time::Duration::from_secs(POLL_TIMEOUT_S);
+                let mut last_notify = tokio::time::Instant::now();
+                let mut ready = false;
+                loop {
+                    if tokio::time::Instant::now() >= deadline {
+                        break;
+                    }
+                    if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+                        ready = true;
+                        break;
+                    }
+                    if last_notify.elapsed().as_secs() >= LOADING_NOTIFY_INTERVAL_S {
+                        let elapsed = POLL_TIMEOUT_S
+                            - deadline
+                                .saturating_duration_since(tokio::time::Instant::now())
+                                .as_secs();
+                        if let Some(win) = handle.get_webview_window("main") {
+                            let _ = win.emit("tauri-startup-loading", elapsed);
+                        }
+                        last_notify = tokio::time::Instant::now();
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
+                }
+
+                if let Some(win) = handle.get_webview_window("main") {
+                    if ready {
+                        let _ = win.emit("tauri-startup-ready", ());
+                    } else {
                         let _ = win.emit("tauri-startup-timeout", ());
                     }
                 }
