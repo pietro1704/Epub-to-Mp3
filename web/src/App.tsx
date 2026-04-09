@@ -11,7 +11,7 @@ import {
 import Hero from "./components/Hero";
 import Layout from "./components/Layout";
 import Panel from "./components/Panel";
-import { isTauri, listenTauri, sendNotification } from "./lib/tauri";
+import { invoke, isTauri, listenTauri, sendNotification } from "./lib/tauri";
 
 // Lazy load heavy components
 const ConversionForm = lazy(() => import("./components/ConversionForm"));
@@ -303,6 +303,18 @@ export default function App(props?: AppProps): JSX.Element {
           }
         }),
       );
+      // Fetch any logs that were buffered before this listener was registered.
+      try {
+        const buffered = await invoke<string[]>("get_server_logs");
+        if (buffered.length > 0) {
+          setTauriStartupLog((prev) => {
+            const combined = [...prev, ...buffered];
+            return combined.length > 200 ? combined.slice(-200) : combined;
+          });
+        }
+      } catch {
+        // Not critical — ignore
+      }
     })();
     return () => cleanups.forEach((u) => u());
   }, []);
