@@ -115,7 +115,12 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            flatpak \
+            flatpak-builder \
+            xvfb
+          sudo flatpak remote-add --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
 
       # ── Python venv (required by mise virtualenv feature) ──────────────────
       - name: Create Python venv
