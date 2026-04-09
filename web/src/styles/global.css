@@ -3464,6 +3464,76 @@ select {
   font-size: 0.9rem;
 }
 
+.api-offline-banner--starting {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+/* Startup log panel */
+.startup-log-panel {
+  margin: 1rem 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.06);
+  overflow: hidden;
+}
+
+.startup-log-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem 0.5rem;
+  flex-wrap: wrap;
+}
+
+.startup-log-panel__header strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.startup-log-panel__hint {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.startup-log-panel__spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(59, 130, 246, 0.3);
+  border-top-color: rgb(59, 130, 246);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.startup-log-panel__log {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.4rem 1rem 0.75rem;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  border-top: 1px solid rgba(59, 130, 246, 0.15);
+}
+
+.startup-log-panel__line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .downloads-panel {
   display: grid;
   gap: 1rem;
@@ -5708,4 +5778,44 @@ body:has(.app-shell--desktop) {
   display: flex;
   justify-content: center;
   gap: 0.5rem;
+}
+
+/* Update banner (desktop only) */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.update-banner button {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.update-banner button:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+.update-banner button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.update-banner__dismiss {
+  background: transparent !important;
+  border: none !important;
+  font-size: 16px !important;
+  padding: 0 4px !important;
+  opacity: 0.7;
+}
+.update-banner__dismiss:hover {
+  opacity: 1 !important;
 }
