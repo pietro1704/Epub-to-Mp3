@@ -258,6 +258,22 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
+                /// Push a status line to the persistent log buffer and stream it
+                /// to the frontend window in real time.
+                fn push_log(handle: &AppHandle, line: &str) {
+                    if let Some(logs) = handle.try_state::<ServerLogs>() {
+                        let mut v = logs.0.lock().unwrap();
+                        v.push(line.to_string());
+                        let len = v.len();
+                        if len > 2000 {
+                            v.drain(0..len - 2000);
+                        }
+                    }
+                    if let Some(win) = handle.get_webview_window("main") {
+                        let _ = win.emit("tauri-server-log", line);
+                    }
+                }
+
                 // If server is already running (leftover from previous launch), skip spawn.
                 let port_in_use = tokio::net::TcpStream::connect(
                     format!("127.0.0.1:{SERVER_PORT}"),
@@ -266,9 +282,11 @@ pub fn run() {
                 .is_ok();
 
                 let spawn_result = if port_in_use {
+                    push_log(&handle, "Server already running — reconnecting.");
                     // Reuse the existing server — skip spawning a new sidecar.
                     Ok(None)
                 } else {
+                    push_log(&handle, "Starting conversion server…");
                     handle
                         .shell()
                         .sidecar("epub-to-mp3-server")
@@ -279,44 +297,32 @@ pub fn run() {
                 };
 
                 // Forward sidecar stdout/stderr (only when we spawned a new sidecar).
-                let log_handle = handle.clone();
                 match spawn_result {
                     Ok(Some((mut rx, _child))) => {
+                        let log_handle = handle.clone();
                         tauri::async_runtime::spawn(async move {
                             while let Some(event) = rx.recv().await {
-                        let line = match event {
-                            CommandEvent::Stdout(b) => {
-                                String::from_utf8_lossy(&b).trim().to_string()
+                                let line = match event {
+                                    CommandEvent::Stdout(b) => {
+                                        String::from_utf8_lossy(&b).trim().to_string()
+                                    }
+                                    CommandEvent::Stderr(b) => {
+                                        format!("[err] {}", String::from_utf8_lossy(&b).trim())
+                                    }
+                                    _ => continue,
+                                };
+                                if line.is_empty() {
+                                    continue;
+                                }
+                                push_log(&log_handle, &line);
                             }
-                            CommandEvent::Stderr(b) => {
-                                format!("[err] {}", String::from_utf8_lossy(&b).trim())
-                            }
-                            _ => continue,
-                        };
-                        if line.is_empty() {
-                            continue;
-                        }
-                        // Push to persistent log buffer.
-                        if let Some(logs) = log_handle.try_state::<ServerLogs>() {
-                            let mut v = logs.0.lock().unwrap();
-                            v.push(line.clone());
-                            let len = v.len();
-                            if len > 2000 {
-                                v.drain(0..len - 2000);
-                            }
-                        }
-                        // Also stream to the frontend in real time.
-                        if let Some(win) = log_handle.get_webview_window("main") {
-                            let _ = win.emit("tauri-server-log", &line);
-                        }
-                    }
                         });
                     }
                     Ok(None) => {
-                        // Port already in use — existing server is running, connect to it.
+                        // Port already in use — existing server is running.
                     }
                     Err(err) => {
-                        if let Some(win) = log_handle.get_webview_window("main") {
+                        if let Some(win) = handle.get_webview_window("main") {
                             let _ = win.show();
                             let _ = win.emit("tauri-startup-error", &err);
                         }
@@ -352,6 +358,10 @@ pub fn run() {
                         if let Some(win) = handle.get_webview_window("main") {
                             let _ = win.emit("tauri-startup-loading", elapsed);
                         }
+                        push_log(
+                            &handle,
+                            &format!("Still starting… ({elapsed}s elapsed, first launch unpacks dependencies)"),
+                        );
                         last_notify = tokio::time::Instant::now();
                     }
                     tokio::time::sleep(tokio::time::Duration::from_millis(POLL_INTERVAL_MS)).await;

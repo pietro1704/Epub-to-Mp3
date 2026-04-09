@@ -14,7 +14,9 @@ os.environ.setdefault("EPUB_TO_MP3_ENGINE", "edge")
 try:
     import static_ffmpeg  # type: ignore[import-untyped]
 
+    print("Checking ffmpeg…", flush=True)
     static_ffmpeg.add_paths()
+    print("ffmpeg ready.", flush=True)
 except ImportError:
     pass  # ffmpeg must be on PATH if static-ffmpeg is not installed
 
@@ -32,9 +34,11 @@ DESKTOP_PORT = int(os.environ.get("EPUB_TO_MP3_PORT", "47860"))
 def main() -> None:
     import uvicorn
 
+    print("Loading server…", flush=True)
     from python_app.server import app  # deferred so env vars are set first
 
-    uvicorn.run(app, host="127.0.0.1", port=DESKTOP_PORT, log_level="warning")
+    print(f"Starting server on port {DESKTOP_PORT}…", flush=True)
+    uvicorn.run(app, host="127.0.0.1", port=DESKTOP_PORT, log_level="info")
 
 
 if __name__ == "__main__":
