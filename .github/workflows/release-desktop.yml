@@ -612,10 +612,6 @@ jobs:
         working-directory: web
         run: npx cap sync ios
 
-      - name: Install CocoaPods deps
-        working-directory: web/ios/App
-        run: pod install
-
       - name: Build iOS archive (unsigned)
         run: |
           xcodebuild archive \
