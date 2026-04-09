@@ -258,31 +258,32 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                // Try to spawn the Python backend sidecar.
-                let spawn_result = handle
-                    .shell()
-                    .sidecar("epub-to-mp3-server")
-                    .map_err(|e| e.to_string())
-                    .and_then(|cmd| cmd.spawn().map_err(|e| e.to_string()));
+                // If server is already running (leftover from previous launch), skip spawn.
+                let port_in_use = tokio::net::TcpStream::connect(
+                    format!("127.0.0.1:{SERVER_PORT}"),
+                )
+                .await
+                .is_ok();
 
-                let (mut rx, _child) = match spawn_result {
-                    Ok(pair) => pair,
-                    Err(err) => {
-                        // Sidecar binary missing or failed to exec.
-                        // Show the window immediately so the user isn't stuck.
-                        if let Some(win) = handle.get_webview_window("main") {
-                            let _ = win.show();
-                            // Signal the frontend with the error message.
-                            let _ = win.emit("tauri-startup-error", &err);
-                        }
-                        return;
-                    }
+                let spawn_result = if port_in_use {
+                    // Reuse the existing server — skip spawning a new sidecar.
+                    Ok(None)
+                } else {
+                    handle
+                        .shell()
+                        .sidecar("epub-to-mp3-server")
+                        .map_err(|e| e.to_string())
+                        .and_then(|cmd| cmd.spawn().map_err(|e| e.to_string()))
+                        .map(Some)
+                        .map_err(|e| e)
                 };
 
-                // Forward sidecar stdout/stderr to the log buffer AND the webview.
+                // Forward sidecar stdout/stderr (only when we spawned a new sidecar).
                 let log_handle = handle.clone();
-                tauri::async_runtime::spawn(async move {
-                    while let Some(event) = rx.recv().await {
+                match spawn_result {
+                    Ok(Some((mut rx, _child))) => {
+                        tauri::async_runtime::spawn(async move {
+                            while let Some(event) = rx.recv().await {
                         let line = match event {
                             CommandEvent::Stdout(b) => {
                                 String::from_utf8_lossy(&b).trim().to_string()
@@ -309,7 +310,19 @@ pub fn run() {
                             let _ = win.emit("tauri-server-log", &line);
                         }
                     }
-                });
+                        });
+                    }
+                    Ok(None) => {
+                        // Port already in use — existing server is running, connect to it.
+                    }
+                    Err(err) => {
+                        if let Some(win) = log_handle.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.emit("tauri-startup-error", &err);
+                        }
+                        return;
+                    }
+                }
 
                 // Show window early so user sees loading state.
                 if let Some(win) = handle.get_webview_window("main") {
