@@ -313,7 +313,8 @@ if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
   export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
   export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
 fi
-cd desktop && tauri build --target "$TRIPLE"
+# Build only the .app (skip DMG to avoid macOS opening Finder)
+cd desktop && tauri build --target "$TRIPLE" --bundles app
 echo ""
 echo "Done! Installing to /Applications and opening..."
 cd ..
