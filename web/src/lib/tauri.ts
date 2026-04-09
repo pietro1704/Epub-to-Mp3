@@ -119,6 +119,28 @@ export async function installUpdate(): Promise<void> {
   }
 }
 
+/**
+ * Download a file by URL as a blob and trigger a Save dialog / browser download.
+ * Works in both Tauri (WKWebView ignores `download` attr on http:// links) and
+ * regular browsers (fallback identical to the blob approach).
+ */
+export async function downloadFile(
+  url: string,
+  filename: string,
+): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const blob = await response.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
 /** Send an OS notification. Only works in Tauri with notification plugin. */
 export async function sendNotification(
   title: string,

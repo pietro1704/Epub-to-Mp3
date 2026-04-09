@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
 import type { Locale } from "../i18n/translations";
+import { downloadFile, isTauri } from "../lib/tauri";
 import {
   ConversionState,
   DownloadAsset,
@@ -131,6 +132,18 @@ export default function DownloadsPanel({
     }
   };
 
+  const handleDownload = (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    url: string,
+    filename: string,
+  ) => {
+    if (!isTauri()) return; // let browser handle it normally
+    e.preventDefault();
+    downloadFile(url, filename).catch((err) =>
+      console.error("[DownloadsPanel] download failed", err),
+    );
+  };
+
   const shareMessage = t.downloads.shareMessage(shareBookTitle);
 
   const handleCopyLink = async () => {
@@ -258,6 +271,7 @@ export default function DownloadsPanel({
                 href={zipFile.url}
                 download={zipFile.name}
                 className="downloads-panel__zip-button"
+                onClick={(e) => handleDownload(e, zipFile.url, zipFile.name)}
               >
                 <span className="downloads-panel__zip-icon">📦</span>
                 <span className="downloads-panel__zip-text">
@@ -281,6 +295,7 @@ export default function DownloadsPanel({
                   href={logFile.url}
                   download={logFile.name}
                   className="downloads-panel__log-link"
+                  onClick={(e) => handleDownload(e, logFile.url, logFile.name)}
                 >
                   {t.downloads.downloadLog}
                 </a>
@@ -373,6 +388,9 @@ export default function DownloadsPanel({
                           href={asset.url}
                           download={asset.name}
                           className="chapter-item__download"
+                          onClick={(e) =>
+                            handleDownload(e, asset.url, asset.name)
+                          }
                         >
                           {t.downloads.downloadChapter}
                         </a>
