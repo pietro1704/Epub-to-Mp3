@@ -50,6 +50,7 @@ jobs:
   build:
     name: ${{ matrix.label }}
     needs: [cleanup-nightly]
+    timeout-minutes: 40
     # Run when: cleanup succeeded/skipped AND overall conditions met
     if: >
       always() &&
@@ -105,6 +106,29 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: desktop/src-tauri -> target
+          shared-key: tauri-${{ matrix.rust-target }}
+          cache-on-failure: true
+
+      # ── npm cache ────────────────────────────────────────────────────────────
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-${{ runner.os }}-
+
+      # ── pip cache ────────────────────────────────────────────────────────────
+      - name: Get pip cache dir
+        id: pip-cache-dir
+        shell: bash
+        run: echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pip-cache-dir.outputs.dir }}
+          key: pip-${{ runner.os }}-${{ hashFiles('requirements-desktop.txt') }}
+          restore-keys: pip-${{ runner.os }}-
 
       # ── Linux system deps ───────────────────────────────────────────────────
       - name: Linux — Tauri system deps
@@ -127,14 +151,33 @@ jobs:
         shell: bash
         run: python -m venv .venv
 
-      # ── Python sidecar ──────────────────────────────────────────────────────
+      # ── Python sidecar — cache binary, only rebuild on source/dep changes ──
+      - name: Cache Python sidecar binary
+        id: sidecar-cache
+        uses: actions/cache@v4
+        with:
+          path: desktop/src-tauri/binaries
+          key: >-
+            sidecar-${{ runner.os }}-${{ matrix.rust-target }}-${{
+              hashFiles(
+                'requirements-desktop.txt',
+                'desktop.spec',
+                'python_app/server.py',
+                'python_app/main.py',
+                'hf_app.py',
+                'python_app/src/**'
+              )
+            }}
+
       - name: Install Python desktop deps + PyInstaller
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           pip install pyinstaller --quiet
           pip install -r requirements-desktop.txt --quiet
 
       - name: Build Python sidecar
+        if: steps.sidecar-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           pyinstaller desktop.spec --noconfirm --clean
@@ -154,7 +197,7 @@ jobs:
         working-directory: web
         shell: bash
         run: |
-          npm ci
+          npm ci --prefer-offline
           VITE_API_BASE="http://127.0.0.1:${{ env.DESKTOP_PORT }}/api" npm run build
 
       # ── Tauri build ─────────────────────────────────────────────────────────
@@ -425,6 +468,7 @@ jobs:
   docker:
     name: docker
     needs: [cleanup-nightly]
+    timeout-minutes: 20
     if: >
       always() &&
       (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
@@ -484,6 +528,7 @@ jobs:
   android:
     name: android
     needs: [cleanup-nightly]
+    timeout-minutes: 25
     if: >
       always() &&
       (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
@@ -505,7 +550,7 @@ jobs:
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.ref }}
 
-      - name: Set up Java 17
+      - name: Set up Java 21
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -517,9 +562,26 @@ jobs:
       - name: Create Python venv (mise virtualenv)
         run: python -m venv .venv
 
+      # ── Caches ────────────────────────────────────────────────────────────
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-Linux-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-Linux-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ hashFiles('web/package.json') }}
+          restore-keys: gradle-
+
       - name: Install JS deps
         working-directory: web
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Build mobile web bundle
         working-directory: web
@@ -540,7 +602,7 @@ jobs:
         env:
           ANDROID_HOME: /usr/local/lib/android/sdk
           ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --parallel --build-cache
 
       - name: Rename APK
         run: |
@@ -569,6 +631,7 @@ jobs:
   ios:
     name: ios
     needs: [cleanup-nightly]
+    timeout-minutes: 25
     if: >
       always() &&
       (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
@@ -599,9 +662,24 @@ jobs:
       - name: Create Python venv (mise virtualenv)
         run: python -m venv .venv
 
+      # ── Caches ────────────────────────────────────────────────────────────
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: npm-macOS-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-macOS-
+
+      - name: Cache SPM packages
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: spm-ios-${{ hashFiles('web/package.json') }}
+          restore-keys: spm-ios-
+
       - name: Install JS deps
         working-directory: web
-        run: npm ci
+        run: npm ci --prefer-offline
 
       - name: Build mobile web bundle
         working-directory: web
@@ -625,6 +703,7 @@ jobs:
             -configuration Release \
             -archivePath "${{ runner.temp }}/App.xcarchive" \
             -destination generic/platform=iOS \
+            -parallelizeTargets \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
