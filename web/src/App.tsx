@@ -113,6 +113,7 @@ export default function App(props?: AppProps): JSX.Element {
     uploadFile,
     recentJobs,
     healthStatus,
+    notifyServerReady,
     queue,
     queuePaused,
     resumeQueue,
@@ -288,6 +289,7 @@ export default function App(props?: AppProps): JSX.Element {
       cleanups.push(
         await listenTauri("tauri-startup-ready", () => {
           setTauriStarting(false);
+          notifyServerReady();
         }),
       );
       cleanups.push(
@@ -344,13 +346,16 @@ export default function App(props?: AppProps): JSX.Element {
         const r = await fetch("http://127.0.0.1:47860/api/health", {
           signal: AbortSignal.timeout(800),
         });
-        if (r.ok) setTauriStarting(false);
+        if (r.ok) {
+          setTauriStarting(false);
+          notifyServerReady();
+        }
       } catch {
         // not up yet
       }
     }, 2000);
     return () => clearInterval(id);
-  }, [tauriStarting]);
+  }, [tauriStarting, notifyServerReady]);
 
   useEffect(() => {
     if (typeof window === "undefined") {

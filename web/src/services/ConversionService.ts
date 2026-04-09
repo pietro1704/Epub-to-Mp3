@@ -448,6 +448,12 @@ export class HttpConversionClient implements ConversionClient {
     }
 
     if (/^https?:\/\//i.test(normalizedBase)) {
+      if (
+        normalizedBase.endsWith("/api") &&
+        normalizedPath.startsWith("/api")
+      ) {
+        return `${normalizedBase}${normalizedPath.substring(4)}`;
+      }
       return `${normalizedBase}${normalizedPath}`;
     }
 

@@ -753,6 +753,7 @@ export interface UseConversionFlowApi {
   recentJobs: RecentJobEntry[];
   apiAvailable: boolean;
   healthStatus: "unknown" | "ok" | "fail" | "restarting";
+  notifyServerReady: () => void;
   queue: ConversionFormValues[];
   queuePaused: boolean;
   resumeQueue: () => void;
@@ -2630,6 +2631,7 @@ export function useConversionFlow(
     recentJobs,
     apiAvailable,
     healthStatus,
+    notifyServerReady: markApiOnline,
     queue: queueSnapshot,
     queuePaused,
     resumeQueue,
