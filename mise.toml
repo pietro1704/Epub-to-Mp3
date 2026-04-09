@@ -369,12 +369,14 @@ if [[ -z "$APP" || ! -d "$APP" ]]; then
 fi
 DEST="/Applications/Epub to Mp3.app"
 # Kill existing instance so macOS actually launches the new binary
-if pgrep -f "epub-to-mp3" &>/dev/null; then
-  echo "Quitting existing instance..."
-  osascript -e 'tell application "Epub to Mp3" to quit' 2>/dev/null || true
-  pkill -f "epub-to-mp3" 2>/dev/null || true
-  sleep 1
-fi
+echo "Stopping any running instance..."
+osascript -e 'tell application "Epub to Mp3" to quit' 2>/dev/null || true
+sleep 1
+# Kill main app binary + sidecar server (both match "epub-to-mp3" or "epub-to-m3")
+pkill -9 -f "epub-to-mp3" 2>/dev/null || true
+# Also kill by port in case sidecar is orphaned
+lsof -ti :47860 2>/dev/null | xargs kill -9 2>/dev/null || true
+sleep 1
 echo "Installing to $DEST ..."
 rm -rf "$DEST"
 cp -r "$APP" "$DEST"

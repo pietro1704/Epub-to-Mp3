@@ -149,7 +149,7 @@ jobs:
         working-directory: web
         shell: bash
         run: |
-          npm ci --silent
+          npm ci
           VITE_API_BASE="http://127.0.0.1:${{ env.DESKTOP_PORT }}/api" npm run build
 
       # ── Tauri build ─────────────────────────────────────────────────────────
@@ -514,7 +514,7 @@ jobs:
 
       - name: Install JS deps
         working-directory: web
-        run: npm ci --silent
+        run: npm ci
 
       - name: Build mobile web bundle
         working-directory: web
@@ -596,7 +596,7 @@ jobs:
 
       - name: Install JS deps
         working-directory: web
-        run: npm ci --silent
+        run: npm ci
 
       - name: Build mobile web bundle
         working-directory: web
