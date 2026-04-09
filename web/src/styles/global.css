@@ -3464,6 +3464,76 @@ select {
   font-size: 0.9rem;
 }
 
+.api-offline-banner--starting {
+  border-color: rgba(59, 130, 246, 0.4);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+/* Startup log panel */
+.startup-log-panel {
+  margin: 1rem 0;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(59, 130, 246, 0.06);
+  overflow: hidden;
+}
+
+.startup-log-panel__header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1rem 0.5rem;
+  flex-wrap: wrap;
+}
+
+.startup-log-panel__header strong {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.startup-log-panel__hint {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.startup-log-panel__spinner {
+  display: inline-block;
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(59, 130, 246, 0.3);
+  border-top-color: rgb(59, 130, 246);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.startup-log-panel__log {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.4rem 1rem 0.75rem;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+  border-top: 1px solid rgba(59, 130, 246, 0.15);
+}
+
+.startup-log-panel__line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .downloads-panel {
   display: grid;
   gap: 1rem;
@@ -4086,14 +4156,7 @@ select {
   cursor: not-allowed;
 }
 
-footer {
-  width: min(var(--content-max-width), 100%);
-  margin: auto auto 0;
-  text-align: center;
-  padding: 2rem var(--content-padding-inline) 3rem;
-  color: var(--footer-color);
-  font-size: 0.9rem;
-}
+/* footer is now .status-bar — see desktop overrides section at bottom */
 
 @media (max-width: 720px) {
   .panel {
@@ -5389,4 +5452,370 @@ footer {
     width: 100%;
     max-height: 100%;
   }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   Desktop overrides — applied when running inside Tauri webview.
+   Makes the UI feel like a native desktop app: system fonts, flat colors,
+   tight spacing, no web-marketing aesthetics (gradients, blur, pills).
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+.app-shell--desktop {
+  --bg-gradient-start: var(--bg-color);
+  --bg-gradient-end: var(--bg-color);
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    "Helvetica Neue",
+    sans-serif;
+  line-height: 1.4;
+  /* Solid surface colors — no transparency */
+  --panel-bg: #1c2333;
+  --surface: #1c2333;
+  --surface-2: #1a2030;
+  --tab-trigger-bg: #1a2030;
+  --tab-active-bg: #2d3555;
+  --input-bg: #151b2a;
+  --terminal-bg: #0d1117;
+  --downloads-item-bg: #1a2030;
+  --topbar-bg: #1c2333;
+}
+
+.theme-light .app-shell--desktop {
+  --panel-bg: #ffffff;
+  --surface: #ffffff;
+  --surface-2: #f8fafc;
+  --tab-trigger-bg: #f8fafc;
+  --tab-active-bg: #eef2ff;
+  --input-bg: #ffffff;
+  --terminal-bg: #f8fafc;
+  --downloads-item-bg: #ffffff;
+  --topbar-bg: #ffffff;
+}
+
+/* Flat background */
+.app-shell--desktop body,
+body:has(.app-shell--desktop) {
+  background: var(--bg-color);
+}
+
+/* Panels: flat, tight, no blur */
+.app-shell--desktop .panel {
+  border-radius: 6px;
+  padding: 1rem 1.25rem;
+  backdrop-filter: none;
+  box-shadow: 0 1px 3px var(--panel-shadow);
+  gap: 1rem;
+}
+
+.app-shell--desktop .panel__title {
+  font-size: 1.1rem;
+}
+
+/* Tabs: compact, no float */
+.app-shell--desktop .tabs__trigger {
+  padding: 0.6rem 0.85rem;
+  border-radius: 4px;
+  transition:
+    border 0.15s ease,
+    background 0.15s ease;
+}
+
+.app-shell--desktop .tabs__trigger:hover,
+.app-shell--desktop .tabs__trigger:focus-visible {
+  transform: none;
+}
+
+.app-shell--desktop .tabs__trigger--active {
+  box-shadow: none;
+}
+
+/* Hero: compact, no decorative shadow */
+.app-shell--desktop .hero--active {
+  border-radius: 6px;
+  padding: clamp(1rem, 2vw, 1.5rem);
+  box-shadow: 0 1px 3px var(--panel-shadow);
+}
+
+.app-shell--desktop .hero__book-cover {
+  width: clamp(100px, 15vw, 140px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.app-shell--desktop .hero__book-cover img {
+  max-height: clamp(180px, 25vw, 240px);
+}
+
+/* Submit button: flat accent */
+.app-shell--desktop .form-submit {
+  background: var(--accent);
+  box-shadow: none;
+  border-radius: 4px;
+}
+
+.app-shell--desktop .form-submit:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+/* Content area: tighter spacing */
+.app-shell--desktop .content-shell {
+  padding: 0.75rem var(--content-padding-inline) 2rem;
+  gap: 0.75rem;
+}
+
+/* Global radius reset — kill all pills and large rounds */
+.app-shell--desktop *:not(img):not(video):not(svg) {
+  border-radius: clamp(0px, var(--_r, 4px), 6px) !important;
+}
+
+/* Explicitly set desired radii */
+.app-shell--desktop .panel,
+.app-shell--desktop .hero--active,
+.app-shell--desktop .hero--collapsed,
+.app-shell--desktop .system-control,
+.app-shell--desktop .system-stats,
+.app-shell--desktop .chapter-item,
+.app-shell--desktop .form-advanced,
+.app-shell--desktop .ebook-reader__panel,
+.app-shell--desktop .reader-modal__panel {
+  --_r: 6px;
+}
+
+.app-shell--desktop .tabs__trigger,
+.app-shell--desktop .badge,
+.app-shell--desktop .form-submit,
+.app-shell--desktop button,
+.app-shell--desktop input,
+.app-shell--desktop select,
+.app-shell--desktop textarea {
+  --_r: 4px;
+}
+
+/* Kill all decorative shadows globally */
+.app-shell--desktop * {
+  --_native-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.app-shell--desktop .panel,
+.app-shell--desktop .hero--active,
+.app-shell--desktop .hero--collapsed {
+  box-shadow: var(--_native-shadow) !important;
+}
+
+.app-shell--desktop .tabs__trigger--active,
+.app-shell--desktop .form-submit,
+.app-shell--desktop .badge,
+.app-shell--desktop button {
+  box-shadow: none !important;
+}
+
+/* Kill all backdrop blur */
+.app-shell--desktop * {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Kill all hover transforms globally */
+.app-shell--desktop *:hover,
+.app-shell--desktop *:focus-visible {
+  transform: none !important;
+}
+
+/* Progress bars: flat accent */
+.app-shell--desktop .hero__progress-fill,
+.app-shell--desktop .hero__collapsed-fill,
+.app-shell--desktop [class*="progress-fill"],
+.app-shell--desktop [class*="progress__fill"] {
+  background: var(--accent) !important;
+}
+
+/* Kill gradient backgrounds on buttons */
+.app-shell--desktop .form-submit,
+.app-shell--desktop [class*="button-gradient"],
+.app-shell--desktop .whatsapp-share-button,
+.app-shell--desktop .quick-queue__submit {
+  background: var(--accent) !important;
+  box-shadow: none !important;
+}
+
+/* Inputs: native-looking */
+.app-shell--desktop input,
+.app-shell--desktop select,
+.app-shell--desktop textarea {
+  box-shadow: none !important;
+  transition: border-color 0.1s ease !important;
+}
+
+.app-shell--desktop input:focus,
+.app-shell--desktop select:focus,
+.app-shell--desktop textarea:focus {
+  outline: 2px solid var(--accent) !important;
+  outline-offset: -1px !important;
+  box-shadow: none !important;
+}
+
+/* Collapsed hero: compact */
+.app-shell--desktop .hero--collapsed {
+  padding: 0.5rem 1rem !important;
+  box-shadow: var(--_native-shadow) !important;
+}
+
+/* Topbar group (if ever shown): not pills */
+.app-shell--desktop .topbar__group {
+  border-radius: 4px !important;
+}
+
+/* Downloads and misc: tight */
+.app-shell--desktop .downloads-list__item,
+.app-shell--desktop .recent-jobs__card,
+.app-shell--desktop .resumable-job,
+.app-shell--desktop .cached-jobs-alert {
+  border-radius: 6px !important;
+  box-shadow: var(--_native-shadow) !important;
+}
+
+/* Notification toasts: tight */
+.app-shell--desktop .hf-notification {
+  border-radius: 6px !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+}
+
+/* Modal overlays: tight */
+.app-shell--desktop .reader-modal__overlay {
+  backdrop-filter: none !important;
+}
+
+/* Scrollbar: native thin style */
+.app-shell--desktop ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.app-shell--desktop ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.app-shell--desktop ::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+}
+
+.app-shell--desktop ::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
+
+/* Reduce animation durations for snappier feel */
+.app-shell--desktop * {
+  transition-duration: 0.1s !important;
+}
+
+/* But allow 0 for no-transition cases */
+.app-shell--desktop *[style*="transition: none"],
+.app-shell--desktop .no-transition {
+  transition: none !important;
+}
+
+/* Status bar footer */
+.app-shell--desktop .status-bar {
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  max-width: 100%;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  margin: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.75rem;
+  color: var(--footer-color);
+  text-align: left;
+  gap: 1rem;
+}
+
+.app-shell--desktop .status-bar__version {
+  opacity: 0.7;
+}
+
+.app-shell--desktop .status-bar__text {
+  margin-left: auto;
+}
+
+/* Drag-and-drop overlay */
+.conversion-form {
+  position: relative;
+}
+
+.conversion-form--drag-over::before {
+  content: "Drop files here";
+  position: absolute;
+  inset: 0;
+  border: 2px dashed var(--accent);
+  background: rgba(99, 102, 241, 0.08);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent);
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+/* Non-desktop status bar (web) */
+.status-bar {
+  width: min(var(--content-max-width), 100%);
+  margin: auto auto 0;
+  text-align: center;
+  padding: 1.5rem var(--content-padding-inline) 2rem;
+  color: var(--footer-color);
+  font-size: 0.85rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+/* Update banner (desktop only) */
+.update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: var(--accent, #3b82f6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.update-banner button {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.update-banner button:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+.update-banner button:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+.update-banner__dismiss {
+  background: transparent !important;
+  border: none !important;
+  font-size: 16px !important;
+  padding: 0 4px !important;
+  opacity: 0.7;
+}
+.update-banner__dismiss:hover {
+  opacity: 1 !important;
 }

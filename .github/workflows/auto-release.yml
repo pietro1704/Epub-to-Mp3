@@ -192,7 +192,12 @@ jobs:
             python_app/version.py \
             flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml \
             CHANGELOG.md
-          git diff --quiet --cached && exit 0
+          # Skip if tag already exists (duplicate run guard)
+          if git rev-parse "${{ steps.bump.outputs.tag }}" >/dev/null 2>&1; then
+            echo "Tag ${{ steps.bump.outputs.tag }} already exists — skipping"
+            exit 0
+          fi
+          git diff --quiet --cached && { git tag "${{ steps.bump.outputs.tag }}"; git push origin master --tags; exit 0; }
           git commit -m "chore: release ${{ steps.bump.outputs.tag }} [skip ci]"
           git tag "${{ steps.bump.outputs.tag }}"
           git push origin master --tags
