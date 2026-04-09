@@ -279,7 +279,7 @@ pub fn run() {
                     }
                 };
 
-                // Forward sidecar stdout/stderr to the shared log buffer.
+                // Forward sidecar stdout/stderr to the log buffer AND the webview.
                 let log_handle = handle.clone();
                 tauri::async_runtime::spawn(async move {
                     while let Some(event) = rx.recv().await {
@@ -295,13 +295,18 @@ pub fn run() {
                         if line.is_empty() {
                             continue;
                         }
+                        // Push to persistent log buffer.
                         if let Some(logs) = log_handle.try_state::<ServerLogs>() {
                             let mut v = logs.0.lock().unwrap();
-                            v.push(line);
+                            v.push(line.clone());
                             let len = v.len();
                             if len > 2000 {
                                 v.drain(0..len - 2000);
                             }
+                        }
+                        // Also stream to the frontend in real time.
+                        if let Some(win) = log_handle.get_webview_window("main") {
+                            let _ = win.emit("tauri-server-log", &line);
                         }
                     }
                 });
