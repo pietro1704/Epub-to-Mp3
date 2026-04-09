@@ -306,10 +306,17 @@ run = """
 set -euo pipefail
 mise run desktop:sidecar
 mise run desktop:web
-cd desktop && tauri build --target aarch64-apple-darwin
+TRIPLE=$(rustc -Vv | grep "^host" | cut -d' ' -f2)
+# Load updater signing key if available locally
+KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
+if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+fi
+cd desktop && tauri build --target "$TRIPLE"
 echo ""
 echo "Done! Artifacts:"
-find desktop/src-tauri/target -name '*.dmg' -o -name '*.app' 2>/dev/null | head -5
+find src-tauri/target -name '*.dmg' -o -name '*.app' 2>/dev/null | head -5
 """
 
 [tasks."desktop:build:linux"]
@@ -319,6 +326,11 @@ run = """
 set -euo pipefail
 mise run desktop:sidecar
 mise run desktop:web
+KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
+if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+fi
 cd desktop && tauri build
 echo ""
 echo "Done! Artifacts:"
@@ -332,6 +344,11 @@ run = """
 set -euo pipefail
 mise run desktop:sidecar
 mise run desktop:web
+KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
+if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
+  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
+fi
 cd desktop && tauri build
 echo ""
 echo "Done! Artifacts:"

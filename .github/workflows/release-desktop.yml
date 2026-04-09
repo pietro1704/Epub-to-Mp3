@@ -155,6 +155,9 @@ jobs:
       # ── Tauri build ─────────────────────────────────────────────────────────
       - name: Build Tauri app
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: cd desktop && tauri build ${{ matrix.tauri-args }}
 
       # ── Collect artifacts ───────────────────────────────────────────────────
@@ -234,12 +237,37 @@ jobs:
             **First launch**: ffmpeg is downloaded once (~60 MB) on first conversion.
           files: |
             desktop/src-tauri/target/**/bundle/dmg/*.dmg
+            desktop/src-tauri/target/**/bundle/dmg/*.dmg.sig
+            desktop/src-tauri/target/**/bundle/macos/*.tar.gz
+            desktop/src-tauri/target/**/bundle/macos/*.tar.gz.sig
             desktop/src-tauri/target/**/bundle/msi/*.msi
+            desktop/src-tauri/target/**/bundle/msi/*.msi.sig
+            desktop/src-tauri/target/**/bundle/msi/*.msi.zip
+            desktop/src-tauri/target/**/bundle/msi/*.msi.zip.sig
             desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.exe.sig
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip.sig
             desktop/src-tauri/target/**/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.sig
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz.sig
             desktop/src-tauri/target/**/bundle/deb/*.deb
             Epub.to.Mp3_x86_64.flatpak
             Epub.to.Mp3_x86_64.snap
+
+      - name: Upload updater artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-${{ matrix.label }}
+          path: |
+            desktop/src-tauri/target/**/bundle/macos/*.tar.gz
+            desktop/src-tauri/target/**/bundle/macos/*.tar.gz.sig
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip.sig
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz.sig
+          if-no-files-found: ignore
 
       - name: Upload — nightly pre-release
         if: github.event_name == 'workflow_run'
@@ -269,12 +297,124 @@ jobs:
             | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:nightly` |
           files: |
             desktop/src-tauri/target/**/bundle/dmg/*.dmg
+            desktop/src-tauri/target/**/bundle/dmg/*.dmg.sig
+            desktop/src-tauri/target/**/bundle/macos/*.tar.gz
+            desktop/src-tauri/target/**/bundle/macos/*.tar.gz.sig
             desktop/src-tauri/target/**/bundle/msi/*.msi
+            desktop/src-tauri/target/**/bundle/msi/*.msi.sig
+            desktop/src-tauri/target/**/bundle/msi/*.msi.zip
+            desktop/src-tauri/target/**/bundle/msi/*.msi.zip.sig
             desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.exe.sig
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip
+            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip.sig
             desktop/src-tauri/target/**/bundle/appimage/*.AppImage
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.sig
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz
+            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz.sig
             desktop/src-tauri/target/**/bundle/deb/*.deb
             Epub.to.Mp3_x86_64.flatpak
             Epub.to.Mp3_x86_64.snap
+
+  # ── Updater JSON (aggregates all platform signatures) ─────────────────────────
+  updater-json:
+    name: Generate latest.json
+    needs: [build]
+    if: needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (for version detection)
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          sparse-checkout: desktop/src-tauri/tauri.conf.json
+          sparse-checkout-cone-mode: false
+
+      - name: Download updater artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-*
+          merge-multiple: true
+          path: updater-artifacts
+
+      - name: Build latest.json
+        shell: bash
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('desktop/src-tauri/tauri.conf.json'))['version'])")
+          REPO="${{ github.repository }}"
+          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
+            TAG="nightly"
+          else
+            TAG="${{ github.ref_name || inputs.tag }}"
+          fi
+          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
+          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+          echo "Updater artifacts:"
+          find updater-artifacts -type f 2>/dev/null || echo "(none)"
+
+          # Read signatures
+          read_sig() { cat "$1" 2>/dev/null || echo ""; }
+
+          MAC_SIG=$(find updater-artifacts -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
+          MAC_URL=$(find updater-artifacts -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1)
+          WIN_SIG=$(find updater-artifacts -name "*-setup.nsis.zip.sig" 2>/dev/null | head -1)
+          WIN_URL=$(find updater-artifacts -name "*-setup.nsis.zip" ! -name "*.sig" 2>/dev/null | head -1)
+          LIN_SIG=$(find updater-artifacts -name "*.AppImage.tar.gz.sig" 2>/dev/null | head -1)
+          LIN_URL=$(find updater-artifacts -name "*.AppImage.tar.gz" ! -name "*.sig" 2>/dev/null | head -1)
+
+          # Build platform entries
+          platforms="{}"
+          if [[ -n "$MAC_SIG" && -n "$MAC_URL" ]]; then
+            MAC_FNAME=$(basename "$MAC_URL")
+            MAC_SIG_CONTENT=$(read_sig "$MAC_SIG")
+            platforms=$(echo "$platforms" | python3 -c "
+          import sys, json
+          p = json.load(sys.stdin)
+          p['darwin-aarch64'] = {'signature': '''$MAC_SIG_CONTENT''', 'url': '$BASE_URL/$MAC_FNAME'}
+          json.dump(p, sys.stdout)")
+          fi
+
+          if [[ -n "$WIN_SIG" && -n "$WIN_URL" ]]; then
+            WIN_FNAME=$(basename "$WIN_URL")
+            WIN_SIG_CONTENT=$(read_sig "$WIN_SIG")
+            platforms=$(echo "$platforms" | python3 -c "
+          import sys, json
+          p = json.load(sys.stdin)
+          p['windows-x86_64'] = {'signature': '''$WIN_SIG_CONTENT''', 'url': '$BASE_URL/$WIN_FNAME'}
+          json.dump(p, sys.stdout)")
+          fi
+
+          if [[ -n "$LIN_SIG" && -n "$LIN_URL" ]]; then
+            LIN_FNAME=$(basename "$LIN_URL")
+            LIN_SIG_CONTENT=$(read_sig "$LIN_SIG")
+            platforms=$(echo "$platforms" | python3 -c "
+          import sys, json
+          p = json.load(sys.stdin)
+          p['linux-x86_64'] = {'signature': '''$LIN_SIG_CONTENT''', 'url': '$BASE_URL/$LIN_FNAME'}
+          json.dump(p, sys.stdout)")
+          fi
+
+          python3 -c "
+          import json
+          platforms = json.loads('''$platforms''') if '''$platforms''' != '{}' else {}
+          manifest = {
+            'version': 'v$VERSION',
+            'notes': 'See release notes on GitHub.',
+            'pub_date': '$NOW',
+            'platforms': platforms
+          }
+          with open('latest.json', 'w') as f:
+            json.dump(manifest, f, indent=2)
+          print(json.dumps(manifest, indent=2))
+          "
+
+      - name: Upload latest.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ (github.event_name == 'workflow_run' && 'nightly') || github.ref_name || inputs.tag }}
+          fail_on_unmatched_files: false
+          files: latest.json
 
   # ── Docker image → ghcr.io ────────────────────────────────────────────────────
   docker:

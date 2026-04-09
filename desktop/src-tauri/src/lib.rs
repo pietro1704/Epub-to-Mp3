@@ -4,6 +4,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_shell::process::CommandEvent;
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_updater::UpdaterExt;
 
 const SERVER_PORT: u16 = 47860;
 const POLL_INTERVAL_MS: u64 = 300;
@@ -86,6 +87,8 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
 
     let open = MenuItem::with_id(h, "open_books", "Open Books…", true, Some("CmdOrCtrl+O"))?;
     let logs = MenuItem::with_id(h, "show_logs", "Server Logs", true, None::<&str>)?;
+    let check_update =
+        MenuItem::with_id(h, "check_update", "Check for Updates…", true, None::<&str>)?;
 
     // Theme submenu
     let theme_auto = CheckMenuItem::with_id(h, "theme_auto", "Auto", true, true, None::<&str>)?;
@@ -128,6 +131,7 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
             true,
             &[
                 &PredefinedMenuItem::about(h, None, None)?,
+                &check_update,
                 &PredefinedMenuItem::separator(h)?,
                 &PredefinedMenuItem::hide(h, None)?,
                 &PredefinedMenuItem::hide_others(h, None)?,
@@ -152,7 +156,8 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
                 &PredefinedMenuItem::quit(h, None)?,
             ],
         )?;
-        Menu::with_items(h, &[&file_sub, &view])?
+        let help_sub = Submenu::with_items(h, "Help", true, &[&check_update])?;
+        Menu::with_items(h, &[&file_sub, &view, &help_sub])?
     };
 
     Ok(menu)
@@ -166,6 +171,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(ServerLogs(Mutex::new(Vec::new())))
         .invoke_handler(tauri::generate_handler![
@@ -190,13 +196,21 @@ pub fn run() {
                     // View > Server Logs
                     "show_logs" => show_log_window(app_handle),
 
+                    // Check for Updates
+                    "check_update" => {
+                        if let Some(win) = app_handle.get_webview_window("main") {
+                            let _ = win.emit("tauri-check-update", ());
+                        }
+                    }
+
                     // View > Theme
                     "theme_auto" | "theme_light" | "theme_dark" => {
                         let value = id.strip_prefix("theme_").unwrap_or("auto");
                         // Uncheck siblings, check selected
                         for tid in ["theme_auto", "theme_light", "theme_dark"] {
                             if let Some(item) = app_handle.menu().and_then(|m| m.get(tid)) {
-                                if let Ok(check) = item.as_check_menuitem_unchecked() {
+                                {
+                    let check = item.as_check_menuitem_unchecked();
                                     let _ = check.set_checked(tid == id);
                                 }
                             }
@@ -211,7 +225,8 @@ pub fn run() {
                         let value = id.strip_prefix("lang_").unwrap_or("auto");
                         for lid in ["lang_auto", "lang_pt", "lang_en"] {
                             if let Some(item) = app_handle.menu().and_then(|m| m.get(lid)) {
-                                if let Ok(check) = item.as_check_menuitem_unchecked() {
+                                {
+                    let check = item.as_check_menuitem_unchecked();
                                     let _ = check.set_checked(lid == id);
                                 }
                             }
@@ -222,6 +237,30 @@ pub fn run() {
                     }
 
                     _ => {}
+                }
+            });
+
+            // ── Auto-update check (background) ────────────────────────────────
+            let update_handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                // Delay 3s so the window can load first
+                tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+                if let Ok(updater) = update_handle.updater() {
+                    match updater.check().await {
+                        Ok(Some(update)) => {
+                            if let Some(win) = update_handle.get_webview_window("main") {
+                                let _ = win.emit(
+                                    "tauri-update-available",
+                                    serde_json::json!({
+                                        "version": update.version,
+                                        "body": update.body.clone().unwrap_or_default(),
+                                    }),
+                                );
+                            }
+                        }
+                        Ok(None) => {} // already up to date
+                        Err(_) => {}   // network error, ignore silently
+                    }
                 }
             });
 
