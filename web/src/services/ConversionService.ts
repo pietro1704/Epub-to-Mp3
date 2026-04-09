@@ -500,6 +500,40 @@ export class HttpConversionClient implements ConversionClient {
       method: "POST",
       body: buildFormData(request),
     });
+
+    // Auto-recover: if the upload expired on the server but we still have the
+    // original local file path (desktop app), re-register it and retry once.
+    if (
+      !response.ok &&
+      response.status === 404 &&
+      request.localPath &&
+      request.uploadId
+    ) {
+      const body = await response.text();
+      if (body.includes("Upload not found") || body.includes("expired")) {
+        try {
+          const reReg = await fetch(this.resolve("/api/uploads/local"), {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path: request.localPath }),
+          });
+          if (reReg.ok) {
+            const newUpload: UploadResponse = await reReg.json();
+            const retryResp = await fetch(this.resolve("/api/convert"), {
+              method: "POST",
+              body: buildFormData({ ...request, uploadId: newUpload.uploadId }),
+            });
+            return parseResponse<{ jobId: string }>(retryResp);
+          }
+        } catch {
+          // Re-registration failed; fall through to original error below
+        }
+        throw new Error(
+          normalizeErrorMessage(response.status, response.statusText, body),
+        );
+      }
+    }
+
     return parseResponse<{ jobId: string }>(response);
   }
 

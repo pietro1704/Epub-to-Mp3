@@ -164,6 +164,9 @@ interface QueuedFileEntry {
   bookAuthor?: string;
   coverUrl?: string;
   detectedLanguage?: string;
+  /** Desktop only: absolute path of the source file. Retained so we can
+   *  re-register an expired upload automatically without user action. */
+  localPath?: string;
 }
 
 const SUPPORTED_BOOK_EXTENSIONS = new Set([".epub", ".pdf"]);
@@ -797,10 +800,7 @@ export default function ConversionForm({
     if (additions.length === 0) return;
     setFileError(null);
     setShowMissingFileError(false);
-    setFileQueueSafe((prev) => [
-      ...prev,
-      ...additions.map(({ localPath: _lp, ...rest }) => rest),
-    ]);
+    setFileQueueSafe((prev) => [...prev, ...additions]);
     additions.forEach((entry) =>
       startLocalUploadForEntry(entry.id, entry.localPath, entry.name),
     );
@@ -952,6 +952,7 @@ export default function ConversionForm({
         bookTitle: entry.bookTitle,
         bookAuthor: entry.bookAuthor,
         coverUrl: entry.coverUrl,
+        localPath: entry.localPath,
       };
     });
     const [first, ...rest] = payloads;

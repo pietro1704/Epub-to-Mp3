@@ -52,11 +52,15 @@ export interface ConversionFormValues {
   healthCheckOkMem?: number;
   healthCheckSlowStreak?: number;
   uiLanguage?: string;
+  /** Desktop only: absolute path of the source file on the local filesystem.
+   *  Used to re-register an expired upload without asking the user to re-drop
+   *  the file. Never sent to the server as part of the form payload. */
+  localPath?: string;
 }
 
 export type ConversionTemplate = Omit<
   ConversionFormValues,
-  "file" | "fileName" | "uploadId"
+  "file" | "fileName" | "uploadId" | "localPath"
 >;
 
 export interface SubmitBatchOptions {

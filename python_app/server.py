@@ -564,7 +564,14 @@ _worker_scale_lock = asyncio.Lock()
 
 _pending_uploads: Dict[str, dict] = {}
 _pending_lock = threading.Lock()
-_PENDING_TTL_SECONDS = 3600  # 1 hour
+# Local desktop keeps uploads for 30 days (file lives on disk, rarely needs cleanup).
+# HF Spaces keeps them for 1 hour to avoid filling the /data volume.
+_PENDING_TTL_SECONDS = int(
+    os.getenv(
+        "UPLOAD_TTL_SECONDS",
+        str(30 * 24 * 3600 if not os.getenv("SPACE_ID") else 3600),
+    )
+)
 _PENDING_META_FILENAME = "upload.json"
 _CHAPTER_HEARTBEAT_SECONDS = 20.0  # was 45s — more frequent activity pings
 _CHAPTER_TIMEOUT_FACTOR = 2.0  # was 2.5 — less overshoot on estimated duration
