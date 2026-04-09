@@ -78,6 +78,24 @@ export interface AppProps {
   client?: ConversionClient;
 }
 
+function StartupLogView({ lines }: { lines: string[] }): JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (ref.current) {
+      ref.current.scrollTop = ref.current.scrollHeight;
+    }
+  }, [lines]);
+  return (
+    <div className="startup-log-panel__log" ref={ref}>
+      {lines.map((l, i) => (
+        <div key={i} className="startup-log-panel__line">
+          {l}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function App(props?: AppProps): JSX.Element {
   const { client } = props ?? {};
   const {
@@ -188,6 +206,8 @@ export default function App(props?: AppProps): JSX.Element {
   >(null);
   // Tauri-specific: tracks whether the Python sidecar failed to start.
   const [tauriEngineError, setTauriEngineError] = useState<string | null>(null);
+  const [tauriStarting, setTauriStarting] = useState<boolean>(isTauri());
+  const [tauriStartupLog, setTauriStartupLog] = useState<string[]>([]);
   const restartOptionsRef = useRef({ keepCache: false, keepFinished: false });
   const [hiddenRecentIds, setHiddenRecentIds] = useState<Set<string>>(() => {
     if (typeof window === "undefined") {
@@ -247,6 +267,7 @@ export default function App(props?: AppProps): JSX.Element {
     (async () => {
       cleanups.push(
         await listenTauri("tauri-startup-error", (payload) => {
+          setTauriStarting(false);
           setTauriEngineError(
             typeof payload === "string"
               ? payload
@@ -256,9 +277,30 @@ export default function App(props?: AppProps): JSX.Element {
       );
       cleanups.push(
         await listenTauri("tauri-startup-timeout", () => {
+          setTauriStarting(false);
           setTauriEngineError(
             "Engine took too long to start. Check Server Logs or restart the app.",
           );
+        }),
+      );
+      cleanups.push(
+        await listenTauri("tauri-startup-ready", () => {
+          setTauriStarting(false);
+        }),
+      );
+      cleanups.push(
+        await listenTauri("tauri-startup-loading", () => {
+          setTauriStarting(true);
+        }),
+      );
+      cleanups.push(
+        await listenTauri("tauri-server-log", (line) => {
+          if (typeof line === "string") {
+            setTauriStartupLog((prev) => {
+              const next = [...prev, line];
+              return next.length > 200 ? next.slice(-200) : next;
+            });
+          }
         }),
       );
     })();
@@ -1431,7 +1473,23 @@ export default function App(props?: AppProps): JSX.Element {
           <span>API: {apiHealthLabel}</span>
         </div>
       )}
-      {isTauri() && tauriEngineError && showSetupPanels && (
+      {isTauri() && tauriStarting && showSetupPanels && (
+        <div className="startup-log-panel" role="status">
+          <div className="startup-log-panel__header">
+            <span className="startup-log-panel__spinner" aria-hidden="true" />
+            <strong>Starting conversion engine…</strong>
+            <span className="startup-log-panel__hint">
+              {tauriStartupLog.length === 0
+                ? "First launch downloads ffmpeg (~60 MB)"
+                : tauriStartupLog[tauriStartupLog.length - 1]}
+            </span>
+          </div>
+          {tauriStartupLog.length > 0 && (
+            <StartupLogView lines={tauriStartupLog} />
+          )}
+        </div>
+      )}
+      {isTauri() && !tauriStarting && tauriEngineError && showSetupPanels && (
         <div className="api-offline-banner" role="alert">
           <strong>Conversion engine error</strong>
           <span>{tauriEngineError}</span>
