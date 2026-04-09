@@ -267,12 +267,12 @@ dir = "desktop"
 run = "tauri icon icon-source/icon.png"
 
 [tasks."desktop:build"]
-description = "Full desktop build for current platform + open the app immediately"
+description = "Full desktop build for current platform + install + open"
 run = """
 #!/bin/bash
 set -euo pipefail
 case "$(uname)" in
-  Darwin) mise run desktop:build:mac && mise run desktop:run:mac ;;
+  Darwin) mise run desktop:build:mac ;;
   Linux)  mise run desktop:build:linux && mise run desktop:run:linux ;;
   *)      mise run desktop:build:windows ;;
 esac
@@ -357,7 +357,7 @@ find desktop/src-tauri/target -name '*.msi' -o -name '*-setup.exe' 2>/dev/null |
 """
 
 [tasks."desktop:run:mac"]
-description = "Install built .app to /Applications and open it"
+description = "Install built .app to /Applications (removing quarantine) and open it"
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -370,6 +370,8 @@ DEST="/Applications/Epub to Mp3.app"
 echo "Installing to $DEST ..."
 rm -rf "$DEST"
 cp -r "$APP" "$DEST"
+# Remove macOS quarantine so the app opens without Gatekeeper prompts
+xattr -rd com.apple.quarantine "$DEST" 2>/dev/null || true
 echo "Opening $DEST"
 open "$DEST"
 """
