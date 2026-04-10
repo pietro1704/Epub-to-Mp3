@@ -20,21 +20,33 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          # Get all open dependabot PRs
+          is_major_bump() {
+            local title="$1"
+            # Extract "from X to Y" where X and Y start with different major numbers
+            local from to
+            from=$(echo "$title" | grep -oE 'from [0-9]+' | grep -oE '[0-9]+' | head -1)
+            to=$(echo "$title"   | grep -oE 'to [0-9]+'   | grep -oE '[0-9]+' | head -1)
+            [ -n "$from" ] && [ -n "$to" ] && [ "$from" != "$to" ]
+          }
+
           PRS=$(gh pr list \
             --repo "$REPO" \
             --author "app/dependabot" \
-            --json number,url,mergeable,mergeStateStatus \
-            --jq '.[] | select(.mergeStateStatus == "CLEAN") | .number')
+            --json number,title,mergeStateStatus \
+            --jq '.[] | select(.mergeStateStatus == "CLEAN") | "\(.number)\t\(.title)"')
 
           if [ -z "$PRS" ]; then
             echo "No dependabot PRs ready to merge"
             exit 0
           fi
 
-          for PR in $PRS; do
-            echo "Approving PR #$PR..."
+          while IFS=$'\t' read -r PR TITLE; do
+            if is_major_bump "$TITLE"; then
+              echo "Skipping major bump PR #$PR: $TITLE"
+              continue
+            fi
+            echo "Approving PR #$PR: $TITLE"
             gh pr review "$PR" --repo "$REPO" --approve || true
             echo "Merging PR #$PR..."
             gh pr merge "$PR" --repo "$REPO" --squash --admin --delete-branch || true
-          done
+          done <<< "$PRS"
