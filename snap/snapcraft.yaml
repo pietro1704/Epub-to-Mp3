@@ -18,9 +18,6 @@ grade: stable
 base: core22
 compression: lzo
 
-architectures:
-  - amd64
-
 apps:
   epub-to-mp3:
     command: bin/epub-to-mp3
