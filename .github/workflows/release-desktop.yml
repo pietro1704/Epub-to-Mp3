@@ -754,7 +754,7 @@ jobs:
   homebrew:
     name: Update Homebrew cask
     needs: [build]
-    if: >
+    if: false  # disabled — HOMEBREW_TAP_TOKEN secret not configured
       always() &&
       needs.build.result == 'success' &&
       (
