@@ -145,9 +145,11 @@ jobs:
             xvfb
           sudo flatpak remote-add --system --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
-          # Also add as user remote so the flatpak-github-actions can install SDKs
-          flatpak remote-add --user --if-not-exists flathub \
-            https://dl.flathub.org/repo/flathub.flatpakrepo
+          # Pre-install runtime/SDK as root so flatpak-github-actions (which calls
+          # `flatpak --system install`) doesn't fail with "Deploy not allowed for user"
+          sudo flatpak install --system -y --noninteractive flathub \
+            org.gnome.Platform/x86_64/47 \
+            org.gnome.Sdk/x86_64/47 || true
 
       # ── Python venv (required by mise virtualenv feature) ──────────────────
       - name: Create Python venv
@@ -697,6 +699,14 @@ jobs:
       - name: Sync assets into iOS project
         working-directory: web
         run: npx cap sync ios
+
+      - name: Resolve SPM packages
+        run: |
+          # cap add ios (Capacitor 8 SPM) does not pre-resolve packages;
+          # resolve them before archiving so xcodebuild can find all dependencies
+          xcodebuild -resolvePackageDependencies \
+            -project web/ios/App/App.xcodeproj \
+            -scheme App
 
       - name: Build iOS archive (unsigned)
         run: |
