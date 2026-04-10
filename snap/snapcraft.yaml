@@ -18,8 +18,8 @@ grade: stable
 base: core22
 compression: lzo
 
-platforms:
-  amd64:
+architectures:
+  - amd64
 
 apps:
   epub-to-mp3:
