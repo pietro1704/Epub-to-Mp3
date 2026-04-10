@@ -111,7 +111,7 @@ jobs:
 
       # ── npm cache ────────────────────────────────────────────────────────────
       - name: Cache npm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
@@ -124,7 +124,7 @@ jobs:
         run: echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
 
       - name: Cache pip
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ${{ steps.pip-cache-dir.outputs.dir }}
           key: pip-${{ runner.os }}-${{ hashFiles('requirements-desktop.txt') }}
@@ -160,7 +160,7 @@ jobs:
       # ── Python sidecar — cache binary, only rebuild on source/dep changes ──
       - name: Cache Python sidecar binary
         id: sidecar-cache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: desktop/src-tauri/binaries
           key: >-
@@ -569,14 +569,14 @@ jobs:
 
       # ── Caches ────────────────────────────────────────────────────────────
       - name: Cache npm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.npm
           key: npm-Linux-${{ hashFiles('web/package-lock.json') }}
           restore-keys: npm-Linux-
 
       - name: Cache Gradle
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.gradle/caches
@@ -669,14 +669,14 @@ jobs:
 
       # ── Caches ────────────────────────────────────────────────────────────
       - name: Cache npm
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.npm
           key: npm-macOS-${{ hashFiles('web/package-lock.json') }}
           restore-keys: npm-macOS-
 
       - name: Cache SPM packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/Library/Caches/org.swift.swiftpm
           key: spm-ios-${{ hashFiles('web/package.json') }}
