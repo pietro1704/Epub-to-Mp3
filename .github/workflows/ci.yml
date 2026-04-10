@@ -10,7 +10,8 @@ on:
   pull_request:
 
 jobs:
-  test:
+  python:
+    name: Python
     runs-on: ubuntu-latest
 
     steps:
@@ -20,33 +21,30 @@ jobs:
       - name: Install mise
         uses: jdx/mise-action@v4
 
-      - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Cache pip
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('requirements.txt', 'python_app/requirements.txt') }}
+          restore-keys: pip-
 
-      - name: Install toolchain via mise
+      - name: Install system dependencies
+        run: sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install Python dependencies
         env:
           PIP_EXTRA_INDEX_URL: https://download.pytorch.org/whl/cpu
-          PIP_NO_CACHE_DIR: "1"
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
-        run: mise run install
+        run: |
+          mise exec -- python -m venv .venv
+          .venv/bin/python -m pip install -r requirements.txt -r python_app/requirements.txt ruff
+          bash scripts/install_piper_binary.sh
 
       - name: Run Python tests
         run: mise exec -- python -m pytest -v --tb=short
 
       - name: Run Python lint
         run: mise exec -- ruff check .
-
-      - name: Run web tests
-        working-directory: web
-        run: mise exec -- npm test
-
-      - name: Run web lint
-        working-directory: web
-        run: mise exec -- npm run lint
-
-      - name: Run web build
-        working-directory: web
-        run: mise exec -- npm run build
 
       - name: Run sample conversion smoke
         env:
@@ -69,3 +67,37 @@ jobs:
           mise exec -- python scripts/external_worker_pool.py web/public/sample.epub \
             --workers 1 \
             --forward-args "--engine edge --chapter 1 --no-parallel --no-validate-text --no-validate-audio --stage-pipeline"
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Install mise
+        uses: jdx/mise-action@v4
+
+      - name: Cache npm
+        uses: actions/cache@v5
+        with:
+          path: web/node_modules
+          key: npm-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: npm-
+
+      - name: Install web dependencies
+        working-directory: web
+        run: mise exec -- npm install
+
+      - name: Run web tests
+        working-directory: web
+        run: mise exec -- npm test
+
+      - name: Run web lint
+        working-directory: web
+        run: mise exec -- npm run lint
+
+      - name: Run web build
+        working-directory: web
+        run: mise exec -- npm run build
