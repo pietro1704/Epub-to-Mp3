@@ -630,6 +630,7 @@ jobs:
 
       - name: Upload APK — nightly pre-release
         if: github.event_name == 'workflow_run'
+        continue-on-error: true  # race condition: macos job owns release metadata; file upload succeeds even if finalize conflicts
         uses: softprops/action-gh-release@v2
         with:
           tag_name: nightly

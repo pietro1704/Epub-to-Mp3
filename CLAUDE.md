@@ -358,6 +358,7 @@ These features exist specifically to improve the audiobook listening experience:
 | `_CHAPTER_RETRY_FOREVER = True` → infinite loop when all engines fail | Set to `False`, use `_CHAPTER_RETRY_ROUNDS=3` |
 | `EXPECTED_WPM=160` → 80% coverage on complete Edge audio → false truncation | Changed to `200` |
 | Missing `espeak-ng` in Dockerfile → Kokoro fails silently on HF | Added to apt-get |
+| 35 CVEs in pip-audit (aiohttp, pypdf, flask, nltk, requests, filelock, etc.) | Bumped direct deps + added transitive security pins in requirements.txt; `pip upgrade` in Dockerfile |
 | Keep-alive pinging public URL → HF 429 for users | Use localhost only |
 | Edge slow (66 chars/s) never triggered fallback on HF | HF threshold 100 chars/s, 1.5x ratio |
 | Chapter timeout 300s on HF → 5 min per stuck chapter | 120s on HF |

@@ -26,6 +26,8 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements first for caching
 COPY requirements.txt .
+# Upgrade pip first to fix CVE-2025-8869, CVE-2026-1703
+RUN pip install --upgrade pip
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
