@@ -28,6 +28,12 @@ permissions:
   contents: write
   packages: write   # required for ghcr.io Docker push
 
+# Cancel in-progress nightly builds when a newer commit arrives.
+# Versioned tag releases are never cancelled (unique group per tag).
+concurrency:
+  group: release-desktop-${{ github.event_name == 'push' && github.ref || 'nightly' }}
+  cancel-in-progress: true
+
 # ── Nightly cleanup — runs before build matrix to avoid race conditions ─────────
 jobs:
   cleanup-nightly:
