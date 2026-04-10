@@ -233,12 +233,12 @@ jobs:
         if: matrix.os == 'ubuntu-22.04'
         shell: bash
         run: |
-          mkdir -p flatpak-stage
-          cp desktop/src-tauri/target/release/epub-to-mp3 flatpak-stage/
-          cp desktop/src-tauri/binaries/epub-to-mp3-server-x86_64-unknown-linux-gnu flatpak-stage/epub-to-mp3-server
-          cp flatpak/io.github.pietro1704.EpubToMp3.desktop flatpak-stage/
-          cp flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml flatpak-stage/
-          cp desktop/src-tauri/icons/128x128.png flatpak-stage/
+          mkdir -p flatpak/flatpak-stage
+          cp desktop/src-tauri/target/release/epub-to-mp3 flatpak/flatpak-stage/
+          cp desktop/src-tauri/binaries/epub-to-mp3-server-x86_64-unknown-linux-gnu flatpak/flatpak-stage/epub-to-mp3-server
+          cp flatpak/io.github.pietro1704.EpubToMp3.desktop flatpak/flatpak-stage/
+          cp flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml flatpak/flatpak-stage/
+          cp desktop/src-tauri/icons/128x128.png flatpak/flatpak-stage/
 
       - name: Build Flatpak bundle
         if: matrix.os == 'ubuntu-22.04'
