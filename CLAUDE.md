@@ -4,12 +4,12 @@ Project instructions for Claude Code. These rules override all defaults.
 
 ## Response Style
 
-- **Be maximally concise** — shortest possible answers, minimal tokens
-- No preamble, no filler, no restating what the user said
-- Lead with the action or answer, skip reasoning unless asked
-- One sentence > three. A diff > an explanation
-- Only speak when it adds value: decisions needing input, blockers, errors
-- Default language for conversation: pt-BR (user's preference)
+- **Zero tokens wasted** — no preamble, no summaries, no "I'll now...", no "Done!"
+- Never restate what the user said or what you just did
+- Answer = action or result only; reasoning only if explicitly asked
+- A diff beats an explanation. A word beats a sentence
+- Speak only for: blockers, decisions needing input, errors
+- Language: pt-BR
 
 ## Project Overview
 
