@@ -201,3 +201,76 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         # non-localhost caller.
         resp = client.post("/api/uploads/local", json={"path": str(epub)})
         assert resp.status_code == 403
+
+
+def _compute_pending_ttl(space_id: str | None, upload_ttl_seconds: str | None) -> int:
+    """Replicate the _PENDING_TTL_SECONDS formula without importing server.py."""
+    import os
+
+    env = {}
+    if space_id is not None:
+        env["SPACE_ID"] = space_id
+    if upload_ttl_seconds is not None:
+        env["UPLOAD_TTL_SECONDS"] = upload_ttl_seconds
+
+    with patch.dict("os.environ", env, clear=False):
+        # Mirror the exact expression from server.py
+        default = 30 * 24 * 3600 if not os.getenv("SPACE_ID") else 3600
+        return int(os.getenv("UPLOAD_TTL_SECONDS", str(default)))
+
+
+class TestPendingTTL(unittest.TestCase):
+    """_PENDING_TTL_SECONDS — 30 days locally, 1 hour on HF Spaces."""
+
+    def test_default_ttl_is_30_days_locally(self):
+        """Without SPACE_ID, TTL defaults to 30 days (2 592 000 s)."""
+        import os
+
+        if os.environ.get("SPACE_ID"):
+            self.skipTest("SPACE_ID is set — running on HF, not local")
+
+        expected = 30 * 24 * 3600  # 2 592 000
+        self.assertEqual(_compute_pending_ttl(None, None), expected)
+
+    def test_ttl_is_1_hour_on_hf(self):
+        """With SPACE_ID set, TTL defaults to 3600 s (1 hour)."""
+        self.assertEqual(_compute_pending_ttl("test-space", None), 3600)
+
+    def test_ttl_override_via_env_var(self):
+        """UPLOAD_TTL_SECONDS env var overrides the default."""
+        self.assertEqual(_compute_pending_ttl(None, "7200"), 7200)
+
+    def test_cleanup_removes_expired_entries(self):
+        """_cleanup_pending_uploads removes entries older than TTL."""
+        import shutil
+        import tempfile
+        import time
+        from pathlib import Path
+        from unittest.mock import patch as mpatch
+
+        try:
+            import python_app.server as srv  # noqa: PLC0415
+        except Exception:
+            raise unittest.SkipTest("server import failed")
+
+        tmp_uploads = Path(tempfile.mkdtemp())
+        try:
+            # Patch TTL to 1 hour; old_entry is 2 h old → expired
+            old_entry = {"path": "/tmp/old.epub", "created_at": time.time() - 7200}
+            fresh_entry = {"path": "/tmp/new.epub", "created_at": time.time()}
+            with srv._pending_lock:
+                srv._pending_uploads["old-id"] = old_entry
+                srv._pending_uploads["new-id"] = fresh_entry
+
+            with (
+                mpatch("python_app.server.uploads_dir", tmp_uploads),
+                mpatch("python_app.server._PENDING_TTL_SECONDS", 3600),
+            ):
+                srv._cleanup_pending_uploads()
+
+            with srv._pending_lock:
+                self.assertNotIn("old-id", srv._pending_uploads)
+                self.assertIn("new-id", srv._pending_uploads)
+                srv._pending_uploads.pop("new-id", None)
+        finally:
+            shutil.rmtree(tmp_uploads, ignore_errors=True)

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useI18n, useTranslations } from "../i18n/I18nProvider";
 import type { Locale } from "../i18n/translations";
 import { downloadFile, isTauri } from "../lib/tauri";
@@ -55,6 +55,9 @@ export default function DownloadsPanel({
     error: null,
   });
   const verboseLogRef = useRef<HTMLPreElement>(null);
+  const [downloadProgress, setDownloadProgress] = useState<Map<string, number>>(
+    new Map(),
+  );
 
   useEffect(() => {
     const handlePlay = (event: Event) => {
@@ -132,17 +135,34 @@ export default function DownloadsPanel({
     }
   };
 
-  const handleDownload = (
-    e: React.MouseEvent<HTMLAnchorElement>,
-    url: string,
-    filename: string,
-  ) => {
-    if (!isTauri()) return; // let browser handle it normally
-    e.preventDefault();
-    downloadFile(url, filename).catch((err) =>
-      console.error("[DownloadsPanel] download failed", err),
-    );
-  };
+  const handleDownload = useCallback(
+    (e: React.MouseEvent<HTMLAnchorElement>, url: string, filename: string) => {
+      if (!isTauri()) return; // let browser handle it normally
+      e.preventDefault();
+      setDownloadProgress((prev) => new Map(prev).set(url, 0));
+      downloadFile(url, filename, (loaded, total) => {
+        setDownloadProgress((prev) =>
+          new Map(prev).set(url, Math.round((loaded / total) * 100)),
+        );
+      })
+        .then(() => {
+          setDownloadProgress((prev) => {
+            const next = new Map(prev);
+            next.delete(url);
+            return next;
+          });
+        })
+        .catch((err) => {
+          console.error("[DownloadsPanel] download failed", err);
+          setDownloadProgress((prev) => {
+            const next = new Map(prev);
+            next.delete(url);
+            return next;
+          });
+        });
+    },
+    [],
+  );
 
   const shareMessage = t.downloads.shareMessage(shareBookTitle);
 
@@ -278,7 +298,11 @@ export default function DownloadsPanel({
                 <span className="downloads-panel__zip-icon">📦</span>
                 <span className="downloads-panel__zip-text">
                   <strong>{t.downloads.downloadZip}</strong>
-                  <small>{t.downloads.downloadZipHint(chapters.length)}</small>
+                  <small>
+                    {downloadProgress.has(zipFile.url)
+                      ? `${downloadProgress.get(zipFile.url)}%`
+                      : t.downloads.downloadZipHint(chapters.length)}
+                  </small>
                 </span>
               </a>
             </div>
@@ -394,7 +418,9 @@ export default function DownloadsPanel({
                             handleDownload(e, asset.url, asset.name)
                           }
                         >
-                          {t.downloads.downloadChapter}
+                          {downloadProgress.has(asset.url)
+                            ? `${downloadProgress.get(asset.url)}%`
+                            : t.downloads.downloadChapter}
                         </a>
                       </div>
                     </div>

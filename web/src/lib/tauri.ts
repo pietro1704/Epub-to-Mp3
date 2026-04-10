@@ -119,18 +119,40 @@ export async function installUpdate(): Promise<void> {
   }
 }
 
+export type DownloadProgressCallback = (loaded: number, total: number) => void;
+
 /**
  * Download a file by URL as a blob and trigger a Save dialog / browser download.
  * Works in both Tauri (WKWebView ignores `download` attr on http:// links) and
- * regular browsers (fallback identical to the blob approach).
+ * regular browsers. Reports streaming progress via optional callback.
  */
 export async function downloadFile(
   url: string,
   filename: string,
+  onProgress?: DownloadProgressCallback,
 ): Promise<void> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const blob = await response.blob();
+
+  let blob: Blob;
+  const total = Number(response.headers.get("content-length") ?? 0);
+
+  if (onProgress && response.body && total > 0) {
+    const reader = response.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let loaded = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      loaded += value.length;
+      onProgress(loaded, total);
+    }
+    blob = new Blob(chunks as BlobPart[]);
+  } else {
+    blob = await response.blob();
+  }
+
   const objectUrl = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = objectUrl;

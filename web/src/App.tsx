@@ -11,7 +11,14 @@ import {
 import Hero from "./components/Hero";
 import Layout from "./components/Layout";
 import Panel from "./components/Panel";
-import { invoke, isTauri, listenTauri, sendNotification } from "./lib/tauri";
+import {
+  checkForUpdate,
+  installUpdate,
+  invoke,
+  isTauri,
+  listenTauri,
+  sendNotification,
+} from "./lib/tauri";
 
 // Lazy load heavy components
 const ConversionForm = lazy(() => import("./components/ConversionForm"));
@@ -208,6 +215,8 @@ export default function App(props?: AppProps): JSX.Element {
   // Tauri-specific: tracks whether the Python sidecar failed to start.
   const [tauriEngineError, setTauriEngineError] = useState<string | null>(null);
   const [tauriStarting, setTauriStarting] = useState<boolean>(isTauri());
+  const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
+  const [updateInstalling, setUpdateInstalling] = useState(false);
   const [tauriStartupLog, setTauriStartupLog] = useState<string[]>([]);
   const [startupLogsExpanded, setStartupLogsExpanded] =
     useState<boolean>(false);
@@ -356,6 +365,20 @@ export default function App(props?: AppProps): JSX.Element {
     }, 2000);
     return () => clearInterval(id);
   }, [tauriStarting, notifyServerReady]);
+
+  // Check for app updates once the sidecar is ready (Tauri only)
+  useEffect(() => {
+    if (!isTauri() || tauriStarting) return;
+    checkForUpdate().then(({ available, version }) => {
+      if (available && version) setUpdateAvailable(version);
+    });
+  }, [tauriStarting]);
+
+  const handleInstallUpdate = useCallback(async () => {
+    setUpdateInstalling(true);
+    await installUpdate();
+    setUpdateInstalling(false);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -968,8 +991,8 @@ export default function App(props?: AppProps): JSX.Element {
     });
     manualDownloadOverrideRef.current = false;
     lastCompletedJobIdRef.current = state.jobId;
-    // OS notification when app is in background
-    if (isTauri() && document.hidden) {
+    // OS notification — always in Tauri (app may be minimised or behind another window)
+    if (isTauri()) {
       sendNotification(t.downloads.readyNotificationTitle, resolvedTitle);
     }
   }, [
@@ -1521,6 +1544,19 @@ export default function App(props?: AppProps): JSX.Element {
           <strong>{t.flow.backendOffline}</strong>
           <span>{t.flow.backendOfflineBanner}</span>
           <span>API: {apiHealthLabel}</span>
+        </div>
+      )}
+      {isTauri() && updateAvailable && (
+        <div className="update-banner" role="status">
+          <span>Update v{updateAvailable} available</span>
+          <button
+            type="button"
+            className="update-banner__button"
+            onClick={handleInstallUpdate}
+            disabled={updateInstalling}
+          >
+            {updateInstalling ? "Installing…" : "Install & restart"}
+          </button>
         </div>
       )}
       {isTauri() && tauriStarting && showSetupPanels && (
