@@ -78,15 +78,12 @@ parts:
 
   # ── Desktop metadata and icon ─────────────────────────────────────────────
   desktop-files:
-    plugin: dump
-    source: flatpak
-    override-install: |
+    plugin: nil
+    source: .
+    override-build: |
       mkdir -p $SNAPCRAFT_PART_INSTALL/share/applications
-      mkdir -p $SNAPCRAFT_PART_INSTALL/share/metainfo
       mkdir -p $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/128x128/apps
-      cp io.github.pietro1704.EpubToMp3.desktop \
+      cp flatpak/io.github.pietro1704.EpubToMp3.desktop \
          $SNAPCRAFT_PART_INSTALL/share/applications/
-      cp io.github.pietro1704.EpubToMp3.metainfo.xml \
-         $SNAPCRAFT_PART_INSTALL/share/metainfo/
-      cp $SNAPCRAFT_PROJECT_DIR/desktop/src-tauri/icons/128x128.png \
+      cp desktop/src-tauri/icons/128x128.png \
          $SNAPCRAFT_PART_INSTALL/share/icons/hicolor/128x128/apps/io.github.pietro1704.EpubToMp3.png
