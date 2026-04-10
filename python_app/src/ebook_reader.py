@@ -30,8 +30,8 @@ NBSP_RE = re.compile(r"(?:&nbsp;|\u00A0)", re.I)
 PARA_BLOCK_RE = re.compile(
     r"</?(p|div|br|li|tr|td|th|blockquote|section|article|hr|h[1-6])[^>]*>", re.I
 )
-STYLE_RE = re.compile(r"(?is)<style.*?>.*?</style>")
-SCRIPT_RE = re.compile(r"(?is)<script.*?>.*?</script>")
+STYLE_RE = re.compile(r"(?is)<style.*?>.*?</style\s*>")
+SCRIPT_RE = re.compile(r"(?is)<script.*?>.*?</script\s*>")
 ARTIFACT_RE = re.compile(r"\b(?:[\w\-/]+\.(?:xhtml|html|opf|ncx|css)|\d+_[\w-]+)\b", re.I)
 H_TAG = re.compile(r"<h([1-6])[^>]*>(.*?)</h\1>", re.I | re.DOTALL)
 PAGE_BREAK_RE = re.compile(

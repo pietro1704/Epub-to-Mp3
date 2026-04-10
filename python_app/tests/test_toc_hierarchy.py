@@ -380,7 +380,7 @@ class TestFlatEpub(unittest.TestCase):
     """A book with no TOC hierarchy: all chapters should have level=1."""
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -427,7 +427,7 @@ class TestTwoLevelEpub(unittest.TestCase):
     """Books with Part (L1) > Chapter (L2) structure."""
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -541,7 +541,7 @@ class TestThreeLevelEpub(unittest.TestCase):
     """Books with Volume (L1) > Book (L2) > Chapter (L3) structure (e.g. Dom Quixote)."""
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -622,7 +622,7 @@ class TestAnchorOnlySubchapters(unittest.TestCase):
     """Files with anchor-only TOC subchapters stay at their parent's level."""
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -697,7 +697,7 @@ class TestFilesNotInToc(unittest.TestCase):
     """Spine files not referenced in the TOC keep their default level (1)."""
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -750,7 +750,7 @@ class TestEpub3NavFallback(unittest.TestCase):
     """EPUB3 books with nav.xhtml and no NCX file."""
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -850,7 +850,7 @@ class TestItAcoisaSimulation(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -1075,7 +1075,7 @@ class TestFourLevelEpub(unittest.TestCase):
     """4-level EPUB: Volume > Book > Part > Chapter."""
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -1152,7 +1152,7 @@ class TestNcxFallbackToNav(unittest.TestCase):
     """When NCX is malformed/missing navMap, EPUB3 nav.xhtml fallback is used."""
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):
@@ -1279,7 +1279,7 @@ class TestGenerateStructureItemsIndices(unittest.TestCase):
     """
 
     def setUp(self):
-        self.tmp = tempfile.mktemp(suffix=".epub")
+        self.tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".epub").name
 
     def tearDown(self):
         if os.path.exists(self.tmp):

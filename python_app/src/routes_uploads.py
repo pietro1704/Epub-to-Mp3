@@ -165,7 +165,10 @@ async def upload_ebook_local(
             status_code=403, detail="Local uploads are only available from localhost"
         )
 
-    src = Path(body.path).resolve()
+    raw = body.path
+    if not raw or ".." in Path(raw).parts:
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    src = Path(raw).resolve()
     if not src.exists() or not src.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 

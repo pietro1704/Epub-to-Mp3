@@ -424,6 +424,15 @@ def _book_slug(title: Optional[str], fallback: Optional[str] = None) -> str:
     return FileManager.sanitize_filename(stem)
 
 
+_VALID_JOB_ID_RE = re.compile(r"^[a-zA-Z0-9_\-]{1,64}$")
+
+
+def _validate_job_id(job_id: str) -> None:
+    """Raise ValueError if job_id contains path-traversal characters."""
+    if not _VALID_JOB_ID_RE.match(job_id):
+        raise ValueError(f"Invalid job_id: {job_id!r}")
+
+
 def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = False) -> Path:
     """Resolve the canonical output directory for a job.
 
@@ -433,6 +442,7 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
     layout to avoid breaking older jobs.
     """
 
+    _validate_job_id(job_id)
     legacy_dir = output_dir / job_id
     job_data = job or jobs.get(job_id) or job_manager.load_job(job_id)
     target: Optional[Path] = None
@@ -2135,7 +2145,8 @@ async def convert_ebook(
             cover_source = Path(reuse_upload.get("cover_path") or "")
             if cover_source.exists():
                 temp_job = {"bookTitle": book_title, "engine": engine}
-                dest_cover = _job_output_dir(job_id, temp_job, ensure=True) / cover_name
+                safe_cover_name = Path(cover_name).name
+                dest_cover = _job_output_dir(job_id, temp_job, ensure=True) / safe_cover_name
                 shutil.move(str(cover_source), dest_cover)
                 cover_url = f"/api/outputs/{job_id}/{cover_name}"
         upload_folder = source_file.parent
@@ -2182,10 +2193,11 @@ async def convert_ebook(
                     "engine": engine,
                 }
                 cover_path = _job_output_dir(job_id, temp_job, ensure=True)
-                target = cover_path / filename
+                safe_filename = Path(filename).name
+                target = cover_path / safe_filename
                 target.write_bytes(cover_blob.data)
-                cover_name = filename
-                cover_url = f"/api/outputs/{job_id}/{filename}"
+                cover_name = safe_filename
+                cover_url = f"/api/outputs/{job_id}/{safe_filename}"
                 cover_mime = cover_blob.media_type
         except Exception:
             pass
@@ -2373,12 +2385,15 @@ async def delete_job(job_id: str) -> dict:
 @app.get("/api/outputs/{job_id}/{filename}")
 async def download_output(job_id: str, filename: str) -> FileResponse:
     job_data = jobs.get(job_id) or job_manager.load_job(job_id)
-    base_dir = _job_output_dir(job_id, job_data)
-    file_path = base_dir / filename
+    base_dir = _job_output_dir(job_id, job_data).resolve()
+    file_path = (base_dir / filename).resolve()
+    if not file_path.is_relative_to(base_dir):
+        raise HTTPException(status_code=400, detail="Invalid filename")
     if not file_path.exists():
         # Legacy fallback
-        legacy_path = output_dir / job_id / filename
-        if legacy_path.exists():
+        legacy_base = (output_dir / job_id).resolve()
+        legacy_path = (legacy_base / filename).resolve()
+        if legacy_path.is_relative_to(legacy_base) and legacy_path.exists():
             file_path = legacy_path
         else:
             raise HTTPException(status_code=404, detail="File not found")
@@ -2439,7 +2454,11 @@ async def stream_manifest(job_id: str, chapter_index: int) -> dict:
 @app.get("/api/streams/{job_id}/chapters/{chapter_index}/chunks/{chunk_id}")
 async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     """Serve an individual synthesized chunk for progressive playback."""
-    chapter_dir = _chapter_chunk_dir(job_id, chapter_index, ensure=False)
+    import re as _re
+
+    if not _re.match(r"^[\w\-]+$", chunk_id):
+        raise HTTPException(status_code=400, detail="Invalid chunk ID")
+    chapter_dir = _chapter_chunk_dir(job_id, chapter_index, ensure=False).resolve()
     if not chapter_dir.exists():
         raise HTTPException(status_code=404, detail="Chunk not found")
 
@@ -2453,7 +2472,10 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     candidates.append(chapter_dir / f"{chunk_id}.mp3")
     candidates.append(chapter_dir / f"{chunk_id}")
 
-    file_path = next((path for path in candidates if path.exists()), None)
+    file_path = next(
+        (p.resolve() for p in candidates if p.exists() and p.resolve().is_relative_to(chapter_dir)),
+        None,
+    )
     if file_path is None or not file_path.exists():
         raise HTTPException(status_code=404, detail="Chunk not found")
 
