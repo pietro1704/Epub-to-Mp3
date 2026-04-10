@@ -42,7 +42,7 @@ parts:
     override-build: |
       pip3 install --quiet pyinstaller
       pip3 install --quiet -r requirements-desktop.txt
-      pyinstaller desktop.spec --noconfirm --clean
+      python3 -m PyInstaller desktop.spec --noconfirm --clean
       mkdir -p $SNAPCRAFT_PART_INSTALL/lib/epub-to-mp3
       cp dist/epub-to-mp3-server $SNAPCRAFT_PART_INSTALL/lib/epub-to-mp3/
       chmod +x $SNAPCRAFT_PART_INSTALL/lib/epub-to-mp3/epub-to-mp3-server
