@@ -243,7 +243,7 @@ Epub-to-Mp3/
 │   │       ├── edge_engine.py
 │   │       ├── kokoro_engine.py
 │   │       └── piper_engine.py
-│   └── tests/              # 1070+ tests
+│   └── tests/              # 1076+ tests
 ├── web/                    # React/TypeScript frontend (Vite)
 │   └── src/
 │       ├── hooks/useConversionFlow.ts
