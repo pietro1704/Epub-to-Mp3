@@ -257,9 +257,11 @@ export default function DownloadsPanel({
         </div>
       )}
 
-      {!hasDownloads && phase !== "success" && (
+      {!hasDownloads && (
         <p className="downloads-panel__placeholder">
-          {t.downloads.placeholder}
+          {phase === "success"
+            ? t.downloads.noDownloadsAfterSuccess
+            : t.downloads.placeholder}
         </p>
       )}
 

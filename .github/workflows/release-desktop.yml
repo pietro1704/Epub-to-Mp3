@@ -143,7 +143,10 @@ jobs:
             flatpak \
             flatpak-builder \
             xvfb
-          sudo flatpak remote-add --if-not-exists flathub \
+          sudo flatpak remote-add --system --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          # Also add as user remote so the flatpak-github-actions can install SDKs
+          flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
 
       # ── Python venv (required by mise virtualenv feature) ──────────────────
@@ -697,8 +700,9 @@ jobs:
 
       - name: Build iOS archive (unsigned)
         run: |
+          # Capacitor 8 uses SPM — no .xcworkspace, use .xcodeproj directly
           xcodebuild archive \
-            -workspace web/ios/App/App.xcworkspace \
+            -project web/ios/App/App.xcodeproj \
             -scheme App \
             -configuration Release \
             -archivePath "${{ runner.temp }}/App.xcarchive" \
