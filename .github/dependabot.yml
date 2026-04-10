@@ -55,7 +55,7 @@ updates:
 
   # ── Cargo (Tauri desktop) ─────────────────────────────────────────────────
   - package-ecosystem: "cargo"
-    directory: "/desktop"
+    directory: "/desktop/src-tauri"
     schedule:
       interval: "daily"
     open-pull-requests-limit: 10
