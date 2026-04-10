@@ -238,7 +238,6 @@ jobs:
           cp desktop/src-tauri/target/release/epub-to-mp3 flatpak/flatpak-stage/
           cp desktop/src-tauri/binaries/epub-to-mp3-server-x86_64-unknown-linux-gnu flatpak/flatpak-stage/epub-to-mp3-server
           cp flatpak/io.github.pietro1704.EpubToMp3.desktop flatpak/flatpak-stage/
-          cp flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml flatpak/flatpak-stage/
           cp desktop/src-tauri/icons/128x128.png flatpak/flatpak-stage/
 
       - name: Build Flatpak bundle
