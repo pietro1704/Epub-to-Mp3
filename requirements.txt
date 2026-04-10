@@ -8,15 +8,14 @@ python-multipart>=0.0.22
 
 # TTS Engine (Edge-TTS - Microsoft online)
 edge-tts>=7.2.0
- 
-# Best offline fallback (quality + multilingual, CPU-only)
-TTS>=0.22.0,<0.23.0
-numba==0.65.0
-llvmlite==0.47.0
+
+# Kokoro / Piper audio deps
 torch>=2.2.0
 torchaudio>=2.2.0
 soundfile>=0.12.1
 pandas>=1.5.0,<4.0.0
+
+# Coqui XTTS (optional GPU engine) — see requirements-coqui.txt
 
 # Offline fallback (fast, small)
 piper-tts>=1.3.0
