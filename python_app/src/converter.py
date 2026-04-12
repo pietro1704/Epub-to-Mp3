@@ -1890,7 +1890,7 @@ class AudioConverter(
                 print("✅ Cache cleaned! Proceeding with full conversion.\n")
             except Exception as exc:
                 print(f"❌ Failure clearing cache: {exc}")
-                print("⚠️  Continuando com conversion mas pode haver problems.\n")
+                print("⚠️  Continuing with conversion but there may be issues.\n")
 
         # Save parsed text for all chapters (creates baseline for validation)
         text_validator.save_all_chapters_text(chapters_for_text, show_progress=not self.verbose)
@@ -3526,8 +3526,8 @@ class AudioConverter(
                 monolingual_voice = voice_provider.get_monolingual_voice(config.primary_language)
                 if monolingual_voice and monolingual_voice != config.voice:
                     print(f"\n🔄 Edge-TTS com {edge_consecutive_failures} failures consecutive")
-                    print(f"   🔀 Mudando para Edge monolingual: {config.primary_language}")
-                    print(f"   🎤 Nova voz: {monolingual_voice}")
+                    print(f"   🔀 Switching to Edge monolingual: {config.primary_language}")
+                    print(f"   🎤 New voice: {monolingual_voice}")
                     config = replace(config, voice=monolingual_voice)
                     engine_pool.register_engine("edge", config)
                     edge_switched_to_monolingual = True
@@ -3579,7 +3579,7 @@ class AudioConverter(
                     print(
                         f"\n🔄 {current_label} com {edge_consecutive_failures} failures consecutive"
                     )
-                    print(f"   🛟 Mudando para Piper (offline) com language: {piper_language}")
+                    print(f"   🛟 Switching to Piper (offline) for language: {piper_language}")
                     from .config import VoiceConfigProvider
 
                     voice_provider = VoiceConfigProvider()

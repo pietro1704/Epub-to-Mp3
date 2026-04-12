@@ -3972,7 +3972,20 @@ async def process_conversion(job_id: str) -> None:
                 if not engine_name or engine_name in unavailable_engines:
                     _append_event(job, "   ↳ Engine unavailable, skipping")
                     continue
-                _append_event(job, f"   ↳ Activating engine '{candidate.engine}'...")
+                # Distinguish Edge monolingual fallback from a full engine switch
+                prev_config = engine_chain[engine_index - 1] if engine_index > 0 else None
+                if (
+                    engine_name == "edge"
+                    and prev_config is not None
+                    and (prev_config.engine or "").lower() == "edge"
+                    and candidate.voice != prev_config.voice
+                ):
+                    _append_event(
+                        job,
+                        f"   ↳ Switching to Edge monolingual voice ({candidate.voice})...",
+                    )
+                else:
+                    _append_event(job, f"   ↳ Activating engine '{candidate.engine}'...")
                 active_config = candidate
                 if engine_name == "piper":
                     chars = len(getattr(chapter, "text", "") or "")

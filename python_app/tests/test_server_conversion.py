@@ -127,15 +127,47 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
 
 
 def test_build_engine_chain_respects_guards(monkeypatch):
+    """When all non-Edge engines are unavailable and no monolingual voice exists, chain = [edge]."""
     config = ConversionConfig(engine="edge", primary_language="pt-BR")
 
     monkeypatch.setattr(server, "_has_coqui_support", lambda: False)
     monkeypatch.setattr(server, "_has_kokoro_support", lambda _: False)
     monkeypatch.setattr(server, "_has_piper_support", lambda: False)
     monkeypatch.setattr(server, "_has_spark_support", lambda: False)
+    # Suppress monolingual fallback so only the primary Edge entry appears.
+    monkeypatch.setattr(
+        server.tts_factory.voice_provider, "get_monolingual_voice", lambda _lang: None
+    )
 
     chain = server._build_engine_chain(config)
     assert [cfg.engine for cfg in chain] == ["edge"]
+
+
+def test_build_engine_chain_includes_edge_monolingual_fallback(monkeypatch):
+    """Edge monolingual fallback is inserted as tier-2 when a distinct mono voice exists."""
+    config = ConversionConfig(engine="edge", primary_language="pt-BR")
+
+    monkeypatch.setattr(server, "_has_coqui_support", lambda: False)
+    monkeypatch.setattr(server, "_has_kokoro_support", lambda _: False)
+    monkeypatch.setattr(server, "_has_piper_support", lambda: False)
+    monkeypatch.setattr(server, "_has_spark_support", lambda: False)
+    # Simulate a multilingual primary voice and a distinct monolingual alternative.
+    monkeypatch.setattr(
+        server.tts_factory.voice_provider,
+        "edge_voice_is_multilingual",
+        lambda _voice: True,
+    )
+    monkeypatch.setattr(
+        server.tts_factory.voice_provider,
+        "get_monolingual_voice",
+        lambda _lang: "pt-BR-AntonioNeural",
+    )
+
+    chain = server._build_engine_chain(config)
+    engines = [cfg.engine for cfg in chain]
+    assert engines == ["edge", "edge"]
+    # Second entry must use the monolingual voice.
+    assert chain[1].voice == "pt-BR-AntonioNeural"
 
 
 def test_build_engine_chain_includes_supported_fallbacks(monkeypatch):

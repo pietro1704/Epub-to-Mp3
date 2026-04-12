@@ -278,6 +278,13 @@ export default function App(props?: AppProps): JSX.Element {
     const cleanups: Array<() => void> = [];
     (async () => {
       cleanups.push(
+        await listenTauri("tauri-server-restarting", () => {
+          // Sidecar crashed and is being auto-restarted — show startup panel.
+          setTauriStarting(true);
+          setTauriEngineError(null);
+        }),
+      );
+      cleanups.push(
         await listenTauri("tauri-startup-error", (payload) => {
           setTauriStarting(false);
           setTauriEngineError(

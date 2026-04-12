@@ -175,6 +175,23 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
         return ordered
 
     if (config.engine or "").lower() == "edge":
+        # Tier 2: Edge monolingual — mirrors the CLI four-tier fallback chain.
+        # Insert a second Edge entry with a monolingual voice when the primary voice
+        # is multilingual and a monolingual alternative exists for the language.
+        provider = _srv.tts_factory.voice_provider
+        is_multilingual = provider.edge_voice_is_multilingual(config.voice)
+        if is_multilingual is not False:  # True or None (unknown) → try to insert mono tier
+            mono_voice = provider.get_monolingual_voice(config.primary_language)
+            if mono_voice and mono_voice != config.voice:
+                mono_config = replace(config, voice=mono_voice)
+                mono_config.language_voices = provider.build_language_voice_map(
+                    "edge",
+                    list(config.languages or []),
+                    mono_voice,
+                    primary_language=config.primary_language,
+                )
+                chain.append(mono_config)
+
         fallback_candidates = []
         if _srv._has_coqui_support():
             fallback_candidates.append("coqui")

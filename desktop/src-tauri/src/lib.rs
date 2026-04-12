@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::sync::Mutex;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -10,8 +12,12 @@ const SERVER_PORT: u16 = 47860;
 const POLL_INTERVAL_MS: u64 = 500;
 /// 5 min: first launch downloads ffmpeg (~60 MB) before server can start.
 const POLL_TIMEOUT_S: u64 = 300;
+/// Shorter poll timeout for subsequent restarts (dependencies already unpacked).
+const RESTART_POLL_TIMEOUT_S: u64 = 60;
 /// Emit a "still loading" event every N seconds so the frontend can show progress.
 const LOADING_NOTIFY_INTERVAL_S: u64 = 5;
+/// Maximum number of automatic sidecar restarts per session.
+const MAX_RESTARTS: u32 = 5;
 
 /// Shared server log buffer (last 2000 lines).
 pub struct ServerLogs(Mutex<Vec<String>>);
@@ -67,6 +73,153 @@ fn show_log_window(app: &AppHandle) {
     .inner_size(800.0, 500.0)
     .resizable(true)
     .build();
+}
+
+/// Push a status line to the persistent log buffer and stream it to the frontend.
+fn push_log(handle: &AppHandle, line: &str) {
+    if let Some(logs) = handle.try_state::<ServerLogs>() {
+        let mut v = logs.0.lock().unwrap();
+        v.push(line.to_string());
+        let len = v.len();
+        if len > 2000 {
+            v.drain(0..len - 2000);
+        }
+    }
+    if let Some(win) = handle.get_webview_window("main") {
+        let _ = win.emit("tauri-server-log", line);
+    }
+}
+
+/// Poll TCP port until the server answers or the deadline is reached.
+/// Emits `tauri-startup-loading` every `LOADING_NOTIFY_INTERVAL_S` seconds.
+/// Returns `true` if the server became reachable within `timeout_s` seconds.
+async fn poll_until_ready(handle: &AppHandle, timeout_s: u64) -> bool {
+    let addr = format!("127.0.0.1:{SERVER_PORT}");
+    let deadline =
+        tokio::time::Instant::now() + tokio::time::Duration::from_secs(timeout_s);
+    let mut last_notify = tokio::time::Instant::now();
+
+    loop {
+        if tokio::time::Instant::now() >= deadline {
+            return false;
+        }
+        if tokio::net::TcpStream::connect(&addr).await.is_ok() {
+            return true;
+        }
+        if last_notify.elapsed().as_secs() >= LOADING_NOTIFY_INTERVAL_S {
+            let elapsed = timeout_s.saturating_sub(
+                deadline
+                    .saturating_duration_since(tokio::time::Instant::now())
+                    .as_secs(),
+            );
+            if let Some(win) = handle.get_webview_window("main") {
+                let _ = win.emit("tauri-startup-loading", elapsed);
+            }
+            push_log(
+                handle,
+                &format!(
+                    "Still starting… ({elapsed}s elapsed, first launch unpacks dependencies)"
+                ),
+            );
+            last_notify = tokio::time::Instant::now();
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
+    }
+}
+
+/// Forward sidecar stdout/stderr to the log panel and watch for process exit.
+/// When the sidecar terminates, triggers an automatic restart (up to MAX_RESTARTS).
+fn monitor_sidecar_and_restart(
+    handle: AppHandle,
+    mut rx: tauri::async_runtime::Receiver<CommandEvent>,
+    restart_count: u32,
+) -> impl std::future::Future<Output = ()> + Send + 'static {
+    async move {
+    // Forward logs until the process terminates or the channel closes.
+    let mut terminated = false;
+    while let Some(event) = rx.recv().await {
+        let line = match event {
+            CommandEvent::Stdout(b) => String::from_utf8_lossy(&b).trim().to_string(),
+            CommandEvent::Stderr(b) => {
+                format!("[err] {}", String::from_utf8_lossy(&b).trim())
+            }
+            CommandEvent::Terminated(_) => {
+                terminated = true;
+                break;
+            }
+            _ => continue,
+        };
+        if !line.is_empty() {
+            push_log(&handle, &line);
+        }
+    }
+    // rx closed without an explicit Terminated also means the process exited.
+    if !terminated {
+        push_log(&handle, "[server] process channel closed — server may have exited");
+    }
+
+    if restart_count >= MAX_RESTARTS {
+        let msg = format!(
+            "Conversion server crashed {} times. Please restart the app.",
+            restart_count
+        );
+        push_log(&handle, &msg);
+        if let Some(win) = handle.get_webview_window("main") {
+            let _ = win.emit("tauri-startup-error", &msg);
+        }
+        return;
+    }
+
+    let next = restart_count + 1;
+    // Exponential backoff: 4 s, 8 s, 16 s, 30 s (capped).
+    let backoff = u64::min(4u64 << restart_count.min(3), 30);
+    push_log(
+        &handle,
+        &format!(
+            "Server exited. Restarting in {backoff}s… (attempt {next}/{MAX_RESTARTS})"
+        ),
+    );
+    if let Some(win) = handle.get_webview_window("main") {
+        // Notify frontend so it shows the startup loading panel instead of an error.
+        let _ = win.emit("tauri-server-restarting", ());
+    }
+    tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
+
+    push_log(&handle, "Restarting conversion server…");
+
+    let spawn_result = handle
+        .shell()
+        .sidecar("epub-to-mp3-server")
+        .map_err(|e| e.to_string())
+        .and_then(|cmd| cmd.spawn().map_err(|e| e.to_string()));
+
+    match spawn_result {
+        Err(e) => {
+            push_log(&handle, &format!("Failed to restart server: {e}"));
+            if let Some(win) = handle.get_webview_window("main") {
+                let _ = win.emit("tauri-startup-error", &e);
+            }
+        }
+        Ok((new_rx, _child)) => {
+            let ready = poll_until_ready(&handle, RESTART_POLL_TIMEOUT_S).await;
+            if ready {
+                push_log(&handle, "Server restarted successfully.");
+                if let Some(win) = handle.get_webview_window("main") {
+                    let _ = win.emit("tauri-startup-ready", ());
+                }
+                tauri::async_runtime::spawn(monitor_sidecar_and_restart(
+                    handle, new_rx, next,
+                ));
+            } else {
+                let msg = "Server failed to restart (timeout). Please restart the app.";
+                push_log(&handle, msg);
+                if let Some(win) = handle.get_webview_window("main") {
+                    let _ = win.emit("tauri-startup-error", msg);
+                }
+            }
+        }
+    }
+    } // end async move
 }
 
 fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
@@ -193,7 +346,6 @@ pub fn run() {
                     // View > Theme
                     "theme_auto" | "theme_light" | "theme_dark" => {
                         let value = id.strip_prefix("theme_").unwrap_or("auto");
-                        // Uncheck siblings, check selected
                         for tid in ["theme_auto", "theme_light", "theme_dark"] {
                             if let Some(item) = app_handle.menu().and_then(|m| m.get(tid)) {
                                 {
@@ -258,22 +410,6 @@ pub fn run() {
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                /// Push a status line to the persistent log buffer and stream it
-                /// to the frontend window in real time.
-                fn push_log(handle: &AppHandle, line: &str) {
-                    if let Some(logs) = handle.try_state::<ServerLogs>() {
-                        let mut v = logs.0.lock().unwrap();
-                        v.push(line.to_string());
-                        let len = v.len();
-                        if len > 2000 {
-                            v.drain(0..len - 2000);
-                        }
-                    }
-                    if let Some(win) = handle.get_webview_window("main") {
-                        let _ = win.emit("tauri-server-log", line);
-                    }
-                }
-
                 // If server is already running (leftover from previous launch), skip spawn.
                 let port_in_use = tokio::net::TcpStream::connect(
                     format!("127.0.0.1:{SERVER_PORT}"),
@@ -296,30 +432,18 @@ pub fn run() {
                         .map_err(|e| e)
                 };
 
-                // Forward sidecar stdout/stderr (only when we spawned a new sidecar).
                 match spawn_result {
-                    Ok(Some((mut rx, _child))) => {
-                        let log_handle = handle.clone();
+                    Ok(Some((rx, _child))) => {
+                        // Monitor logs and restart on crash (up to MAX_RESTARTS).
+                        // Spawn detached so the startup polling below can run concurrently.
+                        let monitor_handle = handle.clone();
                         tauri::async_runtime::spawn(async move {
-                            while let Some(event) = rx.recv().await {
-                                let line = match event {
-                                    CommandEvent::Stdout(b) => {
-                                        String::from_utf8_lossy(&b).trim().to_string()
-                                    }
-                                    CommandEvent::Stderr(b) => {
-                                        format!("[err] {}", String::from_utf8_lossy(&b).trim())
-                                    }
-                                    _ => continue,
-                                };
-                                if line.is_empty() {
-                                    continue;
-                                }
-                                push_log(&log_handle, &line);
-                            }
+                            // Forward logs immediately; restart on exit.
+                            monitor_sidecar_and_restart(monitor_handle, rx, 0).await;
                         });
                     }
                     Ok(None) => {
-                        // Port already in use — existing server is running.
+                        // Port already in use — existing server is running, no monitoring needed.
                     }
                     Err(err) => {
                         if let Some(win) = handle.get_webview_window("main") {
@@ -337,35 +461,7 @@ pub fn run() {
                 }
 
                 // Poll TCP; emit loading events every LOADING_NOTIFY_INTERVAL_S.
-                let addr = format!("127.0.0.1:{SERVER_PORT}");
-                let deadline = tokio::time::Instant::now()
-                    + tokio::time::Duration::from_secs(POLL_TIMEOUT_S);
-                let mut last_notify = tokio::time::Instant::now();
-                let mut ready = false;
-                loop {
-                    if tokio::time::Instant::now() >= deadline {
-                        break;
-                    }
-                    if tokio::net::TcpStream::connect(&addr).await.is_ok() {
-                        ready = true;
-                        break;
-                    }
-                    if last_notify.elapsed().as_secs() >= LOADING_NOTIFY_INTERVAL_S {
-                        let elapsed = POLL_TIMEOUT_S
-                            - deadline
-                                .saturating_duration_since(tokio::time::Instant::now())
-                                .as_secs();
-                        if let Some(win) = handle.get_webview_window("main") {
-                            let _ = win.emit("tauri-startup-loading", elapsed);
-                        }
-                        push_log(
-                            &handle,
-                            &format!("Still starting… ({elapsed}s elapsed, first launch unpacks dependencies)"),
-                        );
-                        last_notify = tokio::time::Instant::now();
-                    }
-                    tokio::time::sleep(tokio::time::Duration::from_millis(POLL_INTERVAL_MS)).await;
-                }
+                let ready = poll_until_ready(&handle, POLL_TIMEOUT_S).await;
 
                 if let Some(win) = handle.get_webview_window("main") {
                     if ready {
