@@ -2511,6 +2511,7 @@ export function useConversionFlow(
 
   const clearQueue = useCallback(() => {
     jobQueueRef.current = [];
+    conversionCache.clearPendingBatch();
     setQueuePaused(false);
     processedCountRef.current = 0;
     syncQueueSnapshot();

@@ -18,6 +18,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api", tags=["uploads"])
+_VALID_UPLOAD_ID_CHARS = frozenset("0123456789abcdef-")
+
+
+def _validate_upload_id(upload_id: str) -> str:
+    value = str(upload_id or "")
+    if not value or any(ch.lower() not in _VALID_UPLOAD_ID_CHARS for ch in value):
+        raise HTTPException(status_code=400, detail="Invalid upload ID")
+    return value
 
 
 def _allowed_local_source_roots() -> tuple[Path, ...]:
@@ -75,11 +83,14 @@ async def serve_uploaded_asset(upload_id: str, filename: str):
     """Serve a previously uploaded asset (e.g. cover image)."""
     import python_app.server as _srv
 
+    safe_upload_id = _validate_upload_id(upload_id)
     safe_name = Path(filename).name
     if safe_name != filename or not safe_name:
         raise HTTPException(status_code=400, detail="Invalid filename")
-    uploads_root = _srv._resolve_path_within_root(_srv.uploads_dir, upload_id, must_exist=True)
-    path = _srv._resolve_path_within_root(uploads_root, safe_name, must_exist=False)
+    uploads_root = _srv._resolve_relative_path_within_root(
+        _srv.uploads_dir, safe_upload_id, must_exist=True
+    )
+    path = _srv._resolve_relative_path_within_root(uploads_root, safe_name, must_exist=False)
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(str(path))
@@ -104,10 +115,12 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
 
     _srv._cleanup_pending_uploads()
     upload_id = f"{uuid.uuid4()}"
-    upload_dir = _srv.uploads_dir / upload_id
+    upload_dir = _srv._resolve_relative_path_within_root(
+        _srv.uploads_dir, upload_id, must_exist=False
+    )
     upload_dir.mkdir(parents=True, exist_ok=True)
     original_name = Path(file.filename or "ebook").name
-    temp_path = upload_dir / original_name
+    temp_path = _srv._resolve_relative_path_within_root(upload_dir, original_name, must_exist=False)
     temp_path.write_bytes(raw_payload)
     file_hash = hashlib.sha1(raw_payload).hexdigest() if raw_payload else None
 
@@ -127,7 +140,9 @@ async def upload_ebook(background_tasks: BackgroundTasks, file: UploadFile = Fil
         cover_blob = reader.extract_cover_image()
         if cover_blob:
             cover_filename = f"cover{cover_blob.extension}"
-            cover_path = upload_dir / cover_filename
+            cover_path = _srv._resolve_relative_path_within_root(
+                upload_dir, cover_filename, must_exist=False
+            )
             cover_path.write_bytes(cover_blob.data)
             cover_url = f"/api/uploads/{upload_id}/{cover_filename}"
             cover_mime = cover_blob.media_type
@@ -208,10 +223,12 @@ async def upload_ebook_local(
 
     _srv._cleanup_pending_uploads()
     upload_id = str(uuid.uuid4())
-    upload_dir = _srv._resolve_path_within_root(_srv.uploads_dir, upload_id, must_exist=False)
+    upload_dir = _srv._resolve_relative_path_within_root(
+        _srv.uploads_dir, upload_id, must_exist=False
+    )
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    dest_path = _srv._resolve_path_within_root(upload_dir, src.name, must_exist=False)
+    dest_path = _srv._resolve_relative_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
     file_hash = hashlib.sha1(src.read_bytes()).hexdigest()
@@ -232,7 +249,9 @@ async def upload_ebook_local(
         cover_blob = reader.extract_cover_image()
         if cover_blob:
             cover_filename = f"cover{cover_blob.extension}"
-            cover_path = upload_dir / cover_filename
+            cover_path = _srv._resolve_relative_path_within_root(
+                upload_dir, cover_filename, must_exist=False
+            )
             cover_path.write_bytes(cover_blob.data)
             cover_url = f"/api/uploads/{upload_id}/{cover_filename}"
             cover_mime = cover_blob.media_type

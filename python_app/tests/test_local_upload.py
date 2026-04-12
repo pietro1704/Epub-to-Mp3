@@ -191,6 +191,13 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         self._restore_server(srv)
         assert resp.status_code == 400
 
+    def test_400_for_invalid_upload_asset_id(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        resp = client.get("/api/uploads/bad_id!/cover.jpg")
+        self._restore_server(srv)
+        assert resp.status_code == 400
+
     def test_413_when_file_exceeds_size_limit(self):
         client, srv = _make_client()
         self._patch_server(srv)

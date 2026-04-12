@@ -449,6 +449,16 @@ def _resolve_path_within_root(
     return resolved
 
 
+def _resolve_relative_path_within_root(
+    root: Path, relative_path: Path | str, *, must_exist: bool = False
+) -> Path:
+    """Resolve a relative path and ensure it stays inside the provided root."""
+    raw_relative = Path(relative_path)
+    if raw_relative.is_absolute():
+        raise ValueError(f"Expected relative path, got: {relative_path}")
+    return _resolve_path_within_root(root, raw_relative, must_exist=must_exist)
+
+
 def _job_source_roots() -> tuple[Path, ...]:
     return (job_inputs_dir, uploads_dir, SOURCE_BACKUPS_DIR, persistent_root)
 
@@ -481,7 +491,7 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
     """
 
     _validate_job_id(job_id)
-    legacy_dir = _resolve_path_within_root(output_dir, job_id, must_exist=False)
+    legacy_dir = _resolve_relative_path_within_root(output_dir, job_id, must_exist=False)
     job_data = job or jobs.get(job_id) or job_manager.load_job(job_id)
     target: Optional[Path] = None
 
@@ -496,7 +506,7 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
             book_title = job_data.get("bookTitle") or job_data.get("fileName") or ""
             file_name = job_data.get("file_path") or ""
             book_slug = _book_slug(book_title, file_name)
-            target = _resolve_path_within_root(output_dir, book_slug, must_exist=False)
+            target = _resolve_relative_path_within_root(output_dir, book_slug, must_exist=False)
 
             # If legacy dir already exists with data, prefer it to avoid breaking older jobs
             if legacy_dir.exists() and any(legacy_dir.iterdir()):
@@ -516,7 +526,7 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
 
 def _chapter_chunk_dir(job_id: str, chapter_index: int, ensure: bool = False) -> Path:
     base = _job_output_dir(job_id, ensure=ensure)
-    target = _resolve_path_within_root(
+    target = _resolve_relative_path_within_root(
         base,
         Path("streams") / job_id / f"chapter_{int(chapter_index):04d}",
         must_exist=False,

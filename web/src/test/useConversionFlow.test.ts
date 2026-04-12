@@ -597,4 +597,73 @@ describe("useConversionFlow", () => {
     expect(submitMock).not.toHaveBeenCalled();
     expect(result.current.savedBatch).toBeNull();
   });
+
+  it("restartBackend clears cached state and reloads after health check succeeds", async () => {
+    vi.useFakeTimers();
+    const restartBackend = vi.fn().mockResolvedValue({ status: "restarting" });
+    const healthFetch = vi
+      .fn()
+      .mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ status: "healthy" }),
+      });
+    vi.stubGlobal("fetch", healthFetch);
+
+    const reloadMock = vi.fn();
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, reload: reloadMock },
+    });
+
+    conversionCache.save("cached-job", "book.epub", {
+      phase: "success",
+      log: [],
+      downloads: [],
+      rawLog: [],
+    });
+    conversionCache.savePendingBatch([
+      {
+        file: null,
+        uploadId: "queued-upload",
+        fileName: "queued.epub",
+        engine: "edge",
+        footnoteMode: "inline",
+      },
+    ]);
+
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: vi.fn(),
+      poll: vi.fn(),
+      restartBackend,
+    };
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await result.current.restartBackend({ keep_cache: true });
+    });
+
+    expect(restartBackend).toHaveBeenCalledWith({ keep_cache: true });
+    expect(conversionCache.load("cached-job")).toBeNull();
+    expect(conversionCache.loadPendingBatch()).toBeNull();
+    expect(result.current.cachedJobs).toEqual([]);
+    expect(result.current.recentJobs).toEqual([]);
+    expect(result.current.healthStatus).toBe("restarting");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+
+    expect(healthFetch).toHaveBeenCalled();
+    expect(reloadMock).toHaveBeenCalledTimes(1);
+
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    });
+    vi.useRealTimers();
+  });
 });
