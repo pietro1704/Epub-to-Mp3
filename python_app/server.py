@@ -528,7 +528,7 @@ def _chapter_chunk_dir(job_id: str, chapter_index: int, ensure: bool = False) ->
     base = _job_output_dir(job_id, ensure=ensure)
     target = _resolve_relative_path_within_root(
         base,
-        Path("streams") / job_id / f"chapter_{int(chapter_index):04d}",
+        Path("streams") / f"chapter_{int(chapter_index):04d}",
         must_exist=False,
     )
     if ensure:
@@ -538,11 +538,14 @@ def _chapter_chunk_dir(job_id: str, chapter_index: int, ensure: bool = False) ->
 
 def _find_named_file_within_dir(directory: Path, filename: str) -> Optional[Path]:
     """Return an existing file inside directory whose basename matches filename."""
-    if not directory.exists() or not directory.is_dir():
+    try:
+        entries = os.scandir(directory)
+    except OSError:
         return None
-    for candidate in directory.iterdir():
-        if candidate.is_file() and candidate.name == filename:
-            return candidate.resolve()
+    with entries:
+        for entry in entries:
+            if entry.is_file() and entry.name == filename:
+                return Path(entry.path)
     return None
 
 
