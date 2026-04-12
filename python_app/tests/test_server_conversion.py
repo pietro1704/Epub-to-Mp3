@@ -650,6 +650,53 @@ def test_download_output_serves_named_file_from_job_directory(tmp_path, monkeypa
     assert response.content == MINIMAL_MP3
 
 
+def test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    job_id = str(uuid4())
+    output_book_dir = tmp_path / "Streaming Book"
+    stream_dir = output_book_dir / "streams"
+    stream_dir.mkdir(parents=True, exist_ok=True)
+
+    manifest_path = stream_dir / "chapter_0001_manifest.json"
+    chunk_path = stream_dir / "chapter_0001_chunk_0000.mp3"
+    chunk_path.write_bytes(MINIMAL_MP3)
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "jobId": job_id,
+                "chapterIndex": 1,
+                "chunks": [
+                    {
+                        "index": 0,
+                        "file": chunk_path.name,
+                        "url": f"/api/streams/{job_id}/chapters/1/chunks/0",
+                    }
+                ],
+                "updatedAt": 1.0,
+                "baseUrl": f"/api/streams/{job_id}/chapters/1",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "finished",
+        "outputDir": str(output_book_dir),
+    }
+
+    client = TestClient(server.app)
+
+    manifest_response = client.get(f"/api/streams/{job_id}/chapters/1")
+    assert manifest_response.status_code == 200
+    manifest_payload = manifest_response.json()
+    assert manifest_payload["chunks"][0]["file"] == chunk_path.name
+
+    chunk_response = client.get(f"/api/streams/{job_id}/chapters/1/chunks/0")
+    assert chunk_response.status_code == 200
+    assert chunk_response.content == MINIMAL_MP3
+
+
 def test_feature_history_endpoint_missing_file(tmp_path, monkeypatch):
     _configure_server_paths(tmp_path, monkeypatch)
     monkeypatch.setattr(server, "CACHE_DIR", tmp_path)
