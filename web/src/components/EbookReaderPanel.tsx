@@ -167,6 +167,9 @@ export default function EbookReaderPanel({
   const [pageIndex, setPageIndex] = useState(0);
   const [search, setSearch] = useState("");
   const [prefs, setPrefs] = useState<ReaderPrefs>(DEFAULT_PREFS);
+  // In-memory override: user clicked a chapter manually, temporarily pause followAudio
+  // without persisting the change. Clears automatically when audio advances to a new chapter.
+  const [followPaused, setFollowPaused] = useState(false);
   const articleHostRef = useRef<HTMLDivElement | null>(null);
   const deferredSearch = useDeferredValue(search.trim());
 
@@ -239,8 +242,17 @@ export default function EbookReaderPanel({
     if (!prefs.followAudio || !playback) {
       return;
     }
+    if (followPaused) {
+      // Audio advanced to a different chapter than the manually-selected one:
+      // resume following automatically.
+      if (playback.chapterIndex !== selectedChapterIndex) {
+        setFollowPaused(false);
+        setSelectedChapterIndex(playback.chapterIndex);
+      }
+      return;
+    }
     setSelectedChapterIndex(playback.chapterIndex);
-  }, [prefs.followAudio, playback]);
+  }, [prefs.followAudio, playback, followPaused, selectedChapterIndex]);
 
   useEffect(() => {
     const marker = articleHostRef.current?.shadowRoot?.querySelector(
@@ -322,6 +334,11 @@ export default function EbookReaderPanel({
       <style>${READER_CONTENT_BASE_CSS}\n${renderedCss}</style>
       <div class="reader-root">${currentPage?.html || "<p></p>"}</div>
     `;
+    // Scroll the article shell back to the top whenever page content changes.
+    const shell = host.closest(".ebook-reader__article");
+    if (shell) {
+      shell.scrollTop = 0;
+    }
   }, [currentPage?.html, renderedCss]);
 
   const resolvedTitle =
@@ -374,9 +391,7 @@ export default function EbookReaderPanel({
             )}
             {audioChapter && (
               <span className="ebook-reader__hero-chip ebook-reader__hero-chip--live">
-                {locale === "pt"
-                  ? `Áudio no cap. ${audioChapter.index}`
-                  : `Audio on ch. ${audioChapter.index}`}
+                {t.status.readerAudioOnChapter(audioChapter.index)}
               </span>
             )}
           </div>
@@ -414,12 +429,16 @@ export default function EbookReaderPanel({
           <input
             type="checkbox"
             checked={prefs.followAudio}
-            onChange={(event) =>
+            onChange={(event) => {
               setPrefs((current) => ({
                 ...current,
                 followAudio: event.target.checked,
-              }))
-            }
+              }));
+              // Re-enabling follow clears any manual override.
+              if (event.target.checked) {
+                setFollowPaused(false);
+              }
+            }}
           />
         </label>
 
@@ -532,10 +551,11 @@ export default function EbookReaderPanel({
                       .join(" ")}
                     onClick={() => {
                       setSelectedChapterIndex(chapter.index);
-                      setPrefs((current) => ({
-                        ...current,
-                        followAudio: false,
-                      }));
+                      // Pause follow temporarily without persisting to localStorage.
+                      // Resumes automatically when audio advances to a new chapter.
+                      if (prefs.followAudio) {
+                        setFollowPaused(true);
+                      }
                     }}
                   >
                     <span className="ebook-reader__chapter-index">

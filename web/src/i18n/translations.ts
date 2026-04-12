@@ -367,6 +367,7 @@ export interface StatusText {
   readerPaused: string;
   readerSegmentLabel: (index: number) => string;
   readerChapterCount: (count: number) => string;
+  readerAudioOnChapter: (index: number) => string;
   readerRetryLoad: string;
   uiHealthTitle: string;
   uiHealthSubtitle: (count: number) => string;
@@ -1034,6 +1035,7 @@ export const translations: Record<Locale, Translations> = {
       readerSegmentLabel: (index: number) => `Segmento ${index}`,
       readerChapterCount: (count: number) =>
         count === 1 ? "capítulo" : "capítulos",
+      readerAudioOnChapter: (index: number) => `Áudio no cap. ${index}`,
       readerRetryLoad: "Tentar carregar novamente",
       uiHealthTitle: "Saúde da interface",
       uiHealthSubtitle: (count: number) =>
@@ -1714,6 +1716,7 @@ export const translations: Record<Locale, Translations> = {
       readerSegmentLabel: (index: number) => `Segment ${index}`,
       readerChapterCount: (count: number) =>
         count === 1 ? "chapter" : "chapters",
+      readerAudioOnChapter: (index: number) => `Audio on ch. ${index}`,
       readerRetryLoad: "Retry loading",
       uiHealthTitle: "UI health",
       uiHealthSubtitle: (count: number) =>
