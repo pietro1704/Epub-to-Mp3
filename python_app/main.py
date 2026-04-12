@@ -275,6 +275,7 @@ class ConverterApplication:
         stop_on_error = bool(getattr(args, "batch_stop_on_error", False))
         successes = 0
         exit_code = 0
+        failed_books: List[str] = []
 
         verify_mode = getattr(args, "verify_only", False)
         fix_mode = getattr(args, "fix_mode", False)
@@ -291,6 +292,7 @@ class ConverterApplication:
                 successes += 1
             else:
                 exit_code = exit_code or result or 1
+                failed_books.append(target.name)
                 if stop_on_error:
                     print("🛑 Processing interrupted after failure.")
                     break
@@ -302,6 +304,10 @@ class ConverterApplication:
         else:
             label = "succeeded"
         print(f"\n📚 Batch complete: {successes}/{total} book(s) {label}.")
+        if failed_books:
+            print("   Failed books:")
+            for failed in failed_books:
+                print(f"   - {failed}")
         return exit_code
 
     @staticmethod
@@ -2489,11 +2495,10 @@ class ConverterApplication:
             return text.lstrip()
 
         cleaned = text.lstrip()
-        pattern = re.compile(
-            rf"^(?:{re.escape(title)}[\s,.:;\-–—“”\"']*)+",
-            re.IGNORECASE,
-        )
-        cleaned = pattern.sub("", cleaned, count=1)
+        suffix_chars = " \t\r\n,.:;-–—“”\"'"
+        title_folded = title.casefold()
+        while cleaned[: len(title)].casefold() == title_folded:
+            cleaned = cleaned[len(title) :].lstrip(suffix_chars)
 
         def normalise(value: str) -> str:
             value = value or ""
@@ -2971,10 +2976,17 @@ class ConverterApplication:
         raw = str(value).strip()
         if not raw:
             return None
-        parts = re.split(r"\s*(?:\.\.|:|,)\s*", raw, maxsplit=1)
-        if len(parts) != 2:
+        separator_index = -1
+        separator_width = 1
+        for token in ("..", ":", ","):
+            index = raw.find(token)
+            if index >= 0 and (separator_index < 0 or index < separator_index):
+                separator_index = index
+                separator_width = len(token)
+        if separator_index < 0:
             return None
-        start, end = (part.strip() for part in parts)
+        start = raw[:separator_index].strip()
+        end = raw[separator_index + separator_width :].strip()
         if not start or not end:
             return None
         return start, end

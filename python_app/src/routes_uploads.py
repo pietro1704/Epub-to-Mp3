@@ -20,6 +20,29 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/api", tags=["uploads"])
 
 
+def _allowed_local_source_roots() -> tuple[Path, ...]:
+    roots = [Path.cwd(), Path.home(), Path("/tmp"), Path("/private/tmp"), Path("/var/folders")]
+    if Path("/Volumes").exists():
+        roots.append(Path("/Volumes"))
+    return tuple(root.resolve() for root in roots if root.exists())
+
+
+def _resolve_allowed_local_source(raw_path: str) -> Path:
+    import python_app.server as _srv
+
+    candidate = Path(str(raw_path or ""))
+    if not candidate.is_absolute():
+        raise HTTPException(status_code=400, detail="Invalid file path")
+    if candidate.is_symlink():
+        raise HTTPException(status_code=400, detail="Symlinks are not supported")
+    for root in _allowed_local_source_roots():
+        try:
+            return _srv._resolve_path_within_root(root, candidate, must_exist=False)
+        except ValueError:
+            continue
+    raise HTTPException(status_code=400, detail="File path is outside allowed local roots")
+
+
 def _precache_uploaded_book(upload_path: Path, book_title: str, book_author: str) -> None:
     """Pre-cache parsed chapters after the upload response returns."""
     from src.ebook_reader import EbookReader
@@ -52,7 +75,11 @@ async def serve_uploaded_asset(upload_id: str, filename: str):
     """Serve a previously uploaded asset (e.g. cover image)."""
     import python_app.server as _srv
 
-    path = _srv.uploads_dir / upload_id / filename
+    safe_name = Path(filename).name
+    if safe_name != filename or not safe_name:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    uploads_root = _srv._resolve_path_within_root(_srv.uploads_dir, upload_id, must_exist=True)
+    path = _srv._resolve_path_within_root(uploads_root, safe_name, must_exist=False)
     if not path.exists():
         raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(str(path))
@@ -166,9 +193,7 @@ async def upload_ebook_local(
         )
 
     raw = body.path
-    if not raw or ".." in Path(raw).parts:
-        raise HTTPException(status_code=400, detail="Invalid file path")
-    src = Path(raw).resolve()
+    src = _resolve_allowed_local_source(raw)
     if not src.exists() or not src.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
@@ -183,10 +208,10 @@ async def upload_ebook_local(
 
     _srv._cleanup_pending_uploads()
     upload_id = str(uuid.uuid4())
-    upload_dir = _srv.uploads_dir / upload_id
+    upload_dir = _srv._resolve_path_within_root(_srv.uploads_dir, upload_id, must_exist=False)
     upload_dir.mkdir(parents=True, exist_ok=True)
 
-    dest_path = upload_dir / src.name
+    dest_path = _srv._resolve_path_within_root(upload_dir, src.name, must_exist=False)
     shutil.copy2(src, dest_path)
 
     file_hash = hashlib.sha1(src.read_bytes()).hexdigest()

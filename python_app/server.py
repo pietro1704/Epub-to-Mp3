@@ -433,6 +433,44 @@ def _validate_job_id(job_id: str) -> None:
         raise ValueError(f"Invalid job_id: {job_id!r}")
 
 
+def _resolve_path_within_root(
+    root: Path, candidate: Path | str, *, must_exist: bool = False
+) -> Path:
+    """Resolve a path and ensure it stays within the provided root directory."""
+    root_resolved = root.resolve()
+    raw_candidate = Path(candidate)
+    resolved = (
+        raw_candidate.resolve(strict=must_exist)
+        if raw_candidate.is_absolute()
+        else (root_resolved / raw_candidate).resolve(strict=must_exist)
+    )
+    if not resolved.is_relative_to(root_resolved):
+        raise ValueError(f"Path escapes root: {candidate}")
+    return resolved
+
+
+def _job_source_roots() -> tuple[Path, ...]:
+    return (job_inputs_dir, uploads_dir, SOURCE_BACKUPS_DIR, persistent_root)
+
+
+def _resolve_job_source_path(candidate: Path | str, *, must_exist: bool = False) -> Path:
+    last_error: Optional[Exception] = None
+    for root in _job_source_roots():
+        try:
+            return _resolve_path_within_root(root, candidate, must_exist=must_exist)
+        except Exception as exc:
+            last_error = exc
+    raise ValueError(f"Invalid job source path: {candidate}") from last_error
+
+
+def _safe_leaf_name(value: str, *, field_name: str) -> str:
+    raw = str(value or "")
+    name = Path(raw).name
+    if not name or name != raw:
+        raise HTTPException(status_code=400, detail=f"Invalid {field_name}")
+    return name
+
+
 def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = False) -> Path:
     """Resolve the canonical output directory for a job.
 
@@ -443,19 +481,22 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
     """
 
     _validate_job_id(job_id)
-    legacy_dir = output_dir / job_id
+    legacy_dir = _resolve_path_within_root(output_dir, job_id, must_exist=False)
     job_data = job or jobs.get(job_id) or job_manager.load_job(job_id)
     target: Optional[Path] = None
 
     if job_data:
         stored = job_data.get("outputDir")
         if stored:
-            target = Path(stored)
-        else:
+            try:
+                target = _resolve_path_within_root(output_dir, stored, must_exist=False)
+            except ValueError:
+                target = None
+        if target is None:
             book_title = job_data.get("bookTitle") or job_data.get("fileName") or ""
             file_name = job_data.get("file_path") or ""
             book_slug = _book_slug(book_title, file_name)
-            target = output_dir / book_slug
+            target = _resolve_path_within_root(output_dir, book_slug, must_exist=False)
 
             # If legacy dir already exists with data, prefer it to avoid breaking older jobs
             if legacy_dir.exists() and any(legacy_dir.iterdir()):
@@ -475,7 +516,11 @@ def _job_output_dir(job_id: str, job: Optional[dict] = None, ensure: bool = Fals
 
 def _chapter_chunk_dir(job_id: str, chapter_index: int, ensure: bool = False) -> Path:
     base = _job_output_dir(job_id, ensure=ensure)
-    target = Path(base) / "streams" / job_id / f"chapter_{int(chapter_index):04d}"
+    target = _resolve_path_within_root(
+        base,
+        Path("streams") / job_id / f"chapter_{int(chapter_index):04d}",
+        must_exist=False,
+    )
     if ensure:
         target.mkdir(parents=True, exist_ok=True)
     return target
@@ -2129,36 +2174,57 @@ async def convert_ebook(
             if not reuse_upload:
                 raise HTTPException(status_code=404, detail="Upload not found or expired")
         job_id = str(uuid.uuid4())
-        job_input_dir = job_inputs_dir / job_id
+        job_input_dir = _resolve_path_within_root(job_inputs_dir, job_id, must_exist=False)
         job_input_dir.mkdir(parents=True, exist_ok=True)
-        source_file = Path(reuse_upload["file_path"])
+        upload_root = _resolve_path_within_root(uploads_dir, upload_id, must_exist=True)
+        try:
+            source_file = _resolve_path_within_root(
+                upload_root, reuse_upload["file_path"], must_exist=True
+            )
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid uploaded source file")
         file_hash = reuse_upload.get("file_hash")
         cover_name = reuse_upload.get("cover_filename")
         cover_mime = reuse_upload.get("cover_mime")
         cover_url = None
-        original_name = reuse_upload.get("file_name") or source_file.name
-        temp_file = job_input_dir / original_name
+        original_name = _safe_leaf_name(
+            reuse_upload.get("file_name") or source_file.name, field_name="file name"
+        )
+        temp_file = _resolve_path_within_root(job_input_dir, original_name, must_exist=False)
         shutil.move(str(source_file), temp_file)
         book_title = reuse_upload.get("book_title")
         book_author = reuse_upload.get("book_author")
         if cover_name:
-            cover_source = Path(reuse_upload.get("cover_path") or "")
-            if cover_source.exists():
+            try:
+                cover_source = _resolve_path_within_root(
+                    upload_root, reuse_upload.get("cover_path") or "", must_exist=True
+                )
+            except ValueError:
+                cover_source = None
+            if cover_source and cover_source.exists():
                 temp_job = {"bookTitle": book_title, "engine": engine}
-                safe_cover_name = Path(cover_name).name
-                dest_cover = _job_output_dir(job_id, temp_job, ensure=True) / safe_cover_name
+                safe_cover_name = _safe_leaf_name(cover_name, field_name="cover name")
+                dest_cover = _resolve_path_within_root(
+                    _job_output_dir(job_id, temp_job, ensure=True),
+                    safe_cover_name,
+                    must_exist=False,
+                )
                 shutil.move(str(cover_source), dest_cover)
-                cover_url = f"/api/outputs/{job_id}/{cover_name}"
+                cover_url = f"/api/outputs/{job_id}/{safe_cover_name}"
         upload_folder = source_file.parent
-        if upload_folder.exists():
+        if upload_folder.exists() and upload_folder.is_relative_to(upload_root):
             shutil.rmtree(upload_folder, ignore_errors=True)
     else:
         if file is None:
             raise HTTPException(status_code=400, detail="No file uploaded")
         job_id = f"{uuid.uuid4()}"
-        job_input_dir = job_inputs_dir / job_id
+        job_input_dir = _resolve_path_within_root(job_inputs_dir, job_id, must_exist=False)
         job_input_dir.mkdir(parents=True, exist_ok=True)
-        temp_file = job_input_dir / Path(file.filename or "ebook.epub").name
+        temp_file = _resolve_path_within_root(
+            job_input_dir,
+            Path(file.filename or "ebook.epub").name,
+            must_exist=False,
+        )
         raw_payload = await file.read()
         if MAX_UPLOAD_BYTES and len(raw_payload) > MAX_UPLOAD_BYTES:
             raise HTTPException(
@@ -2194,7 +2260,7 @@ async def convert_ebook(
                 }
                 cover_path = _job_output_dir(job_id, temp_job, ensure=True)
                 safe_filename = Path(filename).name
-                target = cover_path / safe_filename
+                target = _resolve_path_within_root(cover_path, safe_filename, must_exist=False)
                 target.write_bytes(cover_blob.data)
                 cover_name = safe_filename
                 cover_url = f"/api/outputs/{job_id}/{safe_filename}"
@@ -2207,9 +2273,9 @@ async def convert_ebook(
         book_title = Path(temp_file.name).stem
     book_author = book_author or (reuse_upload.get("book_author") if reuse_upload else None)
     book_slug = _book_slug(book_title, temp_file.name)
-    output_book_dir = output_dir / book_slug
+    output_book_dir = _resolve_path_within_root(output_dir, book_slug, must_exist=False)
     output_book_dir.mkdir(parents=True, exist_ok=True)
-    cache_base = CACHE_DIR / book_slug
+    cache_base = _resolve_path_within_root(CACHE_DIR, book_slug, must_exist=False)
     cache_base.mkdir(parents=True, exist_ok=True)
 
     parallel_slots_value = parallel_slots_override
@@ -2309,6 +2375,7 @@ async def convert_ebook(
 
 @app.post("/api/jobs/{job_id}/cancel")
 async def cancel_job(job_id: str) -> dict:
+    _validate_job_id(job_id)
     job = jobs.get(job_id)
     if job is None:
         job_data = job_manager.load_job(job_id)
@@ -2338,11 +2405,15 @@ async def cancel_job(job_id: str) -> dict:
 @app.post("/api/jobs/{job_id}/resume")
 async def resume_job(job_id: str) -> dict:
     """Requeue an interrupted/failed job so it can continue conversion."""
+    _validate_job_id(job_id)
     job = _ensure_job(job_id)
     state = job.get("state", "")
     if state == "finished":
         return {"status": "finished"}
-    source_path = Path(job.get("file_path") or "")
+    try:
+        source_path = _resolve_job_source_path(job.get("file_path") or "", must_exist=True)
+    except ValueError:
+        raise HTTPException(status_code=409, detail="Source file is no longer available")
     if not source_path.exists():
         raise HTTPException(status_code=409, detail="Source file is no longer available")
     job["cancelRequested"] = False
@@ -2359,6 +2430,7 @@ async def resume_job(job_id: str) -> dict:
 @app.delete("/api/jobs/{job_id}")
 async def delete_job(job_id: str) -> dict:
     """Remove a job and its artifacts from disk."""
+    _validate_job_id(job_id)
     job = jobs.get(job_id) or job_manager.load_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -2384,27 +2456,32 @@ async def delete_job(job_id: str) -> dict:
 
 @app.get("/api/outputs/{job_id}/{filename}")
 async def download_output(job_id: str, filename: str) -> FileResponse:
+    _validate_job_id(job_id)
     job_data = jobs.get(job_id) or job_manager.load_job(job_id)
     base_dir = _job_output_dir(job_id, job_data).resolve()
-    file_path = (base_dir / filename).resolve()
-    if not file_path.is_relative_to(base_dir):
-        raise HTTPException(status_code=400, detail="Invalid filename")
+    safe_filename = _safe_leaf_name(filename, field_name="filename")
+    file_path = _resolve_path_within_root(base_dir, safe_filename, must_exist=False)
     if not file_path.exists():
         # Legacy fallback
-        legacy_base = (output_dir / job_id).resolve()
-        legacy_path = (legacy_base / filename).resolve()
+        legacy_base = _resolve_path_within_root(output_dir, job_id, must_exist=False)
+        legacy_path = _resolve_path_within_root(legacy_base, safe_filename, must_exist=False)
         if legacy_path.is_relative_to(legacy_base) and legacy_path.exists():
             file_path = legacy_path
         else:
             raise HTTPException(status_code=404, detail="File not found")
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
-    return FileResponse(path=file_path, media_type=_guess_media_type(filename), filename=filename)
+    return FileResponse(
+        path=file_path,
+        media_type=_guess_media_type(safe_filename),
+        filename=safe_filename,
+    )
 
 
 @app.get("/api/streams/{job_id}/chapters/{chapter_index}")
 async def stream_manifest(job_id: str, chapter_index: int) -> dict:
     """Return available chunk list for a chapter."""
+    _validate_job_id(job_id)
     chapter_dir = _chapter_chunk_dir(job_id, chapter_index, ensure=False)
     manifest_path = chapter_dir / "manifest.json"
     chunks: list[dict] = []
@@ -2456,6 +2533,7 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     """Serve an individual synthesized chunk for progressive playback."""
     import re as _re
 
+    _validate_job_id(job_id)
     if not _re.match(r"^[\w\-]+$", chunk_id):
         raise HTTPException(status_code=400, detail="Invalid chunk ID")
     chapter_dir = _chapter_chunk_dir(job_id, chapter_index, ensure=False).resolve()
@@ -2495,12 +2573,16 @@ async def get_job_fulltext(job_id: str) -> dict:
 
     # Get the source file path
     input_file = job_data.get("inputFile") or job_data.get("file_path")
-    if not input_file or not Path(input_file).exists():
+    try:
+        source_path = _resolve_job_source_path(input_file or "", must_exist=True)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Source file not found")
+    if not input_file or not source_path.exists():
         raise HTTPException(status_code=404, detail="Source file not found")
 
     try:
         cache_manager = get_cache_manager()
-        cached = cache_manager.get_cached_chapters(Path(input_file))
+        cached = cache_manager.get_cached_chapters(source_path)
         if cached and cached.get("chapters"):
             chapters = [
                 {

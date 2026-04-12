@@ -3,11 +3,13 @@
 
 from __future__ import annotations
 
+import html
 import mimetypes
 import posixpath
 import re
 import zipfile
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib.parse import unquote
@@ -30,8 +32,6 @@ NBSP_RE = re.compile(r"(?:&nbsp;|\u00A0)", re.I)
 PARA_BLOCK_RE = re.compile(
     r"</?(p|div|br|li|tr|td|th|blockquote|section|article|hr|h[1-6])[^>]*>", re.I
 )
-STYLE_RE = re.compile(r"(?is)<style.*?>.*?</style\s*>")
-SCRIPT_RE = re.compile(r"(?is)<script.*?>.*?</script\s*>")
 ARTIFACT_RE = re.compile(r"\b(?:[\w\-/]+\.(?:xhtml|html|opf|ncx|css)|\d+_[\w-]+)\b", re.I)
 H_TAG = re.compile(r"<h([1-6])[^>]*>(.*?)</h\1>", re.I | re.DOTALL)
 PAGE_BREAK_RE = re.compile(
@@ -121,6 +121,98 @@ class TextProcessor:
     """Utility helpers for dealing with HTML text inside EPUB files."""
 
     @staticmethod
+    def strip_html_tags(content: Optional[str]) -> str:
+        if not content:
+            return ""
+
+        class _TagStripper(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__(convert_charrefs=False)
+                self.parts: list[str] = []
+
+            def handle_data(self, data: str) -> None:
+                self.parts.append(data)
+
+            def handle_entityref(self, name: str) -> None:
+                self.parts.append(f"&{name};")
+
+            def handle_charref(self, name: str) -> None:
+                self.parts.append(f"&#{name};")
+
+        parser = _TagStripper()
+        parser.feed(str(content))
+        parser.close()
+        return "".join(parser.parts)
+
+    @staticmethod
+    def strip_ignored_html_blocks(content: Optional[str]) -> str:
+        if not content:
+            return ""
+
+        class _IgnoredBlockStripper(HTMLParser):
+            def __init__(self) -> None:
+                super().__init__(convert_charrefs=False)
+                self._ignored_stack: list[str] = []
+                self.parts: list[str] = []
+
+            def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+                if tag in {"style", "script", "head"}:
+                    self._ignored_stack.append(tag)
+                    return
+                if self._ignored_stack:
+                    return
+                attrs_text = "".join(
+                    f' {name}="{html.escape(value, quote=True)}"'
+                    if value is not None
+                    else f" {name}"
+                    for name, value in attrs
+                )
+                self.parts.append(f"<{tag}{attrs_text}>")
+
+            def handle_startendtag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
+                if tag in {"style", "script", "head"} or self._ignored_stack:
+                    return
+                attrs_text = "".join(
+                    f' {name}="{html.escape(value, quote=True)}"'
+                    if value is not None
+                    else f" {name}"
+                    for name, value in attrs
+                )
+                self.parts.append(f"<{tag}{attrs_text}/>")
+
+            def handle_endtag(self, tag: str) -> None:
+                if self._ignored_stack:
+                    if tag == self._ignored_stack[-1]:
+                        self._ignored_stack.pop()
+                    return
+                self.parts.append(f"</{tag}>")
+
+            def handle_data(self, data: str) -> None:
+                if not self._ignored_stack:
+                    self.parts.append(data)
+
+            def handle_entityref(self, name: str) -> None:
+                if not self._ignored_stack:
+                    self.parts.append(f"&{name};")
+
+            def handle_charref(self, name: str) -> None:
+                if not self._ignored_stack:
+                    self.parts.append(f"&#{name};")
+
+            def handle_comment(self, data: str) -> None:
+                if not self._ignored_stack:
+                    self.parts.append(f"<!--{data}-->")
+
+            def handle_decl(self, decl: str) -> None:
+                if not self._ignored_stack:
+                    self.parts.append(f"<!{decl}>")
+
+        parser = _IgnoredBlockStripper()
+        parser.feed(str(content))
+        parser.close()
+        return "".join(parser.parts)
+
+    @staticmethod
     def clean_chapter_title(title: str) -> str:
         """Remove common EPUB export prefixes like 'part0001' from chapter titles."""
         if not title:
@@ -140,17 +232,15 @@ class TextProcessor:
 
         # Initialize formatting processor
         formatter = TextFormattingProcessor()
+        cleaned_content = TextProcessor.strip_ignored_html_blocks(content)
 
         # Extract formatting and convert to internal markers
-        text_with_markers = formatter.extract_formatting(content)
+        text_with_markers = formatter.extract_formatting(cleaned_content)
 
         # Apply standard text processing
         text = str(text_with_markers)
-        text = STYLE_RE.sub("", text)
-        text = SCRIPT_RE.sub("", text)
         text = NBSP_RE.sub(" ", text)
         text = ARTIFACT_RE.sub(" ", text)
-        text = re.sub(r"(?is)<head.*?>.*?</head>", "", text)
         text = text.replace("\r", "\n")
         # HTML treats raw newlines inside elements as whitespace. Collapse them
         # before block-element processing so only actual block boundaries (<p>,
@@ -185,12 +275,7 @@ class TextProcessor:
         if not content:
             return ""
 
-        text = str(content)
-
-        # Remove style and script tags first (preserve content order)
-        text = STYLE_RE.sub("", text)
-        text = SCRIPT_RE.sub("", text)
-        text = re.sub(r"(?is)<head.*?>.*?</head>", "", text)
+        text = TextProcessor.strip_ignored_html_blocks(str(content))
 
         # Preserve dialog structure - add extra newline before dialog markers
         text = re.sub(r"([.!?])\s*([—–-]\s*)", r"\1\n\2", text)
@@ -213,7 +298,7 @@ class TextProcessor:
         text = PARA_BLOCK_RE.sub("\n", text)
 
         # Remove remaining HTML tags
-        text = TAG_RE.sub("", text)
+        text = TextProcessor.strip_html_tags(text)
 
         # Normalize whitespace within lines but preserve paragraph breaks
         text = WHITESPACE_RE.sub(" ", text)
@@ -774,13 +859,11 @@ class TextProcessor:
     def html_to_text(content: str) -> str:
         if not content:
             return ""
-        text = str(content)
-        text = STYLE_RE.sub("", text)
-        text = SCRIPT_RE.sub("", text)
+        text = TextProcessor.strip_ignored_html_blocks(str(content))
         text = NBSP_RE.sub(" ", text)
         text = ARTIFACT_RE.sub(" ", text)
         text = PARA_BLOCK_RE.sub("\n", text)
-        text = TAG_RE.sub("", text)
+        text = TextProcessor.strip_html_tags(text)
         text = PAGE_BREAK_RE.sub("\n", text)
         text = WHITESPACE_RE.sub(" ", text)
         text = re.sub(r"\n{2,}", "\n", text)
@@ -805,7 +888,7 @@ class TextProcessor:
     def extract_title(markup: str, fallback: str) -> str:
         match = H_TAG.search(markup)
         if match:
-            heading = TAG_RE.sub("", match.group(2)).strip()
+            heading = TextProcessor.strip_html_tags(match.group(2)).strip()
             if heading:
                 return heading
         # Fallback to the first meaningful words of the content
@@ -950,7 +1033,7 @@ class TextProcessor:
         match = H_TAG.search(content)
         if not match:
             return None
-        heading = TAG_RE.sub("", match.group(2))
+        heading = TextProcessor.strip_html_tags(match.group(2))
         return TextProcessor.normalise_whitespace(heading)
 
     @staticmethod
@@ -963,7 +1046,9 @@ class TextProcessor:
         _p_tag = re.compile(r"<p\b[^>]*>(.*?)</p>", re.I | re.DOTALL)
 
         def _add(raw: str) -> None:
-            norm = TextProcessor.normalise_whitespace(NBSP_RE.sub(" ", TAG_RE.sub("", raw)))
+            norm = TextProcessor.normalise_whitespace(
+                NBSP_RE.sub(" ", TextProcessor.strip_html_tags(raw))
+            )
             key = norm.casefold()
             if norm and key not in seen:
                 seen.add(key)
@@ -982,7 +1067,7 @@ class TextProcessor:
             # <p> elements up to the 6-title limit (e.g. pt-BR IT edition).
             _has_h_tags = H_TAG.search(content) is not None
             for p_match in _p_tag.finditer(content):
-                raw = TAG_RE.sub("", p_match.group(1)).strip()
+                raw = TextProcessor.strip_html_tags(p_match.group(1)).strip()
                 norm = TextProcessor.normalise_whitespace(NBSP_RE.sub(" ", raw))
                 if norm and len(norm.split()) <= 8 and norm[-1] not in ".!?":
                     _add(p_match.group(1))
@@ -1503,14 +1588,14 @@ class EpubParser:
             title_window = markup[window_start : window_start + 500]
             tm = title_re.search(title_window)
             if tm:
-                raw = TAG_RE.sub("", tm.group(1)).strip()
+                raw = TextProcessor.strip_html_tags(tm.group(1)).strip()
                 split_points.append((nm.start(), raw or f"Section {len(split_points) + 1}", True))
             else:
                 # No dedicated title element — derive title from first paragraph content.
                 fallback_window = markup[window_start : window_start + 2000]
                 any_p = any_p_re.search(fallback_window)
                 if any_p:
-                    raw = TAG_RE.sub("", any_p.group(1)).strip()
+                    raw = TextProcessor.strip_html_tags(any_p.group(1)).strip()
                     derived = raw[:57] + "..." if len(raw) > 60 else raw
                     split_points.append(
                         (nm.start(), derived or f"Section {len(split_points) + 1}", False)
@@ -1559,7 +1644,7 @@ class EpubParser:
 
         num_matches: List[Tuple[int, str]] = []
         for m in heading_re.finditer(markup):
-            text = TAG_RE.sub("", m.group(2)).strip()
+            text = TextProcessor.strip_html_tags(m.group(2)).strip()
             if re.fullmatch(r"\d+", text):
                 num_matches.append((m.start(), text))
 
@@ -1587,7 +1672,7 @@ class EpubParser:
             fallback_window = markup[heading_close : heading_close + 2000]
             any_p = any_p_re.search(fallback_window)
             if any_p:
-                raw = TAG_RE.sub("", any_p.group(1)).strip()
+                raw = TextProcessor.strip_html_tags(any_p.group(1)).strip()
                 derived = raw[:57] + "..." if len(raw) > 60 else raw
                 sub_title = derived or f"Section {i + 1}"
             else:

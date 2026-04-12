@@ -9,6 +9,9 @@ on:
       - master
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -17,6 +20,8 @@ jobs:
   python:
     name: Python
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
@@ -75,6 +80,8 @@ jobs:
   web:
     name: Web
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout repository
