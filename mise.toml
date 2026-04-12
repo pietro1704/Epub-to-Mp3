@@ -114,6 +114,7 @@ set -euo pipefail
 
 mise run test:unit
 mise run test:integration
+mise run test:desktop
 mise run test:web
 """
 
@@ -478,6 +479,20 @@ fi
 (cd web && mise exec -- npm run lint)
 (cd web && mise exec -- npm run test)
 (cd web && mise exec -- npm run build)
+"""
+
+[tasks."test:desktop"]
+description = "Run desktop/Tauri unit tests"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+if [ ! -d "desktop/src-tauri" ]; then
+  echo "desktop/src-tauri not found"
+  exit 1
+fi
+
+(cd desktop/src-tauri && mise exec -- cargo test --lib)
 """
 
 # ── Release ───────────────────────────────────────────────────────────────────────

@@ -92,13 +92,22 @@ fn push_log(handle: &AppHandle, line: &str) {
     }
 }
 
+fn restart_policy(restart_count: u32, uptime_s: u64) -> (u32, u64) {
+    let effective_restart_count = if uptime_s >= RESTART_RESET_AFTER_S {
+        0
+    } else {
+        restart_count
+    };
+    let backoff = u64::min(4u64 << effective_restart_count.min(3), 30);
+    (effective_restart_count, backoff)
+}
+
 /// Poll TCP port until the server answers or the deadline is reached.
 /// Emits `tauri-startup-loading` every `LOADING_NOTIFY_INTERVAL_S` seconds.
 /// Returns `true` if the server became reachable within `timeout_s` seconds.
 async fn poll_until_ready(handle: &AppHandle, timeout_s: u64) -> bool {
     let addr = format!("127.0.0.1:{SERVER_PORT}");
-    let deadline =
-        tokio::time::Instant::now() + tokio::time::Duration::from_secs(timeout_s);
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(timeout_s);
     let mut last_notify = tokio::time::Instant::now();
 
     loop {
@@ -119,9 +128,7 @@ async fn poll_until_ready(handle: &AppHandle, timeout_s: u64) -> bool {
             }
             push_log(
                 handle,
-                &format!(
-                    "Still starting… ({elapsed}s elapsed, first launch unpacks dependencies)"
-                ),
+                &format!("Still starting… ({elapsed}s elapsed, first launch unpacks dependencies)"),
             );
             last_notify = tokio::time::Instant::now();
         }
@@ -138,100 +145,115 @@ fn monitor_sidecar_and_restart(
     started_at: tokio::time::Instant,
 ) -> impl std::future::Future<Output = ()> + Send + 'static {
     async move {
-    // Forward logs until the process terminates or the channel closes.
-    let mut terminated = false;
-    while let Some(event) = rx.recv().await {
-        let line = match event {
-            CommandEvent::Stdout(b) => String::from_utf8_lossy(&b).trim().to_string(),
-            CommandEvent::Stderr(b) => {
-                format!("[err] {}", String::from_utf8_lossy(&b).trim())
+        // Forward logs until the process terminates or the channel closes.
+        let mut terminated = false;
+        while let Some(event) = rx.recv().await {
+            let line = match event {
+                CommandEvent::Stdout(b) => String::from_utf8_lossy(&b).trim().to_string(),
+                CommandEvent::Stderr(b) => {
+                    format!("[err] {}", String::from_utf8_lossy(&b).trim())
+                }
+                CommandEvent::Terminated(_) => {
+                    terminated = true;
+                    break;
+                }
+                _ => continue,
+            };
+            if !line.is_empty() {
+                push_log(&handle, &line);
             }
-            CommandEvent::Terminated(_) => {
-                terminated = true;
-                break;
-            }
-            _ => continue,
-        };
-        if !line.is_empty() {
-            push_log(&handle, &line);
         }
-    }
-    // rx closed without an explicit Terminated also means the process exited.
-    if !terminated {
-        push_log(&handle, "[server] process channel closed — server may have exited");
-    }
-
-    let effective_restart_count = if started_at.elapsed().as_secs() >= RESTART_RESET_AFTER_S {
-        0
-    } else {
-        restart_count
-    };
-
-    if effective_restart_count >= MAX_RESTARTS {
-        let msg = format!(
-            "Conversion server crashed {} times. Please restart the app.",
-            effective_restart_count
-        );
-        push_log(&handle, &msg);
-        if let Some(win) = handle.get_webview_window("main") {
-            let _ = win.emit("tauri-startup-error", &msg);
+        // rx closed without an explicit Terminated also means the process exited.
+        if !terminated {
+            push_log(
+                &handle,
+                "[server] process channel closed — server may have exited",
+            );
         }
-        return;
-    }
 
-    let next = effective_restart_count + 1;
-    // Exponential backoff: 4 s, 8 s, 16 s, 30 s (capped).
-    let backoff = u64::min(4u64 << effective_restart_count.min(3), 30);
-    push_log(
-        &handle,
-        &format!(
-            "Server exited. Restarting in {backoff}s… (attempt {next}/{MAX_RESTARTS})"
-        ),
-    );
-    if let Some(win) = handle.get_webview_window("main") {
-        // Notify frontend so it shows the startup loading panel instead of an error.
-        let _ = win.emit("tauri-server-restarting", ());
-    }
-    tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
+        let (effective_restart_count, backoff) =
+            restart_policy(restart_count, started_at.elapsed().as_secs());
 
-    push_log(&handle, "Restarting conversion server…");
-
-    let spawn_result = handle
-        .shell()
-        .sidecar("epub-to-mp3-server")
-        .map_err(|e| e.to_string())
-        .and_then(|cmd| cmd.spawn().map_err(|e| e.to_string()));
-
-    match spawn_result {
-        Err(e) => {
-            push_log(&handle, &format!("Failed to restart server: {e}"));
+        if effective_restart_count >= MAX_RESTARTS {
+            let msg = format!(
+                "Conversion server crashed {} times. Please restart the app.",
+                effective_restart_count
+            );
+            push_log(&handle, &msg);
             if let Some(win) = handle.get_webview_window("main") {
-                let _ = win.emit("tauri-startup-error", &e);
+                let _ = win.emit("tauri-startup-error", &msg);
+            }
+            return;
+        }
+
+        let next = effective_restart_count + 1;
+        push_log(
+            &handle,
+            &format!("Server exited. Restarting in {backoff}s… (attempt {next}/{MAX_RESTARTS})"),
+        );
+        if let Some(win) = handle.get_webview_window("main") {
+            // Notify frontend so it shows the startup loading panel instead of an error.
+            let _ = win.emit("tauri-server-restarting", ());
+        }
+        tokio::time::sleep(tokio::time::Duration::from_secs(backoff)).await;
+
+        push_log(&handle, "Restarting conversion server…");
+
+        let spawn_result = handle
+            .shell()
+            .sidecar("epub-to-mp3-server")
+            .map_err(|e| e.to_string())
+            .and_then(|cmd| cmd.spawn().map_err(|e| e.to_string()));
+
+        match spawn_result {
+            Err(e) => {
+                push_log(&handle, &format!("Failed to restart server: {e}"));
+                if let Some(win) = handle.get_webview_window("main") {
+                    let _ = win.emit("tauri-startup-error", &e);
+                }
+            }
+            Ok((new_rx, _child)) => {
+                let ready = poll_until_ready(&handle, RESTART_POLL_TIMEOUT_S).await;
+                if ready {
+                    push_log(&handle, "Server restarted successfully.");
+                    if let Some(win) = handle.get_webview_window("main") {
+                        let _ = win.emit("tauri-startup-ready", ());
+                    }
+                    tauri::async_runtime::spawn(monitor_sidecar_and_restart(
+                        handle,
+                        new_rx,
+                        next,
+                        tokio::time::Instant::now(),
+                    ));
+                } else {
+                    let msg = "Server failed to restart (timeout). Please restart the app.";
+                    push_log(&handle, msg);
+                    if let Some(win) = handle.get_webview_window("main") {
+                        let _ = win.emit("tauri-startup-error", msg);
+                    }
+                }
             }
         }
-        Ok((new_rx, _child)) => {
-            let ready = poll_until_ready(&handle, RESTART_POLL_TIMEOUT_S).await;
-            if ready {
-                push_log(&handle, "Server restarted successfully.");
-                if let Some(win) = handle.get_webview_window("main") {
-                    let _ = win.emit("tauri-startup-ready", ());
-                }
-                tauri::async_runtime::spawn(monitor_sidecar_and_restart(
-                    handle,
-                    new_rx,
-                    next,
-                    tokio::time::Instant::now(),
-                ));
-            } else {
-                let msg = "Server failed to restart (timeout). Please restart the app.";
-                push_log(&handle, msg);
-                if let Some(win) = handle.get_webview_window("main") {
-                    let _ = win.emit("tauri-startup-error", msg);
-                }
-            }
-        }
-    }
     } // end async move
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{restart_policy, RESTART_RESET_AFTER_S};
+
+    #[test]
+    fn restart_policy_resets_after_stable_uptime() {
+        let (effective_restart_count, backoff) = restart_policy(4, RESTART_RESET_AFTER_S);
+        assert_eq!(effective_restart_count, 0);
+        assert_eq!(backoff, 4);
+    }
+
+    #[test]
+    fn restart_policy_caps_backoff_without_resetting_recent_failures() {
+        let (effective_restart_count, backoff) = restart_policy(4, RESTART_RESET_AFTER_S - 1);
+        assert_eq!(effective_restart_count, 4);
+        assert_eq!(backoff, 30);
+    }
 }
 
 fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
@@ -244,24 +266,16 @@ fn build_menu(app: &tauri::App) -> tauri::Result<Menu<tauri::Wry>> {
 
     // Theme submenu
     let theme_auto = CheckMenuItem::with_id(h, "theme_auto", "Auto", true, true, None::<&str>)?;
-    let theme_light =
-        CheckMenuItem::with_id(h, "theme_light", "Light", true, false, None::<&str>)?;
-    let theme_dark =
-        CheckMenuItem::with_id(h, "theme_dark", "Dark", true, false, None::<&str>)?;
-    let theme_sub = Submenu::with_items(
-        h,
-        "Theme",
-        true,
-        &[&theme_auto, &theme_light, &theme_dark],
-    )?;
+    let theme_light = CheckMenuItem::with_id(h, "theme_light", "Light", true, false, None::<&str>)?;
+    let theme_dark = CheckMenuItem::with_id(h, "theme_dark", "Dark", true, false, None::<&str>)?;
+    let theme_sub =
+        Submenu::with_items(h, "Theme", true, &[&theme_auto, &theme_light, &theme_dark])?;
 
     // Language submenu
     let lang_auto = CheckMenuItem::with_id(h, "lang_auto", "Auto", true, true, None::<&str>)?;
-    let lang_pt =
-        CheckMenuItem::with_id(h, "lang_pt", "Português", true, false, None::<&str>)?;
+    let lang_pt = CheckMenuItem::with_id(h, "lang_pt", "Português", true, false, None::<&str>)?;
     let lang_en = CheckMenuItem::with_id(h, "lang_en", "English", true, false, None::<&str>)?;
-    let lang_sub =
-        Submenu::with_items(h, "Language", true, &[&lang_auto, &lang_pt, &lang_en])?;
+    let lang_sub = Submenu::with_items(h, "Language", true, &[&lang_auto, &lang_pt, &lang_en])?;
 
     let view = Submenu::with_items(
         h,
@@ -361,7 +375,7 @@ pub fn run() {
                         for tid in ["theme_auto", "theme_light", "theme_dark"] {
                             if let Some(item) = app_handle.menu().and_then(|m| m.get(tid)) {
                                 {
-                    let check = item.as_check_menuitem_unchecked();
+                                    let check = item.as_check_menuitem_unchecked();
                                     let _ = check.set_checked(tid == id);
                                 }
                             }
@@ -377,7 +391,7 @@ pub fn run() {
                         for lid in ["lang_auto", "lang_pt", "lang_en"] {
                             if let Some(item) = app_handle.menu().and_then(|m| m.get(lid)) {
                                 {
-                    let check = item.as_check_menuitem_unchecked();
+                                    let check = item.as_check_menuitem_unchecked();
                                     let _ = check.set_checked(lid == id);
                                 }
                             }
@@ -423,11 +437,10 @@ pub fn run() {
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 // If server is already running (leftover from previous launch), skip spawn.
-                let port_in_use = tokio::net::TcpStream::connect(
-                    format!("127.0.0.1:{SERVER_PORT}"),
-                )
-                .await
-                .is_ok();
+                let port_in_use =
+                    tokio::net::TcpStream::connect(format!("127.0.0.1:{SERVER_PORT}"))
+                        .await
+                        .is_ok();
 
                 let spawn_result = if port_in_use {
                     push_log(&handle, "Server already running — reconnecting.");
