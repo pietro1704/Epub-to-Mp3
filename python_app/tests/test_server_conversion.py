@@ -8,6 +8,8 @@ from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
+
 try:
     from fastapi.testclient import TestClient
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
@@ -142,6 +144,13 @@ def test_job_output_dir_rejects_stored_path_outside_output_root(tmp_path, monkey
     )
 
     assert target == safe_dir
+
+
+def test_resolve_relative_path_within_root_rejects_absolute_candidate(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    with pytest.raises(ValueError, match="Expected relative path"):
+        server._resolve_relative_path_within_root(tmp_path, "/tmp/escape", must_exist=False)
 
 
 def test_get_job_fulltext_rejects_source_path_outside_allowed_roots(tmp_path, monkeypatch):

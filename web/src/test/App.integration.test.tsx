@@ -1,10 +1,22 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { renderWithProviders } from "./testUtils";
 import type { ConversionClient } from "../services/ConversionService";
 import type { JobSnapshot } from "../types/conversion";
+
+function setTauriGlobal(value: unknown) {
+  Object.defineProperty(window, "__TAURI__", {
+    configurable: true,
+    writable: true,
+    value,
+  });
+}
+
+afterEach(() => {
+  setTauriGlobal(undefined);
+});
 
 describe("App integration", () => {
   it("runs full conversion flow with a custom client", async () => {
@@ -62,7 +74,11 @@ describe("App integration", () => {
     const file = new File(["ebook"], "historia.pdf", {
       type: "application/pdf",
     });
-    const fileInput = await screen.findByLabelText(/arquivo do livro/i);
+    const fileInput = await screen.findByLabelText(
+      /arquivo do livro/i,
+      {},
+      { timeout: 5000 },
+    );
     await user.upload(fileInput, file);
 
     await user.click(screen.getByRole("button", { name: /converter agora/i }));
@@ -108,7 +124,11 @@ describe("App integration", () => {
     const file = new File(["ebook"], "historia.pdf", {
       type: "application/pdf",
     });
-    const fileInput = await screen.findByLabelText(/arquivo do livro/i);
+    const fileInput = await screen.findByLabelText(
+      /arquivo do livro/i,
+      {},
+      { timeout: 5000 },
+    );
     await user.upload(fileInput, file);
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(1));
 
@@ -132,5 +152,64 @@ describe("App integration", () => {
         }),
       );
     });
+  });
+
+  it("shows startup panel again when the Tauri sidecar restarts", async () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    setTauriGlobal({
+      core: {
+        invoke: vi.fn().mockResolvedValue([]),
+      },
+      event: {
+        listen: vi
+          .fn()
+          .mockImplementation(
+            async (
+              event: string,
+              handler: (e: { payload: unknown }) => void,
+            ) => {
+              listeners.set(event, (payload: unknown) => handler({ payload }));
+              return () => listeners.delete(event);
+            },
+          ),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: false,
+        json: vi.fn().mockResolvedValue({ status: "starting" }),
+      }),
+    );
+
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: vi.fn(),
+      poll: vi.fn(),
+    };
+
+    await act(async () => {
+      renderWithProviders(<App client={client} />, { locale: "en" });
+    });
+
+    expect(screen.getByText("Starting conversion engine…")).toBeInTheDocument();
+
+    await act(async () => {
+      listeners.get("tauri-startup-ready")?.(undefined);
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Starting conversion engine…"),
+      ).not.toBeInTheDocument(),
+    );
+
+    await act(async () => {
+      listeners.get("tauri-server-restarting")?.(undefined);
+      listeners.get("tauri-server-log")?.("Restarting sidecar");
+    });
+
+    expect(screen.getByText("Starting conversion engine…")).toBeInTheDocument();
+    expect(screen.getByText("Restarting sidecar")).toBeInTheDocument();
   });
 });

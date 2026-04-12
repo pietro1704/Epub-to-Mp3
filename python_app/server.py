@@ -2184,9 +2184,9 @@ async def convert_ebook(
             if not reuse_upload:
                 raise HTTPException(status_code=404, detail="Upload not found or expired")
         job_id = str(uuid.uuid4())
-        job_input_dir = _resolve_path_within_root(job_inputs_dir, job_id, must_exist=False)
+        job_input_dir = _resolve_relative_path_within_root(job_inputs_dir, job_id, must_exist=False)
         job_input_dir.mkdir(parents=True, exist_ok=True)
-        upload_root = _resolve_path_within_root(uploads_dir, upload_id, must_exist=True)
+        upload_root = _resolve_relative_path_within_root(uploads_dir, upload_id, must_exist=True)
         try:
             source_file = _resolve_path_within_root(
                 upload_root, reuse_upload["file_path"], must_exist=True
@@ -2200,7 +2200,9 @@ async def convert_ebook(
         original_name = _safe_leaf_name(
             reuse_upload.get("file_name") or source_file.name, field_name="file name"
         )
-        temp_file = _resolve_path_within_root(job_input_dir, original_name, must_exist=False)
+        temp_file = _resolve_relative_path_within_root(
+            job_input_dir, original_name, must_exist=False
+        )
         shutil.move(str(source_file), temp_file)
         book_title = reuse_upload.get("book_title")
         book_author = reuse_upload.get("book_author")
@@ -2214,7 +2216,7 @@ async def convert_ebook(
             if cover_source and cover_source.exists():
                 temp_job = {"bookTitle": book_title, "engine": engine}
                 safe_cover_name = _safe_leaf_name(cover_name, field_name="cover name")
-                dest_cover = _resolve_path_within_root(
+                dest_cover = _resolve_relative_path_within_root(
                     _job_output_dir(job_id, temp_job, ensure=True),
                     safe_cover_name,
                     must_exist=False,
@@ -2228,9 +2230,9 @@ async def convert_ebook(
         if file is None:
             raise HTTPException(status_code=400, detail="No file uploaded")
         job_id = f"{uuid.uuid4()}"
-        job_input_dir = _resolve_path_within_root(job_inputs_dir, job_id, must_exist=False)
+        job_input_dir = _resolve_relative_path_within_root(job_inputs_dir, job_id, must_exist=False)
         job_input_dir.mkdir(parents=True, exist_ok=True)
-        temp_file = _resolve_path_within_root(
+        temp_file = _resolve_relative_path_within_root(
             job_input_dir,
             Path(file.filename or "ebook.epub").name,
             must_exist=False,
@@ -2270,7 +2272,9 @@ async def convert_ebook(
                 }
                 cover_path = _job_output_dir(job_id, temp_job, ensure=True)
                 safe_filename = Path(filename).name
-                target = _resolve_path_within_root(cover_path, safe_filename, must_exist=False)
+                target = _resolve_relative_path_within_root(
+                    cover_path, safe_filename, must_exist=False
+                )
                 target.write_bytes(cover_blob.data)
                 cover_name = safe_filename
                 cover_url = f"/api/outputs/{job_id}/{safe_filename}"
@@ -2283,9 +2287,9 @@ async def convert_ebook(
         book_title = Path(temp_file.name).stem
     book_author = book_author or (reuse_upload.get("book_author") if reuse_upload else None)
     book_slug = _book_slug(book_title, temp_file.name)
-    output_book_dir = _resolve_path_within_root(output_dir, book_slug, must_exist=False)
+    output_book_dir = _resolve_relative_path_within_root(output_dir, book_slug, must_exist=False)
     output_book_dir.mkdir(parents=True, exist_ok=True)
-    cache_base = _resolve_path_within_root(CACHE_DIR, book_slug, must_exist=False)
+    cache_base = _resolve_relative_path_within_root(CACHE_DIR, book_slug, must_exist=False)
     cache_base.mkdir(parents=True, exist_ok=True)
 
     parallel_slots_value = parallel_slots_override
@@ -2473,8 +2477,10 @@ async def download_output(job_id: str, filename: str) -> FileResponse:
     file_path = _resolve_path_within_root(base_dir, safe_filename, must_exist=False)
     if not file_path.exists():
         # Legacy fallback
-        legacy_base = _resolve_path_within_root(output_dir, job_id, must_exist=False)
-        legacy_path = _resolve_path_within_root(legacy_base, safe_filename, must_exist=False)
+        legacy_base = _resolve_relative_path_within_root(output_dir, job_id, must_exist=False)
+        legacy_path = _resolve_relative_path_within_root(
+            legacy_base, safe_filename, must_exist=False
+        )
         if legacy_path.is_relative_to(legacy_base) and legacy_path.exists():
             file_path = legacy_path
         else:
