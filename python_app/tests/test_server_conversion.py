@@ -629,6 +629,27 @@ def test_job_status_rehydrates_outputs(tmp_path, monkeypatch):
     assert job_state_path.exists()
 
 
+def test_download_output_serves_named_file_from_job_directory(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    job_id = str(uuid4())
+    output_book_dir = tmp_path / "Download Book"
+    output_book_dir.mkdir(parents=True, exist_ok=True)
+    target = output_book_dir / "chapter-001.mp3"
+    target.write_bytes(MINIMAL_MP3)
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "finished",
+        "outputDir": str(output_book_dir),
+    }
+
+    client = TestClient(server.app)
+    response = client.get(f"/api/outputs/{job_id}/chapter-001.mp3")
+
+    assert response.status_code == 200
+    assert response.content == MINIMAL_MP3
+
+
 def test_feature_history_endpoint_missing_file(tmp_path, monkeypatch):
     _configure_server_paths(tmp_path, monkeypatch)
     monkeypatch.setattr(server, "CACHE_DIR", tmp_path)

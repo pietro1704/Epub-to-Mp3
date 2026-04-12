@@ -536,6 +536,16 @@ def _chapter_chunk_dir(job_id: str, chapter_index: int, ensure: bool = False) ->
     return target
 
 
+def _find_named_file_within_dir(directory: Path, filename: str) -> Optional[Path]:
+    """Return an existing file inside directory whose basename matches filename."""
+    if not directory.exists() or not directory.is_dir():
+        return None
+    for candidate in directory.iterdir():
+        if candidate.is_file() and candidate.name == filename:
+            return candidate.resolve()
+    return None
+
+
 def _load_cover_cache() -> Dict[str, dict]:
     try:
         return json.loads(cover_index_path.read_text())
@@ -2474,19 +2484,15 @@ async def download_output(job_id: str, filename: str) -> FileResponse:
     job_data = jobs.get(job_id) or job_manager.load_job(job_id)
     base_dir = _job_output_dir(job_id, job_data).resolve()
     safe_filename = _safe_leaf_name(filename, field_name="filename")
-    file_path = _resolve_path_within_root(base_dir, safe_filename, must_exist=False)
-    if not file_path.exists():
+    file_path = _find_named_file_within_dir(base_dir, safe_filename)
+    if file_path is None:
         # Legacy fallback
         legacy_base = _resolve_relative_path_within_root(output_dir, job_id, must_exist=False)
-        legacy_path = _resolve_relative_path_within_root(
-            legacy_base, safe_filename, must_exist=False
-        )
-        if legacy_path.is_relative_to(legacy_base) and legacy_path.exists():
+        legacy_path = _find_named_file_within_dir(legacy_base, safe_filename)
+        if legacy_path is not None:
             file_path = legacy_path
         else:
             raise HTTPException(status_code=404, detail="File not found")
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="File not found")
     return FileResponse(
         path=file_path,
         media_type=_guess_media_type(safe_filename),
