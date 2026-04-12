@@ -687,6 +687,7 @@ export class HttpConversionClient implements ConversionClient {
             typeof chunk.index === "number" && Number.isFinite(chunk.index)
               ? chunk.index
               : idx,
+          url: chunk.url ? this.resolve(chunk.url) : chunk.url,
         }))
         .sort((a, b) => a.index - b.index);
       return { ...payload, chunks: normalizedChunks };

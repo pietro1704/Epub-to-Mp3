@@ -217,6 +217,25 @@ export default function StreamingAudioPlayer({
     setCurrentSegment(0);
   };
 
+  const handleStop = () => {
+    if (pollTimeoutRef.current) {
+      window.clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.src = "";
+    }
+    setSrc(null);
+    setManifest(null);
+    setCurrentSegmentText("");
+    setWaiting(false);
+    setIsPlaying(false);
+    setError(null);
+    setStarted(false);
+  };
+
   const handlePause = () => {
     setIsPlaying(false);
   };
@@ -328,6 +347,7 @@ export default function StreamingAudioPlayer({
     locale === "pt" ? "Capítulo anterior" : "Prev chapter";
   const nextChapterLabel =
     locale === "pt" ? "Próximo capítulo" : "Next chapter";
+  const stopLabel = locale === "pt" ? "Parar" : "Stop";
   const openReaderHint =
     locale === "pt"
       ? "Use o leitor para começar a reprodução."
@@ -388,6 +408,13 @@ export default function StreamingAudioPlayer({
               }
             >
               {nextChapterLabel}
+            </button>
+            <button
+              type="button"
+              className="button-secondary"
+              onClick={handleStop}
+            >
+              {stopLabel}
             </button>
           </div>
         ) : (
