@@ -126,6 +126,39 @@ def test_process_conversion_generates_chapters(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
+def test_job_output_dir_rejects_stored_path_outside_output_root(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    job_id = str(uuid4())
+    safe_dir = tmp_path / "Safe Book"
+
+    target = server._job_output_dir(
+        job_id,
+        {
+            "jobId": job_id,
+            "bookTitle": "Safe Book",
+            "fileName": "safe-book.epub",
+            "outputDir": "/tmp/../../etc",
+        },
+    )
+
+    assert target == safe_dir
+
+
+def test_get_job_fulltext_rejects_source_path_outside_allowed_roots(tmp_path, monkeypatch):
+    _configure_server_paths(tmp_path, monkeypatch)
+    job_id = str(uuid4())
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "queued",
+        "file_path": "/etc/passwd",
+    }
+
+    client = TestClient(server.app)
+    response = client.get(f"/api/jobs/{job_id}/fulltext")
+
+    assert response.status_code == 404
+
+
 def test_build_engine_chain_respects_guards(monkeypatch):
     """When all non-Edge engines are unavailable and no monolingual voice exists, chain = [edge]."""
     config = ConversionConfig(engine="edge", primary_language="pt-BR")

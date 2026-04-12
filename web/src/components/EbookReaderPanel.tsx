@@ -409,7 +409,7 @@ export default function EbookReaderPanel({
               </button>
             )}
             <span className="ebook-reader__hero-chip">
-              {prefs.followAudio
+              {prefs.followAudio && !followPaused
                 ? t.status.readerFollowAudioOn
                 : t.status.readerFollowAudioOff}
             </span>

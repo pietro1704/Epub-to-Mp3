@@ -59,6 +59,13 @@ class TestConverterApplication(unittest.TestCase):
         self.assertIsNotNone(self.app.menu)
         self.assertIsNotNone(self.app.converter)
 
+    def test_strip_book_title_prefix_removes_repeated_prefix(self):
+        cleaned = self.app._strip_book_title_prefix(
+            "It, It: It — Chapter starts here",
+            "It",
+        )
+        self.assertEqual(cleaned, "Chapter starts here")
+
     @patch("main.EbookReader")
     def test_run_file_not_found(self, mock_reader):
         """Test running with non-existent file"""
@@ -324,6 +331,32 @@ class TestConverterApplication(unittest.TestCase):
                 called_kwargs.get("force_reprocess"),
                 "force_reprocess should be enabled when --no-cache is used",
             )
+
+    @patch("builtins.print")
+    def test_run_batch_lists_failed_books(self, mock_print):
+        args = Namespace(
+            batch_stop_on_error=False,
+            verify_only=False,
+            fix_mode=False,
+        )
+
+        with patch.object(
+            self.app,
+            "_run_single_conversion",
+            side_effect=[0, 2],
+        ):
+            result = self.app._run_batch(
+                args,
+                [Path("ok.epub"), Path("failed.epub")],
+                hardware_profile=Mock(),
+            )
+
+        self.assertEqual(result, 2)
+        printed = "\n".join(
+            " ".join(str(arg) for arg in call.args) for call in mock_print.call_args_list
+        )
+        self.assertIn("Failed books:", printed)
+        self.assertIn("failed.epub", printed)
 
     def test_apply_cli_overrides_auto_engine_enables_auto_tuning_defaults(self):
         config = self.app.config.create_conversion_config(engine="auto")

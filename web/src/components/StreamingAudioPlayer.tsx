@@ -295,6 +295,11 @@ export default function StreamingAudioPlayer({
   };
 
   const handleChapterJump = (chapterIndex: number) => {
+    const audio = audioRef.current;
+    if (audio) {
+      audio.pause();
+      audio.src = "";
+    }
     setCurrentChapter(chapterIndex);
     setCurrentSegment(0);
     setManifest(null);
@@ -375,6 +380,13 @@ export default function StreamingAudioPlayer({
       setCurrentSegmentText("");
     } else {
       // Reached the end of the book
+      if (jobId) {
+        try {
+          window.localStorage.removeItem(positionKey(jobId));
+        } catch {
+          // Persistence is optional.
+        }
+      }
       setStarted(false);
       setIsPlaying(false);
       setWaiting(false);

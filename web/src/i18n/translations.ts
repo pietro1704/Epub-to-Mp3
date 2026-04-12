@@ -377,6 +377,21 @@ export interface StatusText {
   uiHealthClear: string;
   uiHealthDismiss: string;
   chapterStatuses: Record<ChapterProgressStatus, string>;
+  chapterCompletedIn: (value: string) => string;
+  chapterGoToCurrent: string;
+  chapterGoToCurrentTitle: string;
+  chapterFullAudio: string;
+  chapterSegmentsTitle: string;
+  chapterSegmentCount: (count: number) => string;
+  chapterSegmentsNone: string;
+  chapterSegmentsWaiting: string;
+  chapterSegmentsLoading: string;
+  chapterSegmentTitle: (index: number) => string;
+  chapterSegmentShowText: string;
+  chapterSegmentHideText: string;
+  chapterSegmentText: string;
+  chapterSegmentsEmpty: string;
+  chapterAudioUnsupported: string;
   chapterEngineLabel: (engine: string) => string;
   bookFallbackTitle: string;
   bookFallbackAuthor: string;
@@ -1059,6 +1074,23 @@ export const translations: Record<Locale, Translations> = {
         cancelled: "Cancelado",
         retrying: "Tentando novamente",
       },
+      chapterCompletedIn: (value: string) => `Concluído em ${value}`,
+      chapterGoToCurrent: "Ver atual",
+      chapterGoToCurrentTitle: "Ir para o capítulo atual",
+      chapterFullAudio: "Capítulo completo:",
+      chapterSegmentsTitle: "Segmentos do capítulo",
+      chapterSegmentCount: (count: number) =>
+        count <= 0 ? "sem segmentos" : `${count} segmentos`,
+      chapterSegmentsNone: "Nenhum segmento disponível",
+      chapterSegmentsWaiting: "Aguardando segmentos...",
+      chapterSegmentsLoading: "Carregando segmentos...",
+      chapterSegmentTitle: (index: number) => `Segmento ${index}`,
+      chapterSegmentShowText: "Mostrar texto",
+      chapterSegmentHideText: "Ocultar texto",
+      chapterSegmentText: "Texto",
+      chapterSegmentsEmpty: "Nenhum segmento disponível ainda.",
+      chapterAudioUnsupported:
+        "Seu navegador não oferece suporte à reprodução de áudio.",
       chapterEngineLabel: (engine: string) => `Motor: ${engine.toUpperCase()}`,
       bookFallbackTitle: "Livro carregado",
       bookFallbackAuthor: "Autor desconhecido",
@@ -1743,6 +1775,22 @@ export const translations: Record<Locale, Translations> = {
         cancelled: "Cancelled",
         retrying: "Retrying",
       },
+      chapterCompletedIn: (value: string) => `Completed in ${value}`,
+      chapterGoToCurrent: "Go to current",
+      chapterGoToCurrentTitle: "Go to current chapter",
+      chapterFullAudio: "Full chapter:",
+      chapterSegmentsTitle: "Chapter segments",
+      chapterSegmentCount: (count: number) =>
+        count <= 0 ? "no segments yet" : `${count} segments`,
+      chapterSegmentsNone: "No segments available",
+      chapterSegmentsWaiting: "Waiting for segments...",
+      chapterSegmentsLoading: "Loading segments...",
+      chapterSegmentTitle: (index: number) => `Segment ${index}`,
+      chapterSegmentShowText: "Show text",
+      chapterSegmentHideText: "Hide text",
+      chapterSegmentText: "Text",
+      chapterSegmentsEmpty: "No segments available yet.",
+      chapterAudioUnsupported: "Your browser does not support audio playback.",
       chapterEngineLabel: (engine: string) => `Engine: ${engine.toUpperCase()}`,
       bookFallbackTitle: "Uploaded book",
       bookFallbackAuthor: "Unknown author",

@@ -174,6 +174,23 @@ class TestLocalUploadEndpoint(unittest.TestCase):
         self._restore_server(srv)
         assert resp.status_code == 400
 
+    def test_400_for_path_outside_allowed_roots(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        resp = client.post("/api/uploads/local", json={"path": "/etc/passwd"})
+        self._restore_server(srv)
+        assert resp.status_code == 400
+
+    def test_400_for_symlink(self):
+        client, srv = _make_client()
+        self._patch_server(srv)
+        target = _minimal_epub(self.tmp / "target.epub")
+        link = self.tmp / "linked.epub"
+        link.symlink_to(target)
+        resp = client.post("/api/uploads/local", json={"path": str(link)})
+        self._restore_server(srv)
+        assert resp.status_code == 400
+
     def test_413_when_file_exceeds_size_limit(self):
         client, srv = _make_client()
         self._patch_server(srv)

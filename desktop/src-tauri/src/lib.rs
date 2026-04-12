@@ -18,6 +18,8 @@ const RESTART_POLL_TIMEOUT_S: u64 = 60;
 const LOADING_NOTIFY_INTERVAL_S: u64 = 5;
 /// Maximum number of automatic sidecar restarts per session.
 const MAX_RESTARTS: u32 = 5;
+/// Stable uptime before restart attempts reset to zero.
+const RESTART_RESET_AFTER_S: u64 = 300;
 
 /// Shared server log buffer (last 2000 lines).
 pub struct ServerLogs(Mutex<Vec<String>>);
@@ -133,6 +135,7 @@ fn monitor_sidecar_and_restart(
     handle: AppHandle,
     mut rx: tauri::async_runtime::Receiver<CommandEvent>,
     restart_count: u32,
+    started_at: tokio::time::Instant,
 ) -> impl std::future::Future<Output = ()> + Send + 'static {
     async move {
     // Forward logs until the process terminates or the channel closes.
@@ -158,10 +161,16 @@ fn monitor_sidecar_and_restart(
         push_log(&handle, "[server] process channel closed — server may have exited");
     }
 
-    if restart_count >= MAX_RESTARTS {
+    let effective_restart_count = if started_at.elapsed().as_secs() >= RESTART_RESET_AFTER_S {
+        0
+    } else {
+        restart_count
+    };
+
+    if effective_restart_count >= MAX_RESTARTS {
         let msg = format!(
             "Conversion server crashed {} times. Please restart the app.",
-            restart_count
+            effective_restart_count
         );
         push_log(&handle, &msg);
         if let Some(win) = handle.get_webview_window("main") {
@@ -170,9 +179,9 @@ fn monitor_sidecar_and_restart(
         return;
     }
 
-    let next = restart_count + 1;
+    let next = effective_restart_count + 1;
     // Exponential backoff: 4 s, 8 s, 16 s, 30 s (capped).
-    let backoff = u64::min(4u64 << restart_count.min(3), 30);
+    let backoff = u64::min(4u64 << effective_restart_count.min(3), 30);
     push_log(
         &handle,
         &format!(
@@ -208,7 +217,10 @@ fn monitor_sidecar_and_restart(
                     let _ = win.emit("tauri-startup-ready", ());
                 }
                 tauri::async_runtime::spawn(monitor_sidecar_and_restart(
-                    handle, new_rx, next,
+                    handle,
+                    new_rx,
+                    next,
+                    tokio::time::Instant::now(),
                 ));
             } else {
                 let msg = "Server failed to restart (timeout). Please restart the app.";
@@ -439,7 +451,13 @@ pub fn run() {
                         let monitor_handle = handle.clone();
                         tauri::async_runtime::spawn(async move {
                             // Forward logs immediately; restart on exit.
-                            monitor_sidecar_and_restart(monitor_handle, rx, 0).await;
+                            monitor_sidecar_and_restart(
+                                monitor_handle,
+                                rx,
+                                0,
+                                tokio::time::Instant::now(),
+                            )
+                            .await;
                         });
                     }
                     Ok(None) => {

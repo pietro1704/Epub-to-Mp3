@@ -221,10 +221,12 @@ const isNetworkError = (error: unknown): boolean => {
   }
   const status = (error as Error & { status?: number }).status;
   if (typeof status === "number") {
-    return status === 429 || status >= 500;
+    return status === 404 || status === 429 || status >= 500;
   }
   const message = error.message.toLowerCase();
   return (
+    message.includes("404") ||
+    message.includes("not found") ||
     message.includes("429") ||
     message.includes("rate limit") ||
     message.includes("too many requests") ||

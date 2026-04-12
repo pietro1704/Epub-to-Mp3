@@ -481,12 +481,8 @@ export default function ChapterProgressList({
   }, [jobId, entries, expanded, fetchManifest]);
 
   const segmentCountLabel = useCallback(
-    (count: number) => {
-      if (count <= 0)
-        return locale === "pt" ? "sem segmentos" : "no segments yet";
-      return locale === "pt" ? `${count} segmentos` : `${count} segments`;
-    },
-    [locale],
+    (count: number) => t.status.chapterSegmentCount(count),
+    [t.status],
   );
 
   const segmentDurationLabel = useCallback((value?: number) => {
@@ -512,14 +508,10 @@ export default function ChapterProgressList({
             type="button"
             className="status-panel__toggle"
             onClick={() => scrollToCurrent("smooth")}
-            title={
-              locale === "pt"
-                ? "Go to current chapter"
-                : "Go to current chapter"
-            }
+            title={t.status.chapterGoToCurrentTitle}
             style={{ fontSize: "0.8rem", padding: "0.35rem 0.75rem" }}
           >
-            ↓ {locale === "pt" ? "View current" : "Go to current"}
+            ↓ {t.status.chapterGoToCurrent}
           </button>
           <button
             type="button"
@@ -648,7 +640,10 @@ export default function ChapterProgressList({
                   )}
                   {entry.status === "completed" && (
                     <span className="chapter-progress__time">
-                      {formatChapterDuration(entry.elapsedSeconds) ?? "--"}
+                      {formatChapterDuration(
+                        entry.elapsedSeconds,
+                        t.status.chapterCompletedIn,
+                      ) ?? "--"}
                       {typeof entry.charsPerSecond === "number"
                         ? ` • ~${entry.charsPerSecond} chars/s`
                         : ""}
@@ -680,26 +675,26 @@ export default function ChapterProgressList({
                 <div className="chapter-progress__details">
                   {entry.downloadUrl && (
                     <div className="chapter-progress__download-audio">
-                      <strong>{"Full chapter:"}</strong>
+                      <strong>{t.status.chapterFullAudio}</strong>
                       <audio
                         controls
                         preload="metadata"
                         className="chapter-progress__audio"
                       >
                         <source src={entry.downloadUrl} type="audio/mpeg" />
-                        {"Your browser does not support audio"}
+                        {t.status.chapterAudioUnsupported}
                       </audio>
                     </div>
                   )}
                   <div className="chapter-progress__segments">
                     <div className="chapter-progress__segments-header">
-                      <strong>{"Chapter segments"}</strong>
+                      <strong>{t.status.chapterSegmentsTitle}</strong>
                       <span className="chapter-progress__segments-meta">
                         {segments.length > 0
                           ? segmentCountLabel(segments.length)
                           : status === "completed" && !loading
-                            ? "No segments available"
-                            : "Waiting for segments..."}
+                            ? t.status.chapterSegmentsNone
+                            : t.status.chapterSegmentsWaiting}
                       </span>
                     </div>
                     {manifestError && (
@@ -707,7 +702,7 @@ export default function ChapterProgressList({
                     )}
                     {loading && (
                       <p className="chapter-progress__loading">
-                        {"Loading segments..."}
+                        {t.status.chapterSegmentsLoading}
                       </p>
                     )}
                     {segments.length > 0 && (
@@ -734,7 +729,9 @@ export default function ChapterProgressList({
                               <div className="chapter-progress__segment-header">
                                 <div className="chapter-progress__segment-meta">
                                   <span className="chapter-progress__segment-title">
-                                    {`Segment ${segment.index + 1}`}
+                                    {t.status.chapterSegmentTitle(
+                                      segment.index + 1,
+                                    )}
                                   </span>
                                   {segment.durationSeconds !== undefined && (
                                     <span className="chapter-progress__segment-duration">
@@ -755,10 +752,13 @@ export default function ChapterProgressList({
                                       )
                                     }
                                     title={
-                                      isTextExpanded ? "Hide text" : "Show text"
+                                      isTextExpanded
+                                        ? t.status.chapterSegmentHideText
+                                        : t.status.chapterSegmentShowText
                                     }
                                   >
-                                    {isTextExpanded ? "▾" : "▸"} {"Text"}
+                                    {isTextExpanded ? "▾" : "▸"}{" "}
+                                    {t.status.chapterSegmentText}
                                   </button>
                                 )}
                               </div>
@@ -768,9 +768,7 @@ export default function ChapterProgressList({
                                 className="chapter-progress__audio"
                               >
                                 <source src={segment.url} type="audio/mpeg" />
-                                {locale === "pt"
-                                  ? "Your browser does not support audio"
-                                  : "Your browser does not support audio"}
+                                {t.status.chapterAudioUnsupported}
                               </audio>
                               {isTextExpanded && hasText && (
                                 <div
@@ -795,7 +793,7 @@ export default function ChapterProgressList({
                     )}
                     {!loading && segments.length === 0 && (
                       <p className="chapter-progress__empty">
-                        {"No segments available yet."}
+                        {t.status.chapterSegmentsEmpty}
                       </p>
                     )}
                     {!jobId && (
@@ -816,7 +814,10 @@ export default function ChapterProgressList({
   );
 }
 
-function formatChapterDuration(value?: number): string | null {
+function formatChapterDuration(
+  value: number | undefined,
+  formatLabel: (value: string) => string,
+): string | null {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     return null;
   }
@@ -832,5 +833,5 @@ function formatChapterDuration(value?: number): string | null {
     parts.push(`${minutes.toString().padStart(2, "0")}m`);
   }
   parts.push(`${seconds.toString().padStart(2, "0")}s`);
-  return `Completed in ${parts.join(" ")}`;
+  return formatLabel(parts.join(" "));
 }

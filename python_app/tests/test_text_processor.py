@@ -49,6 +49,16 @@ class TestTextProcessor(unittest.TestCase):
         self.assertIn("Second paragraph with italic text", result)
         self.assertIn("Third paragraph after break", result)
 
+    def test_html_to_plain_text_removes_script_and_style_content(self):
+        html = """
+        <html>
+            <head><style>body { display:none; }</style><script>alert(1)</script></head>
+            <body><p>Visible text</p><script>console.log('hidden')</script></body>
+        </html>
+        """
+        result = TextProcessor.html_to_plain_text(html)
+        self.assertEqual(result, "Visible text")
+
     def test_html_to_plain_text_with_nbsp(self):
         """Test html_to_plain_text with non-breaking spaces"""
         html = "<p>Text&nbsp;with&nbsp;nbsp</p>"

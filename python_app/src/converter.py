@@ -3447,8 +3447,8 @@ class AudioConverter(
                 engine_ref: Optional[dict] = None,
             ) -> bool:
                 """
-                Handle Edge outages without mudar de engine (mode manual).
-                Aguarda cooldown curto antes de tentar novamente.
+                Handle Edge outages without switching engines (manual mode).
+                Wait briefly for cooldown before trying again.
                 """
                 if (config.engine or "").lower() != "edge":
                     return False
@@ -3482,7 +3482,7 @@ class AudioConverter(
                 max_wait = min(seconds, 25)
                 if self.verbose:
                     print(
-                        f"   ⏳ No fallback available; waiting {max_wait}s antes de tentar novamente..."
+                        f"   ⏳ No fallback available; waiting {max_wait}s before trying again..."
                     )
                 waited = 0
                 while waited < max_wait:

@@ -218,6 +218,8 @@ export default function App(props?: AppProps): JSX.Element {
   const [updateAvailable, setUpdateAvailable] = useState<string | null>(null);
   const [updateInstalling, setUpdateInstalling] = useState(false);
   const [tauriStartupLog, setTauriStartupLog] = useState<string[]>([]);
+  const didRestartRef = useRef(false);
+  const handleTauriStartupReadyRef = useRef<() => void>(() => {});
   const [startupLogsExpanded, setStartupLogsExpanded] =
     useState<boolean>(false);
   const restartOptionsRef = useRef({ keepCache: false, keepFinished: false });
@@ -304,8 +306,7 @@ export default function App(props?: AppProps): JSX.Element {
       );
       cleanups.push(
         await listenTauri("tauri-startup-ready", () => {
-          setTauriStarting(false);
-          notifyServerReady();
+          handleTauriStartupReadyRef.current();
         }),
       );
       cleanups.push(
@@ -363,15 +364,14 @@ export default function App(props?: AppProps): JSX.Element {
           signal: AbortSignal.timeout(800),
         });
         if (r.ok) {
-          setTauriStarting(false);
-          notifyServerReady();
+          handleTauriStartupReadyRef.current();
         }
       } catch {
         // not up yet
       }
     }, 2000);
     return () => clearInterval(id);
-  }, [tauriStarting, notifyServerReady]);
+  }, [tauriStarting]);
 
   // Check for app updates once the sidecar is ready (Tauri only)
   useEffect(() => {
@@ -458,6 +458,19 @@ export default function App(props?: AppProps): JSX.Element {
     lastCompletedJobIdRef.current = null;
     setQueuePlanTotal(0);
   }, [clearRecentJobView, reset]);
+
+  const handleTauriStartupReady = useCallback(() => {
+    setTauriStarting(false);
+    if (didRestartRef.current) {
+      handleReset();
+    }
+    didRestartRef.current = true;
+    notifyServerReady();
+  }, [handleReset, notifyServerReady]);
+
+  useEffect(() => {
+    handleTauriStartupReadyRef.current = handleTauriStartupReady;
+  }, [handleTauriStartupReady]);
 
   const handleTabChange = useCallback(
     (tabId: "setup" | "progress" | "downloads") => {

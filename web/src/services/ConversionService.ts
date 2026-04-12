@@ -789,6 +789,9 @@ export class HttpConversionClient implements ConversionClient {
     return new Promise<JobSnapshot | null>((resolve, reject) => {
       let settled = false;
       let source: EventSource | null = null;
+      let retryTimer: number | null = null;
+      let retryCount = 0;
+      const retryDelaysMs = [2000, 4000, 8000] as const;
 
       const cleanup = () => {
         if (source) {
@@ -796,6 +799,10 @@ export class HttpConversionClient implements ConversionClient {
           source.onerror = null;
           source.close();
           source = null;
+        }
+        if (retryTimer !== null) {
+          window.clearTimeout(retryTimer);
+          retryTimer = null;
         }
         if (signal) {
           signal.removeEventListener("abort", handleAbort);
@@ -819,6 +826,7 @@ export class HttpConversionClient implements ConversionClient {
 
       const handleMessage = (event: MessageEvent) => {
         try {
+          retryCount = 0;
           const payload = JSON.parse(event.data) as JobSnapshot;
           const snapshot = this.normalizeSnapshot(payload);
           latestSnapshot = snapshot;
@@ -836,6 +844,7 @@ export class HttpConversionClient implements ConversionClient {
 
       const handleChapterUpdate = (event: MessageEvent) => {
         try {
+          retryCount = 0;
           if (!latestSnapshot || !Array.isArray(latestSnapshot.chapterProgress))
             return;
           const chapter = JSON.parse(event.data) as Record<string, unknown>;
@@ -853,28 +862,56 @@ export class HttpConversionClient implements ConversionClient {
         }
       };
 
-      const handleError = () => {
-        finalize(null);
+      const closeSource = () => {
+        if (!source) {
+          return;
+        }
+        source.onmessage = null;
+        source.onerror = null;
+        source.close();
+        source = null;
       };
 
-      try {
-        source = new EventSource(streamUrl, { withCredentials: true });
-      } catch (error) {
-        console.warn(
-          "[ConversionClient] Failed to establish SSE connection:",
-          error,
-        );
-        finalize(null);
-        return;
-      }
+      const scheduleReconnect = () => {
+        closeSource();
+        if (retryCount >= retryDelaysMs.length) {
+          finalize(null);
+          return;
+        }
+        const delayMs = retryDelaysMs[retryCount];
+        retryCount += 1;
+        retryTimer = window.setTimeout(() => {
+          retryTimer = null;
+          connect();
+        }, delayMs);
+      };
 
-      source.onmessage = handleMessage;
-      source.addEventListener("chapter_update", handleChapterUpdate);
-      source.onerror = handleError;
+      const handleError = () => {
+        scheduleReconnect();
+      };
+
+      const connect = () => {
+        try {
+          source = new EventSource(streamUrl, { withCredentials: true });
+        } catch (error) {
+          console.warn(
+            "[ConversionClient] Failed to establish SSE connection:",
+            error,
+          );
+          scheduleReconnect();
+          return;
+        }
+
+        source.onmessage = handleMessage;
+        source.addEventListener("chapter_update", handleChapterUpdate);
+        source.onerror = handleError;
+      };
 
       if (signal) {
         signal.addEventListener("abort", handleAbort, { once: true });
       }
+
+      connect();
     });
   }
 }
