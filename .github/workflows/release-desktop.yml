@@ -239,6 +239,8 @@ jobs:
       - name: Stage binaries for Flatpak
         if: matrix.os == 'ubuntu-22.04'
         shell: bash
+        env:
+          TRIPLE: ${{ matrix.rust-target }}
         run: |
           mkdir -p flatpak/flatpak-stage
           cp desktop/src-tauri/target/release/epub-to-mp3 flatpak/flatpak-stage/
