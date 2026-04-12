@@ -657,23 +657,28 @@ def test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir(tmp_path,
     stream_dir = output_book_dir / "streams"
     stream_dir.mkdir(parents=True, exist_ok=True)
 
-    manifest_path = stream_dir / "chapter_0001_manifest.json"
-    chunk_path = stream_dir / "chapter_0001_chunk_0000.mp3"
+    manifest_path = stream_dir / "index.json"
+    chunk_path = stream_dir / "stream_chunk_1.mp3"
     chunk_path.write_bytes(MINIMAL_MP3)
     manifest_path.write_text(
         json.dumps(
             {
                 "jobId": job_id,
-                "chapterIndex": 1,
-                "chunks": [
-                    {
-                        "index": 0,
-                        "file": chunk_path.name,
-                        "url": f"/api/streams/{job_id}/chapters/1/chunks/0",
+                "chapters": {
+                    "1": {
+                        "chapterIndex": 1,
+                        "chunks": [
+                            {
+                                "id": "0",
+                                "index": 0,
+                                "file": chunk_path.name,
+                                "url": f"/api/streams/{job_id}/chapters/1/chunks/0",
+                            }
+                        ],
+                        "updatedAt": 1.0,
+                        "baseUrl": f"/api/streams/{job_id}/chapters/1",
                     }
-                ],
-                "updatedAt": 1.0,
-                "baseUrl": f"/api/streams/{job_id}/chapters/1",
+                },
             }
         ),
         encoding="utf-8",

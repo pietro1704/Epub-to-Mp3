@@ -532,13 +532,31 @@ def _job_stream_dir(job_id: str, ensure: bool = False) -> Path:
     return target
 
 
-def _chapter_chunk_prefix(chapter_index: int) -> str:
-    return f"chapter_{int(chapter_index):04d}_chunk_"
-
-
-def _chapter_manifest_path(job_id: str, chapter_index: int, ensure: bool = False) -> Path:
+def _stream_index_path(job_id: str, ensure: bool = False) -> Path:
     stream_dir = _job_stream_dir(job_id, ensure=ensure)
-    return stream_dir / f"chapter_{int(chapter_index):04d}_manifest.json"
+    return stream_dir / "index.json"
+
+
+def _load_stream_index(job_id: str) -> dict:
+    index_path = _stream_index_path(job_id, ensure=False)
+    if not index_path.exists():
+        return {"chapters": {}}
+    try:
+        payload = json.loads(index_path.read_text(encoding="utf-8"))
+    except Exception:
+        return {"chapters": {}}
+    if not isinstance(payload, dict):
+        return {"chapters": {}}
+    chapters = payload.get("chapters")
+    if not isinstance(chapters, dict):
+        payload["chapters"] = {}
+    return payload
+
+
+def _save_stream_index(job_id: str, payload: dict) -> None:
+    index_path = _stream_index_path(job_id, ensure=True)
+    payload.setdefault("chapters", {})
+    index_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _load_cover_cache() -> Dict[str, dict]:
@@ -2508,50 +2526,18 @@ async def download_output(job_id: str, filename: str) -> FileResponse:
 async def stream_manifest(job_id: str, chapter_index: int) -> dict:
     """Return available chunk list for a chapter."""
     _validate_job_id(job_id)
-    stream_dir = _job_stream_dir(job_id, ensure=False)
-    manifest_path = _chapter_manifest_path(job_id, chapter_index, ensure=False)
-    chunk_prefix = _chapter_chunk_prefix(chapter_index)
-    chunks: list[dict] = []
-
-    if manifest_path.exists():
-        try:
-            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
-            chunks = payload.get("chunks") or []
-        except Exception:
-            chunks = []
-    else:
-        # Build manifest from files if no manifest exists
-        if stream_dir.exists():
-            for path in sorted(stream_dir.glob(f"{chunk_prefix}*")):
-                if path.is_file():
-                    name = path.name
-                    try:
-                        idx_text = name.removeprefix(chunk_prefix).split(".")[0]
-                        idx_val = int(idx_text)
-                    except Exception:
-                        idx_val = None
-                    chunks.append(
-                        {
-                            "index": idx_val if idx_val is not None else name,
-                            "file": name,
-                            "url": f"/api/streams/{job_id}/chapters/{chapter_index}/chunks/{idx_val if idx_val is not None else name}",
-                        }
-                    )
-
+    index_payload = _load_stream_index(job_id)
+    chapter_key = str(int(chapter_index))
+    chapter_payload = index_payload.get("chapters", {}).get(chapter_key) or {}
     base_url = f"/api/streams/{job_id}/chapters/{chapter_index}"
-
-    def _sort_key(item: dict) -> int:
-        try:
-            return int(item.get("index"))
-        except Exception:
-            return 0
+    chunks = chapter_payload.get("chunks") or []
 
     return {
         "jobId": job_id,
         "chapterIndex": int(chapter_index),
         "baseUrl": base_url,
-        "chunks": sorted(chunks, key=_sort_key),
-        "updatedAt": time.time(),
+        "chunks": chunks,
+        "updatedAt": chapter_payload.get("updatedAt") or time.time(),
     }
 
 
@@ -2567,22 +2553,18 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     if not stream_dir.exists():
         raise HTTPException(status_code=404, detail="Chunk not found")
 
-    chunk_prefix = _chapter_chunk_prefix(chapter_index)
-    candidates = []
-    try:
-        numeric = int(chunk_id)
-        candidates.append(stream_dir / f"{chunk_prefix}{numeric:04d}.mp3")
-        candidates.append(stream_dir / f"{chunk_prefix}{numeric:04d}.wav")
-    except Exception:
-        pass
-    candidates.append(stream_dir / f"{chunk_prefix}{chunk_id}.mp3")
-    candidates.append(stream_dir / f"{chunk_prefix}{chunk_id}")
-
-    file_path = next(
-        (p.resolve() for p in candidates if p.exists() and p.resolve().is_relative_to(stream_dir)),
+    index_payload = _load_stream_index(job_id)
+    chapter_payload = index_payload.get("chapters", {}).get(str(int(chapter_index))) or {}
+    chunk_entry = next(
+        (item for item in chapter_payload.get("chunks") or [] if str(item.get("id")) == chunk_id),
         None,
     )
-    if file_path is None or not file_path.exists():
+    if chunk_entry is None:
+        raise HTTPException(status_code=404, detail="Chunk not found")
+
+    chunk_name = _safe_leaf_name(str(chunk_entry.get("file") or ""), field_name="chunk")
+    file_path = _resolve_relative_path_within_root(stream_dir, chunk_name, must_exist=False)
+    if not file_path.exists():
         raise HTTPException(status_code=404, detail="Chunk not found")
 
     return FileResponse(path=file_path, media_type=_guess_media_type(file_path.name))
@@ -4336,40 +4318,46 @@ async def process_conversion(job_id: str) -> None:
 
                 # Streaming: use a single per-job directory with chapter-prefixed files
                 stream_dir = _job_stream_dir(job_id, ensure=True)
-                chunk_prefix = _chapter_chunk_prefix(idx)
+                stream_index = _load_stream_index(job_id)
+                chapter_key = str(idx)
                 try:
-                    # Clear previous chunks for this chapter
-                    for old_file in stream_dir.glob(f"{chunk_prefix}*.mp3"):
-                        old_file.unlink(missing_ok=True)
-                    for old_file in stream_dir.glob(f"{chunk_prefix}*.wav"):
-                        old_file.unlink(missing_ok=True)
-                    manifest_path = _chapter_manifest_path(job_id, idx, ensure=True)
-                    if manifest_path.exists():
-                        manifest_path.unlink(missing_ok=True)
+                    previous_chapter = stream_index.get("chapters", {}).get(chapter_key) or {}
+                    for chunk in previous_chapter.get("chunks") or []:
+                        old_name = _safe_leaf_name(str(chunk.get("file") or ""), field_name="chunk")
+                        old_path = _resolve_relative_path_within_root(
+                            stream_dir, old_name, must_exist=False
+                        )
+                        old_path.unlink(missing_ok=True)
+                    stream_index.setdefault("chapters", {}).pop(chapter_key, None)
+                    _save_stream_index(job_id, stream_index)
                 except Exception:
                     pass
 
                 # In-memory manifest — avoids a read-modify-write per segment
                 _manifest_chunks: dict[int, dict] = {}
-                _manifest_path = _chapter_manifest_path(job_id, idx, ensure=True)
 
                 def _chunk_callback(
                     segment_index: int, temp_path: Path, segment_text: str = ""
                 ) -> None:
                     """Save synthesized segment for streaming playback."""
                     try:
-                        target = stream_dir / f"{chunk_prefix}{segment_index:04d}{temp_path.suffix}"
+                        chunk_id = str(segment_index)
+                        target_name = f"stream_{uuid.uuid4().hex}{temp_path.suffix.lower()}"
+                        target = _resolve_relative_path_within_root(
+                            stream_dir, target_name, must_exist=False
+                        )
                         shutil.copy2(temp_path, target)
                         chunk_entry: dict = {
+                            "id": chunk_id,
                             "index": segment_index,
                             "file": target.name,
-                            "url": f"/api/streams/{job_id}/chapters/{idx}/chunks/{segment_index}",
+                            "url": f"/api/streams/{job_id}/chapters/{idx}/chunks/{chunk_id}",
                         }
                         if segment_text:
                             chunk_entry["text"] = segment_text
                         _manifest_chunks[segment_index] = chunk_entry
-                        manifest = {
-                            "jobId": job_id,
+                        stream_index.setdefault("jobId", job_id)
+                        stream_index.setdefault("chapters", {})[chapter_key] = {
                             "chapterIndex": idx,
                             "chunks": sorted(
                                 _manifest_chunks.values(), key=lambda x: x.get("index", 0)
@@ -4377,9 +4365,7 @@ async def process_conversion(job_id: str) -> None:
                             "updatedAt": time.time(),
                             "baseUrl": f"/api/streams/{job_id}/chapters/{idx}",
                         }
-                        _manifest_path.write_text(
-                            json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-                        )
+                        _save_stream_index(job_id, stream_index)
                     except Exception as exc:
                         logger.debug("Chunk callback error for segment %d: %s", segment_index, exc)
 
