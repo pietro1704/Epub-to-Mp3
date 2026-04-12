@@ -22,6 +22,9 @@ interface StreamingAudioPlayerProps {
 }
 
 const POLL_INTERVAL_MS = 1500;
+const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2] as const;
+const SPEED_KEY = "epub-to-mp3:player-speed";
+const positionKey = (id: string) => `epub-to-mp3:player-pos:${id}`;
 
 export default function StreamingAudioPlayer({
   jobId,
@@ -49,6 +52,17 @@ export default function StreamingAudioPlayer({
   const pollTimeoutRef = useRef<number | null>(null);
   // Incremented on stop to cancel in-flight pollForChunk callbacks.
   const pollGenerationRef = useRef<number>(0);
+  const [playbackRate, setPlaybackRate] = useState<number>(() => {
+    try {
+      const saved = window.localStorage.getItem(SPEED_KEY);
+      const parsed = saved !== null ? Number(saved) : NaN;
+      return (PLAYBACK_RATES as ReadonlyArray<number>).includes(parsed)
+        ? parsed
+        : 1;
+    } catch {
+      return 1;
+    }
+  });
 
   // Get sorted chapters
   const sortedChapters = useMemo(() => {
@@ -90,6 +104,38 @@ export default function StreamingAudioPlayer({
       // Best effort only
     }
   }, [bookTitle, bookAuthor, coverUrl, currentChapterLabel]);
+
+  // Persist playback rate globally.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SPEED_KEY, String(playbackRate));
+    } catch {
+      // Persistence is optional.
+    }
+  }, [playbackRate]);
+
+  // Apply playback rate to the audio element whenever it changes or a new src loads.
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    audio.playbackRate = playbackRate;
+  }, [playbackRate, src]);
+
+  // Persist current position (chapter + segment) per job so it can be restored.
+  useEffect(() => {
+    if (!started || !jobId) return;
+    try {
+      window.localStorage.setItem(
+        positionKey(jobId),
+        JSON.stringify({
+          chapterIndex: currentChapter,
+          segmentIndex: currentSegment,
+        }),
+      );
+    } catch {
+      // Persistence is optional.
+    }
+  }, [started, jobId, currentChapter, currentSegment]);
 
   // Notify parent about current playing segment
   useEffect(() => {
@@ -220,8 +266,40 @@ export default function StreamingAudioPlayer({
     setError(null);
     setWaiting(true);
     setStarted(true);
-    setCurrentChapter(sortedChapters[0]?.index ?? 0);
+
+    let startChapter = sortedChapters[0]?.index ?? 0;
+    let startSegment = 0;
+    if (jobId) {
+      try {
+        const saved = window.localStorage.getItem(positionKey(jobId));
+        if (saved) {
+          const pos = JSON.parse(saved) as {
+            chapterIndex: number;
+            segmentIndex: number;
+          };
+          if (
+            typeof pos.chapterIndex === "number" &&
+            typeof pos.segmentIndex === "number" &&
+            sortedChapters.some((ch) => ch.index === pos.chapterIndex)
+          ) {
+            startChapter = pos.chapterIndex;
+            startSegment = pos.segmentIndex;
+          }
+        }
+      } catch {
+        // Ignore invalid saved position.
+      }
+    }
+    setCurrentChapter(startChapter);
+    setCurrentSegment(startSegment);
+  };
+
+  const handleChapterJump = (chapterIndex: number) => {
+    setCurrentChapter(chapterIndex);
     setCurrentSegment(0);
+    setManifest(null);
+    setSrc(null);
+    setCurrentSegmentText("");
   };
 
   const handleStop = () => {
@@ -356,6 +434,8 @@ export default function StreamingAudioPlayer({
   const nextChapterLabel =
     locale === "pt" ? "Próximo capítulo" : "Next chapter";
   const stopLabel = locale === "pt" ? "Parar" : "Stop";
+  const speedLabel = locale === "pt" ? "Velocidade" : "Speed";
+  const jumpLabel = locale === "pt" ? "Ir para" : "Jump to";
   const openReaderHint =
     locale === "pt"
       ? "Use o leitor para começar a reprodução."
@@ -417,6 +497,32 @@ export default function StreamingAudioPlayer({
             >
               {nextChapterLabel}
             </button>
+            <label className="streaming-player__speed">
+              <span>{speedLabel}</span>
+              <select
+                value={playbackRate}
+                onChange={(e) => setPlaybackRate(Number(e.target.value))}
+              >
+                {PLAYBACK_RATES.map((rate) => (
+                  <option key={rate} value={rate}>
+                    {rate}x
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="streaming-player__jump">
+              <span>{jumpLabel}</span>
+              <select
+                value={currentChapter}
+                onChange={(e) => handleChapterJump(Number(e.target.value))}
+              >
+                {sortedChapters.map((ch) => (
+                  <option key={ch.index} value={ch.index}>
+                    {ch.index}. {ch.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               className="button-secondary"

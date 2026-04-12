@@ -359,6 +359,9 @@ export interface StatusText {
   readerThemeMist: string;
   readerThemeInk: string;
   readerFontSizeLabel: string;
+  readerFontFamilyLabel: string;
+  readerFontFamilySerif: string;
+  readerFontFamilySans: string;
   readerLineHeightLabel: string;
   readerWidthLabel: string;
   readerNowReading: string;
@@ -1026,6 +1029,9 @@ export const translations: Record<Locale, Translations> = {
       readerThemeMist: "Bruma",
       readerThemeInk: "Tinta",
       readerFontSizeLabel: "Tamanho da fonte",
+      readerFontFamilyLabel: "Fonte",
+      readerFontFamilySerif: "Serifa",
+      readerFontFamilySans: "Sem serifa",
       readerLineHeightLabel: "Espaçamento",
       readerWidthLabel: "Largura da coluna",
       readerNowReading: "Trecho em leitura",
@@ -1707,6 +1713,9 @@ export const translations: Record<Locale, Translations> = {
       readerThemeMist: "Mist",
       readerThemeInk: "Ink",
       readerFontSizeLabel: "Font size",
+      readerFontFamilyLabel: "Font",
+      readerFontFamilySerif: "Serif",
+      readerFontFamilySans: "Sans-serif",
       readerLineHeightLabel: "Line height",
       readerWidthLabel: "Column width",
       readerNowReading: "Now reading",

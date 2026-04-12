@@ -4848,6 +4848,30 @@ select {
   font-size: 0.9rem;
 }
 
+.streaming-player__speed,
+.streaming-player__jump {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.84rem;
+  color: var(--text-secondary);
+}
+
+.streaming-player__speed select,
+.streaming-player__jump select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.84rem;
+  padding: 0.2rem 0.4rem;
+  cursor: pointer;
+}
+
+.streaming-player__jump select {
+  max-width: 12rem;
+}
+
 .streaming-player__text {
   margin-top: 0.75rem;
   padding: 0.75rem;

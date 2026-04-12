@@ -26,6 +26,7 @@ interface EbookReaderPanelProps {
 }
 
 type ReaderTheme = "paper" | "mist" | "ink";
+type ReaderFontFamily = "serif" | "sans";
 
 interface ReaderPrefs {
   fontScale: number;
@@ -33,6 +34,7 @@ interface ReaderPrefs {
   widthRem: number;
   theme: ReaderTheme;
   followAudio: boolean;
+  fontFamily: ReaderFontFamily;
 }
 
 const PREFS_KEY = "epub-to-mp3:reader-prefs";
@@ -42,12 +44,13 @@ const DEFAULT_PREFS: ReaderPrefs = {
   widthRem: 48,
   theme: "paper",
   followAudio: true,
+  fontFamily: "serif",
 };
 
 const READER_CONTENT_BASE_CSS = `
   .reader-root {
     color: var(--reader-text);
-    font-family: "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Georgia", serif;
+    font-family: var(--reader-font-family, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", "Georgia", serif);
     font-size: calc(1rem * var(--reader-font-scale, 1.05));
     line-height: var(--reader-line-height, 1.75);
     text-rendering: optimizeLegibility;
@@ -316,6 +319,31 @@ export default function EbookReaderPanel({
     setPageIndex(0);
   }, [selectedChapterIndex]);
 
+  // Keyboard shortcuts: ← / → to flip pages (only when no text input is focused).
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      const target = event.target as HTMLElement;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "SELECT"
+      ) {
+        return;
+      }
+      event.preventDefault();
+      if (event.key === "ArrowLeft") {
+        setPageIndex((current) => Math.max(0, current - 1));
+      } else {
+        setPageIndex((current) =>
+          Math.min(readerPages.length - 1, current + 1),
+        );
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [readerPages.length]);
+
   useEffect(() => {
     const nextIndex = readerPages.findIndex((page) => page.hasAudio);
     if (nextIndex >= 0 && nextIndex !== pageIndex) {
@@ -457,6 +485,22 @@ export default function EbookReaderPanel({
             <option value="paper">{t.status.readerThemePaper}</option>
             <option value="mist">{t.status.readerThemeMist}</option>
             <option value="ink">{t.status.readerThemeInk}</option>
+          </select>
+        </label>
+
+        <label className="ebook-reader__control">
+          <span>{t.status.readerFontFamilyLabel}</span>
+          <select
+            value={prefs.fontFamily}
+            onChange={(event) =>
+              setPrefs((current) => ({
+                ...current,
+                fontFamily: event.target.value as ReaderFontFamily,
+              }))
+            }
+          >
+            <option value="serif">{t.status.readerFontFamilySerif}</option>
+            <option value="sans">{t.status.readerFontFamilySans}</option>
           </select>
         </label>
 
@@ -651,6 +695,10 @@ export default function EbookReaderPanel({
                     "--reader-font-scale": prefs.fontScale,
                     "--reader-line-height": prefs.lineHeight,
                     "--reader-width": `${prefs.widthRem}rem`,
+                    "--reader-font-family":
+                      prefs.fontFamily === "sans"
+                        ? '"Helvetica Neue", Arial, sans-serif'
+                        : '"Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif',
                   } as CSSProperties
                 }
               >
