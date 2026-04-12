@@ -47,6 +47,8 @@ export default function StreamingAudioPlayer({
   const [src, setSrc] = useState<string | null>(null);
   const [currentSegmentText, setCurrentSegmentText] = useState<string>("");
   const pollTimeoutRef = useRef<number | null>(null);
+  // Incremented on stop to cancel in-flight pollForChunk callbacks.
+  const pollGenerationRef = useRef<number>(0);
 
   // Get sorted chapters
   const sortedChapters = useMemo(() => {
@@ -125,12 +127,16 @@ export default function StreamingAudioPlayer({
   // Poll for next chunk
   const pollForChunk = useCallback(async () => {
     if (!jobId || !started) return;
+    const generation = pollGenerationRef.current;
 
     try {
       const data = await conversionClient.getChapterManifest?.(
         jobId,
         currentChapter,
       );
+
+      // Discard result if stop was called while fetch was in flight.
+      if (pollGenerationRef.current !== generation) return;
 
       if (!data) {
         setWaiting(true);
@@ -166,6 +172,7 @@ export default function StreamingAudioPlayer({
         );
       }
     } catch (fetchErr) {
+      if (pollGenerationRef.current !== generation) return;
       console.warn("[StreamingAudio] manifest fetch failed", fetchErr);
       setWaiting(true);
       pollTimeoutRef.current = window.setTimeout(
@@ -218,6 +225,7 @@ export default function StreamingAudioPlayer({
   };
 
   const handleStop = () => {
+    pollGenerationRef.current += 1;
     if (pollTimeoutRef.current) {
       window.clearTimeout(pollTimeoutRef.current);
       pollTimeoutRef.current = null;

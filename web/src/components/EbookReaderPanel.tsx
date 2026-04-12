@@ -171,6 +171,7 @@ export default function EbookReaderPanel({
   // without persisting the change. Clears automatically when audio advances to a new chapter.
   const [followPaused, setFollowPaused] = useState(false);
   const articleHostRef = useRef<HTMLDivElement | null>(null);
+  const articleShellRef = useRef<HTMLDivElement | null>(null);
   const deferredSearch = useDeferredValue(search.trim());
 
   useEffect(() => {
@@ -334,11 +335,11 @@ export default function EbookReaderPanel({
       <style>${READER_CONTENT_BASE_CSS}\n${renderedCss}</style>
       <div class="reader-root">${currentPage?.html || "<p></p>"}</div>
     `;
-    // Scroll the article shell back to the top whenever page content changes.
-    const shell = host.closest(".ebook-reader__article");
-    if (shell) {
-      shell.scrollTop = 0;
-    }
+    // Scroll the article shell into view at the top whenever page content changes.
+    safeScrollIntoView(articleShellRef.current, {
+      behavior: "instant",
+      block: "start",
+    });
   }, [currentPage?.html, renderedCss]);
 
   const resolvedTitle =
@@ -584,7 +585,7 @@ export default function EbookReaderPanel({
           )}
         </aside>
 
-        <div className="ebook-reader__article-shell">
+        <div ref={articleShellRef} className="ebook-reader__article-shell">
           {selectedChapter ? (
             <>
               <div className="ebook-reader__article-header">
