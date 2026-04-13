@@ -1,6 +1,129 @@
 # Changelog
 
+## [0.2.1] — 2026-04-13
+
+### Bug Fixes
+
+- Correct scroll-to-top and race condition in streaming player ([64d281f](https://github.com/pietro1704/Epub-to-Mp3/commit/64d281f99b48f8e76f881956e36c247a17580e7d))
+- Three reader panel bugs ([f16d176](https://github.com/pietro1704/Epub-to-Mp3/commit/f16d17664db14e88fb104c26bb495869b359af18))
+- Resolve chunk URLs to absolute in desktop + add Stop button to streaming player ([6b65148](https://github.com/pietro1704/Epub-to-Mp3/commit/6b65148e6a8fb3941dfb04b5613738cda0e5e7c7))
+- Auto-restart sidecar on crash, add Edge monolingual fallback to server, fix PT strings ([37d1f44](https://github.com/pietro1704/Epub-to-Mp3/commit/37d1f443183970d2de2ba11b75f01e384d55d23a))
+- Patch 35 CVEs and fix android nightly race condition ([a2f9f44](https://github.com/pietro1704/Epub-to-Mp3/commit/a2f9f44f7b71c5b0a8f4a4ba7036800ec4808457))
+- Move Coqui TTS to requirements-coqui.txt (fixes Automatic Dependency Submission) ([80a021e](https://github.com/pietro1704/Epub-to-Mp3/commit/80a021e02cffa4e99c09cc5ad94c16e18c0a5cb2))
+- Resolve all CodeQL security alerts ([b9210c0](https://github.com/pietro1704/Epub-to-Mp3/commit/b9210c04a2526b2d0392888c78b239b2b92a62c8))
+- Correct cargo directory to /desktop/src-tauri ([5faef15](https://github.com/pietro1704/Epub-to-Mp3/commit/5faef1568670bb7b1f939a4914ba30b4f359cea9))
+- Remove dangling YAML block after 'if: false' in homebrew job ([c101b2b](https://github.com/pietro1704/Epub-to-Mp3/commit/c101b2b3f22ffb4d76edcf837966f39b69d24860))
+- Disable Homebrew cask update job (HOMEBREW_TAP_TOKEN not configured) ([3f3f9bf](https://github.com/pietro1704/Epub-to-Mp3/commit/3f3f9bfbcee202efa9999902575dd1e2058f0568))
+- Use 'python3 -m PyInstaller' in snapcraft build (pyinstaller not in PATH after pip install) ([82df100](https://github.com/pietro1704/Epub-to-Mp3/commit/82df1001532978a7f39ef9badef14595d0ba5752))
+- Replace override-install with override-build in snapcraft (removed in snapcraft 8) ([e08ebc8](https://github.com/pietro1704/Epub-to-Mp3/commit/e08ebc8979ed0bc573a3c44205a7d5c90eb8e1d2))
+- Remove architectures field from snapcraft.yaml (snapcraft 8 rejects it for core22) ([a4eb91f](https://github.com/pietro1704/Epub-to-Mp3/commit/a4eb91f20104b66e3159c8ee7a15e46606d1c829))
+- Use list-of-strings format for architectures in core22 snapcraft ([36d61aa](https://github.com/pietro1704/Epub-to-Mp3/commit/36d61aa6258b23fcdc6f45c445e3ab00d74dbc1c))
+- Use 'platforms' instead of 'architectures' for snapcraft 8+ compatibility ([fad575e](https://github.com/pietro1704/Epub-to-Mp3/commit/fad575e130f9c1beb463e6d4787fb6961e01b03c))
+- Skip metainfo install in flatpak to avoid appstream-compose sandbox failure ([0272be8](https://github.com/pietro1704/Epub-to-Mp3/commit/0272be8ebbefaac9d0d6b6ce1a18d8830bc51d79))
+- Install appstream package on Linux to provide appstream-compose for flatpak-builder ([f03bf75](https://github.com/pietro1704/Epub-to-Mp3/commit/f03bf7586d3e0fd0bfd0c6cd3d03d241f44f0e0e))
+- Stage flatpak binaries into flatpak/flatpak-stage (relative to manifest) ([e11b882](https://github.com/pietro1704/Epub-to-Mp3/commit/e11b882d394acd66f322366ecf8faa60fdce14d6))
+- Pre-install flatpak SDK as root; resolve SPM packages before iOS archive ([f29ce00](https://github.com/pietro1704/Epub-to-Mp3/commit/f29ce00c984f464b6d957510a00148ee63c1d2c0))
+- IOS xcodeproj, Linux flatpak user-remote, downloads fallback message ([0558917](https://github.com/pietro1704/Epub-to-Mp3/commit/055891779bddf0c0fbc6f761f2ff14dbd1bc30f0))
+- Use blob URL for downloads in Tauri (WKWebView ignores download attr on http://) ([d7fb0f8](https://github.com/pietro1704/Epub-to-Mp3/commit/d7fb0f87fc4485f44c05d12ca89d3421523c0e12))
+- Permanent upload cache + auto-retry expired upload on desktop ([efddda0](https://github.com/pietro1704/Epub-to-Mp3/commit/efddda03c4497b1eb9470d6e2d03f42c77cba1e9))
+- Install flatpak-builder and xvfb before Flatpak build step ([25ca4ef](https://github.com/pietro1704/Epub-to-Mp3/commit/25ca4effcbf3b3f0dd2e9b8844133e1824a89858))
+- Remove pod install — Capacitor 8 uses Swift Package Manager ([bb15231](https://github.com/pietro1704/Epub-to-Mp3/commit/bb152313a89df837c724b71b6f245bcbc4c9672d))
+- Notify API online when sidecar is ready; fix duplicate /api in URL ([7dce10f](https://github.com/pietro1704/Epub-to-Mp3/commit/7dce10f68b73cfa5f479912901aad1d77201f5ca))
+- Regenerate package-lock.json to fix npm ci (missing transitive deps) ([d575e8b](https://github.com/pietro1704/Epub-to-Mp3/commit/d575e8b84f0e5b95ecd8b69062c6fe0cec547a53))
+- Kill sidecar by port before reinstalling; remove npm ci --silent in release CI ([8f3f353](https://github.com/pietro1704/Epub-to-Mp3/commit/8f3f3539843adbf40917c84090239b6aacdde11b))
+- Kill existing app before relaunching; surface invoke errors; add aiofiles to desktop deps ([073e0d9](https://github.com/pietro1704/Epub-to-Mp3/commit/073e0d956eae08d655a3b86bbc64abdd0cf2a68c))
+- Show real startup progress logs in desktop panel ([06729f9](https://github.com/pietro1704/Epub-to-Mp3/commit/06729f995c28ebcb75bf6d42c7bb6ce205c0fc7b))
+- Downgrade eslint to ^9 (react-hooks plugin incompatible with v10); show buffered startup logs ([e14f726](https://github.com/pietro1704/Epub-to-Mp3/commit/e14f726493e0f4ea5f2eb9b3b7a6407540b31cbb))
+- Reuse existing server when port 47860 is already in use; bump numba to 0.65.0 ([3a1848d](https://github.com/pietro1704/Epub-to-Mp3/commit/3a1848dae9d0438edc8c3da6ea3f5adbdb43e126))
+- Desktop:run:mac removes quarantine + no duplicate run on build ([2dbe8d4](https://github.com/pietro1704/Epub-to-Mp3/commit/2dbe8d427789dac4d75661d6aa562a26ef488dd7))
+- Desktop startup — 5min timeout for ffmpeg download + loading state UI ([9c1c16c](https://github.com/pietro1704/Epub-to-Mp3/commit/9c1c16c5ce37a0e6610b6e15b0cc5be1485bad80))
+- CORS for Tauri webview + auto-release duplicate tag guard ([d862629](https://github.com/pietro1704/Epub-to-Mp3/commit/d8626294c8f603698fe5e583a803cdb5444f34ae))
+- Desktop build — updater signing key + Tauri v2 API fixes ([e7b0b99](https://github.com/pietro1704/Epub-to-Mp3/commit/e7b0b9915afc6636b66f85fc0a7a8154b26ee45b))
+
+### CI
+
+- Add concurrency groups to cancel stale runs on new push ([7600c67](https://github.com/pietro1704/Epub-to-Mp3/commit/7600c67d83726a9b72d34449c41910a08e8ba0da))
+- Bump the actions group with 2 updates (#48) ([272f5c3](https://github.com/pietro1704/Epub-to-Mp3/commit/272f5c3a88299b674fd698240b56258a29d60932))
+- Skip major version bumps in auto-merge (require manual review) ([45e2e89](https://github.com/pietro1704/Epub-to-Mp3/commit/45e2e8946e3a46f740ace58dd1be936cde989ed1))
+- Harden dependabot — daily scans, Docker + Cargo ecosystems, grouped PRs ([7e0d2de](https://github.com/pietro1704/Epub-to-Mp3/commit/7e0d2de17eea27ff7a60d45ad48b5e666cea6628))
+- Remove deploy-failure issue creation — failed run is sufficient signal ([4906df3](https://github.com/pietro1704/Epub-to-Mp3/commit/4906df33d4c50f92fa4cc129412a829f62285926))
+- Parallelize Python and Web jobs, add pip/npm cache ([a6e05a0](https://github.com/pietro1704/Epub-to-Mp3/commit/a6e05a0a42581ca2473c70634b5d7e0f69ecb5b8))
+- Upgrade actions/cache from v4 to v5 (Node 24 native) ([bcda6ab](https://github.com/pietro1704/Epub-to-Mp3/commit/bcda6ab0f2208b509435209f09f069103abe26a0))
+- Bump actions/github-script from 7 to 8 (#24) ([95f0f16](https://github.com/pietro1704/Epub-to-Mp3/commit/95f0f16914c93bd50bb31b3881727e6d8e9432d0))
+- Bump actions/checkout from 5 to 6 (#33) ([3a50bed](https://github.com/pietro1704/Epub-to-Mp3/commit/3a50bed11133f8e4e28f3c513b1685d1476877b2))
+- Auto-merge dependabot PRs when CI passes (approve + squash + admin) ([8c0c737](https://github.com/pietro1704/Epub-to-Mp3/commit/8c0c737488a3480d0c033589f3947b32094a48e1))
+- Bump actions/upload-artifact from 4 to 7 (#28) ([6c51629](https://github.com/pietro1704/Epub-to-Mp3/commit/6c5162957438cf293db8210683bec005c6692347))
+- Bump actions/cache from 4 to 5 (#25) ([4de8fa0](https://github.com/pietro1704/Epub-to-Mp3/commit/4de8fa0aa9bc8e28e9b478d7745b6f38d7780f94))
+- Auto-merge dependabot patch/minor PRs + branch protection on master ([aa66167](https://github.com/pietro1704/Epub-to-Mp3/commit/aa66167dd973cc8488c7cfa7462bf60d26b6c61f))
+
+### Changes
+
+- Release on every push with versioned tags ([f549ed7](https://github.com/pietro1704/Epub-to-Mp3/commit/f549ed76628b3fc71158aff9cfc4a1ed60fe24fa))
+- Add desktop restart coverage to CI (#56)
+
+* Add desktop restart coverage to CI
+
+* Stub missing sidecar in desktop tests ([70b4ad3](https://github.com/pietro1704/Epub-to-Mp3/commit/70b4ad33793c8b6ffd1b3d7c90634f1ac56ffda2))
+- Index streamed chunks by manifest ([98ca275](https://github.com/pietro1704/Epub-to-Mp3/commit/98ca2751f5b31f37ff97976bcc3d91c4571d7f6f))
+- Flatten streamed chunk storage paths ([85e78cb](https://github.com/pietro1704/Epub-to-Mp3/commit/85e78cb26288a7cae26fb8feb94f4a69d8da93ad))
+- Avoid user-derived nested output chunk paths ([f8b0133](https://github.com/pietro1704/Epub-to-Mp3/commit/f8b013336444b823617ed9fc2e84a0a352569cc3))
+- Avoid direct output path joins in download endpoint ([9e81b35](https://github.com/pietro1704/Epub-to-Mp3/commit/9e81b3544360c5ae1397ad038c8789108aed5866))
+- Harden path guards and Tauri restart coverage ([7badb90](https://github.com/pietro1704/Epub-to-Mp3/commit/7badb900e2b76be79a31f9a9cb3bec5cd358168a))
+- Fix Flatpak sidecar staging in release workflow ([5861b38](https://github.com/pietro1704/Epub-to-Mp3/commit/5861b380f7ea855f94aefc1868e7692ea9c6ad88))
+- Harden recovery flow and repo guardrails ([6d03326](https://github.com/pietro1704/Epub-to-Mp3/commit/6d033268061c31bc7ed73ba9b8de8ccbd561b68f))
+- Finalize desktop and web recovery fixes ([4b1c929](https://github.com/pietro1704/Epub-to-Mp3/commit/4b1c929f19d8f3cf207357fa7e2dc92dac5eb25f))
+- Harden path handling and workflow permissions ([c1bbf88](https://github.com/pietro1704/Epub-to-Mp3/commit/c1bbf88c66762f77820210c17cb97d904755eebe))
+- Update claude md ([61d7de8](https://github.com/pietro1704/Epub-to-Mp3/commit/61d7de88030bd182b85c35f779b9d9fb75ba328a))
+- Merge pull request #37 from pietro1704/dependabot/pip/pandas-gte-1.5.0-and-lt-4.0.0 ([575f6a7](https://github.com/pietro1704/Epub-to-Mp3/commit/575f6a70fcaa4a5b2fdda690b61a62920b4897f2))
+
+### Chores
+
+- Bump terser from 5.46.0 to 5.46.1 in /web (#55) ([bac025a](https://github.com/pietro1704/Epub-to-Mp3/commit/bac025a64083e446b2fcb4916c1bbff970c7337a))
+- Bump the npm-non-security group in /web with 2 updates (#41) ([c345712](https://github.com/pietro1704/Epub-to-Mp3/commit/c34571211fc4a8231d80de281d9720597ffc0254))
+- Bump @typescript-eslint/eslint-plugin in /web (#44) ([4f34fd1](https://github.com/pietro1704/Epub-to-Mp3/commit/4f34fd1072b05760924c01959a994c27fcc63f47))
+- Update fsspec requirement (#47) ([bc3bbf0](https://github.com/pietro1704/Epub-to-Mp3/commit/bc3bbf0a36d30339a832e771bc57e509d696fa27))
+- Bump baseline-browser-mapping in /web (#49) ([72b914c](https://github.com/pietro1704/Epub-to-Mp3/commit/72b914cde5775dd0f3e516e7a207f26dddb401cb))
+- Bump prettier from 3.8.1 to 3.8.2 in /web (#51) ([24cd0bd](https://github.com/pietro1704/Epub-to-Mp3/commit/24cd0bd8dd5cd7f373d10eea8911cb1d12349aba))
+- Bump vitest from 4.0.18 to 4.1.4 in /web (#52) ([7276197](https://github.com/pietro1704/Epub-to-Mp3/commit/72761979a305ecba44565d5fe5a1511c81df4e2c))
+- Bump the cargo-non-security group (#54) ([5698e22](https://github.com/pietro1704/Epub-to-Mp3/commit/5698e2253656df06a91bf66f693f7ec2af75991e))
+- Align capacitor to v8 + skip DMG on local mac build ([79c14ec](https://github.com/pietro1704/Epub-to-Mp3/commit/79c14ec61bc723b299441bcae3ae462cfefec985))
+- Merge dependabot updates + packaging/globals bumps ([9662c8f](https://github.com/pietro1704/Epub-to-Mp3/commit/9662c8fc4f2868e16e7f24ff221f43f3b2501178))
+- Bump @capacitor/android from 7.6.1 to 8.3.0 in /web (#36) ([7cc90ac](https://github.com/pietro1704/Epub-to-Mp3/commit/7cc90ac9ed7f6ca4c0ff989593b91eb9e023ebab))
+- Update numpy requirement (#35) ([9971429](https://github.com/pietro1704/Epub-to-Mp3/commit/9971429ad3ad11195ae22b24335a621864b25f74))
+- Bump @typescript-eslint/parser in /web (#34) ([d8a46df](https://github.com/pietro1704/Epub-to-Mp3/commit/d8a46df0aae2f4d00190b7d201aca0cdd0a5eb68))
+- Update fsspec requirement (#30) ([3c4dcf6](https://github.com/pietro1704/Epub-to-Mp3/commit/3c4dcf67ea9d4b1d76d8e8f2cc9454970b6af330))
+- Bump jsdom from 28.1.0 to 29.0.2 in /web (#29) ([1403a0e](https://github.com/pietro1704/Epub-to-Mp3/commit/1403a0efb0c7b6468313889a4a6f01775d718203))
+- Bump eslint-plugin-react-hooks in /web (#27) ([93238af](https://github.com/pietro1704/Epub-to-Mp3/commit/93238af7a4283f3be21e291136453c87a2358f90))
+- Bump llvmlite from 0.41.1 to 0.47.0 (#26) ([97f0514](https://github.com/pietro1704/Epub-to-Mp3/commit/97f0514e8ccefb4d7598ee523f3bf7e12a94c670))
+- Bump globals from 16.x to 17.4.0 ([cae37e3](https://github.com/pietro1704/Epub-to-Mp3/commit/cae37e3cf7fd5fe096897d5ebf01f3c7e46a96f5))
+- Update packaging requirement >=23.2,<27.0 ([48c06b6](https://github.com/pietro1704/Epub-to-Mp3/commit/48c06b66f704e8533839e2c44229d14bd31aa10b))
+- Update pandas requirement ([b7b9173](https://github.com/pietro1704/Epub-to-Mp3/commit/b7b9173cf88f96141f8f2df9eb14d79abfa89d2b))
+- Add per-platform mise tasks for desktop build and run ([4b7a0c8](https://github.com/pietro1704/Epub-to-Mp3/commit/4b7a0c86d1cb13956978125ada2ed5b1dd2beb64))
+
+### Documentation
+
+- Update test count to 1076+ ([606b327](https://github.com/pietro1704/Epub-to-Mp3/commit/606b327ed9ddf73eac11a8ae619e8e52a6eba369))
+- Add SECURITY.md with vulnerability reporting policy ([6d02c97](https://github.com/pietro1704/Epub-to-Mp3/commit/6d02c97f7d37b2b5d5a34250dbfa0a87669501ca))
+
+### Features
+
+- Audio player speed, chapter jump, saved position; reader font family + keyboard shortcuts ([bc9164d](https://github.com/pietro1704/Epub-to-Mp3/commit/bc9164d9cc72c96ea3539d0b5d3fda33b96a83ed))
+- Auto-update banner, download progress, improved notifications, and new tests ([96457e7](https://github.com/pietro1704/Epub-to-Mp3/commit/96457e718a73f3fb43fa3067353b42855bf5bf09))
+- Expandable startup log panel with 2s polling ([7d67fdf](https://github.com/pietro1704/Epub-to-Mp3/commit/7d67fdfd80990854319731799174015a058e2a9c))
+- Real-time startup log in desktop loading banner ([915cc61](https://github.com/pietro1704/Epub-to-Mp3/commit/915cc61f8e431ab0305f0df8e53576747e123ff2))
+- Desktop:build installs to /Applications and opens app automatically ([4c5eb70](https://github.com/pietro1704/Epub-to-Mp3/commit/4c5eb70c39d23414af08fbe330066ea079021009))
+- Aggressive native UI overhaul — kill all web aesthetics ([40410d8](https://github.com/pietro1704/Epub-to-Mp3/commit/40410d8407c3af378464249e46fd0d8efe3de3b0))
+- Native desktop UX — plugins, menus, flat UI, drag-drop, notifications ([d841990](https://github.com/pietro1704/Epub-to-Mp3/commit/d84199030cf2ffb0995523d3ffbec628f4237178))
+
+### Performance
+
+- Aggressive caching across all platforms to slash build time ([d6cdfff](https://github.com/pietro1704/Epub-to-Mp3/commit/d6cdfff71df14c49bf0e9a5cff9aae59e0d897c6))
+
 ## [0.2.0] — 2026-04-08
+
+### Chores
+
+- Release v0.2.0 [skip ci] ([6cf965d](https://github.com/pietro1704/Epub-to-Mp3/commit/6cf965d43a2023eb3930ff89add4c7688b174254))
 
 ### Features
 
