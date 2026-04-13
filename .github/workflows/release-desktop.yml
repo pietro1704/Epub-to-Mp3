@@ -7,7 +7,6 @@ env:
   MISE_EXPERIMENTAL: "1"
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
-  RELEASE_IS_TAG: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
 
 on:
   # Versioned release: git tag v1.2.3
@@ -423,7 +422,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ env.RELEASE_IS_TAG == 'true' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
           labels: |
             org.opencontainers.image.title=Epub to Mp3
             org.opencontainers.image.description=EPUB/PDF to MP3 audiobook converter
@@ -672,7 +671,8 @@ jobs:
     name: Update Winget manifest
     needs: [build]
     if: >
-      env.RELEASE_IS_TAG == 'true' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) &&
       needs.build.result == 'success'
     runs-on: windows-latest
     steps:
