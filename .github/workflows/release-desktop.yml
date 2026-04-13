@@ -281,10 +281,11 @@ jobs:
           draft: false
           prerelease: false
           fail_on_unmatched_files: false
-          # Append binaries to existing release (auto-release creates it first)
-          append_body: true
+          append_body: false
           body: |
-            ## Desktop binaries
+            Automated release generated from a successful push.
+
+            ## Assets
 
             | Platform | File |
             |---|---|
@@ -294,6 +295,8 @@ jobs:
             | Linux (Snap) | `*.snap` — `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
             | Linux (AppImage) | `*.AppImage` |
             | Linux (deb) | `*.deb` |
+            | Android | `EpubToMp3_android.apk` |
+            | iOS (sideload) | `EpubToMp3_ios.ipa` |
 
             **First launch**: ffmpeg is downloaded once (~60 MB) on first conversion.
           files: |
