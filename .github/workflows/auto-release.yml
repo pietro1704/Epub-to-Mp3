@@ -1,8 +1,8 @@
 name: Auto Release
 
 # Automatically creates a new version tag after every successful CI run on master.
-# The version is derived from the checked-in project version and the latest
-# existing release tag, always moving forward and never skipping pushes.
+# The workflow must not push follow-up commits to master because the branch is
+# protected by required checks. It only tags the already-validated HEAD commit.
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -88,97 +88,13 @@ jobs:
           echo "tag=v$NEW" >> "$GITHUB_OUTPUT"
           echo "Version: ${BASE_VERSION} -> ${NEW} (last tag: ${LAST_TAG:-none})"
 
-      - name: Update version files
+      - name: Create release tag
         if: steps.bump.outputs.skip != 'true'
-        env:
-          NEW: ${{ steps.bump.outputs.version }}
         run: |
           set -euo pipefail
-
-          # tauri.conf.json
-          python3 - "$NEW" <<'PYEOF'
-          import json, sys
-          path = "desktop/src-tauri/tauri.conf.json"
-          d = json.load(open(path))
-          d["version"] = sys.argv[1]
-          json.dump(d, open(path, "w"), indent=2)
-          open(path, "a").write("\n")
-          PYEOF
-
-          # Cargo.toml (first occurrence only)
-          sed -i "0,/^version = \".*\"/{s/^version = \".*\"/version = \"$NEW\"/}" \
-            desktop/src-tauri/Cargo.toml
-
-          # web/package.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$NEW\"/" web/package.json
-
-          # python_app/version.py
-          sed -i "s/__version__ = \".*\"/__version__ = \"$NEW\"/" python_app/version.py
-
-          # Flatpak metainfo
-          TODAY=$(date +%Y-%m-%d)
-          sed -i "s|<release version=\".*\" date=\".*\"/>|<release version=\"$NEW\" date=\"$TODAY\"/>|" \
-            flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml
-
-      - name: Generate changelog for release body
-        if: steps.bump.outputs.skip != 'true'
-        id: changelog
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --unreleased --tag ${{ steps.bump.outputs.tag }}
-        env:
-          OUTPUT: RELEASE_CHANGELOG.md
-          GITHUB_REPO: ${{ github.repository }}
-
-      - name: Build release body file
-        if: steps.bump.outputs.skip != 'true'
-        run: |
-          # Truncate changelog to avoid "Argument list too long" on large histories
-          if [ -f RELEASE_CHANGELOG.md ]; then
-            head -200 RELEASE_CHANGELOG.md > RELEASE_BODY.md
-          else
-            echo "Release ${{ steps.bump.outputs.tag }}" > RELEASE_BODY.md
-          fi
-          VER="${{ steps.bump.outputs.version }}"
-          printf '\n---\n\n## Install\n\n' >> RELEASE_BODY.md
-          printf '| Platform | Install |\n|---|---|\n' >> RELEASE_BODY.md
-          printf '| macOS (Homebrew) | `brew install --cask epub-to-mp3` |\n' >> RELEASE_BODY.md
-          printf '| Windows (Winget) | `winget install Pietro1704.EpubToMp3` |\n' >> RELEASE_BODY.md
-          printf '| Linux (Flatpak) | Download `.flatpak` below |\n' >> RELEASE_BODY.md
-          printf '| Linux (Snap) | Download `.snap` below |\n' >> RELEASE_BODY.md
-          printf '| Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:%s` |\n' "$VER" >> RELEASE_BODY.md
-          printf '| Web | [HF Space](https://huggingface.co/spaces/pi1704/epub-to-mp3) |\n\n' >> RELEASE_BODY.md
-          printf '> Desktop and mobile binaries are built separately and attached by the Release Desktop workflow.\n' >> RELEASE_BODY.md
-
-      - name: Update full CHANGELOG.md
-        if: steps.bump.outputs.skip != 'true'
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --tag ${{ steps.bump.outputs.tag }}
-        env:
-          OUTPUT: CHANGELOG.md
-          GITHUB_REPO: ${{ github.repository }}
-
-      - name: Commit version bump + changelog
-        if: steps.bump.outputs.skip != 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add \
-            desktop/src-tauri/tauri.conf.json \
-            desktop/src-tauri/Cargo.toml \
-            web/package.json \
-            python_app/version.py \
-            flatpak/io.github.pietro1704.EpubToMp3.metainfo.xml \
-            CHANGELOG.md
-          # Skip if tag already exists (duplicate run guard)
           if git rev-parse "${{ steps.bump.outputs.tag }}" >/dev/null 2>&1; then
             echo "Tag ${{ steps.bump.outputs.tag }} already exists — skipping"
             exit 0
           fi
-          git diff --quiet --cached && { git tag "${{ steps.bump.outputs.tag }}"; git push origin master --tags; exit 0; }
-          git commit -m "chore: release ${{ steps.bump.outputs.tag }} [skip ci]"
           git tag "${{ steps.bump.outputs.tag }}"
-          git push origin master --tags
+          git push origin "${{ steps.bump.outputs.tag }}"
