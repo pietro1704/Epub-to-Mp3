@@ -784,7 +784,6 @@ jobs:
     if: >
       (github.event_name == 'workflow_dispatch' ||
        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) &&
-      secrets.WINGET_TOKEN != '' &&
       needs.build.result == 'success'
     runs-on: windows-latest
     steps:
@@ -793,6 +792,11 @@ jobs:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
         shell: pwsh
         run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINGET_TOKEN)) {
+            Write-Host "WINGET_TOKEN not configured; skipping winget publish."
+            exit 0
+          }
+
           $TAG = "${{ env.RELEASE_TAG }}"
           $VERSION = $TAG.TrimStart("v")
           $INSTALLER_URL = "https://github.com/${{ github.repository }}/releases/download/${TAG}/Epub.to.Mp3_${VERSION}_x64-setup.exe"
