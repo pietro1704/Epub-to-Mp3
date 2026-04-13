@@ -98,24 +98,21 @@ export async function checkForUpdate(): Promise<{
 /** Install a pending update via the Tauri updater plugin. */
 export async function installUpdate(): Promise<void> {
   if (!window.__TAURI__) return;
-  try {
-    const tauri = window.__TAURI__ as unknown as TauriAny;
-    const updater = tauri.updater as
-      | {
-          check: () => Promise<{
-            available: boolean;
-            downloadAndInstall: () => Promise<void>;
-          }>;
-        }
-      | undefined;
-    if (updater) {
-      const update = await updater.check();
-      if (update.available) {
-        await update.downloadAndInstall();
+  const tauri = window.__TAURI__ as unknown as TauriAny;
+  const updater = tauri.updater as
+    | {
+        check: () => Promise<{
+          available: boolean;
+          downloadAndInstall: () => Promise<void>;
+        }>;
       }
-    }
-  } catch {
-    // Update failed
+    | undefined;
+  if (!updater) {
+    return;
+  }
+  const update = await updater.check();
+  if (update.available) {
+    await update.downloadAndInstall();
   }
 }
 

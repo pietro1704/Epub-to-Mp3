@@ -212,4 +212,126 @@ describe("App integration", () => {
     expect(screen.getByText("Starting conversion engine…")).toBeInTheDocument();
     expect(screen.getByText("Restarting sidecar")).toBeInTheDocument();
   });
+
+  it("renders a single desktop update banner when an update is available", async () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    setTauriGlobal({
+      core: {
+        invoke: vi.fn().mockResolvedValue([]),
+      },
+      event: {
+        listen: vi
+          .fn()
+          .mockImplementation(
+            async (
+              event: string,
+              handler: (e: { payload: unknown }) => void,
+            ) => {
+              listeners.set(event, (payload: unknown) => handler({ payload }));
+              return () => listeners.delete(event);
+            },
+          ),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ status: "ok" }),
+      }),
+    );
+
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: vi.fn(),
+      poll: vi.fn(),
+    };
+
+    await act(async () => {
+      renderWithProviders(<App client={client} />, { locale: "en" });
+    });
+
+    await act(async () => {
+      listeners.get("tauri-startup-ready")?.(undefined);
+      listeners.get("tauri-update-available")?.({
+        version: "2.0.1",
+        body: "Bug fixes",
+      });
+    });
+
+    await waitFor(() =>
+      expect(screen.getByText("Update v2.0.1 available")).toBeInTheDocument(),
+    );
+    expect(
+      screen.getAllByRole("button", { name: /install & restart/i }),
+    ).toHaveLength(1);
+  });
+
+  it("shows an error when desktop update installation fails", async () => {
+    const listeners = new Map<string, (payload: unknown) => void>();
+    const downloadAndInstall = vi
+      .fn()
+      .mockRejectedValue(new Error("install failed"));
+    setTauriGlobal({
+      core: {
+        invoke: vi.fn().mockResolvedValue([]),
+      },
+      event: {
+        listen: vi
+          .fn()
+          .mockImplementation(
+            async (
+              event: string,
+              handler: (e: { payload: unknown }) => void,
+            ) => {
+              listeners.set(event, (payload: unknown) => handler({ payload }));
+              return () => listeners.delete(event);
+            },
+          ),
+      },
+      updater: {
+        check: vi.fn().mockResolvedValue({
+          available: true,
+          version: "2.0.1",
+          downloadAndInstall,
+        }),
+      },
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: vi.fn().mockResolvedValue({ status: "ok" }),
+      }),
+    );
+
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: vi.fn(),
+      poll: vi.fn(),
+    };
+
+    await act(async () => {
+      renderWithProviders(<App client={client} />, { locale: "en" });
+    });
+
+    await act(async () => {
+      listeners.get("tauri-startup-ready")?.(undefined);
+      listeners.get("tauri-update-available")?.({
+        version: "2.0.1",
+        body: "Bug fixes",
+      });
+    });
+
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: /install & restart/i }));
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Update installation failed. Please try again."),
+      ).toBeInTheDocument(),
+    );
+    expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+  });
 });

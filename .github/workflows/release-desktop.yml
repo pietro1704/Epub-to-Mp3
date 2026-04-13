@@ -12,11 +12,6 @@ on:
     tags:
       - "v*.*.*"
 
-  # Nightly rolling release: fires after CI passes on master
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-
   # Manual trigger
   workflow_dispatch:
     inputs:
@@ -28,50 +23,15 @@ permissions:
   contents: write
   packages: write   # required for ghcr.io Docker push
 
-# Cancel in-progress nightly builds when a newer commit arrives.
-# Versioned tag releases are never cancelled (unique group per tag).
+# Cancel in-progress runs for the same ref or manual dispatch.
 concurrency:
-  group: release-desktop-${{ github.event_name == 'push' && github.ref || 'nightly' }}
+  group: release-desktop-${{ github.ref || github.run_id }}
   cancel-in-progress: true
 
-# ── Nightly cleanup — runs before build matrix to avoid race conditions ─────────
 jobs:
-  cleanup-nightly:
-    name: Delete old nightly release
-    if: >
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'push' &&
-      github.event.workflow_run.head_branch == 'master' &&
-      github.event.workflow_run.head_repository.full_name == github.repository
-    runs-on: ubuntu-latest
-    steps:
-      - name: Delete nightly release + tag
-        continue-on-error: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete nightly --yes --cleanup-tag --repo ${{ github.repository }} 2>/dev/null || true
-
-  # ── Build matrix (desktop) ────────────────────────────────────────────────────
   build:
     name: ${{ matrix.label }}
-    needs: [cleanup-nightly]
     timeout-minutes: 40
-    # Run when: cleanup succeeded/skipped AND overall conditions met
-    if: >
-      always() &&
-      (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
-      (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'master' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        )
-      )
 
     strategy:
       fail-fast: false
@@ -98,7 +58,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ github.ref }}
 
       # ── Toolchain via mise ──────────────────────────────────────────────────
       - name: Install mise + toolchain (Rust, Node, Python, tauri-cli)
@@ -273,7 +233,6 @@ jobs:
 
       # ── Upload to GitHub Release ────────────────────────────────────────────
       - name: Upload — versioned release
-        if: github.event_name != 'workflow_run'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || inputs.tag }}
@@ -289,16 +248,18 @@ jobs:
 
             | Platform | File |
             |---|---|
-            | macOS Apple Silicon | `*_aarch64.dmg` or `brew install --cask epub-to-mp3` |
-            | Windows | `*_x64-setup.exe` or `*.msi` |
+            | macOS app | `*.dmg` |
+            | Windows app | `*-setup.exe` or `*.msi` |
             | Linux (Flatpak) | `*.flatpak` — `flatpak install Epub.to.Mp3_x86_64.flatpak` |
             | Linux (Snap) | `*.snap` — `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
             | Linux (AppImage) | `*.AppImage` |
             | Linux (deb) | `*.deb` |
-            | Android | `EpubToMp3_android.apk` |
-            | iOS (sideload) | `EpubToMp3_ios.ipa` |
+            | Android app | `EpubToMp3_android.apk` |
+            | iOS app (sideload) | `EpubToMp3_ios.ipa` |
 
             **First launch**: ffmpeg is downloaded once (~60 MB) on first conversion.
+
+            **Docker**: `docker pull ghcr.io/${{ github.repository_owner }}/epub-to-mp3:latest`
           files: |
             desktop/src-tauri/target/**/bundle/dmg/*.dmg
             desktop/src-tauri/target/**/bundle/dmg/*.dmg.sig
@@ -333,53 +294,6 @@ jobs:
             desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz.sig
           if-no-files-found: ignore
 
-      - name: Upload — nightly pre-release
-        if: github.event_name == 'workflow_run'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          name: "Latest Build (nightly)"
-          draft: false
-          prerelease: true
-          fail_on_unmatched_files: false
-          body: |
-            Automated build from the latest passing CI on `master`.
-            Commit: ${{ github.event.workflow_run.head_sha }}
-
-            > Pre-release — use a versioned release for stable builds.
-
-            | Platform | File |
-            |---|---|
-            | macOS Apple Silicon | `*_aarch64.dmg` or `brew install --cask epub-to-mp3` |
-            | Windows | `*_x64-setup.exe` or `*.msi` |
-            | Linux (Flatpak) | `*.flatpak` — `flatpak install Epub.to.Mp3_x86_64.flatpak` |
-            | Linux (Snap) | `*.snap` — `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
-            | Linux (AppImage) | `*.AppImage` |
-            | Linux (deb) | `*.deb` |
-            | Android | `EpubToMp3_android.apk` |
-            | iOS (sideload) | `EpubToMp3_ios.ipa` |
-            | Docker | `docker pull ghcr.io/pietro1704/epub-to-mp3:nightly` |
-          files: |
-            desktop/src-tauri/target/**/bundle/dmg/*.dmg
-            desktop/src-tauri/target/**/bundle/dmg/*.dmg.sig
-            desktop/src-tauri/target/**/bundle/macos/*.tar.gz
-            desktop/src-tauri/target/**/bundle/macos/*.tar.gz.sig
-            desktop/src-tauri/target/**/bundle/msi/*.msi
-            desktop/src-tauri/target/**/bundle/msi/*.msi.sig
-            desktop/src-tauri/target/**/bundle/msi/*.msi.zip
-            desktop/src-tauri/target/**/bundle/msi/*.msi.zip.sig
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.exe.sig
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip.sig
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.sig
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz.sig
-            desktop/src-tauri/target/**/bundle/deb/*.deb
-            Epub.to.Mp3_x86_64.flatpak
-            Epub.to.Mp3_x86_64.snap
-
   # ── Updater JSON (aggregates all platform signatures) ─────────────────────────
   updater-json:
     name: Generate latest.json
@@ -390,7 +304,7 @@ jobs:
       - name: Checkout (for version detection)
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ github.ref }}
           sparse-checkout: desktop/src-tauri/tauri.conf.json
           sparse-checkout-cone-mode: false
 
@@ -406,11 +320,7 @@ jobs:
         run: |
           VERSION=$(python3 -c "import json; print(json.load(open('desktop/src-tauri/tauri.conf.json'))['version'])")
           REPO="${{ github.repository }}"
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            TAG="nightly"
-          else
-            TAG="${{ github.ref_name || inputs.tag }}"
-          fi
+          TAG="${{ github.ref_name || inputs.tag }}"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -476,35 +386,21 @@ jobs:
       - name: Upload latest.json to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ (github.event_name == 'workflow_run' && 'nightly') || github.ref_name || inputs.tag }}
+          tag_name: ${{ github.ref_name || inputs.tag }}
           fail_on_unmatched_files: false
           files: latest.json
 
   # ── Docker image → ghcr.io ────────────────────────────────────────────────────
   docker:
     name: docker
-    needs: [cleanup-nightly]
+    needs: [build]
     timeout-minutes: 20
-    if: >
-      always() &&
-      (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
-      (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'master' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        )
-      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ github.ref }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -525,7 +421,6 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=nightly,enable=${{ github.event_name == 'workflow_run' || github.event_name == 'workflow_dispatch' }}
           labels: |
             org.opencontainers.image.title=Epub to Mp3
             org.opencontainers.image.description=EPUB/PDF to MP3 audiobook converter
@@ -543,28 +438,14 @@ jobs:
   # ── Android APK ───────────────────────────────────────────────────────────────
   android:
     name: android
-    needs: [cleanup-nightly]
+    needs: [build]
     timeout-minutes: 25
-    if: >
-      always() &&
-      (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
-      (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'master' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        )
-      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ github.ref }}
 
       - name: Set up Java 21
         uses: actions/setup-java@v5
@@ -625,7 +506,6 @@ jobs:
           cp web/android/app/build/outputs/apk/debug/app-debug.apk EpubToMp3_android.apk
 
       - name: Upload APK — versioned release
-        if: github.event_name != 'workflow_run'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || inputs.tag }}
@@ -633,36 +513,11 @@ jobs:
           fail_on_unmatched_files: false
           files: EpubToMp3_android.apk
 
-      - name: Upload APK — nightly pre-release
-        if: github.event_name == 'workflow_run'
-        continue-on-error: true  # race condition: macos job owns release metadata; file upload succeeds even if finalize conflicts
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          draft: false
-          prerelease: true
-          fail_on_unmatched_files: false
-          files: EpubToMp3_android.apk
-
   # ── iOS IPA (unsigned — sideloadable via AltStore/Sideloadly) ─────────────────
   ios:
     name: ios
-    needs: [cleanup-nightly]
+    needs: [build]
     timeout-minutes: 25
-    if: >
-      always() &&
-      (needs.cleanup-nightly.result == 'success' || needs.cleanup-nightly.result == 'skipped') &&
-      (
-        github.event_name == 'push' ||
-        github.event_name == 'workflow_dispatch' ||
-        (
-          github.event_name == 'workflow_run' &&
-          github.event.workflow_run.conclusion == 'success' &&
-          github.event.workflow_run.event == 'push' &&
-          github.event.workflow_run.head_branch == 'master' &&
-          github.event.workflow_run.head_repository.full_name == github.repository
-        )
-      )
     runs-on: macos-latest
     # Signing cert required for App Store / TestFlight distribution
     # Unsigned IPA can be sideloaded with AltStore or Sideloadly
@@ -671,7 +526,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+          ref: ${{ github.ref }}
 
       - name: Install mise + toolchain (Node)
         uses: jdx/mise-action@v4
@@ -744,7 +599,6 @@ jobs:
           zip -r "${{ runner.temp }}/EpubToMp3_ios.ipa" Payload/
 
       - name: Upload IPA — versioned release
-        if: github.event_name != 'workflow_run'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || inputs.tag }}
@@ -752,46 +606,28 @@ jobs:
           fail_on_unmatched_files: false
           files: ${{ runner.temp }}/EpubToMp3_ios.ipa
 
-      - name: Upload IPA — nightly pre-release
-        if: github.event_name == 'workflow_run'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: nightly
-          draft: false
-          prerelease: true
-          fail_on_unmatched_files: false
-          files: ${{ runner.temp }}/EpubToMp3_ios.ipa
-
-  # ── Homebrew cask update (versioned releases + nightly) ──────────────────────
+  # ── Homebrew cask update (versioned releases only) ───────────────────────────
   homebrew:
     name: Update Homebrew cask
     needs: [build]
     if: false  # disabled — HOMEBREW_TAP_TOKEN secret not configured
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout (for version detection on nightly)
-        if: github.event_name == 'workflow_run'
+      - name: Checkout (for version detection)
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha }}
+          ref: ${{ github.ref }}
           sparse-checkout: desktop/src-tauri/tauri.conf.json
           sparse-checkout-cone-mode: false
 
       - name: Resolve tag and version
         id: meta
         run: |
-          if [[ "${{ github.event_name }}" == "workflow_run" ]]; then
-            echo "tag=nightly" >> "$GITHUB_OUTPUT"
-            echo "version=nightly" >> "$GITHUB_OUTPUT"
-            TAURI_VER=$(python3 -c "import json; print(json.load(open('desktop/src-tauri/tauri.conf.json'))['version'])" 2>/dev/null || echo "0.1.0")
-            echo "filename=Epub.to.Mp3_${TAURI_VER}_aarch64.dmg" >> "$GITHUB_OUTPUT"
-          else
-            TAG="${{ github.ref_name }}"
-            VERSION="${TAG#v}"
-            echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-            echo "filename=Epub.to.Mp3_${VERSION}_aarch64.dmg" >> "$GITHUB_OUTPUT"
-          fi
+          TAG="${{ github.ref_name }}"
+          VERSION="${TAG#v}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "filename=Epub.to.Mp3_${VERSION}_aarch64.dmg" >> "$GITHUB_OUTPUT"
 
       - name: Compute DMG SHA256
         id: dmg

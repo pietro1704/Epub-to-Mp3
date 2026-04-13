@@ -20,6 +20,7 @@ from src.job_manager import JobManager
 from src.telemetry import TelemetryRecorder
 
 from python_app import server
+from python_app.src import _server_audio_helpers as server_audio_helpers
 
 FIXTURE_BOOK = Path(__file__).resolve().parents[2] / "web" / "public" / "sample.epub"
 MINIMAL_MP3 = (
@@ -511,6 +512,33 @@ def test_pick_auto_engine_prefers_fastest_telemetry():
     selected, order = server._pick_auto_engine(12_000, 600, pool, telemetry_speeds=telemetry_speeds)
     assert order[0] == "edge"
     assert selected == order[0]
+
+
+def test_server_short_audio_detection_uses_cli_completeness_threshold(monkeypatch, tmp_path):
+    output_file = tmp_path / "chapter.mp3"
+    output_file.write_bytes(MINIMAL_MP3)
+
+    called = {}
+
+    def fake_validate(audio_path, text_length):
+        called["audio_path"] = audio_path
+        called["text_length"] = text_length
+        return False, 72.0
+
+    monkeypatch.setattr(
+        "src.converter.validate_audio_completeness",
+        fake_validate,
+    )
+
+    warning = server_audio_helpers._detect_short_audio_output(
+        "x" * 1600,
+        output_file,
+        engine_label="edge",
+    )
+
+    assert warning == "Audio possibly truncated (72% coverage, expected full chapter)"
+    assert called["audio_path"] == output_file
+    assert called["text_length"] == 1600
 
 
 def test_convert_endpoint_rejects_large_files(monkeypatch):

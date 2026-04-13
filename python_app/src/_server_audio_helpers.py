@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from src.chapter_utils import MIN_DUPLICATE_CHARS
-from src.utils import FileManager, TextValidator
+from src.utils import FileManager
 
 # ---------------------------------------------------------------------------
 # Media type / hashing
@@ -128,34 +128,35 @@ async def _get_audio_duration(file_path: Path) -> float:
 
 def _detect_short_audio_output(
     text: str,
-    duration_seconds: float,
+    audio_path: Path,
     *,
     engine_label: Optional[str] = None,
 ) -> Optional[str]:
     """Return warning text when audio looks far shorter than expected."""
-    if not text or duration_seconds <= 0:
+    if not text:
         return None
 
     engine = (engine_label or "").lower()
     if engine != "edge":
         return None
 
+    audio_path = Path(audio_path)
+    if not audio_path.exists():
+        return None
+
     stripped = text.strip()
-    if len(stripped) < 2000:
+    if not stripped:
         return None
 
-    estimated_seconds = TextValidator.estimate_duration(stripped)
-    if estimated_seconds < 150:
+    # Mirror the CLI truncation check so both conversion paths use the same
+    # short-chapter cutoff and EXPECTED_WPM-based completeness heuristic.
+    from src.converter import validate_audio_completeness
+
+    is_complete, coverage_percent = validate_audio_completeness(audio_path, len(stripped))
+    if is_complete:
         return None
 
-    if duration_seconds >= estimated_seconds * 0.60:
-        return None
-    if duration_seconds >= max(estimated_seconds - 90, estimated_seconds * 0.5):
-        return None
-
-    return (
-        f"Audio possibly truncated ({int(duration_seconds)}s, expected ≈ {int(estimated_seconds)}s)"
-    )
+    return "Audio possibly truncated " f"({coverage_percent:.0f}% coverage, expected full chapter)"
 
 
 # ---------------------------------------------------------------------------

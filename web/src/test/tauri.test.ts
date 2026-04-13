@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { downloadFile, isTauri, sendNotification } from "../lib/tauri";
+import {
+  downloadFile,
+  installUpdate,
+  isTauri,
+  sendNotification,
+} from "../lib/tauri";
 
 // Helper to set window.__TAURI__
 function setTauri(value: unknown) {
@@ -160,5 +165,47 @@ describe("sendNotification", () => {
       title: "Done!",
       body: undefined,
     });
+  });
+});
+
+describe("installUpdate", () => {
+  it("does nothing when updater plugin is absent", async () => {
+    setTauri({ core: {}, event: {} });
+    await expect(installUpdate()).resolves.toBeUndefined();
+  });
+
+  it("downloads and installs when an update is available", async () => {
+    const downloadAndInstall = vi.fn().mockResolvedValue(undefined);
+    setTauri({
+      core: {},
+      event: {},
+      updater: {
+        check: vi.fn().mockResolvedValue({
+          available: true,
+          downloadAndInstall,
+        }),
+      },
+    });
+
+    await expect(installUpdate()).resolves.toBeUndefined();
+    expect(downloadAndInstall).toHaveBeenCalledTimes(1);
+  });
+
+  it("propagates install failures to the caller", async () => {
+    const downloadAndInstall = vi
+      .fn()
+      .mockRejectedValue(new Error("install failed"));
+    setTauri({
+      core: {},
+      event: {},
+      updater: {
+        check: vi.fn().mockResolvedValue({
+          available: true,
+          downloadAndInstall,
+        }),
+      },
+    });
+
+    await expect(installUpdate()).rejects.toThrow("install failed");
   });
 });

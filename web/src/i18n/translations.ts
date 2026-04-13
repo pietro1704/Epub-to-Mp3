@@ -485,6 +485,11 @@ export interface DownloadsText {
 export interface LayoutText {
   footer: string;
   closeNotification: string;
+  updateAvailable: (version: string) => string;
+  updateInstall: string;
+  updateInstalling: string;
+  updateDismiss: string;
+  updateInstallError: string;
   restartTitle: string;
   restartDescription: string;
   restartButton: string;
@@ -1175,6 +1180,12 @@ export const translations: Record<Locale, Translations> = {
     layout: {
       footer: "",
       closeNotification: "Fechar notificação",
+      updateAvailable: (version: string) =>
+        `Atualização v${version} disponível`,
+      updateInstall: "Instalar e reiniciar",
+      updateInstalling: "Instalando...",
+      updateDismiss: "Dispensar",
+      updateInstallError: "Falha ao instalar a atualização. Tente novamente.",
       restartTitle: "Reiniciar backend Python",
       restartDescription:
         "Interrompe todas as conversões em andamento e limpa a fila atual.",
@@ -1872,6 +1883,11 @@ export const translations: Record<Locale, Translations> = {
     layout: {
       footer: "",
       closeNotification: "Close notification",
+      updateAvailable: (version: string) => `Update v${version} available`,
+      updateInstall: "Install & Restart",
+      updateInstalling: "Installing...",
+      updateDismiss: "Dismiss",
+      updateInstallError: "Update installation failed. Please try again.",
       restartTitle: "Restart Python backend",
       restartDescription:
         "Interrupts all running conversions and clears the current queue.",

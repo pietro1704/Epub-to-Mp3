@@ -4860,7 +4860,9 @@ async def process_conversion(job_id: str) -> None:
                         or "auto"
                     )
                     truncation_warning = _detect_short_audio_output(
-                        clean_text, duration_seconds, engine_label=engine_label
+                        clean_text,
+                        output_file,
+                        engine_label=engine_label,
                     )
                     if truncation_warning:
                         _append_event(job, f"⚠️ {truncation_warning}")
