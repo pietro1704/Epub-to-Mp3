@@ -114,6 +114,7 @@ set -euo pipefail
 
 mise run test:unit
 mise run test:integration
+mise run test:desktop
 mise run test:web
 """
 
@@ -478,6 +479,40 @@ fi
 (cd web && mise exec -- npm run lint)
 (cd web && mise exec -- npm run test)
 (cd web && mise exec -- npm run build)
+"""
+
+[tasks."test:desktop"]
+description = "Run desktop/Tauri unit tests"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+if [ ! -d "desktop/src-tauri" ]; then
+  echo "desktop/src-tauri not found"
+  exit 1
+fi
+
+case "$(uname -s)-$(uname -m)" in
+  Darwin-arm64) target_triple="aarch64-apple-darwin" ;;
+  Darwin-x86_64) target_triple="x86_64-apple-darwin" ;;
+  Linux-x86_64) target_triple="x86_64-unknown-linux-gnu" ;;
+  *)
+    echo "Unsupported desktop test target: $(uname -s)-$(uname -m)"
+    exit 1
+    ;;
+esac
+
+sidecar_path="desktop/src-tauri/binaries/epub-to-mp3-server-${target_triple}"
+if [ ! -f "$sidecar_path" ]; then
+  mkdir -p "$(dirname "$sidecar_path")"
+  cat > "$sidecar_path" <<'SH'
+#!/bin/sh
+exit 0
+SH
+  chmod +x "$sidecar_path"
+fi
+
+(cd desktop/src-tauri && mise exec -- cargo test --lib)
 """
 
 # ── Release ───────────────────────────────────────────────────────────────────────
