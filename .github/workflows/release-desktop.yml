@@ -5,6 +5,9 @@ env:
   DESKTOP_PORT: "47860"
   # Required so mise can activate the .venv from mise.toml (virtualenv feature)
   MISE_EXPERIMENTAL: "1"
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+  RELEASE_IS_TAG: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v') }}
 
 on:
   # Versioned release: git tag v1.2.3
@@ -58,7 +61,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_REF }}
 
       # ── Toolchain via mise ──────────────────────────────────────────────────
       - name: Install mise + toolchain (Rust, Node, Python, tauri-cli)
@@ -235,8 +238,8 @@ jobs:
       - name: Upload — versioned release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || inputs.tag }}
-          name: "Epub to Mp3 ${{ github.ref_name || inputs.tag }}"
+          tag_name: ${{ env.RELEASE_TAG }}
+          name: "Epub to Mp3 ${{ env.RELEASE_TAG }}"
           draft: false
           prerelease: false
           fail_on_unmatched_files: false
@@ -304,7 +307,7 @@ jobs:
       - name: Checkout (for version detection)
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_REF }}
           sparse-checkout: desktop/src-tauri/tauri.conf.json
           sparse-checkout-cone-mode: false
 
@@ -320,7 +323,7 @@ jobs:
         run: |
           VERSION=$(python3 -c "import json; print(json.load(open('desktop/src-tauri/tauri.conf.json'))['version'])")
           REPO="${{ github.repository }}"
-          TAG="${{ github.ref_name || inputs.tag }}"
+          TAG="${{ env.RELEASE_TAG }}"
           BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
           NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -386,7 +389,7 @@ jobs:
       - name: Upload latest.json to release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || inputs.tag }}
+          tag_name: ${{ env.RELEASE_TAG }}
           fail_on_unmatched_files: false
           files: latest.json
 
@@ -400,7 +403,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -420,7 +423,7 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=latest,enable=${{ env.RELEASE_IS_TAG == 'true' }}
           labels: |
             org.opencontainers.image.title=Epub to Mp3
             org.opencontainers.image.description=EPUB/PDF to MP3 audiobook converter
@@ -445,7 +448,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Set up Java 21
         uses: actions/setup-java@v5
@@ -508,7 +511,7 @@ jobs:
       - name: Upload APK — versioned release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || inputs.tag }}
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: false
           fail_on_unmatched_files: false
           files: EpubToMp3_android.apk
@@ -526,7 +529,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_REF }}
 
       - name: Install mise + toolchain (Node)
         uses: jdx/mise-action@v4
@@ -601,7 +604,7 @@ jobs:
       - name: Upload IPA — versioned release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || inputs.tag }}
+          tag_name: ${{ env.RELEASE_TAG }}
           draft: false
           fail_on_unmatched_files: false
           files: ${{ runner.temp }}/EpubToMp3_ios.ipa
@@ -616,14 +619,14 @@ jobs:
       - name: Checkout (for version detection)
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ env.RELEASE_REF }}
           sparse-checkout: desktop/src-tauri/tauri.conf.json
           sparse-checkout-cone-mode: false
 
       - name: Resolve tag and version
         id: meta
         run: |
-          TAG="${{ github.ref_name }}"
+          TAG="${{ env.RELEASE_TAG }}"
           VERSION="${TAG#v}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
@@ -668,9 +671,8 @@ jobs:
   winget:
     name: Update Winget manifest
     needs: [build]
-    # Only run on versioned tags — winget-pkgs requires stable versions
     if: >
-      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+      env.RELEASE_IS_TAG == 'true' &&
       needs.build.result == 'success'
     runs-on: windows-latest
     steps:
@@ -679,7 +681,7 @@ jobs:
           WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
         shell: pwsh
         run: |
-          $TAG = "${{ github.ref_name }}"
+          $TAG = "${{ env.RELEASE_TAG }}"
           $VERSION = $TAG.TrimStart("v")
           $INSTALLER_URL = "https://github.com/${{ github.repository }}/releases/download/${TAG}/Epub.to.Mp3_${VERSION}_x64-setup.exe"
 
