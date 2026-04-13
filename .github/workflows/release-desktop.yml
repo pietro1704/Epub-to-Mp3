@@ -62,6 +62,69 @@ jobs:
         with:
           ref: ${{ env.RELEASE_REF }}
 
+      - name: Sync release version manifests
+        shell: bash
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          python3 - <<'PY' "$VERSION"
+          import json
+          import re
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1]
+
+          tauri_path = Path("desktop/src-tauri/tauri.conf.json")
+          tauri = json.loads(tauri_path.read_text(encoding="utf-8"))
+          tauri["version"] = version
+          tauri_path.write_text(json.dumps(tauri, indent=2) + "\n", encoding="utf-8")
+
+          package_path = Path("web/package.json")
+          package = json.loads(package_path.read_text(encoding="utf-8"))
+          package["version"] = version
+          package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+
+          lock_path = Path("web/package-lock.json")
+          lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
+          lock_data["version"] = version
+          lock_data.setdefault("packages", {}).setdefault("", {})["version"] = version
+          lock_path.write_text(json.dumps(lock_data, indent=2) + "\n", encoding="utf-8")
+
+          cargo_toml = Path("desktop/src-tauri/Cargo.toml")
+          cargo_toml.write_text(
+              re.sub(
+                  r'^version = ".*"$',
+                  f'version = "{version}"',
+                  cargo_toml.read_text(encoding="utf-8"),
+                  count=1,
+                  flags=re.MULTILINE,
+              ),
+              encoding="utf-8",
+          )
+
+          cargo_lock = Path("desktop/src-tauri/Cargo.lock")
+          cargo_lock.write_text(
+              re.sub(
+                  r'(?m)^version = ".*"$',
+                  f'version = "{version}"',
+                  cargo_lock.read_text(encoding="utf-8"),
+                  count=1,
+              ),
+              encoding="utf-8",
+          )
+
+          python_version = Path("python_app/version.py")
+          python_version.write_text(
+              re.sub(
+                  r'__version__ = ".*"',
+                  f'__version__ = "{version}"',
+                  python_version.read_text(encoding="utf-8"),
+                  count=1,
+              ),
+              encoding="utf-8",
+          )
+          PY
+
       # ── Toolchain via mise ──────────────────────────────────────────────────
       - name: Install mise + toolchain (Rust, Node, Python, tauri-cli)
         uses: jdx/mise-action@v4
@@ -235,7 +298,7 @@ jobs:
 
       # ── Upload to GitHub Release ────────────────────────────────────────────
       - name: Upload — versioned release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           name: "Epub to Mp3 ${{ env.RELEASE_TAG }}"
@@ -309,6 +372,22 @@ jobs:
           ref: ${{ env.RELEASE_REF }}
           sparse-checkout: desktop/src-tauri/tauri.conf.json
           sparse-checkout-cone-mode: false
+
+      - name: Sync release version manifests
+        shell: bash
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          python3 - <<'PY' "$VERSION"
+          import json
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1]
+          tauri_path = Path("desktop/src-tauri/tauri.conf.json")
+          tauri = json.loads(tauri_path.read_text(encoding="utf-8"))
+          tauri["version"] = version
+          tauri_path.write_text(json.dumps(tauri, indent=2) + "\n", encoding="utf-8")
+          PY
 
       - name: Download updater artifacts
         uses: actions/download-artifact@v8
@@ -386,7 +465,7 @@ jobs:
           "
 
       - name: Upload latest.json to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           fail_on_unmatched_files: false
@@ -403,6 +482,22 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.RELEASE_REF }}
+
+      - name: Sync release version manifests
+        shell: bash
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          python3 - <<'PY' "$VERSION"
+          import json
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1]
+          package_path = Path("web/package.json")
+          package = json.loads(package_path.read_text(encoding="utf-8"))
+          package["version"] = version
+          package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+          PY
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -508,7 +603,7 @@ jobs:
           cp web/android/app/build/outputs/apk/debug/app-debug.apk EpubToMp3_android.apk
 
       - name: Upload APK — versioned release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           draft: false
@@ -529,6 +624,22 @@ jobs:
         uses: actions/checkout@v6
         with:
           ref: ${{ env.RELEASE_REF }}
+
+      - name: Sync release version manifests
+        shell: bash
+        run: |
+          VERSION="${RELEASE_TAG#v}"
+          python3 - <<'PY' "$VERSION"
+          import json
+          import sys
+          from pathlib import Path
+
+          version = sys.argv[1]
+          package_path = Path("web/package.json")
+          package = json.loads(package_path.read_text(encoding="utf-8"))
+          package["version"] = version
+          package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+          PY
 
       - name: Install mise + toolchain (Node)
         uses: jdx/mise-action@v4
@@ -601,7 +712,7 @@ jobs:
           zip -r "${{ runner.temp }}/EpubToMp3_ios.ipa" Payload/
 
       - name: Upload IPA — versioned release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           draft: false
