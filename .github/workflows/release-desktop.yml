@@ -475,7 +475,7 @@ jobs:
   docker:
     name: docker
     needs: [build]
-    timeout-minutes: 20
+    timeout-minutes: 35
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
