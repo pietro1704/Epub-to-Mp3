@@ -63,6 +63,12 @@ jobs:
               details = ", ".join(f"{path}={version}" for path, version in versions.items())
               raise SystemExit(f"Version mismatch across manifests: {details}")
 
+          changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          if f"## [{python_version}]" not in changelog:
+              raise SystemExit(
+                  f"CHANGELOG.md is missing an entry for version {python_version}"
+              )
+
           print(f"base_version={python_version}")
           PY
 
@@ -94,18 +100,26 @@ jobs:
           if base > last:
               print(sys.argv[1])
           else:
-              major, minor, patch = last
-              print(f"{major}.{minor}.{patch + 1}")
+              print("")
           PY
           )
 
+          if [[ -z "$NEW" ]]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+            echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
+            echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+            echo "Committed version ${BASE_VERSION} is not newer than ${LAST_TAG}; skipping release tag"
+            exit 0
+          fi
+
           if git rev-parse "v${NEW}" >/dev/null 2>&1; then
-            NEW=$(python3 - <<'PY' "$NEW"
-          import sys
-          major, minor, patch = (int(part) for part in sys.argv[1].split("."))
-          print(f"{major}.{minor}.{patch + 1}")
-          PY
-            )
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+            echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
+            echo "range=${RANGE}" >> "$GITHUB_OUTPUT"
+            echo "Tag v${NEW} already exists; skipping"
+            exit 0
           fi
 
           echo "skip=false" >> "$GITHUB_OUTPUT"

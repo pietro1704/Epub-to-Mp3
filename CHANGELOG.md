@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.3] — 2026-04-14
+
+### Bug Fixes
+
+- Publish stable release assets from committed version metadata and skip winget submission when its token is missing
+- Sync release workflow artifact versions to the release tag
+- Limit Dependabot auto-merge to the passing PR head
+
 ## [0.2.0] — 2026-04-08
 
 ### Features
@@ -3097,5 +3105,4 @@ Signed-off-by: dependabot[bot] <support@github.com> ([b80f688](https://github.co
 - Add fast validation controls and new speedtest ([98c2d60](https://github.com/pietro1704/Epub-to-Mp3/commit/98c2d60f7b29589460f3f21f1972d22837104f25))
 - Optimize Edge-TTS for large books (remove chunk penalty, faster recovery) ([ca6d4a7](https://github.com/pietro1704/Epub-to-Mp3/commit/ca6d4a7f6cea816f0032b8230d4fcae913ccab54))
 - Major improvements to parsing, audio experience, performance & memory ([8b91d48](https://github.com/pietro1704/Epub-to-Mp3/commit/8b91d48f7ccda1e8b99ab96ec48516d9faf40046))
-
 

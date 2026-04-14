@@ -29,6 +29,11 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.3.3" date="2026-04-14">
+      <description>
+        <p>Publish stable desktop, mobile, and Linux release assets with synced tag versioning.</p>
+      </description>
+    </release>
     <release version="0.3.1" date="2026-04-13">
       <description>
         <p>Align release asset versions across desktop, mobile, and Python builds.</p>
