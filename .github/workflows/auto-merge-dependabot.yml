@@ -1,7 +1,6 @@
 name: Auto-merge Dependabot
 
 on:
-  pull_request:
   check_suite:
     types: [completed]
 
@@ -13,12 +12,16 @@ jobs:
   auto-merge:
     name: Approve and merge dependabot PRs
     runs-on: ubuntu-latest
-    if: github.actor == 'dependabot[bot]' || github.event_name == 'check_suite'
+    if: >
+      github.event_name == 'check_suite' &&
+      github.event.check_suite.conclusion == 'success' &&
+      github.event.check_suite.head_branch != 'master'
     steps:
       - name: Find and merge dependabot PRs where CI passed
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.check_suite.head_sha }}
         run: |
           is_major_bump() {
             local title="$1"
@@ -32,8 +35,8 @@ jobs:
           PRS=$(gh pr list \
             --repo "$REPO" \
             --author "app/dependabot" \
-            --json number,title,mergeStateStatus \
-            --jq '.[] | select(.mergeStateStatus == "CLEAN") | "\(.number)\t\(.title)"')
+            --json number,title,mergeStateStatus,headRefOid \
+            --jq '.[] | select(.headRefOid == env.HEAD_SHA and .mergeStateStatus == "CLEAN") | "\(.number)\t\(.title)"')
 
           if [ -z "$PRS" ]; then
             echo "No dependabot PRs ready to merge"
