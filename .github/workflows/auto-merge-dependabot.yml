@@ -1,8 +1,8 @@
 name: Auto-merge Dependabot
 
 on:
-  check_suite:
-    types: [completed]
+  pull_request_target:
+    types: [opened, reopened, synchronize, ready_for_review]
 
 permissions:
   contents: write
@@ -10,46 +10,39 @@ permissions:
 
 jobs:
   auto-merge:
-    name: Approve and merge dependabot PRs
+    name: Enable auto-merge for dependabot PRs
     runs-on: ubuntu-latest
     if: >
-      github.event_name == 'check_suite' &&
-      github.event.check_suite.conclusion == 'success' &&
-      github.event.check_suite.head_branch != 'master'
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.draft == false
     steps:
-      - name: Find and merge dependabot PRs where CI passed
+      - name: Skip major bumps
+        id: classify
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.check_suite.head_sha }}
+          TITLE: ${{ github.event.pull_request.title }}
         run: |
-          is_major_bump() {
-            local title="$1"
-            # Extract "from X to Y" where X and Y start with different major numbers
-            local from to
-            from=$(echo "$title" | grep -oE 'from [0-9]+' | grep -oE '[0-9]+' | head -1)
-            to=$(echo "$title"   | grep -oE 'to [0-9]+'   | grep -oE '[0-9]+' | head -1)
-            [ -n "$from" ] && [ -n "$to" ] && [ "$from" != "$to" ]
-          }
-
-          PRS=$(gh pr list \
-            --repo "$REPO" \
-            --author "app/dependabot" \
-            --json number,title,mergeStateStatus,headRefOid \
-            --jq '.[] | select(.headRefOid == env.HEAD_SHA and .mergeStateStatus == "CLEAN") | "\(.number)\t\(.title)"')
-
-          if [ -z "$PRS" ]; then
-            echo "No dependabot PRs ready to merge"
+          from=$(echo "$TITLE" | grep -oE 'from [0-9]+' | grep -oE '[0-9]+' | head -1)
+          to=$(echo "$TITLE" | grep -oE 'to [0-9]+' | grep -oE '[0-9]+' | head -1)
+          if [ -n "$from" ] && [ -n "$to" ] && [ "$from" != "$to" ]; then
+            echo "major=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping major bump: $TITLE"
             exit 0
           fi
 
-          while IFS=$'\t' read -r PR TITLE; do
-            if is_major_bump "$TITLE"; then
-              echo "Skipping major bump PR #$PR: $TITLE"
-              continue
-            fi
-            echo "Approving PR #$PR: $TITLE"
-            gh pr review "$PR" --repo "$REPO" --approve || true
-            echo "Merging PR #$PR..."
-            gh pr merge "$PR" --repo "$REPO" --squash --admin --delete-branch || true
-          done <<< "$PRS"
+          echo "major=false" >> "$GITHUB_OUTPUT"
+
+      - name: Approve PR
+        if: steps.classify.outputs.major == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr review "$PR_NUMBER" --repo "$REPO" --approve || true
+
+      - name: Enable auto-merge
+        if: steps.classify.outputs.major == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh pr merge "$PR_NUMBER" --repo "$REPO" --auto --squash --delete-branch
