@@ -525,6 +525,23 @@ export interface LayoutText {
   statsOffline: string;
   statsLastUpdated: (value: string) => string;
   statsRetrying: (value: string) => string;
+  telemetryTitle: string;
+  telemetryDescription: string;
+  telemetryRefresh: string;
+  telemetryRefreshing: string;
+  telemetryErrorGeneric: string;
+  telemetryEmptyState: string;
+  telemetryEngineHeader: string;
+  telemetrySamplesHeader: string;
+  telemetryAvgHeader: string;
+  telemetryMinHeader: string;
+  telemetryMaxHeader: string;
+  telemetryRankedLabel: string;
+  telemetryTimelineTitle: string;
+  telemetryTimelineEmpty: string;
+  telemetryTimelineLatest: string;
+  telemetryTotalSamples: (count: number) => string;
+  telemetryUpdatedAt: (isoString: string) => string;
 }
 
 export interface FlowMessages {
@@ -1228,6 +1245,26 @@ export const translations: Record<Locale, Translations> = {
       statsOffline: "Servidor indisponível. Verifique o backend.",
       statsLastUpdated: (value: string) => `Atualizado ${value}`,
       statsRetrying: (value: string) => `Nova tentativa em ${value}`,
+      telemetryTitle: "Telemetria",
+      telemetryDescription:
+        "Taxa de síntese TTS por engine, com base em amostras registradas.",
+      telemetryRefresh: "Atualizar",
+      telemetryRefreshing: "Atualizando…",
+      telemetryErrorGeneric: "Falha ao carregar telemetria.",
+      telemetryEmptyState:
+        "Sem amostras de telemetria ainda — rode uma conversão para popular.",
+      telemetryEngineHeader: "Engine",
+      telemetrySamplesHeader: "Amostras",
+      telemetryAvgHeader: "Média c/s",
+      telemetryMinHeader: "Mín c/s",
+      telemetryMaxHeader: "Máx c/s",
+      telemetryRankedLabel: "Mais rápido → mais lento",
+      telemetryTimelineTitle: "Capítulos recentes",
+      telemetryTimelineEmpty: "Sem amostras recentes.",
+      telemetryTimelineLatest: "Mais recentes primeiro",
+      telemetryTotalSamples: (count: number) => `${count} amostras totais`,
+      telemetryUpdatedAt: (iso: string) =>
+        `Atualizado ${new Date(iso).toLocaleTimeString()}`,
     },
     flow: {
       startUpload: "Enviando arquivo para o servidor…",
@@ -1929,6 +1966,26 @@ export const translations: Record<Locale, Translations> = {
       statsOffline: "Backend unreachable. Please start the server.",
       statsLastUpdated: (value: string) => `Updated ${value}`,
       statsRetrying: (value: string) => `Retrying in ${value}`,
+      telemetryTitle: "Telemetry",
+      telemetryDescription:
+        "TTS throughput per engine, based on recorded synthesis samples.",
+      telemetryRefresh: "Refresh",
+      telemetryRefreshing: "Refreshing…",
+      telemetryErrorGeneric: "Failed to load telemetry.",
+      telemetryEmptyState:
+        "No telemetry samples yet — run a conversion to populate.",
+      telemetryEngineHeader: "Engine",
+      telemetrySamplesHeader: "Samples",
+      telemetryAvgHeader: "Avg c/s",
+      telemetryMinHeader: "Min c/s",
+      telemetryMaxHeader: "Max c/s",
+      telemetryRankedLabel: "Fastest → slowest",
+      telemetryTimelineTitle: "Recent chapters",
+      telemetryTimelineEmpty: "No recent samples.",
+      telemetryTimelineLatest: "Latest first",
+      telemetryTotalSamples: (count: number) => `${count} total samples`,
+      telemetryUpdatedAt: (iso: string) =>
+        `Updated ${new Date(iso).toLocaleTimeString()}`,
     },
     flow: {
       startUpload: "Sending file to the server…",

@@ -179,6 +179,46 @@ export default function App(props?: AppProps): JSX.Element {
       t.layout.statsRetrying,
     ],
   );
+  const telemetryLabels = useMemo(
+    () => ({
+      title: t.layout.telemetryTitle,
+      description: t.layout.telemetryDescription,
+      refresh: t.layout.telemetryRefresh,
+      refreshing: t.layout.telemetryRefreshing,
+      errorGeneric: t.layout.telemetryErrorGeneric,
+      emptyState: t.layout.telemetryEmptyState,
+      engineHeader: t.layout.telemetryEngineHeader,
+      samplesHeader: t.layout.telemetrySamplesHeader,
+      avgHeader: t.layout.telemetryAvgHeader,
+      minHeader: t.layout.telemetryMinHeader,
+      maxHeader: t.layout.telemetryMaxHeader,
+      rankedLabel: t.layout.telemetryRankedLabel,
+      timelineTitle: t.layout.telemetryTimelineTitle,
+      timelineEmpty: t.layout.telemetryTimelineEmpty,
+      timelineLatest: t.layout.telemetryTimelineLatest,
+      totalSamples: t.layout.telemetryTotalSamples,
+      updatedAt: t.layout.telemetryUpdatedAt,
+    }),
+    [
+      t.layout.telemetryTitle,
+      t.layout.telemetryDescription,
+      t.layout.telemetryRefresh,
+      t.layout.telemetryRefreshing,
+      t.layout.telemetryErrorGeneric,
+      t.layout.telemetryEmptyState,
+      t.layout.telemetryEngineHeader,
+      t.layout.telemetrySamplesHeader,
+      t.layout.telemetryAvgHeader,
+      t.layout.telemetryMinHeader,
+      t.layout.telemetryMaxHeader,
+      t.layout.telemetryRankedLabel,
+      t.layout.telemetryTimelineTitle,
+      t.layout.telemetryTimelineEmpty,
+      t.layout.telemetryTimelineLatest,
+      t.layout.telemetryTotalSamples,
+      t.layout.telemetryUpdatedAt,
+    ],
+  );
   const [formVersion, setFormVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<
     "setup" | "progress" | "downloads"
@@ -1783,7 +1823,7 @@ export default function App(props?: AppProps): JSX.Element {
           />
         </Suspense>
         <Suspense fallback={<ComponentFallback />}>
-          <TelemetryPanel locale={locale === "pt" ? "pt" : "en"} />
+          <TelemetryPanel labels={telemetryLabels} />
         </Suspense>
         <div className="system-control">
           <div className="system-control__text">
