@@ -52,6 +52,11 @@ jobs:
             --period-hours 24 \
             --min-avg-cps 425
 
+      - name: Telemetry baseline smoke check
+        if: always()
+        continue-on-error: true
+        run: mise run benchmark:check
+
       - name: Save nightly baseline cache
         if: always()
         uses: actions/cache/save@v5
