@@ -22,7 +22,7 @@ import weakref
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 import psutil
 from mutagen.mp3 import MP3
@@ -37,6 +37,7 @@ from ._retry_mixin import _RetryMixin
 from ._server_engine_helpers import _build_multi_engine_slot_map
 from ._validation_mixin import _ValidationMixin
 from .adaptive_performance import AdaptivePerformanceController
+from .audio_postprocess import add_silence_padding
 from .auto_tuner import AutoTuner
 from .cache_manager import CacheManager
 from .chapter_utils import deduplicate_chapters_by_content
@@ -102,6 +103,33 @@ def _env_float(name: str, default: float) -> float:
         return float(raw)
     except (TypeError, ValueError):
         return default
+
+
+async def _apply_silence_padding(
+    output_path: Path,
+    config: ConversionConfig,
+    *,
+    logger: Optional[Callable[[str], None]] = None,
+) -> None:
+    """Pad a finalised chapter MP3 with configured intro/outro silence.
+
+    Errors are logged but swallowed — padding is cosmetic and must not fail
+    the chapter.
+    """
+    intro = max(int(getattr(config, "chapter_intro_silence_ms", 0) or 0), 0)
+    outro = max(int(getattr(config, "chapter_outro_silence_ms", 0) or 0), 0)
+    if intro == 0 and outro == 0:
+        return
+    ok, error = await add_silence_padding(
+        output_path,
+        intro_ms=intro,
+        outro_ms=outro,
+        bitrate=getattr(config, "bitrate", "8k") or "8k",
+        sample_rate=int(getattr(config, "sample_rate", 16_000) or 16_000),
+        channels=int(getattr(config, "channels", 1) or 1),
+    )
+    if not ok and logger:
+        logger(f"   ⚠️ silence padding failed: {error}")
 
 
 EDGE_AUTO_TUNE = _env_bool("EDGE_AUTO_TUNE", True)
@@ -5138,6 +5166,11 @@ class AudioConverter(
                                 album=book_title,
                                 artist=book_author or None,
                                 cover_art=cover_art,
+                            )
+                            await _apply_silence_padding(
+                                output_path,
+                                config,
+                                logger=print if self.verbose else None,
                             )
                             chapter_success = True
 

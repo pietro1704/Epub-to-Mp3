@@ -229,6 +229,14 @@ echo "Result: $ok OK, $fail failed"
 [[ $fail -eq 0 ]]
 """
 
+[tasks."benchmark:check"]
+description = "Compare live telemetry throughput against benchmarks/baseline.json"
+run = """
+#!/bin/bash
+set -euo pipefail
+.venv/bin/python scripts/benchmark_regression.py "$@"
+"""
+
 # ── Desktop (Tauri) ────────────────────────────────────────────────────────────
 
 [tasks."desktop:server"]

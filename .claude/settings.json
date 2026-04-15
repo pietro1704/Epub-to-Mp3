@@ -1,5 +1,6 @@
 {
   "fastMode": true,
+  "language": "portuguese",
   "hooks": {
     "SessionStart": [
       {
@@ -27,6 +28,35 @@
         ]
       }
     ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/bash_conversion.sh",
+            "timeout": 10,
+            "async": true,
+            "if": "Bash(python*)"
+          },
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/bash_conversion.sh",
+            "timeout": 10,
+            "async": true,
+            "if": "Bash(mise run*)"
+          },
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/ci_watch.sh",
+            "timeout": 900,
+            "async": true,
+            "if": "Bash(git push*)",
+            "statusMessage": "Watching CI run..."
+          }
+        ]
+      }
+    ],
     "Stop": [
       {
         "hooks": [
@@ -34,6 +64,11 @@
             "type": "command",
             "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/stop_status.sh",
             "timeout": 8
+          },
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/test_coverage_gate.sh",
+            "timeout": 15
           }
         ]
       }

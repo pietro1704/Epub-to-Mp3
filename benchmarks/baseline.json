@@ -1,0 +1,22 @@
+{
+  "description": "Baseline throughput targets (chars/s) per TTS engine. benchmark_regression.py compares TelemetryRecorder.summary() avg_chars_per_second against these floors. Chosen conservatively from observed local runs; raise after validated improvements.",
+  "min_samples": 3,
+  "tolerance_pct": 15.0,
+  "engines": {
+    "edge": {
+      "min_chars_per_second": 120.0
+    },
+    "kokoro": {
+      "min_chars_per_second": 70.0
+    },
+    "piper": {
+      "min_chars_per_second": 90.0
+    },
+    "coqui": {
+      "min_chars_per_second": 15.0
+    },
+    "spark": {
+      "min_chars_per_second": 10.0
+    }
+  }
+}

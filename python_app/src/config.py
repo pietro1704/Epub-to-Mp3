@@ -74,6 +74,9 @@ class ConversionConfig:
     verify_transcription: bool = False
     transcription_model: str = "medium"
     validation_language: Optional[str] = None  # Language for transcription validation
+    # Audio polish: silence padding applied after synthesis (ffmpeg adelay/apad)
+    chapter_intro_silence_ms: int = 0
+    chapter_outro_silence_ms: int = 500
 
     def __post_init__(self) -> None:
         if self.output_dir is not None and not isinstance(self.output_dir, Path):
@@ -133,6 +136,8 @@ class ConversionConfig:
         data["strict_validate"] = self.strict_validate
         data["deep_validate"] = self.deep_validate
         data["validation_language"] = self.validation_language
+        data["chapter_intro_silence_ms"] = self.chapter_intro_silence_ms
+        data["chapter_outro_silence_ms"] = self.chapter_outro_silence_ms
         return data
 
 
@@ -723,6 +728,22 @@ class AppConfig:
         auto_validate_output = bool(kwargs.pop("auto_validate_output", False))
         auto_fix_output = bool(kwargs.pop("auto_fix_output", True))
 
+        def _safe_silence(raw: object, default: int) -> int:
+            try:
+                value = int(raw) if raw is not None else default
+            except (TypeError, ValueError):
+                value = default
+            return max(value, 0)
+
+        chapter_intro_silence_ms = _safe_silence(
+            kwargs.pop("chapter_intro_silence_ms", os.getenv("CHAPTER_INTRO_SILENCE_MS")),
+            ConversionConfig.chapter_intro_silence_ms,
+        )
+        chapter_outro_silence_ms = _safe_silence(
+            kwargs.pop("chapter_outro_silence_ms", os.getenv("CHAPTER_OUTRO_SILENCE_MS")),
+            ConversionConfig.chapter_outro_silence_ms,
+        )
+
         config = ConversionConfig(
             engine=engine,
             voice=voice,
@@ -769,6 +790,8 @@ class AppConfig:
             deep_validate=deep_validate,
             auto_validate_output=auto_validate_output,
             auto_fix_output=auto_fix_output,
+            chapter_intro_silence_ms=chapter_intro_silence_ms,
+            chapter_outro_silence_ms=chapter_outro_silence_ms,
         )
 
         if kwargs:

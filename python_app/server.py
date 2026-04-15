@@ -44,6 +44,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from main import ConverterApplication
 from pydantic import BaseModel
+from src.audio_postprocess import add_silence_padding
 from src.auto_tuner import AutoTuner
 from src.benchmark_profile import recommend_parallel_slots
 from src.cache_manager import CacheManager
@@ -1002,6 +1003,30 @@ def _append_event(job: dict, message: str, *, raw: Optional[str] = None) -> None
     # **OPTIMIZATION #3**: Broadcast event to SSE clients
     _schedule_job_broadcast(job.get("jobId"), job)
     _update_job_activity(job)
+
+
+async def _apply_server_silence_padding(
+    job: dict, output_file: Path, config: ConversionConfig
+) -> None:
+    """Pad a finalised chapter MP3 with configured intro/outro silence.
+
+    Mirrors the CLI path (`converter._apply_silence_padding`).  Errors are
+    logged into the job event stream but do not fail the chapter.
+    """
+    intro = max(int(getattr(config, "chapter_intro_silence_ms", 0) or 0), 0)
+    outro = max(int(getattr(config, "chapter_outro_silence_ms", 0) or 0), 0)
+    if intro == 0 and outro == 0:
+        return
+    ok, error = await add_silence_padding(
+        output_file,
+        intro_ms=intro,
+        outro_ms=outro,
+        bitrate=getattr(config, "bitrate", "8k") or "8k",
+        sample_rate=int(getattr(config, "sample_rate", 16_000) or 16_000),
+        channels=int(getattr(config, "channels", 1) or 1),
+    )
+    if not ok:
+        _append_event(job, f"⚠️ silence padding failed for {output_file.name}: {error}")
 
 
 _SSE_RAW_LOG_CAP = 200  # Limit rawLog in SSE payloads to avoid large messages
@@ -4966,6 +4991,8 @@ async def process_conversion(job_id: str) -> None:
                         return
                     break
 
+                await _apply_server_silence_padding(job, output_file, config)
+
                 engine_runtime = max((last_stage_timestamp - synth_started), 0.001)
 
                 _append_event(
@@ -5638,10 +5665,12 @@ async def download_sample_epub():
 
 from src.routes_health import router as _health_router  # noqa: E402
 from src.routes_sessions import router as _sessions_router  # noqa: E402
+from src.routes_telemetry import router as _telemetry_router  # noqa: E402
 from src.routes_uploads import router as _uploads_router  # noqa: E402
 
 app.include_router(_health_router)
 app.include_router(_sessions_router)
+app.include_router(_telemetry_router)
 app.include_router(_uploads_router)
 
 

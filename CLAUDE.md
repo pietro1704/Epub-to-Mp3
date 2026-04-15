@@ -58,7 +58,23 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 
 ## Testing Policy
 
-**Always test after every change.** Before committing:
+**MANDATORY: every code modification MUST ship with tests.** This is enforced by
+`.claude/hooks/test_coverage_gate.sh` (Stop hook). If you edit any file under
+`python_app/*.py` (excluding `__init__.py`, `__main__.py`) or
+`web/src/**/*.{ts,tsx}` (excluding `.test.*`, `.d.ts`), you MUST also add or
+update at least one test file (`python_app/tests/**` or `web/src/**/*.test.{ts,tsx}`)
+in the same turn. The Stop hook blocks completion otherwise.
+
+Rules:
+- **Every code change ships with tests** — new file → new test; bug fix → regression test; refactor → tests still cover the refactored path
+- **All code must be covered** — no source file should exist without at least one test exercising its public surface
+- **Always run the full suite before committing**
+- **Add tests for every new feature AND every bug fix**
+- Critical paths need both unit tests AND integration tests
+- Test edge cases: empty chapters, oversized chapters, engine failures
+- The 2 skipped tests are Coqui GPU tests — acceptable
+
+Before committing:
 ```bash
 mise run test           # Full suite: Python + web + lint + build
 # OR individually:
@@ -67,10 +83,10 @@ pytest -v --tb=short python_app/tests/test_edge_engine.py  # Single test file
 pytest -v --tb=short -k "test_name"                        # Single test by name
 cd web && npm run test  # Web only (17 tests)
 ```
-- Add tests for every new feature or bug fix
-- Critical paths need both unit tests AND integration tests
-- Test edge cases: empty chapters, oversized chapters, engine failures
-- The 2 skipped tests are Coqui GPU tests — acceptable
+
+Escape hatch: if a change is genuinely untestable (comment-only edit, pure
+formatting, README update), justify explicitly in the commit message and the
+hook's reason field will be acknowledged.
 
 ---
 
