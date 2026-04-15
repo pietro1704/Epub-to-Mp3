@@ -71,6 +71,7 @@ export const DEFAULT_TELEMETRY_LABELS_PT: TelemetryPanelLabels = {
 
 export interface TelemetryPanelProps {
   labels?: TelemetryPanelLabels;
+  locale?: "pt" | "en";
   autoRefreshMs?: number;
 }
 
@@ -94,9 +95,15 @@ function engineRow(name: string, stats: EngineStats): JSX.Element {
 }
 
 export default function TelemetryPanel({
-  labels = DEFAULT_TELEMETRY_LABELS_EN,
+  labels: labelsProp,
+  locale = "en",
   autoRefreshMs = 30000,
 }: TelemetryPanelProps): JSX.Element {
+  const labels =
+    labelsProp ??
+    (locale === "pt"
+      ? DEFAULT_TELEMETRY_LABELS_PT
+      : DEFAULT_TELEMETRY_LABELS_EN);
   const [summary, setSummary] = useState<TelemetrySummary | null>(null);
   const [timeline, setTimeline] = useState<TelemetryPoint[]>([]);
   const [loading, setLoading] = useState<boolean>(false);

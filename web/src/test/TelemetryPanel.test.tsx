@@ -11,6 +11,7 @@ import {
 } from "vitest";
 import TelemetryPanel, {
   DEFAULT_TELEMETRY_LABELS_EN,
+  DEFAULT_TELEMETRY_LABELS_PT,
 } from "../components/TelemetryPanel";
 import { renderWithProviders } from "./testUtils";
 
@@ -150,6 +151,19 @@ describe("TelemetryPanel", () => {
     await waitFor(() => {
       expect(screen.getByRole("alert")).toBeInTheDocument();
     });
+  });
+
+  it("falls back to PT labels when locale=pt and no labels prop is given", async () => {
+    renderWithProviders(<TelemetryPanel locale="pt" autoRefreshMs={0} />);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(DEFAULT_TELEMETRY_LABELS_PT.title),
+      ).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText(DEFAULT_TELEMETRY_LABELS_PT.timelineTitle),
+    ).toBeInTheDocument();
   });
 
   it("refreshes when the button is clicked", async () => {

@@ -33,10 +33,6 @@ const ReadyDownloadsList = lazy(() =>
 const QueueDisplay = lazy(() => import("./components/QueueDisplay"));
 const SystemStatsPanel = lazy(() => import("./components/SystemStatsPanel"));
 const TelemetryPanel = lazy(() => import("./components/TelemetryPanel"));
-import {
-  DEFAULT_TELEMETRY_LABELS_EN,
-  DEFAULT_TELEMETRY_LABELS_PT,
-} from "./components/TelemetryPanel";
 const ConversionHistoryPanel = lazy(
   () => import("./components/ConversionHistoryPanel"),
 );
@@ -1787,13 +1783,7 @@ export default function App(props?: AppProps): JSX.Element {
           />
         </Suspense>
         <Suspense fallback={<ComponentFallback />}>
-          <TelemetryPanel
-            labels={
-              locale === "pt"
-                ? DEFAULT_TELEMETRY_LABELS_PT
-                : DEFAULT_TELEMETRY_LABELS_EN
-            }
-          />
+          <TelemetryPanel locale={locale === "pt" ? "pt" : "en"} />
         </Suspense>
         <div className="system-control">
           <div className="system-control__text">
