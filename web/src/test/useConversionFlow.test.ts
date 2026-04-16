@@ -598,9 +598,9 @@ describe("useConversionFlow", () => {
     expect(result.current.savedBatch).toBeNull();
   });
 
-  it("keeps local-cache resumable jobs visible when backend returns an empty list", async () => {
+  it("keeps interrupted local-cache jobs visible when backend returns an empty list", async () => {
     conversionCache.save("local-only-job", "local.epub", {
-      phase: "success",
+      phase: "error",
       log: [],
       downloads: [],
       rawLog: [],
@@ -634,9 +634,46 @@ describe("useConversionFlow", () => {
     expect(conversionCache.load("local-only-job")).not.toBeNull();
   });
 
-  it("merges local-only cache jobs with backend resumable jobs", async () => {
-    conversionCache.save("local-ghost", "ghost.epub", {
+  it("does not surface completed local-cache jobs in the resume hero", async () => {
+    conversionCache.save("finished-job", "done.epub", {
       phase: "success",
+      log: [],
+      downloads: [],
+      rawLog: [],
+    });
+    conversionCache.save("cancelled-job", "stopped.epub", {
+      phase: "cancelled",
+      log: [],
+      downloads: [],
+      rawLog: [],
+    });
+
+    const getResumableJobs = vi.fn().mockResolvedValue([]);
+
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: vi.fn(),
+      poll: vi.fn(),
+      getResumableJobs,
+    };
+
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const ids = result.current.cachedJobs.map((j) => j.jobId);
+    expect(ids).not.toContain("finished-job");
+    expect(ids).not.toContain("cancelled-job");
+  });
+
+  it("merges resumable local-only cache jobs with backend resumable jobs", async () => {
+    conversionCache.save("local-ghost", "ghost.epub", {
+      phase: "polling",
       log: [],
       downloads: [],
       rawLog: [],

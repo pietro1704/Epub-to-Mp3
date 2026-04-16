@@ -1306,8 +1306,22 @@ export function useConversionFlow(
         return expanded;
       };
 
+      // Only jobs whose conversion was interrupted are meaningfully resumable.
+      // Finished ("success") or explicitly cancelled jobs exist in the cache
+      // for download/history reasons but should not appear in the resume hero.
+      const isResumablePhase = (phase: ConversionState["phase"] | undefined) =>
+        phase === "submitting" ||
+        phase === "polling" ||
+        phase === "error" ||
+        phase === "cancelling";
+
+      const listResumableLocalJobs = () =>
+        conversionCache
+          .listAll()
+          .filter((job) => isResumablePhase(job.state?.phase));
+
       const localFallback = (allowMarkOffline: boolean = true) => {
-        const localJobs = conversionCache.listAll();
+        const localJobs = listResumableLocalJobs();
         const expandedJobs = localJobs.flatMap((job) =>
           expandJobsWithQueue(
             {
@@ -1370,8 +1384,7 @@ export function useConversionFlow(
           );
         });
 
-        const localOnlyExpanded = conversionCache
-          .listAll()
+        const localOnlyExpanded = listResumableLocalJobs()
           .filter((localJob) => !backendJobIds.has(localJob.jobId))
           .flatMap((localJob) =>
             expandJobsWithQueue(
