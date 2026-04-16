@@ -266,9 +266,21 @@ echo "Sidecar ready: desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
 """
 
 [tasks."desktop:web"]
-description = "Build React frontend for desktop (VITE_API_BASE=localhost:47860)"
+description = "Build React frontend for desktop (loads .env.desktop → VITE_API_BASE=127.0.0.1:47860)"
 dir = "web"
-run = "VITE_API_BASE=http://127.0.0.1:47860/api npm run build"
+run = """
+#!/bin/bash
+set -euo pipefail
+npm run build:desktop
+# Postbuild guard: the bundle MUST contain the sidecar URL, otherwise the
+# webview will fall back to relative /api and report "backend offline".
+if ! grep -lqr "127.0.0.1:47860/api" dist/assets/*.js; then
+  echo "FATAL: dist bundle does not contain 127.0.0.1:47860/api — VITE_API_BASE was not applied."
+  echo "Check web/.env.desktop and that vite is loaded with --mode desktop."
+  exit 1
+fi
+echo "Desktop bundle OK (VITE_API_BASE baked into dist/assets/)"
+"""
 
 [tasks."desktop:icons"]
 description = "Generate all icon sizes from desktop/icon-source/icon.png"

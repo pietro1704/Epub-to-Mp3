@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "npx tsc --noEmit -p tsconfig.build.json && vite build",
+    "build:desktop": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode desktop",
     "build:mobile": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode mobile && npx cap sync",
     "build:mobile:bundle": "npx tsc --noEmit -p tsconfig.build.json && vite build --mode mobile",
     "preview": "vite preview",
