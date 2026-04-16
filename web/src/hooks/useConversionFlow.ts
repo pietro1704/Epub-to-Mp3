@@ -1338,19 +1338,22 @@ export function useConversionFlow(
 
       try {
         const backendJobs = await api.getResumableJobs();
+        markApiOnline();
+
         if (!backendJobs || backendJobs.length === 0) {
-          setCachedJobs([]);
-          markApiOnline();
-          setCachedJobsLoading(false);
+          // Backend has no resumable jobs (e.g. desktop sidecar restarted and
+          // .jobs/ was wiped from temp dir). Keep local-cache entries visible
+          // so the user can still resume from the last persisted state.
+          localFallback(false);
           return;
         }
 
-        // Create a map of local cache to get pendingBatchQueue info
         const localCacheMap = new Map(
           conversionCache.listAll().map((job) => [job.jobId, job]),
         );
+        const backendJobIds = new Set(backendJobs.map((j) => j.jobId));
 
-        const expandedJobs = backendJobs.flatMap((job) => {
+        const backendExpanded = backendJobs.flatMap((job) => {
           const localCache = localCacheMap.get(job.jobId);
           return expandJobsWithQueue(
             {
@@ -1367,15 +1370,26 @@ export function useConversionFlow(
           );
         });
 
-        setCachedJobs(expandedJobs);
+        const localOnlyExpanded = conversionCache
+          .listAll()
+          .filter((localJob) => !backendJobIds.has(localJob.jobId))
+          .flatMap((localJob) =>
+            expandJobsWithQueue(
+              {
+                jobId: localJob.jobId,
+                fileName: localJob.fileName,
+                timestamp: localJob.timestamp,
+                engine: localJob.state?.engine,
+                voice: localJob.state?.voice,
+                language:
+                  localJob.state?.language ??
+                  localJob.state?.summary?.detectedLanguage,
+              },
+              localJob.state?.pendingBatchQueue,
+            ),
+          );
 
-        const backendJobIds = new Set(backendJobs.map((j) => j.jobId));
-        conversionCache.listAll().forEach((localJob) => {
-          if (!backendJobIds.has(localJob.jobId)) {
-            conversionCache.remove(localJob.jobId);
-          }
-        });
-        markApiOnline();
+        setCachedJobs([...backendExpanded, ...localOnlyExpanded]);
         setCachedJobsLoading(false);
       } catch (error) {
         console.warn(

@@ -598,15 +598,88 @@ describe("useConversionFlow", () => {
     expect(result.current.savedBatch).toBeNull();
   });
 
+  it("keeps local-cache resumable jobs visible when backend returns an empty list", async () => {
+    conversionCache.save("local-only-job", "local.epub", {
+      phase: "success",
+      log: [],
+      downloads: [],
+      rawLog: [],
+      engine: "edge",
+      voice: "pt-BR-AntonioNeural",
+      language: "pt",
+    });
+
+    const getResumableJobs = vi.fn().mockResolvedValue([]);
+
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: vi.fn(),
+      poll: vi.fn(),
+      getResumableJobs,
+    };
+
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(getResumableJobs).toHaveBeenCalled();
+    expect(
+      result.current.cachedJobs.some((j) => j.jobId === "local-only-job"),
+    ).toBe(true);
+    expect(conversionCache.load("local-only-job")).not.toBeNull();
+  });
+
+  it("merges local-only cache jobs with backend resumable jobs", async () => {
+    conversionCache.save("local-ghost", "ghost.epub", {
+      phase: "success",
+      log: [],
+      downloads: [],
+      rawLog: [],
+    });
+
+    const getResumableJobs = vi.fn().mockResolvedValue([
+      {
+        jobId: "backend-job",
+        fileName: "backend.epub",
+        bookTitle: "Backend Book",
+        savedAt: new Date().toISOString(),
+        engine: "edge",
+      },
+    ]);
+
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: vi.fn(),
+      poll: vi.fn(),
+      getResumableJobs,
+    };
+
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const ids = result.current.cachedJobs.map((j) => j.jobId);
+    expect(ids).toContain("backend-job");
+    expect(ids).toContain("local-ghost");
+  });
+
   it("restartBackend clears cached state and reloads after health check succeeds", async () => {
     vi.useFakeTimers();
     const restartBackend = vi.fn().mockResolvedValue({ status: "restarting" });
-    const healthFetch = vi
-      .fn()
-      .mockResolvedValue({
-        ok: true,
-        json: vi.fn().mockResolvedValue({ status: "healthy" }),
-      });
+    const healthFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: vi.fn().mockResolvedValue({ status: "healthy" }),
+    });
     vi.stubGlobal("fetch", healthFetch);
 
     const reloadMock = vi.fn();
