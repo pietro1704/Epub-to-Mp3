@@ -598,53 +598,17 @@ describe("useConversionFlow", () => {
     expect(result.current.savedBatch).toBeNull();
   });
 
-  it("keeps interrupted local-cache jobs visible when backend returns an empty list", async () => {
-    conversionCache.save("local-only-job", "local.epub", {
+  it("keeps local-cache jobs visible across phases when backend returns an empty list", async () => {
+    conversionCache.save("interrupted-job", "interrupted.epub", {
       phase: "error",
       log: [],
       downloads: [],
       rawLog: [],
-      engine: "edge",
-      voice: "pt-BR-AntonioNeural",
-      language: "pt",
     });
-
-    const getResumableJobs = vi.fn().mockResolvedValue([]);
-
-    const client: ConversionClient = {
-      submit: vi.fn(),
-      fetch: vi.fn(),
-      poll: vi.fn(),
-      getResumableJobs,
-    };
-
-    const { result } = renderHook(() => useConversionFlow(client), {
-      wrapper: createProvidersWrapper("en"),
-    });
-
-    await act(async () => {
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    expect(getResumableJobs).toHaveBeenCalled();
-    expect(
-      result.current.cachedJobs.some((j) => j.jobId === "local-only-job"),
-    ).toBe(true);
-    expect(conversionCache.load("local-only-job")).not.toBeNull();
-  });
-
-  it("does not surface completed local-cache jobs in the resume hero", async () => {
     conversionCache.save("finished-job", "done.epub", {
       phase: "success",
       log: [],
-      downloads: [],
-      rawLog: [],
-    });
-    conversionCache.save("cancelled-job", "stopped.epub", {
-      phase: "cancelled",
-      log: [],
-      downloads: [],
+      downloads: [{ name: "ch-1.mp3", url: "/audio/ch-1.mp3" }],
       rawLog: [],
     });
 
@@ -667,11 +631,42 @@ describe("useConversionFlow", () => {
     });
 
     const ids = result.current.cachedJobs.map((j) => j.jobId);
-    expect(ids).not.toContain("finished-job");
-    expect(ids).not.toContain("cancelled-job");
+    expect(ids).toContain("interrupted-job");
+    expect(ids).toContain("finished-job");
   });
 
-  it("merges resumable local-only cache jobs with backend resumable jobs", async () => {
+  it("restores a terminal (success) cached job without hitting the backend", async () => {
+    conversionCache.save("done-123", "finished.epub", {
+      phase: "success",
+      log: [],
+      downloads: [{ name: "ch-1.mp3", url: "/audio/ch-1.mp3" }],
+      rawLog: [],
+      bookTitle: "Completed Book",
+    });
+
+    const fetchMock = vi.fn();
+    const client: ConversionClient = {
+      submit: vi.fn(),
+      fetch: fetchMock,
+      poll: vi.fn(),
+      getResumableJobs: vi.fn().mockResolvedValue([]),
+    };
+
+    const { result } = renderHook(() => useConversionFlow(client), {
+      wrapper: createProvidersWrapper("en"),
+    });
+
+    await act(async () => {
+      await result.current.resume("done-123");
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.current.state.phase).toBe("success");
+    expect(result.current.state.downloads).toHaveLength(1);
+    expect(result.current.state.bookTitle).toBe("Completed Book");
+  });
+
+  it("merges interrupted local-only cache jobs with backend resumable jobs", async () => {
     conversionCache.save("local-ghost", "ghost.epub", {
       phase: "polling",
       log: [],

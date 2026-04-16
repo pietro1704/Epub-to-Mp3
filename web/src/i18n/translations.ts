@@ -564,6 +564,7 @@ export interface FlowMessages {
   backendOfflineDetails: string;
   backendConnecting: string;
   backendOfflineBanner: string;
+  cachedRestoredSuccess: string;
   cancelConfirm: string;
   batchPosition: (index: number, total: number) => string;
   batchCancelled: (remaining: number) => string;
@@ -1291,6 +1292,8 @@ export const translations: Record<Locale, Translations> = {
       backendConnecting: "Conectando ao servidor de conversão…",
       backendOfflineBanner:
         "Servidor Python não está respondendo. Inicie o backend local (porta 8000) ou use `python app.py` na porta 7860 e ajuste VITE_API_BASE. Depois recarregue esta página.",
+      cachedRestoredSuccess:
+        "Restaurado do cache local. Os downloads podem estar indisponíveis se o servidor foi reiniciado.",
       cancelConfirm:
         "Cancelar agora interrompe a conversão atual e remove os arquivos gerados. Deseja continuar?",
       batchPosition: (index: number, total: number) =>
@@ -2013,6 +2016,8 @@ export const translations: Record<Locale, Translations> = {
       backendConnecting: "Connecting to the conversion server…",
       backendOfflineBanner:
         "Python backend is offline. Start it locally on port 8000, or use `python app.py` on port 7860 and set VITE_API_BASE, then reload this page.",
+      cachedRestoredSuccess:
+        "Restored from local cache — downloads may be unavailable if the server was restarted.",
       cancelConfirm:
         "Cancelling now stops the current conversion and removes generated files. Continue?",
       batchPosition: (index: number, total: number) =>

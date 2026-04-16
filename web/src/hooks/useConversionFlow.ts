@@ -1306,22 +1306,8 @@ export function useConversionFlow(
         return expanded;
       };
 
-      // Only jobs whose conversion was interrupted are meaningfully resumable.
-      // Finished ("success") or explicitly cancelled jobs exist in the cache
-      // for download/history reasons but should not appear in the resume hero.
-      const isResumablePhase = (phase: ConversionState["phase"] | undefined) =>
-        phase === "submitting" ||
-        phase === "polling" ||
-        phase === "error" ||
-        phase === "cancelling";
-
-      const listResumableLocalJobs = () =>
-        conversionCache
-          .listAll()
-          .filter((job) => isResumablePhase(job.state?.phase));
-
       const localFallback = (allowMarkOffline: boolean = true) => {
-        const localJobs = listResumableLocalJobs();
+        const localJobs = conversionCache.listAll();
         const expandedJobs = localJobs.flatMap((job) =>
           expandJobsWithQueue(
             {
@@ -1384,7 +1370,8 @@ export function useConversionFlow(
           );
         });
 
-        const localOnlyExpanded = listResumableLocalJobs()
+        const localOnlyExpanded = conversionCache
+          .listAll()
           .filter((localJob) => !backendJobIds.has(localJob.jobId))
           .flatMap((localJob) =>
             expandJobsWithQueue(
@@ -1973,6 +1960,51 @@ export function useConversionFlow(
               ),
             });
           }
+        }
+
+        // Terminal-state cache: restore directly so the user can still browse
+        // downloads/metadata even after the backend was wiped (e.g. desktop
+        // sidecar restart, /data eviction). Skip the backend fetch that would
+        // otherwise 404 and surface a hard "Conversion not found" error.
+        if (cached.state.phase === "success") {
+          dispatch({
+            type: "job-created",
+            jobId: actualJobId,
+            entry: entryFactoryRef.current(
+              t.flow.loadingCache || "📦 Restoring conversion data...",
+            ),
+          });
+          dispatch({
+            type: "complete",
+            entry: entryFactoryRef.current(
+              t.flow.cachedRestoredSuccess ||
+                "Restored from local cache — downloads may be unavailable if the server was restarted.",
+            ),
+            downloads: cached.state.downloads ?? [],
+            completedAt: cached.state.completedAt,
+            totalDurationSeconds: cached.state.totalDurationSeconds,
+          });
+          startTimeRef.current = null;
+          return;
+        }
+        if (cached.state.phase === "cancelled") {
+          dispatch({
+            type: "job-created",
+            jobId: actualJobId,
+            entry: entryFactoryRef.current(
+              t.flow.loadingCache || "📦 Restoring conversion data...",
+            ),
+          });
+          dispatch({
+            type: "cancelled",
+            entry: entryFactoryRef.current(
+              cached.state.error || t.flow.cancelled || "Cancelled",
+            ),
+            error: cached.state.error || t.flow.cancelled || "Cancelled",
+            errorCategory: cached.state.errorCategory,
+          });
+          startTimeRef.current = null;
+          return;
         }
       }
 
