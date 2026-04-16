@@ -232,6 +232,18 @@ def test_should_retry_edge_before_fallback_prefers_one_local_retry():
     assert server._should_retry_edge_before_fallback("piper", edge_slow_mode=False) is False
 
 
+def test_engine_is_disabled_respects_unavailable_set():
+    # Regression: after the job-wide Edge timeout threshold fires, subsequent
+    # chapters must not retry Edge — otherwise each one burns _CHAPTER_RETRY_MAX
+    # timeouts before giving up (observed: 14 chapters × 4 retries = ~56 timeouts).
+    unavailable: set[str] = {"edge"}
+    assert server._engine_is_disabled("edge", unavailable) is True
+    assert server._engine_is_disabled("EDGE", unavailable) is True
+    assert server._engine_is_disabled("piper", unavailable) is False
+    assert server._engine_is_disabled(None, unavailable) is False
+    assert server._engine_is_disabled("edge", set()) is False
+
+
 class DummyTTSEngine:
     def __init__(self, name: str, fail_times: int = 0):
         self.name = name

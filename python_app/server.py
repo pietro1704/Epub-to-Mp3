@@ -3150,6 +3150,16 @@ def _should_retry_edge_before_fallback(engine_label: Optional[str], edge_slow_mo
     return (engine_label or "").strip().lower() == "edge" and not edge_slow_mode
 
 
+def _engine_is_disabled(engine_label: Optional[str], unavailable_engines: "set[str]") -> bool:
+    """Return True when the current engine has been flagged job-wide unavailable.
+
+    Used to short-circuit per-chapter retries after the job-wide Edge timeout
+    threshold fires — otherwise every remaining chapter burns _CHAPTER_RETRY_MAX
+    timeouts on the same dead engine before giving up.
+    """
+    return (engine_label or "").strip().lower() in unavailable_engines
+
+
 def _persist_job_log(job_id: str, job: dict) -> Optional[Path]:
     job_dir = _job_output_dir(job_id, job, ensure=True)
     if not job_dir.exists():
@@ -4464,6 +4474,12 @@ async def process_conversion(job_id: str) -> None:
                     engine_config,
                 ) -> bool:
                     nonlocal retry_count, parallel_slots, engine_index
+                    # Stop retrying engines flagged as unavailable (e.g. Edge after
+                    # the job-wide timeout threshold). Without this guard the loop
+                    # would keep retrying the same dead engine for every remaining
+                    # chapter, burning _CHAPTER_RETRY_MAX timeouts each time.
+                    if _engine_is_disabled(engine_label, unavailable_engines):
+                        return False
                     # Give Edge one local safe-mode retry before switching to slower
                     # offline engines. This preserves Edge for as long as possible
                     # without keeping it enabled after repeated hard failures.
@@ -4581,6 +4597,27 @@ async def process_conversion(job_id: str) -> None:
                         or (local_active_config.engine if local_active_config else config.engine)
                         or "auto"
                     ).lower()
+                    # If the current engine was flagged unavailable job-wide (e.g. Edge
+                    # after the timeout threshold), switch before spending another
+                    # chapter_timeout on it. Without this guard, each remaining chapter
+                    # would time out on the dead engine before the retry layer gave up.
+                    if _engine_is_disabled(engine_name, unavailable_engines):
+                        if _switch_to_next_engine(f"{engine_name.upper()} disabled job-wide"):
+                            local_active_config = active_config
+                            local_engine_name = (
+                                active_config.engine if active_config else config.engine
+                            ) or "auto"
+                            continue
+                        if _record_chapter_failure(
+                            job,
+                            None,
+                            chapter_name,
+                            f"{engine_name} disabled and no fallback engine available",
+                            chapter_index=idx,
+                            fatal=False,
+                        ):
+                            job_failed["value"] = True
+                        return
                     synth_started = time.time()
                     last_stage_timestamp = synth_started
                     chapter_timeout = _resolve_chapter_timeout(
