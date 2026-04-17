@@ -6,9 +6,69 @@ import asyncio
 import contextlib
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from .ebook_reader import Chapter
+
+
+async def _safe_cancel_task(
+    task: Optional[asyncio.Task],
+    grace: float = 10.0,
+) -> bool:
+    """Cancel a task and wait up to ``grace`` seconds for it to unwind.
+
+    If the task does not honor cancellation within the grace window the
+    reference is dropped and we return ``False`` — this trades a potential
+    resource leak for the guarantee that the caller never blocks indefinitely
+    on a non-cooperative coroutine (e.g. an HTTP stream stuck in a C-level
+    wait).  Without this guard the outer ``asyncio.wait_for`` could hang
+    forever, silently stalling the whole job.
+    """
+    if task is None or task.done():
+        return True
+    task.cancel()
+    with contextlib.suppress(BaseException):
+        await asyncio.wait({task}, timeout=max(0.1, float(grace)))
+    return task.done()
+
+
+async def _await_task_with_deadline(
+    task: asyncio.Task,
+    timeout: float,
+    *,
+    grace: float = 15.0,
+) -> Any:
+    """Await ``task`` under an outer deadline that cannot deadlock.
+
+    Unlike ``asyncio.wait_for`` — which awaits the cancelled coroutine after
+    the deadline and can therefore block forever if the coroutine swallows
+    cancellation — this helper gives the task a bounded grace period and
+    then detaches, raising ``asyncio.TimeoutError``.
+    """
+    if task is None:
+        raise asyncio.TimeoutError()
+    try:
+        done, _ = await asyncio.wait({task}, timeout=max(0.1, float(timeout)))
+    except asyncio.CancelledError:
+        await _safe_cancel_task(task, grace=grace)
+        raise
+    if task in done:
+        return task.result()
+    await _safe_cancel_task(task, grace=grace)
+    raise asyncio.TimeoutError()
+
+
+async def _run_with_hard_deadline(
+    factory,
+    timeout: float,
+    *,
+    grace: float = 15.0,
+) -> Any:
+    """Run ``factory()`` under a deadline with the same guarantees as
+    :func:`_await_task_with_deadline`, creating the task for the caller."""
+    coro = factory()
+    task = asyncio.ensure_future(coro)
+    return await _await_task_with_deadline(task, timeout, grace=grace)
 
 
 class _HealthWatchdogMixin:
@@ -75,6 +135,62 @@ class _HealthWatchdogMixin:
         state["last_activity"] = status
         state["warn_emitted"] = False
         state["action_emitted"] = False
+
+    async def _watch_segment_idle(
+        self,
+        chapter_index: int,
+        task: asyncio.Task,
+        progress_state: dict,
+        idle_seconds: float,
+        *,
+        check_interval: float = 10.0,
+        stall_event: Optional[asyncio.Event] = None,
+        label: str = "segment",
+    ) -> None:
+        """Cancel ``task`` if ``progress_state['hits']`` does not advance.
+
+        This is a per-chapter watchdog that is immune to sibling-chapter
+        activity (unlike :func:`_watch_chapter_stall`, which relies on the
+        shared progress timer and can be reset by any parallel chapter).
+        It is the last-line defence against silent stalls in the middle of
+        a multi-segment synthesis — the scenario where the network drops a
+        stream without raising and the inner ``wait_for`` has plenty of
+        headroom left on its outer timeout.
+        """
+        try:
+            idle_seconds = max(0.0, float(idle_seconds))
+        except Exception:
+            return
+        if idle_seconds <= 0 or task is None or task.done():
+            return
+        check_interval = max(2.0, float(check_interval))
+        try:
+            last_hits = int(progress_state.get("hits", 0))
+        except Exception:
+            last_hits = 0
+        last_advance = time.time()
+        while not task.done():
+            await asyncio.sleep(check_interval)
+            if task.done():
+                return
+            try:
+                current = int(progress_state.get("hits", 0))
+            except Exception:
+                current = last_hits
+            if current != last_hits:
+                last_hits = current
+                last_advance = time.time()
+                continue
+            if (time.time() - last_advance) >= idle_seconds:
+                print(
+                    f"\n🛟 Idle watchdog: chapter {chapter_index} emitted no "
+                    f"{label} for {int(idle_seconds)}s — aborting engine"
+                )
+                if stall_event is not None:
+                    with contextlib.suppress(Exception):
+                        stall_event.set()
+                await _safe_cancel_task(task, grace=10.0)
+                return
 
     async def _watch_chapter_stall(
         self,

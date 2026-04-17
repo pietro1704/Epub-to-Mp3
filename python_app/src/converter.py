@@ -31,7 +31,11 @@ from mutagen.mp3 import MP3
 from ._cache_mixin import _CacheMixin
 from ._edge_throttle_mixin import _EdgeThrottleMixin
 from ._engine_selection_mixin import _EngineSelectionMixin
-from ._health_watchdog_mixin import _HealthWatchdogMixin
+from ._health_watchdog_mixin import (
+    _await_task_with_deadline,
+    _HealthWatchdogMixin,
+    _safe_cancel_task,
+)
 from ._metrics_report_mixin import _MetricsReportMixin
 from ._output_file_mixin import _OutputFileMixin
 from ._retry_mixin import _RetryMixin
@@ -4609,6 +4613,25 @@ class AudioConverter(
                                     probe_dir=Path(getattr(config, "cache_dir", "") or ""),
                                 )
                             )
+                            # Per-chapter idle watchdog: immune to shared
+                            # progress timer (which is reset by sibling
+                            # chapters running in parallel).  Always on.
+                            try:
+                                _seg_idle_seconds = float(
+                                    os.getenv("CHAPTER_SEGMENT_IDLE_SECONDS", "180") or "180"
+                                )
+                            except ValueError:
+                                _seg_idle_seconds = 180.0
+                            segment_idle_task = asyncio.create_task(
+                                self._watch_segment_idle(
+                                    chapter_num,
+                                    synthesis_task,
+                                    segment_progress_state,
+                                    _seg_idle_seconds,
+                                    stall_event=stall_event,
+                                    label="segment",
+                                )
+                            )
                             slow_task: Optional[asyncio.Task] = None
 
                             if (
@@ -4707,21 +4730,22 @@ class AudioConverter(
                                 if not skip_slow_switch:
                                     slow_task = asyncio.create_task(_watch_slow_engine())
                             try:
-                                synthesis_result = await asyncio.wait_for(
-                                    synthesis_task, timeout=timeout_seconds
+                                synthesis_result = await _await_task_with_deadline(
+                                    synthesis_task,
+                                    timeout=timeout_seconds,
+                                    grace=15.0,
                                 )
                             except asyncio.CancelledError as exc:
                                 if stall_event.is_set() or slow_switch_event.is_set():
                                     raise asyncio.TimeoutError() from exc
                                 raise
                             finally:
-                                stall_task.cancel()
-                                with contextlib.suppress(asyncio.CancelledError):
-                                    await stall_task
+                                # All cancellations use bounded grace so a
+                                # non-cooperative task cannot hang the chapter.
+                                await _safe_cancel_task(stall_task, grace=5.0)
+                                await _safe_cancel_task(segment_idle_task, grace=5.0)
                                 if slow_task is not None:
-                                    slow_task.cancel()
-                                    with contextlib.suppress(asyncio.CancelledError):
-                                        await slow_task
+                                    await _safe_cancel_task(slow_task, grace=5.0)
                             if synthesis_result:
                                 break
                             waited = await wait_edge_cooldown_if_needed(
@@ -6054,7 +6078,9 @@ class AudioConverter(
                                 pre_segment_callback=_pre_segment_monitor,
                             )
                         )
-                        temp_wav = await asyncio.wait_for(synthesis_task, timeout=chapter_timeout)
+                        temp_wav = await _await_task_with_deadline(
+                            synthesis_task, timeout=chapter_timeout, grace=15.0
+                        )
 
                         if temp_wav and (attempt == 2 or use_immediate_fallback):
                             if self.verbose:
@@ -6065,12 +6091,10 @@ class AudioConverter(
                             print(
                                 f"[DEBUG] Chapter {index} attempt {attempt} timeout after {chapter_timeout}s"
                             )
-                        if synthesis_task and not synthesis_task.done():
-                            synthesis_task.cancel()
-                            try:
-                                await synthesis_task
-                            except asyncio.CancelledError:
-                                pass
+                        # ``_await_task_with_deadline`` already detached the
+                        # task with bounded grace; still call safe-cancel so
+                        # mid-flight tasks from other code paths don't leak.
+                        await _safe_cancel_task(synthesis_task, grace=5.0)
 
                         if attempt == max_attempts:
                             temp_wav = None
@@ -6082,8 +6106,7 @@ class AudioConverter(
                             raise
                         if self.verbose:
                             print(f"[DEBUG] Chapter {index} attempt {attempt} error: {e}")
-                        if synthesis_task and not synthesis_task.done():
-                            synthesis_task.cancel()
+                        await _safe_cancel_task(synthesis_task, grace=5.0)
 
                         if attempt == max_attempts:
                             temp_wav = None

@@ -45,6 +45,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from main import ConverterApplication
 from pydantic import BaseModel
+from src._health_watchdog_mixin import (
+    _await_task_with_deadline,
+    _safe_cancel_task,
+)
 from src.audio_postprocess import add_silence_padding
 from src.auto_tuner import AutoTuner
 from src.benchmark_profile import recommend_parallel_slots
@@ -992,6 +996,50 @@ def _sanitize_event_message(message: str) -> str:
         if message.startswith(prefix):
             return message[len(prefix) :].strip()
     return message
+
+
+async def _segment_idle_watchdog(
+    task: asyncio.Task,
+    progress_state: dict,
+    idle_seconds: float,
+    chapter_index: int,
+    *,
+    check_interval: float = 10.0,
+) -> None:
+    """Cancel ``task`` if ``progress_state['hits']`` stops advancing.
+
+    Per-chapter heartbeat monitor used by the web conversion path; mirrors
+    ``_HealthWatchdogMixin._watch_segment_idle`` on the CLI side.  Runs
+    independent of any shared activity clock so parallel chapters cannot
+    keep a silently-stalled engine alive.
+    """
+    if task is None or task.done() or idle_seconds <= 0:
+        return
+    try:
+        last_hits = int(progress_state.get("hits", 0))
+    except Exception:
+        last_hits = 0
+    last_advance = time.time()
+    interval = max(2.0, float(check_interval))
+    while not task.done():
+        await asyncio.sleep(interval)
+        if task.done():
+            return
+        try:
+            current = int(progress_state.get("hits", 0))
+        except Exception:
+            current = last_hits
+        if current != last_hits:
+            last_hits = current
+            last_advance = time.time()
+            continue
+        if (time.time() - last_advance) >= idle_seconds:
+            print(
+                f"🛟 Idle watchdog: chapter {chapter_index} emitted no "
+                f"segment for {int(idle_seconds)}s — aborting engine"
+            )
+            await _safe_cancel_task(task, grace=10.0)
+            return
 
 
 def _update_job_activity(job: Optional[dict], stage: Optional[str] = None) -> None:
@@ -4361,7 +4409,14 @@ async def process_conversion(job_id: str) -> None:
                 if preview:
                     _append_event(job, f"📝 Excerpt: {preview}")
 
+                # Per-chapter segment progress counter — the canonical
+                # heartbeat that the idle watchdog monitors.  It is a plain
+                # dict so the watchdog can read it without closing over the
+                # synthesis-scoped int.
+                _segment_progress_state: dict = {"hits": 0}
+
                 def _progress_callback(segment_text: str, total_text_chars: int = 0) -> None:
+                    _segment_progress_state["hits"] = int(_segment_progress_state["hits"]) + 1
                     _advance_chapter_progress(idx, segment_text, total_text_chars)
 
                 # Streaming: use a single per-job directory with chapter-prefixed files
@@ -4687,7 +4742,7 @@ async def process_conversion(job_id: str) -> None:
                             )
                             try:
                                 try:
-                                    synth_task = engine_obj.synthesize_async(
+                                    synth_coro = engine_obj.synthesize_async(
                                         clean_text,
                                         tts_path,
                                         progress_callback=_progress_callback,
@@ -4695,10 +4750,38 @@ async def process_conversion(job_id: str) -> None:
                                     )
                                 except TypeError:
                                     # Fallback for engines that don't support callbacks
-                                    synth_task = engine_obj.synthesize_async(clean_text, tts_path)
-                                synth_result = await asyncio.wait_for(
-                                    synth_task, timeout=chapter_timeout
-                                )
+                                    synth_coro = engine_obj.synthesize_async(clean_text, tts_path)
+                                synth_task = asyncio.ensure_future(synth_coro)
+                                # Per-chapter idle watchdog — aborts when the
+                                # engine goes silent mid-synthesis even if the
+                                # outer wait_for still has runway.  Uses the
+                                # local segment-hit counter so sibling chapters
+                                # cannot keep it alive.
+                                try:
+                                    _seg_idle_seconds = float(
+                                        os.getenv("CHAPTER_SEGMENT_IDLE_SECONDS", "180") or "180"
+                                    )
+                                except ValueError:
+                                    _seg_idle_seconds = 180.0
+                                _segment_progress_state["hits"] = 0
+                                idle_task: Optional[asyncio.Task] = None
+                                if _seg_idle_seconds > 0:
+                                    idle_task = asyncio.create_task(
+                                        _segment_idle_watchdog(
+                                            synth_task,
+                                            _segment_progress_state,
+                                            _seg_idle_seconds,
+                                            idx,
+                                        )
+                                    )
+                                try:
+                                    synth_result = await _await_task_with_deadline(
+                                        synth_task,
+                                        timeout=chapter_timeout,
+                                        grace=15.0,
+                                    )
+                                finally:
+                                    await _safe_cancel_task(idle_task, grace=5.0)
                                 last_stage_timestamp = time.time()
                                 # Engines that write WAV (Piper/Coqui) return None on
                                 # failure instead of raising.  Raise here so the
