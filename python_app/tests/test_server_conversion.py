@@ -232,6 +232,55 @@ def test_should_retry_edge_before_fallback_prefers_one_local_retry():
     assert server._should_retry_edge_before_fallback("piper", edge_slow_mode=False) is False
 
 
+def test_rank_fallbacks_penalises_recently_failed_engines(monkeypatch):
+    """The server-side fallback ranking must mirror the CLI reliability
+    weighting: a slightly slower but reliable engine should outrank a fast
+    one that just failed several times."""
+    from dataclasses import replace
+
+    from python_app.src import _server_engine_helpers
+
+    base = ConversionConfig(engine="edge", primary_language="pt-BR")
+
+    # Stub server-side feature detection to keep the chain deterministic.
+    monkeypatch.setattr(server, "_has_coqui_support", lambda: False)
+    monkeypatch.setattr(server, "_has_kokoro_support", lambda _: True)
+    monkeypatch.setattr(server, "_has_piper_support", lambda: True)
+    monkeypatch.setattr(server, "_has_spark_support", lambda: False)
+
+    # Kokoro nominally faster than Piper (400 vs 300 cps) — baseline order.
+    fake_summary = {
+        "kokoro": {"avg_chars_per_second": 400.0},
+        "piper": {"avg_chars_per_second": 300.0},
+    }
+
+    class _FakeTelemetry:
+        def summary(self):
+            return fake_summary
+
+        def __init__(self):
+            self._kokoro_fails = 0
+
+        def reliability_factor(self, engine):
+            if engine == "kokoro":
+                # 5 recent failures → 0.85**5 ≈ 0.44 → effective cps 176 (below Piper).
+                return 0.85**5
+            return 1.0
+
+    monkeypatch.setattr(server, "telemetry", _FakeTelemetry())
+    # Also patch the lazy-imported reference inside _server_engine_helpers.
+    monkeypatch.setattr(_server_engine_helpers, "__name__", _server_engine_helpers.__name__)
+
+    chain = server._build_engine_chain(replace(base))
+    engines = [cfg.engine for cfg in chain]
+    # Edge stays first (primary). Among fallbacks, Piper must come before
+    # Kokoro because the reliability penalty pushed Kokoro below it.
+    assert engines[0] == "edge"
+    fallback_engines = engines[1:]
+    assert "piper" in fallback_engines and "kokoro" in fallback_engines
+    assert fallback_engines.index("piper") < fallback_engines.index("kokoro")
+
+
 def test_engine_is_disabled_respects_unavailable_set():
     # Regression: after the job-wide Edge timeout threshold fires, subsequent
     # chapters must not retry Edge — otherwise each one burns _CHAPTER_RETRY_MAX

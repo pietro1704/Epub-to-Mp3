@@ -57,3 +57,71 @@ def test_telemetry_ignores_invalid_samples(tmp_path):
         chapter=None,
     )
     assert recorder.summary() == {}
+
+
+# ── Failure tracking / reliability factor ─────────────────────────────────
+
+
+def _fresh_recorder(tmp_path) -> TelemetryRecorder:
+    recorder = TelemetryRecorder(telemetry_file=tmp_path / "telemetry.json", max_samples=5)
+    recorder.clear()
+    return recorder
+
+
+def test_record_failure_increments_counter(tmp_path):
+    recorder = _fresh_recorder(tmp_path)
+    assert recorder.failure_count_recent("edge") == 0
+    recorder.record_failure("edge")
+    recorder.record_failure("edge")
+    assert recorder.failure_count_recent("edge") == 2
+    # Other engines unaffected.
+    assert recorder.failure_count_recent("piper") == 0
+
+
+def test_record_failure_normalizes_engine_name(tmp_path):
+    recorder = _fresh_recorder(tmp_path)
+    recorder.record_failure("EDGE")
+    recorder.record_failure(" edge ")
+    assert recorder.failure_count_recent("edge") == 2
+
+
+def test_record_failure_ignores_empty(tmp_path):
+    recorder = _fresh_recorder(tmp_path)
+    recorder.record_failure("")
+    recorder.record_failure(None)  # type: ignore[arg-type]
+    assert recorder.failure_count_recent("edge") == 0
+
+
+def test_failure_count_respects_window(tmp_path):
+    import time as _time
+
+    recorder = _fresh_recorder(tmp_path)
+    recorder.record_failure("edge")
+    # Force old timestamp so it falls outside the window.
+    recorder._failure_timestamps["edge"][0] = _time.time() - 10_000
+    assert recorder.failure_count_recent("edge", window_seconds=900) == 0
+    # Widening the window should surface it again.
+    assert recorder.failure_count_recent("edge", window_seconds=20_000) == 1
+
+
+def test_reliability_factor_shapes(tmp_path):
+    recorder = _fresh_recorder(tmp_path)
+    # No failures → full confidence.
+    assert recorder.reliability_factor("edge") == 1.0
+    # One failure → 0.85.
+    recorder.record_failure("edge")
+    assert abs(recorder.reliability_factor("edge") - 0.85) < 1e-9
+    # Many failures → floor at 0.10.
+    for _ in range(30):
+        recorder.record_failure("edge")
+    assert recorder.reliability_factor("edge") == 0.10
+
+
+def test_reliability_factor_is_monotone_decreasing(tmp_path):
+    recorder = _fresh_recorder(tmp_path)
+    prev = recorder.reliability_factor("edge")
+    for _ in range(6):
+        recorder.record_failure("edge")
+        current = recorder.reliability_factor("edge")
+        assert current <= prev
+        prev = current

@@ -4721,6 +4721,7 @@ async def process_conversion(job_id: str) -> None:
                                 # chapters skip the 60s wait if Edge is consistently broken.
                                 if use_engine == "edge":
                                     edge_chapter_timeouts[0] += 1
+                                    telemetry.record_failure("edge")
                                     if edge_chapter_timeouts[0] >= _EDGE_TIMEOUT_DISABLE_THRESHOLD:
                                         unavailable_engines.add("edge")
                                         _append_event(
@@ -4909,6 +4910,7 @@ async def process_conversion(job_id: str) -> None:
                     except Exception as exc:
                         if engine_name:
                             unavailable_engines.add(engine_name)
+                            telemetry.record_failure(engine_name)
                         if auto_mode:
                             available_auto = _available_auto_pool()
                             next_engine = _next_auto_engine(

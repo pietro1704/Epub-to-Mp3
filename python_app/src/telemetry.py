@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import json
 import threading
+import time
+from collections import deque
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Deque, Dict, List, Optional
 
 from .paths import TELEMETRY_DIR
 
@@ -34,6 +36,9 @@ class TelemetryRecorder:
         self.telemetry_file.parent.mkdir(parents=True, exist_ok=True)
         self.max_samples = max(50, max_samples)
         self._lock = threading.Lock()
+        # In-memory ring of recent per-engine failures (timestamps). Used to
+        # penalise flaky engines in the server-side fallback ranking.
+        self._failure_timestamps: Dict[str, Deque[float]] = {}
 
     def record_sample(
         self,
@@ -112,6 +117,39 @@ class TelemetryRecorder:
             reverse=True,
         )
         return [engine for engine, _ in ranked]
+
+    # -- Failure tracking for reliability-weighted ranking --------------------
+
+    def record_failure(self, engine: str) -> None:
+        """Record a terminal engine failure (e.g. chapter timeout, engine
+        marked unavailable for a job). Consumed by ``failure_count_recent``
+        so the fallback ranking can penalise flaky engines."""
+        normalized = (engine or "").lower().strip()
+        if not normalized:
+            return
+        with self._lock:
+            dq = self._failure_timestamps.setdefault(normalized, deque(maxlen=20))
+            dq.append(time.time())
+
+    def failure_count_recent(self, engine: str, window_seconds: int = 900) -> int:
+        """Return how many failures the given engine has accumulated within
+        the last ``window_seconds`` (default 15 min)."""
+        normalized = (engine or "").lower().strip()
+        if not normalized:
+            return 0
+        now = time.time()
+        with self._lock:
+            dq = self._failure_timestamps.get(normalized)
+            if not dq:
+                return 0
+            return sum(1 for ts in dq if (now - ts) <= window_seconds)
+
+    def reliability_factor(self, engine: str, window_seconds: int = 900) -> float:
+        """Return a multiplier in (0, 1] for ranking. Each recent failure
+        shaves 15% off, floored at 0.10 so the engine never fully vanishes
+        from the chain (we still want it as last-resort retry fodder)."""
+        fails = self.failure_count_recent(engine, window_seconds=window_seconds)
+        return max(0.10, 0.85**fails)
 
     def recent_samples(self, limit: int = 25) -> List[dict]:
         samples = self._load_samples()

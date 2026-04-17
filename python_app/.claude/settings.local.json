@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//Users/pietropugliesi/Developer/Epub-to-Mp3/**)",
+      "Bash(python3 deploy_to_hf.py)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

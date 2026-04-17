@@ -185,8 +185,15 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
 
     def _rank_fallbacks(candidates: list[str]) -> list[str]:
         summary = _srv.telemetry.summary()
+        reliability = getattr(_srv.telemetry, "reliability_factor", None)
+
+        def _score(name: str) -> float:
+            cps = summary.get(name, {}).get("avg_chars_per_second", 0.0)
+            factor = reliability(name) if callable(reliability) else 1.0
+            return cps * factor
+
         ranked = sorted(
-            ((name, summary.get(name, {}).get("avg_chars_per_second", 0.0)) for name in candidates),
+            ((name, _score(name)) for name in candidates),
             key=lambda item: item[1],
             reverse=True,
         )
