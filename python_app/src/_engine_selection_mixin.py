@@ -400,8 +400,10 @@ class _EngineSelectionMixin:
             chapter_chars, available_engines
         )
 
-        # --- 2. Global performance ranking ---
-        rankings = self.speed_controller.get_engine_ranking(available_engines)
+        # --- 2. Global performance ranking (size-aware when enough samples) ---
+        rankings = self.speed_controller.get_engine_ranking(
+            available_engines, chapter_chars=chapter_chars
+        )
 
         if self.verbose and rankings:
             print("📊 Engine Rankings (based on recent performance):")

@@ -18,6 +18,26 @@ from .ebook_reader import Chapter
 
 class _RetryMixin:
     @staticmethod
+    def _scaled_quick_timeout(base_seconds: int, chars: int, engine: str) -> int:
+        """Scale a quick-synthesis timeout to the chapter's size.
+
+        A chapter that already failed once tends to be slow, and the fixed
+        defaults (90s Edge / 360s Piper) were sized around a ~15k-char chapter.
+        For larger chapters we grow the budget proportionally so the retry
+        isn't starved by a too-tight timeout.
+        """
+        base = max(10, int(base_seconds))
+        chars = max(0, int(chars))
+        if chars <= 0:
+            return base
+        ref_chars = {"edge": 15000, "piper": 8000, "kokoro": 6000}.get(engine.lower(), 12000)
+        if chars <= ref_chars:
+            return base
+        overflow = (chars - ref_chars) / float(ref_chars)
+        scale = min(3.0, 1.0 + overflow * 1.3)
+        return int(base * scale)
+
+    @staticmethod
     def _classify_failure_reason(error_text: Optional[str]) -> str:
         text = str(error_text or "").strip().lower()
         if not text:
@@ -336,16 +356,23 @@ class _RetryMixin:
 
                     # Synthesize audio
                     wav_file = None
+                    chapter_chars = len(text)
                     try:
                         synth_task = tts_engine.synthesize_async(
                             text, target_file.parent / f"temp_{chapter_num}.wav"
                         )
                         if selected_engine_name == "edge":
-                            timeout_s = edge_quick_timeout
+                            timeout_s = self._scaled_quick_timeout(
+                                edge_quick_timeout, chapter_chars, "edge"
+                            )
                         elif selected_engine_name == "piper":
-                            timeout_s = piper_quick_timeout
+                            timeout_s = self._scaled_quick_timeout(
+                                piper_quick_timeout, chapter_chars, "piper"
+                            )
                         else:
-                            timeout_s = generic_quick_timeout
+                            timeout_s = self._scaled_quick_timeout(
+                                generic_quick_timeout, chapter_chars, selected_engine_name or ""
+                            )
                         wav_file = await asyncio.wait_for(synth_task, timeout=timeout_s)
                     except Exception as primary_exc:
                         if selected_engine_name == "edge" and "piper" in available_engines:
@@ -373,7 +400,10 @@ class _RetryMixin:
                                     text, target_file.parent / f"temp_{chapter_num}.wav"
                                 )
                                 wav_file = await asyncio.wait_for(
-                                    piper_task, timeout=piper_quick_timeout
+                                    piper_task,
+                                    timeout=self._scaled_quick_timeout(
+                                        piper_quick_timeout, chapter_chars, "piper"
+                                    ),
                                 )
                             except Exception as fallback_exc:
                                 if self.verbose:

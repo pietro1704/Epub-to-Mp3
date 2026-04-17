@@ -157,3 +157,142 @@ class TestSizeBucket:
         assert AdaptiveSpeedController._size_bucket(29999) == "medium"
         assert AdaptiveSpeedController._size_bucket(30000) == "long"
         assert AdaptiveSpeedController._size_bucket(100000) == "long"
+
+
+class TestEngineRankingReliability:
+    """Failure rate must penalize the score multiplicatively; user cancels
+    must NOT count against the engine."""
+
+    def _append(
+        self,
+        ctrl: AdaptiveSpeedController,
+        engine: str,
+        *,
+        success: bool,
+        chars: int = 4000,
+        elapsed: float = 10.0,
+        error: str | None = None,
+    ) -> None:
+        ctrl._history[engine].append(
+            ChapterPerf(
+                index=1,
+                name="ch",
+                chars=chars,
+                elapsed=elapsed,
+                success=success,
+                error=error,
+                from_cache=False,
+            )
+        )
+
+    def test_all_success_scores_higher_than_mixed(self):
+        good = AdaptiveSpeedController()
+        flaky = AdaptiveSpeedController()
+        for _ in range(4):
+            self._append(good, "edge", success=True)
+        # 2 of 4 failures on flaky → ~50% failure rate
+        self._append(flaky, "edge", success=True)
+        self._append(flaky, "edge", success=False, error="boom")
+        self._append(flaky, "edge", success=True)
+        self._append(flaky, "edge", success=False, error="boom")
+
+        good_score, _ = good._calculate_engine_score("edge")
+        flaky_score, _ = flaky._calculate_engine_score("edge")
+        assert good_score > flaky_score
+        # Quadratic-ish penalty: flaky drops to less than 60% of good.
+        assert flaky_score < good_score * 0.6
+
+    def test_user_cancellation_does_not_penalize(self):
+        """A chapter cancelled by the user must not drag the engine's score
+        down — the engine did nothing wrong."""
+        ctrl_real_fail = AdaptiveSpeedController()
+        ctrl_cancel = AdaptiveSpeedController()
+        # Both: 2 successes + 1 negative outcome. One is a real failure, one
+        # is a cancellation — only the real failure should hurt the score.
+        for _ in range(2):
+            self._append(ctrl_real_fail, "edge", success=True)
+            self._append(ctrl_cancel, "edge", success=True)
+        self._append(ctrl_real_fail, "edge", success=False, error="timeout")
+        self._append(ctrl_cancel, "edge", success=False, error="cancelled by user")
+
+        real_score, _ = ctrl_real_fail._calculate_engine_score("edge")
+        cancel_score, _ = ctrl_cancel._calculate_engine_score("edge")
+        assert cancel_score > real_score
+
+    def test_only_cancellations_returns_neutral(self):
+        ctrl = AdaptiveSpeedController()
+        for _ in range(3):
+            self._append(ctrl, "edge", success=False, error="Cancellation requested")
+        score, reason = ctrl._calculate_engine_score("edge")
+        assert 40 <= score <= 60
+        assert "cancel" in reason
+
+    def test_slow_reliable_beats_fast_flaky(self):
+        """A slower but always-reliable engine should rank higher than a fast
+        but 50%-failing one — the core motivation for the reliability factor."""
+        ctrl = AdaptiveSpeedController()
+        # Piper: 100 chars/s, 100% success
+        for _ in range(4):
+            self._append(ctrl, "piper", success=True, chars=3000, elapsed=30.0)
+        # Edge: 500 chars/s but 50% failure rate
+        self._append(ctrl, "edge", success=True, chars=3000, elapsed=6.0)
+        self._append(ctrl, "edge", success=False, error="timeout")
+        self._append(ctrl, "edge", success=True, chars=3000, elapsed=6.0)
+        self._append(ctrl, "edge", success=False, error="timeout")
+
+        rankings = ctrl.get_engine_ranking(["edge", "piper"])
+        top = rankings[0][0]
+        assert top == "piper", f"expected piper to outrank flaky edge, got {rankings}"
+
+
+class TestRankingSizeAwareness:
+    """`get_engine_ranking` should bias towards samples in the target size
+    bucket when one is provided."""
+
+    def _append(
+        self,
+        ctrl: AdaptiveSpeedController,
+        engine: str,
+        *,
+        chars: int,
+        elapsed: float,
+    ) -> None:
+        ctrl._history[engine].append(
+            ChapterPerf(
+                index=1,
+                name="ch",
+                chars=chars,
+                elapsed=elapsed,
+                success=True,
+                error=None,
+                from_cache=False,
+            )
+        )
+
+    def test_ranking_uses_bucket_samples_when_enough(self):
+        ctrl = AdaptiveSpeedController()
+        # Edge: very fast on short chapters (2 samples in short bucket)
+        self._append(ctrl, "edge", chars=3000, elapsed=6.0)
+        self._append(ctrl, "edge", chars=3500, elapsed=7.0)
+        # Edge: very slow on long chapters (also 2 samples, in long bucket)
+        self._append(ctrl, "edge", chars=50_000, elapsed=1000.0)
+        self._append(ctrl, "edge", chars=45_000, elapsed=900.0)
+
+        ranking_short = ctrl.get_engine_ranking(["edge"], chapter_chars=3200)
+        ranking_long = ctrl.get_engine_ranking(["edge"], chapter_chars=48_000)
+        # Short bucket should outperform long by a wide margin (10×+ cps).
+        assert ranking_short[0][1] > ranking_long[0][1]
+        assert "short bucket" in ranking_short[0][2]
+        assert "long bucket" in ranking_long[0][2]
+
+    def test_ranking_falls_back_when_bucket_sparse(self):
+        """With only 1 sample in the bucket, ranking uses the full window."""
+        ctrl = AdaptiveSpeedController()
+        self._append(ctrl, "edge", chars=3000, elapsed=6.0)  # short, single sample
+        self._append(ctrl, "edge", chars=40_000, elapsed=80.0)
+        self._append(ctrl, "edge", chars=38_000, elapsed=80.0)
+
+        ranking = ctrl.get_engine_ranking(["edge"], chapter_chars=3200)
+        # Bucket has <2 samples → falls back to full window. Reason must NOT
+        # claim it used the short bucket.
+        assert "bucket" not in ranking[0][2]

@@ -250,3 +250,52 @@ class TestFailureCheckpoint:
         payload = mixin._load_failure_checkpoint(tmp_path)
         assert "chapter_1" in payload["resume_chunks"]
         assert payload["resume_chunks"]["chapter_1"]["chunk_files"] == 2
+
+
+# ---------------------------------------------------------------------------
+# _scaled_quick_timeout — size-aware retry timeout
+# ---------------------------------------------------------------------------
+
+
+class TestScaledQuickTimeout:
+    def test_zero_chars_returns_base(self):
+        assert _RetryMixin._scaled_quick_timeout(90, 0, "edge") == 90
+
+    def test_negative_chars_returns_base(self):
+        assert _RetryMixin._scaled_quick_timeout(90, -500, "edge") == 90
+
+    def test_below_reference_returns_base_edge(self):
+        # 15k reference for edge → 10k stays at base.
+        assert _RetryMixin._scaled_quick_timeout(90, 10_000, "edge") == 90
+
+    def test_at_reference_returns_base_piper(self):
+        # 8k reference for piper.
+        assert _RetryMixin._scaled_quick_timeout(360, 8_000, "piper") == 360
+
+    def test_scales_above_reference_edge(self):
+        # Edge at 30k = 2× ref → overflow 1.0 → scale 2.3× ≈ 207s.
+        result = _RetryMixin._scaled_quick_timeout(90, 30_000, "edge")
+        assert 200 <= result <= 215
+
+    def test_scales_above_reference_piper(self):
+        # Piper at 16k = 2× ref → overflow 1.0 → scale 2.3× ≈ 828s.
+        result = _RetryMixin._scaled_quick_timeout(360, 16_000, "piper")
+        assert 820 <= result <= 835
+
+    def test_caps_at_3x(self):
+        # Very long chapter must not exceed 3× base.
+        result = _RetryMixin._scaled_quick_timeout(90, 1_000_000, "edge")
+        assert result == 270  # 3 × 90
+
+    def test_unknown_engine_uses_generic_reference(self):
+        # Fallback reference is 12k for unknown engines.
+        assert _RetryMixin._scaled_quick_timeout(240, 10_000, "kokoro_xl") == 240
+
+    def test_base_is_floored(self):
+        # Tiny base values get a minimum floor of 10 before scaling.
+        assert _RetryMixin._scaled_quick_timeout(5, 10_000, "edge") == 10
+
+    def test_engine_name_case_insensitive(self):
+        a = _RetryMixin._scaled_quick_timeout(90, 30_000, "EDGE")
+        b = _RetryMixin._scaled_quick_timeout(90, 30_000, "edge")
+        assert a == b

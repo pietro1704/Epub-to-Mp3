@@ -792,8 +792,12 @@ class AudioConverter(
             os.environ["PIPER_CHUNK_CHARS"] = str(config.piper_chunk_chars)
         elif engine == "edge":
             config.edge_enable_parallel = False
-            config.edge_chunk_chars = max(
-                4000, int((getattr(config, "edge_chunk_chars", 12000) or 12000) * 0.8)
+            from ._server_engine_helpers import degrade_edge_chunk_chars
+
+            config.edge_chunk_chars = degrade_edge_chunk_chars(
+                getattr(config, "edge_chunk_chars", 12000) or 12000,
+                floor=4000,
+                cap=12000,
             )
             os.environ["EDGE_CHUNK_CHARS"] = str(config.edge_chunk_chars)
         if getattr(config, "extra", None) is None:

@@ -7,6 +7,7 @@ import contextlib
 import json
 import os
 import platform
+import random
 import re
 import subprocess
 import time
@@ -869,6 +870,17 @@ class _EdgeThrottleMixin:
             if self.verbose:
                 print(f"🌡️ Thermal/power guard ({mode}): {current}→{cap_int}")
 
+    @staticmethod
+    def _jittered_auto_tune_thresholds() -> tuple[float, float]:
+        """Return (down, up) multipliers with ±10% jitter around 0.78 / 1.18.
+
+        Factored out for testability; inline in ``_auto_tune_parallelism``
+        callers so concurrent conversions don't pick identical thresholds.
+        """
+        down = 0.78 + random.uniform(-0.08, 0.08)
+        up = 1.18 + random.uniform(-0.12, 0.12)
+        return down, up
+
     def _auto_tune_parallelism(
         self,
         *,
@@ -905,13 +917,17 @@ class _EdgeThrottleMixin:
             if throughput:
                 if throughput > best:
                     state["best_throughput"] = throughput
-                if last and throughput < last * 0.78 and current > 1:
+                # ±10% jitter on the decision thresholds so concurrent
+                # conversions don't all step up/down in lockstep (avoids
+                # thundering-herd CPU spikes on HF Spaces).
+                down_threshold, up_threshold = self._jittered_auto_tune_thresholds()
+                if last and throughput < last * down_threshold and current > 1:
                     new_value = current - 1
                     reason = (
                         f"throughput caiu de ~{int(last)} para ~{int(throughput)} chars/s → "
                         f"{new_value} chapter(s)"
                     )
-                elif last and throughput >= last * 1.18 and current < ceiling:
+                elif last and throughput >= last * up_threshold and current < ceiling:
                     new_value = current + 1
                     reason = (
                         f"throughput atingiu ~{int(throughput)} chars/s → "

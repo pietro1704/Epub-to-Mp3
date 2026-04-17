@@ -19,6 +19,28 @@ def _piper_fallback_disabled() -> bool:
     return os.getenv("DISABLE_PIPER_FALLBACK", "").strip().lower() in ("1", "true", "yes")
 
 
+def degrade_edge_chunk_chars(
+    current: Optional[int],
+    *,
+    floor: int = 4000,
+    cap: int = 8000,
+    shrink_factor: float = 0.8,
+) -> int:
+    """Compute a reduced ``edge_chunk_chars`` for safe/degraded mode.
+
+    Shared by both conversion paths (``converter.py`` startup guardrail and
+    ``server.py`` slow-mode entry) so the same config degrades to the same
+    value regardless of entry point — avoids CLI vs Web divergence.
+
+    The result is ``current * shrink_factor`` clamped to ``[floor, cap]``.
+    ``current`` falling back to ``cap`` when missing or non-positive keeps
+    callers from accidentally shrinking to the floor.
+    """
+    base = int(current) if current and int(current) > 0 else cap
+    shrunk = int(base * shrink_factor)
+    return max(floor, min(cap, shrunk))
+
+
 # ---------------------------------------------------------------------------
 # Performance profile helpers
 # ---------------------------------------------------------------------------

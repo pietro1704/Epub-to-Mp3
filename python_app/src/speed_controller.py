@@ -8,6 +8,8 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Dict, List, Optional
 
+from .error_classifier import classify_error
+
 
 @dataclass
 class ChapterSpeedDecision:
@@ -292,9 +294,18 @@ class AdaptiveSpeedController:
             return None
         return f"{int(chunk)} chars, {int(seconds)}s, {int(wpm)} wpm"
 
-    def get_engine_ranking(self, available_engines: List[str]) -> List[tuple[str, float, str]]:
+    def get_engine_ranking(
+        self,
+        available_engines: List[str],
+        chapter_chars: Optional[int] = None,
+    ) -> List[tuple[str, float, str]]:
         """
         Get engines ranked by performance (best first).
+
+        When ``chapter_chars`` is provided, samples from the matching size
+        bucket are preferred, so ranking reflects expected performance for a
+        chapter of that size (falls back to the full window when the bucket
+        has no data yet).
 
         Returns:
             List of (engine_name, score, reason) tuples
@@ -302,20 +313,25 @@ class AdaptiveSpeedController:
         rankings = []
 
         for engine in available_engines:
-            score, reason = self._calculate_engine_score(engine)
+            score, reason = self._calculate_engine_score(engine, chapter_chars=chapter_chars)
             rankings.append((engine, score, reason))
 
         # Sort by score (higher is better)
         rankings.sort(key=lambda x: x[1], reverse=True)
         return rankings
 
-    def _calculate_engine_score(self, engine: str) -> tuple[float, str]:
+    def _calculate_engine_score(
+        self,
+        engine: str,
+        chapter_chars: Optional[int] = None,
+    ) -> tuple[float, str]:
         """
         Calculate performance score for an engine.
 
         Score components:
         - Speed (chars/second): Higher is better
-        - Success rate: Higher is better
+        - Reliability: Multiplicative quadratic-ish penalty on failure rate.
+          User-cancelled chapters are excluded (not an engine fault).
         - Consistency: Lower variance is better
         - Recency: Recent performance weighted more
 
@@ -325,17 +341,35 @@ class AdaptiveSpeedController:
         history = self._history.get(engine, deque())
 
         if not history:
-            # No data - give neutral score
             return (50.0, "no history")
 
-        # Calculate metrics
-        recent_items = list(history)[-3:]  # Last 3 chapters
-        if not recent_items:
+        # Wider window (5) so a single transient failure doesn't dominate.
+        full_recent = list(history)[-5:]
+        if not full_recent:
             return (50.0, "no recent data")
 
-        # Speed (chars/second)
+        bucket_note = ""
+        recent_items = full_recent
+        if chapter_chars and chapter_chars > 0:
+            target_bucket = self._size_bucket(int(chapter_chars))
+            bucket_items = [
+                item for item in full_recent if self._size_bucket(item.chars) == target_bucket
+            ]
+            # Only use bucket-restricted view if it has enough signal (>= 2
+            # samples). Otherwise a single lucky success in that bucket would
+            # dominate the score.
+            if len(bucket_items) >= 2:
+                recent_items = bucket_items
+                bucket_note = f", {target_bucket} bucket"
+
+        scorable = [
+            item for item in recent_items if classify_error(item.error or "") != "cancelled"
+        ]
+        if not scorable:
+            return (50.0, "only user cancellations")
+
         speeds = [
-            item.chars / item.elapsed for item in recent_items if item.success and item.elapsed > 0
+            item.chars / item.elapsed for item in scorable if item.success and item.elapsed > 0
         ]
 
         if not speeds:
@@ -343,31 +377,29 @@ class AdaptiveSpeedController:
 
         avg_speed = sum(speeds) / len(speeds)
 
-        # Success rate
-        successes = sum(1 for item in recent_items if item.success)
-        success_rate = successes / len(recent_items)
+        successes = sum(1 for item in scorable if item.success)
+        success_rate = successes / len(scorable)
+        failure_rate = 1.0 - success_rate
 
-        # Consistency (lower std dev is better)
         if len(speeds) >= 2:
             mean = sum(speeds) / len(speeds)
             variance = sum((x - mean) ** 2 for x in speeds) / len(speeds)
             std_dev = variance**0.5
-            consistency = 1.0 / (1.0 + std_dev / mean)  # Normalize
+            consistency = 1.0 / (1.0 + std_dev / mean)
         else:
             consistency = 0.5
 
-        # Calculate final score (0-100)
-        # Speed is primary factor (weighted 60%)
-        # Success rate (weighted 30%)
-        # Consistency (weighted 10%)
-        speed_score = min(avg_speed / 5, 100)  # Normalize to 0-100 (500 chars/s = max)
-        success_score = success_rate * 100
+        speed_score = min(avg_speed / 5, 100)
         consistency_score = consistency * 100
 
-        final_score = speed_score * 0.6 + success_score * 0.3 + consistency_score * 0.1
+        # Multiplicative reliability: a slower-but-reliable engine should beat
+        # a fast-but-flaky one in auto-mode ranking. Power 1.5 keeps the
+        # penalty meaningful without zeroing out after a single failure.
+        reliability_factor = max(0.25, (1.0 - failure_rate) ** 1.5)
 
-        # Penalize engines with recent connectivity issues (DNS/SSL/network).
-        # This avoids oscillation back to unstable cloud engines in auto mode.
+        raw_score = speed_score * 0.7 + consistency_score * 0.3
+        final_score = raw_score * reliability_factor
+
         now = time.time()
         window_seconds = 15 * 60
         failures = self._connectivity_failures.get(engine, deque())
@@ -376,12 +408,12 @@ class AdaptiveSpeedController:
             penalty = min(70.0, 25.0 * len(recent))
             final_score = max(0.0, final_score - penalty)
             reason = (
-                f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% success, "
+                f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% success{bucket_note}, "
                 f"connectivity penalty x{len(recent)}"
             )
             return (final_score, reason)
 
-        reason = f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% success"
+        reason = f"{int(avg_speed)} chars/s, {int(success_rate * 100)}% success{bucket_note}"
         return (final_score, reason)
 
     def record_connectivity_failure(self, engine: str) -> None:

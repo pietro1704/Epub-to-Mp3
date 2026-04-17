@@ -1526,6 +1526,7 @@ from src._server_engine_helpers import (  # noqa: E402
     _pick_auto_engine,
     _prepare_auto_engine_pool,
     _resolve_auto_preferred_engine,
+    degrade_edge_chunk_chars,
 )
 
 # Performance profile (auto = HF-safe on Spaces, local otherwise)
@@ -4193,10 +4194,10 @@ async def process_conversion(job_id: str) -> None:
             requested_slots = min(requested_slots, cap)
             parallel_slots = min(parallel_slots, cap)
             job["parallelSlots"] = parallel_slots
+            safe_cap = int(edge_safe_profile["chunk_chars"])
             for cfg in edge_configs:
-                cfg.edge_chunk_chars = min(
-                    cfg.edge_chunk_chars or edge_safe_profile["chunk_chars"],
-                    edge_safe_profile["chunk_chars"],
+                cfg.edge_chunk_chars = degrade_edge_chunk_chars(
+                    cfg.edge_chunk_chars, floor=4000, cap=safe_cap
                 )
                 cfg.edge_max_segment_seconds = min(
                     cfg.edge_max_segment_seconds or edge_safe_profile["max_segment_seconds"],
