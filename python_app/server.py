@@ -28,6 +28,7 @@ import hashlib
 import html
 import json
 import logging
+import random
 import re
 import shutil
 import sys
@@ -52,6 +53,7 @@ from src.chapter_utils import deduplicate_chapters_by_content
 from src.config import CACHE_DIR, ConversionConfig
 from src.ebook_reader import EbookReader
 from src.engine_pool import JobEnginePool, ResourceSnapshot
+from src.error_classifier import classify_error
 from src.hardware_detector import HardwareDetector
 from src.job_manager import JobManager
 from src.language import LanguageProfile
@@ -260,7 +262,16 @@ _DEFAULT_TTL_HOURS = 48 if os.getenv("SPACE_ID") else 4
 COMPLETED_JOB_TTL_HOURS = float(
     os.getenv("COMPLETED_JOB_TTL_HOURS", str(_DEFAULT_TTL_HOURS)) or _DEFAULT_TTL_HOURS
 )
-CLEANUP_INTERVAL_SECONDS = 300  # Run cleanup every 5 minutes
+# HF Spaces recycles jobs faster than local dev; default to a shorter cleanup
+# interval there so orphaned entries don't linger for the full 5-minute window.
+_DEFAULT_CLEANUP_INTERVAL = 60 if os.getenv("SPACE_ID") else 300
+CLEANUP_INTERVAL_SECONDS = max(
+    10,
+    int(
+        os.getenv("CLEANUP_INTERVAL_SECONDS", str(_DEFAULT_CLEANUP_INTERVAL))
+        or _DEFAULT_CLEANUP_INTERVAL
+    ),
+)
 TELEMETRY_RETENTION_HOURS = max(
     24, int(os.getenv("TELEMETRY_RETENTION_HOURS", "720") or "720")
 )  # 30 days
@@ -1650,7 +1661,8 @@ async def _hf_keepalive(interval_seconds: float = 600.0) -> None:
     # through HF's proxy.
     port = int(os.getenv("PORT", "7860"))
     url = f"http://localhost:{port}/api/health"
-    await asyncio.sleep(60)  # Let the server fully start before first ping
+    initial_delay = max(1, int(os.getenv("HF_KEEPALIVE_INITIAL_DELAY", "10") or "10"))
+    await asyncio.sleep(initial_delay)
     while True:
         try:
             async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
@@ -4489,8 +4501,21 @@ async def process_conversion(job_id: str) -> None:
                         return False
                     if _CHAPTER_RETRY_MAX <= 0 or retry_count >= _CHAPTER_RETRY_MAX:
                         return False
+                    # Short-circuit terminal categories — retrying an auth failure or
+                    # an engine flagged unavailable just burns the retry budget.
+                    # Fall through to the next engine in the chain instead.
+                    category = classify_error(reason)
+                    if category in ("auth", "engine_unavailable"):
+                        _append_event(
+                            job,
+                            f"⛔ Skipping retry for terminal error ({category}): {reason}",
+                        )
+                        return False
                     retry_count += 1
                     backoff = _CHAPTER_RETRY_BACKOFF_SECONDS * (1 + 0.5 * (retry_count - 1))
+                    # Jitter ±20% so simultaneous chapter failures don't retry in lockstep
+                    # and collide on Edge rate limits.
+                    backoff = max(0.0, backoff + random.uniform(-0.2, 0.2) * backoff)
                     if (engine_label or "").lower() == "edge":
                         _apply_edge_slow_mode(reason)
                         adjustments = _edge_retry_adjustments(engine_config, retry_count)

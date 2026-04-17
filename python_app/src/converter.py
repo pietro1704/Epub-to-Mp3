@@ -10,6 +10,7 @@ import gc
 import inspect
 import json
 import os
+import random
 import re
 import resource
 import shutil
@@ -44,6 +45,7 @@ from .chapter_utils import deduplicate_chapters_by_content
 from .config import ConversionConfig
 from .ebook_reader import Chapter, EbookReader
 from .engine_pool import JobEnginePool
+from .error_classifier import classify_error
 from .hardware_detector import HardwareProfile
 from .i18n import Localization, get_localization
 from .performance_profile_store import PerformanceProfileStore
@@ -3867,9 +3869,14 @@ class AudioConverter(
                 chapter_retry = False
                 start_time = time.time()
                 if chapter_attempt > 1:
-                    retry_backoff = min(30, 2 ** min(chapter_attempt, 5))
+                    base_backoff = min(30, 2 ** min(chapter_attempt, 5))
+                    # Add ±20% jitter so many chapters failing simultaneously don't
+                    # retry in lockstep — prevents the Edge rate-limit thundering herd
+                    # when a whole batch trips 429 at once.
+                    jitter = random.uniform(-0.2, 0.2) * base_backoff
+                    retry_backoff = max(0.5, base_backoff + jitter)
                     self.progress.tick(
-                        f"⏳ Retry backoff {retry_backoff}s (attempt {chapter_attempt}/{max_chapter_attempts})"
+                        f"⏳ Retry backoff {retry_backoff:.1f}s (attempt {chapter_attempt}/{max_chapter_attempts})"
                     )
                     await asyncio.sleep(retry_backoff)
 
@@ -5592,6 +5599,15 @@ class AudioConverter(
                 except _RetryChapter as retry_exc:
                     chapter_retry = True
                     chapter_error = str(retry_exc)
+                    # Terminal categories (auth, no engine available) won't be fixed
+                    # by retrying — stop early so the defer/fallback logic kicks in.
+                    terminal_category = classify_error(chapter_error)
+                    if terminal_category in ("auth", "engine_unavailable"):
+                        if self.verbose:
+                            print(
+                                f"   ⛔ Terminal error ({terminal_category}), skipping retries: {chapter_error}"
+                            )
+                        chapter_attempt = max_chapter_attempts
                 except Exception as e:
                     error_msg = f"Exception: {str(e)}"
                     if self.verbose:
