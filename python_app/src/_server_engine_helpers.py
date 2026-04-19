@@ -19,6 +19,24 @@ def _piper_fallback_disabled() -> bool:
     return os.getenv("DISABLE_PIPER_FALLBACK", "").strip().lower() in ("1", "true", "yes")
 
 
+def _fallback_engine_override() -> Optional[str]:
+    """Return the operator-configured fallback engine override, if any.
+
+    Mirrors the CLI's ``--fallback-engine`` flag on the server path: when set,
+    the server's engine chain is constrained accordingly.
+
+    ``FALLBACK_ENGINE_OVERRIDE=none`` strips all offline fallbacks; setting it
+    to a specific engine (``piper``/``kokoro``/``coqui``) keeps only that tier.
+    Unknown / empty values return None (no override → current ranking wins).
+    """
+    raw = (os.getenv("FALLBACK_ENGINE_OVERRIDE") or "").strip().lower()
+    if not raw or raw == "auto":
+        return None
+    if raw in {"none", "piper", "kokoro", "coqui", "spark"}:
+        return raw
+    return None
+
+
 def degrade_edge_chunk_chars(
     current: Optional[int],
     *,
@@ -221,6 +239,9 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
                 )
                 chain.append(mono_config)
 
+        override = _fallback_engine_override()
+        if override == "none":
+            return chain
         fallback_candidates = []
         if _srv._has_coqui_support():
             fallback_candidates.append("coqui")
@@ -229,6 +250,8 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
             fallback_candidates.append("spark")
         if _srv._has_piper_support() and not _piper_fallback_disabled():
             fallback_candidates.append("piper")
+        if override and override in fallback_candidates:
+            fallback_candidates = [override]
         fallback_engines = _rank_fallbacks(fallback_candidates)
         for engine_name in fallback_engines:
             if engine_name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):

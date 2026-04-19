@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import html
 import mimetypes
+import os
 import posixpath
 import re
 import zipfile
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
@@ -1174,6 +1176,34 @@ class TextProcessor:
         return " ".join(words[:max_words])
 
 
+_TOC_CACHE_MAX = 16
+_toc_cache: "OrderedDict[Tuple[str, int, str], List[TocItem]]" = OrderedDict()
+
+
+def _toc_cache_get(file_path: str, opf_path: Optional[str]) -> Optional[List[TocItem]]:
+    try:
+        mtime_ns = os.stat(file_path).st_mtime_ns
+    except OSError:
+        return None
+    key = (file_path, mtime_ns, opf_path or "")
+    hit = _toc_cache.get(key)
+    if hit is None:
+        return None
+    _toc_cache.move_to_end(key)
+    return list(hit)
+
+
+def _toc_cache_put(file_path: str, opf_path: Optional[str], items: List[TocItem]) -> None:
+    try:
+        mtime_ns = os.stat(file_path).st_mtime_ns
+    except OSError:
+        return
+    key = (file_path, mtime_ns, opf_path or "")
+    _toc_cache[key] = list(items)
+    while len(_toc_cache) > _TOC_CACHE_MAX:
+        _toc_cache.popitem(last=False)
+
+
 class EpubParser:
     """Parse a single EPUB file into a :class:`Book` instance."""
 
@@ -2247,6 +2277,9 @@ class EpubParser:
         opf_path: Optional[str] = None,
     ) -> List[TocItem]:
         """Parse the table of contents, trying NCX (EPUB2) then nav.xhtml (EPUB3)."""
+        cached = _toc_cache_get(self.file_path, opf_path)
+        if cached is not None:
+            return cached
         # --- EPUB2: NCX ---
         candidates = [name for name in archive.namelist() if name.lower().endswith(".ncx")]
         if candidates:
@@ -2283,7 +2316,9 @@ class EpubParser:
                         return items
 
                     top_level_points = nav_map.findall("ncx:navPoint", XML_NS)
-                    return build(top_level_points, level=1)
+                    built = build(top_level_points, level=1)
+                    _toc_cache_put(self.file_path, opf_path, built)
+                    return built
             except (ET.ParseError, KeyError):
                 pass
 
@@ -2291,8 +2326,10 @@ class EpubParser:
         if opf_path:
             nav_items = self._parse_nav_toc_from_opf(archive, opf_path, base_dir)
             if nav_items:
+                _toc_cache_put(self.file_path, opf_path, nav_items)
                 return nav_items
 
+        _toc_cache_put(self.file_path, opf_path, [])
         return []
 
     @staticmethod

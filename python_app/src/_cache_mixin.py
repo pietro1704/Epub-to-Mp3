@@ -12,6 +12,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from ._cache_helpers import compute_cache_model_bucket
 from .config import ConversionConfig
 from .ebook_reader import Chapter
 from .utils import FileManager, TextValidator
@@ -555,29 +556,7 @@ class _CacheMixin:
 
     @staticmethod
     def _cache_model_bucket(config: ConversionConfig) -> Optional[str]:
-        engine = (getattr(config, "engine", "") or "unknown").lower()
-        parts = [engine]
-
-        voice = getattr(config, "voice", None)
-        model_path = getattr(config, "model_path", None)
-
-        if engine == "piper" and model_path:
-            parts.append(Path(model_path).stem)
-        elif engine == "coqui":
-            if voice:
-                parts.append(str(voice))
-            elif model_path:
-                parts.append(Path(model_path).stem)
-        else:
-            if voice:
-                parts.append(str(voice))
-
-        bucket_name = "__".join(part for part in parts if part)
-        if not bucket_name:
-            return None
-        safe_bucket = FileManager.sanitize_filename(bucket_name, max_length=96)
-        safe_bucket = safe_bucket.replace(" ", "_")
-        return safe_bucket or None
+        return compute_cache_model_bucket(config)
 
     @staticmethod
     def _cache_text(
