@@ -137,6 +137,29 @@ def check_regression(payload: Dict[str, object], min_avg_cps: float) -> tuple[bo
     return False, f"avg chars/s {avg_cps:.1f} < threshold {threshold:.1f}"
 
 
+def check_per_item_regression(payload: Dict[str, object], min_item_cps: float) -> tuple[bool, str]:
+    """Return (ok, message) based on per-item chars/s floor.
+
+    Fails when any individual benchmark item (short/medium/long) drops below
+    the configured floor. Catches regressions isolated to a single size class
+    that an averaged gate would miss.
+    """
+    threshold = float(min_item_cps or 0.0)
+    if threshold <= 0:
+        return True, "no per-item threshold configured"
+    items = payload.get("items", []) or []
+    offenders: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        cps = float(item.get("chars_per_second", 0.0) or 0.0)
+        if cps < threshold:
+            offenders.append(f"{item.get('size', '?')}={cps:.1f}")
+    if offenders:
+        return False, f"items below {threshold:.1f} cps: {', '.join(offenders)}"
+    return True, f"all items >= {threshold:.1f} cps"
+
+
 def load_baseline(path: Optional[Path] = None) -> Optional[Dict[str, object]]:
     baseline_path = Path(path or (TELEMETRY_DIR / "ci-speed-baseline.json"))
     if not baseline_path.exists():

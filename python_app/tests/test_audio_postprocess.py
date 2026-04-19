@@ -172,6 +172,48 @@ def test_app_config_clamps_negative_env(monkeypatch: pytest.MonkeyPatch) -> None
     assert cfg.chapter_outro_silence_ms == ConversionConfig.chapter_outro_silence_ms
 
 
+def test_concat_fallback_succeeds_when_filter_step_fails(dummy_mp3: Path) -> None:
+    """When the -af step fails (e.g. decode error), the concat fallback runs."""
+    calls: list[tuple] = []
+
+    async def fake_exec(cmd, **kwargs):
+        calls.append(cmd)
+        # First call is the filter step — fail it to trigger the fallback.
+        if calls and len(calls) == 1:
+            return _make_fake_proc(returncode=1, stderr=b"Decode error rate 1 exceeds maximum")
+        # Silence / concat steps succeed and write something to the output path.
+        Path(cmd[-1]).write_bytes(b"\xff\xfb" + b"\x02" * 1024)
+        return _make_fake_proc(returncode=0)
+
+    with patch(
+        "python_app.src.audio_postprocess.asyncio.create_subprocess_exec",
+        side_effect=fake_exec,
+    ):
+        ok, error = asyncio.run(add_silence_padding(dummy_mp3, intro_ms=100, outro_ms=500))
+
+    assert ok is True, f"fallback should succeed, got error={error}"
+    assert error is None
+    cmds_joined = " ".join(" ".join(c) for c in calls)
+    assert "anullsrc" in cmds_joined
+    assert "concat" in cmds_joined
+
+
+def test_concat_fallback_reports_error_when_both_paths_fail(dummy_mp3: Path) -> None:
+    """If filter AND concat fallback fail, original error is surfaced."""
+
+    async def fake_exec(cmd, **kwargs):
+        return _make_fake_proc(returncode=1, stderr=b"ffmpeg: total failure")
+
+    with patch(
+        "python_app.src.audio_postprocess.asyncio.create_subprocess_exec",
+        side_effect=fake_exec,
+    ):
+        ok, error = asyncio.run(add_silence_padding(dummy_mp3, intro_ms=0, outro_ms=500))
+
+    assert ok is False
+    assert "total failure" in (error or "")
+
+
 def test_config_as_dict_includes_silence_fields() -> None:
     cfg = ConversionConfig(
         engine="edge",

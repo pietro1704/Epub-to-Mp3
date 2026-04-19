@@ -21,6 +21,7 @@ sys.path.insert(0, repo_root)
 
 from src.ci_speed_benchmark import (  # noqa: E402
     baseline_is_stale,
+    check_per_item_regression,
     check_regression,
     check_regression_vs_baseline,
     load_baseline,
@@ -48,6 +49,13 @@ def main() -> int:
         type=float,
         default=0.0,
         help="Fail with exit code 2 if avg chars/s is below this threshold",
+    )
+    parser.add_argument(
+        "--min-item-cps",
+        type=float,
+        default=0.0,
+        help="Fail with exit code 4 if any individual item (short/medium/long) "
+        "is below this threshold. Tighter signal than --min-avg-cps.",
     )
     parser.add_argument(
         "--baseline-file",
@@ -83,6 +91,13 @@ def main() -> int:
         else:
             print(f"❌ Regression check: {message}")
             return 2
+    ok_items, items_message = check_per_item_regression(payload, args.min_item_cps)
+    if args.min_item_cps > 0:
+        if ok_items:
+            print(f"✅ Per-item check: {items_message}")
+        else:
+            print(f"❌ Per-item check: {items_message}")
+            return 4
     baseline = load_baseline(args.baseline_file)
     baseline_stale = baseline_is_stale(baseline, period_hours=args.period_hours)
     if args.update_baseline or baseline_stale:

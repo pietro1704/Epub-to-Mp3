@@ -6,12 +6,17 @@ Cache manager for processed ebooks
 import hashlib
 import json
 import shutil
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .paths import CACHE_DIR
+
+# Bound the in-memory cache so batch conversions of many large books do not
+# grow unbounded (each metadata entry holds full chapter text).
+_MEMORY_CACHE_MAX_ENTRIES = 8
 
 
 @dataclass
@@ -46,8 +51,9 @@ class CacheManager:
     }
 
     def __init__(self, cache_dir: Optional[Path] = None):
-        # In-memory cache for the current session (avoids redundant disk reads)
-        self._memory_cache: Dict[str, Dict[str, Any]] = {}
+        # LRU-bound in-memory cache for the current session (avoids redundant
+        # disk reads while preventing unbounded growth across batch jobs).
+        self._memory_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         try:
             # Always uses CACHE_DIR from project root, unless explicitly provided
             self.cache_dir = Path(cache_dir) if cache_dir else CACHE_DIR
@@ -102,6 +108,7 @@ class CacheManager:
 
         key = str(ebook_path.resolve())
         if key in self._memory_cache:
+            self._memory_cache.move_to_end(key)
             return self._memory_cache[key]
 
         cache_path = self._get_cache_path(ebook_path)
@@ -116,7 +123,7 @@ class CacheManager:
 
             # Validate if cache is still valid
             if self._is_cache_valid(metadata, ebook_path):
-                self._memory_cache[key] = metadata
+                self._memory_cache_put(key, metadata)
                 return metadata
             else:
                 # Remove invalid cache
@@ -192,12 +199,20 @@ class CacheManager:
             with open(metadata_file, "w", encoding="utf-8") as f:
                 json.dump(metadata, f, ensure_ascii=False, indent=2)
 
-            self._memory_cache[str(ebook_path.resolve())] = metadata
+            self._memory_cache_put(str(ebook_path.resolve()), metadata)
             return True
 
         except Exception as exc:
             print(f"⚠️  Error saving cache: {exc}")
             return False
+
+    def _memory_cache_put(self, key: str, metadata: Dict[str, Any]) -> None:
+        """Insert into LRU, evicting the oldest entry past the bound."""
+        if key in self._memory_cache:
+            self._memory_cache.move_to_end(key)
+        self._memory_cache[key] = metadata
+        while len(self._memory_cache) > _MEMORY_CACHE_MAX_ENTRIES:
+            self._memory_cache.popitem(last=False)
 
     def _is_cache_valid(self, metadata: Dict[str, Any], ebook_path: Path) -> bool:
         """Validate if the cache is still valid"""

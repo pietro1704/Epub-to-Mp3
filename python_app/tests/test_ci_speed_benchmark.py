@@ -11,6 +11,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.ci_speed_benchmark import (
     baseline_is_stale,
+    check_per_item_regression,
     check_regression,
     check_regression_vs_baseline,
     load_baseline,
@@ -58,3 +59,32 @@ class TestCISpeedBenchmark(unittest.IsolatedAsyncioTestCase):
                 max_regression_pct=10.0,
             )
             self.assertFalse(ok)
+
+    def test_per_item_regression_passes_when_all_above_floor(self):
+        payload = {
+            "items": [
+                {"size": "short", "chars_per_second": 300.0},
+                {"size": "medium", "chars_per_second": 450.0},
+                {"size": "long", "chars_per_second": 500.0},
+            ]
+        }
+        ok, msg = check_per_item_regression(payload, 200.0)
+        self.assertTrue(ok)
+        self.assertIn("all items", msg)
+
+    def test_per_item_regression_fails_when_single_item_below(self):
+        payload = {
+            "items": [
+                {"size": "short", "chars_per_second": 150.0},
+                {"size": "medium", "chars_per_second": 450.0},
+                {"size": "long", "chars_per_second": 500.0},
+            ]
+        }
+        ok, msg = check_per_item_regression(payload, 200.0)
+        self.assertFalse(ok)
+        self.assertIn("short", msg)
+
+    def test_per_item_regression_disabled_when_threshold_zero(self):
+        payload = {"items": [{"size": "short", "chars_per_second": 10.0}]}
+        ok, _ = check_per_item_regression(payload, 0.0)
+        self.assertTrue(ok)
