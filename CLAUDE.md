@@ -263,6 +263,12 @@ PIPER_CHUNK_CHARS=5000           # Chars per Piper chunk (was 3000; fewer subpro
 PIPER_MAX_PROCS=0                # Auto-detect from CPU (0=auto)
 DISABLE_PIPER_FALLBACK=0         # Set to 1 to skip Piper and retry Edge instead
                                  # (faster for PT-BR where Kokoro is unavailable)
+FALLBACK_ENGINE_OVERRIDE=auto    # Operator-level fallback constraint, read by
+                                 # both the CLI (secondary to --fallback-engine)
+                                 # and server's _build_engine_chain. Values:
+                                 # auto|none|piper|kokoro|coqui|spark.
+                                 # "none" strips all offline fallbacks; a specific
+                                 # engine filters the chain to that tier only.
 SPARK_CHUNK_CHARS=1500           # Chars per Spark chunk
 SPARK_MAX_WORKERS=1              # GPU-bound
 ```

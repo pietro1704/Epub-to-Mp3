@@ -165,3 +165,6 @@ tmp_*
 
 # Local build artifacts
 releases/
+
+# Claude Code runtime artifacts
+.claude/scheduled_tasks.lock

@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import json
 import re
 import shutil
@@ -12,7 +11,7 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from ._cache_helpers import compute_cache_model_bucket
+from ._cache_helpers import compute_cache_model_bucket, hash_text
 from .config import ConversionConfig
 from .ebook_reader import Chapter
 from .utils import FileManager, TextValidator
@@ -146,7 +145,7 @@ class _CacheMixin:
 
     @staticmethod
     def _hash_text(value: str) -> str:
-        return hashlib.sha1(value.encode("utf-8", errors="ignore")).hexdigest()
+        return hash_text(value)
 
     def _load_cache_index(self, cache_dir: Optional[Path]) -> dict:
         if not cache_dir:

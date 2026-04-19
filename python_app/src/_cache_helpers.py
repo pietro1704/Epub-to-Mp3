@@ -10,11 +10,17 @@ towards — helpers first, mixins as thin wrappers.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from typing import Optional
 
 from .config import ConversionConfig
 from .utils import FileManager
+
+
+def hash_text(value: str) -> str:
+    """Return a stable SHA-1 hash used to key pre-tts/cached text lookups."""
+    return hashlib.sha1(value.encode("utf-8", errors="ignore")).hexdigest()
 
 
 def compute_cache_model_bucket(config: ConversionConfig) -> Optional[str]:
@@ -50,4 +56,4 @@ def compute_cache_model_bucket(config: ConversionConfig) -> Optional[str]:
     return safe_bucket or None
 
 
-__all__ = ["compute_cache_model_bucket"]
+__all__ = ["compute_cache_model_bucket", "hash_text"]

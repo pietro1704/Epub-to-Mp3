@@ -54,6 +54,28 @@ from src.text_formatting import PRESERVE_TTS_LAYOUT, TextFormattingProcessor
 from src.ui.menu import MenuInterface
 from src.utils import FileManager, resolve_cache_root
 
+_FALLBACK_ENGINE_CHOICES = {"piper", "kokoro", "coqui", "spark", "none"}
+
+
+def _resolve_cli_fallback_engine(
+    flag_value: Optional[str], env_value: Optional[str]
+) -> Optional[str]:
+    """Resolve the CLI fallback-engine preference.
+
+    The ``--fallback-engine`` flag wins when set to anything other than
+    ``auto``. Otherwise ``FALLBACK_ENGINE_OVERRIDE`` is consulted so a single
+    env var can configure both the CLI and the server's engine chain.
+    Returns ``None`` when no override applies (engine-selection mixin then
+    chooses based on language).
+    """
+    flag = (flag_value or "auto").strip().lower()
+    if flag and flag != "auto":
+        return flag
+    env = (env_value or "").strip().lower()
+    if env and env != "auto" and env in _FALLBACK_ENGINE_CHOICES:
+        return env
+    return None
+
 
 @dataclass
 class ChapterStructureItem:
@@ -632,8 +654,11 @@ class ConverterApplication:
             structure_items = self._apply_text_transforms(structure_items, config, reader)
             self._apply_structure_to_reader(reader, structure_items)
 
-            fallback_pref = getattr(args, "fallback_engine", "auto")
-            if fallback_pref and fallback_pref != "auto":
+            fallback_pref = _resolve_cli_fallback_engine(
+                getattr(args, "fallback_engine", "auto"),
+                os.getenv("FALLBACK_ENGINE_OVERRIDE"),
+            )
+            if fallback_pref:
                 self.converter._cli_fallback_engine = fallback_pref
 
             # Convert
