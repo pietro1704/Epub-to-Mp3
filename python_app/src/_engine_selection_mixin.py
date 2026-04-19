@@ -249,6 +249,23 @@ class _EngineSelectionMixin:
         self, available: Optional[Set[str]] = None
     ) -> Optional[str]:
         available_set = {str(item).lower() for item in (available or set())}
+        cli_override = getattr(self, "_cli_fallback_engine", None)
+        if cli_override:
+            override = str(cli_override).lower()
+            if override == "none":
+                return None
+            if (
+                override == "piper"
+                and _has_piper_support()
+                and (not available_set or "piper" in available_set)
+            ):
+                if _piper_fallback_disabled():
+                    return None
+                _warn_piper_fallback()
+                return "piper"
+            if override == "kokoro" and (not available_set or "kokoro" in available_set):
+                return "kokoro"
+            # If explicit override is unavailable, fall through to default resolution.
         if _has_piper_support() and (not available_set or "piper" in available_set):
             if _piper_fallback_disabled():
                 print("\nℹ️  DISABLE_PIPER_FALLBACK=1: skipping Piper, will retry Edge.\n")

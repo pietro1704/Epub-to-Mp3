@@ -163,5 +163,45 @@ class TestPiperFallbackMonitoring(unittest.TestCase):
         self.assertEqual(result, "coqui")
 
 
+class TestCliFallbackEngineOverride(unittest.TestCase):
+    """--fallback-engine CLI flag overrides default resolution."""
+
+    def test_cli_override_none_returns_none_even_if_piper_available(self):
+        mixin = _make_mixin()
+        mixin._cli_fallback_engine = "none"
+        with (
+            patch("src._engine_selection_mixin._has_piper_support", return_value=True),
+            patch("src._engine_selection_mixin._has_coqui_support", return_value=True),
+        ):
+            self.assertIsNone(mixin._resolve_offline_fallback_engine())
+
+    def test_cli_override_kokoro_returns_kokoro(self):
+        mixin = _make_mixin()
+        mixin._cli_fallback_engine = "kokoro"
+        with patch("src._engine_selection_mixin._has_piper_support", return_value=True):
+            self.assertEqual(mixin._resolve_offline_fallback_engine(), "kokoro")
+
+    def test_cli_override_piper_honored(self):
+        mixin = _make_mixin()
+        mixin._cli_fallback_engine = "piper"
+        env = {k: v for k, v in os.environ.items() if k != "DISABLE_PIPER_FALLBACK"}
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch("src._engine_selection_mixin._has_piper_support", return_value=True),
+        ):
+            self.assertEqual(mixin._resolve_offline_fallback_engine(), "piper")
+
+    def test_cli_override_falls_through_when_unavailable(self):
+        """If the override engine isn't available, default resolution still runs."""
+        mixin = _make_mixin()
+        mixin._cli_fallback_engine = "kokoro"  # not in available set
+        with (
+            patch("src._engine_selection_mixin._has_piper_support", return_value=False),
+            patch("src._engine_selection_mixin._has_coqui_support", return_value=True),
+        ):
+            result = mixin._resolve_offline_fallback_engine(available={"coqui"})
+        self.assertEqual(result, "coqui")
+
+
 if __name__ == "__main__":
     unittest.main()

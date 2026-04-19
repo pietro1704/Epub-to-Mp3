@@ -632,6 +632,10 @@ class ConverterApplication:
             structure_items = self._apply_text_transforms(structure_items, config, reader)
             self._apply_structure_to_reader(reader, structure_items)
 
+            fallback_pref = getattr(args, "fallback_engine", "auto")
+            if fallback_pref and fallback_pref != "auto":
+                self.converter._cli_fallback_engine = fallback_pref
+
             # Convert
             result = asyncio.run(self.converter.convert(reader, config))
 
@@ -4304,9 +4308,15 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["auto", "edge", "coqui", "piper", "kokoro", "spark"],
+        choices=["edge", "coqui", "piper", "kokoro", "spark"],
         default="edge",
-        help="TTS engine to use (default: edge). auto=choose fastest per chapter, edge=fast cloud, coqui=neural local, kokoro=fast local, spark=LLM-based",
+        help="TTS engine to use (default: edge). edge=fast cloud, coqui=neural local, kokoro=fast local, spark=LLM-based",
+    )
+    parser.add_argument(
+        "--fallback-engine",
+        choices=["auto", "piper", "kokoro", "none"],
+        default="auto",
+        help="Engine used to re-synthesize a single sentence if the primary engine hangs/fails. auto=piper for pt-*, kokoro for en, piper otherwise. none=disable per-sentence fallback.",
     )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
     parser.add_argument("--model", help="Model path (for Piper/Coqui/Spark)")

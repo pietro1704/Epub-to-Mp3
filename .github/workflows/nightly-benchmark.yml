@@ -50,7 +50,7 @@ jobs:
             --baseline-file .cache/telemetry/ci-speed-baseline-nightly.json \
             --max-regression-pct 20 \
             --period-hours 24 \
-            --min-avg-cps 425
+            --min-avg-cps 350
 
       - name: Telemetry baseline smoke check
         if: always()

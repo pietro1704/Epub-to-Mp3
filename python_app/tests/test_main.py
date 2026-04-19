@@ -761,6 +761,19 @@ class TestArgumentParser(unittest.TestCase):
         self.assertTrue(args.show_structure)
         self.assertTrue(args.filter_chapters)
 
+        # --engine no longer accepts "auto"
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["convert", "test.epub", "--engine", "auto"])
+
+        # --fallback-engine defaults to "auto" and accepts piper/kokoro/none
+        args = parser.parse_args(["convert", "test.epub"])
+        self.assertEqual(args.fallback_engine, "auto")
+        for choice in ("auto", "piper", "kokoro", "none"):
+            args = parser.parse_args(["convert", "test.epub", "--fallback-engine", choice])
+            self.assertEqual(args.fallback_engine, choice)
+        with self.assertRaises(SystemExit):
+            parser.parse_args(["convert", "test.epub", "--fallback-engine", "edge"])
+
         args = parser.parse_args(["convert", "test.epub", "--detect-language"])
         self.assertTrue(args.detect_language)
         args = parser.parse_args(["convert", "test.epub", "--show-metrics-summary"])
@@ -809,7 +822,7 @@ class TestArgumentParser(unittest.TestCase):
         parser = create_argument_parser()
 
         # Valid engines
-        for engine in ["auto", "edge", "coqui", "piper", "kokoro", "spark"]:
+        for engine in ["edge", "coqui", "piper", "kokoro", "spark"]:
             args = parser.parse_args(["convert", "test.epub", "--engine", engine])
             self.assertEqual(args.engine, engine)
 
