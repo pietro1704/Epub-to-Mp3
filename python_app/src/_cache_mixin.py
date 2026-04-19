@@ -8,12 +8,39 @@ import hashlib
 import json
 import re
 import shutil
+from collections import OrderedDict
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from .config import ConversionConfig
 from .ebook_reader import Chapter
 from .utils import FileManager, TextValidator
+
+# Session-local LRU for pre-tts / cached chapter text reads. Keyed by
+# (absolute path, mtime_ns) so a file rewritten on disk invalidates the entry
+# automatically. Small bound — 64 entries ≈ one medium book's worth of
+# chapters and keeps memory pressure negligible.
+_CHAPTER_TEXT_LRU_MAX = 64
+_chapter_text_lru: "OrderedDict[Tuple[str, int], str]" = OrderedDict()
+
+
+def _read_chapter_text_cached(path: Path) -> str:
+    """Read a chapter text file with an LRU, invalidated on file mtime change."""
+    resolved = str(path)
+    try:
+        mtime_ns = path.stat().st_mtime_ns
+    except OSError:
+        return path.read_text(encoding="utf-8")
+    key = (resolved, mtime_ns)
+    hit = _chapter_text_lru.get(key)
+    if hit is not None:
+        _chapter_text_lru.move_to_end(key)
+        return hit
+    text = path.read_text(encoding="utf-8")
+    _chapter_text_lru[key] = text
+    while len(_chapter_text_lru) > _CHAPTER_TEXT_LRU_MAX:
+        _chapter_text_lru.popitem(last=False)
+    return text
 
 
 class _CacheMixin:
@@ -33,7 +60,7 @@ class _CacheMixin:
                 index_label=index_label,
             )
             if pre_tts_path and pre_tts_path.exists():
-                return pre_tts_path.read_text(encoding="utf-8")
+                return _read_chapter_text_cached(pre_tts_path)
         except OSError:
             pass
         return None
@@ -56,7 +83,7 @@ class _CacheMixin:
         )
         if pre_tts_path and pre_tts_path.exists():
             try:
-                return pre_tts_path.read_text(encoding="utf-8"), pre_tts_path, True
+                return _read_chapter_text_cached(pre_tts_path), pre_tts_path, True
             except OSError:
                 pass
         return (self._speech_text(chapter) or ""), pre_tts_path, False

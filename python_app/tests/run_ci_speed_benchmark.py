@@ -21,11 +21,13 @@ sys.path.insert(0, repo_root)
 
 from src.ci_speed_benchmark import (  # noqa: E402
     baseline_is_stale,
+    check_per_engine_regression,
     check_per_item_regression,
     check_regression,
     check_regression_vs_baseline,
     load_baseline,
     run_ci_speed_benchmark,
+    run_per_engine_benchmark,
     save_baseline,
 )
 
@@ -58,6 +60,20 @@ def main() -> int:
         "is below this threshold. Tighter signal than --min-avg-cps.",
     )
     parser.add_argument(
+        "--per-engine",
+        action="store_true",
+        help="Run the synthetic benchmark across multiple engine profiles "
+        "(edge/kokoro/piper) and emit per-engine averages.",
+    )
+    parser.add_argument(
+        "--min-engine-cps",
+        action="append",
+        default=[],
+        metavar="ENGINE=FLOOR",
+        help="Per-engine chars/s floor, e.g. --min-engine-cps edge=400 "
+        "--min-engine-cps piper=80. Fails with exit code 5 when breached.",
+    )
+    parser.add_argument(
         "--baseline-file",
         type=Path,
         default=Path(".cache/telemetry/ci-speed-baseline.json"),
@@ -81,9 +97,17 @@ def main() -> int:
         help="Force update baseline with current benchmark result",
     )
     args = parser.parse_args()
-    payload = asyncio.run(run_ci_speed_benchmark(output_path=args.output, cps=args.cps))
+    if args.per_engine:
+        payload = asyncio.run(run_per_engine_benchmark(output_path=args.output))
+    else:
+        payload = asyncio.run(run_ci_speed_benchmark(output_path=args.output, cps=args.cps))
     print(f"✅ Benchmark complete: {args.output}")
     print(f"   avg chars/s: {payload.get('avg_chars_per_second', 0):.1f}")
+    if args.per_engine:
+        per_engine = payload.get("per_engine_avg_chars_per_second") or {}
+        if isinstance(per_engine, dict):
+            for engine, cps in sorted(per_engine.items()):
+                print(f"   {engine}: {float(cps):.1f} chars/s")
     ok, message = check_regression(payload, args.min_avg_cps)
     if args.min_avg_cps > 0:
         if ok:
@@ -98,6 +122,22 @@ def main() -> int:
         else:
             print(f"❌ Per-item check: {items_message}")
             return 4
+    per_engine_floors: dict = {}
+    for entry in args.min_engine_cps or []:
+        if "=" not in entry:
+            continue
+        engine, raw_floor = entry.split("=", 1)
+        try:
+            per_engine_floors[engine.strip().lower()] = float(raw_floor)
+        except ValueError:
+            continue
+    if per_engine_floors:
+        ok_eng, eng_msg = check_per_engine_regression(payload, per_engine_floors)
+        if ok_eng:
+            print(f"✅ Per-engine check: {eng_msg}")
+        else:
+            print(f"❌ Per-engine check: {eng_msg}")
+            return 5
     baseline = load_baseline(args.baseline_file)
     baseline_stale = baseline_is_stale(baseline, period_hours=args.period_hours)
     if args.update_baseline or baseline_stale:

@@ -11,11 +11,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.ci_speed_benchmark import (
     baseline_is_stale,
+    check_per_engine_regression,
     check_per_item_regression,
     check_regression,
     check_regression_vs_baseline,
     load_baseline,
     run_ci_speed_benchmark,
+    run_per_engine_benchmark,
     save_baseline,
 )
 
@@ -87,4 +89,36 @@ class TestCISpeedBenchmark(unittest.IsolatedAsyncioTestCase):
     def test_per_item_regression_disabled_when_threshold_zero(self):
         payload = {"items": [{"size": "short", "chars_per_second": 10.0}]}
         ok, _ = check_per_item_regression(payload, 0.0)
+        self.assertTrue(ok)
+
+
+class TestPerEngineBenchmark(unittest.IsolatedAsyncioTestCase):
+    async def test_per_engine_benchmark_emits_per_engine_avg(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            report_path = Path(temp_dir) / "per-engine.json"
+            payload = await run_per_engine_benchmark(
+                output_path=report_path,
+                engines={"edge": 250_000.0, "piper": 250_000.0},
+            )
+            self.assertTrue(report_path.exists())
+            per_engine = payload.get("per_engine_avg_chars_per_second")
+            self.assertIsInstance(per_engine, dict)
+            self.assertEqual(set(per_engine.keys()), {"edge", "piper"})
+            engines_in_items = {item.get("engine") for item in payload["items"]}
+            self.assertEqual(engines_in_items, {"edge", "piper"})
+
+    def test_per_engine_regression_passes(self):
+        payload = {"per_engine_avg_chars_per_second": {"edge": 400.0, "piper": 100.0}}
+        ok, _ = check_per_engine_regression(payload, {"edge": 350.0, "piper": 80.0})
+        self.assertTrue(ok)
+
+    def test_per_engine_regression_fails_for_offender(self):
+        payload = {"per_engine_avg_chars_per_second": {"edge": 200.0, "piper": 100.0}}
+        ok, msg = check_per_engine_regression(payload, {"edge": 350.0, "piper": 80.0})
+        self.assertFalse(ok)
+        self.assertIn("edge", msg)
+
+    def test_per_engine_regression_empty_thresholds_ok(self):
+        payload = {"per_engine_avg_chars_per_second": {"edge": 10.0}}
+        ok, _ = check_per_engine_regression(payload, {})
         self.assertTrue(ok)

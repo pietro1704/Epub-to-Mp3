@@ -552,11 +552,47 @@ class AudioConverter(
             # Auto-configure (does not overwrite manually set vars)
             await self._auto_tuner.auto_configure(force=False, measure_network=measure_network)
 
+            # Kick off the Piper fallback model download in the background so
+            # it overlaps with auto-tuning / network probing. When the fallback
+            # actually triggers mid-conversion the model is already on disk.
+            self._kick_off_piper_prefetch()
+
             self._auto_tuning_initialized = True
 
         except Exception as exc:
             if self.verbose:
                 print(f"⚠️  Auto-tuning failed (using default configs): {exc}")
+
+    def _kick_off_piper_prefetch(self) -> None:
+        """Best-effort, fire-and-forget pre-download of the Piper fallback model.
+
+        Runs in a background thread so it overlaps with auto-tuning, engine
+        warmup, and EPUB parsing. The TTSFactory's own download path is a
+        no-op when the file already exists, so a hit here simply removes
+        latency the first time Piper fallback is actually needed.
+        """
+        if os.getenv("DISABLE_PIPER_FALLBACK", "").strip().lower() in {"1", "true", "yes"}:
+            return
+        if getattr(self, "_piper_prefetch_started", False):
+            return
+        self._piper_prefetch_started = True
+
+        def _run() -> None:
+            try:
+                from .tts.factory import TTSFactory
+
+                preferred = os.getenv("PIPER_PREFETCH_LANG", "pt")
+                TTSFactory()._download_default_piper_model(preferred)
+            except Exception:
+                # Prefetch is best-effort; factory will retry on real use.
+                return
+
+        try:
+            import threading
+
+            threading.Thread(target=_run, name="piper-prefetch", daemon=True).start()
+        except Exception:
+            pass
 
     def _initialize_adaptive_performance(self) -> None:
         """Initialize adaptive performance controller."""

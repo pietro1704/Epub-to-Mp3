@@ -24,6 +24,19 @@ class BenchmarkItem:
     elapsed_s: float
     chars_per_second: float
     success: bool
+    engine: str = "edge"
+
+
+# Archetype profiles used by the per-engine benchmark. Values are intentionally
+# coarse: they model the relative cps ordering we expect in production so a
+# regression that destroys the gap between engines (e.g. Edge suddenly serving
+# at Piper speeds) still trips the gate. Real engine latency is measured in
+# separate integration benchmarks, not here.
+ENGINE_PROFILES: Dict[str, float] = {
+    "edge": 450.0,
+    "kokoro": 220.0,
+    "piper": 110.0,
+}
 
 
 def _make_text(chars_target: int) -> str:
@@ -53,10 +66,54 @@ class _MockBenchmarkEngine:
         return target
 
 
+async def run_per_engine_benchmark(
+    *,
+    output_path: Optional[Path] = None,
+    engines: Optional[Dict[str, float]] = None,
+) -> Dict[str, object]:
+    """Run the CI benchmark across multiple synthetic engine profiles.
+
+    Each (engine, size) pair is emitted as a separate benchmark item so the
+    per-item gate (``--min-item-cps``) and downstream analyzers can detect a
+    regression isolated to a single engine archetype (for example Edge
+    collapsing to Piper's throughput profile).
+    """
+    profiles = dict(engines or ENGINE_PROFILES)
+    combined_items: List[Dict[str, object]] = []
+    per_engine_avg: Dict[str, float] = {}
+    for engine_name, cps_target in profiles.items():
+        single = await run_ci_speed_benchmark(
+            output_path=None,
+            cps=cps_target,
+            engine_label=engine_name,
+        )
+        for raw in single.get("items", []) or []:
+            if isinstance(raw, dict):
+                raw.setdefault("engine", engine_name)
+                combined_items.append(raw)
+        per_engine_avg[engine_name] = float(single.get("avg_chars_per_second", 0.0) or 0.0)
+
+    overall_avg = (
+        sum(per_engine_avg.values()) / max(len(per_engine_avg), 1) if per_engine_avg else 0.0
+    )
+    payload: Dict[str, object] = {
+        "generated_at": time.time(),
+        "items": combined_items,
+        "avg_chars_per_second": overall_avg,
+        "per_engine_avg_chars_per_second": per_engine_avg,
+    }
+    if output_path is not None:
+        out = Path(output_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return payload
+
+
 async def run_ci_speed_benchmark(
     *,
     output_path: Optional[Path] = None,
     cps: float = 450.0,
+    engine_label: str = "edge",
 ) -> Dict[str, object]:
     converter = AudioConverter()
 
@@ -111,6 +168,7 @@ async def run_ci_speed_benchmark(
                 elapsed_s=elapsed,
                 chars_per_second=chars / elapsed,
                 success=bool(result.success),
+                engine=engine_label,
             )
             items.append(item)
 
@@ -135,6 +193,31 @@ def check_regression(payload: Dict[str, object], min_avg_cps: float) -> tuple[bo
     if avg_cps >= threshold:
         return True, f"avg chars/s {avg_cps:.1f} >= threshold {threshold:.1f}"
     return False, f"avg chars/s {avg_cps:.1f} < threshold {threshold:.1f}"
+
+
+def check_per_engine_regression(
+    payload: Dict[str, object], min_cps_by_engine: Dict[str, float]
+) -> tuple[bool, str]:
+    """Return (ok, message) for per-engine average chars/s floors.
+
+    ``min_cps_by_engine`` maps engine label → minimum avg cps. Engines not
+    present in the payload are ignored; thresholds of 0 are skipped.
+    """
+    if not min_cps_by_engine:
+        return True, "no per-engine threshold configured"
+    per_engine = payload.get("per_engine_avg_chars_per_second") or {}
+    if not isinstance(per_engine, dict):
+        return True, "no per-engine data in payload"
+    offenders: list[str] = []
+    for engine, threshold in min_cps_by_engine.items():
+        if not threshold or float(threshold) <= 0:
+            continue
+        observed = float(per_engine.get(engine, 0.0) or 0.0)
+        if observed and observed < float(threshold):
+            offenders.append(f"{engine}={observed:.1f}<{float(threshold):.1f}")
+    if offenders:
+        return False, f"engines below floor: {', '.join(offenders)}"
+    return True, "all engines above floors"
 
 
 def check_per_item_regression(payload: Dict[str, object], min_item_cps: float) -> tuple[bool, str]:
