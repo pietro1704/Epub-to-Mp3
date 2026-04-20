@@ -195,6 +195,10 @@ export interface FormText {
   edgeStableModeHint: string;
   edgeStableModeOn: string;
   edgeStableModeOff: string;
+  engineChainFallbackLabel: string;
+  engineChainFallbackHint: string;
+  engineChainFallbackOn: string;
+  engineChainFallbackOff: string;
   coquiChunkCharsLabel: string;
   coquiChunkCharsPlaceholder: string;
   coquiChunkCharsHint: string;
@@ -910,6 +914,11 @@ export const translations: Record<Locale, Translations> = {
         "Força menos paralelismo e timeouts maiores para reduzir falhas em capítulos longos.",
       edgeStableModeOn: "Estável",
       edgeStableModeOff: "Normal",
+      engineChainFallbackLabel: "Cascata de engines (legado)",
+      engineChainFallbackHint:
+        "Por padrão, permanecemos no Edge; falhas isoladas usam fallback por chunk. Ative para reabrir a cascata Edge → Kokoro → Piper quando o Edge estiver rate-limitado.",
+      engineChainFallbackOn: "Cascata ativa",
+      engineChainFallbackOff: "Só Edge",
       coquiChunkCharsLabel: "Coqui: tamanho do chunk (chars)",
       coquiChunkCharsPlaceholder: "Ex.: 8000",
       coquiChunkCharsHint:
@@ -1647,6 +1656,11 @@ export const translations: Record<Locale, Translations> = {
         "Forces lower parallelism and longer timeouts to reduce failures on long chapters.",
       edgeStableModeOn: "Stable",
       edgeStableModeOff: "Normal",
+      engineChainFallbackLabel: "Engine chain fallback (legacy)",
+      engineChainFallbackHint:
+        "By default we stay on Edge; isolated failures use per-chunk fallback. Enable to restore the Edge → Kokoro → Piper cascade when Edge is rate-limited.",
+      engineChainFallbackOn: "Cascade on",
+      engineChainFallbackOff: "Edge only",
       coquiChunkCharsLabel: "Coqui: chunk size (chars)",
       coquiChunkCharsPlaceholder: "e.g., 8000",
       coquiChunkCharsHint: "Larger chunks reduce overhead but use more memory.",

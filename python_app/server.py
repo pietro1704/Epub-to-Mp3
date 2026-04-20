@@ -2171,6 +2171,7 @@ async def convert_ebook(
     coqui_max_workers: Optional[str] = Form(None),
     coqui_safe_mode: Optional[str] = Form(None),
     piper_max_procs: Optional[str] = Form(None),
+    engine_chain_fallback: Optional[str] = Form(None),
     bitrate: Optional[str] = Form(None),
     sample_rate: Optional[str] = Form(None),
     channels: Optional[str] = Form(None),
@@ -2219,6 +2220,7 @@ async def convert_ebook(
     coqui_workers_override = _parse_form_int(coqui_max_workers, min_value=1, max_value=12)
     coqui_safe_override = _parse_form_optional_bool(coqui_safe_mode)
     piper_procs_override = _parse_form_int(piper_max_procs, min_value=1, max_value=12)
+    engine_chain_fallback_flag = _parse_form_optional_bool(engine_chain_fallback)
     sample_rate_override = _parse_form_int(sample_rate, min_value=8000, max_value=96000)
     channels_override = _parse_form_int(channels, min_value=1, max_value=2)
     clear_cache_flag = _parse_form_bool(clear_cache, False)
@@ -2456,6 +2458,7 @@ async def convert_ebook(
         "coquiMaxWorkers": coqui_workers_override,
         "coquiSafeMode": coqui_safe_override,
         "piperMaxProcs": piper_procs_override,
+        "engineChainFallback": engine_chain_fallback_flag,
         "bitrate": bitrate,
         "sampleRate": sample_rate_override,
         "channels": channels_override,
@@ -3602,6 +3605,7 @@ async def process_conversion(job_id: str) -> None:
             coqui_max_workers=coqui_workers_override,
             coqui_safe_mode=coqui_safe_override,
             piper_max_procs=piper_procs_override,
+            engine_chain_fallback=job.get("engineChainFallback"),
             verbose=verbose_enabled,  # Enable verbose logging for terminal-like output
             log_callback=tts_log_callback,  # Capture all verbose logs
         )

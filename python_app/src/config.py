@@ -68,6 +68,9 @@ class ConversionConfig:
     coqui_safe_mode: Optional[bool] = None  # force safe mode for Coqui (limits parallelism)
     piper_max_procs: Optional[int] = None  # override Piper concurrent process limit
     piper_chunk_chars: Optional[int] = None  # override Piper chunk size when auto-tuning
+    engine_chain_fallback: Optional[bool] = (
+        None  # mirrors ENGINE_CHAIN_FALLBACK env var; when True, legacy Edge→Kokoro→Piper cascade is re-enabled
+    )
     speak_formatting_cues: bool = True
     formatting_locale: str = "pt"
     # Validation settings

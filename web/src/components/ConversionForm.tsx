@@ -220,6 +220,7 @@ export default function ConversionForm({
   const [edgeEnableParallel, setEdgeEnableParallel] = useState(true);
   const [edgeAutoTune, setEdgeAutoTune] = useState(true);
   const [edgeStableMode, setEdgeStableMode] = useState(false);
+  const [engineChainFallback, setEngineChainFallback] = useState(false);
   const [coquiChunkChars, setCoquiChunkChars] = useState("");
   const [coquiMaxWorkers, setCoquiMaxWorkers] = useState("");
   const [coquiSafeMode, setCoquiSafeMode] = useState(true);
@@ -908,6 +909,7 @@ export default function ConversionForm({
       edgeEnableParallel,
       edgeAutoTune,
       edgeStableMode,
+      engineChainFallback,
       coquiChunkChars: parseOptionalInt(coquiChunkChars),
       coquiMaxWorkers: parseOptionalInt(coquiMaxWorkers),
       coquiSafeMode,
@@ -1648,6 +1650,31 @@ export default function ConversionForm({
                 </span>
               </label>
               <p className="form-hint">{t.form.edgeStableModeHint}</p>
+            </div>
+            <div className="form-row">
+              <label htmlFor="engineChainFallbackToggle">
+                {t.form.engineChainFallbackLabel}
+              </label>
+              <label
+                className="form-toggle"
+                htmlFor="engineChainFallbackToggle"
+              >
+                <input
+                  id="engineChainFallbackToggle"
+                  type="checkbox"
+                  checked={engineChainFallback}
+                  disabled={isSubmitting}
+                  onChange={(event) =>
+                    setEngineChainFallback(event.target.checked)
+                  }
+                />
+                <span>
+                  {engineChainFallback
+                    ? t.form.engineChainFallbackOn
+                    : t.form.engineChainFallbackOff}
+                </span>
+              </label>
+              <p className="form-hint">{t.form.engineChainFallbackHint}</p>
             </div>
             <div className="form-row">
               <label htmlFor="coquiChunkChars">

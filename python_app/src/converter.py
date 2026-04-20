@@ -164,6 +164,25 @@ EDGE_FORCE_SAFE_CHARS = _env_int("EDGE_FORCE_SAFE_CHARS", 60000)
 # chapter engine to Kokoro/Piper. Per-chunk fallback still handles isolated
 # hangs. Flip to True to restore the legacy four-tier cascade.
 ENGINE_CHAIN_FALLBACK = _env_bool("ENGINE_CHAIN_FALLBACK", False)
+
+
+def _chain_tier_allowed(tier_engine: str) -> bool:
+    """Decide whether the given offline tier may take over the whole chapter.
+
+    Honors both ``ENGINE_CHAIN_FALLBACK`` and ``FALLBACK_ENGINE_OVERRIDE``:
+    - override=="none" disables every offline tier (wins over ENGINE_CHAIN_FALLBACK).
+    - override pointing to a specific engine pins the cascade to that engine
+      (permitted even when ENGINE_CHAIN_FALLBACK is off, mirroring server parity).
+    - override in {"", "auto"} defers to ENGINE_CHAIN_FALLBACK.
+    """
+    override = (os.getenv("FALLBACK_ENGINE_OVERRIDE") or "").strip().lower()
+    if override == "none":
+        return False
+    if override in {"piper", "kokoro", "coqui", "spark"}:
+        return override == tier_engine
+    return ENGINE_CHAIN_FALLBACK
+
+
 EDGE_AUTO_STABLE = _env_bool("EDGE_AUTO_STABLE", True)
 EDGE_AUTO_PARALLEL_CAPS = {
     "slow": _env_int("EDGE_AUTO_PARALLEL_CAP_SLOW", 4),
@@ -3617,7 +3636,7 @@ class AudioConverter(
 
             # TIER 3: Kokoro after KOKORO_THRESHOLD failures (from monolingual Edge)
             if (
-                ENGINE_CHAIN_FALLBACK
+                _chain_tier_allowed("kokoro")
                 and not edge_switched_to_kokoro
                 and edge_switched_to_monolingual
                 and current_engine == "edge"
@@ -3648,7 +3667,7 @@ class AudioConverter(
 
             # TIER 4: Piper after PIPER_THRESHOLD failures (from Kokoro or Edge)
             if (
-                ENGINE_CHAIN_FALLBACK
+                _chain_tier_allowed("piper")
                 and not edge_switched_to_piper
                 and edge_consecutive_failures >= EDGE_PIPER_THRESHOLD
                 and (edge_switched_to_kokoro or edge_switched_to_monolingual)

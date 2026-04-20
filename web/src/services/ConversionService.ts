@@ -177,6 +177,12 @@ function buildFormData(values: ConversionFormValues): FormData {
   ) {
     formData.append("piper_max_procs", String(values.piperMaxProcs));
   }
+  if (typeof values.engineChainFallback === "boolean") {
+    formData.append(
+      "engine_chain_fallback",
+      values.engineChainFallback ? "on" : "off",
+    );
+  }
   if (values.bitrate) {
     formData.append("bitrate", values.bitrate);
   }

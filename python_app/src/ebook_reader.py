@@ -1139,13 +1139,23 @@ class TextProcessor:
         first_line_key = TextProcessor._structural_key(first_line)
         opening_key = TextProcessor._structural_key(opening_preview)
         toc_title_key = TextProcessor._structural_key(toc_title)
-        if (
-            toc_title
-            and first_line_key != toc_title_key
-            and not opening_key.startswith(toc_title_key)
-            and not toc_title_key.startswith(opening_key)
-            and toc_title_key not in opening_key
-        ):
+        # Prepend the chapter title so the TTS announces it. Suppress only when
+        # the title is already the first line, OR when the title is substantive
+        # enough that a fuzzy overlap with the opening is reliable evidence of
+        # duplication. Short/numeric titles (e.g. "1", "Chapter 2") always get
+        # announced — they collide with incidental digits/words in the opening
+        # otherwise, silently dropping the announcement.
+        should_prepend = bool(toc_title) and first_line_key != toc_title_key
+        if should_prepend:
+            toc_tokens = toc_title_key.split()
+            substantive = len(toc_title_key) >= 10 and len(toc_tokens) >= 2
+            if substantive and (
+                opening_key.startswith(toc_title_key)
+                or toc_title_key.startswith(opening_key)
+                or toc_title_key in opening_key
+            ):
+                should_prepend = False
+        if should_prepend:
             updated = f"{toc_title}\n{updated}"
 
         title_keys = {title.casefold() for title in titles}

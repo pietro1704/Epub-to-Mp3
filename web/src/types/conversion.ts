@@ -34,6 +34,7 @@ export interface ConversionFormValues {
   coquiMaxWorkers?: number;
   coquiSafeMode?: boolean;
   piperMaxProcs?: number;
+  engineChainFallback?: boolean;
   bitrate?: string;
   sampleRate?: number;
   channels?: number;

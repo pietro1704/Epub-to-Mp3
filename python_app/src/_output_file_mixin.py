@@ -10,6 +10,15 @@ import unicodedata
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Set
 
+from ._output_file_helpers import (
+    coerce_chapter_index as _coerce_chapter_index_helper,
+)
+from ._output_file_helpers import (
+    sample_edges as _sample_edges_helper,
+)
+from ._output_file_helpers import (
+    title_from_filename as _title_from_filename_helper,
+)
 from .config import ConversionConfig
 from .ebook_reader import Chapter, EbookReader
 from .text_integrity_validator import TextIntegrityValidator
@@ -65,24 +74,7 @@ class _OutputFileMixin:
 
     @staticmethod
     def _coerce_chapter_index(raw: object, fallback: int) -> int:
-        if raw is None:
-            return fallback
-        try:
-            if isinstance(raw, str):
-                text = raw.strip()
-                if not text:
-                    return fallback
-                if text.replace(".", "", 1).isdigit():
-                    raw = float(text) if "." in text else int(text)
-                else:
-                    return fallback
-            value = int(raw)
-        except Exception:
-            try:
-                value = int(float(raw))  # type: ignore[arg-type]
-            except Exception:
-                return fallback
-        return value if value > 0 else fallback
+        return _coerce_chapter_index_helper(raw, fallback)
 
     @staticmethod
     def _spot_check_text_against_epub(epub_text: str, payload: str) -> bool:
@@ -110,10 +102,7 @@ class _OutputFileMixin:
 
     @staticmethod
     def _sample_edges(text: str, size: int = 180) -> tuple[str, str]:
-        normalized = re.sub(r"\s+", " ", text or "").strip()
-        if len(normalized) <= size * 2:
-            return normalized, normalized
-        return normalized[:size], normalized[-size:]
+        return _sample_edges_helper(text, size)
 
     @staticmethod
     def _strip_formatting_cues(text: str) -> str:
@@ -764,19 +753,7 @@ class _OutputFileMixin:
 
     @staticmethod
     def _title_from_filename(mp3_path: Path) -> str:
-        stem = mp3_path.stem
-        candidate = stem
-        if " - " in stem:
-            parts = stem.split(" - ", 1)
-            if len(parts) == 2 and parts[0].isdigit():
-                candidate = parts[1]
-        else:
-            parts = stem.split("_", 1)
-            if len(parts) == 2 and parts[0].isdigit():
-                candidate = parts[1]
-            candidate = candidate.replace("_", " ")
-        candidate = candidate.strip()
-        return candidate or mp3_path.name
+        return _title_from_filename_helper(mp3_path)
 
     def _apply_final_id3_tags(
         self,
