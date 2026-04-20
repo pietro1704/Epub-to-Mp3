@@ -263,6 +263,12 @@ PIPER_CHUNK_CHARS=5000           # Chars per Piper chunk (was 3000; fewer subpro
 PIPER_MAX_PROCS=0                # Auto-detect from CPU (0=auto)
 DISABLE_PIPER_FALLBACK=0         # Set to 1 to skip Piper and retry Edge instead
                                  # (faster for PT-BR where Kokoro is unavailable)
+ENGINE_CHAIN_FALLBACK=0          # Default off: stay on Edge (multi → mono) and
+                                 # never cascade to Kokoro/Piper for whole
+                                 # chapters. Per-chunk fallback still handles
+                                 # isolated hangs (CLI --fallback-engine or
+                                 # FALLBACK_ENGINE_OVERRIDE). Set to 1 to
+                                 # restore the legacy four-tier cascade.
 FALLBACK_ENGINE_OVERRIDE=auto    # Operator-level fallback constraint, read by
                                  # both the CLI (secondary to --fallback-engine)
                                  # and server's _build_engine_chain. Values:

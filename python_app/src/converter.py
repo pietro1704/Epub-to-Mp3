@@ -160,6 +160,10 @@ EDGE_PIPER_THRESHOLD = _env_int(
 # Legacy env var for backwards compatibility (maps to PIPER threshold)
 EDGE_FAILURE_THRESHOLD = _env_int("EDGE_FAILURE_THRESHOLD", EDGE_PIPER_THRESHOLD)
 EDGE_FORCE_SAFE_CHARS = _env_int("EDGE_FORCE_SAFE_CHARS", 60000)
+# When False (default), stay on Edge (multi → mono) and never switch the whole
+# chapter engine to Kokoro/Piper. Per-chunk fallback still handles isolated
+# hangs. Flip to True to restore the legacy four-tier cascade.
+ENGINE_CHAIN_FALLBACK = _env_bool("ENGINE_CHAIN_FALLBACK", False)
 EDGE_AUTO_STABLE = _env_bool("EDGE_AUTO_STABLE", True)
 EDGE_AUTO_PARALLEL_CAPS = {
     "slow": _env_int("EDGE_AUTO_PARALLEL_CAP_SLOW", 4),
@@ -3613,7 +3617,8 @@ class AudioConverter(
 
             # TIER 3: Kokoro after KOKORO_THRESHOLD failures (from monolingual Edge)
             if (
-                not edge_switched_to_kokoro
+                ENGINE_CHAIN_FALLBACK
+                and not edge_switched_to_kokoro
                 and edge_switched_to_monolingual
                 and current_engine == "edge"
                 and edge_consecutive_failures >= EDGE_KOKORO_THRESHOLD
@@ -3643,7 +3648,8 @@ class AudioConverter(
 
             # TIER 4: Piper after PIPER_THRESHOLD failures (from Kokoro or Edge)
             if (
-                not edge_switched_to_piper
+                ENGINE_CHAIN_FALLBACK
+                and not edge_switched_to_piper
                 and edge_consecutive_failures >= EDGE_PIPER_THRESHOLD
                 and (edge_switched_to_kokoro or edge_switched_to_monolingual)
             ):

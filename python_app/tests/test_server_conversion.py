@@ -220,6 +220,7 @@ def test_build_engine_chain_includes_supported_fallbacks(monkeypatch):
     monkeypatch.setattr(server, "_has_kokoro_support", lambda _: True)
     monkeypatch.setattr(server, "_has_piper_support", lambda: True)
     monkeypatch.setattr(server, "_has_spark_support", lambda: False)
+    monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     chain = server._build_engine_chain(config)
     engines = [cfg.engine for cfg in chain]
@@ -270,6 +271,7 @@ def test_rank_fallbacks_penalises_recently_failed_engines(monkeypatch):
     monkeypatch.setattr(server, "telemetry", _FakeTelemetry())
     # Also patch the lazy-imported reference inside _server_engine_helpers.
     monkeypatch.setattr(_server_engine_helpers, "__name__", _server_engine_helpers.__name__)
+    monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     chain = server._build_engine_chain(replace(base))
     engines = [cfg.engine for cfg in chain]
@@ -479,6 +481,7 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
 def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
@@ -523,6 +526,7 @@ def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
 def test_edge_fallbacks_to_piper_when_coqui_fails(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)
+    monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     upload_path = tmp_path / f"{job_id}_book.epub"
     upload_path.write_bytes(FIXTURE_BOOK.read_bytes())

@@ -19,6 +19,19 @@ def _piper_fallback_disabled() -> bool:
     return os.getenv("DISABLE_PIPER_FALLBACK", "").strip().lower() in ("1", "true", "yes")
 
 
+def _engine_chain_fallback_enabled() -> bool:
+    """Whether to append offline engine tiers (kokoro/piper/coqui/spark) after Edge.
+
+    Defaults to ``False``: the project's priority is to maximise Edge usage
+    in both CLI and web paths, with per-chunk fallback handling isolated
+    failures and the monolingual Edge tier absorbing multilingual hiccups.
+    Opt back in with ``ENGINE_CHAIN_FALLBACK=1`` when operators explicitly
+    want the legacy cascading behaviour (for example on HF Spaces where
+    Edge is being rate-limited for a whole job).
+    """
+    return os.getenv("ENGINE_CHAIN_FALLBACK", "").strip().lower() in ("1", "true", "yes")
+
+
 def _fallback_engine_override() -> Optional[str]:
     """Return the operator-configured fallback engine override, if any.
 
@@ -241,6 +254,10 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
 
         override = _fallback_engine_override()
         if override == "none":
+            return chain
+        # Edge-only by default: skip the offline tier unless the operator
+        # explicitly opts into the legacy cascade or names a specific engine.
+        if override is None and not _engine_chain_fallback_enabled():
             return chain
         fallback_candidates = []
         if _srv._has_coqui_support():
