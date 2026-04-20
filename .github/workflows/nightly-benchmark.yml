@@ -43,6 +43,8 @@ jobs:
 
       - name: Run nightly speed benchmark (regression gate)
         id: nightly_benchmark
+        env:
+          ENGINE_CHAIN_FALLBACK: "1"
         run: |
           mkdir -p .cache/telemetry
           mise exec -- python python_app/tests/run_ci_speed_benchmark.py \

@@ -48,5 +48,21 @@ class TestConverterModuleGate(unittest.TestCase):
         importlib.reload(converter)
 
 
+class TestCliFlagPresent(unittest.TestCase):
+    def test_flag_parses(self):
+        from main import create_argument_parser
+
+        parser = create_argument_parser()
+        args = parser.parse_args(["convert", "test.epub", "--engine-chain-fallback"])
+        self.assertTrue(args.engine_chain_fallback)
+
+    def test_flag_default_false(self):
+        from main import create_argument_parser
+
+        parser = create_argument_parser()
+        args = parser.parse_args(["convert", "test.epub"])
+        self.assertFalse(args.engine_chain_fallback)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -654,6 +654,15 @@ class ConverterApplication:
             structure_items = self._apply_text_transforms(structure_items, config, reader)
             self._apply_structure_to_reader(reader, structure_items)
 
+            if getattr(args, "engine_chain_fallback", False):
+                os.environ["ENGINE_CHAIN_FALLBACK"] = "1"
+                try:
+                    import src.converter as _cv
+
+                    _cv.ENGINE_CHAIN_FALLBACK = True
+                except Exception:
+                    pass
+
             fallback_pref = _resolve_cli_fallback_engine(
                 getattr(args, "fallback_engine", "auto"),
                 os.getenv("FALLBACK_ENGINE_OVERRIDE"),
@@ -4342,6 +4351,11 @@ def _add_conversion_arguments(
         choices=["auto", "piper", "kokoro", "none"],
         default="auto",
         help="Engine used to re-synthesize a single sentence if the primary engine hangs/fails. auto=piper for pt-*, kokoro for en, piper otherwise. none=disable per-sentence fallback.",
+    )
+    parser.add_argument(
+        "--engine-chain-fallback",
+        action="store_true",
+        help="Enable the legacy multi-engine cascade (Edge -> Kokoro -> Piper). Default is Edge-only with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
     )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
     parser.add_argument("--model", help="Model path (for Piper/Coqui/Spark)")

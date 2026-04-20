@@ -36,8 +36,8 @@ Pre-built desktop app (updated on every commit):
 
 ## Features
 
-- **Three TTS engines**: Edge-TTS (cloud, fastest) → Kokoro (local neural, EN/JA/ZH) → Piper (offline ONNX, all languages)
-- **Automatic fallback**: engines fail over automatically; the fastest available engine wins
+- **Three TTS engines**: Edge-TTS (cloud, fastest), Kokoro (local neural, EN/JA/ZH), Piper (offline ONNX, all languages)
+- **Edge-only by default**: per-chunk single-sentence fallback recovers transient failures and returns to Edge. Opt-in to the legacy multi-engine cascade via `--engine-chain-fallback` or `ENGINE_CHAIN_FALLBACK=1`.
 - **Smart cache**: parsed text cached per-book — re-runs skip re-parsing
 - **Chapter structure**: preserves TOC hierarchy (NCX / EPUB3 nav), numbered `1.0 / 1.1 / 1.2`
 - **Batch conversion**: queue multiple EPUB/PDF files or entire folders
@@ -202,8 +202,9 @@ mise run audit          # Scan Python dependencies for CVEs
 | **Kokoro** | EN, JA, ZH | ⭐⭐⭐ | Fast | `espeak-ng` |
 | **Piper** | All | ⭐⭐ | Moderate | ONNX model file |
 
-**Fallback chain (CLI):** Edge multilingual → Edge monolingual → Kokoro → Piper
-**Fallback chain (web):** Edge → Kokoro → Piper (ranked by live telemetry)
+**Default behavior (CLI + web):** Edge-only. Per-chunk failures are retried as a single sentence and synthesis returns to Edge. The chapter never cascades to Kokoro/Piper.
+
+**Opt-in legacy cascade:** set `ENGINE_CHAIN_FALLBACK=1` (or pass `--engine-chain-fallback` on the CLI) to restore Edge multilingual → Edge monolingual → Kokoro → Piper. Use `FALLBACK_ENGINE_OVERRIDE=piper|kokoro|coqui|none|auto` to pin or strip the offline tier.
 
 ---
 
