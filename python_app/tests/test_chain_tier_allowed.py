@@ -1,7 +1,13 @@
 # -*- coding: utf-8 -*-
-"""Tests for _chain_tier_allowed gating in the CLI path."""
+"""Tests for _chain_tier_allowed gating in the CLI path.
 
-import importlib
+Note: _chain_tier_allowed reads FALLBACK_ENGINE_OVERRIDE at call time and only
+consults the module-level ENGINE_CHAIN_FALLBACK constant as the default case.
+Tests patch the env var directly and, when they need to exercise the default
+path, override the module constant with mock.patch to avoid a module reload
+(importlib.reload leaks class identities across test files).
+"""
+
 import os
 import sys
 import unittest
@@ -9,31 +15,33 @@ from unittest.mock import patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from src import converter
+
 
 class TestChainTierAllowed(unittest.TestCase):
-    def _reload(self):
-        import src.converter as converter
-
-        return importlib.reload(converter)
-
     def test_override_none_blocks_all_tiers(self):
-        env = {"FALLBACK_ENGINE_OVERRIDE": "none", "ENGINE_CHAIN_FALLBACK": "1"}
-        with patch.dict(os.environ, env, clear=False):
-            converter = self._reload()
+        with (
+            patch.dict(os.environ, {"FALLBACK_ENGINE_OVERRIDE": "none"}, clear=False),
+            patch.object(converter, "ENGINE_CHAIN_FALLBACK", True),
+        ):
             self.assertFalse(converter._chain_tier_allowed("kokoro"))
             self.assertFalse(converter._chain_tier_allowed("piper"))
 
     def test_override_piper_only_allows_piper(self):
-        with patch.dict(os.environ, {"FALLBACK_ENGINE_OVERRIDE": "piper"}, clear=False):
-            os.environ.pop("ENGINE_CHAIN_FALLBACK", None)
-            converter = self._reload()
+        env = dict(os.environ)
+        env["FALLBACK_ENGINE_OVERRIDE"] = "piper"
+        env.pop("ENGINE_CHAIN_FALLBACK", None)
+        with patch.dict(os.environ, env, clear=True):
             self.assertFalse(converter._chain_tier_allowed("kokoro"))
             self.assertTrue(converter._chain_tier_allowed("piper"))
 
     def test_override_auto_respects_chain_flag(self):
-        with patch.dict(os.environ, {"ENGINE_CHAIN_FALLBACK": "1"}, clear=False):
-            os.environ.pop("FALLBACK_ENGINE_OVERRIDE", None)
-            converter = self._reload()
+        env = dict(os.environ)
+        env.pop("FALLBACK_ENGINE_OVERRIDE", None)
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(converter, "ENGINE_CHAIN_FALLBACK", True),
+        ):
             self.assertTrue(converter._chain_tier_allowed("kokoro"))
             self.assertTrue(converter._chain_tier_allowed("piper"))
 
@@ -41,16 +49,12 @@ class TestChainTierAllowed(unittest.TestCase):
         env = dict(os.environ)
         env.pop("FALLBACK_ENGINE_OVERRIDE", None)
         env.pop("ENGINE_CHAIN_FALLBACK", None)
-        with patch.dict(os.environ, env, clear=True):
-            converter = self._reload()
+        with (
+            patch.dict(os.environ, env, clear=True),
+            patch.object(converter, "ENGINE_CHAIN_FALLBACK", False),
+        ):
             self.assertFalse(converter._chain_tier_allowed("kokoro"))
             self.assertFalse(converter._chain_tier_allowed("piper"))
-
-    @classmethod
-    def tearDownClass(cls):
-        import src.converter as converter
-
-        importlib.reload(converter)
 
 
 if __name__ == "__main__":
