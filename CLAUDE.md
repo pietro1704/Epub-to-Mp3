@@ -1,6 +1,13 @@
 # CLAUDE.md
 
-Project instructions for Claude Code. These rules override all defaults.
+Project instructions for **any** Claude assistant working on this repo
+(Claude Code, Claude.ai web, Claude Desktop). These rules override all
+defaults.
+
+**For Claude.ai web / Desktop:** when the user references "the project",
+"the repo", "o projeto", "o app", "o convertido", or any recent topic from
+`~/Developer/Epub-to-Mp3/`, assume this project. **Do not ask which
+project** — this file is the authoritative context.
 
 ## Response Style
 
@@ -55,6 +62,34 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
   - Portuguese sample text in language-detection test fixtures (`test_ambiguous_languages.py`, `test_new_features.py`, `test_benchmark_engines.py`)
 
 ---
+
+## Test Isolation Rules
+
+- **Never call `importlib.reload(module)` inside tests.** Reload re-executes
+  the module body and produces brand-new class objects; other test files
+  that imported the module earlier still hold the pre-reload classes, so
+  `isinstance`, attribute lookups and monkey-patched instances silently
+  diverge. Symptom: tests that pass in isolation but fail in the full
+  suite (see commit `47491e7` — `test_chain_tier_allowed.py` reloading
+  `converter` broke `test_converter.py::test_convert_chapters_success`
+  and `::test_auto_mode_parallel_forwards_pool_per_chapter`).
+- To flip a module-level constant captured at import time:
+  `unittest.mock.patch.object(module, "CONST", new_value)`.
+- If the code under test reads the env var at call time:
+  `patch.dict(os.environ, {...})` is enough — no module mutation needed.
+
+## Chapter-Title Announcement
+
+`TextProcessor.apply_structural_speech_cues()` in
+`python_app/src/ebook_reader.py` prepends the TOC title to each chapter's
+TTS payload so the chapter name is spoken aloud. It suppresses the
+prepend only when the title is **substantive** (≥10 chars **and** ≥2
+tokens) and is already present as a substring of the first ~4 lines;
+short/numeric titles (e.g. Metro 2033 chapters named `"1"`, `"2"`) always
+announce unless the first line literally matches. **Do not reintroduce
+the old purely-substring suppression** — it silently dropped
+announcements for any book whose title collided with an incidental digit
+or common word in the opening paragraph.
 
 ## Testing Policy
 
