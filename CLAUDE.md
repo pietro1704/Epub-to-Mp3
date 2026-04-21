@@ -18,6 +18,31 @@ project** — this file is the authoritative context.
 - Speak only for: blockers, decisions needing input, errors
 - Language: pt-BR
 
+## Issue Detection & Auto-Fix
+
+When the user reports a bug ("nao funcionou", "nao limpou", "nao converteu", etc.),
+treat it as a **bug report requiring immediate diagnosis and patch** — do not merely
+answer questions about it. Reproduce / inspect, fix the root cause, add a regression
+test, commit and push without asking for further confirmation (user has standing
+authorization for this flow when they explicitly request "corrija e faça commit e push").
+
+## CLI Input Resolution
+
+`python_app/convert` accepts loose multi-word book names and resolves them via:
+1. `_normalize_cli_args` — joins space-split tokens into one argument until an
+   existing path is found or an option starts.
+2. `_collect_files_from_path` — expands files/directories.
+3. `_fuzzy_find_book` — **fallback** when the joined tokens don't resolve. Searches
+   `~/Downloads` and CWD for EPUB/PDF whose filename fuzzy-matches the query tokens
+   (accent-stripped, difflib ratio ≥ 0.75 per token, ≥ 60% of tokens matched).
+   Handles typos like `loudo` → `louco` and ignores noise words like the leading
+   `downloads` directory name.
+
+**Do not regress this fallback.** Without it, a command like
+`convert downloads o loudo de deus --clear-cache` silently falls through to the
+global `_clear_cache_all` path (clearing ALL cache instead of the intended book)
+and never runs the conversion.
+
 ## Project Overview
 
 Full-stack EPUB/PDF to MP3 audiobook converter. Python backend (FastAPI) + React/TypeScript frontend. Three deployment modes that **share the same cache and output directories**:

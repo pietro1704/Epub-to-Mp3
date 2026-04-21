@@ -2,7 +2,11 @@
 """Dedicated CLI entry that defaults to the `convert` command."""
 
 import argparse
+import difflib
+import os
+import re
 import sys
+import unicodedata
 from pathlib import Path
 
 CURRENT_DIR = Path(__file__).resolve().parent
@@ -21,6 +25,57 @@ from main import (
 )
 
 SUPPORTED_EXTENSIONS = {".epub", ".pdf"}
+
+
+_FUZZY_SEARCH_DIRS = (Path.home() / "Downloads", Path.cwd())
+
+
+def _norm_tokens(text: str) -> list[str]:
+    """Lowercase, strip accents, split on non-alphanumerics."""
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return [t for t in re.split(r"[^a-z0-9]+", text.lower()) if t]
+
+
+def _fuzzy_find_book(query: str) -> Path | None:
+    """Search common directories for a book whose filename fuzzy-matches query tokens.
+
+    Returns the best match if score is high enough, else None.
+    """
+    query_tokens = _norm_tokens(query)
+    if not query_tokens:
+        return None
+
+    best: tuple[float, Path] | None = None
+    seen: set[Path] = set()
+    for base in _FUZZY_SEARCH_DIRS:
+        if not base.exists() or not base.is_dir():
+            continue
+        try:
+            candidates = [
+                p for p in base.iterdir()
+                if p.is_file() and p.suffix.lower() in SUPPORTED_EXTENSIONS
+            ]
+        except OSError:
+            continue
+        for cand in candidates:
+            if cand in seen:
+                continue
+            seen.add(cand)
+            fname_tokens = _norm_tokens(cand.stem)
+            if not fname_tokens:
+                continue
+            matched = 0
+            for qt in query_tokens:
+                if len(qt) < 2:
+                    continue
+                ratios = [difflib.SequenceMatcher(None, qt, ft).ratio() for ft in fname_tokens]
+                if ratios and max(ratios) >= 0.75:
+                    matched += 1
+            score = matched / max(1, len([t for t in query_tokens if len(t) >= 2]))
+            if score >= 0.6 and (best is None or score > best[0]):
+                best = (score, cand)
+    return best[1] if best else None
 
 
 def _collect_files_from_path(path: Path) -> list[str]:
@@ -123,6 +178,13 @@ def main() -> int:
 
     for entry in original_inputs:
         expanded = _collect_files_from_path(Path(entry).expanduser())
+        if not expanded:
+            # Fuzzy fallback: user may have typed a partial/misspelled book name
+            # like "downloads o loudo de deus" — search ~/Downloads and CWD.
+            match = _fuzzy_find_book(entry)
+            if match is not None:
+                print(f"🔎 Fuzzy match: {entry!r} -> {match}")
+                expanded = [str(match)]
         if expanded:
             expanded_inputs.extend(expanded)
         else:

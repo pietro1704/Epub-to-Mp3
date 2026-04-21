@@ -55,3 +55,20 @@ def test_convert_entrypoint_rejects_menu_without_input(monkeypatch):
         assert exc.code == 2
     else:
         raise AssertionError("Expected SystemExit for --menu without input")
+
+
+def test_fuzzy_find_book_matches_misspelled_query(monkeypatch, tmp_path):
+    module = _load_convert_module()
+    downloads = tmp_path / "Downloads"
+    downloads.mkdir()
+    target = downloads / "O_louco_de_Deus_no_fim_do_mundo.epub"
+    target.write_text("x", encoding="utf-8")
+    (downloads / "Other_Book.epub").write_text("y", encoding="utf-8")
+
+    monkeypatch.setattr(module, "_FUZZY_SEARCH_DIRS", (downloads,))
+
+    # typo: "loudo" instead of "louco"; leading "downloads" directory name
+    match = module._fuzzy_find_book("downloads o loudo de deus")
+    assert match == target
+
+    assert module._fuzzy_find_book("completely unrelated qwerty") is None
