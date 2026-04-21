@@ -761,9 +761,9 @@ class TestArgumentParser(unittest.TestCase):
         self.assertTrue(args.show_structure)
         self.assertTrue(args.filter_chapters)
 
-        # --engine no longer accepts "auto"
-        with self.assertRaises(SystemExit):
-            parser.parse_args(["convert", "test.epub", "--engine", "auto"])
+        # --engine accepts "auto" as an alias (mapped to edge downstream, see 96bb0e7)
+        args = parser.parse_args(["convert", "test.epub", "--engine", "auto"])
+        self.assertEqual(args.engine, "auto")
 
         # --fallback-engine defaults to "auto" and accepts piper/kokoro/none
         args = parser.parse_args(["convert", "test.epub"])
