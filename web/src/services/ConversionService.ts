@@ -796,10 +796,33 @@ export class HttpConversionClient implements ConversionClient {
       let settled = false;
       let source: EventSource | null = null;
       let retryTimer: number | null = null;
+      let idleTimer: number | null = null;
       let retryCount = 0;
       const retryDelaysMs = [2000, 4000, 8000] as const;
+      // Tauri WKWebView on macOS keeps the SSE TCP connection open during
+      // long backend silences (e.g. Edge slow mode) but never fires onmessage
+      // or onerror — the UI freezes. The backend heartbeat is a ":" comment
+      // and is invisible to EventSource. We add a client-side idle watchdog:
+      // if no message arrives within this window, force a reconnect.
+      const IDLE_WATCHDOG_MS = 25000;
+
+      const clearIdleTimer = () => {
+        if (idleTimer !== null) {
+          window.clearTimeout(idleTimer);
+          idleTimer = null;
+        }
+      };
+
+      const armIdleTimer = () => {
+        clearIdleTimer();
+        idleTimer = window.setTimeout(() => {
+          idleTimer = null;
+          scheduleReconnect();
+        }, IDLE_WATCHDOG_MS);
+      };
 
       const cleanup = () => {
+        clearIdleTimer();
         if (source) {
           source.onmessage = null;
           source.onerror = null;
@@ -833,6 +856,7 @@ export class HttpConversionClient implements ConversionClient {
       const handleMessage = (event: MessageEvent) => {
         try {
           retryCount = 0;
+          armIdleTimer();
           const payload = JSON.parse(event.data) as JobSnapshot;
           const snapshot = this.normalizeSnapshot(payload);
           latestSnapshot = snapshot;
@@ -851,6 +875,7 @@ export class HttpConversionClient implements ConversionClient {
       const handleChapterUpdate = (event: MessageEvent) => {
         try {
           retryCount = 0;
+          armIdleTimer();
           if (!latestSnapshot || !Array.isArray(latestSnapshot.chapterProgress))
             return;
           const chapter = JSON.parse(event.data) as Record<string, unknown>;
@@ -869,6 +894,7 @@ export class HttpConversionClient implements ConversionClient {
       };
 
       const closeSource = () => {
+        clearIdleTimer();
         if (!source) {
           return;
         }
@@ -911,6 +937,7 @@ export class HttpConversionClient implements ConversionClient {
         source.onmessage = handleMessage;
         source.addEventListener("chapter_update", handleChapterUpdate);
         source.onerror = handleError;
+        armIdleTimer();
       };
 
       if (signal) {
