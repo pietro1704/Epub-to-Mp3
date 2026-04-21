@@ -3977,8 +3977,13 @@ class ConverterApplication:
         if getattr(args, "auto_fix_output", None) is not None:
             overrides["auto_fix_output"] = bool(getattr(args, "auto_fix_output"))
 
+        # "auto" is a UI-friendly alias kept for parity with the web form; it
+        # means "let the default (Edge) engine handle it" at the CLI layer.
+        engine_choice = args.engine or "edge"
+        if engine_choice == "auto":
+            engine_choice = "edge"
         config = self.config.create_conversion_config(
-            engine=args.engine or "edge",
+            engine=engine_choice,
             voice=args.voice,
             model=args.model,
             output_dir=args.output_dir or str(OUTPUT_DIR),
@@ -4342,9 +4347,9 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["edge", "coqui", "piper", "kokoro", "spark"],
+        choices=["auto", "edge", "coqui", "piper", "kokoro", "spark"],
         default="edge",
-        help="TTS engine to use (default: edge). edge=fast cloud, coqui=neural local, kokoro=fast local, spark=LLM-based",
+        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, coqui=neural local, kokoro=fast local, spark=LLM-based",
     )
     parser.add_argument(
         "--fallback-engine",
