@@ -336,6 +336,9 @@ class AudioConverter(
         self._edge_auto_state: Dict[str, Any] = {}
         self.hardware_profile: Optional[HardwareProfile] = None
         self._health_state: Dict[str, Any] = {"active": False}
+        # Track in-flight chapter tasks so the health watchdog can force-cancel
+        # stuck chapters once backpressure alone can't unstick the pipeline.
+        self._inflight_chapter_tasks: set = set()
         self._auto_tuner: Optional[AutoTuner] = None
         self._auto_tuning_enabled = _env_bool("ENABLE_AUTO_TUNING", True)
         self._auto_tuning_initialized = False
@@ -3034,6 +3037,35 @@ class AudioConverter(
                     "⚡ Multi-engine parallel: " + ", ".join(f"{e}×{n}" for e, n in counts.items())
                 )
 
+        # Hard per-chapter deadline — last-line defence against silent stalls
+        # where neither per-segment nor stall watchdogs fire (e.g. a chapter
+        # hung deep in post-TTS validation/encoding emits no heartbeat).
+        # Without this, the outer `asyncio.wait(FIRST_COMPLETED)` would block
+        # forever. Override via CLI_CHAPTER_HARD_TIMEOUT_SECONDS (0 disables).
+        try:
+            hard_chapter_timeout = float(os.getenv("CLI_CHAPTER_HARD_TIMEOUT_SECONDS", "900"))
+        except (TypeError, ValueError):
+            hard_chapter_timeout = 900.0
+
+        async def _chapter_with_deadline(coro, chapter_label: str):
+            if hard_chapter_timeout <= 0:
+                return await coro
+            try:
+                return await asyncio.wait_for(coro, timeout=hard_chapter_timeout)
+            except asyncio.TimeoutError:
+                msg = (
+                    f"Chapter {chapter_label} cancelled after hard timeout "
+                    f"{int(hard_chapter_timeout)}s"
+                )
+                print(f"\n⏱️  {msg}")
+                return ConversionResult(
+                    success=False,
+                    total_chapters=1,
+                    converted_chapters=0,
+                    output_files=[],
+                    errors=[msg],
+                )
+
         # Helper to create chapter task
         def create_chapter_task(
             chapter: Chapter, preferred_engine: Optional[str] = None
@@ -3043,20 +3075,23 @@ class AudioConverter(
                 from dataclasses import replace as _dc_replace
 
                 task_config = _dc_replace(config, engine=preferred_engine)
-            return asyncio.create_task(
-                self._convert_chapters_sequential(
-                    [chapter],
-                    engine_pool,
-                    output_dir,
-                    task_config,
-                    is_auto_engine=is_auto_engine,
-                    auto_engine_pool=auto_engine_pool,
-                    book_title=book_title,
-                    book_author=book_author,
-                    cover_art=cover_art,
-                    skip_preprocessing=True,  # Preprocessing already done by parallel caller
-                )
+            chapter_label = str(getattr(chapter, "index", "?"))
+            inner_coro = self._convert_chapters_sequential(
+                [chapter],
+                engine_pool,
+                output_dir,
+                task_config,
+                is_auto_engine=is_auto_engine,
+                auto_engine_pool=auto_engine_pool,
+                book_title=book_title,
+                book_author=book_author,
+                cover_art=cover_art,
+                skip_preprocessing=True,  # Preprocessing already done by parallel caller
             )
+            task = asyncio.create_task(_chapter_with_deadline(inner_coro, chapter_label))
+            self._inflight_chapter_tasks.add(task)
+            task.add_done_callback(self._inflight_chapter_tasks.discard)
+            return task
 
         parallel_slots = int(self._parallel_state.get("current", recommended) or recommended)
         parallel_slots = max(1, min(parallel_slots, recommended))
