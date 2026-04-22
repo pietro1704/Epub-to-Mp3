@@ -5820,6 +5820,35 @@ class AudioConverter(
                         engine_obj=engine_instance.get("object"),
                     )
                 self._mark_health_progress(chapter_num, chapter_success, elapsed, chapter_error)
+                try:
+                    from .session_logger import log_chapter_error, log_chapter_perf
+
+                    _engine_label = engine_tracker.get("label") or (config.engine or "").lower()
+                    _book = (
+                        getattr(self._active_config, "book_title", None)
+                        or getattr(config, "book_title", "")
+                        or ""
+                    )
+                    if chapter_success and not chapter_cached:
+                        log_chapter_perf(
+                            book_title=_book,
+                            chapter_index=chapter_num,
+                            chapter_name=chapter_label,
+                            engine=_engine_label,
+                            elapsed_seconds=float(elapsed or 0.0),
+                            char_count=int(chapter_chars or 0),
+                        )
+                    elif not chapter_success:
+                        log_chapter_error(
+                            book_title=_book,
+                            chapter_index=chapter_num,
+                            chapter_name=chapter_label,
+                            engine=_engine_label,
+                            error=chapter_error or "",
+                            elapsed_seconds=float(elapsed or 0.0),
+                        )
+                except Exception:
+                    pass
                 self._record_chapter_progress(
                     chapter,
                     chapter_success,

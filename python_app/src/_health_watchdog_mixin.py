@@ -186,6 +186,16 @@ class _HealthWatchdogMixin:
                     f"\n🛟 Idle watchdog: chapter {chapter_index} emitted no "
                     f"{label} for {int(idle_seconds)}s — aborting engine"
                 )
+                with contextlib.suppress(Exception):
+                    from .session_logger import log_freeze
+
+                    log_freeze(
+                        source="segment_idle",
+                        chapter_index=chapter_index,
+                        stalled_seconds=time.time() - last_advance,
+                        threshold_seconds=idle_seconds,
+                        action=f"abort_engine ({label})",
+                    )
                 if stall_event is not None:
                     with contextlib.suppress(Exception):
                         stall_event.set()
@@ -230,6 +240,16 @@ class _HealthWatchdogMixin:
                 print(
                     f"\n🛟 Watchdog: chapter {chapter_index} no progress for {int(stall_seconds)}s"
                 )
+                with contextlib.suppress(Exception):
+                    from .session_logger import log_freeze
+
+                    log_freeze(
+                        source="chapter_stall",
+                        chapter_index=chapter_index,
+                        stalled_seconds=self.progress.seconds_since_activity(),
+                        threshold_seconds=stall_seconds,
+                        action="cancel_and_restart_chapter",
+                    )
                 self.progress.tick(
                     f"🛟 No progress for {int(stall_seconds)}s - restarting chapter..."
                 )
@@ -259,7 +279,18 @@ class _HealthWatchdogMixin:
                 if last_chapter:
                     info += f" (last chapter #{last_chapter})"
                 print(f"\n🩺 Watchdog: {info} – investigating bottleneck")
-                if not self._apply_watchdog_backpressure():
+                applied = self._apply_watchdog_backpressure()
+                with contextlib.suppress(Exception):
+                    from .session_logger import log_freeze
+
+                    log_freeze(
+                        source="health",
+                        chapter_index=int(last_chapter or 0),
+                        stalled_seconds=stalled,
+                        threshold_seconds=action_threshold,
+                        action="reduce_parallelism" if applied else "warn_only",
+                    )
+                if not applied:
                     print(
                         "   Suggestion: check connection ou allow offline fallback (Coqui/Piper)."
                     )

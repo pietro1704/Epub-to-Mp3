@@ -38,8 +38,12 @@ _LOCK = threading.Lock()
 # During pytest, write to a temp file so tests never pollute the real log.
 if os.getenv("PYTEST_CURRENT_TEST"):
     _LOG_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_sessions.jsonl"
+    _EVENTS_FILE = pathlib.Path(tempfile.gettempdir()) / "epub_to_mp3_test_events.jsonl"
 else:
     _LOG_FILE = LOGS_DIR / "conversions.jsonl"
+    _EVENTS_FILE = LOGS_DIR / "events.jsonl"
+
+_EVENTS_LOCK = threading.Lock()
 
 
 def _detect_mode() -> str:
@@ -121,6 +125,144 @@ def read_sessions(last_n: int = 0) -> list[dict[str, Any]]:
     if last_n > 0:
         return records[-last_n:]
     return records
+
+
+def log_event(kind: str, **fields: Any) -> None:
+    """Append a structured event (perf/error/freeze) to events.jsonl.
+
+    Never raises — logging must not perturb the conversion pipeline.
+    """
+    if not kind:
+        return
+    record: dict[str, Any] = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "mode": _detect_mode(),
+        "kind": kind,
+    }
+    for k, v in fields.items():
+        if v is None or v == "":
+            continue
+        record[k] = v
+    try:
+        line = json.dumps(record, ensure_ascii=False, default=str) + "\n"
+        with _EVENTS_LOCK:
+            with open(_EVENTS_FILE, "a", encoding="utf-8") as fh:
+                fh.write(line)
+    except Exception:
+        pass
+
+
+def log_chapter_perf(
+    *,
+    book_title: str = "",
+    chapter_index: int = 0,
+    chapter_name: str = "",
+    engine: str = "",
+    elapsed_seconds: float = 0.0,
+    char_count: int = 0,
+    job_id: str = "",
+) -> None:
+    """Record successful per-chapter completion with throughput."""
+    chars_per_sec = (
+        round(char_count / elapsed_seconds, 1) if elapsed_seconds > 0 and char_count > 0 else 0.0
+    )
+    log_event(
+        "chapter_perf",
+        book_title=book_title,
+        chapter_index=chapter_index,
+        chapter_name=chapter_name,
+        engine=engine,
+        elapsed_seconds=round(float(elapsed_seconds or 0.0), 2),
+        char_count=int(char_count or 0),
+        chars_per_second=chars_per_sec,
+        job_id=job_id,
+    )
+
+
+def log_chapter_error(
+    *,
+    book_title: str = "",
+    chapter_index: int = 0,
+    chapter_name: str = "",
+    engine: str = "",
+    error: str = "",
+    elapsed_seconds: float = 0.0,
+    job_id: str = "",
+) -> None:
+    """Record a per-chapter failure (engine exception, fallback exhausted, etc.)."""
+    log_event(
+        "chapter_error",
+        book_title=book_title,
+        chapter_index=chapter_index,
+        chapter_name=chapter_name,
+        engine=engine,
+        error=str(error)[:500],
+        elapsed_seconds=round(float(elapsed_seconds or 0.0), 2),
+        job_id=job_id,
+    )
+
+
+def log_freeze(
+    *,
+    source: str,
+    book_title: str = "",
+    chapter_index: int = 0,
+    engine: str = "",
+    stalled_seconds: float = 0.0,
+    threshold_seconds: float = 0.0,
+    action: str = "",
+    job_id: str = "",
+) -> None:
+    """Record a stall/freeze detection (watchdog trip).
+
+    `source` identifies which watchdog fired:
+      - 'health' (no chapter completed for N seconds)
+      - 'chapter_stall' (single chapter stuck mid-synthesis)
+      - 'segment_idle' (no chunk progress within N seconds)
+      - 'job_stall' (server-side job stall)
+    """
+    log_event(
+        "freeze",
+        source=source,
+        book_title=book_title,
+        chapter_index=chapter_index,
+        engine=engine,
+        stalled_seconds=round(float(stalled_seconds or 0.0), 1),
+        threshold_seconds=round(float(threshold_seconds or 0.0), 1),
+        action=action,
+        job_id=job_id,
+    )
+
+
+def read_events(last_n: int = 0, kind: str = "") -> list[dict[str, Any]]:
+    """Return all (or last N) event records, optionally filtered by `kind`."""
+    if not _EVENTS_FILE.exists():
+        return []
+    records: list[dict[str, Any]] = []
+    with open(_EVENTS_FILE, encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if kind and rec.get("kind") != kind:
+                continue
+            records.append(rec)
+    if last_n > 0:
+        return records[-last_n:]
+    return records
+
+
+def clear_events() -> int:
+    """Delete all event records. Returns the count of deleted records."""
+    if not _EVENTS_FILE.exists():
+        return 0
+    count = len(read_events())
+    _EVENTS_FILE.unlink()
+    return count
 
 
 def clear_sessions() -> int:

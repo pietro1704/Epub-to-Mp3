@@ -199,6 +199,22 @@ echo "🔍 npm CVE scan..."
 echo "✅ npm: no known vulnerabilities."
 """
 
+[tasks."logs-perf"]
+description = "Show recent perf/error/freeze events from .logs/events.jsonl"
+run = """
+#!/bin/bash
+set -euo pipefail
+
+EVENTS_FILE=".logs/events.jsonl"
+if [[ ! -f "$EVENTS_FILE" ]]; then
+    echo "No events log at $EVENTS_FILE"
+    exit 0
+fi
+
+LIMIT="${1:-30}"
+.venv/bin/python scripts/print_events.py "$EVENTS_FILE" "$LIMIT"
+"""
+
 [tasks."hooks-test"]
 description = "Validate Claude Code hook scripts are syntactically valid and executable"
 run = """
