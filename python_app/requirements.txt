@@ -10,7 +10,7 @@ piper-tts>=1.3.0
 torch>=2.2.0
 torchaudio>=2.2.0
 numpy>=1.24.0,<3.0.0
-soundfile>=0.12.1
+soundfile>=0.13.1
 
 # Ebook processing
 beautifulsoup4>=4.12.0
