@@ -2086,14 +2086,21 @@ class AudioConverter(
                 network_tier = str(
                     getattr(self.hardware_profile, "network_speed_estimate", "") or ""
                 ).lower()
+            engine_is_edge = (config.engine or "").lower() == "edge"
             if cpu_physical >= 8:
-                chapter_parallel_count = min(8, cpu_logical)
+                chapter_parallel_count = min(
+                    16 if engine_is_edge else 8, cpu_logical * (2 if engine_is_edge else 1)
+                )
             elif cpu_physical >= 4:
-                chapter_parallel_count = min(6, cpu_logical)
+                chapter_parallel_count = min(
+                    12 if engine_is_edge else 6, cpu_logical * (2 if engine_is_edge else 1)
+                )
             elif cpu_physical >= 2:
-                chapter_parallel_count = min(4, cpu_logical)
+                chapter_parallel_count = min(
+                    8 if engine_is_edge else 4, cpu_logical * (2 if engine_is_edge else 1)
+                )
             else:
-                chapter_parallel_count = 2
+                chapter_parallel_count = 4 if engine_is_edge else 2
             # Resource-aware conservative defaults for stability/throughput.
             if (ram_total and ram_total <= 8.5) or (ram_available and ram_available <= 2.5):
                 chapter_parallel_count = min(chapter_parallel_count, 2)

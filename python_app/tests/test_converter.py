@@ -517,6 +517,21 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(self.converter._parallel_state["current"], 3)
 
+    def test_engine_resource_budget_grows_ceiling_for_idle_edge(self):
+        self.converter._resource_budget_enabled = True
+        self.converter._parallel_state["ceiling"] = 8
+        self.converter._parallel_state["current"] = 8
+        self.converter._engine_resource_budget = {
+            "edge": {"cap": 8, "pressure_streak": 0, "free_streak": 0}
+        }
+        snap = SimpleNamespace(cpu_percent=10.0, ram_gb=3.0)
+        for _ in range(3):
+            self.converter._apply_engine_resource_budget(
+                engine_label="edge", snapshot=snap, engine_pool=None
+            )
+        self.assertGreater(self.converter._parallel_state["ceiling"], 8)
+        self.assertGreater(self.converter._parallel_state["current"], 8)
+
     def test_adaptive_state_checkpoint_roundtrip(self):
         path_dir = Path(self.temp_dir)
         self.converter._adaptive_checkpoint_enabled = True
@@ -535,6 +550,20 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(other._engine_resource_budget.get("edge", {}).get("cap"), 2)
         self.assertEqual(other._auto_ab_counter, 9)
+
+    def test_save_adaptive_state_checkpoint_does_not_spam_runtime_metrics(self):
+        path_dir = Path(self.temp_dir)
+        self.converter._adaptive_checkpoint_enabled = True
+        self.converter._last_output_dir = path_dir
+        for _ in range(5):
+            self.converter._save_adaptive_state_checkpoint(path_dir)
+        metrics_path = path_dir / "_runtime_metrics.jsonl"
+        if metrics_path.exists():
+            lines = metrics_path.read_text(encoding="utf-8").splitlines()
+            self.assertFalse(
+                any("adaptive_state_saved" in line for line in lines),
+                "adaptive_state_saved event should not be emitted to runtime metrics",
+            )
 
     def test_runtime_metrics_summary_includes_optimization_metrics(self):
         metrics_path = Path(self.temp_dir) / "_runtime_metrics.jsonl"

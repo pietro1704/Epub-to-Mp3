@@ -102,6 +102,14 @@ class _EdgeThrottleMixin:
             budget["free_streak"] = int(budget.get("free_streak", 0) or 0) + 1
             budget["pressure_streak"] = 0
             if budget["free_streak"] >= 3:
+                if engine == "edge" and snapshot.cpu_percent < 40 and cap >= ceiling:
+                    hard_ceiling = max(
+                        ceiling, int(budget.get("ceiling_override", ceiling) or ceiling)
+                    )
+                    hard_ceiling = min(hard_ceiling + 1, ceiling * 3, 32)
+                    budget["ceiling_override"] = hard_ceiling
+                    self._parallel_state["ceiling"] = hard_ceiling
+                    ceiling = hard_ceiling
                 cap = min(ceiling, cap + 1)
                 budget["free_streak"] = 0
         else:
@@ -109,7 +117,7 @@ class _EdgeThrottleMixin:
             budget["free_streak"] = 0
 
         budget["cap"] = cap
-        if current > cap:
+        if current != cap:
             self._parallel_state["current"] = cap
             if engine_pool is not None:
                 engine_pool.update_parallel_slots(cap)
@@ -124,7 +132,8 @@ class _EdgeThrottleMixin:
                 }
             )
             if self.verbose:
-                print(f"⚖️ Resource budget cap for {engine}: {current}→{cap}")
+                direction = "↑" if cap > current else "↓"
+                print(f"⚖️ Resource budget {direction} for {engine}: {current}→{cap}")
 
     @staticmethod
     def _adaptive_state_path(temp_dir: Optional[Path]) -> Optional[Path]:
@@ -159,7 +168,6 @@ class _EdgeThrottleMixin:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
             self._adaptive_checkpoint_dirty = 0
-            self._append_runtime_metric({"event": "adaptive_state_saved"})
         except Exception:
             return
 

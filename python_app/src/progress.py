@@ -338,8 +338,19 @@ class ProgressTracker:
                 partial = min(0.99, max(0.0, self.processed_chars / self.total_chars))
         progress = ((base + partial) / self.total_chapters) * 100
         if self.completed_chapters < self.total_chapters:
-            return min(99.99, max(0.0, progress))
-        return min(100.0, max(0.0, progress))
+            progress = min(99.99, max(0.0, progress))
+        else:
+            progress = min(100.0, max(0.0, progress))
+        # Monotonic clamp: with parallel chapters, partial progress jumps between
+        # active chapters and can appear to move backwards. Never decrease unless
+        # the conversion was reset (start_conversion clears _last_progress_pct).
+        floor = (self.completed_chapters / max(self.total_chapters, 1)) * 100
+        prior = self._last_progress_pct if self._last_progress_pct >= 0 else 0.0
+        progress = max(progress, prior, floor)
+        if self.completed_chapters < self.total_chapters:
+            progress = min(99.99, progress)
+        self._last_progress_pct = progress
+        return progress
 
     def seconds_since_activity(self) -> float:
         return max(0.0, time.time() - self._last_real_progress_time)
