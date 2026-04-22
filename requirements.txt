@@ -13,7 +13,7 @@ edge-tts>=7.2.0
 torch>=2.6.0  # PYSEC-2024-259, PYSEC-2025-41
 torchaudio>=2.6.0
 soundfile>=0.13.1
-pandas>=1.5.0,<4.0.0
+pandas>=3.0.2,<4.0.0
 
 # Coqui XTTS (optional GPU engine) — see requirements-coqui.txt
 
