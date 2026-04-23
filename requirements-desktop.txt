@@ -20,4 +20,4 @@ fsspec<=2026.3.0,>=2026.3.0
 packaging>=23.2,<27.0
 argcomplete>=3.1.0
 pip-audit
-pyinstaller>=6.0.0
+pyinstaller>=6.20.0
