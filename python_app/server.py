@@ -2937,6 +2937,188 @@ async def list_available_voices() -> dict:
     }
 
 
+# ── Voice preview cache ─────────────────────────────────────────────────
+_PREVIEW_CACHE_DIR = CACHE_DIR / "voice-previews"
+_PREVIEW_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Cleanup cached previews older than 30 days on startup
+_PREVIEW_TTL_SECONDS = 30 * 24 * 3600
+try:
+    _now = time.time()
+    for _cached_file in _PREVIEW_CACHE_DIR.glob("*.mp3"):
+        try:
+            if _now - _cached_file.stat().st_mtime > _PREVIEW_TTL_SECONDS:
+                _cached_file.unlink()
+        except OSError:
+            pass
+except Exception:
+    pass
+
+# ── Voice preview rate limiter (per-IP sliding window) ──────────────────
+_PREVIEW_RATE_WINDOW = 60  # seconds
+_PREVIEW_RATE_LIMIT = 10  # max requests per window
+_preview_rate_log: dict[str, list[float]] = {}
+_preview_rate_lock = threading.Lock()
+
+
+def _check_preview_rate_limit(client_ip: str) -> bool:
+    """Return True if the request should be allowed."""
+    now = time.time()
+    cutoff = now - _PREVIEW_RATE_WINDOW
+    with _preview_rate_lock:
+        timestamps = _preview_rate_log.get(client_ip, [])
+        timestamps = [t for t in timestamps if t > cutoff]
+        if len(timestamps) >= _PREVIEW_RATE_LIMIT:
+            _preview_rate_log[client_ip] = timestamps
+            return False
+        timestamps.append(now)
+        _preview_rate_log[client_ip] = timestamps
+    return True
+
+
+_PREVIEW_SAMPLE_TEXTS: dict[str, str] = {
+    "pt": ("Era uma vez, numa terra distante, " "um livro que ganhava vida ao ser ouvido."),
+    "en": ("Once upon a time, in a distant land, " "a book came alive when it was heard."),
+    "es": ("Érase una vez, en una tierra lejana, " "un libro que cobraba vida al ser escuchado."),
+    "fr": (
+        "Il était une fois, dans un pays lointain, " "un livre qui prenait vie quand on l'écoutait."
+    ),
+    "de": (
+        "Es war einmal, in einem fernen Land, " "ein Buch, das lebendig wurde, wenn man es hörte."
+    ),
+    "ja": "むかしむかし、遠い国に、聞くと命を宿す本がありました。",
+    "zh": "从前，在一个遥远的地方，有一本书，当有人听它时，它便活了过来。",
+    "it": (
+        "C'era una volta, in una terra lontana, "
+        "un libro che prendeva vita quando veniva ascoltato."
+    ),
+}
+
+# Limit concurrent preview synthesis to avoid overloading the system
+_preview_semaphore = asyncio.Semaphore(2)
+# In-flight dedup: maps cache_key -> Future so parallel requests for the
+# same voice share a single synthesis
+_preview_in_flight: dict[str, asyncio.Future[Path]] = {}
+
+
+@app.get("/api/voice-preview")
+async def voice_preview(
+    request: Request, engine: str, voice: str = "", language: str = "pt"
+) -> FileResponse:
+    """Synthesize a short sample for the given engine+voice and return MP3.
+
+    Results are cached on disk so subsequent requests are instant.
+    Rate-limited to 10 requests/minute per IP.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    if not _check_preview_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429, detail="Too many preview requests. Try again in a minute."
+        )
+
+    engine = engine.lower().strip()
+    if engine not in ("edge", "kokoro", "piper", "coqui", "spark"):
+        raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine}")
+
+    lang_code = language.lower().split("-")[0] if language else "pt"
+
+    # Pick sample text matching language (or engine default)
+    if engine == "kokoro" and lang_code not in ("en", "ja", "zh"):
+        lang_code = "en"
+    elif engine == "piper" and lang_code not in ("pt", "en", "es", "fr", "de", "it"):
+        lang_code = "pt"
+
+    sample_text = _PREVIEW_SAMPLE_TEXTS.get(lang_code, _PREVIEW_SAMPLE_TEXTS["en"])
+
+    # Deterministic cache key
+    voice_slug = (voice or "default").replace("/", "_").replace(" ", "_")
+    cache_key = f"{engine}__{voice_slug}__{lang_code}"
+    cache_path = _PREVIEW_CACHE_DIR / f"{cache_key}.mp3"
+
+    if cache_path.exists() and cache_path.stat().st_size > 0:
+        return FileResponse(
+            cache_path,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    # Dedup in-flight requests for the same cache key
+    loop = asyncio.get_running_loop()
+    if cache_key in _preview_in_flight:
+        try:
+            result_path = await _preview_in_flight[cache_key]
+            return FileResponse(
+                result_path,
+                media_type="audio/mpeg",
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+        except Exception:
+            pass  # fall through to synthesize
+
+    future: asyncio.Future[Path] = loop.create_future()
+    _preview_in_flight[cache_key] = future
+
+    try:
+        async with _preview_semaphore:
+            # Double-check after acquiring semaphore (another request may have filled it)
+            if cache_path.exists() and cache_path.stat().st_size > 0:
+                future.set_result(cache_path)
+                return FileResponse(
+                    cache_path,
+                    media_type="audio/mpeg",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+
+            import tempfile
+
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                raw_output = Path(tmp_dir) / "preview.mp3"
+
+                config = ConversionConfig(
+                    engine=engine,
+                    voice=voice or None,
+                    primary_language=lang_code,
+                    verbose=False,
+                )
+
+                try:
+                    tts_engine = tts_factory.create_engine(config)
+                    await asyncio.wait_for(
+                        tts_engine.synthesize_async(sample_text, raw_output),
+                        timeout=30.0,
+                    )
+                except asyncio.TimeoutError:
+                    future.set_exception(
+                        HTTPException(status_code=504, detail="Preview synthesis timed out")
+                    )
+                    raise HTTPException(status_code=504, detail="Preview synthesis timed out")
+                except Exception as exc:
+                    future.set_exception(
+                        HTTPException(status_code=500, detail=f"Synthesis failed: {exc}")
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"Synthesis failed: {exc}",
+                    )
+
+                if not raw_output.exists() or raw_output.stat().st_size == 0:
+                    future.set_exception(
+                        HTTPException(status_code=500, detail="Synthesis produced empty output")
+                    )
+                    raise HTTPException(status_code=500, detail="Synthesis produced empty output")
+
+                shutil.copy2(raw_output, cache_path)
+
+        future.set_result(cache_path)
+        return FileResponse(
+            cache_path,
+            media_type="audio/mpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    finally:
+        _preview_in_flight.pop(cache_key, None)
+
+
 @app.get("/api/estimate")
 async def estimate_conversion(
     upload_id: str,

@@ -12,6 +12,20 @@ export interface EngineOptionText {
   help: string;
 }
 
+export interface EngineDetailText {
+  tagline: string;
+  quality: string;
+  speed: string;
+  requirements: string;
+  bestVoice: string;
+  bestVoiceNote: string;
+  pros: string[];
+  cons: string[];
+  languages: string;
+}
+
+export type EngineDetails = Record<string, EngineDetailText>;
+
 export interface FootnoteOptionText {
   value: FootnoteMode;
   title: string;
@@ -102,6 +116,20 @@ export interface FormText {
   addFolderButton: string;
   engineLabel: string;
   engineOptions: EngineOptionText[];
+  engineDetails: EngineDetails;
+  autoEngineComparisonTitle: string;
+  autoEngineComparisonNote: string;
+  comparisonHeaders: {
+    engine: string;
+    quality: string;
+    speed: string;
+    languages: string;
+    needs: string;
+  };
+  voicePreviewPlay: string;
+  voicePreviewStop: string;
+  voicePreviewLoading: string;
+  voicePreviewError: string;
   defaultVoiceLabel: string;
   multilingualSupportLabel: string;
   multilingualYes: string;
@@ -132,6 +160,9 @@ export interface FormText {
   languagePlaceholder: string;
   languageHint: string;
   languageNotRequired: string;
+  languageAutoDetected: string;
+  voiceAutoSelected: string;
+  voiceAutoOption: string;
   languageOptions: Record<string, string>;
   availableLanguagesLabel: string;
   errorNoFile: string;
@@ -770,6 +801,135 @@ export const translations: Record<Locale, Translations> = {
           help: "Modelos PT/EN incluídos. Offline, qualidade básica.",
         },
       ],
+      engineDetails: {
+        edge: {
+          tagline:
+            "A escolha mais versátil — vozes neurais na nuvem da Microsoft",
+          quality: "Alta — entonação natural, respiração realista",
+          speed: "~70 chars/s — o mais rápido de todos",
+          requirements: "Conexão com a internet",
+          bestVoice: "pt-BR-ThalitaMultilingualNeural",
+          bestVoiceNote:
+            "Thalita é multilíngue: troca de idioma automaticamente no mesmo texto. Para voz masculina, use AntonioNeural.",
+          pros: [
+            "Mais rápido de todos os motores",
+            "Vozes naturais com entonação expressiva",
+            "16+ vozes em pt-BR (femininas e masculinas)",
+            "Multilíngue automático com Thalita",
+            "Não precisa baixar nada",
+          ],
+          cons: [
+            "Precisa de internet",
+            "Pode sofrer rate-limiting em uso intenso",
+            "Vozes são da Microsoft (não 100% open-source)",
+          ],
+          languages:
+            "Todos (automático) — pt, en, es, fr, de, it, ja, zh e mais",
+        },
+        kokoro: {
+          tagline: "Qualidade surpreendente para 82M parâmetros — roda offline",
+          quality:
+            "Muito alta — voz extremamente natural, quase indistinguível de humana",
+          speed: "~35 chars/s — rápido para um modelo local",
+          requirements: "espeak-ng instalado, ~170 MB RAM",
+          bestVoice: "af_heart",
+          bestVoiceNote:
+            "Heart (feminina americana) é a voz mais natural. Para britânico, bf_emma. Para japonês, jf_alpha.",
+          pros: [
+            "Qualidade de áudio excepcionalmente natural",
+            "Funciona 100% offline após download",
+            "40+ vozes (homem, mulher) em 4 variantes de inglês",
+            "Leve — roda bem em CPU",
+          ],
+          cons: [
+            "Apenas inglês, japonês e chinês",
+            "Sem suporte a português",
+            "Precisa de espeak-ng no sistema",
+          ],
+          languages: "EN (americano/britânico), JA, ZH",
+        },
+        coqui: {
+          tagline: "Clonagem de voz e qualidade premium — para quem tem GPU",
+          quality: "Premium — a mais expressiva e emocional",
+          speed: "~20 chars/s — lento, ideal com GPU",
+          requirements: "GPU recomendada (CUDA), ~2 GB VRAM",
+          bestVoice: "tts_models/multilingual/multi-dataset/xtts_v2",
+          bestVoiceNote:
+            "XTTS v2 é multilíngue e suporta clonagem de voz com áudio de referência. VITS pt é mais leve mas monolíngue.",
+          pros: [
+            "Maior expressividade e emoção na fala",
+            "Suporta clonagem de voz (use sua própria voz!)",
+            "Multilíngue nativo com XTTS v2",
+            "Ótimo para projetos artísticos/profissionais",
+          ],
+          cons: [
+            "Muito lento sem GPU",
+            "Alto consumo de memória (~2 GB+)",
+            "Setup mais complexo",
+            "Licença CPML (não-comercial)",
+          ],
+          languages: "pt, en, es, fr, de e mais (XTTS v2 multilíngue)",
+        },
+        spark: {
+          tagline:
+            "IA generativa de voz baseada em Qwen2.5 — clonagem zero-shot",
+          quality: "Alta — voz natural com clonagem precisa",
+          speed: "~15 chars/s — o mais lento",
+          requirements: "GPU recomendada, ~1 GB VRAM, transformers",
+          bestVoice: "default",
+          bestVoiceNote:
+            "Use 'default' para a voz padrão ou 'clone' com áudio de referência para clonar qualquer voz.",
+          pros: [
+            "Clonagem de voz zero-shot (sem treinamento)",
+            "Baseado em LLM (Qwen2.5) — prosódia inteligente",
+            "Multilíngue nativo",
+            "Modelo open-source (500M params)",
+          ],
+          cons: [
+            "O mais lento de todos",
+            "Requer GPU para uso prático",
+            "Modelo grande (~1 GB download)",
+            "Projeto relativamente novo",
+          ],
+          languages: "Multilíngue (automático)",
+        },
+        piper: {
+          tagline: "Leve, offline e garantido — o fallback confiável",
+          quality: "Básica — voz robótica mas inteligível",
+          speed: "~25 chars/s — moderado",
+          requirements: "Nenhum — funciona em qualquer máquina",
+          bestVoice: "pt_BR-faber-medium.onnx",
+          bestVoiceNote:
+            "Faber é a melhor voz pt-BR disponível. Para inglês, Lessac-medium tem qualidade superior.",
+          pros: [
+            "100% offline — sem internet necessária",
+            "Extremamente leve (~15 MB por modelo)",
+            "Funciona em qualquer hardware",
+            "Nunca falha — é o fallback final do sistema",
+          ],
+          cons: [
+            "Qualidade de voz mais robótica",
+            "Poucos modelos em português",
+            "Sem expressividade emocional",
+            "Um modelo por idioma (não multilíngue)",
+          ],
+          languages: "pt-BR, en-US, es, fr, de, it (um modelo por idioma)",
+        },
+      },
+      autoEngineComparisonTitle: "Comparação rápida dos motores",
+      autoEngineComparisonNote:
+        "No modo automático, o sistema escolhe o melhor motor disponível com base no idioma e nos recursos da máquina.",
+      comparisonHeaders: {
+        engine: "Motor",
+        quality: "Qualidade",
+        speed: "Velocidade",
+        languages: "Idiomas",
+        needs: "Requisitos",
+      },
+      voicePreviewPlay: "Ouvir amostra",
+      voicePreviewStop: "Parar",
+      voicePreviewLoading: "Gerando amostra…",
+      voicePreviewError: "Falha ao gerar amostra. Tente outra voz.",
       defaultVoiceLabel: "Voz padrão com suporte a vários idiomas",
       multilingualSupportLabel: "Suporte multilíngue",
       multilingualYes: "Sim, detecta automaticamente.",
@@ -828,6 +988,11 @@ export const translations: Record<Locale, Translations> = {
       languageHint:
         "Escolha o idioma quando o motor não fizer detecção automática.",
       languageNotRequired: "Este motor detecta o idioma sozinho.",
+      languageAutoDetected:
+        "O idioma será detectado automaticamente a partir do livro.",
+      voiceAutoSelected:
+        "A voz será selecionada automaticamente com base no idioma detectado.",
+      voiceAutoOption: "Seleção automática por idioma",
       languageOptions: {
         auto: "Automático",
         pt: "Português (Brasil)",
@@ -1518,6 +1683,133 @@ export const translations: Record<Locale, Translations> = {
           help: "Bundled PT/EN voices. Offline, basic quality.",
         },
       ],
+      engineDetails: {
+        edge: {
+          tagline: "The most versatile pick — Microsoft neural cloud voices",
+          quality: "High — natural intonation, realistic breathing",
+          speed: "~70 chars/s — the fastest of all",
+          requirements: "Internet connection",
+          bestVoice: "pt-BR-ThalitaMultilingualNeural",
+          bestVoiceNote:
+            "Thalita is multilingual: switches languages automatically within the same text. For a male voice, use AntonioNeural.",
+          pros: [
+            "Fastest engine available",
+            "Natural voices with expressive intonation",
+            "16+ pt-BR voices (male and female)",
+            "Automatic multilingual with Thalita",
+            "No downloads needed",
+          ],
+          cons: [
+            "Requires internet",
+            "May hit rate-limiting under heavy use",
+            "Microsoft voices (not fully open-source)",
+          ],
+          languages:
+            "All (automatic) — pt, en, es, fr, de, it, ja, zh and more",
+        },
+        kokoro: {
+          tagline: "Stunning quality for 82M parameters — runs fully offline",
+          quality:
+            "Very high — extremely natural, almost indistinguishable from human",
+          speed: "~35 chars/s — fast for a local model",
+          requirements: "espeak-ng installed, ~170 MB RAM",
+          bestVoice: "af_heart",
+          bestVoiceNote:
+            "Heart (American female) is the most natural voice. For British, bf_emma. For Japanese, jf_alpha.",
+          pros: [
+            "Exceptionally natural audio quality",
+            "Works 100% offline after download",
+            "40+ voices (male, female) in 4 English variants",
+            "Lightweight — runs well on CPU",
+          ],
+          cons: [
+            "English, Japanese and Chinese only",
+            "No Portuguese support",
+            "Requires espeak-ng on the system",
+          ],
+          languages: "EN (American/British), JA, ZH",
+        },
+        coqui: {
+          tagline: "Voice cloning and premium quality — for GPU owners",
+          quality: "Premium — the most expressive and emotional",
+          speed: "~20 chars/s — slow, best with GPU",
+          requirements: "GPU recommended (CUDA), ~2 GB VRAM",
+          bestVoice: "tts_models/multilingual/multi-dataset/xtts_v2",
+          bestVoiceNote:
+            "XTTS v2 is multilingual and supports voice cloning with reference audio. VITS pt is lighter but monolingual.",
+          pros: [
+            "Greatest expressiveness and emotion in speech",
+            "Supports voice cloning (use your own voice!)",
+            "Native multilingual with XTTS v2",
+            "Great for artistic/professional projects",
+          ],
+          cons: [
+            "Very slow without GPU",
+            "High memory usage (~2 GB+)",
+            "More complex setup",
+            "CPML license (non-commercial)",
+          ],
+          languages: "pt, en, es, fr, de and more (XTTS v2 multilingual)",
+        },
+        spark: {
+          tagline: "Generative voice AI powered by Qwen2.5 — zero-shot cloning",
+          quality: "High — natural voice with accurate cloning",
+          speed: "~15 chars/s — the slowest",
+          requirements: "GPU recommended, ~1 GB VRAM, transformers",
+          bestVoice: "default",
+          bestVoiceNote:
+            "Use 'default' for the built-in voice or 'clone' with reference audio to clone any voice.",
+          pros: [
+            "Zero-shot voice cloning (no training needed)",
+            "LLM-based (Qwen2.5) — intelligent prosody",
+            "Native multilingual",
+            "Open-source model (500M params)",
+          ],
+          cons: [
+            "Slowest of all engines",
+            "Requires GPU for practical use",
+            "Large model (~1 GB download)",
+            "Relatively new project",
+          ],
+          languages: "Multilingual (automatic)",
+        },
+        piper: {
+          tagline: "Lightweight, offline, and reliable — the trusty fallback",
+          quality: "Basic — robotic but intelligible voice",
+          speed: "~25 chars/s — moderate",
+          requirements: "None — works on any machine",
+          bestVoice: "pt_BR-faber-medium.onnx",
+          bestVoiceNote:
+            "Faber is the best available pt-BR voice. For English, Lessac-medium offers superior quality.",
+          pros: [
+            "100% offline — no internet needed",
+            "Extremely lightweight (~15 MB per model)",
+            "Works on any hardware",
+            "Never fails — the system's final fallback",
+          ],
+          cons: [
+            "More robotic voice quality",
+            "Few Portuguese models",
+            "No emotional expressiveness",
+            "One model per language (not multilingual)",
+          ],
+          languages: "pt-BR, en-US, es, fr, de, it (one model per language)",
+        },
+      },
+      autoEngineComparisonTitle: "Quick engine comparison",
+      autoEngineComparisonNote:
+        "In automatic mode, the system picks the best available engine based on language and machine resources.",
+      comparisonHeaders: {
+        engine: "Engine",
+        quality: "Quality",
+        speed: "Speed",
+        languages: "Languages",
+        needs: "Requirements",
+      },
+      voicePreviewPlay: "Listen to sample",
+      voicePreviewStop: "Stop",
+      voicePreviewLoading: "Generating sample…",
+      voicePreviewError: "Failed to generate sample. Try another voice.",
       defaultVoiceLabel: "Default voice with multi-language support",
       multilingualSupportLabel: "Multilingual support",
       multilingualYes: "Yes, language is detected automatically.",
@@ -1574,6 +1866,11 @@ export const translations: Record<Locale, Translations> = {
       languageHint:
         "Select the language whenever the engine cannot switch automatically.",
       languageNotRequired: "This engine detects the language automatically.",
+      languageAutoDetected:
+        "Language will be automatically detected from the book.",
+      voiceAutoSelected:
+        "Voice will be automatically selected based on detected language.",
+      voiceAutoOption: "Automatic selection based on language",
       languageOptions: {
         auto: "Automatic",
         pt: "Portuguese (Brazil)",

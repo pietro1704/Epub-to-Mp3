@@ -171,6 +171,102 @@ interface QueuedFileEntry {
 
 const SUPPORTED_BOOK_EXTENSIONS = new Set([".epub", ".pdf"]);
 
+/* ── Voice Preview Button ─────────────────────────────────────────────── */
+function VoicePreviewButton({
+  engine,
+  voice,
+  language,
+  t,
+}: {
+  engine: string;
+  voice: string;
+  language: string;
+  t: {
+    form: {
+      voicePreviewPlay: string;
+      voicePreviewStop: string;
+      voicePreviewLoading: string;
+      voicePreviewError: string;
+    };
+  };
+}) {
+  const [state, setState] = useState<"idle" | "loading" | "playing" | "error">(
+    "idle",
+  );
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+
+  const stop = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.src = "";
+      audioRef.current = null;
+    }
+    setState("idle");
+  };
+
+  const play = async () => {
+    stop();
+    setState("loading");
+    try {
+      const url = resolveApiUrl(
+        `/api/voice-preview?engine=${encodeURIComponent(engine)}&voice=${encodeURIComponent(voice)}&language=${encodeURIComponent(language || "pt")}`,
+      );
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.statusText);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const audio = new Audio(objectUrl);
+      audioRef.current = audio;
+      audio.onended = () => {
+        URL.revokeObjectURL(objectUrl);
+        setState("idle");
+      };
+      audio.onerror = () => {
+        URL.revokeObjectURL(objectUrl);
+        setState("error");
+      };
+      await audio.play();
+      setState("playing");
+    } catch {
+      setState("error");
+    }
+  };
+
+  // Cleanup on unmount or engine/voice change
+  useEffect(() => stop, [engine, voice]);
+
+  const label =
+    state === "loading"
+      ? t.form.voicePreviewLoading
+      : state === "playing"
+        ? t.form.voicePreviewStop
+        : state === "error"
+          ? t.form.voicePreviewError
+          : t.form.voicePreviewPlay;
+
+  return (
+    <button
+      type="button"
+      className={`voice-preview-btn voice-preview-btn--${state}`}
+      onClick={state === "playing" ? stop : play}
+      disabled={state === "loading"}
+      title={label}
+    >
+      {state === "loading" && <span className="voice-preview-btn__spinner" />}
+      {state === "playing" && (
+        <span className="voice-preview-btn__icon">&#9632;</span>
+      )}
+      {state === "idle" && (
+        <span className="voice-preview-btn__icon">&#9654;</span>
+      )}
+      {state === "error" && (
+        <span className="voice-preview-btn__icon">&#9888;</span>
+      )}
+      <span className="voice-preview-btn__label">{label}</span>
+    </button>
+  );
+}
+
 function getEngineMeta(engine: EngineOption): EngineInsights {
   if ((ENGINE_INFO as Record<string, EngineInsights>)[engine]) {
     return (ENGINE_INFO as Record<string, EngineInsights>)[engine];
@@ -254,6 +350,14 @@ export default function ConversionForm({
   const [estimatedDuration, setEstimatedDuration] = useState<string | null>(
     null,
   );
+  const [engineEstimates, setEngineEstimates] = useState<Record<
+    string,
+    {
+      estimated_duration_formatted: string;
+      estimated_output_mb: number;
+      chars_per_second: number;
+    }
+  > | null>(null);
   const uploadAttemptRef = useRef(0);
   const fileQueueRef = useRef<QueuedFileEntry[]>([]);
   const setFileQueueSafe = (
@@ -358,6 +462,7 @@ export default function ConversionForm({
     );
     if (!readyEntry?.uploadId) {
       setEstimatedDuration(null);
+      setEngineEstimates(null);
       return;
     }
     let cancelled = false;
@@ -366,11 +471,26 @@ export default function ConversionForm({
     );
     fetch(url)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data: { estimated_duration_formatted?: string } | null) => {
-        if (!cancelled && data?.estimated_duration_formatted) {
-          setEstimatedDuration(data.estimated_duration_formatted);
-        }
-      })
+      .then(
+        (
+          data: {
+            estimated_duration_formatted?: string;
+            engine_estimates?: Record<
+              string,
+              {
+                estimated_duration_formatted: string;
+                estimated_output_mb: number;
+                chars_per_second: number;
+              }
+            >;
+          } | null,
+        ) => {
+          if (!cancelled && data?.estimated_duration_formatted) {
+            setEstimatedDuration(data.estimated_duration_formatted);
+            setEngineEstimates(data.engine_estimates ?? null);
+          }
+        },
+      )
       .catch(() => {
         // Estimate is best-effort; ignore errors
       });
@@ -1266,51 +1386,123 @@ export default function ConversionForm({
                 </option>
               ))}
             </select>
-            <p className="form-hint">
-              {
-                t.form.engineOptions.find((option) => option.value === engine)
-                  ?.help
-              }
-            </p>
-            <div className="engine-insight">
-              <div className="engine-insight__item">
-                <span className="engine-insight__label">
-                  {t.form.defaultVoiceLabel}
-                </span>
-                <code className="engine-insight__value">
-                  {engineMeta.defaultVoice}
-                </code>
-              </div>
-              <div className="engine-insight__item">
-                <span className="engine-insight__label">
-                  {t.form.multilingualSupportLabel}
-                </span>
-                <span className="engine-insight__value">
-                  {engineMeta.multiLingual
-                    ? t.form.multilingualYes
-                    : t.form.multilingualNo}
-                </span>
-              </div>
-              <div className="engine-insight__item">
-                <span className="engine-insight__label">
-                  {engineMeta.autoLanguage
-                    ? t.form.autoLanguageLabel
-                    : t.form.manualLanguageLabel}
-                </span>
-              </div>
-              {!engineMeta.autoLanguage && engineMeta.languages.length > 0 && (
-                <div className="engine-insight__languages">
-                  <span className="engine-insight__label">
-                    {t.form.availableLanguagesLabel}:
-                  </span>
-                  <ul>
-                    {engineMeta.languages.map((code) => (
-                      <li key={code}>{translateLanguage(code)}</li>
-                    ))}
-                  </ul>
+
+            {/* ── Engine detail card ──────────────────────────── */}
+            {engine !== "auto" &&
+              t.form.engineDetails[engine] &&
+              (() => {
+                const d = t.form.engineDetails[engine];
+                return (
+                  <div className="engine-card">
+                    <p className="engine-card__tagline">{d.tagline}</p>
+                    <div className="engine-card__grid">
+                      <div className="engine-card__field">
+                        <span className="engine-card__label">
+                          {locale === "pt" ? "Qualidade" : "Quality"}
+                        </span>
+                        <span className="engine-card__value">{d.quality}</span>
+                      </div>
+                      <div className="engine-card__field">
+                        <span className="engine-card__label">
+                          {locale === "pt" ? "Velocidade" : "Speed"}
+                        </span>
+                        <span className="engine-card__value">{d.speed}</span>
+                      </div>
+                      <div className="engine-card__field">
+                        <span className="engine-card__label">
+                          {locale === "pt" ? "Requisitos" : "Requirements"}
+                        </span>
+                        <span className="engine-card__value">
+                          {d.requirements}
+                        </span>
+                      </div>
+                      <div className="engine-card__field">
+                        <span className="engine-card__label">
+                          {locale === "pt" ? "Idiomas" : "Languages"}
+                        </span>
+                        <span className="engine-card__value">
+                          {d.languages}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="engine-card__best-voice">
+                      <span className="engine-card__label">
+                        {locale === "pt" ? "Melhor voz" : "Best voice"}
+                      </span>
+                      <code>{d.bestVoice}</code>
+                      <p className="engine-card__note">{d.bestVoiceNote}</p>
+                    </div>
+                    <div className="engine-card__pros-cons">
+                      <div className="engine-card__list engine-card__list--pros">
+                        {d.pros.map((pro, i) => (
+                          <span
+                            key={i}
+                            className="engine-card__tag engine-card__tag--pro"
+                          >
+                            + {pro}
+                          </span>
+                        ))}
+                      </div>
+                      <div className="engine-card__list engine-card__list--cons">
+                        {d.cons.map((con, i) => (
+                          <span
+                            key={i}
+                            className="engine-card__tag engine-card__tag--con"
+                          >
+                            - {con}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+            {engine === "auto" && (
+              <div className="engine-comparison">
+                <p className="engine-comparison__title">
+                  {t.form.autoEngineComparisonTitle}
+                </p>
+                <div className="engine-comparison__table-wrap">
+                  <table className="engine-comparison__table">
+                    <thead>
+                      <tr>
+                        <th>{t.form.comparisonHeaders.engine}</th>
+                        <th>{t.form.comparisonHeaders.quality}</th>
+                        <th>{t.form.comparisonHeaders.speed}</th>
+                        <th>{t.form.comparisonHeaders.languages}</th>
+                        <th>{t.form.comparisonHeaders.needs}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(
+                        ["edge", "kokoro", "coqui", "spark", "piper"] as const
+                      ).map((eng) => {
+                        const d = t.form.engineDetails[eng];
+                        if (!d) return null;
+                        const opt = t.form.engineOptions.find(
+                          (o) => o.value === eng,
+                        );
+                        return (
+                          <tr key={eng}>
+                            <td className="engine-comparison__name">
+                              {opt?.label ?? eng}
+                            </td>
+                            <td>{d.quality.split("—")[0].trim()}</td>
+                            <td>{d.speed.split("—")[0].trim()}</td>
+                            <td>{d.languages.split("—")[0].trim()}</td>
+                            <td>{d.requirements}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
-              )}
-            </div>
+                <p className="engine-comparison__note">
+                  {t.form.autoEngineComparisonNote}
+                </p>
+              </div>
+            )}
           </fieldset>
 
           <fieldset className="form-row">
@@ -1334,9 +1526,7 @@ export default function ConversionForm({
             </select>
             <p className="form-hint">
               {engine === "auto"
-                ? locale === "pt"
-                  ? "Language will be automatically detected from the book"
-                  : "Language will be automatically detected from the book"
+                ? t.form.languageAutoDetected
                 : engineMeta.autoLanguage
                   ? t.form.languageNotRequired
                   : t.form.languageHint}
@@ -1345,38 +1535,42 @@ export default function ConversionForm({
 
           <fieldset className="form-row">
             <label htmlFor="voice">{t.form.voiceLabel}</label>
-            <select
-              id="voice"
-              name="voice"
-              value={voice}
-              disabled={isSubmitting || engine === "auto"}
-              onChange={(event) => setVoice(event.target.value)}
-            >
-              {engine === "auto" && (
-                <option value="">
-                  {locale === "pt"
-                    ? "Automatic selection based on language"
-                    : "Automatic selection based on language"}
-                </option>
+            <div className="voice-select-row">
+              <select
+                id="voice"
+                name="voice"
+                value={voice}
+                disabled={isSubmitting || engine === "auto"}
+                onChange={(event) => setVoice(event.target.value)}
+              >
+                {engine === "auto" && (
+                  <option value="">{t.form.voiceAutoOption}</option>
+                )}
+                {engine !== "auto" &&
+                  voiceSuggestions.map((voiceInfo) => {
+                    const label =
+                      voiceInfo.label && voiceInfo.label !== voiceInfo.name
+                        ? `${voiceInfo.label} • ${voiceInfo.name}`
+                        : (voiceInfo.label ?? voiceInfo.name);
+                    return (
+                      <option key={voiceInfo.name} value={voiceInfo.name}>
+                        {label} {voiceInfo.multilingual ? "🌐" : ""}
+                      </option>
+                    );
+                  })}
+              </select>
+              {engine !== "auto" && (
+                <VoicePreviewButton
+                  engine={engine}
+                  voice={voice}
+                  language={language}
+                  t={t}
+                />
               )}
-              {engine !== "auto" &&
-                voiceSuggestions.map((voiceInfo) => {
-                  const label =
-                    voiceInfo.label && voiceInfo.label !== voiceInfo.name
-                      ? `${voiceInfo.label} • ${voiceInfo.name}`
-                      : (voiceInfo.label ?? voiceInfo.name);
-                  return (
-                    <option key={voiceInfo.name} value={voiceInfo.name}>
-                      {label} {voiceInfo.multilingual ? "🌐" : ""}
-                    </option>
-                  );
-                })}
-            </select>
+            </div>
             <p className="form-hint">
               {engine === "auto"
-                ? locale === "pt"
-                  ? "Voice will be automatically selected based on detected language"
-                  : "Voice will be automatically selected based on detected language"
+                ? t.form.voiceAutoSelected
                 : currentVoiceMultilingual
                   ? `🌐 ${t.form.voiceHint} ${t.form.voiceMultilingualHint}`
                   : t.form.voiceHint}
@@ -2183,9 +2377,39 @@ export default function ConversionForm({
       )}
 
       {estimatedDuration && !isSubmitting && (
-        <p className="form-estimate-hint">
-          {t.form.estimatedDuration(estimatedDuration)}
-        </p>
+        <div className="form-estimate">
+          <p className="form-estimate__primary">
+            {t.form.estimatedDuration(estimatedDuration)}
+          </p>
+          {engineEstimates && Object.keys(engineEstimates).length > 1 && (
+            <div className="form-estimate__comparison">
+              {(["edge", "kokoro", "coqui", "piper"] as const)
+                .filter((eng) => engineEstimates[eng])
+                .map((eng) => {
+                  const est = engineEstimates[eng];
+                  const isActive =
+                    engine === eng || (engine === "auto" && eng === "edge");
+                  const opt = t.form.engineOptions.find((o) => o.value === eng);
+                  return (
+                    <div
+                      key={eng}
+                      className={`form-estimate__engine ${isActive ? "form-estimate__engine--active" : ""}`}
+                    >
+                      <span className="form-estimate__engine-name">
+                        {opt?.label ?? eng}
+                      </span>
+                      <span className="form-estimate__engine-time">
+                        {est.estimated_duration_formatted}
+                      </span>
+                      <span className="form-estimate__engine-size">
+                        {est.estimated_output_mb} MB
+                      </span>
+                    </div>
+                  );
+                })}
+            </div>
+          )}
+        </div>
       )}
       <button type="submit" disabled={disableSubmit} className="form-submit">
         {isSubmitting || Object.keys(uploadPromisesRef.current).length > 0
