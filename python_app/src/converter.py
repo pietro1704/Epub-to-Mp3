@@ -5393,18 +5393,16 @@ class AudioConverter(
                                 is_complete, coverage_percent = validate_audio_completeness(
                                     output_path, chapter_chars
                                 )
-                                # Accept ≥85% coverage for long chapters (>10K chars)
-                                # to avoid infinite retry loops on chapters where Edge
-                                # consistently produces slightly shorter audio.
-                                if (
-                                    not is_complete
-                                    and chapter_chars > 10_000
-                                    and coverage_percent >= 85.0
-                                ):
+                                # Accept ≥80% coverage to avoid infinite retry loops.
+                                # Edge-TTS WPM varies by content type (verse reads
+                                # slower, dialogue faster), so strict thresholds cause
+                                # repeated re-synthesis of already-adequate audio.
+                                # Genuine truncations typically show <60% coverage.
+                                if not is_complete and coverage_percent >= 80.0:
                                     if self.verbose:
                                         print(
                                             f"   ✅ Accepted {coverage_percent:.1f}% coverage "
-                                            f"(long chapter {chapter_chars:,} chars)"
+                                            f"({chapter_chars:,} chars — within tolerance)"
                                         )
                                     is_complete = True
                                 if not is_complete:
