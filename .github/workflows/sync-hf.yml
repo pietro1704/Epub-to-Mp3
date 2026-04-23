@@ -64,54 +64,27 @@ jobs:
           git add -A
           git commit -m "HF snapshot"
 
-      - name: Push to Hugging Face (prefer SSH, fallback token)
+      - name: Push to Hugging Face
         env:
-          HF_SSH_PRIVATE_KEY: ${{ secrets.HF_SSH_PRIVATE_KEY }}
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           set -euo pipefail
           TARGET_BRANCH="master"
           cd "$HF_SYNC_DIR"
 
-          PUSHED=false
-
-          # ── Try SSH first ──────────────────────────────────────────
-          if [ -n "${HF_SSH_PRIVATE_KEY:-}" ]; then
-            mkdir -p ~/.ssh
-            echo "$HF_SSH_PRIVATE_KEY" | tr -d '\r' > ~/.ssh/id_rsa
-            chmod 600 ~/.ssh/id_rsa
-            eval "$(ssh-agent -s)"
-            ssh-add ~/.ssh/id_rsa
-            # HF uses both hf.co and huggingface.co as SSH hosts
-            ssh-keyscan -t ed25519,ecdsa,rsa hf.co >> ~/.ssh/known_hosts 2>/dev/null
-            ssh-keyscan -t ed25519,ecdsa,rsa huggingface.co >> ~/.ssh/known_hosts 2>/dev/null
-            REMOTE_URL="git@hf.co:spaces/pi1704/epub-to-mp3"
-            git remote add hf "$REMOTE_URL" 2>/dev/null || git remote set-url hf "$REMOTE_URL"
-
-            echo "Attempting SSH push..."
-            if git push --force hf "HEAD:refs/heads/${TARGET_BRANCH}" 2>&1; then
-              git push --force hf "HEAD:refs/heads/main" 2>&1 || true
-              PUSHED=true
-            else
-              echo "SSH push failed, falling back to HTTPS token..."
-            fi
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "::error::HF_TOKEN secret not configured; cannot push."
+            exit 1
           fi
 
-          # ── Fallback to HTTPS token ────────────────────────────────
-          if [ "$PUSHED" = "false" ]; then
-            if [ -z "${HF_TOKEN:-}" ]; then
-              echo "::error::Neither SSH nor HF_TOKEN available; cannot push."
-              exit 1
-            fi
-            git config --global url."https://user:${HF_TOKEN}@huggingface.co/".insteadOf "https://huggingface.co/"
-            REMOTE_URL="https://huggingface.co/spaces/pi1704/epub-to-mp3"
-            git remote set-url hf "$REMOTE_URL" 2>/dev/null || git remote add hf "$REMOTE_URL"
+          # Use HTTPS with token (most reliable in CI environments)
+          git config --global url."https://user:${HF_TOKEN}@huggingface.co/".insteadOf "https://huggingface.co/"
+          REMOTE_URL="https://huggingface.co/spaces/pi1704/epub-to-mp3"
+          git remote add hf "$REMOTE_URL" 2>/dev/null || git remote set-url hf "$REMOTE_URL"
 
-            echo "Pushing via HTTPS token..."
-            git push --force hf "HEAD:refs/heads/${TARGET_BRANCH}"
-            git push --force hf "HEAD:refs/heads/main" || true
-          fi
-
+          echo "Pushing to Hugging Face via HTTPS..."
+          git push --force hf "HEAD:refs/heads/${TARGET_BRANCH}"
+          git push --force hf "HEAD:refs/heads/main" || true
           echo "Push to Hugging Face completed successfully."
 
       - name: Wait for HF Space rebuild
