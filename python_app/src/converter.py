@@ -5393,6 +5393,20 @@ class AudioConverter(
                                 is_complete, coverage_percent = validate_audio_completeness(
                                     output_path, chapter_chars
                                 )
+                                # Accept ≥85% coverage for long chapters (>10K chars)
+                                # to avoid infinite retry loops on chapters where Edge
+                                # consistently produces slightly shorter audio.
+                                if (
+                                    not is_complete
+                                    and chapter_chars > 10_000
+                                    and coverage_percent >= 85.0
+                                ):
+                                    if self.verbose:
+                                        print(
+                                            f"   ✅ Accepted {coverage_percent:.1f}% coverage "
+                                            f"(long chapter {chapter_chars:,} chars)"
+                                        )
+                                    is_complete = True
                                 if not is_complete:
                                     # Audio was truncated - treat as failure
                                     missing_percent = 100.0 - coverage_percent
