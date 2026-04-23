@@ -45,7 +45,7 @@ faster-whisper>=1.0.0
 
 # Data/Validation
 pydantic>=2.10.0
-numpy>=1.24.0,<3.0.0
+numpy>=2.4.4,<3.0.0
 
 # HTTP/Async
 aiohttp>=3.13.5  # CVE-2026-34513–34520, CVE-2026-22815, CVE-2026-34514
