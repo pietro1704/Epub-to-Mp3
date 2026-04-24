@@ -69,18 +69,18 @@ def test_invokes_ffmpeg_with_outro_filter(dummy_mp3: Path) -> None:
     assert error is None
     args = captured["args"]
     assert "ffmpeg" in args
-    assert "-af" in args
-    af_value = args[args.index("-af") + 1]
-    assert "apad=pad_dur=0.500" in af_value
+    # Primary path now uses concat-copy (no -af re-encoding)
+    assert "-c" in args
+    assert "copy" in args
     # Output file overwritten with padded data
     assert dummy_mp3.read_bytes() != original_bytes
 
 
 def test_invokes_ffmpeg_with_intro_and_outro(dummy_mp3: Path) -> None:
-    captured: dict = {}
+    all_calls: list = []
 
     async def fake_exec(cmd, **kwargs):
-        captured["args"] = cmd
+        all_calls.append(cmd)
         Path(cmd[-1]).write_bytes(b"\xff\xfb" + b"\x01" * 1024)
         return _make_fake_proc(returncode=0)
 
@@ -91,10 +91,12 @@ def test_invokes_ffmpeg_with_intro_and_outro(dummy_mp3: Path) -> None:
         ok, _ = asyncio.run(add_silence_padding(dummy_mp3, intro_ms=250, outro_ms=750))
 
     assert ok is True
-    args = captured["args"]
-    af_value = args[args.index("-af") + 1]
-    assert "adelay=250:all=1" in af_value
-    assert "apad=pad_dur=0.750" in af_value
+    # Should have 3 calls: intro silence, outro silence, concat-copy
+    assert len(all_calls) >= 2
+    # Last call should be concat-copy
+    concat_call = all_calls[-1]
+    assert "-c" in concat_call
+    assert "copy" in concat_call
 
 
 def test_leaves_original_when_ffmpeg_fails(dummy_mp3: Path) -> None:

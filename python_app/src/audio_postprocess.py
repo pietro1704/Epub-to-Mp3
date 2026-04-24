@@ -56,38 +56,54 @@ async def add_silence_padding(
 
     _ensure_ffmpeg_paths()
 
-    filters: list[str] = []
-    if intro_ms > 0:
-        filters.append(f"adelay={intro_ms}:all=1")
-    if outro_ms > 0:
-        filters.append(f"apad=pad_dur={outro_ms / 1000:.3f}")
-    filter_chain = ",".join(filters)
-
-    tmp_dir = Path(tempfile.mkdtemp(prefix="silence_pad_"))
-    tmp_output = tmp_dir / f"padded{audio_file.suffix or '.mp3'}"
-
-    command = (
-        "ffmpeg",
-        "-y",
-        "-i",
-        str(audio_file),
-        "-af",
-        filter_chain,
-        "-b:a",
-        bitrate,
-        "-ar",
-        str(sample_rate),
-        "-ac",
-        str(channels),
-        str(tmp_output),
-    )
-
     subprocess_exec = asyncio.create_subprocess_exec
-    positional_args = (
-        (command,) if getattr(subprocess_exec, "__module__", "") == "unittest.mock" else command
-    )
+    tmp_dir = Path(tempfile.mkdtemp(prefix="silence_pad_"))
 
     try:
+        # Primary path: concat-copy with pre-generated silence fragments.
+        # This avoids re-decoding the source stream entirely — orders of
+        # magnitude faster than the old -af apad approach on long chapters.
+        ok, err = await _pad_with_concat(
+            audio_file,
+            tmp_dir,
+            intro_ms=intro_ms,
+            outro_ms=outro_ms,
+            bitrate=bitrate,
+            sample_rate=sample_rate,
+            channels=channels,
+            subprocess_exec=subprocess_exec,
+        )
+        if ok:
+            return True, None
+
+        # Fallback: full decode+encode with audio filters.  Slower but handles
+        # edge cases where concat-copy fails (mismatched codec params).
+        filters: list[str] = []
+        if intro_ms > 0:
+            filters.append(f"adelay={intro_ms}:all=1")
+        if outro_ms > 0:
+            filters.append(f"apad=pad_dur={outro_ms / 1000:.3f}")
+        filter_chain = ",".join(filters)
+
+        tmp_output = tmp_dir / f"padded{audio_file.suffix or '.mp3'}"
+        command = (
+            "ffmpeg",
+            "-y",
+            "-i",
+            str(audio_file),
+            "-af",
+            filter_chain,
+            "-b:a",
+            bitrate,
+            "-ar",
+            str(sample_rate),
+            "-ac",
+            str(channels),
+            str(tmp_output),
+        )
+        positional_args = (
+            (command,) if getattr(subprocess_exec, "__module__", "") == "unittest.mock" else command
+        )
         process = await subprocess_exec(
             *positional_args,
             stdout=asyncio.subprocess.DEVNULL,
@@ -98,31 +114,13 @@ async def add_silence_padding(
             shutil.move(str(tmp_output), str(audio_file))
             return True, None
 
-        err = (stderr or b"").decode("utf-8", errors="ignore").strip()
-
-        # Fallback: when the filter chain fails (commonly because the decoder
-        # rejected the input MP3 — seen on some static-ffmpeg builds in CI),
-        # splice silence via the concat demuxer so the main audio stream is
-        # copied as-is without re-decoding.
-        fallback_ok, fallback_err = await _pad_with_concat(
-            audio_file,
-            tmp_dir,
-            intro_ms=intro_ms,
-            outro_ms=outro_ms,
-            bitrate=bitrate,
-            sample_rate=sample_rate,
-            channels=channels,
-            subprocess_exec=subprocess_exec,
-        )
-        if fallback_ok:
-            return True, None
-
+        fallback_err = (stderr or b"").decode("utf-8", errors="ignore").strip()
         print(
-            f"[audio_postprocess] ffmpeg padding failed ({process.returncode}): {err}; "
-            f"concat fallback: {fallback_err}",
+            f"[audio_postprocess] concat-copy failed: {err}; "
+            f"filter fallback also failed ({process.returncode}): {fallback_err}",
             file=sys.stderr,
         )
-        return False, err or f"ffmpeg exit {process.returncode}"
+        return False, fallback_err or f"ffmpeg exit {process.returncode}"
     except FileNotFoundError:
         return False, "ffmpeg binary not found"
     except Exception as exc:
