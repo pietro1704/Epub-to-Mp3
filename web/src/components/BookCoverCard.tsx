@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { ConversionState } from '../types/conversion';
+import { useTranslations } from '../i18n/I18nProvider';
 
 interface BookCoverCardProps {
   title?: string;
@@ -8,18 +9,21 @@ interface BookCoverCardProps {
   phase: ConversionState['phase'];
 }
 
-function resolveStatusLabel(phase: ConversionState['phase']): string {
+function resolveStatusLabel(
+  phase: ConversionState['phase'],
+  t: ReturnType<typeof useTranslations>,
+): string {
   switch (phase) {
     case 'submitting':
-      return 'File uploaded';
+      return t.status.coverPhaseSubmitting;
     case 'polling':
-      return 'Reading and converting';
+      return t.status.coverPhasePolling;
     case 'success':
-      return 'Conversion completed';
+      return t.status.coverPhaseSuccess;
     case 'error':
-      return 'Conversion interrupted';
+      return t.status.coverPhaseError;
     default:
-      return 'Book selected';
+      return t.status.coverPhaseDefault;
   }
 }
 
@@ -30,14 +34,15 @@ export default function BookCoverCard({
   phase,
 }: BookCoverCardProps): JSX.Element {
   const [coverFailed, setCoverFailed] = useState(false);
+  const t = useTranslations();
 
   useEffect(() => {
     setCoverFailed(false);
   }, [coverUrl]);
 
-  const statusLabel = resolveStatusLabel(phase);
-  const resolvedTitle = title || 'Book loaded';
-  const resolvedAuthor = author || 'Unknown author';
+  const statusLabel = resolveStatusLabel(phase, t);
+  const resolvedTitle = title || t.status.bookFallbackTitle;
+  const resolvedAuthor = author || t.status.bookFallbackAuthor;
   const altText = `Book cover ${resolvedTitle}`;
 
   return (

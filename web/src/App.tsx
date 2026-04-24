@@ -392,7 +392,7 @@ export default function App(props?: AppProps): JSX.Element {
       }
       // If server is already responding, mark as ready (race-condition guard)
       try {
-        const r = await fetch("http://127.0.0.1:47860/api/health", {
+        const r = await fetch(resolveApiUrl("/api/health"), {
           signal: AbortSignal.timeout(800),
         });
         if (r.ok) {
@@ -1252,7 +1252,7 @@ export default function App(props?: AppProps): JSX.Element {
                     className="button-secondary"
                     onClick={() => handleTabChange("progress")}
                   >
-                    Ver Progresso →
+                    {t.activeConversion.viewProgress} →
                   </button>
                 </div>
               )

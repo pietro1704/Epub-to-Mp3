@@ -432,6 +432,24 @@ export interface StatusText {
   bookFallbackAuthor: string;
   uploadingFiles: string;
   errorCategoryHints: Record<string, string>;
+  ttsEngineLabel: string;
+  speedLabel: string;
+  terminalLogLabel: string;
+  coverPhaseSubmitting: string;
+  coverPhasePolling: string;
+  coverPhaseSuccess: string;
+  coverPhaseError: string;
+  coverPhaseDefault: string;
+  cachedJobsTitle: string;
+  cachedJobsClose: string;
+  cachedJobsSingular: string;
+  cachedJobsPlural: (count: number) => string;
+  cachedJobsResume: string;
+  cachedJobsRemove: (fileName: string) => string;
+  cachedJobsJustNow: string;
+  cachedJobsDaysAgo: (days: number) => string;
+  cachedJobsHoursAgo: (hours: number) => string;
+  cachedJobsMinutesAgo: (minutes: number) => string;
 }
 
 export interface ResumableJobsText {
@@ -1312,6 +1330,29 @@ export const translations: Record<Locale, Translations> = {
         file_not_found: "Arquivo não encontrado. Faça o upload novamente.",
         auth: "Erro de autenticação com o serviço TTS.",
       },
+      ttsEngineLabel: "Motor TTS",
+      speedLabel: "Velocidade",
+      terminalLogLabel: "Log do Terminal",
+      coverPhaseSubmitting: "Arquivo enviado",
+      coverPhasePolling: "Lendo e convertendo",
+      coverPhaseSuccess: "Conversão concluída",
+      coverPhaseError: "Conversão interrompida",
+      coverPhaseDefault: "Livro selecionado",
+      cachedJobsTitle: "Conversões Interrompidas",
+      cachedJobsClose: "Fechar aviso",
+      cachedJobsSingular:
+        "Encontramos 1 conversão interrompida. Deseja retomá-la?",
+      cachedJobsPlural: (count: number) =>
+        `Encontramos ${count} conversões interrompidas. Deseja retomar alguma?`,
+      cachedJobsResume: "Retomar",
+      cachedJobsRemove: (fileName: string) => `Remover ${fileName}`,
+      cachedJobsJustNow: "agora mesmo",
+      cachedJobsDaysAgo: (days: number) =>
+        `${days} ${days === 1 ? "dia" : "dias"} atrás`,
+      cachedJobsHoursAgo: (hours: number) =>
+        `${hours} ${hours === 1 ? "hora" : "horas"} atrás`,
+      cachedJobsMinutesAgo: (minutes: number) =>
+        `${minutes} ${minutes === 1 ? "minuto" : "minutos"} atrás`,
     },
     downloads: {
       placeholder:
@@ -2177,6 +2218,29 @@ export const translations: Record<Locale, Translations> = {
         file_not_found: "File not found. Please upload again.",
         auth: "Authentication error with the TTS service.",
       },
+      ttsEngineLabel: "TTS Engine",
+      speedLabel: "Speed",
+      terminalLogLabel: "Terminal Log",
+      coverPhaseSubmitting: "File uploaded",
+      coverPhasePolling: "Reading and converting",
+      coverPhaseSuccess: "Conversion completed",
+      coverPhaseError: "Conversion interrupted",
+      coverPhaseDefault: "Book selected",
+      cachedJobsTitle: "Interrupted Conversions",
+      cachedJobsClose: "Close notice",
+      cachedJobsSingular:
+        "We found 1 interrupted conversion. Do you want to resume it?",
+      cachedJobsPlural: (count: number) =>
+        `We found ${count} interrupted conversions. Do you want to resume one?`,
+      cachedJobsResume: "Resume",
+      cachedJobsRemove: (fileName: string) => `Remove ${fileName}`,
+      cachedJobsJustNow: "just now",
+      cachedJobsDaysAgo: (days: number) =>
+        `${days} day${days > 1 ? "s" : ""} ago`,
+      cachedJobsHoursAgo: (hours: number) =>
+        `${hours} hour${hours > 1 ? "s" : ""} ago`,
+      cachedJobsMinutesAgo: (minutes: number) =>
+        `${minutes} minute${minutes > 1 ? "s" : ""} ago`,
     },
     downloads: {
       placeholder:

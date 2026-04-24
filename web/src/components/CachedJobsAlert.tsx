@@ -1,3 +1,5 @@
+import { useTranslations } from "../i18n/I18nProvider";
+
 interface CachedJob {
   jobId: string;
   fileName: string;
@@ -17,6 +19,7 @@ export default function CachedJobsAlert({
   onDismiss,
   onRemove,
 }: CachedJobsAlertProps): JSX.Element | null {
+  const t = useTranslations();
   if (cachedJobs.length === 0) return null;
 
   const formatTime = (timestamp: number): string => {
@@ -26,29 +29,29 @@ export default function CachedJobsAlert({
     const hours = Math.floor(minutes / 60);
     const days = Math.floor(hours / 24);
 
-    if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
-    if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
-    if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
-    return "just now";
+    if (days > 0) return t.status.cachedJobsDaysAgo(days);
+    if (hours > 0) return t.status.cachedJobsHoursAgo(hours);
+    if (minutes > 0) return t.status.cachedJobsMinutesAgo(minutes);
+    return t.status.cachedJobsJustNow;
   };
 
   return (
     <div className="cached-jobs-alert">
       <div className="cached-jobs-alert__header">
-        <h3>🔄 Interrupted Conversions</h3>
+        <h3>🔄 {t.status.cachedJobsTitle}</h3>
         <button
           type="button"
           className="cached-jobs-alert__close"
           onClick={onDismiss}
-          aria-label="Close notice"
+          aria-label={t.status.cachedJobsClose}
         >
           ✕
         </button>
       </div>
       <p className="cached-jobs-alert__message">
         {cachedJobs.length === 1
-          ? "We found 1 interrupted conversion. Do you want to resume it?"
-          : `We found ${cachedJobs.length} interrupted conversions. Do you want to resume one?`}
+          ? t.status.cachedJobsSingular
+          : t.status.cachedJobsPlural(cachedJobs.length)}
       </p>
       <ul className="cached-jobs-alert__list">
         {cachedJobs.map((job) => (
@@ -72,13 +75,13 @@ export default function CachedJobsAlert({
               className="cached-jobs-alert__resume"
               onClick={() => onResume(job.jobId)}
             >
-              Resume
+              {t.status.cachedJobsResume}
             </button>
             <button
               type="button"
               className="cached-jobs-alert__remove"
               onClick={() => onRemove(job.jobId)}
-              aria-label={`Remove ${job.fileName}`}
+              aria-label={t.status.cachedJobsRemove(job.fileName)}
             >
               ✕
             </button>

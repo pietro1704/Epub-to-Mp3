@@ -71,7 +71,7 @@ export default function ConfirmDialog({
               type="button"
               className="confirm-dialog__close"
               onClick={handleClose}
-              aria-label="Fechar"
+              aria-label="Close"
             >
               ×
             </button>

@@ -223,7 +223,7 @@ export default function StatusPanel({
             )}
             {summary.engineStatus && (
               <div className="status-summary__row status-summary__row--engine">
-                <dt>{locale === "pt" ? "Motor TTS" : "TTS Engine"}</dt>
+                <dt>{t.status.ttsEngineLabel}</dt>
                 <dd>
                   <EngineStatusDisplay
                     status={summary.engineStatus}
@@ -242,7 +242,7 @@ export default function StatusPanel({
             </div>
             {(recentSpeed || averageSpeed) && (
               <div className="status-summary__row">
-                <dt>{locale === "pt" ? "Velocidade" : "Speed"}</dt>
+                <dt>{t.status.speedLabel}</dt>
                 <dd>
                   {recentSpeed ? `${Math.round(recentSpeed)} chars/s` : "—"}
                   {averageSpeed && speedSamples.length > 1
@@ -416,7 +416,7 @@ export default function StatusPanel({
                 color: "var(--text-secondary)",
               }}
             >
-              {locale === "pt" ? "Log do Terminal" : "Terminal Log"}
+              {t.status.terminalLogLabel}
             </h3>
           </div>
           <pre className="status-panel__raw" aria-live="polite" ref={rawLogRef}>

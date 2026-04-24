@@ -1780,10 +1780,6 @@ class AudioConverter(
         # Optimize memory and threading settings
         self._optimize_memory_settings()
 
-        if self.verbose:
-            print("[DEBUG] AudioConverter.convert() started")
-            print(f"[DEBUG] Config: engine={getattr(config, 'engine', 'unknown')}, mode=sequential")
-
         # Setup paths
         reader_path = getattr(reader, "file_path", None)
         try:
@@ -2226,13 +2222,6 @@ class AudioConverter(
         print(f"🎙️ Engine: {config.engine} | Voice: {voice_label}")
         if getattr(config, "languages", None):
             print(f"🌐 Languages: {', '.join(config.languages)}")
-
-        if self.verbose:
-            if engine_seeds:
-                sample_engine = next(iter(engine_seeds.values()))
-                print(f"[DEBUG] Engine configured: {type(sample_engine).__name__}")
-            else:
-                print("[DEBUG] Engine configured: AUTO")
 
         has_edge_engine = (config.engine or "").lower() == "edge"
         if is_auto_engine and auto_engine_pool:
@@ -2816,9 +2805,6 @@ class AudioConverter(
                 else:
                     print(f"📁 {len(moved_files)} converted chapters moved to: {output_dir}")
                     print("   💡 Run again to convert remaining chapters")
-            elif self.verbose:
-                print("[DEBUG] No MP3 files to move (likely full cache reuse)")
-
             normalized_outputs = self._normalize_output_numbers(chapters, output_dir, config)
             if normalized_outputs:
                 result.output_files = normalized_outputs
@@ -4913,7 +4899,6 @@ class AudioConverter(
                                 bitrate=config.bitrate,
                             )
                             if self.verbose and converted is None:
-                                print("[DEBUG] Failure converting WAV→MP3 (ffmpeg)")
                                 self._append_runtime_metric(
                                     {
                                         "event": "transcode_failed",
@@ -5055,7 +5040,6 @@ class AudioConverter(
                                         bitrate=config.bitrate,
                                     )
                                     if self.verbose and converted is None:
-                                        print("[DEBUG] Failure converting WAV→MP3 (fallback)")
                                         self._append_runtime_metric(
                                             {
                                                 "event": "transcode_failed",
