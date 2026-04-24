@@ -1608,7 +1608,7 @@ export default function App(props?: AppProps): JSX.Element {
               lines={
                 tauriStartupLog.length > 0
                   ? tauriStartupLog
-                  : ["Waiting for conversion engine to start…"]
+                  : [t.layout.tauriEngineWaiting]
               }
             />
           )}
@@ -1616,10 +1616,10 @@ export default function App(props?: AppProps): JSX.Element {
       )}
       {isTauri() && !tauriStarting && tauriEngineError && showSetupPanels && (
         <div className="api-offline-banner" role="alert">
-          <strong>Conversion engine error</strong>
+          <strong>{t.layout.tauriEngineErrorTitle}</strong>
           <span>{tauriEngineError}</span>
           <span>
-            Rebuild the sidecar:{" "}
+            {t.layout.tauriEngineRebuild}{" "}
             <code>
               mise run desktop:sidecar &amp;&amp; mise run desktop:build
             </code>

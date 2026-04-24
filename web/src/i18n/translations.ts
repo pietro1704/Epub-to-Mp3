@@ -560,6 +560,9 @@ export interface LayoutText {
   statsOffline: string;
   statsLastUpdated: (value: string) => string;
   statsRetrying: (value: string) => string;
+  tauriEngineWaiting: string;
+  tauriEngineErrorTitle: string;
+  tauriEngineRebuild: string;
   telemetryTitle: string;
   telemetryDescription: string;
   telemetryRefresh: string;
@@ -1420,6 +1423,9 @@ export const translations: Record<Locale, Translations> = {
       statsOffline: "Servidor indisponível. Verifique o backend.",
       statsLastUpdated: (value: string) => `Atualizado ${value}`,
       statsRetrying: (value: string) => `Nova tentativa em ${value}`,
+      tauriEngineWaiting: "Aguardando o motor de conversão iniciar…",
+      tauriEngineErrorTitle: "Erro no motor de conversão",
+      tauriEngineRebuild: "Reconstrua o sidecar:",
       telemetryTitle: "Telemetria",
       telemetryDescription:
         "Taxa de síntese TTS por engine, com base em amostras registradas.",
@@ -2280,6 +2286,9 @@ export const translations: Record<Locale, Translations> = {
       statsOffline: "Backend unreachable. Please start the server.",
       statsLastUpdated: (value: string) => `Updated ${value}`,
       statsRetrying: (value: string) => `Retrying in ${value}`,
+      tauriEngineWaiting: "Waiting for conversion engine to start…",
+      tauriEngineErrorTitle: "Conversion engine error",
+      tauriEngineRebuild: "Rebuild the sidecar:",
       telemetryTitle: "Telemetry",
       telemetryDescription:
         "TTS throughput per engine, based on recorded synthesis samples.",

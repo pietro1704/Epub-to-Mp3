@@ -930,6 +930,7 @@ export class HttpConversionClient implements ConversionClient {
             "[ConversionClient] Failed to establish SSE connection:",
             error,
           );
+          closeSource();
           scheduleReconnect();
           return;
         }

@@ -727,7 +727,7 @@ export default function ConversionForm({
         const unsupported =
           typeof message === "string" &&
           (message.toLowerCase().includes("not supported") ||
-            message.toLowerCase().includes("not supported"));
+            message.toLowerCase().includes("unsupported"));
         if (unsupported) {
           setFileQueueSafe((prev) =>
             prev.map((entry) => {
@@ -760,23 +760,14 @@ export default function ConversionForm({
       }
     })();
     uploadPromisesRef.current[entryId] = uploadPromise;
-    uploadPromise
-      .finally(() => {
-        delete uploadPromisesRef.current[entryId];
-        setPendingUploads((count) => Math.max(0, count - 1));
-        onUploadStateChange?.(
-          fileQueueRef.current.filter((entry) => entry.status === "uploading")
-            .length,
-        );
-      })
-      .catch(() => {
-        delete uploadPromisesRef.current[entryId];
-        setPendingUploads((count) => Math.max(0, count - 1));
-        onUploadStateChange?.(
-          fileQueueRef.current.filter((entry) => entry.status === "uploading")
-            .length,
-        );
-      });
+    uploadPromise.finally(() => {
+      delete uploadPromisesRef.current[entryId];
+      setPendingUploads((count) => Math.max(0, count - 1));
+      onUploadStateChange?.(
+        fileQueueRef.current.filter((entry) => entry.status === "uploading")
+          .length,
+      );
+    });
   };
 
   const addFilesToQueue = (files: FileList | File[]) => {
