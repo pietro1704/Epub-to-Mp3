@@ -7,7 +7,7 @@ uvicorn[standard]>=0.45.0
 python-multipart>=0.0.22
 
 # TTS Engine (Edge-TTS - Microsoft online)
-edge-tts>=7.2.0
+edge-tts>=7.2.8
 
 # Kokoro / Piper audio deps
 torch>=2.6.0  # PYSEC-2024-259, PYSEC-2025-41
