@@ -2754,6 +2754,32 @@ class AudioConverter(
             for name, message in unresolved_pool.items():
                 result.errors.append(f"{name}: {message} (not correlacionado)")
 
+        # Reconcile: if an MP3 already exists in the output dir for a
+        # "failed" chapter (e.g. hard timeout fired after synthesis completed
+        # but during post-processing), drop it from the failure list.
+        if pending_failures or unresolved_pool:
+            existing_mp3s = (
+                {p.stem.lower() for p in output_dir.glob("*.mp3")} if output_dir.exists() else set()
+            )
+            existing_mp3s |= {p.stem.lower() for p in Path(temp_dir).glob("*.mp3")}
+            if existing_mp3s:
+                resolved = [
+                    name
+                    for name in pending_failures
+                    if any(name.lower() in mp3_stem for mp3_stem in existing_mp3s)
+                ]
+                for name in resolved:
+                    pending_failures.pop(name, None)
+                resolved_unresolved = [
+                    name
+                    for name in unresolved_pool
+                    if any(name.lower() in mp3_stem for mp3_stem in existing_mp3s)
+                ]
+                for name in resolved_unresolved:
+                    unresolved_pool.pop(name, None)
+                if resolved or resolved_unresolved:
+                    result.converted_chapters += len(resolved) + len(resolved_unresolved)
+
         result.success = not pending_failures and not unresolved_pool
 
         if result.success:
@@ -3054,15 +3080,21 @@ class AudioConverter(
         except (TypeError, ValueError):
             hard_chapter_timeout = 900.0
 
-        async def _chapter_with_deadline(coro, chapter_label: str):
+        async def _chapter_with_deadline(coro, chapter_label: str, chapter_chars: int = 0):
             if hard_chapter_timeout <= 0:
                 return await coro
+            # Scale timeout for large chapters: base 900s + 15s per 1K chars
+            # over 20K.  A 100K-char chapter gets 900 + 1200 = 2100s.
+            effective_timeout = hard_chapter_timeout
+            if chapter_chars > 20_000:
+                extra = (chapter_chars - 20_000) / 1000.0 * 15.0
+                effective_timeout = hard_chapter_timeout + extra
             try:
-                return await asyncio.wait_for(coro, timeout=hard_chapter_timeout)
+                return await asyncio.wait_for(coro, timeout=effective_timeout)
             except asyncio.TimeoutError:
                 msg = (
                     f"Chapter {chapter_label} cancelled after hard timeout "
-                    f"{int(hard_chapter_timeout)}s"
+                    f"{int(effective_timeout)}s"
                 )
                 print(f"\n⏱️  {msg}")
                 return ConversionResult(
@@ -3083,6 +3115,7 @@ class AudioConverter(
 
                 task_config = _dc_replace(config, engine=preferred_engine)
             chapter_label = str(getattr(chapter, "index", "?"))
+            ch_chars = len(getattr(chapter, "text", "") or "")
             inner_coro = self._convert_chapters_sequential(
                 [chapter],
                 engine_pool,
@@ -3095,7 +3128,7 @@ class AudioConverter(
                 cover_art=cover_art,
                 skip_preprocessing=True,  # Preprocessing already done by parallel caller
             )
-            task = asyncio.create_task(_chapter_with_deadline(inner_coro, chapter_label))
+            task = asyncio.create_task(_chapter_with_deadline(inner_coro, chapter_label, ch_chars))
             self._inflight_chapter_tasks.add(task)
             task.add_done_callback(self._inflight_chapter_tasks.discard)
             return task
