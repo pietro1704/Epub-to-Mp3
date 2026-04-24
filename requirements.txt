@@ -29,7 +29,7 @@ transformers>=5.6.2
 
 # Ebook Processing
 ebooklib>=0.18
-beautifulsoup4>=4.12.0
+beautifulsoup4>=4.14.3
 pypdf>=6.10.2  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
 lxml>=6.1.0
 
