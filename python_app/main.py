@@ -1148,8 +1148,13 @@ class ConverterApplication:
                     )
                 continue
             elif toc_outline_enabled:
-                # When TOC exists, keep output strictly aligned with TOC labels.
-                continue
+                # When TOC exists, keep output strictly aligned with TOC labels
+                # — BUT preserve chapters with substantive text (dedicatórias,
+                # epigraphs, etc.) even if they lack a TOC entry.
+                orphan_text = str(getattr(chapter, "text", "") or "").strip()
+                if len(orphan_text) <= 12:
+                    continue
+                # Fall through to create a synthetic item for this orphan chapter
 
             toc_entries = self._resolve_toc_entries(href_key, toc_map)
             last_toc_split_group = None
@@ -3119,9 +3124,9 @@ class ConverterApplication:
         if not text:
             return True
 
-        if len(text) < 500:
-            return True
-
+        # Only skip very short fragments (stray headings, HTML residue).
+        # Dedicatórias and epigraphs are typically 50-500 chars and must
+        # NOT be dropped — they are real book content.
         if len(text) <= 12:
             return True
 
