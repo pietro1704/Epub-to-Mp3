@@ -44,7 +44,7 @@ mutagen>=1.47.0
 faster-whisper>=1.2.1
 
 # Data/Validation
-pydantic>=2.10.0
+pydantic>=2.13.3
 numpy>=2.4.4,<3.0.0
 
 # HTTP/Async
