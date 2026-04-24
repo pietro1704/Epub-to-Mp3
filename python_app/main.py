@@ -2435,13 +2435,12 @@ class ConverterApplication:
             self._normalise_language_code(lang) for lang in (config.languages or []) if lang
         }
         language_roots.discard("")
-        single_language = len(language_roots) == 1
-        prefer_monolingual_edge = bool(
-            single_language
-            and profile.is_confident
-            and (config.engine or "edge").lower() in {"edge", "auto"}
-        )
-        config.prefer_monolingual_edge = prefer_monolingual_edge
+        len(language_roots) == 1
+        # Always prefer ThalitaMultilingualNeural — it is the highest quality
+        # Edge voice for pt-BR and handles mixed-language text seamlessly.
+        # Monolingual voices (Francisca, etc.) are only used when explicitly
+        # requested via --voice.
+        config.prefer_monolingual_edge = False
 
         voice_auto_raw = config.extra.get("voice_auto", False)
 
@@ -2468,19 +2467,6 @@ class ConverterApplication:
                 if suggested_voice:
                     config.voice = suggested_voice
                     break
-
-        if (
-            prefer_monolingual_edge
-            and voice_auto
-            and (config.engine or "edge").lower() in {"edge", "auto"}
-        ):
-            monolingual_voice = self.config.voice_configs.get_monolingual_voice(primary_language)
-            if monolingual_voice:
-                config.voice = monolingual_voice
-                config.language_voices = {}
-                lang_key = self._normalise_language_code(primary_language or "")
-                if lang_key:
-                    config.language_voices[lang_key] = monolingual_voice
 
         prefer_piper = bool(
             language_roots == {"pt"}
