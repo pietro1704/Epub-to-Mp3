@@ -550,7 +550,7 @@ class AdaptiveEdgeTuner:
         # Auto-tune state
         self._auto_tune_enabled = True
         self._segments_since_last_tune = 0
-        self._tune_every_n_segments = 2  # Faster adaptation
+        self._tune_every_n_segments = 5  # Avoid oscillation; let settings stabilize
 
         # Current settings - start aggressive for throughput
         self._chunk_size = 4000
@@ -677,6 +677,8 @@ class AdaptiveEdgeTuner:
             self._concurrency = CONCURRENCY_OPTIONS[max(0, idx - 1)]
 
         self._log(f"REDUCED: chunk={self._chunk_size}, conc={self._concurrency}")
+        # Reset tune counter so the next tune waits a full interval
+        self._segments_since_last_tune = 0
         return {
             "chunk_size": self._chunk_size,
             "concurrency": self._concurrency,
@@ -722,6 +724,8 @@ class AdaptiveEdgeTuner:
 
         if changed:
             self._log(f"INCREASED: chunk={self._chunk_size}, conc={self._concurrency}")
+            # Reset tune counter so the next tune waits a full interval
+            self._segments_since_last_tune = 0
             return {
                 "chunk_size": self._chunk_size,
                 "concurrency": self._concurrency,
