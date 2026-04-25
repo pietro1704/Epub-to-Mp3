@@ -52,7 +52,7 @@ jobs:
           CHAPTER_PARALLEL_COUNT: "1"
         run: |
           mkdir -p .cache/telemetry
-          mise exec -- python python_app/tests/run_ci_speed_benchmark.py \
+          if mise exec -- python python_app/tests/run_ci_speed_benchmark.py \
             --output .cache/telemetry/ci-speed-benchmark-nightly.json \
             --baseline-file .cache/telemetry/ci-speed-baseline-nightly.json \
             --max-regression-pct 20 \
@@ -62,7 +62,18 @@ jobs:
             --min-item-cps 90 \
             --min-engine-cps edge=350 \
             --min-engine-cps kokoro=160 \
-            --min-engine-cps piper=80
+            --min-engine-cps piper=80; then
+            echo "Benchmark passed"
+          elif [ -f .cache/telemetry/ci-speed-benchmark-nightly.json ]; then
+            # Benchmark ran and produced results but detected regression
+            touch .cache/telemetry/regression-detected
+            echo "Real regression detected"
+            exit 1
+          else
+            # Benchmark crashed (timeout, network error) — not a regression
+            echo "Benchmark failed to run (likely Edge-TTS timeout); not a regression"
+            exit 1
+          fi
 
       - name: Telemetry baseline smoke check
         if: always()
@@ -85,8 +96,8 @@ jobs:
             .cache/telemetry/ci-speed-benchmark-nightly.json
             .cache/telemetry/ci-speed-baseline-nightly.json
 
-      - name: Create regression issue on failure
-        if: steps.nightly_benchmark.outcome == 'failure'
+      - name: Create regression issue on real regression
+        if: steps.nightly_benchmark.outcome == 'failure' && hashFiles('.cache/telemetry/regression-detected') != ''
         uses: actions/github-script@v9
         with:
           script: |
