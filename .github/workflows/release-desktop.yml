@@ -6,7 +6,7 @@ env:
   # Required so mise can activate the .venv from mise.toml (virtualenv feature)
   MISE_EXPERIMENTAL: "1"
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
+  RELEASE_REF: ${{ github.event_name == 'workflow_dispatch' && (inputs.checkout_ref != '' && inputs.checkout_ref || format('refs/tags/{0}', inputs.tag)) || github.ref }}
 
 on:
   # Versioned release: git tag v1.2.3
@@ -14,12 +14,16 @@ on:
     tags:
       - "v*.*.*"
 
-  # Manual trigger
+  # Manual trigger or rolling rebuild from auto-release
   workflow_dispatch:
     inputs:
       tag:
         description: "Version tag (e.g. v1.0.0)"
         required: true
+      checkout_ref:
+        description: "Git ref to checkout (empty = tag ref, 'master' = latest code)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -27,7 +31,7 @@ permissions:
 
 # Cancel in-progress runs for the same ref or manual dispatch.
 concurrency:
-  group: release-desktop-${{ github.ref || github.run_id }}
+  group: release-desktop-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -723,17 +727,17 @@ jobs:
   homebrew:
     name: Update Homebrew cask
     needs: [build]
-    if: false  # disabled — HOMEBREW_TAP_TOKEN secret not configured
+    if: needs.build.result == 'success'
     runs-on: ubuntu-latest
+    env:
+      HAS_HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
     steps:
-      - name: Checkout (for version detection)
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_REF }}
-          sparse-checkout: desktop/src-tauri/tauri.conf.json
-          sparse-checkout-cone-mode: false
+      - name: Skip if no token
+        if: env.HAS_HOMEBREW_TOKEN != 'true'
+        run: echo "HOMEBREW_TAP_TOKEN not configured; skipping Homebrew update."
 
       - name: Resolve tag and version
+        if: env.HAS_HOMEBREW_TOKEN == 'true'
         id: meta
         run: |
           TAG="${{ env.RELEASE_TAG }}"
@@ -743,6 +747,7 @@ jobs:
           echo "filename=Epub.to.Mp3_${VERSION}_aarch64.dmg" >> "$GITHUB_OUTPUT"
 
       - name: Compute DMG SHA256
+        if: env.HAS_HOMEBREW_TOKEN == 'true'
         id: dmg
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
@@ -754,6 +759,7 @@ jobs:
           echo "url=$URL" >> "$GITHUB_OUTPUT"
 
       - name: Checkout Homebrew tap
+        if: env.HAS_HOMEBREW_TOKEN == 'true'
         uses: actions/checkout@v6
         with:
           repository: pietro1704/homebrew-epub-to-mp3
@@ -761,6 +767,7 @@ jobs:
           path: tap
 
       - name: Update cask formula
+        if: env.HAS_HOMEBREW_TOKEN == 'true'
         run: |
           F="tap/Casks/epub-to-mp3.rb"
           VERSION="${{ steps.meta.outputs.version }}"
@@ -769,6 +776,7 @@ jobs:
           sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" "$F"
 
       - name: Commit and push
+        if: env.HAS_HOMEBREW_TOKEN == 'true'
         working-directory: tap
         run: |
           git config user.name "github-actions[bot]"

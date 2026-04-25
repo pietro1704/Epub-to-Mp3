@@ -141,7 +141,7 @@ jobs:
           git tag "${{ steps.bump.outputs.tag }}"
           git push origin "${{ steps.bump.outputs.tag }}"
 
-      - name: Dispatch Release Desktop
+      - name: Dispatch Release Desktop (new version)
         if: steps.bump.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -150,3 +150,15 @@ jobs:
           gh workflow run release-desktop.yml \
             --ref master \
             -f tag="${{ steps.bump.outputs.tag }}"
+
+      - name: Dispatch Release Desktop (rolling rebuild)
+        if: steps.bump.outputs.skip == 'true' && steps.bump.outputs.last_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "Rolling rebuild: updating artifacts on ${{ steps.bump.outputs.last_tag }}"
+          gh workflow run release-desktop.yml \
+            --ref master \
+            -f tag="${{ steps.bump.outputs.last_tag }}" \
+            -f checkout_ref="master"
