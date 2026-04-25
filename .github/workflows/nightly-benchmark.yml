@@ -43,8 +43,13 @@ jobs:
 
       - name: Run nightly speed benchmark (regression gate)
         id: nightly_benchmark
+        continue-on-error: true
         env:
           ENGINE_CHAIN_FALLBACK: "1"
+          # Edge-TTS rate-limits GitHub Actions shared IPs; allow
+          # timeout/network errors without failing the whole workflow.
+          EDGE_MAX_CONCURRENCY: "1"
+          CHAPTER_PARALLEL_COUNT: "1"
         run: |
           mkdir -p .cache/telemetry
           mise exec -- python python_app/tests/run_ci_speed_benchmark.py \
@@ -81,7 +86,7 @@ jobs:
             .cache/telemetry/ci-speed-baseline-nightly.json
 
       - name: Create regression issue on failure
-        if: failure()
+        if: steps.nightly_benchmark.outcome == 'failure'
         uses: actions/github-script@v9
         with:
           script: |
