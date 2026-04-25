@@ -186,8 +186,8 @@ export default function ReadyDownloadsList({
                     e.stopPropagation();
                     onRemove(job.jobId);
                   }}
-                  aria-label={t.downloads.removeButton || "Remover"}
-                  title={t.downloads.removeButton || "Remover"}
+                  aria-label={t.downloads.removeButton || "Remove"}
+                  title={t.downloads.removeButton || "Remove"}
                 >
                   ×
                 </button>
