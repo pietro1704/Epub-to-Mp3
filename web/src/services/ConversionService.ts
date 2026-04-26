@@ -900,6 +900,7 @@ export class HttpConversionClient implements ConversionClient {
         }
         source.onmessage = null;
         source.onerror = null;
+        source.removeEventListener("chapter_update", handleChapterUpdate);
         source.close();
         source = null;
       };

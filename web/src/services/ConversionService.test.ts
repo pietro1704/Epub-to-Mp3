@@ -51,6 +51,12 @@ describe("HttpConversionClient SSE idle watchdog", () => {
     addEventListener(name: string, fn: (ev: MessageEvent) => void) {
       (this.listeners[name] = this.listeners[name] ?? []).push(fn);
     }
+    removeEventListener(name: string, fn: (ev: MessageEvent) => void) {
+      const arr = this.listeners[name];
+      if (arr) {
+        this.listeners[name] = arr.filter((f) => f !== fn);
+      }
+    }
     close() {
       this.closed = true;
     }

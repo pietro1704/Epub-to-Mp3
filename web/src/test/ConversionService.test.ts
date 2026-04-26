@@ -19,6 +19,10 @@ class MockEventSource {
   }
 
   addEventListener(_event: string, _handler: (event: MessageEvent) => void) {}
+  removeEventListener(
+    _event: string,
+    _handler: (event: MessageEvent) => void,
+  ) {}
 
   close() {
     this.closed = true;
