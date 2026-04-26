@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.5] — 2026-04-26
+
+### Performance
+
+- Fix silence padding re-encoding entire audio file (~20min → <1s for long chapters)
+
+### Bug Fixes
+
+- Fix orphan chapters (dedicatórias, epigraphs) silently dropped from conversion
+- Fix SSE chapter_update event listener leak causing duplicate updates on reconnect
+- Fix nightly benchmark creating false regression issues on Edge-TTS timeout
+- Fix hardcoded desktop health check URL (use resolveApiUrl)
+- Fix hardcoded Portuguese strings in BookCoverCard, CachedJobsAlert, StatusPanel, ConfirmDialog
+
+### Features
+
+- Rolling release: rebuild all artifacts (DMG, EXE, MSI, APK) on every green CI push
+- Re-enable Homebrew cask update with runtime token guard
+- Add 18 new i18n keys for PT-BR and EN locales
+- Add 52 new tests (46 i18n coverage + 6 orphan chapter regression)
+
+### Chores
+
+- Remove 14.5MB of stale conversion logs from repo
+- Remove 5 leftover DEBUG print statements from converter
+
 ## [0.3.3] — 2026-04-14
 
 ### Bug Fixes
