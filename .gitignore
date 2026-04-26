@@ -71,6 +71,7 @@ output/.job_inputs/
 output/.source_backups/
 .mise-cache/
 *.log
+log_*.txt
 *.tmp
 *.temp
 *.bak
