@@ -49,7 +49,7 @@ numpy>=2.4.4,<3.0.0
 
 # HTTP/Async
 aiohttp>=3.13.5  # CVE-2026-34513–34520, CVE-2026-22815, CVE-2026-34514
-aiofiles>=24.0.0
+aiofiles>=25.1.0
 httpx>=0.28.1
 
 # Progress
