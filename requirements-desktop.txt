@@ -1,6 +1,6 @@
 # Edge-TTS only — excludes Coqui/Kokoro/Piper/PyTorch
 edge-tts>=7.2.8
-fastapi>=0.134.0
+fastapi>=0.136.1
 uvicorn[standard]>=0.46.0
 python-multipart>=0.0.22
 pydantic>=2.13.3,<3.0.0

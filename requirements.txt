@@ -2,7 +2,7 @@
 # EPUB to MP3 Converter with Edge-TTS
 
 # FastAPI Server
-fastapi>=0.134.0
+fastapi>=0.136.1
 uvicorn[standard]>=0.46.0
 python-multipart>=0.0.22
 
