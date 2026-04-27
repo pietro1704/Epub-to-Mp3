@@ -34,7 +34,7 @@ python-multipart>=0.0.22
 pydantic>=2.13.3,<3.0.0
 pandas>=3.0.2,<4.0.0
 fsspec<=2026.3.0,>=2026.3.0
-packaging>=23.2,<27.0
+packaging>=26.2,<27.0
 
 # HTTP / async
 aiohttp>=3.13.5,<4.0.0
