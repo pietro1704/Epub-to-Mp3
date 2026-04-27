@@ -14,7 +14,7 @@ soundfile>=0.13.1
 
 # Ebook processing
 beautifulsoup4>=4.14.3
-ebooklib>=0.18
+ebooklib>=0.20
 pypdf>=6.10.2
 lxml>=6.1.0
 
