@@ -21,6 +21,10 @@ interface SystemStatsPanelProps {
     gpu: string;
     lastUpdated: (value: string) => string;
     retrying: (value: string) => string;
+    target: string;
+    gpuUsage: string;
+    gpuVram: string;
+    gpuTemp: string;
   };
 }
 
@@ -192,7 +196,7 @@ export default function SystemStatsPanel({
           <span>{labels.workers}</span>
           <strong>{stats.jobs?.workers?.current ?? 0}</strong>
           <small>
-            Target:{" "}
+            {labels.target}:{" "}
             {stats.jobs?.workers?.target ??
               stats.recommendations?.jobWorkers ??
               0}
@@ -211,10 +215,12 @@ export default function SystemStatsPanel({
           {stats.gpus.map((gpu, index) => (
             <div key={`${gpu.name}-${index}`} className="system-stats__gpu">
               <strong>{gpu.name || `${labels.gpu} ${index + 1}`}</strong>
-              <span>{`Uso: ${gpu.utilizationPercent ?? 0}%`}</span>
-              <span>{`VRAM: ${Math.round(gpu.memoryUsedMB ?? 0)} / ${Math.round(gpu.memoryTotalMB ?? 0)} MB`}</span>
+              <span>{`${labels.gpuUsage}: ${gpu.utilizationPercent ?? 0}%`}</span>
+              <span>{`${labels.gpuVram}: ${Math.round(gpu.memoryUsedMB ?? 0)} / ${Math.round(gpu.memoryTotalMB ?? 0)} MB`}</span>
               {typeof gpu.temperatureC === "number" && (
-                <span>Temp: {Math.round(gpu.temperatureC)}°C</span>
+                <span>
+                  {labels.gpuTemp}: {Math.round(gpu.temperatureC)}°C
+                </span>
               )}
             </div>
           ))}

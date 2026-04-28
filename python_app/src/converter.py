@@ -2741,7 +2741,7 @@ class AudioConverter(
 
         if unresolved_pool:
             for name, message in unresolved_pool.items():
-                result.errors.append(f"{name}: {message} (not correlacionado)")
+                result.errors.append(f"{name}: {message} (uncorrelated)")
 
         # Reconcile: if an MP3 already exists in the output dir for a
         # "failed" chapter (e.g. hard timeout fired after synthesis completed
@@ -4492,7 +4492,7 @@ class AudioConverter(
                         spinner_frames = ["⚙️", "🔧"]
                         frame_idx = 0
                         while heartbeat_active:
-                            await asyncio.sleep(5)  # Atualizar a cada 5 segundos (reduz overhead)
+                            await asyncio.sleep(5)  # Update every 5 seconds (reduces overhead)
                             if not heartbeat_active:
                                 break
                             elapsed = int(time.time() - start_synthesis)

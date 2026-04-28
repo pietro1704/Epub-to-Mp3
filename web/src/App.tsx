@@ -163,6 +163,10 @@ export default function App(props?: AppProps): JSX.Element {
       offline: t.layout.statsOffline,
       lastUpdated: t.layout.statsLastUpdated,
       retrying: t.layout.statsRetrying,
+      target: t.layout.statsTarget,
+      gpuUsage: t.layout.statsGpuUsage,
+      gpuVram: t.layout.statsGpuVram,
+      gpuTemp: t.layout.statsGpuTemp,
     }),
     [
       t.layout.statsCpu,
@@ -177,6 +181,11 @@ export default function App(props?: AppProps): JSX.Element {
       t.layout.statsOffline,
       t.layout.statsLastUpdated,
       t.layout.statsRetrying,
+      t.layout.statsTarget,
+      t.layout.statsGpuUsage,
+      t.layout.statsGpuVram,
+      t.layout.statsGpuTemp,
+      t.layout.statsError,
     ],
   );
   const telemetryLabels = useMemo(

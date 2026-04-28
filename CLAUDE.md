@@ -350,6 +350,25 @@ JOB_HEALTHCHECK_INTERVAL_SECONDS=15 # Slow detection (HF: 10s)
 JOB_HEALTHCHECK_SLOW_STREAK=1    # HF: 1 consecutive slow check triggers slow mode
 ```
 
+### Misc Operator Switches
+```bash
+EDGE_AUTO_OFFLINE_SECONDS        # Window after a 403/timeout in which Edge is
+                                 # treated as offline; `_engine_selection_mixin`
+                                 # short-circuits to the next tier without
+                                 # retrying. Read by `ConversionConfig`.
+EPUB2MP3_VENV_BOOTSTRAPPED       # Internal flag set by the CLI when it
+                                 # auto-bootstraps `.venv` after detecting an
+                                 # `externally-managed-environment` pip error.
+                                 # Prevents re-execing into the venv twice.
+                                 # Do NOT set manually.
+MENU_FORCE_TTY                   # Force the interactive menu to use raw termios
+                                 # mode even when stdin/stdout are not a TTY
+                                 # (useful for SSH/CI). Values: 1|true|yes|on.
+CLI_CHAPTER_HARD_TIMEOUT_SECONDS=900  # Hard per-chapter ceiling for the CLI
+                                      # parallel runner; scales by +15s per 1K
+                                      # chars over 20K. Set to 0 to disable.
+```
+
 ---
 
 ## TTS Engine Fallback System

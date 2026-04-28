@@ -75,7 +75,7 @@ const Hero = memo(function Hero({
     (summary?.currentChapter && summary.currentChapter.trim()),
   );
   const shouldShowStatusCard = hasMetadata || phase !== "idle";
-  const collapseEnabled = true; // Habilitado para colapsar ao rolar
+  const collapseEnabled = true;
   const etaDisplay = formatEta(phase, etaSeconds, locale, t);
 
   useEffect(() => {

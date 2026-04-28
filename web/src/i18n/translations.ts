@@ -578,6 +578,10 @@ export interface LayoutText {
   statsOffline: string;
   statsLastUpdated: (value: string) => string;
   statsRetrying: (value: string) => string;
+  statsTarget: string;
+  statsGpuUsage: string;
+  statsGpuVram: string;
+  statsGpuTemp: string;
   tauriEngineWaiting: string;
   tauriEngineErrorTitle: string;
   tauriEngineRebuild: string;
@@ -1464,6 +1468,10 @@ export const translations: Record<Locale, Translations> = {
       statsOffline: "Servidor indisponível. Verifique o backend.",
       statsLastUpdated: (value: string) => `Atualizado ${value}`,
       statsRetrying: (value: string) => `Nova tentativa em ${value}`,
+      statsTarget: "Alvo",
+      statsGpuUsage: "Uso",
+      statsGpuVram: "VRAM",
+      statsGpuTemp: "Temp",
       tauriEngineWaiting: "Aguardando o motor de conversão iniciar…",
       tauriEngineErrorTitle: "Erro no motor de conversão",
       tauriEngineRebuild: "Reconstrua o sidecar:",
@@ -2350,6 +2358,10 @@ export const translations: Record<Locale, Translations> = {
       statsOffline: "Backend unreachable. Please start the server.",
       statsLastUpdated: (value: string) => `Updated ${value}`,
       statsRetrying: (value: string) => `Retrying in ${value}`,
+      statsTarget: "Target",
+      statsGpuUsage: "Usage",
+      statsGpuVram: "VRAM",
+      statsGpuTemp: "Temp",
       tauriEngineWaiting: "Waiting for conversion engine to start…",
       tauriEngineErrorTitle: "Conversion engine error",
       tauriEngineRebuild: "Rebuild the sidecar:",
