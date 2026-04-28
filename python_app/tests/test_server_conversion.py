@@ -957,6 +957,62 @@ def test_stream_endpoints_serve_manifest_and_chunk_from_job_stream_dir(tmp_path,
     assert chunk_response.content == MINIMAL_MP3
 
 
+def test_stream_chunk_rejects_path_traversal_in_manifest_file_field(tmp_path, monkeypatch):
+    """Even if a stale/corrupted manifest somehow contains a `../` filename,
+    the endpoint must refuse to serve files outside the stream directory.
+
+    Guards against the CodeQL `py/path-injection` finding that flagged the
+    FileResponse path: the manifest is treated as semi-trusted because it
+    comes from disk, but its `file` field can in theory be tampered with.
+    """
+    _configure_server_paths(tmp_path, monkeypatch)
+    job_id = str(uuid4())
+    output_book_dir = tmp_path / "Trav Book"
+    stream_dir = output_book_dir / "streams"
+    stream_dir.mkdir(parents=True, exist_ok=True)
+
+    secret = output_book_dir / "secret.bin"
+    secret.write_bytes(b"SECRET")
+
+    manifest_path = stream_dir / "index.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "jobId": job_id,
+                "chapters": {
+                    "1": {
+                        "chapterIndex": 1,
+                        "chunks": [
+                            {
+                                "id": "0",
+                                "index": 0,
+                                # Attempted traversal — must NOT serve `secret.bin`.
+                                "file": "../secret.bin",
+                                "url": f"/api/streams/{job_id}/chapters/1/chunks/0",
+                            }
+                        ],
+                        "updatedAt": 1.0,
+                        "baseUrl": f"/api/streams/{job_id}/chapters/1",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "finished",
+        "outputDir": str(output_book_dir),
+    }
+
+    client = TestClient(server.app)
+    response = client.get(f"/api/streams/{job_id}/chapters/1/chunks/0")
+
+    assert response.status_code in {400, 404}
+    assert response.content != b"SECRET"
+
+
 def test_feature_history_endpoint_missing_file(tmp_path, monkeypatch):
     _configure_server_paths(tmp_path, monkeypatch)
     monkeypatch.setattr(server, "CACHE_DIR", tmp_path)
