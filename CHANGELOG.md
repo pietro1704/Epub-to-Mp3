@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.3.6] — 2026-04-28
+
+### Security
+
+- Fix CodeQL `py/path-injection` (high) on stream chunk endpoint by switching to an enumerated allow-list pattern
+
+### Bug Fixes
+
+- Fix synced reader showing permanent "texto não disponível" message when opened before backend finished extracting chapters; new 503/422/404 contract with auto-retry and exponential backoff (800ms → 12s)
+- Cache-first ordering on `/api/jobs/{id}/fulltext` so the reader keeps working after cleanup removes the source file
+
+### Features
+
+- Differentiated reader error messages: `readerStillExtracting` (transient) vs `readerExtractionFailed` (permanent) vs `readerUnavailable` (network) in PT-BR and EN
+
+### Chores
+
+- Enforce English-only policy across `converter.py` (heartbeat comment + uncorrelated error label) with static regression test
+- New i18n keys for GPU/Target labels in `SystemStatsPanel` (statsTarget, statsGpuUsage, statsGpuVram, statsGpuTemp)
+- Document `MENU_FORCE_TTY`, `EPUB2MP3_VENV_BOOTSTRAPPED`, `EDGE_AUTO_OFFLINE_SECONDS`, `CLI_CHAPTER_HARD_TIMEOUT_SECONDS` env vars in CLAUDE.md
+- Add 18 new tests (5 backend fulltext contract, 2 reader retry, 12 web component coverage)
+
 ## [0.3.5] — 2026-04-26
 
 ### Performance
