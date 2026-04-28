@@ -2651,23 +2651,24 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     if chunk_entry is None:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
-    chunk_name = _safe_leaf_name(str(chunk_entry.get("file") or ""), field_name="chunk")
-    file_path = _resolve_relative_path_within_root(stream_dir, chunk_name, must_exist=False)
-    # Defense-in-depth: re-resolve both the candidate and the parent root
-    # against the real filesystem and assert containment. `_safe_leaf_name`
-    # already rejected any separator/`..` and `_resolve_relative_path_within_root`
-    # rejected paths escaping `stream_dir`, but CodeQL's path-injection
-    # taint tracker does not recognise either of those sanitisers, so we
-    # repeat the check inline using `os.path.realpath` (the form CodeQL
-    # recognises) before handing the path to FileResponse.
-    safe_root = os.path.realpath(stream_dir)
-    safe_path = os.path.realpath(file_path)
-    if not (safe_path == safe_root or safe_path.startswith(safe_root + os.sep)):
-        raise HTTPException(status_code=400, detail="Invalid chunk path")
-    if not os.path.isfile(safe_path):
+    # Build the served file from a strictly-validated allow-list of basenames
+    # already present on disk inside `stream_dir`. The manifest's `file`
+    # field is treated as untrusted: we only use it to look up an entry,
+    # never to construct the served path. This pattern (compare against an
+    # enumerated set of safe paths) is the canonical anti-path-injection
+    # form recognised by CodeQL's taint analysis.
+    requested_basename = Path(str(chunk_entry.get("file") or "")).name
+    if not requested_basename:
+        raise HTTPException(status_code=400, detail="Invalid chunk")
+    allowed_files = {entry.name: entry for entry in stream_dir.iterdir() if entry.is_file()}
+    served_entry = allowed_files.get(requested_basename)
+    if served_entry is None:
         raise HTTPException(status_code=404, detail="Chunk not found")
 
-    return FileResponse(path=safe_path, media_type=_guess_media_type(os.path.basename(safe_path)))
+    return FileResponse(
+        path=served_entry,
+        media_type=_guess_media_type(served_entry.name),
+    )
 
 
 def _build_fulltext_chapters_from_cache(cached: dict) -> list[dict]:
