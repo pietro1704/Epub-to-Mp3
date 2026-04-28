@@ -478,6 +478,168 @@ def test_job_fulltext_prefers_cached_chapters(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
+def test_job_fulltext_returns_503_when_source_missing_and_job_running(tmp_path, monkeypatch):
+    """Source file missing on a running job is transient — return 503 so the
+    UI retries instead of showing a permanent error."""
+    job_id = str(uuid4())
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    upload_path = tmp_path / f"{job_id}_book.epub"
+    # Intentionally do NOT write the file — simulates upload-in-progress.
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "queued",
+        "events": [],
+        "file_path": str(upload_path),
+        "bookTitle": "Pending Book",
+    }
+
+    class EmptyCacheManager:
+        def get_cached_chapters(self, _ebook_path):
+            return None
+
+        def save_chapters_to_cache(self, *_args, **_kwargs):
+            return True
+
+    monkeypatch.setattr(server, "get_cache_manager", lambda: EmptyCacheManager())
+
+    client = TestClient(server.app)
+    response = client.get(f"/api/jobs/{job_id}/fulltext")
+
+    assert response.status_code == 503
+    assert "retry" in response.json().get("detail", "").lower()
+    server.jobs.pop(job_id, None)
+
+
+def test_job_fulltext_returns_404_when_source_missing_and_job_failed(tmp_path, monkeypatch):
+    """Once the job is in a terminal failed state, a missing source file is
+    a permanent 404 — there is no point in the UI retrying forever."""
+    job_id = str(uuid4())
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    upload_path = tmp_path / f"{job_id}_book.epub"
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "failed",
+        "events": [],
+        "file_path": str(upload_path),
+    }
+
+    class EmptyCacheManager:
+        def get_cached_chapters(self, _ebook_path):
+            return None
+
+        def save_chapters_to_cache(self, *_args, **_kwargs):
+            return True
+
+    monkeypatch.setattr(server, "get_cache_manager", lambda: EmptyCacheManager())
+
+    client = TestClient(server.app)
+    response = client.get(f"/api/jobs/{job_id}/fulltext")
+
+    assert response.status_code == 404
+    server.jobs.pop(job_id, None)
+
+
+def test_job_fulltext_uses_cache_even_when_source_file_is_gone(tmp_path, monkeypatch):
+    """If the source file was cleaned up but the cache still holds the parsed
+    chapters, the reader must keep working."""
+    job_id = str(uuid4())
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    upload_path = tmp_path / f"{job_id}_book.epub"
+    # Source file deliberately absent — cache should be the source of truth.
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "completed",
+        "events": [],
+        "file_path": str(upload_path),
+        "bookTitle": "Recovered From Cache",
+    }
+
+    class WarmCacheManager:
+        def get_cached_chapters(self, _ebook_path):
+            return {
+                "title": "Recovered From Cache",
+                "author": "",
+                "chapters": [
+                    {
+                        "title": "Only Chapter",
+                        "text": "Body.",
+                        "html": "<p>Body.</p>",
+                        "css": "",
+                    },
+                ],
+            }
+
+        def save_chapters_to_cache(self, *_args, **_kwargs):
+            return True
+
+    monkeypatch.setattr(server, "get_cache_manager", lambda: WarmCacheManager())
+
+    def fail_reader(*_args, **_kwargs):
+        raise AssertionError("EbookReader must not be used when the cache satisfies the request")
+
+    monkeypatch.setattr(server, "EbookReader", fail_reader)
+
+    client = TestClient(server.app)
+    response = client.get(f"/api/jobs/{job_id}/fulltext")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["bookTitle"] == "Recovered From Cache"
+    assert len(payload["chapters"]) == 1
+    server.jobs.pop(job_id, None)
+
+
+def test_job_fulltext_returns_422_when_parsing_yields_no_chapters_on_failed_job(
+    tmp_path, monkeypatch
+):
+    """A parseable but chapter-less file on a failed job is a hard error so
+    the UI shows a permanent message instead of spinning forever."""
+    job_id = str(uuid4())
+    _configure_server_paths(tmp_path, monkeypatch)
+
+    upload_path = tmp_path / f"{job_id}_book.epub"
+    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
+
+    server.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "failed",
+        "events": [],
+        "file_path": str(upload_path),
+    }
+
+    class EmptyCacheManager:
+        def get_cached_chapters(self, _ebook_path):
+            return None
+
+        def save_chapters_to_cache(self, *_args, **_kwargs):
+            return True
+
+    monkeypatch.setattr(server, "get_cache_manager", lambda: EmptyCacheManager())
+
+    class StubReader:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def get_chapter_structure(self, *_args, **_kwargs):
+            return []
+
+        def extract_chapter_stylesheet(self, *_args, **_kwargs):
+            return ""
+
+    monkeypatch.setattr(server, "EbookReader", StubReader)
+
+    client = TestClient(server.app)
+    response = client.get(f"/api/jobs/{job_id}/fulltext")
+
+    assert response.status_code == 422
+    server.jobs.pop(job_id, None)
+
+
 def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)

@@ -12,26 +12,29 @@ describe("EbookReaderPanel", () => {
   });
 
   it("loads full text and follows the active audio chapter", async () => {
-    vi.spyOn(conversionClient, "getJobFullText").mockResolvedValue({
-      jobId: "job-reader",
-      bookTitle: "Livro Teste",
-      bookAuthor: "Autora Teste",
-      chapters: [
-        {
-          index: 0,
-          name: "Prólogo",
-          text: "Introdução curta.",
-          html: "<p>Introdução curta.</p>",
-          charCount: 17,
-        },
-        {
-          index: 1,
-          name: "Capítulo 1",
-          text: "Primeiro trecho. Segundo trecho em destaque. Final.",
-          html: "<p>Primeiro trecho. <strong>Segundo trecho em destaque.</strong> Final.</p>",
-          charCount: 51,
-        },
-      ],
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "job-reader",
+        bookTitle: "Livro Teste",
+        bookAuthor: "Autora Teste",
+        chapters: [
+          {
+            index: 0,
+            name: "Prólogo",
+            text: "Introdução curta.",
+            html: "<p>Introdução curta.</p>",
+            charCount: 17,
+          },
+          {
+            index: 1,
+            name: "Capítulo 1",
+            text: "Primeiro trecho. Segundo trecho em destaque. Final.",
+            html: "<p>Primeiro trecho. <strong>Segundo trecho em destaque.</strong> Final.</p>",
+            charCount: 51,
+          },
+        ],
+      },
     });
 
     const { container } = renderWithProviders(
@@ -64,24 +67,27 @@ describe("EbookReaderPanel", () => {
 
   it("lets the user disable follow-audio and manually switch chapters", async () => {
     const user = userEvent.setup();
-    vi.spyOn(conversionClient, "getJobFullText").mockResolvedValue({
-      jobId: "job-reader",
-      chapters: [
-        {
-          index: 0,
-          name: "Chapter 0",
-          text: "Alpha text.",
-          html: "<p>Alpha text.</p>",
-          charCount: 11,
-        },
-        {
-          index: 1,
-          name: "Chapter 1",
-          text: "Beta text.",
-          html: "<p>Beta text.</p>",
-          charCount: 10,
-        },
-      ],
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "job-reader",
+        chapters: [
+          {
+            index: 0,
+            name: "Chapter 0",
+            text: "Alpha text.",
+            html: "<p>Alpha text.</p>",
+            charCount: 11,
+          },
+          {
+            index: 1,
+            name: "Chapter 1",
+            text: "Beta text.",
+            html: "<p>Beta text.</p>",
+            charCount: 10,
+          },
+        ],
+      },
     });
 
     const { container } = renderWithProviders(
@@ -123,17 +129,20 @@ describe("EbookReaderPanel", () => {
   it("shows a single read-book CTA and calls the start handler", async () => {
     const user = userEvent.setup();
     const onRequestStart = vi.fn();
-    vi.spyOn(conversionClient, "getJobFullText").mockResolvedValue({
-      jobId: "job-reader",
-      chapters: [
-        {
-          index: 1,
-          name: "Capítulo 1",
-          text: "Texto.",
-          html: "<p>Texto.</p>",
-          charCount: 6,
-        },
-      ],
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "job-reader",
+        chapters: [
+          {
+            index: 1,
+            name: "Capítulo 1",
+            text: "Texto.",
+            html: "<p>Texto.</p>",
+            charCount: 6,
+          },
+        ],
+      },
     });
 
     renderWithProviders(
@@ -147,17 +156,20 @@ describe("EbookReaderPanel", () => {
   });
 
   it("renders the sequential player inside the reader", async () => {
-    vi.spyOn(conversionClient, "getJobFullText").mockResolvedValue({
-      jobId: "job-reader",
-      chapters: [
-        {
-          index: 1,
-          name: "Capítulo 1",
-          text: "Texto.",
-          html: "<p>Texto.</p>",
-          charCount: 6,
-        },
-      ],
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "job-reader",
+        chapters: [
+          {
+            index: 1,
+            name: "Capítulo 1",
+            text: "Texto.",
+            html: "<p>Texto.</p>",
+            charCount: 6,
+          },
+        ],
+      },
     });
 
     renderWithProviders(
@@ -180,17 +192,20 @@ describe("EbookReaderPanel", () => {
   });
 
   it("renders sanitized epub formatting in a minimal reading layout", async () => {
-    vi.spyOn(conversionClient, "getJobFullText").mockResolvedValue({
-      jobId: "job-reader",
-      chapters: [
-        {
-          index: 1,
-          name: "Capítulo 1",
-          text: "Trecho em itálico e em negrito.",
-          html: "<section><h2>Capítulo 1</h2><p><em>Trecho em itálico</em> e <strong>em negrito</strong>.</p><script>alert('x')</script></section>",
-          charCount: 31,
-        },
-      ],
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "job-reader",
+        chapters: [
+          {
+            index: 1,
+            name: "Capítulo 1",
+            text: "Trecho em itálico e em negrito.",
+            html: "<section><h2>Capítulo 1</h2><p><em>Trecho em itálico</em> e <strong>em negrito</strong>.</p><script>alert('x')</script></section>",
+            charCount: 31,
+          },
+        ],
+      },
     });
 
     const { container } = renderWithProviders(
@@ -202,8 +217,6 @@ describe("EbookReaderPanel", () => {
         screen.getByRole("heading", { name: "Capítulo 1" }),
       ).toBeInTheDocument(),
     );
-    // Shadow DOM is populated in a separate useEffect; wait for it explicitly
-    // so the test doesn't race in slower CI environments.
     await waitFor(() => {
       const shadowRoot = container.querySelector(
         ".ebook-reader__content-host",
@@ -224,18 +237,21 @@ describe("EbookReaderPanel", () => {
   it("splits long chapters into pages and lets the user flip them", async () => {
     const user = userEvent.setup();
     const longParagraph = "Texto longo ".repeat(260);
-    vi.spyOn(conversionClient, "getJobFullText").mockResolvedValue({
-      jobId: "job-reader",
-      chapters: [
-        {
-          index: 1,
-          name: "Capítulo 1",
-          text: `${longParagraph}\n\n${longParagraph}`,
-          html: `<p>${longParagraph}</p><p>${longParagraph}</p>`,
-          css: "",
-          charCount: longParagraph.length * 2,
-        },
-      ],
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "job-reader",
+        chapters: [
+          {
+            index: 1,
+            name: "Capítulo 1",
+            text: `${longParagraph}\n\n${longParagraph}`,
+            html: `<p>${longParagraph}</p><p>${longParagraph}</p>`,
+            css: "",
+            charCount: longParagraph.length * 2,
+          },
+        ],
+      },
     });
 
     renderWithProviders(<EbookReaderPanel jobId="job-reader" />);
@@ -247,5 +263,62 @@ describe("EbookReaderPanel", () => {
     expect(nextPage).toBeEnabled();
     await user.click(nextPage);
     expect(screen.getAllByText(/Página 2 de/i).length).toBeGreaterThan(0);
+  });
+
+  it("retries when the server reports the text is still being extracted", async () => {
+    vi.useFakeTimers();
+    const spy = vi
+      .spyOn(conversionClient, "getJobFullTextResult")
+      .mockResolvedValueOnce({ kind: "pending", status: 503 })
+      .mockResolvedValueOnce({ kind: "pending", status: 503 })
+      .mockResolvedValueOnce({
+        kind: "ok",
+        document: {
+          jobId: "job-reader",
+          chapters: [
+            {
+              index: 1,
+              name: "Capítulo 1",
+              text: "Texto.",
+              html: "<p>Texto.</p>",
+              charCount: 6,
+            },
+          ],
+        },
+      });
+
+    renderWithProviders(<EbookReaderPanel jobId="job-reader" />);
+
+    // Advance through the first two backoff windows so the retries run.
+    await vi.advanceTimersByTimeAsync(800);
+    await vi.advanceTimersByTimeAsync(1500);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(spy).toHaveBeenCalledTimes(3);
+    vi.useRealTimers();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: "Capítulo 1" }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("surfaces the permanent extraction-failed message after a 422", async () => {
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "unprocessable",
+      status: 422,
+    });
+
+    renderWithProviders(<EbookReaderPanel jobId="job-reader" />, {
+      locale: "en",
+    });
+
+    expect(
+      await screen.findByText(/Could not extract any chapter/i),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Retry loading/i }),
+    ).toBeInTheDocument();
   });
 });

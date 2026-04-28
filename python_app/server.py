@@ -2659,53 +2659,91 @@ async def stream_chunk(job_id: str, chapter_index: int, chunk_id: str):
     return FileResponse(path=file_path, media_type=_guess_media_type(file_path.name))
 
 
+def _build_fulltext_chapters_from_cache(cached: dict) -> list[dict]:
+    return [
+        {
+            "index": idx,
+            "name": ch.get("title") or f"Chapter {idx}",
+            "text": ch.get("text") or "",
+            "html": ch.get("html") or _chapter_html_fallback(ch.get("text") or ""),
+            "css": ch.get("css") or "",
+            "charCount": len(ch.get("text") or ""),
+        }
+        for idx, ch in enumerate(cached.get("chapters") or [], 1)
+    ]
+
+
 @app.get("/api/jobs/{job_id}/fulltext")
 async def get_job_fulltext(job_id: str) -> dict:
     """Return full text of all chapters before audio conversion starts.
 
     This allows the UI to display chapter text immediately, even before
     any audio segments are ready.
+
+    Status codes:
+        200 OK            — chapters available (from cache or freshly parsed).
+        404 Not Found     — job_id does not exist at all.
+        503 Service Unavailable — text extraction is still in progress (the
+            client should retry shortly). Returned when the source file is
+            still being uploaded or when parsing is happening on another
+            worker; the UI uses this to show a "still extracting" message
+            instead of a permanent error.
     """
     job_data = jobs.get(job_id) or job_manager.load_job(job_id)
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    # Get the source file path
+    cache_manager = get_cache_manager()
     input_file = job_data.get("inputFile") or job_data.get("file_path")
-    try:
-        source_path = _resolve_job_source_path(input_file or "", must_exist=True)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Source file not found")
-    if not input_file or not source_path.exists():
+
+    # 1) Validate the source path early — paths outside the allowed roots
+    # (e.g. `/etc/passwd`) are a hard 404, never a retryable 503.
+    source_path: Optional[Path] = None
+    source_path_invalid = False
+    if input_file:
+        try:
+            source_path = _resolve_job_source_path(input_file, must_exist=False)
+        except ValueError:
+            source_path_invalid = True
+
+    if source_path_invalid:
         raise HTTPException(status_code=404, detail="Source file not found")
 
-    try:
-        cache_manager = get_cache_manager()
-        cached = cache_manager.get_cached_chapters(source_path)
-        if cached and cached.get("chapters"):
-            chapters = [
-                {
-                    "index": idx,
-                    "name": ch.get("title") or f"Chapter {idx}",
-                    "text": ch.get("text") or "",
-                    "html": ch.get("html") or _chapter_html_fallback(ch.get("text") or ""),
-                    "css": ch.get("css") or "",
-                    "charCount": len(ch.get("text") or ""),
+    # 2) Try cache — the conversion path may have already extracted the text
+    # and the source file might be gone (e.g. uploaded file moved by the
+    # cleanup task). The cache is keyed by file path/title, so we attempt to
+    # resolve a path even if it no longer exists on disk.
+    if source_path is not None:
+        with contextlib.suppress(Exception):
+            cached = cache_manager.get_cached_chapters(source_path)
+            if cached and cached.get("chapters"):
+                return {
+                    "jobId": job_id,
+                    "bookTitle": job_data.get("bookTitle", "") or cached.get("title", ""),
+                    "bookAuthor": job_data.get("bookAuthor", "") or cached.get("author", ""),
+                    "chapters": _build_fulltext_chapters_from_cache(cached),
                 }
-                for idx, ch in enumerate(cached.get("chapters") or [], 1)
-            ]
-            return {
-                "jobId": job_id,
-                "bookTitle": job_data.get("bookTitle", "") or cached.get("title", ""),
-                "bookAuthor": job_data.get("bookAuthor", "") or cached.get("author", ""),
-                "chapters": chapters,
-            }
 
-        # Read the ebook and extract chapter structure
+    # 3) Cache miss — we need the source file on disk to parse it. If the
+    # file is missing AND the job is still running/pending, this is a
+    # transient state (upload-in-progress, race with cleanup, etc.) and the
+    # client should retry. Only return a hard 404 once the job is in a
+    # terminal failed state with no source.
+    state = (job_data.get("state") or job_data.get("status") or "").lower()
+    if not input_file or source_path is None or not source_path.exists():
+        if state in {"failed", "error", "cancelled", "canceled"}:
+            raise HTTPException(status_code=404, detail="Source file not found")
+        raise HTTPException(
+            status_code=503,
+            detail="Source file is not yet available; retry shortly",
+        )
+
+    # 4) Parse the ebook on demand and persist to cache so subsequent calls
+    # are cheap.
+    try:
         reader = EbookReader(str(input_file))
         book_chapters = reader.get_chapter_structure(preserve_all=True)
 
-        # Build response with chapter text
         chapters = []
         for idx, chapter in enumerate(book_chapters, 1):
             chapter_text = getattr(chapter, "speech_text", None) or chapter.text or ""
@@ -2724,6 +2762,21 @@ async def get_job_fulltext(job_id: str) -> dict:
                     "css": chapter_css,
                     "charCount": len(clean_text),
                 }
+            )
+
+        if not chapters:
+            # The book was parseable but produced no chapters — treat as
+            # transient if the job is still running (rare race), otherwise
+            # surface a 422 so the UI shows a permanent failure instead of
+            # spinning forever.
+            if state in {"failed", "error", "cancelled", "canceled"}:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Could not extract any chapter from this file",
+                )
+            raise HTTPException(
+                status_code=503,
+                detail="Chapter extraction in progress; retry shortly",
             )
 
         with contextlib.suppress(Exception):
@@ -2750,6 +2803,8 @@ async def get_job_fulltext(job_id: str) -> dict:
             "bookAuthor": job_data.get("bookAuthor", ""),
             "chapters": chapters,
         }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to extract text: {str(e)}")
 

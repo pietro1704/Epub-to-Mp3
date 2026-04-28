@@ -203,44 +203,110 @@ export default function EbookReaderPanel({
 
   useEffect(() => {
     let cancelled = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-    async function loadDocument() {
-      if (!jobId || !conversionClient.getJobFullText) {
+    // Backoff schedule for transient pending/network errors. The reader is
+    // commonly opened immediately after upload, before the server has had a
+    // chance to parse the EPUB — retry quickly first, then back off.
+    const RETRY_DELAYS_MS = [800, 1500, 3000, 6000, 12000];
+
+    async function fetchOnce() {
+      if (conversionClient.getJobFullTextResult) {
+        return conversionClient.getJobFullTextResult(jobId!);
+      }
+      // Backwards-compatible fallback for client implementations (and unit
+      // tests) that still mock the legacy `getJobFullText` API.
+      if (conversionClient.getJobFullText) {
+        const document = await conversionClient.getJobFullText(jobId!);
+        if (document && document.chapters.length > 0) {
+          return { kind: "ok", document } as const;
+        }
+        return { kind: "missing", status: 404 } as const;
+      }
+      return { kind: "missing", status: 404 } as const;
+    }
+
+    async function loadDocument(attempt = 0) {
+      if (!jobId) {
         setDocument(null);
         return;
       }
-      setLoading(true);
-      setLoadError(null);
-      const payload = await conversionClient.getJobFullText(jobId);
+      if (
+        !conversionClient.getJobFullText &&
+        !conversionClient.getJobFullTextResult
+      ) {
+        setDocument(null);
+        return;
+      }
+      if (attempt === 0) {
+        setLoading(true);
+        setLoadError(null);
+      }
+      const result = await fetchOnce();
       if (cancelled) {
         return;
       }
-      if (!payload || payload.chapters.length === 0) {
-        setDocument(null);
-        setLoadError(t.status.readerUnavailable);
-        reportUiIssue("reader", t.status.readerUnavailable, {
-          severity: "warning",
-          details: `job=${jobId}`,
+      if (result.kind === "ok") {
+        setDocument(result.document);
+        setSelectedChapterIndex((current) => {
+          if (
+            result.document.chapters.some(
+              (chapter) => chapter.index === current,
+            )
+          ) {
+            return current;
+          }
+          return result.document.chapters[0]?.index ?? 0;
         });
         setLoading(false);
+        setLoadError(null);
         return;
       }
-      setDocument(payload);
-      setSelectedChapterIndex((current) => {
-        if (payload.chapters.some((chapter) => chapter.index === current)) {
-          return current;
-        }
-        return payload.chapters[0]?.index ?? 0;
+      const isTransient =
+        result.kind === "pending" || result.kind === "network-error";
+      if (isTransient && attempt < RETRY_DELAYS_MS.length) {
+        // Show "still loading" while we wait — never the permanent error.
+        setLoadError(null);
+        setLoading(true);
+        const delay = RETRY_DELAYS_MS[attempt];
+        retryTimer = setTimeout(() => {
+          if (!cancelled) {
+            void loadDocument(attempt + 1);
+          }
+        }, delay);
+        return;
+      }
+      // Permanent failure or transient retries exhausted.
+      setDocument(null);
+      const message =
+        result.kind === "pending"
+          ? t.status.readerStillExtracting
+          : result.kind === "unprocessable"
+            ? t.status.readerExtractionFailed
+            : t.status.readerUnavailable;
+      setLoadError(message);
+      reportUiIssue("reader", message, {
+        severity: "warning",
+        details: `job=${jobId} kind=${result.kind}`,
       });
       setLoading(false);
     }
 
-    void loadDocument();
+    void loadDocument(0);
 
     return () => {
       cancelled = true;
+      if (retryTimer !== null) {
+        clearTimeout(retryTimer);
+      }
     };
-  }, [jobId, reloadToken, t.status.readerUnavailable]);
+  }, [
+    jobId,
+    reloadToken,
+    t.status.readerUnavailable,
+    t.status.readerStillExtracting,
+    t.status.readerExtractionFailed,
+  ]);
 
   useEffect(() => {
     if (!prefs.followAudio || !playback) {

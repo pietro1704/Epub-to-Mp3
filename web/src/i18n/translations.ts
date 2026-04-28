@@ -376,6 +376,8 @@ export interface StatusText {
   readerTitle: string;
   readerReadButton: string;
   readerUnavailable: string;
+  readerStillExtracting: string;
+  readerExtractionFailed: string;
   readerLoading: string;
   readerEmpty: string;
   readerOpen: string;
@@ -1246,7 +1248,11 @@ export const translations: Record<Locale, Translations> = {
       readerTitle: "Leitor sincronizado",
       readerReadButton: "Ler livro",
       readerUnavailable:
-        "O texto do livro ainda não está disponível para leitura.",
+        "Não foi possível carregar o texto do livro. Tente novamente em instantes.",
+      readerStillExtracting:
+        "Ainda extraindo o texto do livro… isto pode levar alguns segundos.",
+      readerExtractionFailed:
+        "Não foi possível extrair capítulos deste arquivo. Verifique se o EPUB/PDF é válido.",
       readerLoading: "Carregando texto do EPUB/PDF…",
       readerEmpty: "Selecione um capítulo para começar a ler.",
       readerOpen: "Abrir leitor",
@@ -2142,7 +2148,12 @@ export const translations: Record<Locale, Translations> = {
       searchNext: "Next",
       readerTitle: "Synced reader",
       readerReadButton: "Read book",
-      readerUnavailable: "Book text is not available yet for reading.",
+      readerUnavailable:
+        "Could not load the book text. Please try again in a moment.",
+      readerStillExtracting:
+        "Still extracting the book text… this can take a few seconds.",
+      readerExtractionFailed:
+        "Could not extract any chapter from this file. Please check that the EPUB/PDF is valid.",
       readerLoading: "Loading EPUB/PDF text…",
       readerEmpty: "Select a chapter to start reading.",
       readerOpen: "Open reader",

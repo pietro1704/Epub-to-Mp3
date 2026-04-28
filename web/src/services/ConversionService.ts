@@ -33,6 +33,14 @@ export interface RestartOptions {
   keep_finished?: boolean;
 }
 
+export type FullTextResult =
+  | { kind: "ok"; document: BookTextDocument }
+  | { kind: "pending"; status: number }
+  | { kind: "missing"; status: number }
+  | { kind: "unprocessable"; status: number }
+  | { kind: "error"; status: number }
+  | { kind: "network-error" };
+
 export interface ConversionClient {
   submit(request: ConversionFormValues): Promise<{ jobId: string }>;
   fetch(jobId: string, signal?: AbortSignal): Promise<JobSnapshot>;
@@ -44,6 +52,7 @@ export interface ConversionClient {
     chapterIndex: number,
   ): Promise<ChapterStreamManifest | null>;
   getJobFullText?(jobId: string): Promise<BookTextDocument | null>;
+  getJobFullTextResult?(jobId: string): Promise<FullTextResult>;
   cancel?(jobId: string): Promise<{ status: string }>;
   resume?(jobId: string): Promise<{ status: string }>;
   removeJob?(jobId: string): Promise<{ status: string }>;
@@ -707,17 +716,34 @@ export class HttpConversionClient implements ConversionClient {
   }
 
   async getJobFullText(jobId: string): Promise<BookTextDocument | null> {
+    const result = await this.getJobFullTextResult(jobId);
+    return result.kind === "ok" ? result.document : null;
+  }
+
+  async getJobFullTextResult(jobId: string): Promise<FullTextResult> {
     const url = this.resolve(`/api/jobs/${encodeURIComponent(jobId)}/fulltext`);
     try {
       const response = await fetch(url, { method: "GET" });
+      if (response.status === 503) {
+        return { kind: "pending", status: 503 };
+      }
+      if (response.status === 404) {
+        return { kind: "missing", status: 404 };
+      }
+      if (response.status === 422) {
+        return { kind: "unprocessable", status: 422 };
+      }
       if (!response.ok) {
-        return null;
+        return { kind: "error", status: response.status };
       }
       const payload = (await response.json()) as BookTextDocument;
       if (!payload || !Array.isArray(payload.chapters)) {
-        return null;
+        return { kind: "error", status: response.status };
       }
-      return {
+      if (payload.chapters.length === 0) {
+        return { kind: "pending", status: 200 };
+      }
+      const document: BookTextDocument = {
         ...payload,
         chapters: payload.chapters.map((chapter, index) => ({
           index:
@@ -735,9 +761,10 @@ export class HttpConversionClient implements ConversionClient {
               : (chapter.text || "").length,
         })),
       };
+      return { kind: "ok", document };
     } catch (error) {
       console.warn("[ConversionClient] Failed to fetch full text:", error);
-      return null;
+      return { kind: "network-error" };
     }
   }
 
@@ -1102,6 +1129,10 @@ export class MockConversionClient implements ConversionClient {
 
   async getJobFullText(_jobId: string): Promise<BookTextDocument | null> {
     return null;
+  }
+
+  async getJobFullTextResult(_jobId: string): Promise<FullTextResult> {
+    return { kind: "missing", status: 404 };
   }
 
   private createMockZip(bookTitle: string): string {
