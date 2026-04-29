@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.14] — 2026-04-29
+
+### Features
+
+- **Auto-detect + auto-fix is now the default.** `auto_validate_output` flipped from `False` to `True` so every conversion runs `validate_book` at the end and `_auto_validate_and_retry_async` re-synthesises any chapter that comes back missing/short/duplicated. Previously the validate-and-retry loop only ran if you explicitly opted in — a Carl conversion silently shipped without chapter 7.20 because nothing was checking. Operators can opt back out with `--no-auto-validate-output` or `AUTO_VALIDATE_OUTPUT=0`.
+
+### Tests
+
+- 8 new tests in `test_auto_validate_default_on.py` pin the new default ON, the env-var off-switch (`0`/`false`/`off`), and the explicit-kwarg-overrides-env precedence.
+- Adjusted `test_converter.py` test-suite configs (setUp + 2 explicit configs) to opt out of auto-validate so the mock-MP3 unit tests stay focused on conversion logic instead of triggering the full retry loop.
+
 ## [0.3.13] — 2026-04-29
 
 ### Features

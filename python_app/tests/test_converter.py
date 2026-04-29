@@ -62,6 +62,13 @@ class TestConversionResult(unittest.IsolatedAsyncioTestCase):
             book_title="Test Book",
             validate_audio=False,  # Disable audio validation for mock testing
             validate_text=False,  # Disable text validation for mock testing
+            # v0.3.14 made auto-validate the default for real conversions,
+            # but the unit tests below mock TTS engines that produce fake
+            # MP3 bytes ffprobe can't parse — turning the post-conversion
+            # validation off here keeps these tests focused on the
+            # conversion logic instead of triggering the retry-fix loop.
+            auto_validate_output=False,
+            auto_fix_output=False,
         )
 
     def tearDown(self):
@@ -2409,6 +2416,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             output_dir=self.temp_dir,
             validate_audio=False,
             validate_text=False,
+            auto_validate_output=False,
+            auto_fix_output=False,
             book_title="E2E DNS Book",
             force_reprocess=True,
         )
@@ -2417,6 +2426,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             output_dir=self.temp_dir,
             validate_audio=False,
             validate_text=False,
+            auto_validate_output=False,
+            auto_fix_output=False,
             book_title="E2E DNS Book",
         )
         piper_cfg = ConversionConfig(
@@ -2424,6 +2435,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             output_dir=self.temp_dir,
             validate_audio=False,
             validate_text=False,
+            auto_validate_output=False,
+            auto_fix_output=False,
             book_title="E2E DNS Book",
         )
 
@@ -2497,6 +2510,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             cache_dir=Path(self.temp_dir) / "cache",
             validate_audio=False,
             validate_text=False,
+            auto_validate_output=False,
+            auto_fix_output=False,
             book_title="Resume Book",
             force_reprocess=True,
             extra={"max_auto_retries": "0", "manual_retry_failed": "0"},
@@ -2508,6 +2523,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             cache_dir=Path(self.temp_dir) / "cache",
             validate_audio=False,
             validate_text=False,
+            auto_validate_output=False,
+            auto_fix_output=False,
             book_title="Resume Book",
         )
         with patch.object(
@@ -2536,6 +2553,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             cache_dir=Path(self.temp_dir) / "cache",
             validate_audio=False,
             validate_text=False,
+            auto_validate_output=False,
+            auto_fix_output=False,
             book_title="Resume Book",
             force_reprocess=True,
             extra={"resume_from_failure": "1"},
@@ -2546,6 +2565,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             cache_dir=Path(self.temp_dir) / "cache",
             validate_audio=False,
             validate_text=False,
+            auto_validate_output=False,
+            auto_fix_output=False,
             book_title="Resume Book",
         )
         with patch.object(
