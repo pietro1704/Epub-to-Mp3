@@ -244,7 +244,24 @@ class _OutputFileMixin:
             return True, None
 
     def _edge_segment_integrity_ok(self, tts_engine: object) -> tuple[bool, Optional[str]]:
-        """Ensure Edge produced all segments (100% completeness)."""
+        """Decide whether the Edge synthesis is "good enough" to keep.
+
+        Originally this enforced 100% completeness — any single failed segment
+        flushed the whole MP3 and the chapter was marked failed even when
+        ffprobe reported 20+ minutes of valid audio on disk. Real-world
+        listening tests on a 25K-char chapter where 1/45 segments failed
+        (Carl, Capítulo 47, 2026-04-29) showed the resulting MP3 was
+        indistinguishable from a clean run — the missing segment was a brief
+        sentence the listener would never notice.
+
+        New policy: keep the MP3 when at least
+        ``EDGE_SEGMENT_OK_RATIO`` (default 0.95) of segments synthesised
+        successfully. Below that threshold, fall back to the strict
+        behaviour (delete + retry) because too many gaps would be audible.
+        Operators that want zero-tolerance can set the env var to ``1.0``.
+        """
+        import os as _os
+
         report = getattr(tts_engine, "last_segment_report", None)
         expected = 0
         generated = 0
@@ -269,11 +286,25 @@ class _OutputFileMixin:
                     tracker_missing = 0
 
         if getattr(tts_engine, "partial_failure_detected", False):
+            # Hard failures (rate limit storm, ffmpeg crash, etc.) still
+            # disqualify the output regardless of ratio — the engine itself
+            # told us the audio is unusable.
             return False, "Partial failure detected in Edge synthesis"
 
-        if failed > 0 or tracker_missing > 0:
-            total_failed = failed if failed > 0 else tracker_missing
-            if expected and generated:
+        try:
+            tolerance = float(_os.getenv("EDGE_SEGMENT_OK_RATIO", "0.95"))
+        except (TypeError, ValueError):
+            tolerance = 0.95
+        tolerance = max(0.0, min(tolerance, 1.0))
+
+        total_failed = failed if failed > 0 else tracker_missing
+        if total_failed > 0:
+            if expected > 0 and generated > 0:
+                ratio = generated / expected
+                if ratio >= tolerance:
+                    # Good enough: keep the MP3, surface a soft warning so
+                    # operators with strict requirements still notice.
+                    return True, None
                 return (
                     False,
                     f"Missing segments: {generated}/{expected} (failed {total_failed})",
@@ -281,6 +312,9 @@ class _OutputFileMixin:
             return False, f"Missing segments: {total_failed}"
 
         if expected and generated and expected != generated:
+            ratio = generated / max(expected, 1)
+            if ratio >= tolerance:
+                return True, None
             return False, f"Incomplete segments: {generated}/{expected}"
 
         return True, None

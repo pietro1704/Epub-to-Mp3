@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.8] — 2026-04-29
+
+### Bug Fixes
+
+- Edge-TTS chapters with ≥95% segment completeness are now kept on disk and counted as converted, instead of being deleted and reported as failures. Discovered during a real run of "Carl, o Explorador de Masmorras" where two ~25-minute MP3s with 41/42 and 44/45 segments produced clean audio yet were marked "0/2 converted" and unrecoverable across retries because the missing segment was deterministic for that text/voice combo. Configurable via `EDGE_SEGMENT_OK_RATIO` (default 0.95; set to 1.0 to restore strict behaviour).
+
+### Tests
+
+- 7 new tests in `test_edge_segment_tolerance.py` lock in the 95% default and the env-override path, including a hard-rejection case for `partial_failure_detected`.
+
 ## [0.3.7] — 2026-04-28
 
 ### Features
