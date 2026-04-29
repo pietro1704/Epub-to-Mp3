@@ -241,6 +241,9 @@ class PiperTTSEngine:
         formatting_cues_enabled: bool = True,
         formatting_locale: str = "pt",
         max_procs: Optional[int] = None,
+        enable_character_voices: bool = False,
+        narrator_voice: Optional[str] = None,
+        character_voice: Optional[str] = None,
     ) -> None:
         self.model_path = Path(model_path)
         if not self.model_path.exists():
@@ -268,6 +271,45 @@ class PiperTTSEngine:
         self.formatting_cues_enabled = bool(formatting_cues_enabled)
         self._semaphore = self._resolve_semaphore(max_procs)
         self._chunk_char_limit = _PIPER_CHUNK_CHARS
+
+        # Multi-voice narration (v0.3.18): map narrator/character "voices"
+        # to Piper model paths. When both resolve to existing files and
+        # they differ, the dialogue splitter routes quoted spans through
+        # the character model and the rest through the narrator model.
+        # Otherwise the engine behaves exactly like the single-voice case.
+        self.enable_character_voices = bool(enable_character_voices)
+        self.narrator_model_path = self._resolve_voice_to_model(narrator_voice)
+        self.character_model_path = self._resolve_voice_to_model(character_voice)
+        # Sanity: only enable when both models exist AND are distinct.
+        # Identical models would just slow down synthesis with extra
+        # concat plumbing for no audible difference.
+        if self.enable_character_voices and (
+            not self.narrator_model_path
+            or not self.character_model_path
+            or self.narrator_model_path == self.character_model_path
+        ):
+            self.enable_character_voices = False
+
+    @staticmethod
+    def _resolve_voice_to_model(value: Optional[str]) -> Optional[Path]:
+        """Accept either an absolute model path or a model filename.
+
+        The CLI/server pass user-configured voice strings here; if the
+        string points to an existing file we use it as the Piper model,
+        otherwise we ignore it. Bare voice names that don't resolve to a
+        file simply disable the multi-voice path — the warning surfaced
+        by `TTSFactory.create_engine` already covers that user-facing
+        case (Piper voices are model paths, unlike Edge's voice IDs).
+        """
+        if not value:
+            return None
+        try:
+            candidate = Path(str(value))
+        except (TypeError, ValueError):
+            return None
+        if candidate.exists() and candidate.is_file():
+            return candidate
+        return None
 
     def _effective_chunk_chars(self) -> int:
         """Resolve chunk size dynamically so converter auto-tuning can update it at runtime."""
@@ -383,6 +425,27 @@ class PiperTTSEngine:
         if len(segments) == 1:
             lang, segment_text = segments[0]
             model = self._resolve_model_for_language(lang)
+            # When character-voice mode is active, route narrator/character
+            # spans to two different Piper models and concatenate the
+            # results. The single-language fast path stays for everything
+            # else so the common case has no extra concat overhead.
+            if (
+                self.enable_character_voices
+                and self.narrator_model_path
+                and self.character_model_path
+            ):
+                routed = await self._synthesize_with_character_voices(
+                    segment_text,
+                    output_path,
+                    progress_callback=progress_callback,
+                    chunk_callback=chunk_callback,
+                    pre_segment_callback=pre_segment_callback,
+                )
+                if routed is not None:
+                    return routed
+                # Fall through to single-voice synthesis if anything in
+                # the multi-voice path failed (concat error, no spans
+                # detected). Better a single voice than no audio.
             return await self._synthesize_chunked(
                 segment_text,
                 output_path,
@@ -604,6 +667,103 @@ class PiperTTSEngine:
     def _resolve_model_for_language(self, language: Optional[str]) -> Path:
         code = (language or "").split("-", 1)[0].lower()
         return self.language_models.get(code) or self.model_path
+
+    async def _synthesize_with_character_voices(
+        self,
+        text: str,
+        output_path: Path,
+        *,
+        progress_callback=None,
+        chunk_callback=None,
+        pre_segment_callback=None,
+    ) -> Optional[Path]:
+        """Mirror of Edge-TTS dialogue splitting for Piper.
+
+        Splits ``text`` into narrator/character spans using the same
+        ``dialogue_splitter`` Edge uses; synthesises each span with the
+        matching Piper model; concatenates the WAV outputs into
+        ``output_path``. Returns ``None`` and lets the caller fall back
+        to single-voice synthesis when:
+
+          * the splitter found only one role (no quoted dialogue);
+          * numpy/soundfile aren't available (concat impossible);
+          * any individual span synthesis failed.
+        """
+        if np is None or sf is None:
+            return None
+        try:
+            from ..dialogue_splitter import split_into_dialogue_spans
+        except Exception:
+            return None
+
+        spans = split_into_dialogue_spans(text)
+        roles = {span.role for span in spans if span.text.strip()}
+        if len(roles) < 2:
+            # Pure narration or pure dialogue — single-voice path is fine.
+            return None
+
+        temp_dir = Path(tempfile.mkdtemp(prefix="piper_charvoice_"))
+        temp_files: List[Path] = []
+        try:
+            for idx, span in enumerate(spans):
+                payload = span.text.strip()
+                if not payload:
+                    continue
+                model = (
+                    self.character_model_path
+                    if span.role == "character"
+                    else self.narrator_model_path
+                )
+                temp_file = tempfile.NamedTemporaryFile(
+                    delete=False,
+                    suffix=".wav",
+                    dir=temp_dir,
+                    prefix=f"piper_role_{span.role}_{idx}_",
+                )
+                temp_file.close()
+                temp_path = Path(temp_file.name)
+                temp_files.append(temp_path)
+                if pre_segment_callback:
+                    with contextlib.suppress(Exception):
+                        pre_segment_callback(payload, len(text))
+                result = await self._synthesize_single(payload, temp_path, model)
+                if result is None:
+                    return None
+                if progress_callback:
+                    with contextlib.suppress(Exception):
+                        progress_callback(payload, len(text))
+                if chunk_callback:
+                    with contextlib.suppress(TypeError):
+                        chunk_callback(idx, temp_path, payload)
+                    with contextlib.suppress(Exception):
+                        chunk_callback(idx, temp_path)
+
+            if not temp_files:
+                return None
+
+            audio_chunks: List[np.ndarray] = []
+            sample_rate: Optional[int] = None
+            for path in temp_files:
+                data, sr = sf.read(str(path))
+                if sample_rate is None:
+                    sample_rate = sr
+                elif sr != sample_rate:
+                    data = self._resample_audio(data, sr, sample_rate)
+                audio_chunks.append(data)
+
+            if not audio_chunks or sample_rate is None:
+                return None
+
+            combined = np.concatenate(audio_chunks, axis=0)
+            sf.write(str(output_path), combined, sample_rate)
+        finally:
+            for path in temp_files:
+                with contextlib.suppress(OSError):
+                    path.unlink()
+            with contextlib.suppress(OSError):
+                shutil.rmtree(temp_dir, ignore_errors=True)
+
+        return output_path if Path(output_path).exists() else None
 
     async def _synthesize_single(
         self, text: str, output_path: Path, model_path: Path

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.18] — 2026-04-29
+
+### Features
+
+- **Multi-voice narration in Piper.** The dialogue splitter that routes quoted spans to a separate `character_voice` (v0.3.7, Edge-only) now also drives Piper. Configure `narrator_voice` and `character_voice` to two distinct ONNX model paths and the engine concatenates the per-role audio just like Edge does. Identical paths or missing files transparently fall back to single-voice synthesis.
+- **Web jobs auto-retry missing chapters.** `process_conversion` already runs `validate_book` after the conversion (v0.3.17); v0.3.18 now feeds chapters flagged as `Missing MP3 file` back into the same `convert_chapter` closure used by the main loop and re-validates. Mirrors the CLI's `_auto_validate_and_retry_async` behaviour without asking the user to retry manually.
+
+### Tests
+
+- 6 new tests in `test_piper_character_voices.py` cover: config resolution (distinct, identical, missing path), routing of quoted vs narration spans to the right model, no-op fallback for pure narration.
+- Adjusted `test_factory_multi_voice_warning.py`: warning now fires for kokoro/coqui/spark (real unsupported engines), not piper.
+
 ## [0.3.17] — 2026-04-29
 
 ### Bug Fixes

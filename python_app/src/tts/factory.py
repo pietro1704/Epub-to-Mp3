@@ -124,14 +124,16 @@ class TTSFactory:
     def create_engine(self, config: ConversionConfig) -> TTSEngine:
         engine = (config.engine or "").lower()
 
-        # Multi-voice narration (v0.3.7) is only wired into Edge-TTS so far
-        # — Kokoro, Piper, Coqui and Spark all use a single voice per
-        # synthesis. If the user explicitly configured a narrator/character
-        # split but picked a non-Edge engine, the dialogue splitter would
-        # be silently ignored. Surface a clear warning on stderr so the
-        # operator knows the config is being dropped instead of finding
-        # out only when the resulting MP3 has one voice throughout.
-        if engine != "edge":
+        # Multi-voice narration support matrix (v0.3.18):
+        #   * edge   — wired in via the dialogue splitter (v0.3.7).
+        #   * piper  — wired in via two ONNX model paths (v0.3.18).
+        #   * kokoro / coqui / spark — single voice only.
+        # When the user configured a narrator/character split but picked
+        # an engine that won't honour it, surface a clear warning so the
+        # config isn't silently dropped (operator finds out only when
+        # the resulting MP3 has one voice throughout).
+        _ENGINES_WITH_MULTI_VOICE = {"edge", "piper"}
+        if engine not in _ENGINES_WITH_MULTI_VOICE:
             wants_split = bool(getattr(config, "enable_character_voices", False))
             has_distinct_voices = (
                 getattr(config, "narrator_voice", None)
@@ -143,8 +145,8 @@ class TTSFactory:
 
                 print(
                     "⚠️  Multi-voice narration (narrator/character split) is only "
-                    f"supported by Edge-TTS. Engine '{engine}' will use a single "
-                    "voice; narrator_voice and character_voice are ignored.",
+                    f"supported by Edge-TTS and Piper. Engine '{engine}' will use a "
+                    "single voice; narrator_voice and character_voice are ignored.",
                     file=_sys.stderr,
                 )
 
@@ -242,6 +244,9 @@ class TTSFactory:
                 formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
                 formatting_locale=getattr(config, "formatting_locale", "pt"),
                 max_procs=getattr(config, "piper_max_procs", None),
+                enable_character_voices=bool(getattr(config, "enable_character_voices", False)),
+                narrator_voice=getattr(config, "narrator_voice", None),
+                character_voice=getattr(config, "character_voice", None),
             )
             engine_instance.verbose = config.verbose
             return engine_instance

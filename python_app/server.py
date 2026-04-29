@@ -5949,6 +5949,55 @@ async def process_conversion(job_id: str) -> None:
                             f"(perfect={stats.get('perfect', 0)}/"
                             f"{stats.get('total_chapters', 0)}). See validationIssues.",
                         )
+
+                        # v0.3.18: retry chapters flagged as "Missing MP3"
+                        # by re-driving the same `convert_chapter` closure
+                        # used by the main loop. Mirrors the CLI's
+                        # `_auto_validate_and_retry_async` behaviour but
+                        # only retries the missing-MP3 case (duration
+                        # outliers and text mismatches need richer logic
+                        # the CLI's retry loop already handled inline).
+                        import re as _re
+
+                        missing_re = _re.compile(r"Chapter\s+([\d.]+):\s+Missing MP3 file")
+                        missing_labels = {
+                            m.group(1) for m in (missing_re.match(i) for i in real_issues) if m
+                        }
+                        if missing_labels:
+                            _append_event(
+                                job,
+                                f"🔁 Auto-fix: re-synthesising "
+                                f"{len(missing_labels)} missing chapter(s)",
+                            )
+                            recovered = 0
+                            for retry_idx, retry_chapter in enumerate(chapters, start=1):
+                                label = str(getattr(retry_chapter, "index", "")).strip()
+                                if label not in missing_labels:
+                                    continue
+                                try:
+                                    await convert_chapter(retry_idx, retry_chapter)
+                                    if not job_failed["value"]:
+                                        recovered += 1
+                                except Exception as retry_exc:
+                                    _append_event(
+                                        job,
+                                        f"   ↳ retry of {label} failed: {retry_exc}",
+                                    )
+                            if recovered:
+                                _append_event(
+                                    job,
+                                    f"✅ Auto-fix: recovered {recovered}/"
+                                    f"{len(missing_labels)} missing chapter(s)",
+                                )
+                                # Re-run validate to update the stats
+                                # surfaced through the API.
+                                result2 = _validate_book(source_path, output_dir=job_output_dir)
+                                if result2 is not None:
+                                    stats2, issues2 = result2
+                                    job["validationStats"] = stats2
+                                    job["validationIssues"] = [
+                                        i for i in issues2 if "Missing cache" not in i
+                                    ]
                     else:
                         _append_event(
                             job,

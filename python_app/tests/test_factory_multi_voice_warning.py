@@ -45,17 +45,34 @@ class TestMultiVoiceEdgeOnlyWarning(unittest.TestCase):
                 pass
         return buf.getvalue()
 
-    def test_warning_fires_for_piper_with_split_voices(self):
+    def test_warning_fires_for_kokoro_with_split_voices(self):
+        # Kokoro is in the unsupported set — multi-voice config is silently
+        # ignored, so the factory must emit the warning. (Piper joined the
+        # supported set in v0.3.18 and no longer warns; that case is
+        # covered by the dedicated `test_piper_character_voices.py`.)
+        cfg = ConversionConfig(
+            engine="kokoro",
+            primary_language="en",
+            enable_character_voices=True,
+            narrator_voice="af_sky",
+            character_voice="af_heart",
+        )
+        stderr = self._capture_stderr(cfg)
+        self.assertIn("Multi-voice narration", stderr)
+        self.assertIn("kokoro", stderr)
+
+    def test_no_warning_for_piper_with_split_voices(self):
+        # v0.3.18 wired multi-voice into Piper; the warning would be
+        # misleading now.
         cfg = ConversionConfig(
             engine="piper",
             primary_language="pt-BR",
             enable_character_voices=True,
-            narrator_voice="pt_BR-faber-medium",
-            character_voice="pt_BR-cadu-medium",
+            narrator_voice="/some/narrator.onnx",
+            character_voice="/some/character.onnx",
         )
         stderr = self._capture_stderr(cfg)
-        self.assertIn("Multi-voice narration", stderr)
-        self.assertIn("piper", stderr)
+        self.assertNotIn("Multi-voice narration", stderr)
 
     def test_no_warning_when_engine_is_edge(self):
         cfg = ConversionConfig(
