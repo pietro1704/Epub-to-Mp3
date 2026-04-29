@@ -1279,6 +1279,23 @@ class EdgeTTSEngine:
                         append=False,
                     )
 
+                    # Recovery: when the segment still won't synthesise
+                    # (typically `no_audio_payload` for a deterministic-bad
+                    # text/voice combo), try cleanup + sub-division before
+                    # giving up. Avoids a single hostile sentence killing
+                    # an otherwise complete chapter — the documented
+                    # 2026-04-29 Carl, Capítulo 40/47 case.
+                    if not success or not retry_path.exists():
+                        last_err = str(self.last_error or "")
+                        if "no_audio" in last_err or "service_unavailable" in last_err:
+                            recovered = await self._recover_failed_segment(
+                                segment_text,
+                                voice or self.voice,
+                                retry_path,
+                            )
+                            if recovered:
+                                success = True
+
                     if success and retry_path.exists():
                         successful_segments += 1
                         segment_files[fail_idx] = retry_path
@@ -2454,6 +2471,93 @@ class EdgeTTSEngine:
                 )
 
             return received_audio
+
+    async def _recover_failed_segment(
+        self,
+        original_text: str,
+        voice: str,
+        output_path: Path,
+    ) -> bool:
+        """Last-resort recovery for a single Edge segment that came back empty.
+
+        Strategy (in order, each step skipped if it succeeds):
+
+        1. Aggressive Unicode cleanup (NFKC + strip invisible codepoints
+           + collapse weird whitespace) and re-attempt the *whole*
+           segment. The cleanup catches the common case where Edge
+           rejected the payload because of a soft hyphen or zero-width
+           joiner copy-pasted from the EPUB source.
+        2. Sentence-level sub-division: split the cleaned text into
+           sentences (force-split if any sentence is still too long)
+           and synthesise each one as its own Edge call, appending into
+           ``output_path``. A whole chapter never fails because of one
+           toxic sentence — only that sentence is missing.
+
+        Returns True if the recovery wrote audio to ``output_path``.
+        Returns False (and the caller falls through to its normal failure
+        path) if both attempts produced nothing.
+
+        This method is called by the recovery branch in the parallel
+        retry loop. It deliberately does NOT involve Piper or any
+        non-Edge engine — listener feedback prefers a missing sentence
+        over a different-quality voice in the middle of the audio.
+        """
+        from ..text_sanitizer import (
+            sanitize_for_edge_recovery,
+            split_into_sentences,
+        )
+
+        cleaned = sanitize_for_edge_recovery(original_text or "")
+        if not cleaned:
+            return False
+
+        # Step 1: re-attempt the whole segment with the cleaned payload.
+        if cleaned != original_text:
+            if self.verbose:
+                self._log(
+                    "   🧼 Recovery: retrying with sanitised text "
+                    f"({len(original_text)}→{len(cleaned)} chars)"
+                )
+            try:
+                if await self._synthesize_segment(cleaned, voice, output_path, append=False):
+                    return True
+            except Exception as exc:
+                if self.verbose:
+                    self._log(f"   🧼 Recovery whole-text retry crashed: {exc}")
+
+        # Step 2: sub-divide into sentences and append each to output_path.
+        sentences = split_into_sentences(cleaned)
+        if not sentences:
+            return False
+        if self.verbose:
+            self._log(
+                "   ✂️  Recovery: sub-dividing into " f"{len(sentences)} sentence-sized fragments"
+            )
+
+        # Make sure the file starts empty before appending — we may have
+        # left a partial write from step 1.
+        with suppress(OSError):
+            output_path.unlink(missing_ok=True)
+
+        any_success = False
+        for idx, sentence in enumerate(sentences):
+            try:
+                ok = await self._synthesize_segment(sentence, voice, output_path, append=True)
+            except Exception as exc:
+                ok = False
+                if self.verbose:
+                    self._log(
+                        f"   ✂️  Recovery fragment {idx + 1}/{len(sentences)} " f"crashed: {exc}"
+                    )
+            if ok:
+                any_success = True
+            elif self.verbose:
+                self._log(
+                    f"   ✂️  Recovery fragment {idx + 1}/{len(sentences)} "
+                    "produced no audio (skipping)"
+                )
+
+        return any_success and output_path.exists() and output_path.stat().st_size > 0
 
 
 __all__ = [

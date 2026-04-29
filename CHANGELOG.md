@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.9] — 2026-04-29
+
+### Bug Fixes
+
+- Edge-TTS recovery: when a segment returns `no_audio_payload` (deterministic-bad text/voice combo), the engine now (1) cleans the payload — strips zero-width joiners, soft hyphens, BOM, directional marks, control characters; normalises NFKC; collapses exotic whitespace — and re-attempts with Edge; (2) if still empty, sub-divides the text into sentence-sized fragments and synthesises each as its own Edge call, appending into the segment file. Avoids losing a whole chapter to one hostile sentence. No fallback to Piper — recovery is 100% Edge so voice quality never drops mid-audio.
+
+### Tests
+
+- 18 unit tests in `test_text_sanitizer.py` covering every invisible-codepoint class, NFKC composition, abbreviation-safe sentence splitting, and force-split paths.
+- 5 integration tests in `test_edge_recovery.py` proving the cleanup-only path, the cleanup→subdivision fallthrough, total failure, partial success, and empty-input short-circuit.
+
 ## [0.3.8] — 2026-04-29
 
 ### Bug Fixes
