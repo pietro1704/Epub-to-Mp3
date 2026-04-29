@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.11] — 2026-04-29
+
+### Bug Fixes
+
+- **Cache hit on re-conversion of the same book.** Three real bugs surfaced when re-running `./convert carl` over an already-converted directory: (1) the MP3 cache lookup failed because two runs disagreed on filename truncation length when upstream metadata varied; (2) the truncation-detector flagged a 32-minute valid MP3 as truncated because chars/WPM over-estimates PT-BR with heavy dialogue; (3) the cache-validation pipeline rejected any MP3 whose `pre-tts.txt` sidecar had been cleaned up post-conversion. After this release a second run of the same book is essentially instant.
+- `FileManager.sanitize_filename` now appends a deterministic 10-char SHA-1 marker when truncation actually drops content, so the same chapter input always produces the same filename even if upstream title casing or whitespace shifts between runs.
+- `_split_cached_chapters` falls back to scanning the output directory by chapter index prefix (`7.13 - …`) when the canonical filename doesn't match — recovers MP3s written by older runs with different truncation rules.
+- `_split_cached_chapters` accepts cache hits without `pre-tts.txt` when the MP3 itself looks audibly complete, so a cleanup task that wiped the txt sidecars no longer forces a full re-synthesis.
+- `_detect_short_audio_output` truncation ratio default lowered 0.60 → 0.50 (env-tunable via `EDGE_TRUNCATION_RATIO`); the previous threshold deleted real, listenable audio.
+
+### Tests
+
+- 18 new tests across `test_filename_determinism.py`, `test_truncation_tolerance.py`, `test_cache_index_prefix_discovery.py` lock in the new behaviours and prevent regression on the exact failure modes observed during the Carl conversion.
+
 ## [0.3.10] — 2026-04-29
 
 ### Performance

@@ -337,6 +337,28 @@ class _CacheMixin:
             if candidate is None and final_mp3.exists():
                 candidate = final_mp3
 
+            # Discovery fallback: scan the final output directory for any
+            # MP3 whose stem starts with this chapter's index label. The
+            # filename truncate / sanitisation rules used by older runs
+            # may have produced a slightly different name (different
+            # truncate length, different EPUB metadata title casing) but
+            # the index prefix `7.13 - ` is stable across all of them.
+            # Without this, two runs that disagree on title casing
+            # produced two parallel sets of MP3s — observed in the
+            # 2026-04-29 Carl conversion that prompted this code path.
+            if candidate is None and final_output_dir.exists():
+                index_label = self._chapter_index_label(chapter, idx)
+                prefix = f"{index_label} - "
+                lowered_prefix = prefix.lower()
+                for existing in final_output_dir.glob("*.mp3"):
+                    if existing.name.lower().startswith(lowered_prefix):
+                        try:
+                            if existing.stat().st_size > 1000:
+                                candidate = existing
+                                break
+                        except OSError:
+                            continue
+
             if candidate is None and cache_dir:
                 cached_audio = self._find_cached_audio_path(
                     cache_dir, config, getattr(chapter, "name", None) or "", chapter_num
@@ -398,6 +420,18 @@ class _CacheMixin:
                     cache_index[cache_key] = entry
                     self._save_cache_index(cache_dir, cache_index)
             elif allow_index_only and entry_hash and size > 1000:
+                cached_ok = True
+            elif pre_tts_path is None and size > 1000 and duration_ok:
+                # No pre-tts.txt available (older runs cleaned them up
+                # post-conversion, or the MP3 was found via the
+                # index-prefix scan rather than the canonical name).
+                # The downstream `_detect_short_audio_output` check
+                # already rejects audibly-short audio, so accept the
+                # cache when we have a non-trivial MP3 that was
+                # discovered for this chapter index. Without this branch,
+                # any second run after a successful conversion that
+                # cleared the txt sidecars would re-synthesise every
+                # chapter from scratch — exactly the 2026-04-29 Carl bug.
                 cached_ok = True
 
             if cached_ok and candidate is not None and candidate.exists():

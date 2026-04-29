@@ -32,13 +32,49 @@ class FileManager:
 
     @classmethod
     def sanitize_filename(cls, name: Optional[str], max_length: int = 128) -> str:
+        """Sanitise ``name`` so it can sit on the filesystem.
+
+        When the cleaned input fits inside ``max_length`` characters, it is
+        returned verbatim so existing audiobook libraries (or the user
+        eyeballing the directory) keep human-readable filenames.
+
+        When the name is longer, the previous implementation just sliced
+        with ``[:max_length]`` — but that broke determinism on a real
+        Carl, o Explorador de Masmorras run: tiny upstream variations in
+        the chapter title (a trailing word added between runs, leading
+        whitespace different, NFKC-vs-NFD codepoints) shifted the cut by
+        a few characters, so the same chapter produced two different
+        filenames on consecutive conversions and re-run cache lookups
+        missed the older MP3.
+
+        The fix: when truncation would actually drop content, append a
+        short SHA-1 prefix of the *full* sanitised string. The visible
+        head stays human-readable, but two runs of the same chapter
+        always converge on the same filename — even if the upstream
+        title was processed slightly differently before reaching us.
+        """
+        import hashlib as _hashlib
+
         if not name:
             return "untitled"
 
         sanitized = cls._INVALID_CHARS.sub("_", str(name))
         sanitized = cls._WHITESPACE.sub(" ", sanitized.strip())
-        sanitized = sanitized[:max_length]
-        return sanitized or "untitled"
+        if not sanitized:
+            return "untitled"
+
+        if len(sanitized) <= max_length:
+            return sanitized
+
+        digest = _hashlib.sha1(sanitized.encode("utf-8")).hexdigest()[:10]
+        marker = f" [{digest}]"
+        head_budget = max_length - len(marker)
+        if head_budget < 16:
+            # Pathological max_length — fall back to the legacy slice so
+            # we never produce a filename starting with the marker only.
+            return sanitized[:max_length]
+        head = sanitized[:head_budget].rstrip(" .-_")
+        return f"{head}{marker}"
 
     @staticmethod
     def ensure_directory(path: Path) -> Path:

@@ -888,6 +888,22 @@ class _OutputFileMixin:
         config: ConversionConfig,
         engine_label: Optional[str] = None,
     ) -> Optional[str]:
+        """Decide whether ``audio_path`` looks too short for ``payload_text``.
+
+        The chars/WPM estimator over-counts for PT-BR with heavy dialogue
+        (quote glyphs, em-dashes, attribution clauses) — Edge speaks
+        those much faster than the formula assumes. The 2026-04-29 Carl
+        run had a 32-minute MP3 (real, ffprobe-confirmed) flagged as
+        truncated because the formula expected ~38 minutes. The cache
+        was deleted and the chapter re-synthesised pointlessly.
+
+        New default ratio: 0.50 (was 0.60). Tunable via
+        ``EDGE_TRUNCATION_RATIO`` for operators that prefer the strict
+        legacy behaviour. Below the ratio the audio is genuinely short
+        and worth re-doing.
+        """
+        import os as _os
+
         audio_path = Path(audio_path)
         if not audio_path.exists() or not payload_text:
             return None
@@ -907,11 +923,17 @@ class _OutputFileMixin:
         if estimated_seconds < 150:
             return None
 
+        try:
+            ratio = float(_os.getenv("EDGE_TRUNCATION_RATIO", "0.50") or "0.50")
+        except (TypeError, ValueError):
+            ratio = 0.50
+        ratio = max(0.10, min(ratio, 0.95))
+
         actual_seconds = self._probe_audio_duration(audio_path)
-        if actual_seconds and actual_seconds >= estimated_seconds * 0.60:
+        if actual_seconds and actual_seconds >= estimated_seconds * ratio:
             return None
         if actual_seconds and actual_seconds >= max(
-            estimated_seconds - 90, estimated_seconds * 0.5
+            estimated_seconds - 90, estimated_seconds * (ratio * 0.85)
         ):
             return None
 
@@ -921,14 +943,14 @@ class _OutputFileMixin:
         ratio_warning = False
         approx_seconds = None
         if expected_bytes:
-            minimum_expected = max(int(expected_bytes * 0.55), 180_000)
+            minimum_expected = max(int(expected_bytes * (ratio * 0.85)), 180_000)
             if file_size < minimum_expected:
                 ratio_warning = True
         if not ratio_warning and actual_seconds is None:
             bitrate_bps = self._bitrate_to_bps(getattr(config, "bitrate", "8k")) or 8_000
             approx_seconds_calc = (file_size * 8) / max(bitrate_bps, 1)
             approx_seconds = int(approx_seconds_calc)
-            if approx_seconds < estimated_seconds * 0.55:
+            if approx_seconds < estimated_seconds * (ratio * 0.85):
                 ratio_warning = True
 
         if not ratio_warning and actual_seconds is None:
