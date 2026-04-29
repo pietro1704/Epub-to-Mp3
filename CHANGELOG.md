@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.12] — 2026-04-29
+
+### Bug Fixes
+
+- **`verify` mode false positives.** The validator stopped flagging healthy MP3s on the 2026-04-29 Carl run: (1) the v0.3.11 SHA-1 marker `[abcdef0123]` no longer leaks into filename normalisation, so `MP3 filename does not match EPUB heading` is no longer raised for hash-suffixed names; (2) duration tolerance defaults raised to 0.70 (text < 10K chars) and 0.60 (≥ 10K) — Edge-TTS PT-BR neural voices speak at 145-180 WPM but produce naturally longer audio than `chars/WPM` predicts because of formatting cues and dialogue pauses. Tunable via `VALIDATION_DURATION_TOLERANCE` env var.
+- **Verify prompt now defaults to YES.** `🔧 Do you want to fix the issues now? [Y/n]` (was `[y/N]`) — the common case is "yes I want to fix what I just saw". Empty input confirms; only `n`/`no` cancels. Trailing `\r` from Windows/SSH terminals is stripped before comparison so a CR-only line still registers as confirmation.
+
+### Tests
+
+- 10 new tests across `test_validate_book_false_positives.py` (hash-marker stripping, duration tolerance constants pinned) and `test_verify_prompt_default_yes.py` (label change, empty/CR confirmations, legacy text removed).
+
 ## [0.3.11] — 2026-04-29
 
 ### Bug Fixes

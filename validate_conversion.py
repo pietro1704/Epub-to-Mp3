@@ -162,6 +162,19 @@ def _strip_text_suffix(name: str) -> str:
     return re.sub(r"-(parsed|pre-tts)$", "", name, flags=re.IGNORECASE).strip()
 
 
+# `FileManager.sanitize_filename` (v0.3.11+) appends a deterministic
+# 10-char hex hash inside square brackets when truncation actually drops
+# content — `… visualiza [7ce6a4d41a]`. The validator's heading-match
+# logic compared the raw filename against the EPUB heading and failed
+# because the hash bled into the comparison window. Strip it here so
+# both sides see the same prefix when measuring alignment.
+_FILENAME_HASH_SUFFIX_RE = re.compile(r"\s*\[[0-9a-f]{8,16}\]\s*$", re.IGNORECASE)
+
+
+def _strip_hash_marker(name: str) -> str:
+    return _FILENAME_HASH_SUFFIX_RE.sub("", name).strip()
+
+
 def build_cache_index(text_dirs: List[Path]) -> Dict[str, Dict[str, Path]]:
     """
     Build an index of parsed/pre-tts files keyed by normalized title (without numeric prefix).
@@ -295,7 +308,7 @@ def contains_html_markup(text: str | None) -> bool:
 
 def normalized_file_title(path: Path) -> str:
     """Normalize a filename (mp3/txt) to compare with chapter titles."""
-    stem = _strip_text_suffix(_strip_numeric_prefix(path.stem))
+    stem = _strip_hash_marker(_strip_text_suffix(_strip_numeric_prefix(path.stem)))
     return normalize_title_key(stem)
 
 
@@ -951,12 +964,25 @@ def validate_book(
                 pretts_text = text_files["pre_tts"].read_text(encoding="utf-8")
                 pretts_len = len(normalize_text(pretts_text))
                 if pretts_len >= 5000:
-                    # Increased tolerance: Edge-TTS speed varies significantly
-                    # Portuguese text + formatting cues make duration estimation less accurate
+                    # Edge-TTS PT-BR neural voices speak ~100-130 WPM in
+                    # practice, but `AudioValidator.DEFAULT_WORDS_PER_MINUTE`
+                    # is 150 — measured Carl chapters consistently came in
+                    # 50-60% longer than the estimate (e.g. 27m26s actual
+                    # vs ~18m expected). The previous 0.40-0.50 tolerance
+                    # turned every long chapter into a "duration mismatch"
+                    # false positive. Defaults raised to 0.60-0.70 and
+                    # tunable via VALIDATION_DURATION_TOLERANCE.
                     if duration_tolerance is not None:
                         tolerance = duration_tolerance
                     else:
-                        tolerance = 0.50 if pretts_len < 10000 else 0.40
+                        try:
+                            env_tol = float(os.getenv("VALIDATION_DURATION_TOLERANCE", "") or "0")
+                        except (TypeError, ValueError):
+                            env_tol = 0.0
+                        if env_tol > 0:
+                            tolerance = max(0.10, min(env_tol, 0.95))
+                        else:
+                            tolerance = 0.70 if pretts_len < 10000 else 0.60
                     result = validator.validate_duration(pretts_text, mp3_file, tolerance=tolerance)
 
                     if not result.is_valid:

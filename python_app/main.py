@@ -819,11 +819,19 @@ class ConverterApplication:
                 print("\nIssues:")
                 for issue in issues:
                     print(f"  • {issue}")
+                # Default Y: most users want to fix the issues they just
+                # saw — the legacy [y/N] forced an extra keypress for the
+                # common case and the user reported that pressing `y`
+                # didn't register on their terminal. Empty input now
+                # confirms; only an explicit `n`/`no` cancels.
+                # Strip Windows-style \r and any trailing whitespace
+                # so a CR-only line (common over SSH) still confirms.
                 try:
-                    answer = input("\n🔧 Do you want to fix the issues now? [y/N] ").strip().lower()
+                    raw = input("\n🔧 Do you want to fix the issues now? [Y/n] ")
                 except (EOFError, KeyboardInterrupt):
-                    answer = ""
-                if answer in ("y", "yes"):
+                    raw = ""
+                answer = (raw or "").strip().rstrip("\r").lower()
+                if answer in ("", "y", "yes", "s", "sim"):
                     return self._run_fix_mode(input_path, config)
             return 1
         print("✅ Verification completed with no issues.")
