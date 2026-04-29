@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.16] — 2026-04-29
+
+### Bug Fixes
+
+- **Filename hash stable across runs.** v0.3.11 made truncated filenames deterministic by appending a SHA-1 marker, but the hash was computed over the *full* sanitised input — tiny upstream variation (extra trailing word, NFC vs NFD codepoints, different casing) shifted the hash and produced two MP3s for the same chapter. v0.3.16 anchors the hash on a 40-char NFKD-folded prefix, so chapters that match in the head of the name always get the same marker.
+- **Auto-dedup before validation.** The end-of-conversion auto-fix loop now runs a pre-pass that collapses duplicate MP3s sharing a `<label> - ` prefix, keeping the file with the longest audio (almost always the more complete output). Without this, validate_book reported phantom dups and the retry loop re-synthesised chapters that were already covered.
+- **Removed obsolete `Desktop` check from master branch protection.** It was required by the protection rule but no CI job emitted that name, so dependabot PRs sat in `BLOCKED` state until manually force-merged.
+
+### Tests
+
+- 5 new tests in `test_filename_hash_stable_across_runs.py` lock the cross-run convergence contract: trailing-word drift, NFC↔NFD, case differences all produce the same hash; truly different chapters keep distinct markers.
+- 4 new tests in `test_auto_dedup_chapter_outputs.py` cover the dedup pre-pass: no-op on clean inventories, keeps longest audio when both copies exist, ignores label-less files, handles missing output dir.
+
 ## [0.3.15] — 2026-04-29
 
 ### Bug Fixes

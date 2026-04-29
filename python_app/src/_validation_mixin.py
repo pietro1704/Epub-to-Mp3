@@ -57,6 +57,17 @@ class _ValidationMixin:
         last_problem_chapters: List[str] = []
         completo_regen_attempted = False
 
+        # Pre-pass: when the same chapter label produced multiple MP3s
+        # across runs (different filename truncations or hash markers),
+        # collapse them down to the single best file *before* validation
+        # runs. Otherwise validate_book reports phantom dups + the retry
+        # loop tries to re-synth a chapter that's already covered. The
+        # 2026-04-29 Carl conversion produced 64 MP3s for a 61-chapter
+        # book because of this exact issue.
+        dedup_dropped = self._dedup_chapter_outputs(output_dir)
+        if dedup_dropped and self.verbose:
+            print(f"🧹 Auto-dedup: removed {dedup_dropped} duplicate MP3(s)")
+
         # Progressive duration tolerance: increase each retry to handle
         # Edge-TTS reading speed variations (Portuguese ~100-120 WPM, not 150)
         duration_tolerances = [None, 0.60, 0.70, 0.80, 0.90, 1.00, 1.20, 1.50, 2.00, 2.50]
@@ -459,6 +470,76 @@ class _ValidationMixin:
         if self.verbose:
             print(f"⚠️  Reached limit of {max_retries} attempts. Some problems may persist.")
         return False
+
+    def _dedup_chapter_outputs(self, output_dir: Path) -> int:
+        """Collapse duplicate MP3s for the same chapter label.
+
+        Two situations produce duplicates we want to clean up
+        automatically:
+
+        1. Re-runs with slightly different filename truncations leave
+           one short and one long version (the v0.3.16 stable hash
+           addresses this for new conversions but doesn't retroactively
+           fix older artefacts already on disk).
+        2. A reconversion of a single chapter writes a new file while
+           the legacy one persists.
+
+        Strategy: group MP3s by their leading ``<label> - `` prefix.
+        Keep the file with the longest *audio duration* — the longer
+        track is almost always the more complete output. Drop the rest.
+
+        Returns the number of files removed.
+        """
+        import re as _re
+        import subprocess as _subprocess
+        from collections import defaultdict as _defaultdict
+
+        if not output_dir or not output_dir.exists():
+            return 0
+
+        label_re = _re.compile(r"^([\d.]+)\s+-\s+")
+        groups: dict[str, list[Path]] = _defaultdict(list)
+        for mp3 in output_dir.glob("*.mp3"):
+            match = label_re.match(mp3.name)
+            if not match:
+                continue
+            groups[match.group(1)].append(mp3)
+
+        def _duration(path: Path) -> float:
+            try:
+                out = _subprocess.run(
+                    [
+                        "ffprobe",
+                        "-v",
+                        "error",
+                        "-show_entries",
+                        "format=duration",
+                        "-of",
+                        "default=noprint_wrappers=1:nokey=1",
+                        str(path),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                return float(out.stdout.strip() or 0.0)
+            except Exception:
+                return 0.0
+
+        removed = 0
+        for label, files in groups.items():
+            if len(files) <= 1:
+                continue
+            scored = [(_duration(f), f.stat().st_size, f) for f in files]
+            # Longest audio first; tie-break on file size.
+            scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+            for _dur, _size, loser in scored[1:]:
+                try:
+                    loser.unlink()
+                    removed += 1
+                except OSError:
+                    pass
+        return removed
 
     def _categorize_problems(self, issues: list, problem_chapters: list) -> tuple[list, list]:
         """

@@ -38,22 +38,22 @@ class FileManager:
         returned verbatim so existing audiobook libraries (or the user
         eyeballing the directory) keep human-readable filenames.
 
-        When the name is longer, the previous implementation just sliced
-        with ``[:max_length]`` — but that broke determinism on a real
-        Carl, o Explorador de Masmorras run: tiny upstream variations in
-        the chapter title (a trailing word added between runs, leading
-        whitespace different, NFKC-vs-NFD codepoints) shifted the cut by
-        a few characters, so the same chapter produced two different
-        filenames on consecutive conversions and re-run cache lookups
-        missed the older MP3.
+        When truncation would drop content, the v0.3.11 implementation
+        appended a SHA-1 of the *full sanitised input*. That broke
+        cross-run determinism: a real Carl conversion produced
+        ``[0f257b1b2b]`` on one run and ``[a47175e782]`` on the next for
+        the same chapter, because the upstream chapter title received
+        slightly different post-processing each time (extra trailing
+        word, NFKC-vs-NFD codepoints) and the hash naturally shifted.
 
-        The fix: when truncation would actually drop content, append a
-        short SHA-1 prefix of the *full* sanitised string. The visible
-        head stays human-readable, but two runs of the same chapter
-        always converge on the same filename — even if the upstream
-        title was processed slightly differently before reaching us.
+        v0.3.16 anchors the marker on a *normalised prefix* of the
+        cleaned name (lower-case, accents stripped, whitespace
+        collapsed, first ~40 chars only). Tiny upstream drift below
+        that horizon no longer changes the hash, so consecutive runs
+        of the same chapter converge on the same filename.
         """
         import hashlib as _hashlib
+        import unicodedata as _unicodedata
 
         if not name:
             return "untitled"
@@ -66,7 +66,16 @@ class FileManager:
         if len(sanitized) <= max_length:
             return sanitized
 
-        digest = _hashlib.sha1(sanitized.encode("utf-8")).hexdigest()[:10]
+        # Stable hash key: NFKD-folded prefix of the first 40 characters.
+        # The prefix is what's already going to be visible in the head
+        # of the truncated filename, so any meaningful identity of the
+        # chapter is captured there. Trailing variation (post-truncate
+        # characters that get dropped anyway) no longer perturbs the
+        # marker.
+        decomposed = _unicodedata.normalize("NFKD", sanitized.lower())
+        folded = "".join(ch for ch in decomposed if not _unicodedata.combining(ch))
+        stable_key = " ".join(folded.split())[:40]
+        digest = _hashlib.sha1(stable_key.encode("utf-8")).hexdigest()[:10]
         marker = f" [{digest}]"
         head_budget = max_length - len(marker)
         if head_budget < 16:
