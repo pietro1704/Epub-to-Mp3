@@ -608,9 +608,16 @@ class _ValidationMixin:
                     cache_dir = None
 
             # Get max retries from config or environment
+            # 2 retries is plenty: each iteration runs validate_book over
+            # the entire book and re-syntheses every flagged chapter, so
+            # 8 retries on a 61-chapter audiobook = up to 8 × 61 chapter
+            # checks plus 8 × N reconversions. The Carl conversion crashed
+            # the OS at iteration 5 from sustained 8 GB RAM pressure. Two
+            # passes is enough for genuine flakiness without spiralling.
+            # Override via MAX_VALIDATION_RETRIES.
             max_retries = getattr(config, "max_validation_retries", None)
             if max_retries is None:
-                max_retries = int(os.getenv("MAX_VALIDATION_RETRIES", "8"))
+                max_retries = int(os.getenv("MAX_VALIDATION_RETRIES", "2"))
 
             # Use retry-based validation if auto_fix is enabled
             if getattr(config, "auto_fix_output", True) and not self._auto_fix_guard:
