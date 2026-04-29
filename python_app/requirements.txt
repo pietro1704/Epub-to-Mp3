@@ -48,7 +48,7 @@ tqdm
 argcomplete>=3.6.3
 
 # HF
-huggingface_hub>=1.12.0
+huggingface_hub>=1.12.2
 transformers>=5.6.2
 
 # Progress / monitoring
