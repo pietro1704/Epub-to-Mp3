@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.10] — 2026-04-29
+
+### Performance
+
+- Edge-TTS default chunk raised from 10K → 12K characters; cuts request count ~17% on long chapters at no measured stability cost.
+- Concurrency hard ceiling lifted from 8 → 16 (still default 8). Local installs without a shared egress IP can opt into more parallelism via `EDGE_MAX_CONCURRENCY_CAP=12` (or up to 16) without source edits. HF/shared hosts keep the conservative default.
+- Rate-limit recovery threshold lowered: concurrency/chunk-size scales back up after 7 consecutive successes (was 15). Configurable via `EDGE_RECOVERY_SUCCESS_THRESHOLD`.
+- `EDGE_NOAUDIO_COOLDOWN_SECONDS` default reduced from 60s → 15s. A single false-positive empty payload was stalling the whole queue for a full minute on the Carl run.
+
+### Tests
+
+- 10 new tests in `test_edge_speed_defaults.py` lock in the new constants and the env-override clamp behaviour. Tests use a manual mirror of the clamp expression instead of `importlib.reload` (forbidden by CLAUDE.md test-isolation rule).
+
 ## [0.3.9] — 2026-04-29
 
 ### Bug Fixes
