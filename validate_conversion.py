@@ -175,6 +175,79 @@ def _strip_hash_marker(name: str) -> str:
     return _FILENAME_HASH_SUFFIX_RE.sub("", name).strip()
 
 
+def _collect_chapter_wpms(
+    epub_chapters,
+    mp3_index,
+    output_dir,
+    text_dirs,
+) -> List[float]:
+    """First pass: measure actual WPM (words/minute) for each chapter.
+
+    Used by the median-based outlier check to anchor the duration
+    heuristic against the engine's *actual* speaking rate for this
+    specific book, instead of a hardcoded 150 WPM that doesn't match
+    Edge-TTS PT-BR neural voices in practice.
+    """
+    if output_dir is None:
+        return []
+    validator = AudioValidator()
+    wpms: list[float] = []
+    for _epub_index, (chapter_label, chapter_title, epub_text) in enumerate(epub_chapters, 1):
+        if not epub_text or not normalize_text(epub_text):
+            continue
+        norm_title = normalize_title_key(_strip_numeric_prefix(chapter_title))
+        mp3_file = (
+            mp3_index.get(norm_title)
+            or find_mp3_by_title(output_dir, chapter_title)
+            or find_mp3_file(output_dir, chapter_label)
+        )
+        if mp3_file is None:
+            continue
+        text_files = {}
+        for text_dir in text_dirs or []:
+            for txt_file in text_dir.glob(f"{chapter_label} - *"):
+                if txt_file.name.endswith("-pre-tts.txt"):
+                    text_files["pre_tts"] = txt_file
+                    break
+        if "pre_tts" not in text_files:
+            continue
+        try:
+            text = text_files["pre_tts"].read_text(encoding="utf-8")
+        except OSError:
+            continue
+        word_count = len(normalize_text(text).split())
+        if word_count < 50:
+            # Too short to be representative.
+            continue
+        duration = validator.get_audio_duration(mp3_file)
+        if not duration or duration < 30:
+            continue
+        wpms.append((word_count / duration) * 60.0)
+    return wpms
+
+
+def _wpm_outlier_bounds(wpms: List[float]) -> tuple[float, float, float] | None:
+    """Compute (median, low_bound, high_bound) for outlier detection.
+
+    Uses median + 50% deviation: anything < 50% of median or > 200% of
+    median is flagged. With < 5 sample chapters there isn't enough data
+    to anchor a distribution, so we return None and the caller falls
+    back to the legacy chars/WPM check.
+    """
+    cleaned = [w for w in wpms if 30 <= w <= 400]  # sanity strip
+    if len(cleaned) < 5:
+        return None
+    cleaned.sort()
+    mid = len(cleaned) // 2
+    if len(cleaned) % 2:
+        median = cleaned[mid]
+    else:
+        median = (cleaned[mid - 1] + cleaned[mid]) / 2.0
+    if median <= 0:
+        return None
+    return median, median * 0.50, median * 2.00
+
+
 def build_cache_index(text_dirs: List[Path]) -> Dict[str, Dict[str, Path]]:
     """
     Build an index of parsed/pre-tts files keyed by normalized title (without numeric prefix).
@@ -746,6 +819,26 @@ def validate_book(
     chapter_text_hash: Dict[object, str] = {}
     audio_hashes: Dict[str, Dict[str, object]] = {}
 
+    # First pass: measure the actual WPM the engine produced on the
+    # already-converted chapters in this book. Edge-TTS PT-BR neural
+    # voices vary wildly — observed range during the Carl conversion
+    # was 55-191 WPM depending on dialogue density and formatting cues —
+    # so the static `chars/WPM=150` estimator triggers either false
+    # positives (long chapter rejected for "+60% duration") or false
+    # negatives (a 55-WPM chapter that's audibly bloated slips through
+    # because the absolute tolerance window is wide enough to swallow
+    # both). The median + MAD approach below flags only true outliers
+    # against the rest of the book's distribution. See
+    # `feedback_validate_book_median.md`.
+    book_chapter_wpms = _collect_chapter_wpms(epub_chapters, mp3_index, output_dir, text_dirs)
+    book_wpm_stats = _wpm_outlier_bounds(book_chapter_wpms)
+    if book_wpm_stats and (output_dir is not None):
+        median, low_bound, high_bound = book_wpm_stats
+        print(
+            f"📐 Median WPM across {len(book_chapter_wpms)} chapter(s): {median:.0f} "
+            f"(outlier bounds: {low_bound:.0f}–{high_bound:.0f})"
+        )
+
     print(
         f"{'Ch':<4} {'Status':<8} {'S/M/E':<7} {'%Text':<6} {'EPUB':<7} {'Parsed':<7} {'PreTTS':<7} {'MP3':<7} {'Issue'}"
     )
@@ -964,37 +1057,59 @@ def validate_book(
                 pretts_text = text_files["pre_tts"].read_text(encoding="utf-8")
                 pretts_len = len(normalize_text(pretts_text))
                 if pretts_len >= 5000:
-                    # Edge-TTS PT-BR neural voices speak ~100-130 WPM in
-                    # practice, but `AudioValidator.DEFAULT_WORDS_PER_MINUTE`
-                    # is 150 — measured Carl chapters consistently came in
-                    # 50-60% longer than the estimate (e.g. 27m26s actual
-                    # vs ~18m expected). The previous 0.40-0.50 tolerance
-                    # turned every long chapter into a "duration mismatch"
-                    # false positive. Defaults raised to 0.60-0.70 and
-                    # tunable via VALIDATION_DURATION_TOLERANCE.
-                    if duration_tolerance is not None:
-                        tolerance = duration_tolerance
-                    else:
-                        try:
-                            env_tol = float(os.getenv("VALIDATION_DURATION_TOLERANCE", "") or "0")
-                        except (TypeError, ValueError):
-                            env_tol = 0.0
-                        if env_tol > 0:
-                            tolerance = max(0.10, min(env_tol, 0.95))
-                        else:
-                            tolerance = 0.70 if pretts_len < 10000 else 0.60
-                    result = validator.validate_duration(pretts_text, mp3_file, tolerance=tolerance)
+                    duration_flag: tuple[bool, str] | None = None
 
-                    if not result.is_valid:
+                    # Preferred path: use the book's own median WPM as the
+                    # anchor when we have ≥5 chapters to compare against.
+                    if book_wpm_stats is not None:
+                        median_wpm, low_bound, high_bound = book_wpm_stats
+                        word_count = len(normalize_text(pretts_text).split())
+                        actual_duration = validator.get_audio_duration(mp3_file)
+                        if word_count >= 50 and actual_duration and actual_duration > 0:
+                            chapter_wpm = (word_count / actual_duration) * 60.0
+                            if chapter_wpm < low_bound or chapter_wpm > high_bound:
+                                deviation = ((chapter_wpm - median_wpm) / median_wpm) * 100
+                                duration_flag = (
+                                    True,
+                                    f"Duration outlier ({chapter_wpm:.0f} WPM vs "
+                                    f"median {median_wpm:.0f}, {deviation:+.0f}%)",
+                                )
+                            else:
+                                duration_flag = (False, "")
+
+                    # Fallback path (small books, missing data): use the
+                    # static chars/WPM heuristic with the v0.3.12 tolerance.
+                    if duration_flag is None:
+                        if duration_tolerance is not None:
+                            tolerance = duration_tolerance
+                        else:
+                            try:
+                                env_tol = float(
+                                    os.getenv("VALIDATION_DURATION_TOLERANCE", "") or "0"
+                                )
+                            except (TypeError, ValueError):
+                                env_tol = 0.0
+                            if env_tol > 0:
+                                tolerance = max(0.10, min(env_tol, 0.95))
+                            else:
+                                tolerance = 0.70 if pretts_len < 10000 else 0.60
+                        legacy_result = validator.validate_duration(
+                            pretts_text, mp3_file, tolerance=tolerance
+                        )
+                        duration_flag = (
+                            not legacy_result.is_valid,
+                            f"Duration mismatch ({legacy_result.duration_diff_percent:+.0f}%)"
+                            if not legacy_result.is_valid
+                            else "",
+                        )
+
+                    is_outlier, message = duration_flag
+                    if is_outlier:
                         stats["duration_mismatch"] += 1
                         if status == "✅":
                             status = "⚠️ "
-                        issue_desc = (
-                            issue_desc + f" Duration({result.duration_diff_percent:+.0f}%)"
-                        ).strip()
-                        issues.append(
-                            f"Chapter {chapter_num}: Duration mismatch ({result.duration_diff_percent:+.0f}%)"
-                        )
+                        issue_desc = (issue_desc + f" {message}").strip()
+                        issues.append(f"Chapter {chapter_num}: {message}")
 
             try:
                 base_hash = chapter_text_hash.get(chapter_num)

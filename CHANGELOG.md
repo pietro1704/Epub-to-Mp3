@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.15] — 2026-04-29
+
+### Bug Fixes
+
+- **Median-based duration outlier detection** replaces the static `chars/WPM=150 ± 60-70%` rule in `validate_book`. Previously every Edge-TTS PT-BR neural chapter at 91-110 WPM (the engine's actual speaking range on dialogue-heavy books) was rejected for "+60% duration"; conversely a 55-WPM chapter that's audibly broken slipped through because the absolute window was wide enough. The new approach makes one pre-pass over the book to compute the median WPM, then flags only chapters whose WPM falls outside `[50%, 200%]` of that book's own median. Books with < 5 chapters fall back to the legacy chars/WPM check (not enough samples to anchor a distribution).
+
+### Tests
+
+- 6 new tests in `test_validate_book_median_wpm.py` covering: < 5 sample fallback, median anchoring, sanity strip of pathological values (5 WPM / 600 WPM), Edge-TTS PT-BR distribution acceptance (180 WPM no longer flagged), real-defect detection (30 WPM chapter still flagged).
+
 ## [0.3.14] — 2026-04-29
 
 ### Features
