@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.13] — 2026-04-29
+
+### Features
+
+- 300 ms breath of silence before each chapter starts. `chapter_intro_silence_ms` default is now 300 (was 0); back-to-back chapter playback no longer feels abrupt at the join point. The 500 ms outro is unchanged. Both still tunable via `CHAPTER_INTRO_SILENCE_MS` / `CHAPTER_OUTRO_SILENCE_MS` env vars.
+
+### Tests
+
+- New `test_default_intro_silence_pads_audio_with_breath` end-to-end test asserts that the default 300 ms reaches ffmpeg as either an `anullsrc -t 0.300` fragment (fast concat-copy path) or `adelay=300:all=1` filter (fallback). A future config tweak that silently zeroes intro_ms breaks CI immediately.
+- Adjusted `test_cache_invalidation_without_txt_files` (pre-existing) to opt out of silence padding so the mock MP3 isn't rewritten by ffmpeg between runs.
+
 ## [0.3.12] — 2026-04-29
 
 ### Bug Fixes

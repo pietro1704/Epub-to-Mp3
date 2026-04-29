@@ -1648,6 +1648,12 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             validate_audio=False,
             validate_text=False,
             book_title="Cache_Test",
+            # Skip silence padding — the post-v0.3.13 default `intro=300ms`
+            # would invoke real ffmpeg here and rewrite the mock MP3 data
+            # into something whose size no longer matches the estimator,
+            # which is irrelevant to what this test exercises (cache hit).
+            chapter_intro_silence_ms=0,
+            chapter_outro_silence_ms=0,
         )
 
         # First conversion

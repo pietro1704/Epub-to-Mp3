@@ -77,8 +77,13 @@ class ConversionConfig:
     verify_transcription: bool = False
     transcription_model: str = "medium"
     validation_language: Optional[str] = None  # Language for transcription validation
-    # Audio polish: silence padding applied after synthesis (ffmpeg adelay/apad)
-    chapter_intro_silence_ms: int = 0
+    # Audio polish: silence padding applied after synthesis (ffmpeg adelay/apad).
+    # 300 ms intro gives the listener a beat of breathing room before the
+    # narrator starts — without it Edge-TTS tends to begin the chapter
+    # immediately on hitting play, which sounds abrupt after the title
+    # announcement of the previous chapter trails off. 500 ms outro keeps
+    # consistent spacing between back-to-back chapters when concatenated.
+    chapter_intro_silence_ms: int = 300
     chapter_outro_silence_ms: int = 500
     # Multi-voice narration: when enabled, dialogue (text inside quotes or
     # em-dash lines) is synthesised with `character_voice` while everything
