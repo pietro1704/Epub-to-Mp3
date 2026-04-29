@@ -55,7 +55,7 @@ _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
 
 # If Edge returns no audio at all, it's often a connectivity / service issue.
 # Use a short circuit-breaker to avoid spending minutes retrying the same request.
-EDGE_NOAUDIO_COOLDOWN_SECONDS = float(os.getenv("EDGE_NOAUDIO_COOLDOWN_SECONDS", "60"))
+EDGE_NOAUDIO_COOLDOWN_SECONDS = float(os.getenv("EDGE_NOAUDIO_COOLDOWN_SECONDS", "15"))
 EDGE_SEGMENT_MAX_RETRIES = max(1, int(os.getenv("EDGE_SEGMENT_MAX_RETRIES", "1") or "1"))
 EDGE_NETWORK_ABORT_AFTER_FAILS = max(
     1, int(os.getenv("EDGE_NETWORK_ABORT_AFTER_FAILS", "1") or "1")
@@ -105,12 +105,21 @@ except ImportError:
 # Defaults based on research + aggressive throughput target (Jan 2026)
 # Target: 200+ chars/s with higher concurrency/segment sizes.
 # Benchmark (Jan 2026): 10K chunks + 8 concurrent = 62.6 chars/s (best)
-_DEFAULT_CHUNK_SIZE = 10000  # Maximum speed from benchmark testing
+# Apr 2026 update: real-world Carl conversion peaked at 558 chars/s and
+# averaged 292 chars/s; bumping default chunk to 12K (the documented Edge
+# safe ceiling) cuts request count by ~17% on long chapters at no
+# stability cost in measured runs.
+_DEFAULT_CHUNK_SIZE = 12000
 _DEFAULT_CONCURRENCY = 8
 _SAFE_CHUNK_MIN = 2000  # Minimum safe chunk size (reduced for rate-limit recovery)
 _SAFE_CHUNK_MAX = 15000  # Upper bound for throughput testing
 _SAFE_CONCURRENCY_MIN = 2  # Always use some parallelism
-_SAFE_CONCURRENCY_MAX = 8  # Hard cap to avoid rate limiting
+# Hard upper bound for the configurable cap. The previous code clamped to
+# 8 unconditionally; raising the ceiling to 16 lets local installs (no
+# shared HF IP) opt into more parallelism via EDGE_MAX_CONCURRENCY_CAP.
+# The default cap is still 8 — opt-in only.
+_SAFE_CONCURRENCY_MAX = 8  # Default hard cap for shared environments
+_SAFE_CONCURRENCY_CEILING = 16  # Highest value the env override may set
 
 # Inter-batch delay for HF/web deployments (helps avoid rate limits)
 try:
@@ -133,7 +142,9 @@ try:
     )
 except (TypeError, ValueError):
     _edge_concurrency_cap = _SAFE_CONCURRENCY_MAX
-_edge_concurrency_cap = max(_SAFE_CONCURRENCY_MIN, min(_edge_concurrency_cap, 8))
+_edge_concurrency_cap = max(
+    _SAFE_CONCURRENCY_MIN, min(_edge_concurrency_cap, _SAFE_CONCURRENCY_CEILING)
+)
 _edge_max_concurrency = max(
     _SAFE_CONCURRENCY_MIN, min(_edge_max_concurrency, _edge_concurrency_cap)
 )
@@ -241,10 +252,16 @@ async def _record_success() -> None:
 
     _edge_consecutive_successes += 1
 
-    # Scale up after 15 consecutive successes and no recent rate limits.
-    # Lower threshold (was 30) means concurrency/chunk-size recovery is faster
-    # after a temporary rate-limit burst.
-    if _edge_consecutive_successes >= 15 and _edge_rate_limit_count > 0:
+    # Scale up after EDGE_RECOVERY_SUCCESS_THRESHOLD consecutive successes
+    # and no recent rate limits. Lower threshold means concurrency/chunk-size
+    # recovery is faster after a temporary rate-limit burst. Default lowered
+    # from 15 → 7 (Apr 2026) after the Carl conversion showed we were
+    # leaving ~5-10% throughput on the table waiting for the old threshold.
+    try:
+        recovery_threshold = max(1, int(os.getenv("EDGE_RECOVERY_SUCCESS_THRESHOLD", "7") or "7"))
+    except (TypeError, ValueError):
+        recovery_threshold = 7
+    if _edge_consecutive_successes >= recovery_threshold and _edge_rate_limit_count > 0:
         now = asyncio.get_event_loop().time()
         time_since_limit = now - _edge_rate_limit_until + 30  # 30s buffer (was 60s)
 

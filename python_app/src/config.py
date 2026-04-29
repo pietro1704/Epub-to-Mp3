@@ -44,7 +44,14 @@ class ConversionConfig:
     extra: Dict[str, str] = field(default_factory=dict)
     batch_size: int = 0
     verbose: bool = False
-    auto_validate_output: bool = False  # Run heavy post-validation only when explicitly enabled
+    # Run validate_book at the end of every conversion and re-synthesise
+    # any chapter that comes back missing/short/duplicated. Was opt-in
+    # before v0.3.14; the user explicitly asked the app to "detect errors
+    # and fix automatically" after a Carl conversion missed chapter 7.20.
+    # Operators can opt out with `--no-auto-validate-output` when
+    # iterating quickly (the full-book validation adds ~30s to a long
+    # book) or via `AUTO_VALIDATE_OUTPUT=0` in the environment.
+    auto_validate_output: bool = True
     auto_fix_output: bool = True  # Auto-reconvert (cache clean) if validation fails
     validate_text: bool = True  # Validate parsed/pre-tts text during conversion
     validate_audio: bool = True  # Validate MP3 integrity/duration after synthesis
@@ -77,8 +84,13 @@ class ConversionConfig:
     verify_transcription: bool = False
     transcription_model: str = "medium"
     validation_language: Optional[str] = None  # Language for transcription validation
-    # Audio polish: silence padding applied after synthesis (ffmpeg adelay/apad)
-    chapter_intro_silence_ms: int = 0
+    # Audio polish: silence padding applied after synthesis (ffmpeg adelay/apad).
+    # 300 ms intro gives the listener a beat of breathing room before the
+    # narrator starts — without it Edge-TTS tends to begin the chapter
+    # immediately on hitting play, which sounds abrupt after the title
+    # announcement of the previous chapter trails off. 500 ms outro keeps
+    # consistent spacing between back-to-back chapters when concatenated.
+    chapter_intro_silence_ms: int = 300
     chapter_outro_silence_ms: int = 500
     # Multi-voice narration: when enabled, dialogue (text inside quotes or
     # em-dash lines) is synthesised with `character_voice` while everything
@@ -842,7 +854,22 @@ class AppConfig:
         validate_audio = bool(kwargs.pop("validate_audio", True))
         strict_validate = bool(kwargs.pop("strict_validate", False))
         deep_validate = bool(kwargs.pop("deep_validate", ConversionConfig.deep_validate))
-        auto_validate_output = bool(kwargs.pop("auto_validate_output", False))
+        # Default flips to True in v0.3.14 — auto-detect+fix is now the
+        # standard end-of-conversion step. Env override keeps the opt-out
+        # path: AUTO_VALIDATE_OUTPUT=0 disables it.
+        env_auto_validate = os.getenv("AUTO_VALIDATE_OUTPUT")
+        if "auto_validate_output" in kwargs:
+            auto_validate_output = bool(kwargs.pop("auto_validate_output"))
+        elif env_auto_validate is not None:
+            auto_validate_output = env_auto_validate.strip().lower() not in {
+                "0",
+                "false",
+                "no",
+                "off",
+                "",
+            }
+        else:
+            auto_validate_output = ConversionConfig.auto_validate_output
         auto_fix_output = bool(kwargs.pop("auto_fix_output", True))
 
         def _safe_silence(raw: object, default: int) -> int:

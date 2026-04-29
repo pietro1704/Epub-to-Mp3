@@ -306,8 +306,26 @@ COMPLETED_JOB_TTL_HOURS  # Default: 48h on HF, 4h local. Files persist this long
 
 ### Edge-TTS Tuning
 ```bash
-EDGE_CHUNK_CHARS=12000           # Chars per request (HF: 12K, local: 12K)
+EDGE_CHUNK_CHARS=12000           # Chars per request (HF: 12K, local: 12K).
+                                 # Default `_DEFAULT_CHUNK_SIZE` was raised
+                                 # from 10K → 12K in v0.3.10; 15K is the safe
+                                 # ceiling, the auto-tuner reduces below 12K
+                                 # only after a real failure.
 EDGE_MAX_CONCURRENCY=12          # Parallel requests (HF: 1, local: 12)
+EDGE_MAX_CONCURRENCY_CAP=8       # Hard upper bound; defaults to 8 for shared
+                                 # egress hosts. Local installs may opt up to
+                                 # 16 (raised from 8 in v0.3.10) without
+                                 # touching source.
+EDGE_RECOVERY_SUCCESS_THRESHOLD=7 # Consecutive Edge successes required before
+                                 # the auto-tuner scales concurrency/chunk
+                                 # back up after a rate-limit burst (was 15).
+EDGE_NOAUDIO_COOLDOWN_SECONDS=15 # Cooldown when Edge returns empty payload
+                                 # AND the health probe also fails (was 60s).
+                                 # A false-positive on a 1-minute idle book
+                                 # was stalling whole queues.
+EDGE_SEGMENT_OK_RATIO=0.95       # Keep MP3 when ≥95% of segments synthesise
+                                 # successfully (v0.3.8). Set to 1.0 for
+                                 # archival/strict mode.
 EDGE_MAX_SEGMENT_SECONDS=85      # Max audio segment duration
 EDGE_SAFE_CHAPTER_PARALLEL=8     # Parallel chapters in safe mode
 CHAPTER_PARALLEL_COUNT=0         # Auto-detect from CPU cores (0=auto)

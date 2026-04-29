@@ -143,7 +143,10 @@ def test_handles_negative_and_invalid_durations(dummy_mp3: Path) -> None:
 
 def test_config_default_silence_values() -> None:
     cfg = ConversionConfig(engine="edge")
-    assert cfg.chapter_intro_silence_ms == 0
+    # 300 ms intro is the post-v0.3.13 default — a brief breath of silence
+    # before the narrator starts, makes back-to-back chapter playback feel
+    # less abrupt. 500 ms outro keeps the same trailing gap as before.
+    assert cfg.chapter_intro_silence_ms == 300
     assert cfg.chapter_outro_silence_ms == 500
 
 
@@ -170,6 +173,10 @@ def test_app_config_clamps_negative_env(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setenv("CHAPTER_INTRO_SILENCE_MS", "-50")
     monkeypatch.setenv("CHAPTER_OUTRO_SILENCE_MS", "garbage")
     cfg = AppConfig().create_conversion_config(engine="edge")
+    # Negative input clamps to 0 (silence cannot be negative). Garbage
+    # falls back to the dataclass default — the clamp must NOT pin to a
+    # hardcoded literal here, otherwise raising the default would silently
+    # fail this test instead of exposing the regression.
     assert cfg.chapter_intro_silence_ms == 0
     assert cfg.chapter_outro_silence_ms == ConversionConfig.chapter_outro_silence_ms
 
@@ -198,6 +205,52 @@ def test_concat_fallback_succeeds_when_filter_step_fails(dummy_mp3: Path) -> Non
     cmds_joined = " ".join(" ".join(c) for c in calls)
     assert "anullsrc" in cmds_joined
     assert "concat" in cmds_joined
+
+
+def test_default_intro_silence_pads_audio_with_breath(dummy_mp3: Path) -> None:
+    """End-to-end: the 300 ms default `chapter_intro_silence_ms` actually
+    reaches ffmpeg. Two implementations are valid:
+
+    * fast path — `anullsrc=...:sample_rate=...` generates a silence MP3
+      then concat-copies it in front of the chapter (no re-encode);
+    * fallback — `-af adelay=300:all=1,apad=pad_dur=0.500` decode+encode.
+
+    The test allows either, because both produce the same audible
+    "breath before the chapter starts". A regression that drops intro_ms
+    back to 0 would skip BOTH branches and fail the assertions below.
+    Without this test, a future config change that silently zeroed the
+    default would still pass every unit test but ship audio with no
+    breath at all.
+    """
+    cfg = ConversionConfig(engine="edge")
+    intro_ms = cfg.chapter_intro_silence_ms
+    outro_ms = cfg.chapter_outro_silence_ms
+    assert intro_ms == 300, "default intro silence must keep the breath-before-chapter behaviour"
+
+    captured: list[tuple] = []
+
+    async def fake_exec(cmd, **kwargs):
+        captured.append(cmd)
+        Path(cmd[-1]).write_bytes(b"\xff\xfb" + b"\x02" * 1024)
+        return _make_fake_proc(returncode=0)
+
+    with patch(
+        "python_app.src.audio_postprocess.asyncio.create_subprocess_exec",
+        side_effect=fake_exec,
+    ):
+        ok, error = asyncio.run(
+            add_silence_padding(dummy_mp3, intro_ms=intro_ms, outro_ms=outro_ms)
+        )
+
+    assert ok is True, f"silence padding should succeed, got error={error}"
+    assert captured, "ffmpeg should have been invoked at least once"
+    cmds_joined = " ".join(" ".join(c) for c in captured)
+    intro_seconds_str = f"{intro_ms / 1000:.3f}"  # "0.300"
+    fast_path_marker = f"-t {intro_seconds_str}"  # anullsrc duration arg
+    fallback_marker = f"adelay={intro_ms}:all=1"
+    assert (
+        fast_path_marker in cmds_joined or fallback_marker in cmds_joined
+    ), f"intro silence missing from ffmpeg invocation: {cmds_joined!r}"
 
 
 def test_concat_fallback_reports_error_when_both_paths_fail(dummy_mp3: Path) -> None:

@@ -1,5 +1,75 @@
 # Changelog
 
+## [0.3.15] — 2026-04-29
+
+### Bug Fixes
+
+- **Median-based duration outlier detection** replaces the static `chars/WPM=150 ± 60-70%` rule in `validate_book`. Previously every Edge-TTS PT-BR neural chapter at 91-110 WPM (the engine's actual speaking range on dialogue-heavy books) was rejected for "+60% duration"; conversely a 55-WPM chapter that's audibly broken slipped through because the absolute window was wide enough. The new approach makes one pre-pass over the book to compute the median WPM, then flags only chapters whose WPM falls outside `[50%, 200%]` of that book's own median. Books with < 5 chapters fall back to the legacy chars/WPM check (not enough samples to anchor a distribution).
+
+### Tests
+
+- 6 new tests in `test_validate_book_median_wpm.py` covering: < 5 sample fallback, median anchoring, sanity strip of pathological values (5 WPM / 600 WPM), Edge-TTS PT-BR distribution acceptance (180 WPM no longer flagged), real-defect detection (30 WPM chapter still flagged).
+
+## [0.3.14] — 2026-04-29
+
+### Features
+
+- **Auto-detect + auto-fix is now the default.** `auto_validate_output` flipped from `False` to `True` so every conversion runs `validate_book` at the end and `_auto_validate_and_retry_async` re-synthesises any chapter that comes back missing/short/duplicated. Previously the validate-and-retry loop only ran if you explicitly opted in — a Carl conversion silently shipped without chapter 7.20 because nothing was checking. Operators can opt back out with `--no-auto-validate-output` or `AUTO_VALIDATE_OUTPUT=0`.
+
+### Tests
+
+- 8 new tests in `test_auto_validate_default_on.py` pin the new default ON, the env-var off-switch (`0`/`false`/`off`), and the explicit-kwarg-overrides-env precedence.
+- Adjusted `test_converter.py` test-suite configs (setUp + 2 explicit configs) to opt out of auto-validate so the mock-MP3 unit tests stay focused on conversion logic instead of triggering the full retry loop.
+
+## [0.3.13] — 2026-04-29
+
+### Features
+
+- 300 ms breath of silence before each chapter starts. `chapter_intro_silence_ms` default is now 300 (was 0); back-to-back chapter playback no longer feels abrupt at the join point. The 500 ms outro is unchanged. Both still tunable via `CHAPTER_INTRO_SILENCE_MS` / `CHAPTER_OUTRO_SILENCE_MS` env vars.
+
+### Tests
+
+- New `test_default_intro_silence_pads_audio_with_breath` end-to-end test asserts that the default 300 ms reaches ffmpeg as either an `anullsrc -t 0.300` fragment (fast concat-copy path) or `adelay=300:all=1` filter (fallback). A future config tweak that silently zeroes intro_ms breaks CI immediately.
+- Adjusted `test_cache_invalidation_without_txt_files` (pre-existing) to opt out of silence padding so the mock MP3 isn't rewritten by ffmpeg between runs.
+
+## [0.3.12] — 2026-04-29
+
+### Bug Fixes
+
+- **`verify` mode false positives.** The validator stopped flagging healthy MP3s on the 2026-04-29 Carl run: (1) the v0.3.11 SHA-1 marker `[abcdef0123]` no longer leaks into filename normalisation, so `MP3 filename does not match EPUB heading` is no longer raised for hash-suffixed names; (2) duration tolerance defaults raised to 0.70 (text < 10K chars) and 0.60 (≥ 10K) — Edge-TTS PT-BR neural voices speak at 145-180 WPM but produce naturally longer audio than `chars/WPM` predicts because of formatting cues and dialogue pauses. Tunable via `VALIDATION_DURATION_TOLERANCE` env var.
+- **Verify prompt now defaults to YES.** `🔧 Do you want to fix the issues now? [Y/n]` (was `[y/N]`) — the common case is "yes I want to fix what I just saw". Empty input confirms; only `n`/`no` cancels. Trailing `\r` from Windows/SSH terminals is stripped before comparison so a CR-only line still registers as confirmation.
+
+### Tests
+
+- 10 new tests across `test_validate_book_false_positives.py` (hash-marker stripping, duration tolerance constants pinned) and `test_verify_prompt_default_yes.py` (label change, empty/CR confirmations, legacy text removed).
+
+## [0.3.11] — 2026-04-29
+
+### Bug Fixes
+
+- **Cache hit on re-conversion of the same book.** Three real bugs surfaced when re-running `./convert carl` over an already-converted directory: (1) the MP3 cache lookup failed because two runs disagreed on filename truncation length when upstream metadata varied; (2) the truncation-detector flagged a 32-minute valid MP3 as truncated because chars/WPM over-estimates PT-BR with heavy dialogue; (3) the cache-validation pipeline rejected any MP3 whose `pre-tts.txt` sidecar had been cleaned up post-conversion. After this release a second run of the same book is essentially instant.
+- `FileManager.sanitize_filename` now appends a deterministic 10-char SHA-1 marker when truncation actually drops content, so the same chapter input always produces the same filename even if upstream title casing or whitespace shifts between runs.
+- `_split_cached_chapters` falls back to scanning the output directory by chapter index prefix (`7.13 - …`) when the canonical filename doesn't match — recovers MP3s written by older runs with different truncation rules.
+- `_split_cached_chapters` accepts cache hits without `pre-tts.txt` when the MP3 itself looks audibly complete, so a cleanup task that wiped the txt sidecars no longer forces a full re-synthesis.
+- `_detect_short_audio_output` truncation ratio default lowered 0.60 → 0.50 (env-tunable via `EDGE_TRUNCATION_RATIO`); the previous threshold deleted real, listenable audio.
+
+### Tests
+
+- 18 new tests across `test_filename_determinism.py`, `test_truncation_tolerance.py`, `test_cache_index_prefix_discovery.py` lock in the new behaviours and prevent regression on the exact failure modes observed during the Carl conversion.
+
+## [0.3.10] — 2026-04-29
+
+### Performance
+
+- Edge-TTS default chunk raised from 10K → 12K characters; cuts request count ~17% on long chapters at no measured stability cost.
+- Concurrency hard ceiling lifted from 8 → 16 (still default 8). Local installs without a shared egress IP can opt into more parallelism via `EDGE_MAX_CONCURRENCY_CAP=12` (or up to 16) without source edits. HF/shared hosts keep the conservative default.
+- Rate-limit recovery threshold lowered: concurrency/chunk-size scales back up after 7 consecutive successes (was 15). Configurable via `EDGE_RECOVERY_SUCCESS_THRESHOLD`.
+- `EDGE_NOAUDIO_COOLDOWN_SECONDS` default reduced from 60s → 15s. A single false-positive empty payload was stalling the whole queue for a full minute on the Carl run.
+
+### Tests
+
+- 10 new tests in `test_edge_speed_defaults.py` lock in the new constants and the env-override clamp behaviour. Tests use a manual mirror of the clamp expression instead of `importlib.reload` (forbidden by CLAUDE.md test-isolation rule).
+
 ## [0.3.9] — 2026-04-29
 
 ### Bug Fixes
