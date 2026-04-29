@@ -19,6 +19,9 @@ export interface ConversionFormValues {
   footnoteMode: FootnoteMode;
   language?: string;
   formattingCues?: boolean;
+  enableCharacterVoices?: boolean;
+  narratorVoice?: string;
+  characterVoice?: string;
   noParallel?: boolean;
   multiEngineParallel?: boolean;
   maxPerformance?: boolean;

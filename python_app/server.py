@@ -2190,7 +2190,13 @@ async def convert_ebook(
     health_check_ok_mem: Optional[str] = Form(None),
     health_check_slow_streak: Optional[str] = Form(None),
     ui_language: Optional[str] = Form(None),
+    enable_character_voices: Optional[str] = Form(None),
+    narrator_voice: Optional[str] = Form(None),
+    character_voice: Optional[str] = Form(None),
 ) -> dict[str, str]:
+    enable_character_voices_flag = _parse_form_optional_bool(enable_character_voices)
+    narrator_voice_value = (narrator_voice or "").strip() or None
+    character_voice_value = (character_voice or "").strip() or None
     speak_cues = _parse_form_bool(formatting_cues, True)
     ui_lang = _normalize_locale(ui_language, "pt")
     disable_parallel = _parse_form_bool(no_parallel, False)
@@ -2459,6 +2465,12 @@ async def convert_ebook(
         "coquiSafeMode": coqui_safe_override,
         "piperMaxProcs": piper_procs_override,
         "engineChainFallback": engine_chain_fallback_flag,
+        # Multi-voice narration (default on; UI may override per-job).
+        "enableCharacterVoices": (
+            True if enable_character_voices_flag is None else bool(enable_character_voices_flag)
+        ),
+        "narratorVoice": narrator_voice_value,
+        "characterVoice": character_voice_value,
         "bitrate": bitrate,
         "sampleRate": sample_rate_override,
         "channels": channels_override,
@@ -3857,6 +3869,9 @@ async def process_conversion(job_id: str) -> None:
             engine_chain_fallback=job.get("engineChainFallback"),
             verbose=verbose_enabled,  # Enable verbose logging for terminal-like output
             log_callback=tts_log_callback,  # Capture all verbose logs
+            enable_character_voices=bool(job.get("enableCharacterVoices", True)),
+            narrator_voice=job.get("narratorVoice"),
+            character_voice=job.get("characterVoice"),
         )
         config.use_language_detection = (
             True if use_language_detection_flag is None else bool(use_language_detection_flag)

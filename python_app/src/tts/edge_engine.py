@@ -374,6 +374,9 @@ class EdgeTTSEngine:
         formatting_cues_enabled: bool = True,
         formatting_locale: str = "pt",
         log_callback: Optional[Callable[[str], None]] = None,
+        enable_character_voices: bool = False,
+        narrator_voice: Optional[str] = None,
+        character_voice: Optional[str] = None,
     ) -> None:
         global edge_tts
 
@@ -398,6 +401,12 @@ class EdgeTTSEngine:
         self.voice = voice
         self._edge_tts = module
         self.primary_language = (primary_language or "auto").split("-", 1)[0].lower()
+        self.enable_character_voices = bool(enable_character_voices)
+        # Default both slots to the primary voice so a partially-configured
+        # caller still produces sensible output. The splitter only fires
+        # when both voices are distinct, otherwise it's a no-op.
+        self.narrator_voice = (narrator_voice or "").strip() or voice
+        self.character_voice = (character_voice or "").strip() or voice
         self.language_voices = {
             (key or "").split("-", 1)[0].lower(): value
             for key, value in (language_voices or {}).items()
@@ -1614,6 +1623,40 @@ class EdgeTTSEngine:
 
         return int(round(timeout))
 
+    def _chunk_text_with_dialogue(self, base_voice: str, text: str) -> list[tuple[str, str]]:
+        """Like ``_chunk_text`` but routes dialogue spans to ``character_voice``.
+
+        Falls back to plain single-voice chunking when:
+
+        - the feature is off (``enable_character_voices`` is False);
+        - narrator and character voices are identical (no point splitting);
+        - the dialogue splitter import fails (defensive — splitter is
+          self-contained but the engine must keep working).
+        """
+        if not self.enable_character_voices:
+            return self._chunk_text(base_voice, text)
+        if self.narrator_voice == self.character_voice:
+            return self._chunk_text(base_voice, text)
+        try:
+            from ..dialogue_splitter import split_into_dialogue_spans
+        except Exception:
+            return self._chunk_text(base_voice, text)
+
+        spans = split_into_dialogue_spans(text)
+        if not spans:
+            return []
+        # When the language pipeline picked a non-default base_voice (e.g. an
+        # English passage in a PT-BR book), keep using it for narrator spans
+        # so we don't shove a Portuguese voice onto English text. Character
+        # spans always use the dedicated character voice — multilingual
+        # voices like ThalitaMultilingualNeural handle the language switch.
+        narrator_voice = base_voice if base_voice != self.voice else self.narrator_voice
+        out: list[tuple[str, str]] = []
+        for span in spans:
+            voice = self.character_voice if span.role == "character" else narrator_voice
+            out.extend(self._chunk_text(voice, span.text))
+        return out
+
     def _prepare_segments(self, text: str) -> list[tuple[str, str]]:
         if text is None:
             return [(self.voice, "")]
@@ -1627,7 +1670,7 @@ class EdgeTTSEngine:
                 if TextFormattingProcessor
                 else cleaned_text
             )
-            return self._chunk_text(self.voice, base_text)
+            return self._chunk_text_with_dialogue(self.voice, base_text)
 
         try:
             lowered = cleaned_text.lower()
@@ -1637,7 +1680,7 @@ class EdgeTTSEngine:
                     if TextFormattingProcessor
                     else cleaned_text
                 )
-                return self._chunk_text(self.voice, base_text)
+                return self._chunk_text_with_dialogue(self.voice, base_text)
 
             segments = LanguageMarkup.parse(cleaned_text, self.primary_language)
             if segments is None:
@@ -1646,7 +1689,7 @@ class EdgeTTSEngine:
                     if TextFormattingProcessor
                     else cleaned_text
                 )
-                return self._chunk_text(self.voice, base_text)
+                return self._chunk_text_with_dialogue(self.voice, base_text)
 
             if len(segments) > 100:
                 simplified = LanguageMarkup.strip(cleaned_text) if LanguageMarkup else cleaned_text
@@ -1655,7 +1698,7 @@ class EdgeTTSEngine:
                     if TextFormattingProcessor
                     else simplified
                 )
-                return self._chunk_text(self.voice, base_text)
+                return self._chunk_text_with_dialogue(self.voice, base_text)
 
             prepared: list[tuple[str, str]] = []
             for segment in segments:
@@ -1672,10 +1715,10 @@ class EdgeTTSEngine:
                     if TextFormattingProcessor
                     else segment_text
                 )
-                prepared.extend(self._chunk_text(voice, segment_clean))
+                prepared.extend(self._chunk_text_with_dialogue(voice, segment_clean))
 
             if not prepared:
-                return self._chunk_text(self.voice, cleaned_text)
+                return self._chunk_text_with_dialogue(self.voice, cleaned_text)
 
             return prepared
 
@@ -1685,7 +1728,7 @@ class EdgeTTSEngine:
                 if TextFormattingProcessor
                 else (text or "")
             )
-            return self._chunk_text(self.voice, fallback)
+            return self._chunk_text_with_dialogue(self.voice, fallback)
 
     def _apply_chunk_prosody(self, text: str, rate_increase: str = "+50%") -> str:
         """

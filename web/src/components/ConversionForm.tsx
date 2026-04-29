@@ -303,6 +303,9 @@ export default function ConversionForm({
     initialMeta.autoLanguage ? "auto" : (initialMeta.languages[0] ?? ""),
   );
   const [formattingCues, setFormattingCues] = useState(true);
+  const [enableCharacterVoices, setEnableCharacterVoices] = useState(true);
+  const [narratorVoice, setNarratorVoice] = useState("");
+  const [characterVoice, setCharacterVoice] = useState("");
   const [noParallel, setNoParallel] = useState(false);
   const [multiEngineParallel, setMultiEngineParallel] = useState(false);
   const [maxPerformance, setMaxPerformance] = useState(true);
@@ -1009,6 +1012,9 @@ export default function ConversionForm({
           ? undefined
           : language,
       formattingCues,
+      enableCharacterVoices,
+      narratorVoice: narratorVoice || undefined,
+      characterVoice: characterVoice || undefined,
       noParallel,
       multiEngineParallel,
       maxPerformance,
@@ -1593,6 +1599,83 @@ export default function ConversionForm({
               </span>
             </label>
             <p className="form-hint">{t.form.formattingCuesDescription}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="characterVoicesToggle">
+              {t.form.characterVoicesLabel}
+            </label>
+            <label className="form-toggle" htmlFor="characterVoicesToggle">
+              <input
+                id="characterVoicesToggle"
+                type="checkbox"
+                checked={enableCharacterVoices}
+                disabled={isSubmitting || engine === "auto"}
+                onChange={(event) =>
+                  setEnableCharacterVoices(event.target.checked)
+                }
+              />
+              <span>
+                {enableCharacterVoices
+                  ? t.form.characterVoicesOn
+                  : t.form.characterVoicesOff}
+              </span>
+            </label>
+            <p className="form-hint">{t.form.characterVoicesDescription}</p>
+            {enableCharacterVoices && engine !== "auto" && (
+              <div className="character-voices-grid">
+                <div className="voice-select-row">
+                  <label htmlFor="narratorVoice">
+                    {t.form.narratorVoiceLabel}
+                  </label>
+                  <select
+                    id="narratorVoice"
+                    name="narrator_voice"
+                    value={narratorVoice}
+                    disabled={isSubmitting}
+                    onChange={(event) => setNarratorVoice(event.target.value)}
+                  >
+                    <option value="">{t.form.characterVoicesAutoOption}</option>
+                    {voiceSuggestions.map((voiceInfo) => {
+                      const label =
+                        voiceInfo.label && voiceInfo.label !== voiceInfo.name
+                          ? `${voiceInfo.label} • ${voiceInfo.name}`
+                          : (voiceInfo.label ?? voiceInfo.name);
+                      return (
+                        <option key={voiceInfo.name} value={voiceInfo.name}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+                <div className="voice-select-row">
+                  <label htmlFor="characterVoice">
+                    {t.form.characterVoiceLabel}
+                  </label>
+                  <select
+                    id="characterVoice"
+                    name="character_voice"
+                    value={characterVoice}
+                    disabled={isSubmitting}
+                    onChange={(event) => setCharacterVoice(event.target.value)}
+                  >
+                    <option value="">{t.form.characterVoicesAutoOption}</option>
+                    {voiceSuggestions.map((voiceInfo) => {
+                      const label =
+                        voiceInfo.label && voiceInfo.label !== voiceInfo.name
+                          ? `${voiceInfo.label} • ${voiceInfo.name}`
+                          : (voiceInfo.label ?? voiceInfo.name);
+                      return (
+                        <option key={voiceInfo.name} value={voiceInfo.name}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+            )}
           </fieldset>
 
           <fieldset className="form-row">

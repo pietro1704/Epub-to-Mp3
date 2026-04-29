@@ -179,6 +179,13 @@ export interface FormText {
   formattingCuesDescription: string;
   formattingCuesOn: string;
   formattingCuesOff: string;
+  characterVoicesLabel: string;
+  characterVoicesDescription: string;
+  characterVoicesOn: string;
+  characterVoicesOff: string;
+  narratorVoiceLabel: string;
+  characterVoiceLabel: string;
+  characterVoicesAutoOption: string;
   noParallelLabel: string;
   noParallelDescription: string;
   noParallelOn: string;
@@ -1047,6 +1054,14 @@ export const translations: Record<Locale, Translations> = {
         "Fala “entre aspas” e “fim das aspas”, “em negrito”, etc., usando o idioma do site.",
       formattingCuesOn: "Ativado",
       formattingCuesOff: "Desativado",
+      characterVoicesLabel: "Vozes diferentes para narrador e personagens",
+      characterVoicesDescription:
+        "Trechos entre aspas ou em linhas começando com travessão são lidos com a voz dos personagens; o resto fica com a voz do narrador.",
+      characterVoicesOn: "Ativado",
+      characterVoicesOff: "Desativado",
+      narratorVoiceLabel: "Voz do narrador",
+      characterVoiceLabel: "Voz dos personagens",
+      characterVoicesAutoOption: "Mesma voz selecionada acima",
       noParallelLabel: "Desativar paralelismo (1 capítulo por vez)",
       noParallelDescription:
         "Útil para Edge online em redes instáveis; reduz travamentos e pode ser mais rápido.",
@@ -1958,6 +1973,14 @@ export const translations: Record<Locale, Translations> = {
         "Says “quote”, “end quote”, and other cues using the site language.",
       formattingCuesOn: "Enabled",
       formattingCuesOff: "Disabled",
+      characterVoicesLabel: "Different voices for narrator and characters",
+      characterVoicesDescription:
+        "Quoted spans and em-dash dialogue lines are read with the character voice; everything else uses the narrator voice.",
+      characterVoicesOn: "Enabled",
+      characterVoicesOff: "Disabled",
+      narratorVoiceLabel: "Narrator voice",
+      characterVoiceLabel: "Character voice",
+      characterVoicesAutoOption: "Same voice selected above",
       noParallelLabel: "Disable parallelism (1 chapter at a time)",
       noParallelDescription:
         "Useful for online Edge voices on unstable networks; reduces stalls and may be faster.",

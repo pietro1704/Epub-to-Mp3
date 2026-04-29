@@ -3997,6 +3997,15 @@ class ConverterApplication:
             ),
             **overrides,
         )
+        char_voices_pref = getattr(args, "character_voices", None)
+        if char_voices_pref is not None:
+            config.enable_character_voices = bool(char_voices_pref)
+        narrator_override = getattr(args, "narrator_voice", None)
+        if narrator_override:
+            config.narrator_voice = narrator_override
+        character_override = getattr(args, "character_voice", None)
+        if character_override:
+            config.character_voice = character_override
         use_language_detection = getattr(args, "use_language_detection", None)
         if use_language_detection is not None:
             config.use_language_detection = bool(use_language_detection)
@@ -4401,6 +4410,33 @@ def _add_conversion_arguments(
         action="store_false",
         default=None,
         help="Disable spoken formatting cues",
+    )
+    char_voices_group = parser.add_mutually_exclusive_group()
+    char_voices_group.add_argument(
+        "--character-voices",
+        dest="character_voices",
+        action="store_true",
+        default=None,
+        help="Use a separate voice for dialogue (default: on)",
+    )
+    char_voices_group.add_argument(
+        "--no-character-voices",
+        dest="character_voices",
+        action="store_false",
+        default=None,
+        help="Read every line with the same voice (no narrator/character split)",
+    )
+    parser.add_argument(
+        "--narrator-voice",
+        dest="narrator_voice",
+        default=None,
+        help="Voice for narration (defaults to --voice when omitted)",
+    )
+    parser.add_argument(
+        "--character-voice",
+        dest="character_voice",
+        default=None,
+        help="Voice for dialogue spans (text inside quotes / em-dash lines)",
     )
     parser.add_argument(
         "--listen",

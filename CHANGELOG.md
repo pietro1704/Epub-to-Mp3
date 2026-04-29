@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.7] — 2026-04-28
+
+### Features
+
+- Multi-voice narration: dialogue spans (text inside `"..."`/`«...»`/straight quotes or em-dash dialogue lines) are read with a separate `character_voice` while narration uses `narrator_voice`. Enabled by default; disable with `--no-character-voices` (CLI) or the form toggle (web). New CLI flags: `--narrator-voice`, `--character-voice`. New form fields: `enable_character_voices`, `narrator_voice`, `character_voice`. Edge-TTS first; other engines fall back to single voice.
+- Added `python_app/src/dialogue_splitter.py` with regex-based span routing for curly/straight/French/em-dash dialogue, span coalescing, and unbalanced-quote tolerance.
+
+### Tests
+
+- 13 unit tests for the dialogue splitter (paired quotes, em-dash lines, malformed input, coalescing, edge cases).
+- 4 integration tests in `test_edge_character_voices.py` proving the Edge engine routes dialogue to the right voice.
+- 1 UI smoke test asserting the new toggle ships on by default and submits the new form fields.
+
 ## [0.3.6] — 2026-04-28
 
 ### Security

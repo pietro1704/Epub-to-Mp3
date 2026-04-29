@@ -141,6 +141,18 @@ class TTSFactory:
             # **PARALLEL MODE**: Enable parallel processing by default, disable for HF Space if needed
             enable_parallel = getattr(config, "edge_enable_parallel", True)
 
+            # Multi-voice narration: prefer the operator-provided narrator/character
+            # voices, falling back to the primary `voice` so a partial config
+            # (only one slot set) still works.
+            narrator_voice = getattr(config, "narrator_voice", None) or voice
+            character_voice = getattr(config, "character_voice", None) or voice
+            enable_character_voices = bool(
+                getattr(config, "enable_character_voices", False)
+                and narrator_voice
+                and character_voice
+                and narrator_voice != character_voice
+            )
+
             return EdgeTTSEngine(
                 voice,
                 primary_language=config.primary_language,
@@ -152,6 +164,9 @@ class TTSFactory:
                 formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
                 formatting_locale=getattr(config, "formatting_locale", "pt"),
                 log_callback=config.log_callback,
+                enable_character_voices=enable_character_voices,
+                narrator_voice=narrator_voice,
+                character_voice=character_voice,
             )
 
         if engine == "coqui":

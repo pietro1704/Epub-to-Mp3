@@ -118,4 +118,45 @@ describe("ConversionForm", () => {
       screen.getByRole("button", { name: /converter agora/i }),
     ).toBeEnabled();
   });
+
+  it("ships character-voice toggle on by default and submits the new fields", async () => {
+    const user = userEvent.setup();
+    const handleSubmit = vi.fn().mockResolvedValue(undefined);
+    const handleUpload = vi
+      .fn()
+      .mockResolvedValue({ uploadId: "voices", fileName: "sample.epub" });
+    renderWithProviders(
+      <ConversionForm
+        isSubmitting={false}
+        onSubmit={handleSubmit}
+        onUploadFile={handleUpload}
+      />,
+    );
+
+    const file = new File(["content"], "sample.epub", {
+      type: "application/epub+zip",
+    });
+    await user.upload(screen.getByLabelText(/arquivo do livro/i), file);
+    await waitFor(() => expect(handleUpload).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /converter agora/i }),
+      ).toBeEnabled(),
+    );
+
+    // Toggle is rendered, on by default, and reveals the two voice selects.
+    const toggle = screen.getByLabelText(
+      /vozes diferentes para narrador e personagens/i,
+    );
+    expect(toggle).toBeChecked();
+    expect(screen.getByLabelText(/voz do narrador/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/voz dos personagens/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /converter agora/i }));
+
+    await waitFor(() => expect(handleSubmit).toHaveBeenCalledTimes(1));
+    expect(handleSubmit.mock.calls[0][0]).toMatchObject({
+      enableCharacterVoices: true,
+    });
+  }, 10000);
 });

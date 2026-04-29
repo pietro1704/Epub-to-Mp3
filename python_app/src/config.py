@@ -80,6 +80,14 @@ class ConversionConfig:
     # Audio polish: silence padding applied after synthesis (ffmpeg adelay/apad)
     chapter_intro_silence_ms: int = 0
     chapter_outro_silence_ms: int = 500
+    # Multi-voice narration: when enabled, dialogue (text inside quotes or
+    # em-dash lines) is synthesised with `character_voice` while everything
+    # else uses `narrator_voice`. Falls back to `voice` when either slot is
+    # empty. Enabled by default — engines that don't support per-segment
+    # voice switching simply ignore the extra fields.
+    enable_character_voices: bool = True
+    narrator_voice: Optional[str] = None
+    character_voice: Optional[str] = None
 
     def __post_init__(self) -> None:
         if self.output_dir is not None and not isinstance(self.output_dir, Path):
@@ -141,6 +149,9 @@ class ConversionConfig:
         data["validation_language"] = self.validation_language
         data["chapter_intro_silence_ms"] = self.chapter_intro_silence_ms
         data["chapter_outro_silence_ms"] = self.chapter_outro_silence_ms
+        data["enable_character_voices"] = self.enable_character_voices
+        data["narrator_voice"] = self.narrator_voice
+        data["character_voice"] = self.character_voice
         return data
 
 
@@ -850,6 +861,15 @@ class AppConfig:
             ConversionConfig.chapter_outro_silence_ms,
         )
 
+        # Multi-voice narration knobs.
+        enable_character_voices_raw = kwargs.pop("enable_character_voices", None)
+        if enable_character_voices_raw is None:
+            enable_character_voices = ConversionConfig.enable_character_voices
+        else:
+            enable_character_voices = bool(enable_character_voices_raw)
+        narrator_voice = kwargs.pop("narrator_voice", None) or None
+        character_voice = kwargs.pop("character_voice", None) or None
+
         config = ConversionConfig(
             engine=engine,
             voice=voice,
@@ -898,6 +918,9 @@ class AppConfig:
             auto_fix_output=auto_fix_output,
             chapter_intro_silence_ms=chapter_intro_silence_ms,
             chapter_outro_silence_ms=chapter_outro_silence_ms,
+            enable_character_voices=enable_character_voices,
+            narrator_voice=narrator_voice,
+            character_voice=character_voice,
         )
 
         if kwargs:

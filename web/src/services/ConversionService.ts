@@ -111,6 +111,18 @@ function buildFormData(values: ConversionFormValues): FormData {
   if (typeof values.formattingCues === "boolean") {
     formData.append("formatting_cues", values.formattingCues ? "on" : "off");
   }
+  if (typeof values.enableCharacterVoices === "boolean") {
+    formData.append(
+      "enable_character_voices",
+      values.enableCharacterVoices ? "on" : "off",
+    );
+  }
+  if (values.narratorVoice) {
+    formData.append("narrator_voice", values.narratorVoice);
+  }
+  if (values.characterVoice) {
+    formData.append("character_voice", values.characterVoice);
+  }
   if (values.noParallel) {
     formData.append("no_parallel", "on");
   }
