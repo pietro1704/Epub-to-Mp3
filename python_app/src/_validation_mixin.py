@@ -505,7 +505,10 @@ class _ValidationMixin:
                 continue
             groups[match.group(1)].append(mp3)
 
+        ffprobe_failures = 0
+
         def _duration(path: Path) -> float:
+            nonlocal ffprobe_failures
             try:
                 out = _subprocess.run(
                     [
@@ -524,14 +527,22 @@ class _ValidationMixin:
                 )
                 return float(out.stdout.strip() or 0.0)
             except Exception:
+                # ffprobe missing or refused the file — note it so the
+                # caller knows the dedup downgraded to file-size only,
+                # then return 0.0 so the size tie-break below still
+                # produces a deterministic winner.
+                ffprobe_failures += 1
                 return 0.0
 
         removed = 0
         for label, files in groups.items():
             if len(files) <= 1:
                 continue
+            # When ffprobe reports duration, longer audio wins (more of
+            # the chapter actually got synthesised). When it doesn't, the
+            # tuple falls back to file size — still deterministic, and
+            # bigger MP3 is almost always the more complete track.
             scored = [(_duration(f), f.stat().st_size, f) for f in files]
-            # Longest audio first; tie-break on file size.
             scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
             for _dur, _size, loser in scored[1:]:
                 try:
@@ -539,6 +550,11 @@ class _ValidationMixin:
                     removed += 1
                 except OSError:
                     pass
+        if ffprobe_failures and getattr(self, "verbose", False):
+            print(
+                f"   ⚠️ Auto-dedup: ffprobe failed on {ffprobe_failures} file(s); "
+                "ranking by file size only."
+            )
         return removed
 
     def _categorize_problems(self, issues: list, problem_chapters: list) -> tuple[list, list]:

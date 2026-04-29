@@ -124,6 +124,30 @@ class TTSFactory:
     def create_engine(self, config: ConversionConfig) -> TTSEngine:
         engine = (config.engine or "").lower()
 
+        # Multi-voice narration (v0.3.7) is only wired into Edge-TTS so far
+        # — Kokoro, Piper, Coqui and Spark all use a single voice per
+        # synthesis. If the user explicitly configured a narrator/character
+        # split but picked a non-Edge engine, the dialogue splitter would
+        # be silently ignored. Surface a clear warning on stderr so the
+        # operator knows the config is being dropped instead of finding
+        # out only when the resulting MP3 has one voice throughout.
+        if engine != "edge":
+            wants_split = bool(getattr(config, "enable_character_voices", False))
+            has_distinct_voices = (
+                getattr(config, "narrator_voice", None)
+                and getattr(config, "character_voice", None)
+                and config.narrator_voice != config.character_voice
+            )
+            if wants_split and has_distinct_voices:
+                import sys as _sys
+
+                print(
+                    "⚠️  Multi-voice narration (narrator/character split) is only "
+                    f"supported by Edge-TTS. Engine '{engine}' will use a single "
+                    "voice; narrator_voice and character_voice are ignored.",
+                    file=_sys.stderr,
+                )
+
         if engine == "edge":
             from .edge_engine import EdgeTTSEngine
 

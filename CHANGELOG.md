@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.17] — 2026-04-29
+
+### Bug Fixes
+
+- **Web conversion now auto-validates and dedups.** The CLI ran `validate_book` + auto-dedup at the end of every conversion (v0.3.14, v0.3.16); the FastAPI server skipped both, so a Carl-style accumulation of duplicate MP3s could pile up across web reconversions without anyone noticing. Server jobs now run the same dedup pre-pass and surface validation issues through the job event log (`validationStats` / `validationIssues` fields).
+- **Multi-voice narration warning when engine isn't Edge.** Configuring narrator/character voices on Piper, Kokoro, or Coqui silently fell back to a single voice because the dialogue splitter is wired only into Edge-TTS. The factory now prints a clear `stderr` warning so the operator notices the config is being dropped.
+- **Cache reads in `/api/jobs/{id}/fulltext` no longer suppress every exception.** Narrowed the catch to `JSONDecodeError`, `OSError`, `KeyError`, `ValueError` and added a `logger.warning` so unexpected failures (e.g. corrupted cache JSON) surface instead of falling through to a fresh full parse.
+- **`_dedup_chapter_outputs` falls back gracefully when ffprobe is missing.** Documents the file-size tie-break path and prints a one-line diagnostic in verbose mode so operators know dedup downgraded.
+
+### Tests
+
+- 5 new tests in `test_server_auto_validate_mirror.py` cover the new server-side dedup helper (no-op, longest wins, ffprobe-missing fallback, missing-dir, label-less files).
+- 4 new tests in `test_factory_multi_voice_warning.py` lock the Edge-only warning behaviour: warning fires for non-Edge with split voices; stays silent for Edge, identical voices, or disabled split.
+
 ## [0.3.16] — 2026-04-29
 
 ### Bug Fixes

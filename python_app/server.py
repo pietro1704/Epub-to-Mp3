@@ -489,6 +489,71 @@ def _resolve_job_source_path(candidate: Path | str, *, must_exist: bool = False)
     raise ValueError(f"Invalid job source path: {candidate}") from last_error
 
 
+def _server_dedup_chapter_outputs(output_dir: Path) -> int:
+    """Collapse duplicate MP3s sharing a `<label> - ` prefix.
+
+    Mirror of `_ValidationMixin._dedup_chapter_outputs` from
+    `_validation_mixin.py` — the CLI runs that during its post-conversion
+    auto-fix; the server skipped the step until v0.3.17 and accumulated
+    duplicates over multiple runs of the same book. Keeps the file with
+    the longest audio duration (ffprobe-measured), falls back to file
+    size when ffprobe fails. Returns the number of files removed.
+    """
+    import re as _re
+    import subprocess as _subprocess
+    from collections import defaultdict as _defaultdict
+
+    if not output_dir or not output_dir.exists():
+        return 0
+
+    label_re = _re.compile(r"^([\d.]+)\s+-\s+")
+    groups: dict[str, list[Path]] = _defaultdict(list)
+    for mp3 in output_dir.glob("*.mp3"):
+        match = label_re.match(mp3.name)
+        if not match:
+            continue
+        groups[match.group(1)].append(mp3)
+
+    def _duration(path: Path) -> float:
+        try:
+            out = _subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "default=noprint_wrappers=1:nokey=1",
+                    str(path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            return float(out.stdout.strip() or 0.0)
+        except Exception:
+            # ffprobe missing or refused the file — fall back to file
+            # size as a proxy for "more content". Better than skipping
+            # the dedup entirely and leaving phantom dups for the
+            # validator to flag.
+            return 0.0
+
+    removed = 0
+    for label, files in groups.items():
+        if len(files) <= 1:
+            continue
+        scored = [(_duration(f), f.stat().st_size, f) for f in files]
+        scored.sort(key=lambda t: (t[0], t[1]), reverse=True)
+        for _dur, _size, loser in scored[1:]:
+            try:
+                loser.unlink()
+                removed += 1
+            except OSError:
+                pass
+    return removed
+
+
 def _safe_leaf_name(value: str, *, field_name: str) -> str:
     raw = str(value or "")
     name = Path(raw).name
@@ -2737,16 +2802,30 @@ async def get_job_fulltext(job_id: str) -> dict:
     # and the source file might be gone (e.g. uploaded file moved by the
     # cleanup task). The cache is keyed by file path/title, so we attempt to
     # resolve a path even if it no longer exists on disk.
+    #
+    # Narrow exception list: corrupt JSON, missing file, or unreadable
+    # cache directory are expected and we just fall through to the parse
+    # path. ANY other exception is unexpected — propagate so the caller
+    # sees it instead of silently skipping the cache and re-doing the
+    # whole parse (the v0.3.16 audit flagged this `suppress(Exception)`
+    # as a real risk for hiding production bugs).
     if source_path is not None:
-        with contextlib.suppress(Exception):
+        try:
             cached = cache_manager.get_cached_chapters(source_path)
-            if cached and cached.get("chapters"):
-                return {
-                    "jobId": job_id,
-                    "bookTitle": job_data.get("bookTitle", "") or cached.get("title", ""),
-                    "bookAuthor": job_data.get("bookAuthor", "") or cached.get("author", ""),
-                    "chapters": _build_fulltext_chapters_from_cache(cached),
-                }
+        except (json.JSONDecodeError, OSError, KeyError, ValueError) as exc:
+            logger.warning(
+                "Cache read failed for %s — falling back to fresh parse: %s",
+                source_path,
+                exc,
+            )
+            cached = None
+        if cached and cached.get("chapters"):
+            return {
+                "jobId": job_id,
+                "bookTitle": job_data.get("bookTitle", "") or cached.get("title", ""),
+                "bookAuthor": job_data.get("bookAuthor", "") or cached.get("author", ""),
+                "chapters": _build_fulltext_chapters_from_cache(cached),
+            }
 
     # 3) Cache miss — we need the source file on disk to parse it. If the
     # file is missing AND the job is still running/pending, this is a
@@ -5828,6 +5907,57 @@ async def process_conversion(job_id: str) -> None:
             return
 
         retrying_failed_chapters = False
+
+        # Auto-dedup + validate (mirror of CLI's _auto_validate_and_retry_async).
+        # Web jobs previously skipped the post-conversion sanity check, so a
+        # Carl-style situation where two MP3s end up under different
+        # filenames for the same chapter went undetected. This block:
+        #   1. Collapses duplicate MP3s in the output dir, keeping the
+        #      longest-duration file per chapter index.
+        #   2. Runs validate_book and surfaces any remaining issues
+        #      through the job event log so the UI can display them.
+        # Chapter re-synthesis is *not* retried here — the inline retry
+        # loop above already handled deterministic failures, and the
+        # server's `convert_chapter` closure is not callable from this
+        # scope. Operators can re-trigger conversion from the UI when
+        # the issue list is non-trivial.
+        try:
+            removed_dups = _server_dedup_chapter_outputs(job_output_dir)
+            if removed_dups:
+                _append_event(job, f"🧹 Auto-dedup: removed {removed_dups} duplicate MP3(s)")
+            _update_job_activity(job, stage="auto_dedup_done")
+
+            source_path = _resolve_job_source_path(job.get("file_path") or "", must_exist=False)
+            if source_path and source_path.exists():
+                from validate_conversion import validate_book as _validate_book
+
+                # `validate_book` may return `None` when it fails early
+                # (e.g. cache directory unresolved for a fresh job that
+                # never wrote one). That's not an error condition — just
+                # nothing to report — so we skip the event log instead
+                # of letting the unpack raise.
+                result = _validate_book(source_path, output_dir=job_output_dir)
+                if result is not None:
+                    stats, issues = result
+                    real_issues = [i for i in issues if "Missing cache" not in i]
+                    job["validationStats"] = stats
+                    job["validationIssues"] = real_issues
+                    if real_issues:
+                        _append_event(
+                            job,
+                            f"⚠️ Auto-validate: {len(real_issues)} issue(s) "
+                            f"(perfect={stats.get('perfect', 0)}/"
+                            f"{stats.get('total_chapters', 0)}). See validationIssues.",
+                        )
+                    else:
+                        _append_event(
+                            job,
+                            f"✅ Auto-validate: all {stats.get('total_chapters', 0)} "
+                            "chapter(s) verified against EPUB",
+                        )
+        except (FileNotFoundError, PermissionError, OSError, ValueError) as exc:
+            _append_event(job, f"⚠️ Auto-validate skipped: {exc}")
+        _update_job_activity(job, stage="auto_validate_done")
 
         _cleanup_output_directory(job_output_dir)
         _update_job_activity(job, stage="chapters_done")
