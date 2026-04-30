@@ -173,6 +173,12 @@ class _RetryMixin:
             available_engines = set(factory.available_engines())
 
             requested_engine = (getattr(config, "engine", "") or "edge").lower()
+            # Respect ``--fallback-engine none``: when the operator
+            # explicitly disabled fallback, the retry pass must NOT
+            # widen the candidate list past the requested engine. Skips
+            # the "edge → piper for short chapters" silent route that
+            # produced wrong-language audio for Carl's Capa chapter.
+            cli_fallback = (getattr(self, "_cli_fallback_engine", None) or "").lower()
             ordered_candidates: list[str] = []
 
             def _append_candidate(engine_name: str) -> None:
@@ -182,7 +188,14 @@ class _RetryMixin:
                     return
                 ordered_candidates.append(engine_name)
 
-            if requested_engine == "auto":
+            if cli_fallback == "none":
+                # Strict mode: only the engine the user picked.
+                _append_candidate(requested_engine if requested_engine != "auto" else "edge")
+            elif cli_fallback in {"piper", "kokoro", "coqui", "spark"}:
+                # Operator pinned a specific fallback tier.
+                _append_candidate(requested_engine if requested_engine != "auto" else "edge")
+                _append_candidate(cli_fallback)
+            elif requested_engine == "auto":
                 _append_candidate("edge")
                 _append_candidate("piper")
                 _append_candidate("coqui")
@@ -375,7 +388,18 @@ class _RetryMixin:
                             )
                         wav_file = await asyncio.wait_for(synth_task, timeout=timeout_s)
                     except Exception as primary_exc:
-                        if selected_engine_name == "edge" and "piper" in available_engines:
+                        # Carl regression guard: with `--fallback-engine
+                        # none` the operator explicitly forbids piper.
+                        # Don't let the inner retry loop silently switch
+                        # to piper (which would synthesise pt-BR audio
+                        # in 16 kHz English-trained Piper voice).
+                        cli_fallback = (getattr(self, "_cli_fallback_engine", None) or "").lower()
+                        piper_allowed = cli_fallback != "none"
+                        if (
+                            selected_engine_name == "edge"
+                            and piper_allowed
+                            and "piper" in available_engines
+                        ):
                             try:
                                 if piper_engine is None:
                                     piper_language = self._effective_primary_language(config)
@@ -491,7 +515,15 @@ class _RetryMixin:
         except Exception:
             available = set()
 
-        if "piper" in available:
+        # Honour `--fallback-engine none`: if the operator forbade
+        # falling back, the last-resort path must keep using the
+        # requested engine instead of jumping to piper/coqui (the
+        # Carl regression — Piper would emit 16 kHz English-tinged
+        # audio for pt-BR text).
+        cli_fallback = (getattr(self, "_cli_fallback_engine", None) or "").lower()
+        if cli_fallback == "none":
+            pass  # keep the originally requested engine
+        elif "piper" in available:
             engine_name = "piper"
         elif "coqui" in available:
             engine_name = "coqui"
