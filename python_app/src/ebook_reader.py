@@ -1188,30 +1188,28 @@ class TextProcessor:
         # `enhance_natural_pauses` might have appended to the line
         # before this normalisation pass (it tags un-punctuated
         # paragraph-end lines with a period).
-        # Period + blank line (real pause) instead of "..."
-        # which Edge treats as a stutter, not a pause.
+        # Drop pt-BR EPUB "<N> |" / "## <N>" / bare-numeric chapter-
+        # start markers entirely. Earlier versions tried to convert them
+        # into "<N>...", then "<N>." + blank line, but plain-text Edge
+        # caps inter-sentence pauses at ~700 ms regardless of how many
+        # periods or newlines you stack, so the result still sounded
+        # like one continuous breath ("Capítulo 1 1 a transformação").
+        # The chapter title announcement ("Capítulo 1.") at the top
+        # already fills the same role; the standalone "1" is a printed
+        # artifact with no listener value, so suppress it.
         result = re.sub(
             r"(^|\n)\s*(\d+)\s*\|\s*[.!?]?\s*(\n|$)",
-            lambda m: f"{m.group(1)}{m.group(2)}.\n{m.group(3)}",
+            lambda m: f"{m.group(1)}{m.group(3)}",
             result,
         )
-
-        # Same idea for two other common pt-BR chapter-start patterns:
-        # - "## 1" (Markdown-style heading with a bare number)
-        # - bare numeric line at the very start of the chapter body,
-        #   when no pipe / hash is present (e.g. some Companhia das
-        #   Letras EPUBs).
-        # We only rewrite when the line is just "<N>" (1-3 digits) and
-        # is followed by another non-empty line — that combination is
-        # almost always a chapter-number marker, not body content.
         result = re.sub(
             r"(^|\n)\s*##+\s*(\d{1,3})\s*[.!?]?\s*(\n|$)",
-            lambda m: f"{m.group(1)}{m.group(2)}.\n{m.group(3)}",
+            lambda m: f"{m.group(1)}{m.group(3)}",
             result,
         )
         result = re.sub(
             r"(^|\n)(\d{1,3})\s*\n(\s*\S)",
-            lambda m: f"{m.group(1)}{m.group(2)}.\n\n{m.group(3)}",
+            lambda m: f"{m.group(1)}{m.group(3)}",
             result,
         )
 
