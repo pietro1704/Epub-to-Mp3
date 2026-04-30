@@ -1188,6 +1188,25 @@ class TextProcessor:
             result,
         )
 
+        # Same idea for two other common pt-BR chapter-start patterns:
+        # - "## 1" (Markdown-style heading with a bare number)
+        # - bare numeric line at the very start of the chapter body,
+        #   when no pipe / hash is present (e.g. some Companhia das
+        #   Letras EPUBs).
+        # We only rewrite when the line is just "<N>" (1-3 digits) and
+        # is followed by another non-empty line — that combination is
+        # almost always a chapter-number marker, not body content.
+        result = re.sub(
+            r"(^|\n)\s*##+\s*(\d{1,3})\s*[.!?]?\s*(\n|$)",
+            lambda m: f"{m.group(1)}{m.group(2)}...{m.group(3)}",
+            result,
+        )
+        result = re.sub(
+            r"(^|\n)(\d{1,3})\s*\n(\s*\S)",
+            lambda m: f"{m.group(1)}{m.group(2)}...\n{m.group(3)}",
+            result,
+        )
+
         return result
 
     @staticmethod

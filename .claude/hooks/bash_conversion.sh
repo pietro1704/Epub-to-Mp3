@@ -68,5 +68,35 @@ msg = (
     f"   Engine: {engine}  |  Mode: {mode}  |  Voice: {voice}\n"
     f"   Chapters: {ch_ok} ok / {ch_fail} failed / {ch_total} total  |  Time: {dur_str}"
 )
+
+# Run analyse-logs and append HIGH issues only — keeps the noise low
+# but surfaces real problems (sample-rate mismatches, silent
+# fallbacks, language mismatches) without the user having to ask.
+import os, subprocess
+analyse_lines = []
+try:
+    project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(log_file))))
+    proc = subprocess.run(
+        ["python", os.path.join(project_dir, "scripts", "analyze_logs.py"), "--book", title],
+        capture_output=True, text=True, timeout=30, cwd=project_dir,
+    )
+    if proc.returncode == 0 and proc.stdout:
+        # Extract only the HIGH section.
+        in_high = False
+        for line in proc.stdout.splitlines():
+            if line.startswith("## HIGH"):
+                in_high = True
+                analyse_lines.append(line)
+                continue
+            if in_high and line.startswith("## "):
+                break
+            if in_high:
+                analyse_lines.append(line)
+except Exception:
+    pass
+
+if analyse_lines:
+    msg += "\n\n## Log analyser — HIGH issues detected\n" + "\n".join(analyse_lines).strip()
+
 print(json.dumps({"additionalContext": "## Conversion result\n" + msg}))
 PYEOF

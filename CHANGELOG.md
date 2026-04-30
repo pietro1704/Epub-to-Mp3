@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.22] — 2026-04-30
+
+### Bug Fixes (Carl regression cluster)
+
+- **`--fallback-engine none` is now strictly honoured.** Three retry sites in `_retry_mixin.py` ignored the operator's "none" choice and silently jumped to Piper for short chapters / quick-synthesis timeouts; pt-BR audio was being narrated by `en_US-lessac-medium.onnx`. All three now check `_cli_fallback_engine` and short-circuit. Pinned by `test_retry_respects_fallback_none.py`.
+- **Silence padding matches the source sample rate.** `add_silence_padding` defaulted to 16 kHz silence. Edge produces 24 kHz; concat-copy then merged 16 kHz silence + 24 kHz audio + 16 kHz silence into a single MP3 that decoded as 16 kHz. New `_detect_audio_sample_rate` probes the source with ffprobe before generating fragments. Pinned by `test_silence_padding_sample_rate.py`.
+- **`<N> |` chapter-number markers become TTS pauses.** pt-BR EPUBs (Carl included) start each chapter with a visual marker like `1 |` on its own line; Edge collapsed it into the body, reading "Capítulo 1 1 a transformação" in one breath. The cue normaliser in `apply_structural_speech_cues` rewrites that marker to `<N>...` so listeners hear three distinct beats. The regex tolerates a trailing period that `enhance_natural_pauses` may have appended earlier in the pipeline. Pinned by `test_chapter_marker_pause.py`.
+- **Reuse short-circuit emits a complete `ConversionResult`.** The v0.3.21 reuse path was missing the required `errors=[]` field and crashed any reconvert of a book already on disk.
+- **Piper refuses wrong-language model fallback.** `_find_piper_model`'s "last resort" branch returned the first installed `.onnx` model when the preferred-language download failed, producing pt-BR audio synthesised in English phonemes. Now raises `FileNotFoundError` so the upstream chain falls through to an engine that honours the language. Pinned by `test_piper_wrong_language_refusal.py`.
+
+### Features
+
+- **Pre-flight verification before TTS.** `_preflight_language_and_config_check` runs an independent second-pass language detection over a different chapter window than the first pass and aborts on disagreement (unless `--language` was forced). Also surfaces engine, fallback, and voice choices so a misconfigured run is visible before synthesis. 5 tests in `test_preflight_language_check.py`.
+- **Skip re-synthesis when the audiobook is already on disk.** `_detect_reusable_existing_output` short-circuits when ≥90 % of expected MP3s are present; iPhone export still runs. Override via `--clear-cache` or `--force`. 6 tests in `test_existing_output_reuse.py`.
+- **Auto-cleanup of stale per-chapter cache.** `_maybe_clean_obsolete_cache` removes cached MP3s whose chapter index no longer matches the current structure list. 3 tests in the same file.
+- **`mise run analyze-logs` log harvester.** Pulls together `_runtime_metrics.jsonl`, ffprobe sample-rate sweep of every MP3, `.logs/conversions.jsonl`, free-form `/tmp/*.log` text logs, and the last 3 GitHub CI runs into a single Markdown report bucketed by HIGH/MEDIUM/LOW. Catches sample-rate outliers, silent engine fallbacks, slow chapters, language-mismatch events, and CI failures. Wired in `mise.toml`; recommended after every conversion or bug report.
+
 ## [0.3.21] — 2026-04-30
 
 ### Bug Fixes

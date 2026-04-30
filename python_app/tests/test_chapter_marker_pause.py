@@ -56,6 +56,29 @@ class TestChapterMarkerPause(unittest.TestCase):
         self.assertIn("42...", out)
         self.assertNotIn("42 |", out)
 
+    def test_markdown_hash_marker_becomes_pause(self):
+        """Markdown-style "## 7" chapter heading must also pause."""
+        text = "## 7\nO velho dragão acordou."
+        out = TextProcessor.apply_structural_speech_cues(
+            text, raw_html=None, chapter_title="Capítulo 7"
+        )
+        self.assertIn("7...", out)
+        self.assertNotIn("##", out)
+
+    def test_bare_numeric_marker_becomes_pause(self):
+        """Bare "<N>" line at chapter start (Companhia das Letras style)."""
+        text = "12\nA nova manhã.\nE o sol nasceu."
+        out = TextProcessor.apply_structural_speech_cues(
+            text, raw_html=None, chapter_title="Capítulo 12"
+        )
+        self.assertIn("12...", out)
+
+    def test_bare_numeric_does_not_match_three_plus_digits(self):
+        """Year mentions like "2026\nfoi" must NOT be rewritten."""
+        text = "2026\nfoi um ano notável."
+        out = TextProcessor.apply_structural_speech_cues(text, raw_html=None, chapter_title="Cap")
+        self.assertNotIn("2026...", out)
+
     def test_marker_with_trailing_period(self):
         """`enhance_natural_pauses` appends '.' to un-punctuated paragraph
         ends BEFORE this normaliser runs. The regex must therefore tolerate

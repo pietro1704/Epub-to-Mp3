@@ -12,7 +12,89 @@ from __future__ import annotations
 import re
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+
+def preflight_language_check(
+    chapters: List[object],
+    config: object,
+    *,
+    user_language_override: bool,
+) -> Optional[str]:
+    """Web-job mirror of `_preflight_language_and_config_check` in main.py.
+
+    Runs a second-pass language detection over a different chapter window
+    than the first pass and returns an error string when the two
+    disagree (and the user did not force `--language`). Returns None
+    when everything looks consistent.
+
+    Why mirror this on the server side: the CLI guard caught the Carl
+    regression (pt-BR audiobook narrated by an English Piper model)
+    before TTS started; web jobs lacked the same protection so a
+    misconfigured upload would happily synthesise hours of wrong-
+    language audio.
+    """
+    primary = (getattr(config, "primary_language", "") or "").lower()
+    primary_root = primary.split("-", 1)[0]
+    if not primary_root or not chapters:
+        return None
+
+    sample_texts: List[str] = []
+    total_chars = 0
+    mid_start = max(0, len(chapters) // 4)
+    mid_end = min(len(chapters), max(mid_start + 5, (3 * len(chapters)) // 4))
+    for chapter in chapters[mid_start:mid_end]:
+        text = getattr(chapter, "speech_text", None) or getattr(chapter, "text", "") or ""
+        if text and len(text.strip()) > 200:
+            sample_texts.append(text)
+            total_chars += len(text)
+            if total_chars >= 5000:
+                break
+    if not sample_texts:
+        return None
+
+    try:
+        from src.language.detector import get_language_detector
+
+        detector = get_language_detector()
+        profile = detector.detect_profile(sample_texts)
+    except Exception:
+        return None
+
+    verified = (getattr(profile, "primary", None) or "").lower()
+    if not verified:
+        return None
+    verified_root = verified.split("-", 1)[0]
+
+    if verified_root and verified_root != primary_root:
+        if user_language_override:
+            return None  # user pinned the language; warn upstream but proceed.
+        return (
+            f"Language mismatch: first-pass detection said '{primary}', "
+            f"second-pass (independent sample) said '{verified}'. "
+            "Refuse to synthesise — pass language explicitly to override."
+        )
+    return None
+
+
+def detect_reusable_existing_output(
+    output_dir: Path, expected_chapters: int, *, force: bool = False
+) -> Optional[Path]:
+    """Server mirror of CLI's `_detect_reusable_existing_output`.
+
+    Returns the dir if ≥90 % of the expected MP3s are already present
+    and non-empty, otherwise None. ``force=True`` (operator wants a
+    fresh run) always returns None.
+    """
+    if force or expected_chapters <= 0 or not output_dir.exists() or not output_dir.is_dir():
+        return None
+    mp3_count = sum(
+        1 for path in output_dir.glob("*.mp3") if path.is_file() and path.stat().st_size > 0
+    )
+    if mp3_count == 0 or mp3_count < int(expected_chapters * 0.9):
+        return None
+    return output_dir
+
 
 if TYPE_CHECKING:
     from src.engine_pool import JobEnginePool

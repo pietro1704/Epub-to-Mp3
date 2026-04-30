@@ -3503,10 +3503,12 @@ from src._server_conversion_helpers import (  # noqa: E402
     compute_parallel_slots,
     count_completed_chapters,
     count_words,
+    detect_reusable_existing_output,
     edge_retry_adjustments,
     expected_output_path,
     mark_retry_round,
     note_chapter_attempt,
+    preflight_language_check,
     recalculate_progress,
     refresh_chapter_completion,
     reset_chapter_progress_tracking,
@@ -4158,6 +4160,49 @@ async def process_conversion(job_id: str) -> None:
             chapter_progress_entries.append(entry)
         job["chapterProgress"] = chapter_progress_entries
         _refresh_chapter_completion()
+
+        # Pre-flight language verification (mirror of CLI guard from
+        # main.py:_preflight_language_and_config_check). The user's
+        # explicit language choice (web form `language` field other
+        # than "auto") wins; otherwise mismatch aborts before TTS.
+        _user_language_override = bool(
+            (config.extra or {}).get("user_language_override")
+            or (
+                config.primary_language
+                and config.primary_language.lower() != "auto"
+                and not (config.extra or {}).get("language_auto_detected")
+            )
+        )
+        _preflight_error = preflight_language_check(
+            chapters, config, user_language_override=_user_language_override
+        )
+        if _preflight_error:
+            _append_event(job, f"❌ {_preflight_error}")
+            job["state"] = "error"
+            job["error"] = _preflight_error
+            _persist_job(job_id, force=True)
+            return
+
+        # Reuse existing output when ≥90% of expected MP3s are already
+        # on disk (mirror of CLI `_detect_reusable_existing_output`).
+        # `--clear-cache` / force is signalled by the web form via
+        # `force_resynth` in the extra dict.
+        _force_resynth = bool((config.extra or {}).get("force_resynth"))
+        try:
+            _expected_output_dir = Path(
+                getattr(config, "output_dir", None) or OUTPUT_DIR
+            ) / FileManager.sanitize_filename(getattr(config, "book_title", "") or "default")
+        except Exception:
+            _expected_output_dir = None
+        if _expected_output_dir is not None:
+            _reusable = detect_reusable_existing_output(
+                _expected_output_dir, len(chapters), force=_force_resynth
+            )
+            if _reusable is not None:
+                _append_event(
+                    job,
+                    f"♻️ Reusing existing output ({len(list(_reusable.glob('*.mp3')))} MP3s in {_reusable}); skipping synthesis",
+                )
 
         engine_chain = _build_engine_chain(config)
         engine_index = 0
