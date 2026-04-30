@@ -5328,13 +5328,6 @@ class AudioConverter(
                                     break
 
                             converted_files.append(output_path)
-                            self._embed_id3_metadata(
-                                output_path,
-                                title=chapter_label,
-                                album=book_title,
-                                artist=book_author or None,
-                                cover_art=cover_art,
-                            )
                             await _apply_silence_padding(
                                 output_path,
                                 config,
@@ -5349,6 +5342,15 @@ class AudioConverter(
                             # splice in an extra second there. Best-
                             # effort — failure leaves the chapter
                             # unchanged.
+                            #
+                            # IMPORTANT: this MUST run BEFORE the ID3
+                            # metadata + cover-art embedding step.
+                            # `inject_silence_at_offset` uses ffmpeg
+                            # concat-copy which strips non-audio
+                            # streams (the embedded JPEG cover) and any
+                            # preceding ID3 frames. Re-embedding tags
+                            # afterwards keeps the cover art the user
+                            # sees on the iPhone audiobook player.
                             try:
                                 from .audio_postprocess import (
                                     find_first_silence_after_title,
@@ -5370,6 +5372,13 @@ class AudioConverter(
                             except Exception as _exc:
                                 if self.verbose:
                                     print(f"   ⚠️ title-pause injection failed: {_exc}")
+                            self._embed_id3_metadata(
+                                output_path,
+                                title=chapter_label,
+                                album=book_title,
+                                artist=book_author or None,
+                                cover_art=cover_art,
+                            )
                             chapter_success = True
 
                             if self.verbose:

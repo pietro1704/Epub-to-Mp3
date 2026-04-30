@@ -694,6 +694,26 @@ class ConverterApplication:
                     f"{existing_output}. Skipping conversion."
                 )
                 print("   Use --clear-cache to force re-synthesis or --force " "to override.")
+                # Re-apply ID3 metadata + cover art on reuse path. The
+                # post-synthesis silence injection step
+                # (`inject_silence_at_offset`) uses ffmpeg concat-copy,
+                # which strips embedded JPEG cover art and ID3 tags.
+                # Without this re-stamp, reuse runs leave the user with
+                # cover-less MP3s on the iPhone audiobook player.
+                try:
+                    cover_art = self.converter._extract_cover_art(reader)
+                    book_title_for_tags = config.book_title or reader.title or existing_output.name
+                    book_author_for_tags = getattr(reader, "author", "") or None
+                    self.converter._apply_final_id3_tags(
+                        sorted(existing_output.glob("*.mp3")),
+                        default_album=book_title_for_tags,
+                        artist=book_author_for_tags,
+                        cover_art=cover_art,
+                    )
+                    if cover_art:
+                        print("   🖼️  Re-applied ID3 tags + cover art")
+                except Exception as _exc:
+                    print(f"   ⚠️ ID3 re-stamp on reuse failed: {_exc}")
                 result = ConversionResult(
                     success=True,
                     converted_chapters=mp3s_now,
