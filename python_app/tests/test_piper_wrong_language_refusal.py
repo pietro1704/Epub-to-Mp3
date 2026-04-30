@@ -79,19 +79,29 @@ class TestPiperRefusesWrongLanguageModel(unittest.TestCase):
     def test_no_preference_falls_back_to_any_model(self):
         """When the caller doesn't specify a language, the historical
         behaviour (return any installed model) is fine — there's no
-        conflict to enforce."""
+        conflict to enforce. Sandbox project_root and cwd so the
+        production `models/` dir on dev machines (which has multiple
+        languages) doesn't influence the test result.
+        """
         fake_dir = Path("/tmp/fake-piper-models-no-pref")
         fake_dir.mkdir(parents=True, exist_ok=True)
         en_model = fake_dir / "en_US-lessac-medium.onnx"
         en_model.write_bytes(b"fake")
-
+        sandbox_root = fake_dir.parent / "sandbox-no-pref"
+        sandbox_root.mkdir(exist_ok=True)
         try:
-            with patch.object(self.factory, "_download_default_piper_model", return_value=None):
+            with (
+                patch.object(self.factory, "_download_default_piper_model", return_value=None),
+                patch.object(self.factory, "_resolve_project_root", return_value=sandbox_root),
+                patch.dict(os.environ, {"PIPER_MODEL_DIR": ""}, clear=False),
+                patch("pathlib.Path.cwd", return_value=sandbox_root),
+            ):
                 result = self.factory._find_piper_model(preferred_code=None, models_dir=fake_dir)
             self.assertEqual(result.name, "en_US-lessac-medium.onnx")
         finally:
             en_model.unlink(missing_ok=True)
             fake_dir.rmdir()
+            sandbox_root.rmdir()
 
 
 if __name__ == "__main__":

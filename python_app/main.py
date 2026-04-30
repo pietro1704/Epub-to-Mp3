@@ -1906,10 +1906,16 @@ class ConverterApplication:
             # this method REBUILDS chapter objects from scratch, so
             # without the second call the brand-new Chapter objects get
             # the cue-less text and the pre-tts cache loses every pause.
+            _raw_html_for_cues = getattr(chapter, "raw_html", None)
+            _title_for_cues = getattr(chapter, "name", None) or item.display_name
+            if _raw_html_for_cues is not None and not isinstance(_raw_html_for_cues, str):
+                _raw_html_for_cues = None
+            if _title_for_cues is not None and not isinstance(_title_for_cues, str):
+                _title_for_cues = None
             speech_text = TextProcessor.apply_structural_speech_cues(
                 speech_text,
-                raw_html=getattr(chapter, "raw_html", None),
-                chapter_title=getattr(chapter, "name", None) or item.display_name,
+                raw_html=_raw_html_for_cues,
+                chapter_title=_title_for_cues,
             )
 
             new_chapters.append(
@@ -2141,12 +2147,18 @@ class ConverterApplication:
             # the raw `chapter.text` (which has no cues) — without this
             # second pass the pre-tts cache loses every pause and Edge
             # reads "Capítulo 1 1 a transformação..." in one breath.
+            _raw_html = getattr(item.chapter, "raw_html", None)
+            _chapter_title = getattr(item.chapter, "name", None)
+            if _raw_html is not None and not isinstance(_raw_html, str):
+                _raw_html = None
+            if _chapter_title is not None and not isinstance(_chapter_title, str):
+                _chapter_title = None
             from src.ebook_reader import TextProcessor as _EReader_TP
 
             speech_text = _EReader_TP.apply_structural_speech_cues(
                 speech_text,
-                raw_html=getattr(item.chapter, "raw_html", None),
-                chapter_title=getattr(item.chapter, "name", None),
+                raw_html=_raw_html,
+                chapter_title=_chapter_title,
             )
 
             # **NEW**: Apply automatic language detection if enabled
