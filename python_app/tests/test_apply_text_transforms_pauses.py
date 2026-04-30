@@ -38,5 +38,20 @@ class TestApplyTextTransformsPreservesPauses(unittest.TestCase):
         self.assertIn("speech_text = ", src)
 
 
+class TestApplyStructureToReaderPreservesPauses(unittest.TestCase):
+    """`_apply_structure_to_reader` rebuilds Chapter objects after
+    `_apply_text_transforms` ran, throwing away the cued speech_text
+    in the process. Without re-stamping the cues here, pre-tts cache
+    loses every pause regardless of how many earlier passes added them.
+    """
+
+    def test_apply_structural_cues_called_in_structure_to_reader(self):
+        src = inspect.getsource(ConverterApplication._apply_structure_to_reader)
+        self.assertIn("apply_structural_speech_cues", src)
+        # Must be applied to the speech_text being assigned to the new
+        # Chapter object, not somewhere unrelated.
+        self.assertIn("speech_text =", src)
+
+
 if __name__ == "__main__":
     unittest.main()

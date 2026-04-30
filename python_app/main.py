@@ -1899,6 +1899,19 @@ class ConverterApplication:
             else:
                 speech_text = formatter.to_audible_text(final_text, formatting_segments)
 
+            # Re-stamp structural speech cues — title announcement
+            # ("Capítulo 1...") and "<N> |" / "## N" / bare-number
+            # chapter markers — onto speech_text. _apply_text_transforms
+            # already did this once on its own copy of speech_text, but
+            # this method REBUILDS chapter objects from scratch, so
+            # without the second call the brand-new Chapter objects get
+            # the cue-less text and the pre-tts cache loses every pause.
+            speech_text = TextProcessor.apply_structural_speech_cues(
+                speech_text,
+                raw_html=getattr(chapter, "raw_html", None),
+                chapter_title=getattr(chapter, "name", None) or item.display_name,
+            )
+
             new_chapters.append(
                 Chapter(
                     index=item.index,
