@@ -2120,6 +2120,22 @@ class ConverterApplication:
             processor.apply_inline_formatting(final_text)
             speech_text = processor.strip_inline_markdown(final_text)
 
+            # Re-apply structural speech cues over the cleaned text so
+            # chapter title announcements ("Capítulo 1...") and "<N> |"
+            # number markers survive the markdown stripping. The
+            # ebook_reader.TextProcessor runs this once during parse,
+            # but `_apply_text_transforms` regenerates speech_text from
+            # the raw `chapter.text` (which has no cues) — without this
+            # second pass the pre-tts cache loses every pause and Edge
+            # reads "Capítulo 1 1 a transformação..." in one breath.
+            from src.ebook_reader import TextProcessor as _EReader_TP
+
+            speech_text = _EReader_TP.apply_structural_speech_cues(
+                speech_text,
+                raw_html=getattr(item.chapter, "raw_html", None),
+                chapter_title=getattr(item.chapter, "name", None),
+            )
+
             # **NEW**: Apply automatic language detection if enabled
             if getattr(config, "use_language_detection", True):
                 try:
