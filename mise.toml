@@ -215,6 +215,10 @@ LIMIT="${1:-30}"
 .venv/bin/python scripts/print_events.py "$EVENTS_FILE" "$LIMIT"
 """
 
+[tasks."analyze-logs"]
+description = "Harvest conversion + CI logs, surface anomalies (slow chapters, fallbacks, language mismatches)"
+run = "python scripts/analyze_logs.py"
+
 [tasks."hooks-test"]
 description = "Validate Claude Code hook scripts are syntactically valid and executable"
 run = """
