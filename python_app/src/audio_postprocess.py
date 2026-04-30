@@ -79,10 +79,14 @@ async def find_silence_for_title(
 
     # silencedetect reports the leading intro padding as silence_start: 0.
     # Skip that one — we want the first silence AFTER speech starts.
+    # Only accept it if it falls within the first 2.5 s; later silences
+    # are inter-sentence pauses inside the body, NOT the title-end
+    # boundary. A chapter title that takes longer than ~2 s to read is
+    # rare enough that returning None and skipping the injection (no
+    # injection beats injection-in-the-wrong-place) is the safer
+    # default.
     for start, end in zip(starts, ends):
-        # 0.45 s skips past the intro padding (which is always
-        # ~0.43 s) and any frame-alignment slop.
-        if start >= 0.45:
+        if 0.45 <= start <= 2.5:
             return end
     return None
 
