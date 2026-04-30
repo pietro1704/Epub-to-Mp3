@@ -1178,8 +1178,12 @@ class TextProcessor:
         # single breath; with the ellipsis split, listeners hear
         # "Capítulo 1... 1... A transformação...". The pipe `|` is a
         # purely visual separator in the source EPUB and gets dropped.
+        # The trailing `[.!?]?` absorbs any period that
+        # `enhance_natural_pauses` might have appended to the line
+        # before this normalisation pass (it tags un-punctuated
+        # paragraph-end lines with a period).
         result = re.sub(
-            r"(^|\n)\s*(\d+)\s*\|\s*(\n|$)",
+            r"(^|\n)\s*(\d+)\s*\|\s*[.!?]?\s*(\n|$)",
             lambda m: f"{m.group(1)}{m.group(2)}...{m.group(3)}",
             result,
         )

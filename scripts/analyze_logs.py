@@ -271,6 +271,14 @@ _LOG_PATTERNS = [
 ]
 
 
+_REPORT_ZERO_RE = re.compile(r"❌\s+[^:]+:\s*0\s*$")
+
+
+def _is_report_header_zero(line: str) -> bool:
+    """True for validation-summary lines like "❌ Missing MP3: 0"."""
+    return bool(_REPORT_ZERO_RE.search(line.strip()))
+
+
 def scan_text_logs(log_globs: list[str], report: Report, max_per_pattern: int = 3) -> None:
     seen: dict[str, int] = defaultdict(int)
     for pattern_glob in log_globs:
@@ -293,6 +301,8 @@ def scan_text_logs(log_globs: list[str], report: Report, max_per_pattern: int = 
                     continue
                 for line in tail:
                     if regex.search(line):
+                        if label == "Error / failure in log" and _is_report_header_zero(line):
+                            continue
                         report.add(severity, label, line.strip()[:240], source=str(log_path))
                         seen[key] += 1
                         if seen[key] >= max_per_pattern:

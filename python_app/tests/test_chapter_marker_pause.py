@@ -56,6 +56,19 @@ class TestChapterMarkerPause(unittest.TestCase):
         self.assertIn("42...", out)
         self.assertNotIn("42 |", out)
 
+    def test_marker_with_trailing_period(self):
+        """`enhance_natural_pauses` appends '.' to un-punctuated paragraph
+        ends BEFORE this normaliser runs. The regex must therefore tolerate
+        a period between '|' and the newline; otherwise the marker keeps
+        flowing into the body and the pause is lost (Carl Capítulo 1
+        regression)."""
+        text = "1 |.\nA transformação aconteceu."
+        out = TextProcessor.apply_structural_speech_cues(
+            text, raw_html=None, chapter_title="Capítulo 1"
+        )
+        self.assertIn("1...", out)
+        self.assertNotIn("1 |", out)
+
 
 if __name__ == "__main__":
     unittest.main()
