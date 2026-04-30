@@ -1169,7 +1169,22 @@ class TextProcessor:
             else:
                 adjusted_lines.append(line)
 
-        return "\n".join(adjusted_lines)
+        result = "\n".join(adjusted_lines)
+
+        # Normalize "<N> |" chapter-number markers (common in pt-BR EPUBs
+        # where each chapter starts with e.g. "1 |") so the TTS pauses
+        # between the announcement, the chapter number, and the body.
+        # Without this, Edge reads "Capítulo 1 1 A transformação..." in a
+        # single breath; with the ellipsis split, listeners hear
+        # "Capítulo 1... 1... A transformação...". The pipe `|` is a
+        # purely visual separator in the source EPUB and gets dropped.
+        result = re.sub(
+            r"(^|\n)\s*(\d+)\s*\|\s*(\n|$)",
+            lambda m: f"{m.group(1)}{m.group(2)}...{m.group(3)}",
+            result,
+        )
+
+        return result
 
     @staticmethod
     def extract_title_from_text(text: Optional[str], max_words: int = 6) -> str:
