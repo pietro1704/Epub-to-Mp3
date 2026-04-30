@@ -25,6 +25,46 @@ def _ensure_ffmpeg_paths() -> None:
         pass
 
 
+def _detect_audio_sample_rate(audio_file: Path) -> Optional[int]:
+    """Probe ``audio_file`` for its first audio stream's sample rate.
+
+    Returns the sample rate in Hz, or ``None`` if probing fails. Used by
+    ``add_silence_padding`` to ensure the generated silence fragments
+    match the source so the concat-copy path produces a consistent MP3
+    instead of a Frankenstein file with mixed 16 kHz / 24 kHz frames
+    (Carl Capa regression: Edge 24 kHz output was concatenated with
+    16 kHz hardcoded silence, the resulting file decoded as 16 kHz and
+    the user heard a robotic Piper-tinged "Capa" intro).
+    """
+    import subprocess
+
+    _ensure_ffmpeg_paths()
+    try:
+        result = subprocess.run(
+            (
+                "ffprobe",
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=sample_rate",
+                "-of",
+                "default=nw=1:nk=1",
+                str(audio_file),
+            ),
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode != 0:
+            return None
+        line = result.stdout.strip().splitlines()[0] if result.stdout.strip() else ""
+        return int(line) if line.isdigit() else None
+    except (subprocess.SubprocessError, OSError, ValueError):
+        return None
+
+
 async def add_silence_padding(
     audio_file: Path,
     *,
@@ -55,6 +95,14 @@ async def add_silence_padding(
         return False, f"input missing or too small: {audio_file}"
 
     _ensure_ffmpeg_paths()
+
+    # Detect actual source sample rate so the generated silence fragments
+    # match (otherwise concat-copy produces a mixed-sample-rate MP3 that
+    # decodes at the WRONG rate — the Carl Capa regression). Falls back
+    # to the caller-supplied default when probe fails.
+    detected_rate = _detect_audio_sample_rate(audio_file)
+    if detected_rate:
+        sample_rate = detected_rate
 
     subprocess_exec = asyncio.create_subprocess_exec
     tmp_dir = Path(tempfile.mkdtemp(prefix="silence_pad_"))
