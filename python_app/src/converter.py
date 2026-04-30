@@ -5353,20 +5353,27 @@ class AudioConverter(
                             # sees on the iPhone audiobook player.
                             try:
                                 from .audio_postprocess import (
-                                    find_first_silence_after_title,
+                                    find_silence_for_title,
                                     inject_silence_at_offset,
                                 )
 
-                                splice_at = await find_first_silence_after_title(
+                                # Use the chapter label as a title hint
+                                # so the splicer knows roughly how long
+                                # the title takes to read aloud. Strip
+                                # any leading number prefix so "5 - Capítulo
+                                # 1" estimates from "Capítulo 1" only.
+                                title_hint = chapter_label or chapter.name or ""
+                                if " - " in title_hint:
+                                    title_hint = title_hint.split(" - ", 1)[-1]
+                                splice_at = await find_silence_for_title(
                                     output_path,
-                                    min_search_offset=0.5,
-                                    max_search_offset=12.0,
+                                    title_text=title_hint,
                                 )
                                 if splice_at is not None:
                                     await inject_silence_at_offset(
                                         output_path,
                                         insert_at_seconds=splice_at,
-                                        silence_ms=1000,
+                                        silence_ms=2000,
                                         bitrate=getattr(config, "bitrate", "8k") or "8k",
                                     )
                             except Exception as _exc:

@@ -29,8 +29,8 @@ class TestInjectSilenceHelpers(unittest.TestCase):
         sig = inspect.signature(find_first_silence_after_title)
         self.assertIn("min_search_offset", sig.parameters)
         self.assertIn("max_search_offset", sig.parameters)
-        self.assertEqual(sig.parameters["min_search_offset"].default, 0.5)
-        self.assertEqual(sig.parameters["max_search_offset"].default, 12.0)
+        self.assertEqual(sig.parameters["min_search_offset"].default, 0.4)
+        self.assertEqual(sig.parameters["max_search_offset"].default, 3.5)
 
     def test_inject_signature_takes_seconds_and_ms(self):
         sig = inspect.signature(inject_silence_at_offset)
@@ -42,9 +42,9 @@ class TestInjectSilenceHelpers(unittest.TestCase):
         from src import converter
 
         src = inspect.getsource(converter)
-        self.assertIn("find_first_silence_after_title", src)
+        self.assertIn("find_silence_for_title", src)
         self.assertIn("inject_silence_at_offset", src)
-        self.assertIn("silence_ms=1000", src)
+        self.assertIn("silence_ms=2000", src)
 
 
 class TestSilenceInjectionPreservesCoverArt(unittest.TestCase):

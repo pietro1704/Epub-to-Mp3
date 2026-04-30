@@ -25,30 +25,96 @@ def _ensure_ffmpeg_paths() -> None:
         pass
 
 
-async def find_first_silence_after_title(
-    audio_file: Path, *, min_search_offset: float = 1.5, max_search_offset: float = 12.0
+async def find_silence_for_title(
+    audio_file: Path,
+    *,
+    title_text: Optional[str] = None,
 ) -> Optional[float]:
-    """Find the END timestamp of the first silence after the chapter title.
+    """Return a splice timestamp at the title/body boundary.
 
-    Edge synthesises "Capítulo X." then a short pause (typically
-    150-300 ms — much shorter than between full sentences in the
-    body) then the chapter body. We use that natural pause as the
-    splice point: by inserting an extra silence at the END of the
-    existing one we get a real beat without the listener noticing
-    the seam.
+    Strategy: probe the audio, skip the leading intro padding (~0.4 s
+    of generated silence at the start of every chapter), then return
+    the END of the FIRST real silence after speech begins. That gap
+    is reliably the title-end pause on Edge output, regardless of
+    whether the title is 2 chars ("VI") or 30 chars
+    ("Capítulo 1 — A transformação"). Inserting silence at that
+    boundary yields the audible beat the user has been asking for.
 
-    The Carl Cap 1 regression (commit 7882805): an earlier version
-    used `duration=0.25` which is *above* the typical title-end pause
-    of ~220 ms, so the helper skipped it and matched the next inter-
-    sentence pause (~640 ms) instead. The injection landed AFTER the
-    first body sentence, leaving the title-to-body transition flat.
+    If no silence is detected in the first 6 s (very long titles or
+    chapters with no clear title break), return None and let the
+    caller skip the injection rather than place it inside the body.
+    """
+    audio_file = Path(audio_file)
+    if not audio_file.exists():
+        return None
+    _ensure_ffmpeg_paths()
 
-    Lower threshold (`duration=0.10`) catches the title-end gap; we
-    also bias the search toward the FIRST silence in [min, max] which
-    on real Edge output is reliably the title-end one.
+    import re
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            (
+                "ffmpeg",
+                "-i",
+                str(audio_file),
+                "-t",
+                "6.0",
+                "-af",
+                "silencedetect=noise=-30dB:duration=0.10",
+                "-f",
+                "null",
+                "-",
+            ),
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+    except (subprocess.SubprocessError, OSError):
+        return None
+
+    text = result.stderr or ""
+    starts = [float(m.group(1)) for m in re.finditer(r"silence_start:\s*([\d.]+)", text)]
+    ends = [float(m.group(1)) for m in re.finditer(r"silence_end:\s*([\d.]+)", text)]
+
+    # silencedetect reports the leading intro padding as silence_start: 0.
+    # Skip that one — we want the first silence AFTER speech starts.
+    for start, end in zip(starts, ends):
+        # 0.45 s skips past the intro padding (which is always
+        # ~0.43 s) and any frame-alignment slop.
+        if start >= 0.45:
+            return end
+    return None
+
+
+async def find_first_silence_after_title(
+    audio_file: Path,
+    *,
+    min_search_offset: float = 0.4,
+    max_search_offset: float = 3.5,
+) -> Optional[float]:
+    """Find the END timestamp of the first silence right after the chapter title.
+
+    Edge usually finishes the chapter title within ~1-2 s of the
+    start (titles are short — "Capítulo 1.", "VI."). The pause that
+    follows is typically only 150-250 ms in plain text, much shorter
+    than the inter-sentence pauses inside the body. Two earlier
+    iterations (commits 7882805, aa7f80a) failed because the search
+    window stretched too far and the helper picked up a body-internal
+    pause instead.
+
+    Strategy now:
+    - Probe at very low duration (0.08 s) so we catch the short
+      title-end gap.
+    - Bound the search tightly: 0.4 s min (skip past the leading
+      intro padding) and 3.5 s max (a chapter title that takes longer
+      to read is unusual; if we can't find a gap by then, return None
+      and let the caller fall back to a fixed offset).
+    - Return the FIRST gap found in that window — on real Edge output
+      that is the title-end gap.
 
     Returns the timestamp (in seconds, as float) of the silence's END,
-    or None if nothing reasonable was found.
+    or None if nothing reasonable was found in the bounded window.
     """
     audio_file = Path(audio_file)
     if not audio_file.exists():
@@ -64,9 +130,9 @@ async def find_first_silence_after_title(
                 "-i",
                 str(audio_file),
                 "-t",
-                f"{max_search_offset + 3:.1f}",
+                f"{max_search_offset + 1.0:.1f}",
                 "-af",
-                "silencedetect=noise=-30dB:duration=0.10",
+                "silencedetect=noise=-30dB:duration=0.08",
                 "-f",
                 "null",
                 "-",
@@ -78,13 +144,10 @@ async def find_first_silence_after_title(
     except (subprocess.SubprocessError, OSError):
         return None
 
-    # silencedetect logs to stderr.
     text = result.stderr or ""
     starts = [float(m.group(1)) for m in re.finditer(r"silence_start:\s*([\d.]+)", text)]
     ends = [float(m.group(1)) for m in re.finditer(r"silence_end:\s*([\d.]+)", text)]
 
-    # We want a silence that starts AFTER the chapter title (≥ min_search)
-    # and BEFORE the body really gets going (≤ max_search).
     for start, end in zip(starts, ends):
         if min_search_offset <= start <= max_search_offset:
             return end
