@@ -189,5 +189,26 @@ class TestMaybeCleanObsoleteCache(unittest.TestCase):
         self.app._maybe_clean_obsolete_cache(_fake_reader("Ghost"), items, config)
 
 
+class TestConversionResultConstructor(unittest.TestCase):
+    """Regression: the reuse short-circuit synthesises a
+    ``ConversionResult`` directly. The dataclass requires *all* fields
+    (success, total_chapters, converted_chapters, output_files, errors)
+    — leaving any of them out raises TypeError at runtime, breaking the
+    CLI for any book that already has output on disk."""
+
+    def test_can_construct_with_empty_errors(self):
+        from src.converter import ConversionResult
+
+        result = ConversionResult(
+            success=True,
+            total_chapters=10,
+            converted_chapters=10,
+            output_files=[],
+            errors=[],
+        )
+        self.assertTrue(result.success)
+        self.assertEqual(result.errors, [])
+
+
 if __name__ == "__main__":
     unittest.main()

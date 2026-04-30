@@ -699,6 +699,7 @@ class ConverterApplication:
                     converted_chapters=mp3s_now,
                     total_chapters=len(structure_items),
                     output_files=[str(p) for p in sorted(existing_output.glob("*.mp3"))],
+                    errors=[],
                 )
             else:
                 # Drop stale cache MP3s from prior editions before any
