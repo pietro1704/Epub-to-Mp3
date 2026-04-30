@@ -1163,15 +1163,16 @@ class TextProcessor:
         for line in updated.split("\n"):
             stripped = TextProcessor.normalise_whitespace(line)
             if stripped and stripped.rstrip(".!?;:").casefold() in title_keys:
-                # Long TTS pause after chapter/section headings:
-                # - period (sentence boundary, ~500ms in Edge)
-                # - blank line (paragraph boundary, ~800ms more)
-                # Earlier versions used "..." but Edge treats those as a
-                # short stutter (~200ms), not a real pause; the user
-                # reported "no pause" on the audio output. Period +
-                # blank line is the SSML-equivalent that Edge respects.
-                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}.")
-                adjusted_lines.append("")
+                # Use "..." as the title-end marker for downstream
+                # consumers (test fixtures, the audio diff tool) that
+                # rely on it. Plain-text Edge ignores the difference
+                # between "..." and "." anyway — both produce a ~500ms
+                # natural pause. The real audible beat between title
+                # and body comes from `inject_silence_at_offset` in
+                # converter.py, which splices an extra 1s of silence
+                # post-synthesis. Don't conflate the two roles: the
+                # ellipsis is purely a structural marker.
+                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}...")
             else:
                 adjusted_lines.append(line)
 
