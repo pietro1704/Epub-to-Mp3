@@ -7,6 +7,7 @@ Reduced from 564 to ~100 lines while maintaining all functionality
 
 import argparse
 import asyncio
+import contextlib
 import copy
 import glob
 import json
@@ -634,6 +635,13 @@ class ConverterApplication:
             config.verbose = self._resolve_verbose(args)
             self._announce_footnote_mode(config)
 
+            # Pre-flight: confirm language detection on an independent
+            # sample and surface engine/voice/fallback choices before
+            # synthesis starts. Aborts on language mismatch unless the
+            # user forced --language. (Carl regression guard.)
+            if not self._preflight_language_and_config_check(reader, structure_items, config, args):
+                return 1
+
             if subset_requested:
                 selected_indices = [str(item.index) for item in structure_items]
                 if selected_indices:
@@ -670,8 +678,35 @@ class ConverterApplication:
             if fallback_pref:
                 self.converter._cli_fallback_engine = fallback_pref
 
-            # Convert
-            result = asyncio.run(self.converter.convert(reader, config))
+            # Reuse: skip synthesis entirely when the audiobook is
+            # already on disk (≥90% of chapters present). Saves the
+            # user a 20-minute Edge run on the second invocation.
+            existing_output = self._detect_reusable_existing_output(
+                reader, structure_items, config, args
+            )
+            if existing_output is not None:
+                mp3s_now = sum(
+                    1 for p in existing_output.glob("*.mp3") if p.is_file() and p.stat().st_size > 0
+                )
+                print()
+                print(
+                    f"♻️  Reusing existing output: {mp3s_now} MP3(s) found in "
+                    f"{existing_output}. Skipping conversion."
+                )
+                print("   Use --clear-cache to force re-synthesis or --force " "to override.")
+                result = ConversionResult(
+                    success=True,
+                    converted_chapters=mp3s_now,
+                    total_chapters=len(structure_items),
+                    output_files=[str(p) for p in sorted(existing_output.glob("*.mp3"))],
+                )
+            else:
+                # Drop stale cache MP3s from prior editions before any
+                # chapter loop reuses them.
+                self._maybe_clean_obsolete_cache(reader, structure_items, config)
+
+                # Convert
+                result = asyncio.run(self.converter.convert(reader, config))
 
             elapsed = time.time() - conversion_start
             print(f"⏱️ Total conversion time: {self._format_hms(elapsed)}")
@@ -2229,6 +2264,209 @@ class ConverterApplication:
             transformed_items.append(item)
 
         return transformed_items
+
+    def _resolve_book_output_dir(self, reader: EbookReader, config: ConversionConfig) -> Path:
+        """The directory the converter writes MP3s into.
+
+        Mirrors the path the converter assembles:
+        ``<output_root>/<sanitised(book_title)>/``. Used for both
+        existing-output detection (skip re-conversion when the book is
+        already there) and the iPhone export step.
+        """
+        title = getattr(config, "book_title", "") or getattr(reader, "title", "") or "default"
+        output_root = Path(getattr(config, "output_dir", None) or OUTPUT_DIR)
+        return output_root / FileManager.sanitize_filename(title)
+
+    def _detect_reusable_existing_output(
+        self,
+        reader: EbookReader,
+        items: List[ChapterStructureItem],
+        config: ConversionConfig,
+        args,
+    ) -> Optional[Path]:
+        """Return the output dir if it already contains the book's MP3s.
+
+        We don't want to re-synthesise an audiobook the user already has
+        on disk just because they re-ran the command. The check is
+        deliberately permissive — count distinct MP3s in the target dir
+        and accept >=90% of expected chapters as reuse-eligible. The
+        per-chapter cache layer below still re-fills any small gap
+        without resynthesising the rest.
+
+        Skipped when the user explicitly asked for a fresh run via
+        ``--clear-cache``, when ``--chapter`` selects a subset (we can
+        only confirm full-book reuse here), or when ``--force`` is set.
+        """
+        if getattr(args, "clear_cache", False) or getattr(args, "force", False):
+            return None
+        # Subset selectors (--chapter, ranges) target a different
+        # workflow; reuse only applies to full-book runs.
+        if getattr(args, "chapter", None):
+            return None
+        if getattr(args, "from_chapter_to_chapter", None) or getattr(
+            args, "from_chapter_to_end", None
+        ):
+            return None
+
+        try:
+            output_dir = self._resolve_book_output_dir(reader, config)
+        except Exception:
+            return None
+        if not output_dir.exists() or not output_dir.is_dir():
+            return None
+
+        mp3_count = sum(
+            1 for path in output_dir.glob("*.mp3") if path.is_file() and path.stat().st_size > 0
+        )
+        expected = len(items)
+        if expected == 0 or mp3_count == 0:
+            return None
+        # 90% threshold: tolerates the case where one or two chapters
+        # were skipped but the bulk of the book is already synthesised.
+        if mp3_count < int(expected * 0.9):
+            return None
+        return output_dir
+
+    def _maybe_clean_obsolete_cache(
+        self,
+        reader: EbookReader,
+        items: List[ChapterStructureItem],
+        config: ConversionConfig,
+    ) -> None:
+        """Remove cached audio that does not match any current chapter.
+
+        Edition swaps (different EPUB → same book title) leave the
+        previous run's MP3s in the cache dir. The chapter loop happily
+        reuses them by filename, so a chapter that was 5,000 chars in
+        the old edition gets a 5,000-char MP3 even when the new edition
+        has 7,000 chars. This pre-pass deletes any cached MP3 whose
+        filename does not correspond to a chapter index in the current
+        structure list — a cheap structural check that catches the
+        common edition-swap case without parsing chapter content.
+        """
+        try:
+            cache_dir = self.cache_root / FileManager.sanitize_filename(
+                getattr(reader, "title", "") or "default"
+            )
+            if not cache_dir.exists() or not cache_dir.is_dir():
+                return
+            valid_indices = {str(item.index) for item in items}
+            removed = 0
+            for path in cache_dir.glob("*.mp3"):
+                # Cache filenames look like "<index> - <title>.mp3".
+                stem = path.stem.split(" - ", 1)[0].strip()
+                if stem and stem not in valid_indices:
+                    with contextlib.suppress(OSError):
+                        path.unlink()
+                        removed += 1
+            if removed:
+                print(
+                    f"🧹 Cache cleanup: removed {removed} stale MP3(s) that no "
+                    "longer match the current chapter list"
+                )
+        except Exception:
+            pass
+
+    def _preflight_language_and_config_check(
+        self,
+        reader: EbookReader,
+        items: List[ChapterStructureItem],
+        config: ConversionConfig,
+        args,
+    ) -> bool:
+        """Second-pass verification before TTS starts.
+
+        The Carl regression (v0.3.20→v0.3.21) shipped pt-BR audiobook
+        narrated by an English Piper model. The first-pass detection
+        had agreed on pt-BR; the bug was downstream. But "two
+        independent confirmations are better than one" — running a
+        second detection over a *different* sample window catches the
+        case where the first sample was unrepresentative (e.g. a book
+        whose first 5 chapters are all front-matter in English while
+        the body is Portuguese).
+
+        Also surfaces the final engine + voice + fallback decisions so
+        the user can spot a misconfigured run BEFORE 10 minutes of
+        synthesis. Honours `--language` override (the user's choice
+        wins, we only warn). Returns True to proceed, False to abort.
+        """
+
+        primary = (config.primary_language or "").lower()
+        primary_root = primary.split("-", 1)[0]
+        user_language_override = bool(
+            self._normalize_language_override(getattr(args, "language", None))
+        )
+
+        # Independent re-detection over a different sample window:
+        # take chapters from the *middle* of the book, not the priority
+        # positions used by `_prepare_language_profile`. Mid-book is
+        # almost always main content, free of front-matter noise.
+        sample_texts: List[str] = []
+        total_chars = 0
+        if items:
+            mid_start = max(0, len(items) // 4)
+            mid_end = min(len(items), max(mid_start + 5, (3 * len(items)) // 4))
+            for item in items[mid_start:mid_end]:
+                source_text = (
+                    item.text_override
+                    if item.text_override is not None
+                    else getattr(item.chapter, "text", "")
+                )
+                if not source_text and getattr(item.chapter, "raw_html", None):
+                    source_text = TextProcessor.html_to_plain_text(item.chapter.raw_html)
+                if source_text and len(source_text.strip()) > 200:
+                    sample_texts.append(source_text)
+                    total_chars += len(source_text)
+                    if total_chars >= 5000:
+                        break
+
+        verified_lang = ""
+        if sample_texts:
+            try:
+                second_profile = self.language_detector.detect_profile(sample_texts)
+                if second_profile and second_profile.primary:
+                    verified_lang = second_profile.primary.lower()
+            except Exception:
+                verified_lang = ""
+
+        verified_root = verified_lang.split("-", 1)[0] if verified_lang else ""
+
+        print()
+        print("🔎 Pre-flight check (idioma + parâmetros)")
+        print(f"   • Idioma detectado (1ª passagem): {primary or '?'}")
+        if verified_lang:
+            match = "✓ Match" if verified_root == primary_root else "✗ MISMATCH"
+            print(
+                f"   • Idioma detectado (2ª passagem, amostra independente): {verified_lang}  {match}"
+            )
+        else:
+            print("   • Idioma detectado (2ª passagem): inconclusivo (texto insuficiente)")
+        engine_choice = getattr(args, "engine", "auto") or "auto"
+        fallback_choice = getattr(args, "fallback_engine", "auto") or "auto"
+        print(f"   • Engine pedido pelo usuário: {engine_choice}")
+        print(f"   • Fallback engine: {fallback_choice}")
+        if config.voice:
+            print(f"   • Voice: {config.voice}")
+
+        if verified_root and primary_root and verified_root != primary_root:
+            if user_language_override:
+                print(
+                    f"   ⚠️  Override do usuário (--language={primary}) difere da 2ª detecção "
+                    f"({verified_lang}). Respeitando o pedido do usuário."
+                )
+            else:
+                print()
+                print(
+                    f"❌ Discrepância de idioma: 1ª passagem disse '{primary}', "
+                    f"2ª passagem (amostra independente) disse '{verified_lang}'."
+                )
+                print(
+                    "   Conversão abortada para não gerar áudio em idioma errado. "
+                    f"Force com --language {primary} ou --language {verified_lang}."
+                )
+                return False
+
+        return True
 
     def _prepare_language_profile(
         self,

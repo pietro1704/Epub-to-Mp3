@@ -6,6 +6,12 @@
 
 - **Piper refuses to synthesise with a wrong-language model.** The `_find_piper_model` resolver had a "last resort" branch that returned the first installed `.onnx` model when no language-matched model was available locally and the on-demand download failed. A pt-BR EPUB ended up narrated by `en_US-lessac-medium.onnx` — Portuguese text spoken with English phonemes (the Carl regression: the user reported the audiobook sounded like "horrível inglês com voz ruim"). The factory now raises `FileNotFoundError` instead, letting the upstream chain (`--fallback-engine` for the CLI, `_build_engine_chain` for the server) fall through to an engine that honours the language. Pinned by `test_piper_wrong_language_refusal.py`.
 
+### Features
+
+- **Pre-flight verification before TTS starts.** New `_preflight_language_and_config_check` in `main.py` runs an independent second-pass language detection over a *different* chapter window than the first pass and aborts if the two disagree (unless the user forced `--language`). Also surfaces the final engine, fallback engine, and voice choices so a misconfigured run is visible *before* hours of synthesis. Catches the "first 5 chapters were front-matter in English" failure mode that single-pass detection would miss. 5 new tests in `test_preflight_language_check.py`.
+- **Skip re-synthesis when the audiobook is already on disk.** New `_detect_reusable_existing_output` in `main.py`: when the resolved per-book output dir already contains ≥90% of the expected MP3s, the converter short-circuits and points the user at the existing files (still triggers the iPhone export step). Override with `--clear-cache` or `--force`. Subset selectors (`--chapter`, ranges) bypass the reuse check. 6 new tests in `test_existing_output_reuse.py`.
+- **Auto-cleanup of stale per-chapter cache.** Edition swaps (different EPUB → same book title) used to leave the previous run's MP3s in the cache dir, where the chapter loop happily reused them by filename — producing a 5,000-char MP3 for a 7,000-char chapter. New `_maybe_clean_obsolete_cache` removes any cached MP3 whose chapter index no longer appears in the current structure list. 3 new tests in `test_existing_output_reuse.py`.
+
 ## [0.3.20] — 2026-04-29
 
 ### Bug Fixes
