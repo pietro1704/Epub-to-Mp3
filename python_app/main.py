@@ -761,6 +761,37 @@ class ConverterApplication:
             if getattr(args, "export_metrics_bundle", False):
                 self._export_metrics_bundle(temp_dir)
 
+            # iPhone export (opt-in): copy the finished audiobook into
+            # the MP3AudioBookPlayer iCloud Drive container so it
+            # syncs to the device. Done last so a failed export never
+            # affects the conversion exit code — the audio is on disk
+            # regardless. macOS-only.
+            cli_flag = getattr(args, "export_to_iphone", None)
+            if cli_flag is None:
+                from src.iphone_export import parse_env_flag
+
+                want_export = parse_env_flag(os.environ.get("EXPORT_TO_IPHONE"))
+            else:
+                want_export = bool(cli_flag)
+            if want_export and isinstance(result, ConversionResult) and result.success:
+                from src.iphone_export import export_book_to_iphone, is_macos
+
+                if not is_macos():
+                    print(
+                        "⚠️  --export-to-iphone is macOS-only (iCloud Drive "
+                        "container path); skipping export."
+                    )
+                else:
+                    output_dir_for_export = _output_dir if _output_dir else None
+                    if output_dir_for_export:
+                        ok, error = export_book_to_iphone(
+                            Path(output_dir_for_export),
+                            book_title=getattr(reader, "title", "") or Path(args.input_file).stem,
+                            log=print,
+                        )
+                        if not ok:
+                            print(f"⚠️  iPhone export skipped: {error}")
+
             if isinstance(result, ConversionResult):
                 return 0 if result.success else 1
             if isinstance(result, int):
@@ -4450,6 +4481,19 @@ def _add_conversion_arguments(
         "--listen",
         action="store_true",
         help="Play each chapter immediately after conversion",
+    )
+    parser.add_argument(
+        "--export-to-iphone",
+        dest="export_to_iphone",
+        action="store_true",
+        default=None,
+        help=(
+            "After conversion, copy MP3s into the MP3AudioBookPlayer iCloud "
+            "Drive container so they sync to the iPhone (macOS only). The "
+            "files appear in 'Files > MP3AudioBookPlayer' on the device. "
+            "Override the container path with IPHONE_EXPORT_DIR or enable "
+            "globally with EXPORT_TO_IPHONE=1."
+        ),
     )
     parser.add_argument(
         "--no-parallel",

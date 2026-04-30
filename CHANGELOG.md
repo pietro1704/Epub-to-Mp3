@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.3.19] — 2026-04-29
+
+### Features
+
+- **Auto-export to iPhone via iCloud Drive (macOS)**. New `--export-to-iphone` CLI flag (and `EXPORT_TO_IPHONE=1` env var) that copies the finished audiobook into the MP3AudioBookPlayer iCloud container (`~/Library/Mobile Documents/iCloud~com~biomsoft~mp3audiobookplayerfree/Documents/<book>/`). iCloud Drive then syncs to the device, where the files appear under **Arquivos > MP3AudioBookPlayer** automatically — no cable, no manual confirmation. Override the destination via `IPHONE_EXPORT_DIR` for users with the paid version of the app or a different audiobook player. Export failures never affect the conversion exit code: the audio stays on disk regardless.
+
+### Tests
+
+- 14 new tests in `test_iphone_export.py` cover the env-flag parser, default container path resolution, the `IPHONE_EXPORT_DIR` override, every file-copy edge case (missing source, missing destination, slash-sanitised titles, blank title fallback, overwrite of existing files), and the macOS platform guard.
+
 ## [0.3.18] — 2026-04-29
 
 ### Features
