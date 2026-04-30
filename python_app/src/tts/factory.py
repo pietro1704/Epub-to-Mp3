@@ -382,7 +382,22 @@ class TTSFactory:
         if downloaded:
             return downloaded
 
-        # Last resort: return any model found, even if wrong language
+        # No model in the requested language is available and the on-demand
+        # download failed. Picking *any* installed model here used to be the
+        # silent fallback, but it produces unlistenable output: a pt-BR
+        # audiobook narrated by `en_US-lessac-medium` reads Portuguese with
+        # English phonemes (the Carl regression). Refuse instead so the
+        # caller falls through to Edge/Kokoro on the next tier rather than
+        # synthesising audio in the wrong language.
+        if preferred:
+            raise FileNotFoundError(
+                f"No Piper model available for '{preferred}' "
+                "(download failed and no compatible local model was found). "
+                "Refusing to synthesise with a wrong-language model."
+            )
+
+        # No language preference at all → falling back to any model is fine
+        # (we have nothing else to compare against).
         for search_dir in dict.fromkeys(candidate_dirs):
             if not search_dir.exists() or not search_dir.is_dir():
                 continue

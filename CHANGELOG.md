@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.21] — 2026-04-30
+
+### Bug Fixes
+
+- **Piper refuses to synthesise with a wrong-language model.** The `_find_piper_model` resolver had a "last resort" branch that returned the first installed `.onnx` model when no language-matched model was available locally and the on-demand download failed. A pt-BR EPUB ended up narrated by `en_US-lessac-medium.onnx` — Portuguese text spoken with English phonemes (the Carl regression: the user reported the audiobook sounded like "horrível inglês com voz ruim"). The factory now raises `FileNotFoundError` instead, letting the upstream chain (`--fallback-engine` for the CLI, `_build_engine_chain` for the server) fall through to an engine that honours the language. Pinned by `test_piper_wrong_language_refusal.py`.
+
 ## [0.3.20] — 2026-04-29
 
 ### Bug Fixes
