@@ -79,20 +79,18 @@ class TestPiperCharacterVoices(unittest.TestCase):
         """
         from src.tts import piper_engine as _piper_mod
 
-        if _piper_mod.np is None or _piper_mod.sf is None:
-            # Mock numpy / soundfile so the concat path proceeds.
-            fake_np = MagicMock()
-            fake_np.concatenate = lambda chunks, axis=0: b"".join(chunks) if chunks else b""
-            fake_sf = MagicMock()
-            fake_sf.read = lambda path: (b"x" * 100, 22050)
-            fake_sf.write = lambda path, data, sr: Path(path).write_bytes(b"WAV")
-            np_patch = patch.object(_piper_mod, "np", fake_np)
-            sf_patch = patch.object(_piper_mod, "sf", fake_sf)
-        else:
-            from contextlib import nullcontext
-
-            np_patch = nullcontext()
-            sf_patch = nullcontext()
+        # Always mock numpy / soundfile here — the test writes synthetic
+        # placeholder bytes (`b"\x00" * 100`) for the per-role WAVs and a
+        # real soundfile.read raises "Format not recognised" against
+        # them. We only care about the routing assertions, not the
+        # concat I/O round-trip.
+        fake_np = MagicMock()
+        fake_np.concatenate = lambda chunks, axis=0: b"".join(chunks) if chunks else b""
+        fake_sf = MagicMock()
+        fake_sf.read = lambda path: (b"x" * 100, 22050)
+        fake_sf.write = lambda path, data, sr: Path(path).write_bytes(b"WAV")
+        np_patch = patch.object(_piper_mod, "np", fake_np)
+        sf_patch = patch.object(_piper_mod, "sf", fake_sf)
 
         engine = self._engine()
         text = "Ele andou ate a porta. \u201cBom dia\u201d, ele disse, sorrindo."
