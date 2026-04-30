@@ -26,14 +26,26 @@ def _ensure_ffmpeg_paths() -> None:
 
 
 async def find_first_silence_after_title(
-    audio_file: Path, *, min_search_offset: float = 0.5, max_search_offset: float = 12.0
+    audio_file: Path, *, min_search_offset: float = 1.5, max_search_offset: float = 12.0
 ) -> Optional[float]:
     """Find the END timestamp of the first silence after the chapter title.
 
-    Edge synthesises "Capítulo X." then a short pause (~0.4-0.7s) then
-    the chapter body. We use that natural pause as the splice point: by
-    inserting an extra silence at the END of the existing one we get a
-    real beat without the listener noticing the seam.
+    Edge synthesises "Capítulo X." then a short pause (typically
+    150-300 ms — much shorter than between full sentences in the
+    body) then the chapter body. We use that natural pause as the
+    splice point: by inserting an extra silence at the END of the
+    existing one we get a real beat without the listener noticing
+    the seam.
+
+    The Carl Cap 1 regression (commit 7882805): an earlier version
+    used `duration=0.25` which is *above* the typical title-end pause
+    of ~220 ms, so the helper skipped it and matched the next inter-
+    sentence pause (~640 ms) instead. The injection landed AFTER the
+    first body sentence, leaving the title-to-body transition flat.
+
+    Lower threshold (`duration=0.10`) catches the title-end gap; we
+    also bias the search toward the FIRST silence in [min, max] which
+    on real Edge output is reliably the title-end one.
 
     Returns the timestamp (in seconds, as float) of the silence's END,
     or None if nothing reasonable was found.
@@ -46,8 +58,6 @@ async def find_first_silence_after_title(
     import subprocess
 
     try:
-        # Probe up to 15s to keep the call cheap; chapter titles are
-        # always near the start.
         result = subprocess.run(
             (
                 "ffmpeg",
@@ -56,7 +66,7 @@ async def find_first_silence_after_title(
                 "-t",
                 f"{max_search_offset + 3:.1f}",
                 "-af",
-                "silencedetect=noise=-30dB:duration=0.25",
+                "silencedetect=noise=-30dB:duration=0.10",
                 "-f",
                 "null",
                 "-",
