@@ -2040,8 +2040,7 @@ def _handle_stalled_job(job_id: str, job: dict, inactivity_seconds: float) -> bo
     job["completedAt"] = now
     _append_event(
         job,
-        f"{message_prefix}Stopped to avoid a permanent stall. "
-        "Try again with different settings.",
+        f"{message_prefix}Stopped to avoid a permanent stall. Try again with different settings.",
     )
     _persist_job(job_id, force=True)
     _persist_job_log(job_id, job)
@@ -2258,10 +2257,12 @@ async def convert_ebook(
     enable_character_voices: Optional[str] = Form(None),
     narrator_voice: Optional[str] = Form(None),
     character_voice: Optional[str] = Form(None),
+    export_to_iphone: Optional[str] = Form(None),
 ) -> dict[str, str]:
     enable_character_voices_flag = _parse_form_optional_bool(enable_character_voices)
     narrator_voice_value = (narrator_voice or "").strip() or None
     character_voice_value = (character_voice or "").strip() or None
+    export_to_iphone_flag = _parse_form_optional_bool(export_to_iphone)
     speak_cues = _parse_form_bool(formatting_cues, True)
     ui_lang = _normalize_locale(ui_language, "pt")
     disable_parallel = _parse_form_bool(no_parallel, False)
@@ -2536,6 +2537,9 @@ async def convert_ebook(
         ),
         "narratorVoice": narrator_voice_value,
         "characterVoice": character_voice_value,
+        # iPhone export (v0.3.20): explicit opt-in per job. macOS-only;
+        # job runner respects EXPORT_TO_IPHONE env as a fallback.
+        "exportToIphone": (False if export_to_iphone_flag is None else bool(export_to_iphone_flag)),
         "bitrate": bitrate,
         "sampleRate": sample_rate_override,
         "channels": channels_override,
@@ -3135,20 +3139,17 @@ def _check_preview_rate_limit(client_ip: str) -> bool:
 
 
 _PREVIEW_SAMPLE_TEXTS: dict[str, str] = {
-    "pt": ("Era uma vez, numa terra distante, " "um livro que ganhava vida ao ser ouvido."),
-    "en": ("Once upon a time, in a distant land, " "a book came alive when it was heard."),
-    "es": ("Érase una vez, en una tierra lejana, " "un libro que cobraba vida al ser escuchado."),
+    "pt": ("Era uma vez, numa terra distante, um livro que ganhava vida ao ser ouvido."),
+    "en": ("Once upon a time, in a distant land, a book came alive when it was heard."),
+    "es": ("Érase una vez, en una tierra lejana, un libro que cobraba vida al ser escuchado."),
     "fr": (
-        "Il était une fois, dans un pays lointain, " "un livre qui prenait vie quand on l'écoutait."
+        "Il était une fois, dans un pays lointain, un livre qui prenait vie quand on l'écoutait."
     ),
-    "de": (
-        "Es war einmal, in einem fernen Land, " "ein Buch, das lebendig wurde, wenn man es hörte."
-    ),
+    "de": ("Es war einmal, in einem fernen Land, ein Buch, das lebendig wurde, wenn man es hörte."),
     "ja": "むかしむかし、遠い国に、聞くと命を宿す本がありました。",
     "zh": "从前，在一个遥远的地方，有一本书，当有人听它时，它便活了过来。",
     "it": (
-        "C'era una volta, in una terra lontana, "
-        "un libro che prendeva vita quando veniva ascoltato."
+        "C'era una volta, in una terra lontana, un libro che prendeva vita quando veniva ascoltato."
     ),
 }
 
@@ -5957,22 +5958,41 @@ async def process_conversion(job_id: str) -> None:
                         # only retries the missing-MP3 case (duration
                         # outliers and text mismatches need richer logic
                         # the CLI's retry loop already handled inline).
+                        # v0.3.20: extended to also retry duration
+                        # outliers and duration mismatches. The
+                        # median-based duration check (v0.3.15) flags
+                        # chapters whose WPM lies outside [50%, 200%] of
+                        # the book median — those are usually genuine
+                        # synthesis defects (silence padding doubled,
+                        # segments duplicated) and a fresh re-synth
+                        # often clears them.
                         import re as _re
 
                         missing_re = _re.compile(r"Chapter\s+([\d.]+):\s+Missing MP3 file")
+                        outlier_re = _re.compile(
+                            r"Chapter\s+([\d.]+):\s+Duration (?:outlier|mismatch)"
+                        )
                         missing_labels = {
                             m.group(1) for m in (missing_re.match(i) for i in real_issues) if m
                         }
-                        if missing_labels:
+                        outlier_labels = {
+                            m.group(1) for m in (outlier_re.match(i) for i in real_issues) if m
+                        }
+                        retry_labels = missing_labels | outlier_labels
+                        if retry_labels:
+                            parts = []
+                            if missing_labels:
+                                parts.append(f"{len(missing_labels)} missing")
+                            if outlier_labels:
+                                parts.append(f"{len(outlier_labels)} duration outlier")
                             _append_event(
                                 job,
-                                f"🔁 Auto-fix: re-synthesising "
-                                f"{len(missing_labels)} missing chapter(s)",
+                                "🔁 Auto-fix: re-synthesising " + " + ".join(parts) + " chapter(s)",
                             )
                             recovered = 0
                             for retry_idx, retry_chapter in enumerate(chapters, start=1):
                                 label = str(getattr(retry_chapter, "index", "")).strip()
-                                if label not in missing_labels:
+                                if label not in retry_labels:
                                     continue
                                 try:
                                     await convert_chapter(retry_idx, retry_chapter)
@@ -5987,7 +6007,7 @@ async def process_conversion(job_id: str) -> None:
                                 _append_event(
                                     job,
                                     f"✅ Auto-fix: recovered {recovered}/"
-                                    f"{len(missing_labels)} missing chapter(s)",
+                                    f"{len(retry_labels)} chapter(s)",
                                 )
                                 # Re-run validate to update the stats
                                 # surfaced through the API.
@@ -6111,6 +6131,39 @@ async def process_conversion(job_id: str) -> None:
                     pass
 
         total_elapsed = time.time() - conversion_started
+
+        # iPhone export (v0.3.20): per-job opt-in via the form, with the
+        # EXPORT_TO_IPHONE env var as a fallback for users who set it
+        # globally on the desktop sidecar. macOS-only; failures are
+        # informational and never fail the job.
+        if job.get("exportToIphone") or os.environ.get("EXPORT_TO_IPHONE", "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            try:
+                from src.iphone_export import export_book_to_iphone, is_macos
+
+                if is_macos():
+                    book_title_for_export = (
+                        job.get("bookTitle") or job_output_dir.name or "Audiobook"
+                    )
+                    ok, error = export_book_to_iphone(
+                        job_output_dir,
+                        book_title=book_title_for_export,
+                        log=lambda msg: _append_event(job, msg),
+                    )
+                    if not ok:
+                        _append_event(job, f"⚠️ iPhone export skipped: {error}")
+                else:
+                    _append_event(
+                        job,
+                        "⚠️ iPhone export requires macOS — skipping (Linux/Windows host).",
+                    )
+            except Exception as exc:
+                _append_event(job, f"⚠️ iPhone export raised unexpectedly: {exc}")
+
         job["state"] = "finished"
         job["progressPercent"] = 100
         job["outputs"] = _sort_output_entries(outputs)

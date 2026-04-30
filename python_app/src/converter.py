@@ -2148,6 +2148,19 @@ class AudioConverter(
 
         if pending_total == 0:
             moved_files = self.file_manager.move_files_to_final_output(temp_dir, output_dir)
+            # Run dedup BEFORE applying ID3 tags so we don't waste cycles
+            # tagging files that are about to be deleted, and BEFORE
+            # building the final result so the file count is accurate.
+            # The auto-fix-and-retry pipeline only runs dedup when there
+            # are validation problems; the all-cached fast path used to
+            # skip it entirely, so leftover duplicates from earlier runs
+            # accumulated forever (the v0.3.18 Carl conversion ended up
+            # with 64 MP3s for 61 chapters because of this).
+            dedup_removed = self._dedup_chapter_outputs(output_dir)
+            if dedup_removed:
+                print(
+                    f"   🧹 Auto-dedup (cache-hit path): removed {dedup_removed} duplicate MP3(s)"
+                )
             result = ConversionResult(
                 success=True,
                 total_chapters=total_chapters,

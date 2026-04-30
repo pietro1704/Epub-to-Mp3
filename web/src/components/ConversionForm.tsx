@@ -306,6 +306,7 @@ export default function ConversionForm({
   const [enableCharacterVoices, setEnableCharacterVoices] = useState(true);
   const [narratorVoice, setNarratorVoice] = useState("");
   const [characterVoice, setCharacterVoice] = useState("");
+  const [exportToIphone, setExportToIphone] = useState(false);
   const [noParallel, setNoParallel] = useState(false);
   const [multiEngineParallel, setMultiEngineParallel] = useState(false);
   const [maxPerformance, setMaxPerformance] = useState(true);
@@ -1015,6 +1016,7 @@ export default function ConversionForm({
       enableCharacterVoices,
       narratorVoice: narratorVoice || undefined,
       characterVoice: characterVoice || undefined,
+      exportToIphone,
       noParallel,
       multiEngineParallel,
       maxPerformance,
@@ -1693,6 +1695,27 @@ export default function ConversionForm({
               </span>
             </label>
             <p className="form-hint">{t.form.noParallelDescription}</p>
+          </fieldset>
+
+          <fieldset className="form-row">
+            <label htmlFor="exportToIphoneToggle">
+              {t.form.exportToIphoneLabel}
+            </label>
+            <label className="form-toggle" htmlFor="exportToIphoneToggle">
+              <input
+                id="exportToIphoneToggle"
+                type="checkbox"
+                checked={exportToIphone}
+                disabled={isSubmitting}
+                onChange={(event) => setExportToIphone(event.target.checked)}
+              />
+              <span>
+                {exportToIphone
+                  ? t.form.exportToIphoneOn
+                  : t.form.exportToIphoneOff}
+              </span>
+            </label>
+            <p className="form-hint">{t.form.exportToIphoneDescription}</p>
           </fieldset>
 
           <fieldset className="form-row">

@@ -22,6 +22,7 @@ export interface ConversionFormValues {
   enableCharacterVoices?: boolean;
   narratorVoice?: string;
   characterVoice?: string;
+  exportToIphone?: boolean;
   noParallel?: boolean;
   multiEngineParallel?: boolean;
   maxPerformance?: boolean;

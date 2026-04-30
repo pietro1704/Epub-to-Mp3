@@ -188,6 +188,9 @@ class KokoroTTSEngine:
         chunk_char_limit: Optional[int] = None,
         max_workers: Optional[int] = None,
         status_callback: Optional[Callable[[str], None]] = None,
+        enable_character_voices: bool = False,
+        narrator_voice: Optional[str] = None,
+        character_voice: Optional[str] = None,
     ) -> None:
         self.voice = voice or "af_heart"
         self.primary_language = (primary_language or "en").split("-")[0].lower()
@@ -198,6 +201,16 @@ class KokoroTTSEngine:
         self.chunk_limit = chunk_char_limit or DEFAULT_CHUNK_CHARS
         self.max_workers = max_workers or MAX_WORKERS
         self.status_callback = status_callback
+
+        # Multi-voice narration (v0.3.20). Kokoro voices are simple
+        # string IDs (e.g. "af_heart", "bf_heart"); we just need two
+        # different ones to enable the split. Falls back to single
+        # voice when either slot is empty or both match.
+        self.narrator_voice = (narrator_voice or "").strip() or self.voice
+        self.character_voice = (character_voice or "").strip() or self.voice
+        self.enable_character_voices = bool(enable_character_voices) and (
+            self.narrator_voice != self.character_voice
+        )
 
         if not kokoro_supports_language(self.primary_language):
             raise ValueError(
@@ -358,13 +371,50 @@ class KokoroTTSEngine:
         audio_parts = []
         loop = asyncio.get_event_loop()
 
+        # Multi-voice expansion (v0.3.20): when character voices are
+        # active, split each language segment into narrator/character
+        # spans BEFORE chunking so each role gets its own Kokoro voice.
+        # The dialogue splitter routes quoted dialogue to the character
+        # voice and everything else stays with the narrator. Same module
+        # the Edge engine uses; identical behaviour for the listener.
+        expanded_segments: List[Tuple[str, str, str]] = []  # (lang, voice, text)
+        if self.enable_character_voices:
+            try:
+                from ..dialogue_splitter import split_into_dialogue_spans
+            except Exception:
+                split_into_dialogue_spans = None  # type: ignore[assignment]
+        else:
+            split_into_dialogue_spans = None  # type: ignore[assignment]
+
         for lang, segment_text in segments:
             segment_text = segment_text.strip()
             if not segment_text:
                 continue
+            base_voice = self._get_voice_for_language(lang)
+            if split_into_dialogue_spans is not None:
+                spans = split_into_dialogue_spans(segment_text)
+                roles_seen = {span.role for span in spans if span.text.strip()}
+                if len(roles_seen) >= 2:
+                    for span in spans:
+                        body = span.text.strip()
+                        if not body:
+                            continue
+                        role_voice = (
+                            self.character_voice
+                            if span.role == "character"
+                            else self.narrator_voice
+                        )
+                        # Language-specific override from base voice
+                        # picker still wins for non-default languages —
+                        # multi-voice only kicks in for the primary lang
+                        # where narrator/character voices were chosen.
+                        chosen = role_voice if base_voice == self.voice else base_voice
+                        expanded_segments.append((lang, chosen, body))
+                    continue
+            expanded_segments.append((lang, base_voice, segment_text))
 
+        for lang, voice, segment_text in expanded_segments:
             lang_code = self._get_lang_code(lang)
-            voice = self._get_voice_for_language(lang)
 
             # Split into chunks
             chunks = self._split_text(segment_text)

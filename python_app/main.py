@@ -782,11 +782,24 @@ class ConverterApplication:
                         "container path); skipping export."
                     )
                 else:
-                    output_dir_for_export = _output_dir if _output_dir else None
+                    # `_output_dir` is the *root* output directory (e.g.
+                    # `output/`); MP3s live in `<root>/<sanitised title>/`.
+                    # Use the same sanitiser the converter used so we
+                    # land on the correct sub-folder instead of an empty
+                    # parent (the v0.3.20 fix).
+                    book_title_for_export = (
+                        getattr(reader, "title", "") or Path(args.input_file).stem
+                    )
+                    output_dir_for_export = None
+                    if _output_dir:
+                        safe_book_dir = FileManager.sanitize_filename(
+                            book_title_for_export or "default"
+                        )
+                        output_dir_for_export = Path(_output_dir) / safe_book_dir
                     if output_dir_for_export:
                         ok, error = export_book_to_iphone(
-                            Path(output_dir_for_export),
-                            book_title=getattr(reader, "title", "") or Path(args.input_file).stem,
+                            output_dir_for_export,
+                            book_title=book_title_for_export,
                             log=print,
                         )
                         if not ok:

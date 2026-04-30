@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.20] — 2026-04-29
+
+### Bug Fixes
+
+- **All-cached fast path now runs auto-dedup.** When every chapter is already on disk, `_convert_chapters_parallel` returned early without invoking `_dedup_chapter_outputs`, so duplicate MP3s from earlier runs survived re-conversion attempts (the Carl regression: 64 MP3s for a 61-chapter book). The cache-hit branch now dedups before applying ID3 tags, matching the slow path. Pinned by `test_all_cached_runs_dedup.py`.
+- **CLI `--export-to-iphone` resolves the per-book output dir.** When the user passes a top-level `output/` root, the export step previously globbed the root directly and reported "no MP3 files" because the audiobook lives one level down (`output/<sanitised_title>/`). The CLI now joins the title via `FileManager.sanitize_filename` before export, matching the path the converter actually wrote.
+
+### Features
+
+- **Multi-voice narration in Kokoro.** v0.3.7 wired the dialogue splitter into Edge, v0.3.18 added Piper, and v0.3.20 finishes the trio: configure `narrator_voice` and `character_voice` to two distinct Kokoro voice IDs (e.g. `af_heart` + `bf_heart`) and quoted spans synthesise on the character voice while the rest stays on the narrator. Identical IDs or empty values transparently fall back to single-voice synthesis. Factory warning now fires only for Coqui/Spark (the remaining unsupported engines).
+- **Web jobs auto-retry duration outliers, not just missing files.** `process_conversion` already retried chapters flagged as `Missing MP3 file` (v0.3.18). It now also catches `Duration outlier`/`Duration mismatch` flags from `validate_book`, mirroring the CLI's `_auto_validate_and_retry_async` behaviour. Stops the regression where a chapter that synthesised but produced a too-short/too-long file slipped through the web retry loop.
+- **Web UI toggle for iPhone export.** The `--export-to-iphone` CLI flag (v0.3.19) is now reachable from the React form: a checkbox between "Multi-voice narration" and "Multi-engine fallback" forwards the choice to the server as `export_to_iphone=on/off`. i18n keys added for both pt-BR and en-US.
+
+### Tests
+
+- 6 new tests in `test_kokoro_character_voices.py` mirror the Piper coverage: config resolution (distinct, identical, empty fallback, disabled flag) and routing of quoted vs pure-narration spans to the right voice.
+- New `test_all_cached_runs_dedup.py` is a structural guard — asserts the dedup call survives the cache-hit branch in `converter.py` so a future refactor cannot silently regress the Carl bug.
+- `test_factory_multi_voice_warning.py` updated: warning fires for `coqui`, no warning for `kokoro` (now supported).
+
 ## [0.3.19] — 2026-04-29
 
 ### Features

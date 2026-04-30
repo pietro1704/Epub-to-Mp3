@@ -45,21 +45,33 @@ class TestMultiVoiceEdgeOnlyWarning(unittest.TestCase):
                 pass
         return buf.getvalue()
 
-    def test_warning_fires_for_kokoro_with_split_voices(self):
-        # Kokoro is in the unsupported set — multi-voice config is silently
+    def test_warning_fires_for_coqui_with_split_voices(self):
+        # Coqui is in the unsupported set — multi-voice config is silently
         # ignored, so the factory must emit the warning. (Piper joined the
-        # supported set in v0.3.18 and no longer warns; that case is
-        # covered by the dedicated `test_piper_character_voices.py`.)
+        # supported set in v0.3.18 and Kokoro in v0.3.20; both are covered
+        # by their own tests now.)
+        cfg = ConversionConfig(
+            engine="coqui",
+            primary_language="en",
+            enable_character_voices=True,
+            narrator_voice="speaker-A",
+            character_voice="speaker-B",
+        )
+        stderr = self._capture_stderr(cfg)
+        self.assertIn("Multi-voice narration", stderr)
+        self.assertIn("coqui", stderr)
+
+    def test_no_warning_for_kokoro_with_split_voices(self):
+        # v0.3.20 wired multi-voice into Kokoro; warning would mislead.
         cfg = ConversionConfig(
             engine="kokoro",
             primary_language="en",
             enable_character_voices=True,
-            narrator_voice="af_sky",
-            character_voice="af_heart",
+            narrator_voice="af_heart",
+            character_voice="bf_heart",
         )
         stderr = self._capture_stderr(cfg)
-        self.assertIn("Multi-voice narration", stderr)
-        self.assertIn("kokoro", stderr)
+        self.assertNotIn("Multi-voice narration", stderr)
 
     def test_no_warning_for_piper_with_split_voices(self):
         # v0.3.18 wired multi-voice into Piper; the warning would be
@@ -89,18 +101,18 @@ class TestMultiVoiceEdgeOnlyWarning(unittest.TestCase):
         # Same voice → splitter would be a no-op even on Edge, so the
         # other engines are not "missing" anything.
         cfg = ConversionConfig(
-            engine="kokoro",
+            engine="coqui",
             primary_language="en",
             enable_character_voices=True,
-            narrator_voice="af_sky",
-            character_voice="af_sky",
+            narrator_voice="speaker-A",
+            character_voice="speaker-A",
         )
         stderr = self._capture_stderr(cfg)
         self.assertNotIn("Multi-voice narration", stderr)
 
     def test_no_warning_when_split_disabled(self):
         cfg = ConversionConfig(
-            engine="piper",
+            engine="coqui",
             primary_language="pt-BR",
             enable_character_voices=False,
             narrator_voice="a",

@@ -124,15 +124,15 @@ class TTSFactory:
     def create_engine(self, config: ConversionConfig) -> TTSEngine:
         engine = (config.engine or "").lower()
 
-        # Multi-voice narration support matrix (v0.3.18):
-        #   * edge   — wired in via the dialogue splitter (v0.3.7).
-        #   * piper  — wired in via two ONNX model paths (v0.3.18).
-        #   * kokoro / coqui / spark — single voice only.
+        # Multi-voice narration support matrix (v0.3.20):
+        #   * edge   — dialogue splitter (v0.3.7).
+        #   * piper  — two ONNX model paths (v0.3.18).
+        #   * kokoro — two voice IDs (v0.3.20).
+        #   * coqui / spark — single voice only.
         # When the user configured a narrator/character split but picked
         # an engine that won't honour it, surface a clear warning so the
-        # config isn't silently dropped (operator finds out only when
-        # the resulting MP3 has one voice throughout).
-        _ENGINES_WITH_MULTI_VOICE = {"edge", "piper"}
+        # config isn't silently dropped.
+        _ENGINES_WITH_MULTI_VOICE = {"edge", "piper", "kokoro"}
         if engine not in _ENGINES_WITH_MULTI_VOICE:
             wants_split = bool(getattr(config, "enable_character_voices", False))
             has_distinct_voices = (
@@ -145,8 +145,8 @@ class TTSFactory:
 
                 print(
                     "⚠️  Multi-voice narration (narrator/character split) is only "
-                    f"supported by Edge-TTS and Piper. Engine '{engine}' will use a "
-                    "single voice; narrator_voice and character_voice are ignored.",
+                    f"supported by Edge-TTS, Piper, and Kokoro. Engine '{engine}' "
+                    "will use a single voice; narrator_voice and character_voice are ignored.",
                     file=_sys.stderr,
                 )
 
@@ -288,6 +288,9 @@ class TTSFactory:
                 status_callback=config.log_callback,
                 chunk_char_limit=getattr(config, "kokoro_chunk_chars", None),
                 max_workers=getattr(config, "kokoro_max_workers", None),
+                enable_character_voices=bool(getattr(config, "enable_character_voices", False)),
+                narrator_voice=getattr(config, "narrator_voice", None),
+                character_voice=getattr(config, "character_voice", None),
             )
 
         if engine == "spark":

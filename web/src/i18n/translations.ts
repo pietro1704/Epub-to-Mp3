@@ -186,6 +186,10 @@ export interface FormText {
   narratorVoiceLabel: string;
   characterVoiceLabel: string;
   characterVoicesAutoOption: string;
+  exportToIphoneLabel: string;
+  exportToIphoneDescription: string;
+  exportToIphoneOn: string;
+  exportToIphoneOff: string;
   noParallelLabel: string;
   noParallelDescription: string;
   noParallelOn: string;
@@ -1062,6 +1066,11 @@ export const translations: Record<Locale, Translations> = {
       narratorVoiceLabel: "Voz do narrador",
       characterVoiceLabel: "Voz dos personagens",
       characterVoicesAutoOption: "Mesma voz selecionada acima",
+      exportToIphoneLabel: "Enviar para iPhone (iCloud Drive)",
+      exportToIphoneDescription:
+        "Ao terminar, copia os MP3 para a pasta MP3AudioBookPlayer no iCloud Drive. Sincroniza automaticamente para o iPhone, sem cabo. macOS apenas.",
+      exportToIphoneOn: "Ativado",
+      exportToIphoneOff: "Desativado",
       noParallelLabel: "Desativar paralelismo (1 capítulo por vez)",
       noParallelDescription:
         "Útil para Edge online em redes instáveis; reduz travamentos e pode ser mais rápido.",
@@ -1981,6 +1990,11 @@ export const translations: Record<Locale, Translations> = {
       narratorVoiceLabel: "Narrator voice",
       characterVoiceLabel: "Character voice",
       characterVoicesAutoOption: "Same voice selected above",
+      exportToIphoneLabel: "Send to iPhone (iCloud Drive)",
+      exportToIphoneDescription:
+        "When finished, copies the MP3s into the MP3AudioBookPlayer iCloud Drive folder. Syncs automatically to the iPhone, no cable. macOS only.",
+      exportToIphoneOn: "Enabled",
+      exportToIphoneOff: "Disabled",
       noParallelLabel: "Disable parallelism (1 chapter at a time)",
       noParallelDescription:
         "Useful for online Edge voices on unstable networks; reduces stalls and may be faster.",

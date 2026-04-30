@@ -123,6 +123,9 @@ function buildFormData(values: ConversionFormValues): FormData {
   if (values.characterVoice) {
     formData.append("character_voice", values.characterVoice);
   }
+  if (typeof values.exportToIphone === "boolean") {
+    formData.append("export_to_iphone", values.exportToIphone ? "on" : "off");
+  }
   if (values.noParallel) {
     formData.append("no_parallel", "on");
   }
