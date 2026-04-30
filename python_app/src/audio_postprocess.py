@@ -79,16 +79,24 @@ async def find_silence_for_title(
 
     # silencedetect reports the leading intro padding as silence_start: 0.
     # Skip that one — we want the first silence AFTER speech starts.
-    # Only accept it if it falls within the first 2.5 s; later silences
-    # are inter-sentence pauses inside the body, NOT the title-end
-    # boundary. A chapter title that takes longer than ~2 s to read is
-    # rare enough that returning None and skipping the injection (no
-    # injection beats injection-in-the-wrong-place) is the safer
-    # default.
+    # Prefer a silence that falls within the first 2.5 s (almost
+    # always the title-end boundary).
     for start, end in zip(starts, ends):
         if 0.45 <= start <= 2.5:
             return end
-    return None
+
+    # No detected silence in the title-end window. Edge sometimes
+    # runs the title and the first body sentence together with no
+    # pause at all. Falling back to "no injection" leaves the chapter
+    # without the audible beat the user explicitly asked for, which is
+    # worse than picking a slightly imperfect splice point. Return a
+    # conservative fixed offset (~1.0 s past the intro padding) so the
+    # caller at least injects SOMETHING audible. The body text then
+    # picks up shortly after — listeners hear "Capítulo X. <2 s of
+    # silence> A transformação..." with at most a tiny clipped first
+    # syllable, which is far less jarring than the title-into-body
+    # mash.
+    return 1.0
 
 
 async def find_first_silence_after_title(
