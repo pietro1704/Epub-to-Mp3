@@ -5340,6 +5340,36 @@ class AudioConverter(
                                 config,
                                 logger=print if self.verbose else None,
                             )
+                            # Inject ~1s of extra silence at the natural
+                            # title/body boundary. Edge plain-text caps
+                            # inter-sentence silence at ~0.7s; chapter
+                            # title announcements need a longer beat to
+                            # land. We look for the first silence_end
+                            # after 0.5s (past the intro padding) and
+                            # splice in an extra second there. Best-
+                            # effort — failure leaves the chapter
+                            # unchanged.
+                            try:
+                                from .audio_postprocess import (
+                                    find_first_silence_after_title,
+                                    inject_silence_at_offset,
+                                )
+
+                                splice_at = await find_first_silence_after_title(
+                                    output_path,
+                                    min_search_offset=0.5,
+                                    max_search_offset=12.0,
+                                )
+                                if splice_at is not None:
+                                    await inject_silence_at_offset(
+                                        output_path,
+                                        insert_at_seconds=splice_at,
+                                        silence_ms=1000,
+                                        bitrate=getattr(config, "bitrate", "8k") or "8k",
+                                    )
+                            except Exception as _exc:
+                                if self.verbose:
+                                    print(f"   ⚠️ title-pause injection failed: {_exc}")
                             chapter_success = True
 
                             if self.verbose:
