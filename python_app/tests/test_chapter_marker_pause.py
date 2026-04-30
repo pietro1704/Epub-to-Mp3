@@ -28,8 +28,8 @@ class TestChapterMarkerPause(unittest.TestCase):
             text, raw_html=None, chapter_title="Capítulo 1"
         )
         # Title prepended + chapter number normalised.
-        self.assertIn("Capítulo 1...", out)
-        self.assertIn("1...", out)
+        self.assertIn("Capítulo 1.", out)
+        self.assertIn("1.", out)
         self.assertNotIn("|", out)
 
     def test_marker_at_start_of_text(self):
@@ -37,7 +37,7 @@ class TestChapterMarkerPause(unittest.TestCase):
         out = TextProcessor.apply_structural_speech_cues(
             text, raw_html=None, chapter_title="Capítulo 5"
         )
-        self.assertIn("5...", out)
+        self.assertIn("5.", out)
         self.assertNotIn("|", out)
 
     def test_no_pipe_no_change_to_body(self):
@@ -53,7 +53,7 @@ class TestChapterMarkerPause(unittest.TestCase):
         out = TextProcessor.apply_structural_speech_cues(
             text, raw_html=None, chapter_title="Capítulo 42"
         )
-        self.assertIn("42...", out)
+        self.assertIn("42.", out)
         self.assertNotIn("42 |", out)
 
     def test_markdown_hash_marker_becomes_pause(self):
@@ -62,7 +62,7 @@ class TestChapterMarkerPause(unittest.TestCase):
         out = TextProcessor.apply_structural_speech_cues(
             text, raw_html=None, chapter_title="Capítulo 7"
         )
-        self.assertIn("7...", out)
+        self.assertIn("7.", out)
         self.assertNotIn("##", out)
 
     def test_bare_numeric_marker_becomes_pause(self):
@@ -71,13 +71,13 @@ class TestChapterMarkerPause(unittest.TestCase):
         out = TextProcessor.apply_structural_speech_cues(
             text, raw_html=None, chapter_title="Capítulo 12"
         )
-        self.assertIn("12...", out)
+        self.assertIn("12.", out)
 
     def test_bare_numeric_does_not_match_three_plus_digits(self):
         """Year mentions like "2026\nfoi" must NOT be rewritten."""
         text = "2026\nfoi um ano notável."
         out = TextProcessor.apply_structural_speech_cues(text, raw_html=None, chapter_title="Cap")
-        self.assertNotIn("2026...", out)
+        self.assertNotIn("2026.", out)
 
     def test_marker_with_trailing_period(self):
         """`enhance_natural_pauses` appends '.' to un-punctuated paragraph
@@ -89,7 +89,7 @@ class TestChapterMarkerPause(unittest.TestCase):
         out = TextProcessor.apply_structural_speech_cues(
             text, raw_html=None, chapter_title="Capítulo 1"
         )
-        self.assertIn("1...", out)
+        self.assertIn("1.", out)
         self.assertNotIn("1 |", out)
 
 

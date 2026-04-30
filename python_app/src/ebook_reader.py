@@ -1163,9 +1163,15 @@ class TextProcessor:
         for line in updated.split("\n"):
             stripped = TextProcessor.normalise_whitespace(line)
             if stripped and stripped.rstrip(".!?;:").casefold() in title_keys:
-                # Use ellipsis for a long TTS pause after chapter/section headings.
-                # A single period gives only a brief beat; "..." signals a longer silence.
-                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}...")
+                # Long TTS pause after chapter/section headings:
+                # - period (sentence boundary, ~500ms in Edge)
+                # - blank line (paragraph boundary, ~800ms more)
+                # Earlier versions used "..." but Edge treats those as a
+                # short stutter (~200ms), not a real pause; the user
+                # reported "no pause" on the audio output. Period +
+                # blank line is the SSML-equivalent that Edge respects.
+                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}.")
+                adjusted_lines.append("")
             else:
                 adjusted_lines.append(line)
 
@@ -1182,9 +1188,11 @@ class TextProcessor:
         # `enhance_natural_pauses` might have appended to the line
         # before this normalisation pass (it tags un-punctuated
         # paragraph-end lines with a period).
+        # Period + blank line (real pause) instead of "..."
+        # which Edge treats as a stutter, not a pause.
         result = re.sub(
             r"(^|\n)\s*(\d+)\s*\|\s*[.!?]?\s*(\n|$)",
-            lambda m: f"{m.group(1)}{m.group(2)}...{m.group(3)}",
+            lambda m: f"{m.group(1)}{m.group(2)}.\n{m.group(3)}",
             result,
         )
 
@@ -1198,12 +1206,12 @@ class TextProcessor:
         # almost always a chapter-number marker, not body content.
         result = re.sub(
             r"(^|\n)\s*##+\s*(\d{1,3})\s*[.!?]?\s*(\n|$)",
-            lambda m: f"{m.group(1)}{m.group(2)}...{m.group(3)}",
+            lambda m: f"{m.group(1)}{m.group(2)}.\n{m.group(3)}",
             result,
         )
         result = re.sub(
             r"(^|\n)(\d{1,3})\s*\n(\s*\S)",
-            lambda m: f"{m.group(1)}{m.group(2)}...\n{m.group(3)}",
+            lambda m: f"{m.group(1)}{m.group(2)}.\n\n{m.group(3)}",
             result,
         )
 
