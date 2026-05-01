@@ -81,8 +81,8 @@ class TestSampleEpubFeatures(unittest.TestCase):
             raw_html=raw_html,
         )
 
-        self.assertIn("AN UNUSUAL TITLE...", speech)
-        self.assertIn("AN UNUSUAL TITLE...\nThe story starts here.", speech)
+        self.assertIn("AN UNUSUAL TITLE.", speech)
+        self.assertIn("AN UNUSUAL TITLE.\nThe story starts here.", speech)
 
     def test_prepare_speech_text_uses_toc_title_when_html_has_no_heading(self) -> None:
         raw_html = "<div><p>The story starts here.</p></div>"
@@ -95,7 +95,7 @@ class TestSampleEpubFeatures(unittest.TestCase):
             chapter_title="Chapter Twelve",
         )
 
-        self.assertTrue(speech.startswith("Chapter Twelve...\nThe story starts here."))
+        self.assertTrue(speech.startswith("Chapter Twelve.\nThe story starts here."))
 
     def test_prepare_speech_text_does_not_duplicate_toc_title_already_in_opening_lines(
         self,
@@ -114,8 +114,8 @@ class TestSampleEpubFeatures(unittest.TestCase):
 
         self.assertEqual(speech.count("Capítulo 4 Ben Hanscom sofre"), 0)
         # p-tag heuristic detects these short lines as headings → long pause
-        self.assertIn("Capítulo 4...", speech)
-        self.assertIn("Ben Hanscom sofre uma queda...", speech)
+        self.assertIn("Capítulo 4.", speech)
+        self.assertIn("Ben Hanscom sofre uma queda.", speech)
 
     def test_prepare_speech_text_does_not_duplicate_title_found_later_in_opening_block(
         self,
@@ -164,11 +164,11 @@ perfectly normal, thank you very much. They were the last people</p>
         self.assertIn("THE BOY WHO LIVED", parsed_text)
         # Soft line breaks inside <p> are collapsed to spaces (HTML whitespace rules)
         self.assertIn("Mr. and Mrs. Dursley, of number four, Privet Drive", parsed_text)
-        self.assertTrue(speech.startswith("Chapter 1..."))
-        self.assertIn("THE BOY WHO LIVED...", speech)
+        self.assertTrue(speech.startswith("Chapter 1."))
+        self.assertIn("THE BOY WHO LIVED.", speech)
         # Heading is on its own line; body starts on the next line (newline preserved)
         self.assertIn(
-            "THE BOY WHO LIVED...\nMr. and Mrs. Dursley, of number four, Privet Drive", speech
+            "THE BOY WHO LIVED.\nMr. and Mrs. Dursley, of number four, Privet Drive", speech
         )
         # Intra-paragraph soft line breaks must NOT create mid-sentence pauses
         self.assertNotIn("of.\nnumber four", speech)
@@ -198,8 +198,8 @@ perfectly normal, thank you very much. They were the last people</p>
         )
 
         # Both headings must get long-pause ellipsis
-        self.assertIn("CHAPTER ONE...", speech)
-        self.assertIn("THE BOY WHO LIVED...", speech)
+        self.assertIn("CHAPTER ONE.", speech)
+        self.assertIn("THE BOY WHO LIVED.", speech)
         # CHAPTER ONE must NOT be concatenated with THE BOY WHO LIVED without pause
         self.assertNotIn("CHAPTER ONE THE BOY WHO LIVED", speech)
         self.assertNotIn("CHAPTER ONE. THE BOY WHO LIVED", speech)
@@ -224,11 +224,11 @@ perfectly normal, thank you very much. They were the last people</p>
         )
 
         # Each heading gets a long pause (...)
-        self.assertIn("Part One: The Shadow Before...", speech)
-        self.assertIn("Chapter 1...", speech)
-        self.assertIn("After the Flood (1957)...", speech)
+        self.assertIn("Part One: The Shadow Before.", speech)
+        self.assertIn("Chapter 1.", speech)
+        self.assertIn("After the Flood (1957).", speech)
         # Headings appear in order with long pauses between them (each on its own line)
-        self.assertIn("Part One: The Shadow Before...\nChapter 1...", speech)
+        self.assertIn("Part One: The Shadow Before.\nChapter 1.", speech)
         # Paragraph content must not be mixed into heading line
         self.assertNotIn("Chapter 1 After the Flood", speech)
 
@@ -494,12 +494,12 @@ class TestJardimDasAflicoesPrefacioParsing(unittest.TestCase):
 
     def test_prefacio_heading_gets_long_pause(self) -> None:
         speech = self._prepare()
-        self.assertIn("PREFÁCIO...", speech)
+        self.assertIn("PREFÁCIO.", speech)
 
     def test_author_attribution_gets_long_pause(self) -> None:
         """'DE BRUNO TOLENTINO' is a <p class='date'> after an h1 — must still get a pause."""
         speech = self._prepare()
-        self.assertIn("DE BRUNO TOLENTINO...", speech)
+        self.assertIn("DE BRUNO TOLENTINO.", speech)
 
     def test_prefacio_before_author_in_speech(self) -> None:
         speech = self._prepare()

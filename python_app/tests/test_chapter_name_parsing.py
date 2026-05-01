@@ -60,7 +60,7 @@ class TestHarryPotterStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_adds_pause_after_h2(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("THE BOY WHO LIVED...", speech)
+        self.assertIn("THE BOY WHO LIVED.", speech)
 
     def test_prepare_speech_text_chapter_heading_before_subtitle(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
@@ -109,12 +109,12 @@ class TestITEnglishStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_adds_pause_after_chapter_1(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("CHAPTER 1...", speech)
+        self.assertIn("CHAPTER 1.", speech)
 
     def test_prepare_speech_text_adds_pause_after_after_flood(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("After the Flood (1957)...", speech)
+        self.assertIn("After the Flood (1957).", speech)
 
     def test_prepare_speech_text_chapter_1_before_flood(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
@@ -161,7 +161,7 @@ class TestMobyDickStyleParsing(unittest.TestCase):
             plain, segs, raw_html=self.HTML, chapter_title="1 MIRAGENS"
         )
         # "1 MIRAGENS" should appear in speech with pause
-        self.assertIn("...", speech)
+        self.assertIn(".", speech)
 
     def test_prepare_speech_text_without_chapter_title_no_heading_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
@@ -203,7 +203,7 @@ class TestMythicalManMonthStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_adds_pause_after_title(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("The Tar Pit...", speech)
+        self.assertIn("The Tar Pit.", speech)
 
     def test_prepare_speech_text_body_follows_heading(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
@@ -250,7 +250,7 @@ class TestEpigraphOpeningQuoteStyleParsing(unittest.TestCase):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
         # The attribution line (short, no terminal punctuation) gets the pause
-        self.assertIn("Suma Bene Gesserit...", speech)
+        self.assertIn("Suma Bene Gesserit.", speech)
         # The speech must also contain the epigraph text
         self.assertIn("história", speech)
 
@@ -300,12 +300,12 @@ class TestDivinaComediaStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_inferno_gets_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("Inferno...", speech)
+        self.assertIn("Inferno.", speech)
 
     def test_prepare_speech_text_canto_i_gets_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("Canto I...", speech)
+        self.assertIn("Canto I.", speech)
 
     def test_prepare_speech_text_inferno_before_canto_i(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
@@ -356,7 +356,7 @@ class TestMontanhaMagicaStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_adds_pause_after_a_chegada(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("A CHEGADA...", speech)
+        self.assertIn("A CHEGADA.", speech)
 
     def test_prepare_speech_text_heading_before_body(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
@@ -406,12 +406,12 @@ class TestDomQuixoteStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_dom_quixote_gets_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("O engenhoso fidalgo Dom Quixote de la Mancha...", speech)
+        self.assertIn("O engenhoso fidalgo Dom Quixote de la Mancha.", speech)
 
     def test_prepare_speech_text_primeira_parte_gets_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("PRIMEIRA PARTE...", speech)
+        self.assertIn("PRIMEIRA PARTE.", speech)
 
 
 # ---------------------------------------------------------------------------
@@ -458,7 +458,7 @@ class TestSilmarillionStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_chapter_1_gets_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("CHAPTER 1...", speech)
+        self.assertIn("CHAPTER 1.", speech)
 
     def test_prepare_speech_text_chapter_1_before_body(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
@@ -514,12 +514,12 @@ class TestKoboTwoLineTitleStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_capitulo_1_gets_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("CAPÍTULO 1...", speech)
+        self.assertIn("CAPÍTULO 1.", speech)
 
     def test_prepare_speech_text_licoes_gets_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("LIÇÕES DE COMBATENTES NO VIETNAME...", speech)
+        self.assertIn("LIÇÕES DE COMBATENTES NO VIETNAME.", speech)
 
     def test_prepare_speech_text_capitulo_before_licoes(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
@@ -559,12 +559,12 @@ class TestVooNoturnoRomanNumeralStyleParsing(unittest.TestCase):
     def test_prepare_speech_text_i_gets_pause(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertIn("I...", speech)
+        self.assertIn("I.", speech)
 
     def test_prepare_speech_text_i_before_body(self):
         plain, segs = TextProcessor.html_to_plain_text_with_formatting(self.HTML)
         speech = EpubParser._prepare_speech_text(plain, segs, raw_html=self.HTML)
-        self.assertLess(speech.index("I..."), speech.index("pilotos"))
+        self.assertLess(speech.index("I."), speech.index("pilotos"))
 
 
 # ---------------------------------------------------------------------------

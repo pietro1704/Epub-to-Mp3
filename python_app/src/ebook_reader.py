@@ -1163,16 +1163,17 @@ class TextProcessor:
         for line in updated.split("\n"):
             stripped = TextProcessor.normalise_whitespace(line)
             if stripped and stripped.rstrip(".!?;:").casefold() in title_keys:
-                # Use "..." as the title-end marker for downstream
-                # consumers (test fixtures, the audio diff tool) that
-                # rely on it. Plain-text Edge ignores the difference
-                # between "..." and "." anyway — both produce a ~500ms
-                # natural pause. The real audible beat between title
-                # and body comes from `inject_silence_at_offset` in
-                # converter.py, which splices an extra 1s of silence
-                # post-synthesis. Don't conflate the two roles: the
-                # ellipsis is purely a structural marker.
-                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}...")
+                # End the title line with a single period. Earlier
+                # versions used "..." (ellipsis), but Edge sometimes
+                # interpreted the ellipsis as a stutter cue and
+                # inserted a 100-150 ms gap INSIDE the previous word
+                # ("Capí..tulo 2"), producing the artefact the user
+                # reported as "Capi..........tulo22". A single period
+                # gives the same ~500 ms sentence-end pause without
+                # the stutter risk; the long beat between title and
+                # body still comes from `inject_silence_at_offset`
+                # in converter.py.
+                adjusted_lines.append(f"{stripped.rstrip('.!?;:')}.")
             else:
                 adjusted_lines.append(line)
 

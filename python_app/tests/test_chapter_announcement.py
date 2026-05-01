@@ -19,16 +19,19 @@ class TestChapterAnnouncement(unittest.TestCase):
     def test_numeric_title_is_announced_even_if_opening_has_digits(self):
         body = "The year was 1933 and the tunnels were silent. He walked on."
         result = TextProcessor.apply_structural_speech_cues(body, None, "1")
-        # Second pass converts the heading line to "1..." for a longer TTS pause.
+        # Second pass converts the heading line to "1." for a sentence-end pause.
+        # (Earlier versions used "..." but Edge sometimes interpreted that as a
+        # stutter cue, so we use a single period and rely on post-synthesis
+        # silence injection for the audible beat.)
         self.assertTrue(
-            result.startswith("1...\n") or result.startswith("1\n"),
+            result.startswith("1.\n") or result.startswith("1\n"),
             f"expected '1' to be announced, got: {result!r}",
         )
 
     def test_short_title_is_announced_when_first_line_does_not_match(self):
         body = "Tunnels collapsed behind him. He kept running."
         result = TextProcessor.apply_structural_speech_cues(body, None, "Prologue")
-        self.assertTrue(result.startswith("Prologue...\n") or result.startswith("Prologue\n"))
+        self.assertTrue(result.startswith("Prologue.\n") or result.startswith("Prologue\n"))
 
     def test_title_already_first_line_is_not_duplicated(self):
         body = "Chapter One\nHe walked into the tunnel."
@@ -57,7 +60,7 @@ class TestChapterAnnouncement(unittest.TestCase):
         # short title should still be announced (this is the core bug fix).
         body = "He rode the metro every day for years. The station was his home."
         result = TextProcessor.apply_structural_speech_cues(body, None, "Metro")
-        self.assertTrue(result.startswith("Metro...\n") or result.startswith("Metro\n"))
+        self.assertTrue(result.startswith("Metro.\n") or result.startswith("Metro\n"))
 
     def test_empty_title_does_not_prepend(self):
         body = "Some text content."

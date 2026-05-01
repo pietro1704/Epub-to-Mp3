@@ -47,8 +47,8 @@ class TestEdgeTTSSegmentation(unittest.TestCase):
         # No raw newlines (Edge-TTS uses them for internal framing)
         self.assertNotIn("\n", sanitized)
         # The structural ellipses — long-pause markers — must survive intact
-        self.assertIn("Chapter 1...", sanitized)
-        self.assertIn("THE BOY WHO LIVED...", sanitized)
+        self.assertIn("Chapter 1.", sanitized)
+        self.assertIn("THE BOY WHO LIVED.", sanitized)
         # Order preserved
         self.assertLess(sanitized.index("Chapter 1..."), sanitized.index("THE BOY WHO LIVED..."))
 
