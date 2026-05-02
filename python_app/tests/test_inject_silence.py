@@ -38,13 +38,21 @@ class TestInjectSilenceHelpers(unittest.TestCase):
         self.assertIn("silence_ms", sig.parameters)
         self.assertEqual(sig.parameters["silence_ms"].default, 1000)
 
-    def test_converter_calls_injection_after_apply_silence_padding(self):
+    def test_converter_injection_is_opt_in_via_config(self):
+        """The injection step must be gated on
+        `config.inject_title_pause_ms > 0` so it stays off unless the
+        user explicitly opted in via `--inject-title-pause MS`. The
+        previous always-on behaviour produced fixed-length pauses that
+        sounded uniform across chapters of varying length."""
         from src import converter
 
         src = inspect.getsource(converter)
         self.assertIn("find_silence_for_title", src)
         self.assertIn("inject_silence_at_offset", src)
-        self.assertIn("silence_ms=2000", src)
+        # Opt-in gate present.
+        self.assertIn("inject_title_pause_ms", src)
+        # The silence duration is taken from the config, not hard-coded.
+        self.assertIn("silence_ms=inject_pause_ms", src)
 
 
 class TestSilenceInjectionPreservesCoverArt(unittest.TestCase):
@@ -91,6 +99,32 @@ class TestSilenceInjectionPreservesCoverArt(unittest.TestCase):
         self.assertGreater(apply_pos, reuse_pos, "reuse path must re-stamp ID3 tags")
         # And it must pass cover_art (not None) so the JPEG is embedded.
         self.assertIn("cover_art=cover_art", src[reuse_pos : reuse_pos + 1500])
+
+
+class TestInjectTitlePauseDefault(unittest.TestCase):
+    """The title-pause injection used to run on every chapter with a
+    hard-coded 2000 ms silence. The user found the resulting cadence
+    awkward (a fixed pause is too uniform across chapters of varying
+    length), so it became opt-in. Pin the new defaults."""
+
+    def test_config_default_is_zero(self):
+        from src.config import ConversionConfig
+
+        self.assertEqual(ConversionConfig.inject_title_pause_ms, 0)
+
+    def test_cli_default_is_zero(self):
+        from main import create_argument_parser
+
+        parser = create_argument_parser()
+        ns = parser.parse_args(["convert", "x.epub"])
+        self.assertEqual(getattr(ns, "inject_title_pause", None), 0)
+
+    def test_cli_accepts_explicit_ms(self):
+        from main import create_argument_parser
+
+        parser = create_argument_parser()
+        ns = parser.parse_args(["convert", "x.epub", "--inject-title-pause", "1500"])
+        self.assertEqual(ns.inject_title_pause, 1500)
 
 
 if __name__ == "__main__":

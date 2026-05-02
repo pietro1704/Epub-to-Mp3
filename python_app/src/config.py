@@ -92,6 +92,11 @@ class ConversionConfig:
     # consistent spacing between back-to-back chapters when concatenated.
     chapter_intro_silence_ms: int = 300
     chapter_outro_silence_ms: int = 500
+    # Optional ffmpeg silence injection between the chapter title and
+    # the body. Off by default (the user found a fixed-length pause
+    # awkward — too uniform across chapters of varying length).
+    # Set via the CLI's `--inject-title-pause MS` flag.
+    inject_title_pause_ms: int = 0
     # Multi-voice narration: when enabled, dialogue (text inside quotes or
     # em-dash lines) is synthesised with `character_voice` while everything
     # else uses `narrator_voice`. Falls back to `voice` when either slot is

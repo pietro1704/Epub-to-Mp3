@@ -4349,6 +4349,13 @@ class ConverterApplication:
             ),
             **overrides,
         )
+        # Optional title-pause injection (off by default, opt-in via
+        # --inject-title-pause MS). 0 = disabled, any positive value
+        # is the silence duration in milliseconds.
+        try:
+            config.inject_title_pause_ms = max(0, int(getattr(args, "inject_title_pause", 0) or 0))
+        except (TypeError, ValueError):
+            config.inject_title_pause_ms = 0
         char_voices_pref = getattr(args, "character_voices", None)
         if char_voices_pref is not None:
             config.enable_character_voices = bool(char_voices_pref)
@@ -4719,6 +4726,18 @@ def _add_conversion_arguments(
         "--engine-chain-fallback",
         action="store_true",
         help="Enable the legacy multi-engine cascade (Edge -> Kokoro -> Piper). Default is Edge-only with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
+    )
+    parser.add_argument(
+        "--inject-title-pause",
+        type=int,
+        default=0,
+        metavar="MS",
+        help=(
+            "Inject N ms of silence between the chapter title announcement and "
+            "the body via ffmpeg post-processing. Off by default (a fixed-length "
+            "pause sounds uniform across chapters of varying length). "
+            "Try 1500 or 2000 to opt in."
+        ),
     )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
     parser.add_argument("--model", help="Model path (for Piper/Coqui/Spark)")

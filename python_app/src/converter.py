@@ -5333,52 +5333,43 @@ class AudioConverter(
                                 config,
                                 logger=print if self.verbose else None,
                             )
-                            # Inject ~1s of extra silence at the natural
-                            # title/body boundary. Edge plain-text caps
-                            # inter-sentence silence at ~0.7s; chapter
-                            # title announcements need a longer beat to
-                            # land. We look for the first silence_end
-                            # after 0.5s (past the intro padding) and
-                            # splice in an extra second there. Best-
-                            # effort — failure leaves the chapter
-                            # unchanged.
-                            #
-                            # IMPORTANT: this MUST run BEFORE the ID3
-                            # metadata + cover-art embedding step.
-                            # `inject_silence_at_offset` uses ffmpeg
-                            # concat-copy which strips non-audio
-                            # streams (the embedded JPEG cover) and any
-                            # preceding ID3 frames. Re-embedding tags
-                            # afterwards keeps the cover art the user
-                            # sees on the iPhone audiobook player.
-                            try:
-                                from .audio_postprocess import (
-                                    find_silence_for_title,
-                                    inject_silence_at_offset,
-                                )
-
-                                # Use the chapter label as a title hint
-                                # so the splicer knows roughly how long
-                                # the title takes to read aloud. Strip
-                                # any leading number prefix so "5 - Capítulo
-                                # 1" estimates from "Capítulo 1" only.
-                                title_hint = chapter_label or chapter.name or ""
-                                if " - " in title_hint:
-                                    title_hint = title_hint.split(" - ", 1)[-1]
-                                splice_at = await find_silence_for_title(
-                                    output_path,
-                                    title_text=title_hint,
-                                )
-                                if splice_at is not None:
-                                    await inject_silence_at_offset(
-                                        output_path,
-                                        insert_at_seconds=splice_at,
-                                        silence_ms=2000,
-                                        bitrate=getattr(config, "bitrate", "8k") or "8k",
+                            # Optional: inject extra silence at the
+                            # natural title/body boundary. Off by
+                            # default (the user reported it sounded
+                            # awkward — a fixed-length pause is too
+                            # uniform across chapters of varying
+                            # length). Opt in via `--inject-title-pause`
+                            # on the CLI, which sets
+                            # `config.inject_title_pause_ms` to a
+                            # positive value. The injection MUST run
+                            # before `_embed_id3_metadata` because
+                            # ffmpeg concat-copy strips non-audio
+                            # streams (the JPEG cover) and ID3 frames.
+                            inject_pause_ms = int(getattr(config, "inject_title_pause_ms", 0) or 0)
+                            if inject_pause_ms > 0:
+                                try:
+                                    from .audio_postprocess import (
+                                        find_silence_for_title,
+                                        inject_silence_at_offset,
                                     )
-                            except Exception as _exc:
-                                if self.verbose:
-                                    print(f"   ⚠️ title-pause injection failed: {_exc}")
+
+                                    title_hint = chapter_label or chapter.name or ""
+                                    if " - " in title_hint:
+                                        title_hint = title_hint.split(" - ", 1)[-1]
+                                    splice_at = await find_silence_for_title(
+                                        output_path,
+                                        title_text=title_hint,
+                                    )
+                                    if splice_at is not None:
+                                        await inject_silence_at_offset(
+                                            output_path,
+                                            insert_at_seconds=splice_at,
+                                            silence_ms=inject_pause_ms,
+                                            bitrate=getattr(config, "bitrate", "8k") or "8k",
+                                        )
+                                except Exception as _exc:
+                                    if self.verbose:
+                                        print(f"   ⚠️ title-pause injection failed: {_exc}")
                             self._embed_id3_metadata(
                                 output_path,
                                 title=chapter_label,
