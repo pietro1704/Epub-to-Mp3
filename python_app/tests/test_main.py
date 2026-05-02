@@ -765,9 +765,11 @@ class TestArgumentParser(unittest.TestCase):
         args = parser.parse_args(["convert", "test.epub", "--engine", "auto"])
         self.assertEqual(args.engine, "auto")
 
-        # --fallback-engine defaults to "auto" and accepts piper/kokoro/none
+        # --fallback-engine defaults to "none" (strict: don't silently
+        # switch engines mid-chapter — the Carl regression). Accepts
+        # auto/piper/kokoro/none when set explicitly.
         args = parser.parse_args(["convert", "test.epub"])
-        self.assertEqual(args.fallback_engine, "auto")
+        self.assertEqual(args.fallback_engine, "none")
         for choice in ("auto", "piper", "kokoro", "none"):
             args = parser.parse_args(["convert", "test.epub", "--fallback-engine", choice])
             self.assertEqual(args.fallback_engine, choice)
