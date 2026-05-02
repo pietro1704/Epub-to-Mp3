@@ -4706,8 +4706,14 @@ def _add_conversion_arguments(
     parser.add_argument(
         "--fallback-engine",
         choices=["auto", "piper", "kokoro", "none"],
-        default="auto",
-        help="Engine used to re-synthesize a single sentence if the primary engine hangs/fails. auto=piper for pt-*, kokoro for en, piper otherwise. none=disable per-sentence fallback.",
+        default="none",
+        help=(
+            "Engine used to re-synthesize a single sentence if the primary engine hangs/fails. "
+            "Default is 'none' — staying on the user-chosen engine instead of silently switching "
+            "(the Carl regression: a pt-BR audiobook was narrated by an English Piper model "
+            "because the previous default 'auto' fell through to Piper without telling the user). "
+            "Set explicitly to 'piper' / 'kokoro' / 'auto' to opt back into per-sentence fallback."
+        ),
     )
     parser.add_argument(
         "--engine-chain-fallback",
