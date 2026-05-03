@@ -958,6 +958,16 @@ class _EdgeThrottleMixin:
                     new_value = new_value - 1
                     reason = f"CPU saturada ({int(cpu_pct)}%) sem ganho → {new_value} chapter(s)"
 
+        # When the Edge auto-tuner has shrunk chunks below ~6K, every chapter
+        # generates many more requests. Running 15+ chapters in parallel under
+        # that condition saturates outbound bandwidth and creates head-of-line
+        # blocking on Edge's per-IP slots. Cap chapter parallelism to match.
+        chunk_cap = self._chapter_cap_from_edge_chunk()
+        if chunk_cap is not None and new_value > chunk_cap:
+            chunk_reason = f"Edge chunk reduzido → limitando capítulos paralelos a {chunk_cap}"
+            new_value = chunk_cap
+            reason = chunk_reason if not reason else f"{reason}; {chunk_reason}"
+
         new_value = max(1, min(ceiling, new_value))
         if throughput:
             state["last_throughput"] = throughput
@@ -966,6 +976,32 @@ class _EdgeThrottleMixin:
         state["current"] = new_value
         self._parallel_state = state
         return new_value, reason
+
+    @staticmethod
+    def _chapter_cap_from_edge_chunk() -> Optional[int]:
+        """Derive a chapter-parallel ceiling from the live Edge chunk size.
+
+        Tracks the global ``_edge_current_chunk_size`` mutated by
+        ``EdgeTtsEngine._apply_tuning``. The mapping is deliberately coarse —
+        the goal is to back off chapter concurrency when the per-segment tuner
+        has reacted to throttling, not to micro-manage every adjustment.
+        """
+        try:
+            from python_app.src.tts import edge_engine as _edge_mod  # local import avoids cycle
+        except Exception:
+            return None
+        chunk = getattr(_edge_mod, "_edge_current_chunk_size", None)
+        try:
+            chunk_int = int(chunk) if chunk else 0
+        except (TypeError, ValueError):
+            return None
+        if chunk_int <= 0:
+            return None
+        if chunk_int <= 4500:
+            return 4
+        if chunk_int <= 6500:
+            return 8
+        return None  # chunk healthy → no extra cap
 
     def _apply_edge_slow_mode(
         self,

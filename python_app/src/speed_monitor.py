@@ -114,6 +114,13 @@ class SpeedMonitor:
         self._speed_variance: float = 0.0
         self._high_jitter_mode: bool = False
         self._last_stall_time: float = 0.0
+        # Require N consecutive stalls before signalling — single jittery sample
+        # on a small chunk is not representative.
+        self._pending_stalls: int = 0
+        self._stall_confirm_threshold: int = 2
+        # Below this chunk size a slow sample is not representative — small
+        # chunks are dominated by request setup, not throughput.
+        self._stall_min_chars: int = 2000
 
         # Best known configuration
         self._best_config: Optional[TuningConfig] = None
@@ -144,11 +151,21 @@ class SpeedMonitor:
 
         speed = chars / duration
         stall_action = None
-        if duration >= STALL_DURATION_SECONDS and speed < self.min_speed:
-            self._last_stall_time = time.time()
-            stall_action = (
-                f"STALL_DETECTED: {duration:.0f}s for {chars} chars ({speed:.0f} chars/s)"
-            )
+        is_stall_candidate = (
+            duration >= STALL_DURATION_SECONDS
+            and speed < self.min_speed
+            and chars >= self._stall_min_chars
+        )
+        if is_stall_candidate:
+            self._pending_stalls += 1
+            if self._pending_stalls >= self._stall_confirm_threshold:
+                self._last_stall_time = time.time()
+                self._pending_stalls = 0
+                stall_action = (
+                    f"STALL_DETECTED: {duration:.0f}s for {chars} chars ({speed:.0f} chars/s)"
+                )
+        elif speed >= self.min_speed:
+            self._pending_stalls = 0
         sample = SpeedSample(
             timestamp=time.time(),
             chars=chars,

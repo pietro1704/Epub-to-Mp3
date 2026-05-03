@@ -219,7 +219,12 @@ class AdaptiveSpeedController:
         max_seconds = float(getattr(config, "edge_max_segment_seconds", 45) or 45)
 
         profile = getattr(tts_engine, "speed_profile", None)
-        words_per_minute = profile.get("words_per_minute") if isinstance(profile, dict) else 170
+        # Edge neural voices speak at ~200 WPM (matches EXPECTED_WPM=200 in
+        # converter.py). Lower defaults inflate ETA estimates and cause the
+        # validator to suspect truncation on perfectly fine audio.
+        words_per_minute = profile.get("words_per_minute") if isinstance(profile, dict) else None
+        if not words_per_minute:
+            words_per_minute = 200
 
         adjustments: Dict[str, float] = {}
         chars = max(chapter_chars, 0)
@@ -243,18 +248,18 @@ class AdaptiveSpeedController:
             penalty = 1000 * max(recent_failures, self._edge_failure_streak)
             chunk_limit = max(4000, chunk_limit - penalty)
             max_seconds = max(45.0, min(max_seconds, 65.0))
-            words_per_minute = min(words_per_minute, 175)
+            words_per_minute = min(words_per_minute, 195)
         elif slow_runs:
             chunk_limit = min(10000, chunk_limit + 2000)
             max_seconds = min(75.0, max_seconds + 6.0)
-            words_per_minute = max(words_per_minute, 190)
+            words_per_minute = max(words_per_minute, 205)
         else:
-            words_per_minute = max(words_per_minute, 180)
+            words_per_minute = max(words_per_minute, 200)
 
         # Keep chunk sizes within reliable bounds.
         chunk_limit = int(max(4000, min(chunk_limit, 12000)))
         max_seconds = float(max(45.0, min(max_seconds, 300.0)))
-        words_per_minute = int(max(160, min(words_per_minute, 230)))
+        words_per_minute = int(max(190, min(words_per_minute, 230)))
 
         changed = False
         for key, value in (

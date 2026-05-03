@@ -296,3 +296,42 @@ class TestRankingSizeAwareness:
         # Bucket has <2 samples → falls back to full window. Reason must NOT
         # claim it used the short bucket.
         assert "bucket" not in ranking[0][2]
+
+
+class _StubEdgeConfig:
+    edge_chunk_chars = 8000
+    edge_max_segment_seconds = 45
+
+
+class _StubEdgeEngine:
+    speed_profile: dict = {}
+
+
+class TestEdgeProfileWpmFloor:
+    """Edge-TTS neural voices speak at ~200 WPM. The historical 160 WPM floor
+    inflated ETA estimates and tripped the audio-completeness validator on
+    perfectly fine recordings (CLAUDE.md "Critical bugs fixed" table)."""
+
+    def test_default_wpm_when_no_profile_is_200(self):
+        ctrl = AdaptiveSpeedController()
+        adjustments, _ = ctrl._prepare_edge_profile(
+            chapter_index=1,
+            chapter_name="ch",
+            chapter_chars=5000,
+            tts_engine=_StubEdgeEngine(),
+            config=_StubEdgeConfig(),
+        )
+        assert adjustments["words_per_minute"] >= 200
+
+    def test_wpm_floor_after_failures_stays_above_legacy_160(self):
+        ctrl = AdaptiveSpeedController()
+        ctrl._edge_failure_streak = 3
+        adjustments, _ = ctrl._prepare_edge_profile(
+            chapter_index=1,
+            chapter_name="ch",
+            chapter_chars=5000,
+            tts_engine=_StubEdgeEngine(),
+            config=_StubEdgeConfig(),
+        )
+        # Even under penalty, WPM must not collapse back to the old 160 floor.
+        assert adjustments["words_per_minute"] >= 190
