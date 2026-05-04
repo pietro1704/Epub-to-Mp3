@@ -51,7 +51,7 @@ jobs:
           sed -i "s|/releases/download/v[^/]*/|/releases/download/v${VERSION}/|g" aur/.SRCINFO
 
       - name: Publish to AUR
-        uses: KSXGitHub/github-actions-deploy-aur@v4
+        uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: epub-to-mp3-bin
           pkgbuild: aur/PKGBUILD
