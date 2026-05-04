@@ -29,4 +29,47 @@ describe("ChapterProgressList", () => {
     expect(screen.getAllByText("edge").length).toBeGreaterThan(0);
     expect(screen.getAllByText("coqui").length).toBeGreaterThan(0);
   });
+
+  it("shows full fallback trail when engineSequence is set", () => {
+    renderWithProviders(
+      <ChapterProgressList
+        entries={[
+          {
+            index: 1,
+            name: "Chapter 1",
+            status: "completed",
+            engine: "piper",
+            engineSequence: ["edge", "kokoro", "piper"],
+          },
+        ]}
+      />,
+      { locale: "en" },
+    );
+
+    expect(screen.getAllByText("edge").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("kokoro").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("piper").length).toBeGreaterThan(0);
+    // Arrow separator between engines
+    expect(screen.getAllByText("→").length).toBeGreaterThan(0);
+  });
+
+  it("deduplicates consecutive identical engines in the trail", () => {
+    renderWithProviders(
+      <ChapterProgressList
+        entries={[
+          {
+            index: 1,
+            name: "Chapter 1",
+            status: "completed",
+            engineSequence: ["edge", "edge", "edge", "piper"],
+          },
+        ]}
+      />,
+      { locale: "en" },
+    );
+
+    // edge should appear once, not three times
+    expect(screen.getAllByText("edge").length).toBe(1);
+    expect(screen.getAllByText("piper").length).toBe(1);
+  });
 });

@@ -1,0 +1,77 @@
+name: Weekly Security Audit
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  schedule:
+    # Mondays 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install mise
+        uses: jdx/mise-action@v4
+
+      - name: Install toolchain
+        run: mise install
+
+      - name: pip-audit
+        id: pip_audit
+        continue-on-error: true
+        run: |
+          mise exec -- pip install pip-audit
+          mise exec -- pip-audit -r requirements.txt --strict 2>&1 | tee pip-audit.log
+
+      - name: npm audit
+        id: npm_audit
+        continue-on-error: true
+        working-directory: web
+        run: npm audit --audit-level=moderate 2>&1 | tee ../npm-audit.log
+
+      - name: Open issue on failure
+        if: steps.pip_audit.outcome == 'failure' || steps.npm_audit.outcome == 'failure'
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const pip = fs.existsSync('pip-audit.log') ? fs.readFileSync('pip-audit.log', 'utf8') : '(no output)';
+            const npmLog = fs.existsSync('npm-audit.log') ? fs.readFileSync('npm-audit.log', 'utf8') : '(no output)';
+            const today = new Date().toISOString().slice(0, 10);
+            const body = [
+              '## Weekly security audit failed',
+              '',
+              `Run: ${context.runId}`,
+              `Date: ${today}`,
+              '',
+              '### pip-audit',
+              '```',
+              pip.slice(-3000),
+              '```',
+              '',
+              '### npm audit',
+              '```',
+              npmLog.slice(-3000),
+              '```',
+            ].join('\n');
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Security audit ${today} — vulnerabilities found`,
+              body,
+              labels: ['security', 'audit'],
+            });
+
+      - name: Fail job if any audit failed
+        if: steps.pip_audit.outcome == 'failure' || steps.npm_audit.outcome == 'failure'
+        run: exit 1

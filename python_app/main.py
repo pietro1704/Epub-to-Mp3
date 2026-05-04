@@ -78,6 +78,30 @@ def _resolve_cli_fallback_engine(
     return None
 
 
+def _prewarm_kokoro_pipeline(language: Optional[str]) -> bool:
+    """Eagerly load the Kokoro KPipeline so the first chapter doesn't pay the cost.
+
+    Returns True on success, False if Kokoro is unsupported for the language or
+    the import failed. Never raises — pre-warm is best-effort.
+    """
+    try:
+        from src.tts.kokoro_engine import kokoro_supports_language
+    except Exception:
+        return False
+    if not kokoro_supports_language(language):
+        print(f"⏭️  Kokoro pre-warm skipped (language '{language}' not supported)")
+        return False
+    try:
+        from src.tts.kokoro_engine import _ensure_kokoro
+
+        _ensure_kokoro()
+        print("✅ Kokoro pipeline pre-warmed")
+        return True
+    except Exception as exc:
+        print(f"⏭️  Kokoro pre-warm failed: {exc}")
+        return False
+
+
 @dataclass
 class ChapterStructureItem:
     chapter: Chapter
@@ -677,6 +701,9 @@ class ConverterApplication:
             )
             if fallback_pref:
                 self.converter._cli_fallback_engine = fallback_pref
+
+            if getattr(args, "prewarm_kokoro", False):
+                _prewarm_kokoro_pipeline(getattr(config, "primary_language", None))
 
             # Reuse: skip synthesis entirely when the audiobook is
             # already on disk (≥90% of chapters present). Saves the
@@ -4726,6 +4753,15 @@ def _add_conversion_arguments(
         "--engine-chain-fallback",
         action="store_true",
         help="Enable the legacy multi-engine cascade (Edge -> Kokoro -> Piper). Default is Edge-only with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
+    )
+    parser.add_argument(
+        "--prewarm-kokoro",
+        action="store_true",
+        help=(
+            "Pre-load the Kokoro pipeline before the chapter loop starts (saves ~3-5s "
+            "on the first chapter that triggers Kokoro). Off by default — only worth it "
+            "for en/ja/zh books that actually use Kokoro fallback."
+        ),
     )
     parser.add_argument(
         "--inject-title-pause",
