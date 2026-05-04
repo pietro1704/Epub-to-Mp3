@@ -940,7 +940,7 @@ dependencies = [
 
 [[package]]
 name = "epub-to-mp3"
-version = "0.3.22"
+version = "0.3.23"
 dependencies = [
  "serde",
  "serde_json",

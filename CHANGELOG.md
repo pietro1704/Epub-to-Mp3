@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.23] — 2026-05-04
+
+### Features
+
+- **`--prewarm-kokoro` CLI flag.** Eagerly loads the Kokoro `KPipeline` before the chapter loop starts, saving ~3-5 s on the first chapter that triggers Kokoro. Off by default — only worth opting in for en/ja/zh books actually using Kokoro fallback. Skips automatically for unsupported languages (e.g. pt-BR). 6 tests in `test_prewarm_kokoro.py`.
+- **Per-chapter engine fallback trail in the UI.** `ChapterProgressList` now renders the full `engineSequence` (e.g. `edge → kokoro → piper`) with deduplication of consecutive identical engines. Listeners can see at a glance which chapters needed fallback. New tests in `web/src/test/ChapterProgressList.test.tsx`.
+- **Weekly security audit workflow.** `.github/workflows/weekly-audit.yml` runs `pip-audit` + `npm audit` every Monday 06:00 UTC and opens an issue when vulnerabilities surface, so CVE drift doesn't accumulate silently between releases.
+
+### Regression Pins
+
+- **pt-BR books bypass Kokoro entirely.** New `test_pt_br_skips_kokoro.py` pins both `kokoro_supports_language` rejecting `pt`/`pt-BR`/`pt_BR` and `_build_engine_chain` excluding the `kokoro` tier for pt-BR jobs (defence-in-depth against the Carl regression cluster).
+
 ## [0.3.22] — 2026-04-30
 
 ### Bug Fixes (Carl regression cluster)
