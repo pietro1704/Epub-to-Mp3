@@ -41,7 +41,7 @@ jobs:
 
       - name: Open issue on failure
         if: steps.pip_audit.outcome == 'failure' || steps.npm_audit.outcome == 'failure'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
