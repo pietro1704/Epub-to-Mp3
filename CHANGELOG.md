@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.28] — 2026-05-06
+
+### Performance — bottleneck batch (post performance-speed-monitor audit)
+
+- **Telemetry hot path: append-only JSONL.** `record_sample` previously read+rewrote the entire JSON consolidation file under a lock for every chapter — O(N²) sync I/O inside the async loop. Now appends one line to a sidecar `.jsonl` and compacts at most every 60 s (or on `flush()`). 4 tests in `test_telemetry_jsonl_append.py`.
+- **Async ffprobe wrapper.** New `_async_subprocess.run_async` + `ffprobe_duration` lets audio post-processing run subprocess calls in worker threads via `asyncio.to_thread` instead of blocking the event loop. `_OutputFileMixin._probe_audio_duration_async` exposes it. Sync version untouched. 5 tests in `test_async_subprocess.py`.
+- **Stage pipeline depth scales with cores.** Previously fixed at 2; left CPU idle whenever the auto-tuner shrunk Edge chunks and the chapter-parallel cap kicked in. Now `max(STAGE_PIPELINE_DEPTH_DEFAULT, min(cpu, 8))` when no override. 6 tests in `test_stage_pipeline_depth.py`.
+- **Edge auto-tuner recovery nudge.** After a degrade cycle, the only path back up was a +1 step on a positive throughput delta — slow on short chapters. Added explicit recovery nudge when system is fully stable (no errors, degrade_runs=0, no chunk cap, room to grow).
+- **Cache writes parallelized + metadata.json without indent.** Per-chapter TXTs now written via `ThreadPoolExecutor` (cap 8). `metadata.json` uses `separators=(",", ":")` instead of `indent=2`. 4 tests in `test_cache_writes_parallel.py`.
+
+### Sub-agents
+
+Five new sub-agents (in `.claude/agents/`):
+- `health-monitor` — read-only system health snapshots
+- `ci-watcher` — GitHub CI / Dependabot / CodeQL triage with bounded auto-fix
+- `ui-modernizer` — frontend changes with build typecheck gate
+- `ios-companion` — SwiftUI scaffold for iOS
+- `flutter-companion` — Flutter scaffold for Android+iOS+macOS
+
 ## [0.3.27] — 2026-05-06
 
 ### Fixes

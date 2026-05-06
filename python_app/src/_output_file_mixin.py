@@ -881,6 +881,20 @@ class _OutputFileMixin:
             pass
         return None
 
+    async def _probe_audio_duration_async(self, audio_path: Path) -> Optional[float]:
+        """Async variant: runs ffprobe in a worker thread so the event
+        loop keeps making progress on other chapters during the call.
+
+        Equivalent semantics to ``_probe_audio_duration`` — returns the
+        duration in seconds or ``None`` on any failure.
+        """
+        try:
+            from ._async_subprocess import ffprobe_duration
+
+            return await ffprobe_duration(str(audio_path))
+        except Exception:
+            return None
+
     def _detect_short_audio_output(
         self,
         audio_path: Path,

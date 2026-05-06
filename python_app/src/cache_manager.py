@@ -169,22 +169,44 @@ class CacheManager:
                 shutil.rmtree(txt_dir)
             txt_dir.mkdir(parents=True, exist_ok=True)
 
-            # Save individual chapters as TXT
-            for index, chapter in enumerate(chapters, 1):
-                if not isinstance(chapter, dict):
-                    print("⚠️  Unexpected chapter in cache, skipping invalid entry.")
-                    continue
+            # Save individual chapters as TXT in parallel — for EPUBs
+            # with 100+ chapters, the previous serial loop blocked the
+            # caller for noticeable wall-clock time on slow disks.
+            from concurrent.futures import ThreadPoolExecutor
 
+            def _write_one(idx_chapter):
+                idx, chapter = idx_chapter
+                if not isinstance(chapter, dict):
+                    return False
                 chapter_title = chapter.get("title", "Chapter")
                 chapter_text = chapter.get("text", "") or ""
-
                 chapter_file = (
-                    txt_dir / f"{index:03d} - {self._sanitize_filename(str(chapter_title))}.txt"
+                    txt_dir / f"{idx:03d} - {self._sanitize_filename(str(chapter_title))}.txt"
                 )
-                with open(chapter_file, "w", encoding="utf-8") as handle:
-                    handle.write(chapter_text)
+                try:
+                    chapter_file.write_text(chapter_text, encoding="utf-8")
+                    return True
+                except OSError:
+                    return False
 
-            # **FIX**: Save metadata.json so that get_cached_chapters works
+            valid_pairs = [(i, c) for i, c in enumerate(chapters, 1) if isinstance(c, dict)]
+            invalid_count = len(chapters) - len(valid_pairs)
+            if invalid_count:
+                print(f"⚠️  {invalid_count} unexpected chapter entry(ies) in cache, skipped.")
+            # Cap workers at 8 — past that, ThreadPool overhead and
+            # contention on the directory inode dominate.
+            max_workers = max(1, min(8, len(valid_pairs)))
+            if max_workers > 1 and len(valid_pairs) > 4:
+                with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                    list(ex.map(_write_one, valid_pairs))
+            else:
+                for pair in valid_pairs:
+                    _write_one(pair)
+
+            # **FIX**: Save metadata.json so that get_cached_chapters works.
+            # v0.3.28: dropped ``indent=2`` — separators=(",", ":") halves
+            # the file size on books with many chapters and the JSON is
+            # only consumed by ``json.loads`` later.
             stat = ebook_path.stat()
             metadata = {
                 "title": chapters_data.get("title", "Unknown"),
@@ -198,7 +220,7 @@ class CacheManager:
 
             metadata_file = cache_path / "metadata.json"
             with open(metadata_file, "w", encoding="utf-8") as f:
-                json.dump(metadata, f, ensure_ascii=False, indent=2)
+                json.dump(metadata, f, ensure_ascii=False, separators=(",", ":"))
 
             self._memory_cache_put(str(ebook_path.resolve()), metadata)
             return True

@@ -279,9 +279,27 @@ class _EdgeThrottleMixin:
 
     @staticmethod
     def _stage_pipeline_depth(config: Optional[ConversionConfig]) -> int:
+        """Depth of the prepare → synthesize stage pipeline queue.
+
+        v0.3.28: decoupled from chapter parallelism. The prepare stage
+        (text payload resolution from cache) is light, runs in a thread,
+        and pre-populating it does not consume meaningful RAM. So we
+        scale with available cores when there is no explicit override,
+        instead of capping at the conservative default of 2 — that
+        previous default left CPU idle whenever the auto-tuner shrunk
+        chunks and the chapter parallelism cap kicked in.
+        """
         raw = None if config is None else getattr(config, "extra", {}).get("stage_pipeline_depth")
         if raw is None:
-            return STAGE_PIPELINE_DEPTH_DEFAULT
+            try:
+                cpu = max(1, (os.cpu_count() or 4))
+            except Exception:
+                cpu = 4
+            # Default: max(STAGE_PIPELINE_DEPTH_DEFAULT, min(cpu, 8)).
+            # Honors STAGE_PIPELINE_DEPTH env var if set, otherwise scales
+            # to CPU but caps at 8 to avoid runaway prepare buffers on
+            # high-core machines.
+            return max(STAGE_PIPELINE_DEPTH_DEFAULT, min(cpu, 8))
         try:
             return max(1, int(raw))
         except (TypeError, ValueError):
@@ -967,6 +985,23 @@ class _EdgeThrottleMixin:
             chunk_reason = f"Edge chunk reduzido → limitando capítulos paralelos a {chunk_cap}"
             new_value = chunk_cap
             reason = chunk_reason if not reason else f"{reason}; {chunk_reason}"
+        # v0.3.28: explicit recovery nudge. After a degrade cycle, the
+        # only path back up was the +1 step on a positive throughput
+        # delta — slow when chapters are short. If the system has fully
+        # stabilised (no errors, no degrade backlog, no chunk cap, room
+        # to grow), bump current_value by one to probe the headroom even
+        # without a clear throughput signal. This shaves multiple
+        # tuning cycles off recovery after a transient slowdown.
+        elif (
+            chunk_cap is None
+            and batch_errors == 0
+            and state.get("degrade_runs") == 0
+            and current < ceiling
+            and new_value == current
+            and reason is None
+        ):
+            new_value = current + 1
+            reason = f"recovery nudge → testando {new_value} chapter(s)"
 
         new_value = max(1, min(ceiling, new_value))
         if throughput:
