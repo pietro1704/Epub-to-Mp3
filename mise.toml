@@ -11,9 +11,7 @@ rust = "stable"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
-# Optional — only needed for the Flutter target. Comment out if you don't
-# want to download the SDK.
-# flutter = "stable"
+flutter = "3.41.9"
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"
@@ -577,3 +575,19 @@ run = "bash scripts/bump.sh ${1:-patch}"
 [tasks.changelog]
 description = "Regenerate CHANGELOG.md from git history using git-cliff"
 run = "git-cliff -o CHANGELOG.md"
+
+[tasks."flutter:run"]
+description = "Run the Flutter companion app on the connected device"
+run = "cd flutter_app && flutter run"
+
+[tasks."flutter:test"]
+description = "Run Flutter unit + widget tests"
+run = "cd flutter_app && flutter test"
+
+[tasks."flutter:analyze"]
+description = "Static analysis of the Flutter app (lints + type errors)"
+run = "cd flutter_app && flutter analyze"
+
+[tasks."flutter:build-apk"]
+description = "Build a debug APK for Android"
+run = "cd flutter_app && flutter build apk --debug"

@@ -536,3 +536,9 @@ These features exist specifically to improve the audiobook listening experience:
 ### Mobile builds
 - Web bundle only (no IDE): `mise run mobile:build` — produces `web/dist/` configured for HF Spaces backend
 - Native iOS/Android packages: built automatically by `release-desktop.yml` CI on tag push
+
+### Flutter companion (`flutter_app/`)
+- Toolchain: Flutter 3.41.9 pinned in `mise.toml`. Use `mise exec -- flutter ...` (or the `flutter:*` tasks) — never a system-wide `flutter`.
+- Tasks: `mise run flutter:run`, `flutter:test`, `flutter:analyze`, `flutter:build-apk`.
+- Models use freezed + json_serializable. Regenerate with `mise exec -- dart run build_runner build --delete-conflicting-outputs` after editing any class under `flutter_app/lib/models/`.
+- Wire format mirrors iOS slice 3: `JobSnapshot` / `EbookFulltext` are camelCase; `SessionRecord` is snake_case (legacy session log).

@@ -38,10 +38,13 @@ let package = Package(
             sources: [
                 "Models/SessionRecord.swift",
                 "Models/JobSnapshot.swift",
+                "Models/EbookFulltext.swift",
                 "Services/APIClient.swift",
                 "Services/AudioPlayer.swift",
                 "Services/DownloadManager.swift",
+                "Services/FulltextStore.swift",
                 "Services/ResumeStore.swift",
+                "Services/SyncEngine.swift",
             ]
         ),
         .testTarget(

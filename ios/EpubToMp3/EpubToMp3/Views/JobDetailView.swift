@@ -168,9 +168,9 @@ struct JobDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { viewModel.start(client: client, jobId: jobId) }
         .onDisappear { viewModel.stop() }
-        .sheet(isPresented: $showingPlayer) {
+        .fullScreenCover(isPresented: $showingPlayer) {
             if let snap = viewModel.snapshot {
-                PlayerView(snapshot: snap, backendBaseURL: settings.resolvedBaseURL)
+                PlayerReaderView(snapshot: snap, backendBaseURL: settings.resolvedBaseURL)
             }
         }
     }

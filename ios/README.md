@@ -4,12 +4,64 @@ Minimal SwiftUI scaffold that talks to the Python backend (FastAPI) running
 either locally (`mise run web`, default `http://localhost:8000`) or on a
 remote tunnel / HF Spaces deploy.
 
-**Slice 2** (current) adds: `JobSnapshot` Codable model mirroring the
+**Slice 2** added: `JobSnapshot` Codable model mirroring the
 `JobStatus` Pydantic schema, `AVQueuePlayer`-backed audio engine with
 lock-screen / `MPRemoteCommandCenter` integration, background-aware
 `DownloadManager`, modal `PlayerView` with scrubber + speed selector,
 and per-`(jobId, chapterIndex)` resume markers persisted in
 `UserDefaults`.
+
+**Slice 3** (current) adds the side-by-side EPUB reader synchronised
+with audio playback:
+
+- `EbookFulltext` — Codable mirror of `GET /api/jobs/{id}/fulltext`.
+  The wire format is `chapters[].{index, name, text, html, css, charCount}`
+  (1-based `index`, no stable string id, no `segments[]` field today
+  — the model accepts an optional `segments[]` for forward compat).
+- `FulltextStore` — disk cache at
+  `<documents>/Audiobooks/<jobId>/fulltext.json`, retry ladder
+  `[800, 1500, 3000, 6000, 12000] ms` for 503 responses, hard-fail on
+  404/422 per memory `project_reader_fulltext.md`. Exposes
+  `watch(jobId:) -> AsyncStream<EbookFulltext>`.
+- `SyncEngine` — pure-logic mapper from `AudioPlayer.position` to a
+  current sentence id. Walks a `(sentenceId, startMs, endMs)` table
+  built from segment metadata when available, otherwise from a
+  WPM-based estimation (default 200 WPM, configurable per
+  instance). Re-emits only on sentence change. No AVFoundation, no
+  SwiftUI — runs headless in the SPM target.
+- `ReaderView` — `ScrollViewReader` + `LazyVStack` of sentence rows;
+  the active sentence gets `.background(.yellow.opacity(0.35))` and
+  the scroll view animates it to the centre. Toolbar exposes font
+  size (5 steps), font family (serif / sans / mono), theme (light /
+  sepia / dark / black), and an auto-scroll toggle. Manual drags
+  pause auto-scroll for 1.5s so user navigation isn't fought by the
+  animation.
+- `TocDrawer` — slide-over chapter list driven by the fulltext
+  payload (or `playableChapters` as fallback). Tap to jump audio +
+  reader simultaneously.
+- `PlayerReaderView` — replaces the slice-2 `PlayerView` sheet with
+  a `fullScreenCover` split: phone gets reader-on-top / transport-
+  on-bottom; iPad regular size class flips to side-by-side.
+- `AppSettings` extended with `readerFontSize`, `readerFontFamily`,
+  `readerTheme`, `readerAutoScroll` via `@AppStorage`.
+
+### Endpoint contract recap (slice 3)
+
+| Status | Meaning                                          | iOS handling                          |
+|--------|--------------------------------------------------|---------------------------------------|
+| 200    | Chapters available                               | Decode + persist + emit                |
+| 404    | Job gone or terminal-failed with no source       | `FulltextError.gone`, no retry        |
+| 422    | Parsed cleanly, zero chapters                    | `FulltextError.emptyParse`, no retry  |
+| 503    | Source not yet on disk / parsing in progress     | Retry ladder `[800,1500,3000,6000,12000]`ms then `transientExhausted` |
+
+**Contract diff vs slice-3 brief:** the brief assumed
+`chapters[].{id, title, text, segments?}`. The actual server wire
+format uses `index` (1-based int) + `name`. We synthesise `id` as
+`String(index)` and treat `name` as the title.  No `segments[]`
+field exists in the server payload today — `SyncEngine` always
+falls back to WPM estimation. The Codable model accepts
+`segments[]` so a future backend can drop it in without an iOS
+change.
 
 ## Layout
 

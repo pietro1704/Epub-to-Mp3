@@ -1,0 +1,1 @@
+- [Flutter scaffold 2026-05-06](project_scaffold_2026_05.md) — initial parity slice landed; freezed regen + iOS pods + Android SDK notes
