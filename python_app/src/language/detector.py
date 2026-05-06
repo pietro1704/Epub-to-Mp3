@@ -3,10 +3,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Iterable, List, Optional, Sequence
+from typing import Dict, Iterable, List, Optional, Sequence
 
 try:  # pragma: no cover - optional dependency resolved at runtime
     from langdetect import DetectorFactory, LangDetectException, detect_langs
@@ -47,10 +48,23 @@ class LanguageDetector:
     """Wrapper around ``langdetect`` with sane defaults and fallbacks."""
 
     SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?;:\n])\s+")
+    # Per-process cache for repeated identical paragraphs within a run.
+    # langdetect's ThreadPoolExecutor + LangDetectException probing is the
+    # heaviest CPU step in EPUB ingest for monolingual books — every call
+    # spins up a worker and re-trains. Hash-keyed memoization eliminates
+    # the duplicate work without changing detection semantics.
+    _DETECT_CACHE_LIMIT = 4096
+    _detect_cache: Dict[str, str] = {}
 
     def __init__(self) -> None:
         if DetectorFactory is not None:
             DetectorFactory.seed = 42  # pragma: no cover - deterministic results
+
+    @classmethod
+    def clear_cache(cls) -> None:
+        """Drop the per-process detection memo. Useful between CI runs and
+        when test fixtures stub the underlying detector."""
+        cls._detect_cache.clear()
 
     def detect_profile(self, texts: Sequence[str], *, max_chars: int = 16000) -> LanguageProfile:
         sample = self._prepare_sample(texts, max_chars=max_chars)
@@ -133,6 +147,7 @@ class LanguageDetector:
             return [LanguageSegment(language=fallback_lang, text=text)]
 
         refined_segments: List[LanguageSegment] = []
+        primary_short = self._normalise_code(primary_language) if primary_language else ""
         for segment in segments:
             stripped = segment.text.strip()
             if len(stripped) < min_segment_chars:
@@ -148,6 +163,24 @@ class LanguageDetector:
                 )
                 or segment.language
             )
+            # Stability guardrail: if the first pass already classified this
+            # segment as the primary language, do not let a non-deterministic
+            # langdetect re-run flip it to a different language. The primary
+            # tag is the reliable signal — the user's book is in pt-BR, and
+            # langdetect oscillates on identical pt-BR paragraphs near the
+            # 0.5 probability boundary against es/it/ca, which would route
+            # the chunk to a foreign Edge voice and produce pt spoken with
+            # an accent. Only the foreign-→primary direction stays free,
+            # since that direction recovers correctness.
+            seg_short = (segment.language or "").split("-", 1)[0].lower()
+            ref_short = (language or "").split("-", 1)[0].lower()
+            if (
+                primary_short
+                and seg_short == primary_short
+                and ref_short
+                and ref_short != primary_short
+            ):
+                language = segment.language
             refined_segments.append(LanguageSegment(language=language or "unknown", text=stripped))
 
         return self._merge_adjacent(refined_segments)
@@ -197,6 +230,31 @@ class LanguageDetector:
         if not stripped or len(stripped) < 10:
             return fallback_language
 
+        # Memoize repeated paragraphs (boilerplate headers, recurring quotes,
+        # short phrases that appear across many chapters). Key includes the
+        # tunables that influence the outcome so different callers do not
+        # collide on the same sample text.
+        cache_key = hashlib.sha1(
+            f"{min_probability}|{timeout_seconds}|{fallback_language}|"
+            f"{primary_language or ''}|{ambiguity_threshold}|{stripped}".encode(
+                "utf-8", errors="ignore"
+            )
+        ).hexdigest()
+        cached = self._detect_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        def _store(result: str) -> str:
+            # Bound the cache to avoid pathological memory growth on
+            # extremely diverse corpora. When the limit is hit we drop
+            # ~10% of oldest entries.
+            if len(self._detect_cache) >= self._DETECT_CACHE_LIMIT:
+                drop = max(1, self._DETECT_CACHE_LIMIT // 10)
+                for old_key in list(self._detect_cache.keys())[:drop]:
+                    self._detect_cache.pop(old_key, None)
+            self._detect_cache[cache_key] = result
+            return result
+
         try:
             # Run detection in a thread to enable timeout
             import concurrent.futures
@@ -207,7 +265,7 @@ class LanguageDetector:
                 try:
                     predictions = future.result(timeout=timeout_seconds)
                     if not predictions:
-                        return fallback_language
+                        return _store(fallback_language)
 
                     text_len = len(stripped)
                     # Check if primary language should be prioritized
@@ -225,24 +283,25 @@ class LanguageDetector:
                         # If primary language found and text is short/ambiguous, prefer it
                         if primary_prediction:
                             if text_len <= 240:
-                                return primary_prediction.code
+                                return _store(primary_prediction.code)
                             prob_diff = abs(
                                 best_prediction.probability - primary_prediction.probability
                             )
                             if prob_diff <= ambiguity_threshold:
                                 # Ambiguous: primary language is within threshold, use it
-                                return primary_prediction.code
+                                return _store(primary_prediction.code)
 
                     # No ambiguity or no primary language match: use best prediction
                     best = predictions[0]
                     if best.probability < min_probability:
-                        return fallback_language
-                    return best.code
+                        return _store(fallback_language)
+                    return _store(best.code)
 
                 except concurrent.futures.TimeoutError:
                     print(
                         f"⚠️ Language detection timeout ({timeout_seconds}s) — using fallback: {fallback_language}"
                     )
+                    # Don't cache timeouts — they may be transient.
                     return fallback_language
         except Exception as e:
             print(f"⚠️ Language detection error: {e} — using fallback: {fallback_language}")

@@ -120,11 +120,18 @@ class LanguageMarkup:
             if best_alternative:
                 alt_prob = best_alternative.probability
                 primary_prob = primary_prediction.probability if primary_prediction else 0.0
-                # Require strong evidence before overriding configured primary language
-                if alt_prob < 0.35:
+                # Require strong evidence before overriding the configured
+                # primary language. Raised the alt-prob floor from 0.35 to
+                # 0.45 because Romance-language pairs (pt/es/ca/it) regularly
+                # score 0.30–0.40 on each other's text and were producing
+                # foreign-voice mis-routings on full pt-BR books.
+                if alt_prob < 0.45:
                     allow_mixed = False
-                elif primary_prediction and primary_prob >= 0.45:
-                    if alt_prob <= primary_prob and alt_prob < 0.75:
+                elif primary_prediction and primary_prob >= 0.40:
+                    # When the primary language is also a strong contender,
+                    # require the alternative to dominate clearly before we
+                    # accept mixed-language markup.
+                    if alt_prob <= primary_prob + 0.10 and alt_prob < 0.75:
                         allow_mixed = False
             if not allow_mixed:
                 return text
@@ -187,22 +194,29 @@ class LanguageMarkup:
                 if len(segment.text.strip()) < 150:  # **CHANGED**: Minimum 150 chars (was 40)
                     segment_lang = default_short
                 else:
-                    # **TIMEOUT**: Confirm with timeout to avoid deadlock
+                    # Final confirmation pass before tagging the segment as
+                    # a foreign language. This previously called
+                    # ``_detect_language_simple`` without the
+                    # ``primary_language`` guardrail, so a pt-BR sentence
+                    # that langdetect happened to score es/it ≥ 0.8 was
+                    # tagged as foreign and Edge picked the wrong voice
+                    # (pt narrated with a Spanish accent). Routing through
+                    # ``_detect_language_with_timeout`` with the primary
+                    # language wired in lets the ambiguity guardrail
+                    # reclaim borderline calls. The hash-keyed memo added
+                    # in v0.3.24 means this is essentially free — the
+                    # exact same segment text was already detected once
+                    # by ``detect_segments`` with the same primary lang.
                     try:
-                        import concurrent.futures
-
-                        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                            future = executor.submit(
-                                self.detector._detect_language_simple,
-                                segment.text,
-                                min_probability=0.8,
-                            )
-                            try:
-                                confirmed = future.result(timeout=1.0)  # 1 segundo max
-                            except concurrent.futures.TimeoutError:
-                                confirmed = default_short  # Fallback em caso de timeout
+                        confirmed = self.detector._detect_language_with_timeout(
+                            segment.text,
+                            min_probability=0.8,
+                            timeout_seconds=1.0,
+                            fallback_language=default_short or "pt",
+                            primary_language=default_short or None,
+                        )
                     except Exception:
-                        confirmed = default_short  # Fallback em caso de erro
+                        confirmed = default_short  # Fallback on any error
 
                     if confirmed in {"unknown", default_short}:
                         segment_lang = default_short
