@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.3.24] — 2026-05-06
+
+### Bug Fixes
+
+- **pt-BR text no longer narrated with foreign accent.** Three-layer guardrail prevents borderline pt-BR paragraphs from being mis-tagged as a Romance-language sibling (es/it/ca) and routed to the wrong Edge voice: (1) `LanguageDetector.detect_segments` refined loop refuses to flip a segment away from the primary language; (2) `LanguageMarkup` final per-segment confirmation routes through `_detect_language_with_timeout` (with `primary_language` wired) instead of the bare `_detect_language_simple` call that ignored the guardrail; (3) the allow-mixed gate raised the foreign-evidence floor 0.35 → 0.45 and now requires `alt_prob > primary_prob + 0.10`. 4 regression tests in `test_pt_br_language_routing.py`. Validated live on the Carl pt-BR chapter — 0 `[[lang:` markers emitted in pre-tts.
+
+### Performance
+
+- **Language-aware telemetry.** `TelemetryRecorder.record_sample` accepts `language=` and exposes `summary_by_language()` + `avg_speed_for(engine, lang)` + `ranked_engines(lang)`. The server engine-chain ranking and ETA helpers now prefer per-language speeds, so pt-BR Edge is no longer ranked against the same bucket as EN Edge. `/api/telemetry/summary` payload includes a `byLanguage` breakdown.
+- **Edge-TTS pre-warm.** New `prewarm_edge()` opens and drains a tiny stream so the first chapter does not pay the TLS handshake (~300-500 ms saved). CLI flag `--prewarm-edge`; server fires it fire-and-forget when `engine=edge`. 4 tests in `test_edge_prewarm.py`.
+- **Piper pre-warm.** New `prewarm_piper(language)` resolves the binary + model file before the chapter loop starts. CLI flag `--prewarm-piper`. 4 tests in `test_piper_prewarm.py`.
+- **Parallel EPUB parsing.** `_extract_chapters` pre-passes the spine in a `ThreadPoolExecutor` (up to 8 workers, gated by `EPUB_PARSE_PARALLEL=1`, default on). 2-3× faster on 12+ chapter EPUBs while preserving chapter ordering and content. 4 tests in `test_epub_parse_parallel.py`.
+- **TOC parsing disk cache.** The previously in-memory-only TOC LRU now also persists to `.cache/_toc/<sha1>.json` keyed on `mtime_ns + opf_path`. Repeat CLI invocations against the same EPUB skip the XML walk entirely. 3 tests in `test_toc_disk_cache.py`.
+- **CLI resume-state cache.** `_detect_reusable_existing_output` writes `<output_dir>/._resume_state.json` so the per-chapter `stat()` storm only happens on the first run; subsequent invocations short-circuit when the dir mtime + expected count match. 3 tests in `test_resume_state_cache.py`.
+- **Language detection memoization.** `LanguageDetector._detect_language_with_timeout` is now hash-keyed memoized (4096-entry LRU) so repeated paragraphs (boilerplate headers, recurring quotes) only spin up the langdetect ThreadPoolExecutor once. New `clear_cache()` classmethod. 6 tests in `test_language_detection_cache.py` + `test_language_detector_clear_cache.py`.
+
 ## [0.3.23] — 2026-05-04
 
 ### Features

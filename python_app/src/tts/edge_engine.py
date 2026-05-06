@@ -373,6 +373,41 @@ except ImportError:  # pragma: no cover - during optional dependency resolution
     TextFormattingProcessor = None  # type: ignore
 
 
+_edge_prewarm_done: bool = False
+_edge_prewarm_lock: Optional[asyncio.Lock] = None
+
+
+async def prewarm_edge(voice: str = "en-US-AriaNeural", *, force: bool = False) -> bool:
+    """Open and drain a tiny Edge-TTS stream to amortize the TLS handshake
+    + first-request latency before the chapter loop starts.
+
+    Idempotent within a process: a second call is a no-op unless ``force``
+    is set. Best-effort — any failure is swallowed and reported via the
+    return value (``True`` on success, ``False`` on any error). Mirrors the
+    pattern used by ``_prewarm_kokoro_pipeline``.
+    """
+    global _edge_prewarm_done, _edge_prewarm_lock, edge_tts
+    if _edge_prewarm_done and not force:
+        return True
+    if _edge_prewarm_lock is None:
+        _edge_prewarm_lock = asyncio.Lock()
+    async with _edge_prewarm_lock:
+        if _edge_prewarm_done and not force:
+            return True
+        try:
+            if edge_tts is None or isinstance(edge_tts, Mock):
+                edge_tts = importlib.import_module("edge_tts")  # type: ignore
+            comm = edge_tts.Communicate("Hi.", voice)  # type: ignore[attr-defined]
+            # Drain the async iterator without writing anywhere — we only
+            # care about establishing the connection + voice handshake.
+            async for _chunk in comm.stream():
+                pass
+        except Exception:
+            return False
+        _edge_prewarm_done = True
+        return True
+
+
 class EdgeTTSEngine:
     """Small facade around ``edge_tts`` with predictable behaviour."""
 

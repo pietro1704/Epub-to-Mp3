@@ -533,7 +533,8 @@ def resolve_recent_speed(job: dict, engine_name: str) -> float:
     """Return the most recent chars/s figure for *engine_name*.
 
     Checks chapter-progress entries first (most recent complete chapter),
-    then falls back to the global telemetry summary.
+    then falls back to the global telemetry summary (language-aware when
+    the job carries a primary language).
     """
     from python_app import server as _srv  # lazy
 
@@ -543,6 +544,9 @@ def resolve_recent_speed(job: dict, engine_name: str) -> float:
             value = entry.get("charsPerSecond")
             if isinstance(value, (int, float)) and value > 0:
                 return float(value)
+    avg_speed_for = getattr(_srv.telemetry, "avg_speed_for", None)
+    if callable(avg_speed_for):
+        return float(avg_speed_for(engine_name, job.get("primaryLanguage")) or 0.0)
     summary = _srv.telemetry.summary()
     engine_key = (engine_name or "").lower()
     stats = summary.get(engine_key) or {}

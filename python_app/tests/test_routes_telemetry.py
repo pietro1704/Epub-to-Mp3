@@ -57,7 +57,7 @@ def test_summary_empty(telemetry_ctx) -> None:
     response = client.get("/api/telemetry/summary")
     assert response.status_code == 200
     payload = response.json()
-    assert payload == {"engines": {}, "ranked": [], "totalSamples": 0}
+    assert payload == {"engines": {}, "ranked": [], "totalSamples": 0, "byLanguage": {}}
 
 
 def test_summary_aggregates_by_engine(telemetry_ctx) -> None:

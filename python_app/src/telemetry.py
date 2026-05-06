@@ -26,6 +26,20 @@ class EngineSample:
     job_id: Optional[str]
     chapter: Optional[str]
     timestamp: str
+    language: Optional[str] = None
+
+
+def _normalize_lang(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    cleaned = str(value).strip().lower()
+    if not cleaned or cleaned in {"auto", "unknown"}:
+        return None
+    # Normalize variants like "pt-BR" -> "pt", "en_US" -> "en". Keep only the
+    # primary language tag — speed differences across regional variants are
+    # negligible compared to differences across primary languages (pt vs en).
+    primary = cleaned.replace("_", "-").split("-", 1)[0]
+    return primary or None
 
 
 class TelemetryRecorder:
@@ -51,6 +65,7 @@ class TelemetryRecorder:
         audio_seconds: Optional[float],
         job_id: Optional[str],
         chapter: Optional[str],
+        language: Optional[str] = None,
     ) -> None:
         if chars <= 0 or synth_seconds <= 0:
             return
@@ -64,6 +79,7 @@ class TelemetryRecorder:
             job_id=job_id,
             chapter=chapter,
             timestamp=datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            language=_normalize_lang(language),
         )
         with self._lock:
             samples = self._load_samples()
@@ -71,8 +87,33 @@ class TelemetryRecorder:
             trimmed = samples[-self.max_samples :]
             self._write_samples(trimmed)
 
+    def _aggregate(self, entries: List[dict]) -> Optional[Dict[str, float]]:
+        total_chars = 0.0
+        total_synth = 0.0
+        best_speed = 0.0
+        worst_speed: Optional[float] = None
+        for entry in entries:
+            chars = float(entry.get("chars") or 0)
+            synth_seconds = float(entry.get("synth_seconds") or 0)
+            if chars <= 0 or synth_seconds <= 0:
+                continue
+            total_chars += chars
+            total_synth += synth_seconds
+            throughput = chars / synth_seconds
+            best_speed = max(best_speed, throughput)
+            if worst_speed is None or throughput < worst_speed:
+                worst_speed = throughput
+        if total_chars <= 0 or total_synth <= 0:
+            return None
+        return {
+            "samples": float(len(entries)),
+            "avg_chars_per_second": total_chars / total_synth,
+            "max_chars_per_second": best_speed,
+            "min_chars_per_second": worst_speed or 0.0,
+        }
+
     def summary(self) -> Dict[str, Dict[str, float]]:
-        """Return aggregated throughput stats per engine."""
+        """Return aggregated throughput stats per engine (language-agnostic)."""
         stats: Dict[str, Dict[str, float]] = {}
         samples = self._load_samples()
         per_engine: Dict[str, List[dict]] = {}
@@ -82,41 +123,64 @@ class TelemetryRecorder:
                 continue
             per_engine.setdefault(engine, []).append(entry)
         for engine, entries in per_engine.items():
-            total_chars = 0.0
-            total_synth = 0.0
-            best_speed = 0.0
-            worst_speed = None
-            for entry in entries:
-                chars = float(entry.get("chars") or 0)
-                synth_seconds = float(entry.get("synth_seconds") or 0)
-                if chars <= 0 or synth_seconds <= 0:
-                    continue
-                total_chars += chars
-                total_synth += synth_seconds
-                throughput = chars / synth_seconds
-                best_speed = max(best_speed, throughput)
-                if worst_speed is None or throughput < worst_speed:
-                    worst_speed = throughput
-            if total_chars <= 0 or total_synth <= 0:
-                continue
-            avg_speed = total_chars / total_synth
-            stats[engine] = {
-                "samples": len(entries),
-                "avg_chars_per_second": avg_speed,
-                "max_chars_per_second": best_speed,
-                "min_chars_per_second": worst_speed or 0.0,
-            }
+            agg = self._aggregate(entries)
+            if agg is not None:
+                stats[engine] = agg
         return stats
 
-    def ranked_engines(self) -> List[str]:
-        """Return engines ordered from fastest to slowest according to telemetry."""
-        summary = self.summary()
-        ranked = sorted(
-            summary.items(),
-            key=lambda item: item[1].get("avg_chars_per_second", 0.0),
-            reverse=True,
-        )
-        return [engine for engine, _ in ranked]
+    def summary_by_language(self) -> Dict[str, Dict[str, Dict[str, float]]]:
+        """Return aggregated stats grouped by ``(engine, language)``.
+
+        Shape: ``{engine: {lang: {avg_chars_per_second, ...}}}``. Samples
+        without a recorded language are bucketed under ``"_any"``.
+        """
+        result: Dict[str, Dict[str, List[dict]]] = {}
+        for entry in self._load_samples():
+            engine = (entry.get("engine") or "").lower()
+            if not engine:
+                continue
+            lang = _normalize_lang(entry.get("language")) or "_any"
+            result.setdefault(engine, {}).setdefault(lang, []).append(entry)
+        out: Dict[str, Dict[str, Dict[str, float]]] = {}
+        for engine, by_lang in result.items():
+            for lang, entries in by_lang.items():
+                agg = self._aggregate(entries)
+                if agg is None:
+                    continue
+                out.setdefault(engine, {})[lang] = agg
+        return out
+
+    def avg_speed_for(self, engine: str, language: Optional[str] = None) -> float:
+        """Return ``avg_chars_per_second`` for an engine, optionally filtered
+        by language. Falls back to the engine-wide average when no
+        language-specific samples exist."""
+        engine_key = (engine or "").lower().strip()
+        if not engine_key:
+            return 0.0
+        lang_key = _normalize_lang(language)
+        if lang_key:
+            by_lang = self.summary_by_language().get(engine_key) or {}
+            stats = by_lang.get(lang_key)
+            if stats and stats.get("avg_chars_per_second"):
+                return float(stats["avg_chars_per_second"])
+            # Fall through to engine-wide aggregate.
+        stats = self.summary().get(engine_key) or {}
+        return float(stats.get("avg_chars_per_second") or 0.0)
+
+    def ranked_engines(self, language: Optional[str] = None) -> List[str]:
+        """Return engines ordered from fastest to slowest.
+
+        When ``language`` is provided, ranking uses language-specific samples
+        when available, falling back to the engine-wide average otherwise.
+        """
+        engine_summary = self.summary()
+        if not engine_summary:
+            return []
+        scored: List[tuple] = []
+        for engine in engine_summary:
+            scored.append((engine, self.avg_speed_for(engine, language)))
+        scored.sort(key=lambda item: item[1], reverse=True)
+        return [engine for engine, _ in scored]
 
     # -- Failure tracking for reliability-weighted ranking --------------------
 

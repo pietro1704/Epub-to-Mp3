@@ -3,11 +3,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
+import json
 import mimetypes
 import os
 import posixpath
 import re
+import threading
 import zipfile
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -1236,6 +1239,49 @@ _TOC_CACHE_MAX = 16
 _toc_cache: "OrderedDict[Tuple[str, int, str], List[TocItem]]" = OrderedDict()
 
 
+def _toc_disk_cache_path(file_path: str) -> Optional[Path]:
+    """Compute the on-disk TOC cache path for a given EPUB. Returns
+    ``None`` when paths cannot be resolved.
+    """
+    try:
+        from .paths import CACHE_DIR  # type: ignore
+
+        digest = hashlib.sha1(str(file_path).encode("utf-8", errors="ignore")).hexdigest()[:16]
+        return Path(CACHE_DIR) / "_toc" / f"{digest}.json"
+    except Exception:
+        return None
+
+
+def _toc_to_jsonable(items: List["TocItem"]) -> list:
+    """Serialize TocItem tree to plain dicts."""
+    out = []
+    for it in items:
+        out.append(
+            {
+                "title": it.title,
+                "href": it.href,
+                "level": it.level,
+                "children": _toc_to_jsonable(it.children) if it.children else [],
+            }
+        )
+    return out
+
+
+def _toc_from_jsonable(data: list) -> List["TocItem"]:
+    out: List[TocItem] = []
+    for entry in data or []:
+        children = _toc_from_jsonable(entry.get("children") or [])
+        out.append(
+            TocItem(
+                title=entry.get("title", "") or "",
+                href=entry.get("href", "") or "",
+                level=int(entry.get("level") or 1),
+                children=children,
+            )
+        )
+    return out
+
+
 def _toc_cache_get(file_path: str, opf_path: Optional[str]) -> Optional[List[TocItem]]:
     try:
         mtime_ns = os.stat(file_path).st_mtime_ns
@@ -1243,10 +1289,30 @@ def _toc_cache_get(file_path: str, opf_path: Optional[str]) -> Optional[List[Toc
         return None
     key = (file_path, mtime_ns, opf_path or "")
     hit = _toc_cache.get(key)
-    if hit is None:
-        return None
-    _toc_cache.move_to_end(key)
-    return list(hit)
+    if hit is not None:
+        _toc_cache.move_to_end(key)
+        return list(hit)
+    # Persistent cache: same EPUB across CLI runs reuses the parsed TOC
+    # without paying the XML walk again. Keyed on mtime_ns + opf_path so
+    # an edition swap (different EPUB at the same path) invalidates.
+    disk_path = _toc_disk_cache_path(file_path)
+    if disk_path is not None and disk_path.exists():
+        try:
+            payload = json.loads(disk_path.read_text(encoding="utf-8"))
+            if (
+                isinstance(payload, dict)
+                and int(payload.get("mtime_ns") or 0) == mtime_ns
+                and (payload.get("opf_path") or "") == (opf_path or "")
+            ):
+                items = _toc_from_jsonable(payload.get("toc") or [])
+                # Promote into the in-memory LRU.
+                _toc_cache[key] = list(items)
+                while len(_toc_cache) > _TOC_CACHE_MAX:
+                    _toc_cache.popitem(last=False)
+                return list(items)
+        except Exception:
+            pass
+    return None
 
 
 def _toc_cache_put(file_path: str, opf_path: Optional[str], items: List[TocItem]) -> None:
@@ -1258,6 +1324,23 @@ def _toc_cache_put(file_path: str, opf_path: Optional[str], items: List[TocItem]
     _toc_cache[key] = list(items)
     while len(_toc_cache) > _TOC_CACHE_MAX:
         _toc_cache.popitem(last=False)
+    # Best-effort persistent cache write.
+    disk_path = _toc_disk_cache_path(file_path)
+    if disk_path is not None:
+        try:
+            disk_path.parent.mkdir(parents=True, exist_ok=True)
+            disk_path.write_text(
+                json.dumps(
+                    {
+                        "mtime_ns": mtime_ns,
+                        "opf_path": opf_path or "",
+                        "toc": _toc_to_jsonable(items),
+                    }
+                ),
+                encoding="utf-8",
+            )
+        except Exception:
+            pass
 
 
 class EpubParser:
@@ -1858,6 +1941,52 @@ class EpubParser:
 
         return chunks
 
+    def _prepare_spine_item(
+        self,
+        archive: zipfile.ZipFile,
+        archive_lock: "threading.Lock",
+        item_id: str,
+        manifest: Dict[str, str],
+        base_dir: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Read + footnote-inject one spine file. Returns ``None`` when the
+        file should be skipped (missing href, non-HTML, CSS-only, missing
+        zip entry). All zip access is serialised through ``archive_lock``
+        because :class:`zipfile.ZipFile` is not thread-safe.
+        """
+        href = manifest.get(item_id)
+        if not href or not self._is_html_like(href):
+            return None
+        asset_path = self._join_path(base_dir, href)
+        try:
+            with archive_lock:
+                raw_content = self._read_zip_text(archive, asset_path)
+        except KeyError:
+            return None
+        if TextProcessor.looks_like_css(raw_content):
+            return None
+        chapter_dir = str(Path(asset_path).parent).replace("\\", "/") if "/" in asset_path else ""
+
+        def resolve_external_file(relative_path: str) -> Optional[str]:
+            try:
+                full_path = self._join_path(chapter_dir, relative_path)
+                with archive_lock:
+                    return self._read_zip_text(archive, full_path)
+            except (KeyError, Exception):
+                return None
+
+        markup_with_markers, footnotes = TextProcessor.inject_footnotes(
+            raw_content, external_file_resolver=resolve_external_file
+        )
+        return {
+            "item_id": item_id,
+            "href": href,
+            "asset_path": asset_path,
+            "raw_content": raw_content,
+            "markup_with_markers": markup_with_markers,
+            "footnotes": footnotes,
+        }
+
     def _extract_chapters(
         self,
         archive: zipfile.ZipFile,
@@ -1867,6 +1996,9 @@ class EpubParser:
         toc_title_map: Optional[Dict[str, str]] = None,
         toc: Optional[List[TocItem]] = None,
     ) -> List[Chapter]:
+        import os as _os
+        from concurrent.futures import ThreadPoolExecutor
+
         chapters: List[Chapter] = []
         index_counter = 1
         context_words = 8
@@ -1884,38 +2016,41 @@ class EpubParser:
         )
         orphan_counter = _max_toc_idx
 
-        for item_id in spine_ids:
-            href = manifest.get(item_id)
-            if not href or not self._is_html_like(href):
+        # --- Pre-pass: parallel read + footnote injection -------------------
+        # The zip read + footnote walk is the I/O-heaviest part of parsing
+        # and is independent per spine item. We materialise the spine list,
+        # parallelise the prep step (gated by env var, default on), then
+        # iterate the prepared payload in spine order so the orphan_counter
+        # and chapter assembly remain deterministic.
+        spine_list = list(spine_ids)
+        archive_lock = threading.Lock()
+        parallel_enabled = _os.getenv("EPUB_PARSE_PARALLEL", "1").strip() != "0"
+        max_workers = max(1, min(8, len(spine_list)))
+        prepared: List[Optional[Dict[str, Any]]]
+        if parallel_enabled and len(spine_list) > 4:
+            with ThreadPoolExecutor(max_workers=max_workers) as ex:
+                prepared = list(
+                    ex.map(
+                        lambda iid: self._prepare_spine_item(
+                            archive, archive_lock, iid, manifest, base_dir
+                        ),
+                        spine_list,
+                    )
+                )
+        else:
+            prepared = [
+                self._prepare_spine_item(archive, archive_lock, iid, manifest, base_dir)
+                for iid in spine_list
+            ]
+
+        for payload in prepared:
+            if payload is None:
                 continue
-
-            asset_path = self._join_path(base_dir, href)
-            try:
-                raw_content = self._read_zip_text(archive, asset_path)
-            except KeyError:
-                continue
-
-            if TextProcessor.looks_like_css(raw_content):
-                continue
-
-            # Create resolver for external footnote files (relative to current chapter)
-            chapter_dir = (
-                str(Path(asset_path).parent).replace("\\", "/") if "/" in asset_path else ""
-            )
-
-            def resolve_external_file(relative_path: str) -> Optional[str]:
-                try:
-                    # Resolve relative to current chapter's directory
-                    full_path = self._join_path(chapter_dir, relative_path)
-                    return self._read_zip_text(archive, full_path)
-                except (KeyError, Exception):
-                    return None
-
-            # Process footnotes on the full file first so that inline markers
-            # are embedded in the markup before any subchapter split.
-            markup_with_markers, footnotes = TextProcessor.inject_footnotes(
-                raw_content, external_file_resolver=resolve_external_file
-            )
+            href = payload["href"]
+            asset_path = payload["asset_path"]
+            raw_content = payload["raw_content"]
+            markup_with_markers = payload["markup_with_markers"]
+            footnotes = payload["footnotes"]
 
             # Determine the hierarchical index for this spine file.
             # When the TOC has nested items, look up the file in the TOC index

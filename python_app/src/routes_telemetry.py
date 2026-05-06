@@ -27,15 +27,29 @@ def _recorder() -> TelemetryRecorder:
 
 @router.get("/summary")
 async def telemetry_summary() -> Dict[str, object]:
-    """Aggregated throughput stats per engine + ranked order."""
+    """Aggregated throughput stats per engine + ranked order.
+
+    Includes a per-language breakdown when telemetry has language-tagged
+    samples, so the dashboard can show that pt-BR Edge ≠ EN Edge in
+    practice. Older recorders without the language-aware API still get
+    a flat ``engines`` payload.
+    """
     recorder = _recorder()
     summary = recorder.summary()
     ranked = recorder.ranked_engines()
     total_samples = sum(int((stats or {}).get("samples", 0) or 0) for stats in summary.values())
+    by_language: Dict[str, Dict[str, Dict[str, float]]] = {}
+    summary_by_language = getattr(recorder, "summary_by_language", None)
+    if callable(summary_by_language):
+        try:
+            by_language = summary_by_language()
+        except Exception:
+            by_language = {}
     return {
         "engines": summary,
         "ranked": ranked,
         "totalSamples": total_samples,
+        "byLanguage": by_language,
     }
 
 

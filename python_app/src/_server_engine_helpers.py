@@ -223,11 +223,19 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
     chain = [config]
 
     def _rank_fallbacks(candidates: list[str]) -> list[str]:
-        summary = _srv.telemetry.summary()
+        # Prefer language-aware speeds when telemetry has them — pt-BR Edge
+        # is markedly slower than EN Edge on the same hardware, and ranking
+        # against an undifferentiated average pollutes the chain.
+        avg_speed_for = getattr(_srv.telemetry, "avg_speed_for", None)
+        summary = _srv.telemetry.summary() if not callable(avg_speed_for) else None
+        lang = getattr(config, "primary_language", None)
         reliability = getattr(_srv.telemetry, "reliability_factor", None)
 
         def _score(name: str) -> float:
-            cps = summary.get(name, {}).get("avg_chars_per_second", 0.0)
+            if callable(avg_speed_for):
+                cps = float(avg_speed_for(name, lang) or 0.0)
+            else:
+                cps = (summary or {}).get(name, {}).get("avg_chars_per_second", 0.0)
             factor = reliability(name) if callable(reliability) else 1.0
             return cps * factor
 

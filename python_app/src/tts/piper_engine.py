@@ -205,6 +205,49 @@ def _get_piper_semaphore():
     return _piper_semaphore
 
 
+_piper_prewarm_done: bool = False
+
+
+def prewarm_piper(language: Optional[str] = None) -> bool:
+    """Best-effort warm-up for Piper: locate the binary and resolve the
+    model file for ``language`` so the first chapter does not pay either
+    cost. Returns ``True`` when both lookups succeed, ``False`` otherwise.
+    Idempotent within a process.
+    """
+    global _piper_prewarm_done
+    if _piper_prewarm_done:
+        return True
+    try:
+        binary = _find_piper_binary()
+        if not binary or binary == "piper":
+            # Still falls through if `piper` is on PATH at synthesis time,
+            # but we couldn't confirm it now.
+            return False
+        # Probe the model directory for a matching voice. We don't load
+        # ONNX (Piper is subprocess-based — load happens per call) but we
+        # do confirm the file exists so synthesis doesn't choke later.
+        try:
+            from ..paths import MODELS_DIR  # type: ignore
+        except Exception:
+            MODELS_DIR = None  # type: ignore
+        if MODELS_DIR is None:
+            _piper_prewarm_done = True
+            return True
+        code = (language or "").split("-", 1)[0].lower()
+        if code:
+            piper_dir = Path(MODELS_DIR) / "piper"
+            if piper_dir.exists():
+                # Any .onnx whose stem starts with the language code counts.
+                for model in piper_dir.glob(f"{code}_*.onnx"):
+                    if model.is_file():
+                        _piper_prewarm_done = True
+                        return True
+        _piper_prewarm_done = True
+        return True
+    except Exception:
+        return False
+
+
 def _find_piper_binary() -> str:
     """Find piper binary, checking venv first if running in one."""
     # Check if we're in a venv

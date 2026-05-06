@@ -3990,6 +3990,19 @@ async def process_conversion(job_id: str) -> None:
         _append_event(job, f"✅ {len(chapters)} chapters found")
         _update_job_activity(job, stage="chapters_ready")
         if (config.engine or "").lower() == "edge":
+            # Pre-warm Edge-TTS while the rest of the chapter setup runs.
+            # Best-effort fire-and-forget: TLS handshake + first-request
+            # latency is ~300-500ms and can run in parallel with config
+            # tuning below. Failures are silent — chapter loop's normal
+            # rate-limit handling still applies on the real first request.
+            try:
+                from src.tts.edge_engine import prewarm_edge as _prewarm_edge
+
+                _voice_pick = config.voice or "en-US-AriaNeural"
+                asyncio.create_task(_prewarm_edge(_voice_pick))
+            except Exception:
+                pass
+
             # **PERFORMANCE OPTIMIZATIONS**: Use auto-tuned Edge profile from hardware/network detector
             def _env_int(name: str, fallback: int) -> int:
                 raw = os.getenv(name, "").strip()
@@ -5600,6 +5613,7 @@ async def process_conversion(job_id: str) -> None:
                     audio_seconds=duration_seconds,
                     job_id=job_id,
                     chapter=chapter_name,
+                    language=getattr(local_active_config or config, "primary_language", None),
                 )
                 if engine_runtime and local_active_config:
                     chars_per_second = len(clean_text) / max(engine_runtime, 0.001)

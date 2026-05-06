@@ -78,6 +78,48 @@ def _resolve_cli_fallback_engine(
     return None
 
 
+def _prewarm_piper_pipeline(language: Optional[str] = None) -> bool:
+    """Best-effort Piper warm-up: locate binary + resolve model. Never raises."""
+    try:
+        from src.tts.piper_engine import prewarm_piper
+    except Exception:
+        return False
+    try:
+        ok = prewarm_piper(language)
+    except Exception:
+        ok = False
+    if ok:
+        print("✅ Piper binary + model located")
+    else:
+        print("⏭️  Piper pre-warm skipped (binary or model unavailable)")
+    return bool(ok)
+
+
+def _prewarm_edge_pipeline(voice: Optional[str] = None) -> bool:
+    """Eagerly open an Edge-TTS connection so the first chapter doesn't pay
+    the TLS handshake. Best-effort — never raises.
+    """
+    try:
+        import asyncio as _asyncio
+
+        from src.tts.edge_engine import prewarm_edge
+    except Exception:
+        return False
+    pick = (voice or "en-US-AriaNeural").strip() or "en-US-AriaNeural"
+    try:
+        ok = _asyncio.run(prewarm_edge(pick))
+    except RuntimeError:
+        # Already inside a running loop (rare in CLI). Skip silently.
+        return False
+    except Exception:
+        ok = False
+    if ok:
+        print("✅ Edge-TTS connection pre-warmed")
+    else:
+        print("⏭️  Edge-TTS pre-warm skipped (offline or unavailable)")
+    return bool(ok)
+
+
 def _prewarm_kokoro_pipeline(language: Optional[str]) -> bool:
     """Eagerly load the Kokoro KPipeline so the first chapter doesn't pay the cost.
 
@@ -704,6 +746,10 @@ class ConverterApplication:
 
             if getattr(args, "prewarm_kokoro", False):
                 _prewarm_kokoro_pipeline(getattr(config, "primary_language", None))
+            if getattr(args, "prewarm_edge", False):
+                _prewarm_edge_pipeline(getattr(config, "voice", None))
+            if getattr(args, "prewarm_piper", False):
+                _prewarm_piper_pipeline(getattr(config, "primary_language", None))
 
             # Reuse: skip synthesis entirely when the audiobook is
             # already on disk (≥90% of chapters present). Saves the
@@ -2404,10 +2450,56 @@ class ConverterApplication:
         if not output_dir.exists() or not output_dir.is_dir():
             return None
 
-        mp3_count = sum(
-            1 for path in output_dir.glob("*.mp3") if path.is_file() and path.stat().st_size > 0
-        )
+        # Resume-state cache: avoids the per-chapter stat() storm on
+        # repeated runs. Keyed on output_dir mtime — if no MP3 was added
+        # or removed since the last successful detection, reuse the
+        # cached count instead of re-scanning the directory.
+        #
+        # The state file lives *inside the output dir itself*, not the
+        # parsing cache, because (a) it is intrinsic to the output and
+        # should travel with it (b) it avoids colliding with shared cache
+        # directories that may already exist for unrelated books.
         expected = len(items)
+        try:
+            dir_mtime = output_dir.stat().st_mtime
+        except OSError:
+            dir_mtime = 0.0
+        cache_state_path = output_dir / "._resume_state.json"
+        cached_count: Optional[int] = None
+        if cache_state_path.exists():
+            try:
+                state = json.loads(cache_state_path.read_text(encoding="utf-8"))
+                if (
+                    isinstance(state, dict)
+                    and abs(float(state.get("dir_mtime") or 0.0) - dir_mtime) < 0.5
+                    and isinstance(state.get("mp3_count"), int)
+                    and isinstance(state.get("expected"), int)
+                    and int(state.get("expected") or 0) == expected
+                ):
+                    cached_count = int(state["mp3_count"])
+            except Exception:
+                cached_count = None
+
+        if cached_count is not None:
+            mp3_count = cached_count
+        else:
+            mp3_count = sum(
+                1 for path in output_dir.glob("*.mp3") if path.is_file() and path.stat().st_size > 0
+            )
+            try:
+                cache_state_path.write_text(
+                    json.dumps(
+                        {
+                            "dir_mtime": dir_mtime,
+                            "mp3_count": mp3_count,
+                            "expected": expected,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            except Exception:
+                pass
+
         if expected == 0 or mp3_count == 0:
             return None
         # 90% threshold: tolerates the case where one or two chapters
@@ -4761,6 +4853,24 @@ def _add_conversion_arguments(
             "Pre-load the Kokoro pipeline before the chapter loop starts (saves ~3-5s "
             "on the first chapter that triggers Kokoro). Off by default — only worth it "
             "for en/ja/zh books that actually use Kokoro fallback."
+        ),
+    )
+    parser.add_argument(
+        "--prewarm-edge",
+        action="store_true",
+        help=(
+            "Open and drain a tiny Edge-TTS stream before the chapter loop starts so "
+            "the first chapter does not pay the TLS handshake + first-request latency. "
+            "Saves ~300-500ms on the first chapter. Best-effort: failures are silent."
+        ),
+    )
+    parser.add_argument(
+        "--prewarm-piper",
+        action="store_true",
+        help=(
+            "Locate the Piper binary and resolve the model file for the primary "
+            "language before the chapter loop starts. Useful when Piper is the "
+            "expected fallback. Best-effort: failures are silent."
         ),
     )
     parser.add_argument(
