@@ -1,0 +1,60 @@
+name: CHANGELOG drift
+
+# Runs git-cliff against the current branch and warns when the generated
+# output diverges from the committed CHANGELOG.md. Doesn't block — just
+# a heads-up so an out-of-date CHANGELOG isn't discovered at release time.
+#
+# Triggered on PRs that modify python_app/, web/src/, or version files,
+# i.e. anywhere a release-worthy change might land.
+
+on:
+  pull_request:
+    paths:
+      - "python_app/**"
+      - "web/src/**"
+      - "python_app/version.py"
+      - "web/package.json"
+      - "desktop/src-tauri/Cargo.toml"
+      - "desktop/src-tauri/tauri.conf.json"
+      - "CHANGELOG.md"
+      - "cliff.toml"
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install git-cliff
+        uses: orhun/git-cliff-action@v3
+        with:
+          config: cliff.toml
+          args: --output GENERATED_CHANGELOG.md
+
+      - name: Compare against committed CHANGELOG
+        id: diff
+        run: |
+          if diff -q CHANGELOG.md GENERATED_CHANGELOG.md > /dev/null; then
+            echo "drift=false" >> "$GITHUB_OUTPUT"
+            echo "No CHANGELOG drift."
+          else
+            echo "drift=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::CHANGELOG.md is out of sync with git-cliff output. Run 'mise run changelog' to regenerate."
+            diff -u CHANGELOG.md GENERATED_CHANGELOG.md | head -100 || true
+          fi
+
+      - name: Comment on PR (only when drift)
+        if: steps.diff.outputs.drift == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = "📋 **CHANGELOG drift detected** — `git-cliff` would generate a different `CHANGELOG.md` than what's committed. This is informational only; run `mise run changelog` locally to regenerate, or update `CHANGELOG.md` manually for the release entry.";
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            await github.rest.issues.createComment({ owner, repo, issue_number, body });

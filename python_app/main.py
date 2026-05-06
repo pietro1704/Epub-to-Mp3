@@ -525,6 +525,16 @@ class ConverterApplication:
 
             cache_manager = CacheManager(cache_dir=self.cache_root)
 
+            # Lazy GC of stale per-chapter ``text/*.txt`` cache files.
+            # Each conversion drops ``<book>/text/*-pre-tts.txt`` and
+            # ``-parsed.txt`` per chapter. Across many books / edition
+            # swaps, that directory grows unboundedly. The sweep is
+            # idempotent per process and only runs once per CLI start.
+            try:
+                cache_manager.cleanup_old_text_files()
+            except Exception:
+                pass
+
             if getattr(args, "clear_cache", False):
                 input_path = (
                     Path(getattr(args, "input_file", ""))
@@ -581,7 +591,10 @@ class ConverterApplication:
                             if stream_dir.exists():
                                 shutil.rmtree(stream_dir, ignore_errors=True)
                                 cleared_audio += 1
-                            # Remove final output MP3 from all engine output dirs
+                            # Remove final output MP3 from all engine output dirs.
+                            # Also drop the per-output ._resume_state.json so the
+                            # next invocation re-scans instead of trusting a stale
+                            # listing hash that still includes the cleared chapter.
                             if output_base.exists():
                                 for out_dir in output_base.iterdir():
                                     if out_dir.is_dir() and (
@@ -591,6 +604,10 @@ class ConverterApplication:
                                         for f in out_dir.glob(f"{chapter_label} - *.mp3"):
                                             f.unlink(missing_ok=True)
                                             cleared_audio += 1
+                                        with contextlib.suppress(OSError):
+                                            (out_dir / "._resume_state.json").unlink(
+                                                missing_ok=True
+                                            )
 
                         if cleared_text > 0:
                             print(f"   ✅ Text cache cleared ({cleared_text} file(s))")

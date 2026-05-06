@@ -346,6 +346,14 @@ class TextProcessor:
     _footnote_cache: "Dict[str, Tuple[str, List[Dict[str, str]]]]" = {}
     _footnote_cache_lock = threading.Lock()
 
+    @classmethod
+    def clear_footnote_cache(cls) -> None:
+        """Drop the per-process inject_footnotes memo. Mirrors
+        ``LanguageDetector.clear_cache`` for parity — useful between CI
+        runs and for test hygiene."""
+        with cls._footnote_cache_lock:
+            cls._footnote_cache.clear()
+
     @staticmethod
     def inject_footnotes(
         markup: Optional[str],

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.3.26] — 2026-05-06
+
+### Robustness & Hygiene
+
+- **Per-chapter `text/*.txt` cache cleanup.** Each conversion drops `<book>/text/*-pre-tts.txt` and `-parsed.txt` per chapter. Across many books and edition swaps, that directory grew unboundedly. New `CacheManager.cleanup_old_text_files(max_age_days=30)` runs lazily on the first CLI start per process and protects telemetry/model directories. 4 tests in `test_text_cache_cleanup.py`.
+- **`--clear-cache --chapter X` removes `._resume_state.json`.** Previously the resume state cache could keep a stale listing hash referencing a chapter MP3 that was just deleted. The chapter-specific cleanup loop now unlinks the resume state file alongside the MP3s. 1 test in `test_clear_cache_drops_resume_state.py`.
+- **`TextProcessor.clear_footnote_cache()`** parity with `LanguageDetector.clear_cache()`. Useful for test hygiene and explicit memo invalidation. 2 tests in `test_footnote_clear_cache.py`.
+
+### Quality
+
+- **Telemetry schema contract test.** Pins the shape of `/api/telemetry/summary` so a backend rename or removed field breaks the test instead of silently breaking the web bundle in CI. 4 tests in `test_telemetry_schema_contract.py`.
+- **CHANGELOG drift workflow.** New `.github/workflows/changelog-drift.yml` runs `git-cliff` on PRs that touch source/version files and posts a comment when the generated CHANGELOG diverges from the committed one. Informational, doesn't block.
+
 ## [0.3.25] — 2026-05-06
 
 ### Performance & Robustness

@@ -6,6 +6,7 @@ Cache manager for processed ebooks
 import hashlib
 import json
 import shutil
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime
@@ -276,6 +277,56 @@ class CacheManager:
                 removed_any = True
 
         return removed_any
+
+    _TEXT_CACHE_CLEANED: bool = False
+
+    def cleanup_old_text_files(self, max_age_days: int = 30) -> int:
+        """Drop ``<book>/text/*.txt`` files older than ``max_age_days``.
+
+        Each conversion writes per-chapter ``-pre-tts.txt`` and
+        ``-parsed.txt`` to the book's text cache. Across many books and
+        edition swaps, that directory grows unboundedly. This sweep is
+        idempotent within a process (gated on ``_TEXT_CACHE_CLEANED``),
+        so it runs at most once per CLI/server start.
+
+        Returns the number of files removed (0 when the cache dir is
+        missing or no entries qualify).
+        """
+        if CacheManager._TEXT_CACHE_CLEANED:
+            return 0
+        CacheManager._TEXT_CACHE_CLEANED = True
+        if self.cache_dir is None or not self.cache_dir.exists():
+            return 0
+        cutoff = time.time() - max(1, max_age_days) * 86400
+        removed = 0
+        try:
+            book_dirs = list(self.cache_dir.iterdir())
+        except OSError:
+            return 0
+        for book_dir in book_dirs:
+            if not book_dir.is_dir():
+                continue
+            if book_dir.name in self._PROTECTED_DIRS:
+                continue
+            text_dir = book_dir / "text"
+            if not text_dir.is_dir():
+                continue
+            try:
+                entries = list(text_dir.iterdir())
+            except OSError:
+                continue
+            for entry in entries:
+                if not entry.is_file():
+                    continue
+                if entry.suffix.lower() != ".txt":
+                    continue
+                try:
+                    if entry.stat().st_mtime < cutoff:
+                        entry.unlink()
+                        removed += 1
+                except OSError:
+                    continue
+        return removed
 
     def get_cache_info(self) -> Dict[str, Any]:
         """Return information about the cache"""
