@@ -10,6 +10,10 @@ rust = "stable"
 "npm:@tauri-apps/cli" = "2"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
+# Flutter SDK for the cross-platform companion app under flutter_app/.
+# Optional — only needed for the Flutter target. Comment out if you don't
+# want to download the SDK.
+# flutter = "stable"
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"
