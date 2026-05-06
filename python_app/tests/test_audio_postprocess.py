@@ -278,3 +278,25 @@ def test_config_as_dict_includes_silence_fields() -> None:
     data = cfg.as_dict()
     assert data["chapter_intro_silence_ms"] == 100
     assert data["chapter_outro_silence_ms"] == 600
+
+
+def test_ensure_ffmpeg_paths_swallows_download_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Regression: static_ffmpeg may 502 on first-use download (github.com/zackees/ffmpeg_bins).
+
+    The helper must NEVER propagate the HTTPError — system ffmpeg on PATH is a fine fallback
+    and tests must not fail on transient infra issues (memory: feedback_autonomous_security_fixes).
+    """
+    import sys
+    import types
+
+    fake_module = types.ModuleType("static_ffmpeg")
+
+    def boom() -> None:
+        raise RuntimeError("502 Server Error: Bad Gateway from github.com/zackees/ffmpeg_bins")
+
+    fake_module.add_paths = boom  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "static_ffmpeg", fake_module)
+
+    from python_app.src.audio_postprocess import _ensure_ffmpeg_paths
+
+    _ensure_ffmpeg_paths()

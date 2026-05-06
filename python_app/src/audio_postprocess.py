@@ -23,6 +23,13 @@ def _ensure_ffmpeg_paths() -> None:
         static_ffmpeg.add_paths()
     except ImportError:
         pass
+    except Exception:
+        # static_ffmpeg may try to download binaries on first use; any
+        # network/filesystem failure must NOT crash the caller. The system
+        # ffmpeg (already on PATH in CI runners and dev machines) is a fine
+        # fallback. Tests in particular must never fail on a transient 502
+        # from github.com/zackees/ffmpeg_bins.
+        pass
 
 
 async def find_silence_for_title(
