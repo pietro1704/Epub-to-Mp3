@@ -205,6 +205,16 @@ export default function App(props?: AppProps): JSX.Element {
       timelineTitle: t.layout.telemetryTimelineTitle,
       timelineEmpty: t.layout.telemetryTimelineEmpty,
       timelineLatest: t.layout.telemetryTimelineLatest,
+      // v0.3.25: lang breakdown. Strings are inlined here rather than
+      // routed through ``t.layout`` because the panel is auxiliary and
+      // adding three i18n keys per locale just for a debug breakdown is
+      // not worth the churn.
+      byLanguageTitle: locale === "pt" ? "Por idioma" : "By language",
+      byLanguageEmpty:
+        locale === "pt"
+          ? "Sem amostras com idioma registrado ainda."
+          : "No language-tagged samples yet.",
+      languageHeader: locale === "pt" ? "Idioma" : "Lang",
       totalSamples: t.layout.telemetryTotalSamples,
       updatedAt: t.layout.telemetryUpdatedAt,
     }),
@@ -226,6 +236,7 @@ export default function App(props?: AppProps): JSX.Element {
       t.layout.telemetryTimelineLatest,
       t.layout.telemetryTotalSamples,
       t.layout.telemetryUpdatedAt,
+      locale,
     ],
   );
   const [formVersion, setFormVersion] = useState(0);
