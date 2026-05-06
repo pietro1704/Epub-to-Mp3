@@ -4,8 +4,12 @@ Minimal SwiftUI scaffold that talks to the Python backend (FastAPI) running
 either locally (`mise run web`, default `http://localhost:8000`) or on a
 remote tunnel / HF Spaces deploy.
 
-This is **slice 1**: skeleton + API connection only. No upload, no audio
-playback, no offline cache yet.
+**Slice 2** (current) adds: `JobSnapshot` Codable model mirroring the
+`JobStatus` Pydantic schema, `AVQueuePlayer`-backed audio engine with
+lock-screen / `MPRemoteCommandCenter` integration, background-aware
+`DownloadManager`, modal `PlayerView` with scrubber + speed selector,
+and per-`(jobId, chapterIndex)` resume markers persisted in
+`UserDefaults`.
 
 ## Layout
 
@@ -16,15 +20,114 @@ ios/EpubToMp3/
 │   ├── EpubToMp3App.swift        # @main entry — sets up AppSettings + RootView
 │   ├── Models/
 │   │   ├── AppSettings.swift     # @Observable, @AppStorage backendURL
-│   │   └── SessionRecord.swift   # Codable mirror of /api/sessions records
+│   │   ├── SessionRecord.swift   # Codable mirror of /api/sessions records
+│   │   └── JobSnapshot.swift     # Codable mirror of /api/jobs/{id} (camelCase!)
 │   ├── Services/
-│   │   └── APIClient.swift       # async/await fetchSessions + SSE eventStream
+│   │   ├── APIClient.swift       # fetchSessions, fetchJob, SSE eventStream
+│   │   ├── AudioPlayer.swift     # AVQueuePlayer + MPNowPlayingInfoCenter
+│   │   ├── DownloadManager.swift # background URLSession + manifest.json
+│   │   └── ResumeStore.swift     # UserDefaults-backed (jobId,chapter) → seconds
 │   └── Views/
 │       ├── RootView.swift        # TabView (Jobs | Settings)
 │       ├── SettingsView.swift    # backend URL + bundle metadata
 │       ├── JobsListView.swift    # /api/sessions list, pull-to-refresh
-│       └── JobDetailView.swift   # SSE stream consumer (URLSession.bytes)
+│       ├── JobDetailView.swift   # snapshot + SSE + chapter list + Play/Download
+│       └── PlayerView.swift      # modal player (scrubber, speed, transport)
+└── EpubToMp3Tests/                # XCTest — JobSnapshot decoding, ResumeStore, DownloadManager helpers
 ```
+
+### Backend contract correction
+
+The slice-2 task brief assumed snake_case (`book_title`, `progress`,
+`mp3_url`, …) for `/api/jobs/{id}`. **The wire format is actually
+camelCase** — the FastAPI `JobStatus` BaseModel in `python_app/server.py`
+uses `jobId`, `bookTitle`, `chapterProgress`, `progressPercent`,
+`chaptersTotal`, etc. and `_job_status_payload` returns the dict
+verbatim. `JobSnapshot.swift` matches that. Notable shape differences
+from the brief:
+
+- Per-chapter MP3s are exposed as `chapterProgress[].downloadUrl`
+  (not `chapters[].mp3Url`).
+- Chapter byte size is not exposed per chapter; only top-level
+  `outputs[].sizeBytes` (ZIP / log).
+- `durationSeconds`, `startedAt`, `completedAt` are *optional* per
+  chapter — the running path doesn't populate them; the recovery path
+  doesn't either, so consider them best-effort hints.
+
+### Audio session + Info.plist requirements
+
+`EpubToMp3App.configureAudioSession()` runs once on `init()`:
+
+```swift
+try AVAudioSession.sharedInstance().setCategory(
+    .playback, mode: .spokenAudio,
+    options: [.allowBluetoothA2DP, .allowAirPlay]
+)
+try AVAudioSession.sharedInstance().setActive(true)
+```
+
+Add to `Info.plist` so iOS keeps the app alive while playing:
+
+```xml
+<key>UIBackgroundModes</key>
+<array>
+    <string>audio</string>
+</array>
+```
+
+For the Files-app integration (so users can hand the resulting MP3s
+off to their preferred audio app):
+
+```xml
+<key>UIFileSharingEnabled</key><true/>
+<key>LSSupportsOpeningDocumentsInPlace</key><true/>
+```
+
+The `DownloadManager` writes to
+`<documents>/Audiobooks/<jobId>/chapters/*.mp3` plus
+`<documents>/Audiobooks/<jobId>/manifest.json`. With the keys above,
+those files become visible in the Files app under "On My iPhone →
+EpubToMp3".
+
+### What works in slice 2
+
+- `JobSnapshot` decoding from both `GET /api/jobs/{id}` and SSE frames.
+- `AudioPlayer.play(snapshot:startingAt:)` builds the chapter playlist
+  and starts playback. `pause`/`resume`/`seek`/`next`/`previous` work.
+- Lock-screen / control-center transport via `MPRemoteCommandCenter`.
+- Now Playing metadata (book title, chapter title, position, rate).
+- Speed selector at `0.75x–2.0x`.
+- Resume position persists per `(jobId, chapterIndex)` and is restored
+  on next `play()`.
+- `DownloadManager` enqueues every MP3 from the snapshot, retries with
+  exponential backoff (1s/2s/4s/8s/16s/30s ceiling, max 6 attempts),
+  writes a `manifest.json` per audiobook.
+
+### Stubbed / deferred to slice 3
+
+- Real `URLSession.background` delegate-driven downloads (slice 2 uses
+  the foreground session under a `Task.detached` queue — works but
+  pauses when the app is suspended).
+- SHA256 verification (`?sha=true` not yet exposed by backend).
+- Sleep timer + skip-silence.
+- Cache eviction (LRU) when `~/Documents/Audiobooks` exceeds the user
+  budget.
+- Wi-Fi-only toggle (`NWPathMonitor` gating on `enqueueAll`).
+- Artwork download via `coverUrl` (currently a `headphones` SF Symbol
+  placeholder).
+- Conversion submission (POST /api/convert + file picker) — slice 4.
+
+### Headless validation status
+
+```
+$ swift build      # compiles Models + Services + AudioPlayer (macOS 14)
+Build complete!
+$ swift test       # 12/12 pass — JobSnapshotTests + ResumeStoreTests + DownloadManagerHelperTests
+```
+
+`PlayerView.swift`, `JobDetailView.swift`, and `EpubToMp3App.swift`
+import SwiftUI and need an iOS SDK / Xcode build to compile. They are
+intentionally excluded from the SPM target.
 
 ## Approach: no hand-written `.xcodeproj`
 

@@ -8,12 +8,20 @@
 // `swift build` from the host platform will compile `EpubToMp3Core` (Models +
 // Services) using the macOS SDK — Foundation-only code, no SwiftUI imports —
 // to validate the API contract and JSON decoding before opening Xcode.
+//
+// AudioPlayer.swift IS included here: AVFoundation + MediaPlayer are
+// available on macOS too, and the file is guarded by `#if canImport(...)`.
+// Tests live in `EpubToMp3Tests/` and exercise pure-logic helpers
+// (ResumeStore, JobSnapshot decoding, DownloadManager filename sanitisation).
 
 import PackageDescription
 
 let package = Package(
     name: "EpubToMp3Core",
-    platforms: [.macOS(.v13), .iOS(.v17)],
+    // macOS 14 + iOS 17 share the Observation framework (`@Observable`).
+    // The host SPM build only exists for headless contract validation; the
+    // shipping target is iOS 17.
+    platforms: [.macOS(.v14), .iOS(.v17)],
     products: [
         .library(name: "EpubToMp3Core", targets: ["EpubToMp3Core"]),
     ],
@@ -29,8 +37,17 @@ let package = Package(
             ],
             sources: [
                 "Models/SessionRecord.swift",
+                "Models/JobSnapshot.swift",
                 "Services/APIClient.swift",
+                "Services/AudioPlayer.swift",
+                "Services/DownloadManager.swift",
+                "Services/ResumeStore.swift",
             ]
+        ),
+        .testTarget(
+            name: "EpubToMp3CoreTests",
+            dependencies: ["EpubToMp3Core"],
+            path: "EpubToMp3Tests"
         ),
     ]
 )

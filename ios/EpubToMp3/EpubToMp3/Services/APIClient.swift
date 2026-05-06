@@ -65,6 +65,33 @@ struct APIClient {
         }
     }
 
+    // MARK: Job snapshot
+
+    /// Fetch a single job snapshot via `GET /api/jobs/{id}`. Mirrors
+    /// `JobStatus` in `python_app/server.py`.
+    func fetchJob(id: String) async throws -> JobSnapshot {
+        let url = baseURL.appendingPathComponent("api/jobs/\(id)")
+        do {
+            let (data, response) = try await session.data(from: url)
+            try Self.assertOK(response: response, data: data)
+            return try JSONDecoder().decode(JobSnapshot.self, from: data)
+        } catch let err as APIError {
+            throw err
+        } catch let decErr as DecodingError {
+            throw APIError.decoding(decErr)
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
+    /// Decode a single SSE `data:` payload into a `JobSnapshot`. Returns
+    /// nil if the payload isn't a snapshot (some events are heartbeats or
+    /// progress fragments).
+    static func decodeSnapshot(from rawPayload: String) -> JobSnapshot? {
+        guard let data = rawPayload.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(JobSnapshot.self, from: data)
+    }
+
     // MARK: SSE
 
     /// Streams raw `data:` payloads from the backend's SSE endpoint as an
