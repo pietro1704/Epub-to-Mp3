@@ -13,6 +13,7 @@ import re
 # IMPORTANT: Required because Microsoft certificate (api.msedgeservices.com) is expired
 # Edge-TTS uses ssl.create_default_context(cafile=certifi.where())
 import ssl as _ssl_module
+import threading
 from contextlib import AsyncExitStack, suppress
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Set, Tuple
@@ -375,6 +376,10 @@ except ImportError:  # pragma: no cover - during optional dependency resolution
 
 _edge_prewarm_done: bool = False
 _edge_prewarm_lock: Optional[asyncio.Lock] = None
+# Sync mutex guarding the lazy creation of ``_edge_prewarm_lock`` itself.
+# Without this, two coroutines hitting the ``is None`` check concurrently
+# could each create their own asyncio.Lock and race past the gate.
+_edge_prewarm_init_mutex = threading.Lock()
 
 
 async def prewarm_edge(voice: str = "en-US-AriaNeural", *, force: bool = False) -> bool:
@@ -389,9 +394,13 @@ async def prewarm_edge(voice: str = "en-US-AriaNeural", *, force: bool = False) 
     global _edge_prewarm_done, _edge_prewarm_lock, edge_tts
     if _edge_prewarm_done and not force:
         return True
-    if _edge_prewarm_lock is None:
-        _edge_prewarm_lock = asyncio.Lock()
-    async with _edge_prewarm_lock:
+    # Lazy-create the asyncio lock under a sync mutex so concurrent
+    # callers see the same Lock instance.
+    with _edge_prewarm_init_mutex:
+        if _edge_prewarm_lock is None:
+            _edge_prewarm_lock = asyncio.Lock()
+        lock = _edge_prewarm_lock
+    async with lock:
         if _edge_prewarm_done and not force:
             return True
         try:

@@ -70,6 +70,10 @@ jaraco-context>=6.1.2  # CVE-2026-23949 (via keyring)
 setuptools>=82.0.1  # PYSEC-2022-43012, PYSEC-2025-49, CVE-2024-6345
 virtualenv>=21.3.1 # CVE-2026-22702 (via pre-commit)
 
+# Additional security pins surfaced by `mise run audit` (OSV)
+python-dotenv>=1.2.2  # CVE-2026-28684
+python-multipart>=0.0.26  # CVE-2026-40347 (already pinned via direct dep above; redundant safeguard)
+
 # Testing (dev only)
-pytest
+pytest>=9.0.3  # CVE-2025-71176
 pytest-asyncio

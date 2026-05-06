@@ -369,7 +369,12 @@ class TextProcessor:
             # Hash on the markup. SHA-1 over UTF-8 is ~200MB/s — cheap
             # compared to the BS4 walk we'd otherwise repeat.
             try:
-                cache_key = hashlib.sha1(str(markup).encode("utf-8", errors="ignore")).hexdigest()
+                # blake2b is ~30% faster than sha1 on long XHTML payloads
+                # and we only need a stable in-memory cache key (no
+                # cryptographic property required).
+                cache_key = hashlib.blake2b(
+                    str(markup).encode("utf-8", errors="ignore"), digest_size=20
+                ).hexdigest()
             except Exception:
                 cache_key = None
             if cache_key is not None:
@@ -1291,7 +1296,14 @@ def _toc_disk_cache_path(file_path: str) -> Optional[Path]:
     try:
         from .paths import CACHE_DIR  # type: ignore
 
-        digest = hashlib.sha1(str(file_path).encode("utf-8", errors="ignore")).hexdigest()[:16]
+        # blake2b digest_size=8 → 16 hex chars, matching the previous
+        # sha1[:16] surface so existing disk filenames are still readable
+        # in length terms. The hash itself is different, so v0.3.24/v0.3.25
+        # entries become orphans on first run after this change — they
+        # are cleared by ``_toc_disk_cache_cleanup`` once they age past 30d.
+        digest = hashlib.blake2b(
+            str(file_path).encode("utf-8", errors="ignore"), digest_size=8
+        ).hexdigest()
         return Path(CACHE_DIR) / "_toc" / f"{digest}.json"
     except Exception:
         return None

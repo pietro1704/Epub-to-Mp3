@@ -2498,7 +2498,10 @@ class ConverterApplication:
                 entries.append(f"{path.name}|{size}")
                 count += 1
             entries.sort()
-            digest = hashlib.sha1("\n".join(entries).encode("utf-8")).hexdigest()
+            # blake2b: faster than sha1 on the small listing strings we
+            # hash here, and the resume-state cache key has no
+            # cryptographic requirement.
+            digest = hashlib.blake2b("\n".join(entries).encode("utf-8"), digest_size=20).hexdigest()
             return count, digest
 
         cached_count: Optional[int] = None

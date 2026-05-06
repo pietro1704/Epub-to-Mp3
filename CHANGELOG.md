@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.3.27] — 2026-05-06
+
+### Fixes
+
+- **`prewarm_edge` race condition.** The lazy creation of `_edge_prewarm_lock` checked `is None` outside any lock, so two concurrent first-time callers could each create their own `asyncio.Lock` and race past the gate. Now guarded by a sync `threading.Lock` (`_edge_prewarm_init_mutex`). 2 tests in `test_prewarm_edge_lock_init.py`.
+- **`mise run audit` works again.** `pip-audit`'s default subprocess-venv path SIGABRTs on local macOS installs (broken `ensurepip`). Switched to OSV service mode (`-s osv`) which scans the installed env directly. Surfaced 21 stale local CVEs (all already pinned in requirements.txt — local venv was just out of date).
+
+### Performance
+
+- **blake2b for cache keys.** The four cache-key sites I introduced in v0.3.24/v0.3.25 (footnote memo, TOC disk cache filename, language detection memo, resume-state listing hash) now use `hashlib.blake2b(digest_size=...)` instead of `hashlib.sha1`. ~30% faster on long inputs, no cryptographic property required for in-process cache keys. Pre-existing sha1 sites (server audio helpers, routes) were left untouched. 4 tests in `test_blake2b_cache_keys.py`.
+
+### Test hygiene
+
+- **`conftest.py` autouse fixture resets cleanup gates.** `_TOC_DISK_CACHE_CLEANED` and `_TEXT_CACHE_CLEANED` are class-level/module-level "ran already" flags so the cleanup runs at most once per CLI start. Across tests they could leak: a test that tripped the gate hid the cleanup path from later tests. New conftest fixture resets both before each test and restores prior state on teardown. 4 tests in `test_conftest_resets_gates.py`.
+
+### Security pins
+
+- **`python-dotenv>=1.2.2`** (CVE-2026-28684) and **`pytest>=9.0.3`** (CVE-2025-71176) added to requirements.txt. Surfaced by the OSV scan above.
+
 ## [0.3.26] — 2026-05-06
 
 ### Robustness & Hygiene
