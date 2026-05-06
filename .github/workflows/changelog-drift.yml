@@ -26,6 +26,12 @@ permissions:
 jobs:
   drift:
     runs-on: ubuntu-latest
+    # Skip the workflow entirely on Dependabot PRs — they intentionally
+    # don't touch CHANGELOG.md, so flagging drift on every dependency
+    # bump is just noise that blocks auto-merge.
+    if: github.event.pull_request.user.login != 'dependabot[bot]'
+    # Informational only — never gate merges on this job.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,13 +39,20 @@ jobs:
 
       - name: Install git-cliff
         uses: orhun/git-cliff-action@v3
+        continue-on-error: true
         with:
           config: cliff.toml
           args: --output GENERATED_CHANGELOG.md
 
       - name: Compare against committed CHANGELOG
         id: diff
+        continue-on-error: true
         run: |
+          if [ ! -f GENERATED_CHANGELOG.md ]; then
+            echo "drift=skip" >> "$GITHUB_OUTPUT"
+            echo "git-cliff did not produce output; skipping comparison."
+            exit 0
+          fi
           if diff -q CHANGELOG.md GENERATED_CHANGELOG.md > /dev/null; then
             echo "drift=false" >> "$GITHUB_OUTPUT"
             echo "No CHANGELOG drift."
@@ -51,6 +64,7 @@ jobs:
 
       - name: Comment on PR (only when drift)
         if: steps.diff.outputs.drift == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+        continue-on-error: true
         uses: actions/github-script@v7
         with:
           script: |

@@ -1,0 +1,116 @@
+name: CI failure diagnose
+
+# When CI completes with failure on a PR or master push, fetch the failing
+# step's tail and post it as a PR comment (or as a GitHub issue for master
+# pushes). The goal is for the human author / Claude Code session to find
+# the diagnosis already on the PR without manually running `gh run view`.
+#
+# This is informational only — never blocks a merge, never auto-fixes.
+
+on:
+  workflow_run:
+    workflows: ["CI", "Release Desktop"]
+    types: [completed]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - name: Fetch failed run summary
+        id: summary
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          # Capture failed-job names + last 80 lines of the first failing
+          # step's log. Trimmed to fit a single PR comment.
+          gh run view "$RUN_ID" --json jobs \
+            -q '.jobs[] | select(.conclusion=="failure") | "- " + .name + " (id=" + (.databaseId|tostring) + ")"' \
+            > failed_jobs.txt
+          FAILED_LOG=$(gh run view "$RUN_ID" --log-failed 2>/dev/null | tail -n 80 | head -n 80)
+          {
+            echo "log<<DIAG_EOF"
+            echo "$FAILED_LOG"
+            echo "DIAG_EOF"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "jobs<<JOBS_EOF"
+            cat failed_jobs.txt
+            echo "JOBS_EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "url=${{ github.event.workflow_run.html_url }}" >> "$GITHUB_OUTPUT"
+          echo "name=${{ github.event.workflow_run.name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Find associated PR
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          # workflow_run gives us the head SHA — find any PR with that head.
+          SHA="${{ github.event.workflow_run.head_sha }}"
+          PR_NUMBER=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" -q '.[0].number' 2>/dev/null)
+          echo "number=${PR_NUMBER:-}" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        if: steps.pr.outputs.number != ''
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `🔴 **CI failure: ${{ steps.summary.outputs.name }}**
+
+            Failed jobs:
+            ${{ steps.summary.outputs.jobs }}
+
+            <details><summary>Last 80 lines of the failing step</summary>
+
+            \`\`\`
+            ${{ steps.summary.outputs.log }}
+            \`\`\`
+
+            </details>
+
+            Full log: ${{ steps.summary.outputs.url }}
+            `;
+            const { owner, repo } = context.repo;
+            await github.rest.issues.createComment({
+              owner, repo,
+              issue_number: ${{ steps.pr.outputs.number }},
+              body,
+            });
+
+      - name: Open issue for master failures
+        if: steps.pr.outputs.number == '' && github.event.workflow_run.head_branch == 'master'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `Workflow **${{ steps.summary.outputs.name }}** failed on master push.
+
+            Failed jobs:
+            ${{ steps.summary.outputs.jobs }}
+
+            <details><summary>Last 80 lines of the failing step</summary>
+
+            \`\`\`
+            ${{ steps.summary.outputs.log }}
+            \`\`\`
+
+            </details>
+
+            Full log: ${{ steps.summary.outputs.url }}
+            `;
+            const { owner, repo } = context.repo;
+            await github.rest.issues.create({
+              owner, repo,
+              title: `CI failure on master: ${{ steps.summary.outputs.name }} (run ${{ github.event.workflow_run.id }})`,
+              body,
+              labels: ["ci-failure", "automated"],
+            });
