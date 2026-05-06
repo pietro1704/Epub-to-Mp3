@@ -11,6 +11,9 @@ export interface TelemetrySummary {
   engines: Record<string, EngineStats>;
   ranked: string[];
   totalSamples: number;
+  /** Per-language breakdown, shape: ``{ engine: { lang: EngineStats } }``.
+   *  Bucket ``"_any"`` collects samples without a recorded language. */
+  byLanguage?: Record<string, Record<string, EngineStats>>;
 }
 
 export interface TelemetryPoint {

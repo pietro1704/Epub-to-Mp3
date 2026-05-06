@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.25] — 2026-05-06
+
+### Performance & Robustness
+
+- **TOC disk cache cleanup.** The persistent `.cache/_toc/<sha1>.json` cache introduced in v0.3.24 grew unboundedly because every EPUB ever opened left an entry behind. New `_toc_disk_cache_cleanup()` runs lazily on the first cache write per process and drops entries older than 30 days. 3 tests in `test_toc_cache_cleanup.py`.
+- **Resume state hash-based invalidation.** The dir-mtime gate from v0.3.24 invalidated on every state-file write — the cache only kicked in on the third call. Switched to a sha1 over the sorted `(name, size)` listing of MP3 files; the cache is now stable as long as the file *list* hasn't changed. 3 tests in `test_resume_state_hash.py` + adjusted older suite.
+- **`inject_footnotes` memoization.** The XHTML→`(markup, footnotes)` walk is now cached in-memory by sha1(markup), bounded at 256 entries. Skipped automatically when an `external_file_resolver` is provided (zip-context-dependent). 4 tests in `test_inject_footnotes_cache.py`.
+- **Telemetry frontend `byLanguage` breakdown.** `TelemetryPanel` renders a new "By language" table sorted by `(engine, lang)` for each language-tagged sample bucket exposed by the v0.3.24 server payload. 2 tests in `TelemetryPanel.byLanguage.test.tsx`.
+
 ## [0.3.24] — 2026-05-06
 
 ### Bug Fixes

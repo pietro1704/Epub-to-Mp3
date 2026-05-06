@@ -22,6 +22,9 @@ export interface TelemetryPanelLabels {
   timelineTitle: string;
   timelineEmpty: string;
   timelineLatest: string;
+  byLanguageTitle: string;
+  byLanguageEmpty: string;
+  languageHeader: string;
   totalSamples: (count: number) => string;
   updatedAt: (isoString: string) => string;
 }
@@ -43,6 +46,9 @@ export const DEFAULT_TELEMETRY_LABELS_EN: TelemetryPanelLabels = {
   timelineTitle: "Recent chapters",
   timelineEmpty: "No recent samples.",
   timelineLatest: "Latest first",
+  byLanguageTitle: "By language",
+  byLanguageEmpty: "No language-tagged samples yet.",
+  languageHeader: "Lang",
   totalSamples: (count) => `${count} total samples`,
   updatedAt: (iso) => `Updated ${new Date(iso).toLocaleTimeString()}`,
 };
@@ -65,6 +71,9 @@ export const DEFAULT_TELEMETRY_LABELS_PT: TelemetryPanelLabels = {
   timelineTitle: "Capítulos recentes",
   timelineEmpty: "Sem amostras recentes.",
   timelineLatest: "Mais recentes primeiro",
+  byLanguageTitle: "Por idioma",
+  byLanguageEmpty: "Sem amostras com idioma registrado ainda.",
+  languageHeader: "Idioma",
   totalSamples: (count) => `${count} amostras totais`,
   updatedAt: (iso) => `Atualizado ${new Date(iso).toLocaleTimeString()}`,
 };
@@ -224,6 +233,64 @@ export default function TelemetryPanel({
               </p>
             )}
           </div>
+
+          {summary && summary.byLanguage && (
+            <div className="telemetry-panel__by-language">
+              <h3>{labels.byLanguageTitle}</h3>
+              {(() => {
+                const rows: Array<{
+                  engine: string;
+                  lang: string;
+                  stats: EngineStats;
+                }> = [];
+                for (const [engine, byLang] of Object.entries(
+                  summary.byLanguage,
+                )) {
+                  for (const [lang, stats] of Object.entries(byLang)) {
+                    rows.push({ engine, lang, stats });
+                  }
+                }
+                rows.sort(
+                  (a, b) =>
+                    a.engine.localeCompare(b.engine) ||
+                    a.lang.localeCompare(b.lang),
+                );
+                if (rows.length === 0) {
+                  return (
+                    <p className="telemetry-panel__empty">
+                      {labels.byLanguageEmpty}
+                    </p>
+                  );
+                }
+                return (
+                  <table>
+                    <thead>
+                      <tr>
+                        <th scope="col">{labels.engineHeader}</th>
+                        <th scope="col">{labels.languageHeader}</th>
+                        <th scope="col">{labels.samplesHeader}</th>
+                        <th scope="col">{labels.avgHeader}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(({ engine, lang, stats }) => (
+                        <tr
+                          key={`${engine}-${lang}`}
+                          data-engine={engine}
+                          data-lang={lang}
+                        >
+                          <td>{engine.toUpperCase()}</td>
+                          <td>{lang === "_any" ? "—" : lang.toUpperCase()}</td>
+                          <td>{stats.samples}</td>
+                          <td>{formatNumber(stats.avg_chars_per_second)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          )}
 
           <div className="telemetry-panel__timeline">
             <h3>{labels.timelineTitle}</h3>

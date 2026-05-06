@@ -10,6 +10,7 @@ import asyncio
 import contextlib
 import copy
 import glob
+import hashlib
 import json
 import os
 import re
@@ -2451,46 +2452,65 @@ class ConverterApplication:
             return None
 
         # Resume-state cache: avoids the per-chapter stat() storm on
-        # repeated runs. Keyed on output_dir mtime — if no MP3 was added
-        # or removed since the last successful detection, reuse the
-        # cached count instead of re-scanning the directory.
+        # repeated runs. Originally keyed on output_dir mtime, but writing
+        # the state file itself bumped mtime, so the cache only kicked in
+        # on the third call. Now keyed on a hash of the sorted MP3 names —
+        # stable as long as the file *list* hasn't changed, regardless of
+        # how many times we re-write the state file or re-read the dir.
         #
         # The state file lives *inside the output dir itself*, not the
         # parsing cache, because (a) it is intrinsic to the output and
         # should travel with it (b) it avoids colliding with shared cache
         # directories that may already exist for unrelated books.
         expected = len(items)
-        try:
-            dir_mtime = output_dir.stat().st_mtime
-        except OSError:
-            dir_mtime = 0.0
         cache_state_path = output_dir / "._resume_state.json"
+
+        def _mp3_listing_hash() -> Tuple[int, str]:
+            """Return (count, sha1 of sorted "name|size" listing)."""
+            entries: List[str] = []
+            count = 0
+            for path in output_dir.glob("*.mp3"):
+                try:
+                    if not path.is_file():
+                        continue
+                    size = path.stat().st_size
+                except OSError:
+                    continue
+                if size <= 0:
+                    continue
+                entries.append(f"{path.name}|{size}")
+                count += 1
+            entries.sort()
+            digest = hashlib.sha1("\n".join(entries).encode("utf-8")).hexdigest()
+            return count, digest
+
         cached_count: Optional[int] = None
         if cache_state_path.exists():
             try:
                 state = json.loads(cache_state_path.read_text(encoding="utf-8"))
+                cached_listing = state.get("listing_hash") if isinstance(state, dict) else None
                 if (
                     isinstance(state, dict)
-                    and abs(float(state.get("dir_mtime") or 0.0) - dir_mtime) < 0.5
+                    and isinstance(cached_listing, str)
                     and isinstance(state.get("mp3_count"), int)
                     and isinstance(state.get("expected"), int)
                     and int(state.get("expected") or 0) == expected
                 ):
-                    cached_count = int(state["mp3_count"])
+                    fresh_count, fresh_hash = _mp3_listing_hash()
+                    if fresh_hash == cached_listing and fresh_count == int(state["mp3_count"]):
+                        cached_count = fresh_count
             except Exception:
                 cached_count = None
 
         if cached_count is not None:
             mp3_count = cached_count
         else:
-            mp3_count = sum(
-                1 for path in output_dir.glob("*.mp3") if path.is_file() and path.stat().st_size > 0
-            )
+            mp3_count, listing_hash = _mp3_listing_hash()
             try:
                 cache_state_path.write_text(
                     json.dumps(
                         {
-                            "dir_mtime": dir_mtime,
+                            "listing_hash": listing_hash,
                             "mp3_count": mp3_count,
                             "expected": expected,
                         }

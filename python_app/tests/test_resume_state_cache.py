@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import pytest
 
@@ -55,34 +54,27 @@ def test_first_call_writes_resume_state(app_with_dirs):
     assert state["expected"] == 12
 
 
-def test_subsequent_call_uses_cached_count(app_with_dirs):
+def test_subsequent_call_keeps_state_stable(app_with_dirs):
+    """v0.3.25: hash-based cache always probes the listing (cheap glob +
+    stat) but only rewrites the state file when the hash changes. So a
+    repeated call must leave the state file content untouched."""
     app, reader, config, args, items, output_dir, cache_root = app_with_dirs
-    # First call writes the state file, which itself bumps dir mtime.
     app._detect_reusable_existing_output(reader, items, config, args)
-    # Second call rewrites the state with the post-write mtime.
+    state_file = output_dir / "._resume_state.json"
+    initial = state_file.read_text()
+    # Repeat: nothing on disk changed → state file content stays the same.
     app._detect_reusable_existing_output(reader, items, config, args)
-    # Third call: state mtime now matches dir mtime → cache hit, no scan.
-    glob_calls = []
-    real_glob = output_dir.glob
-
-    def _spy(*pa, **kw):
-        glob_calls.append(pa)
-        return real_glob(*pa, **kw)
-
-    with patch.object(type(output_dir), "glob", _spy):
-        result = app._detect_reusable_existing_output(reader, items, config, args)
-    assert result == output_dir
-    assert glob_calls == []  # cache hit short-circuits the scan
+    assert state_file.read_text() == initial
 
 
-def test_cache_invalidates_when_dir_mtime_changes(app_with_dirs):
+def test_cache_invalidates_when_listing_changes(app_with_dirs):
+    """v0.3.25: tampering the cached listing_hash forces a re-scan."""
     app, reader, config, args, items, output_dir, cache_root = app_with_dirs
     app._detect_reusable_existing_output(reader, items, config, args)
     state_file = output_dir / "._resume_state.json"
     state = json.loads(state_file.read_text())
-    # Tamper the cached mtime to something far in the past — next call
-    # should re-scan and refresh.
-    state["dir_mtime"] = 1.0
+    # Tamper the cached listing_hash so the next call rebuilds the cache.
+    state["listing_hash"] = "deadbeef" * 5
     state["mp3_count"] = 999
     state_file.write_text(json.dumps(state))
 
@@ -90,3 +82,4 @@ def test_cache_invalidates_when_dir_mtime_changes(app_with_dirs):
     assert result == output_dir
     refreshed = json.loads(state_file.read_text())
     assert refreshed["mp3_count"] == 11
+    assert refreshed["listing_hash"] != "deadbeef" * 5

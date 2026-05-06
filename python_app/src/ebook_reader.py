@@ -11,6 +11,7 @@ import os
 import posixpath
 import re
 import threading
+import time
 import zipfile
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -336,6 +337,15 @@ class TextProcessor:
         result = "\n".join(result_lines)
         return result.rstrip("\n")
 
+    # Per-process cache for ``inject_footnotes`` results. Keyed on a sha1
+    # of the raw markup. Bounded so pathological corpora don't grow it
+    # unboundedly. Skipped when ``external_file_resolver`` is set: an
+    # external resolver can produce different outputs across runs (it
+    # walks the zip), so caching by markup alone would be unsound.
+    _FOOTNOTE_CACHE_LIMIT = 256
+    _footnote_cache: "Dict[str, Tuple[str, List[Dict[str, str]]]]" = {}
+    _footnote_cache_lock = threading.Lock()
+
     @staticmethod
     def inject_footnotes(
         markup: Optional[str],
@@ -345,6 +355,22 @@ class TextProcessor:
     ) -> tuple[str, List[Dict[str, str]]]:
         if not markup:
             return "", []
+
+        cache_key: Optional[str] = None
+        if external_file_resolver is None:
+            # Hash on the markup. SHA-1 over UTF-8 is ~200MB/s — cheap
+            # compared to the BS4 walk we'd otherwise repeat.
+            try:
+                cache_key = hashlib.sha1(str(markup).encode("utf-8", errors="ignore")).hexdigest()
+            except Exception:
+                cache_key = None
+            if cache_key is not None:
+                with TextProcessor._footnote_cache_lock:
+                    hit = TextProcessor._footnote_cache.get(cache_key)
+                if hit is not None:
+                    # Defensive copy of the footnote list so callers can
+                    # mutate it without poisoning the cache.
+                    return hit[0], [dict(fn) for fn in hit[1]]
 
         try:
             from bs4 import BeautifulSoup  # type: ignore
@@ -357,6 +383,17 @@ class TextProcessor:
             )
         else:
             processed_markup, footnotes = TextProcessor._collect_footnotes_fallback(str(markup))
+
+        if cache_key is not None:
+            with TextProcessor._footnote_cache_lock:
+                if len(TextProcessor._footnote_cache) >= TextProcessor._FOOTNOTE_CACHE_LIMIT:
+                    drop = max(1, TextProcessor._FOOTNOTE_CACHE_LIMIT // 10)
+                    for old in list(TextProcessor._footnote_cache.keys())[:drop]:
+                        TextProcessor._footnote_cache.pop(old, None)
+                TextProcessor._footnote_cache[cache_key] = (
+                    processed_markup,
+                    [dict(fn) for fn in footnotes],
+                )
 
         return processed_markup, footnotes
 
@@ -1252,6 +1289,47 @@ def _toc_disk_cache_path(file_path: str) -> Optional[Path]:
         return None
 
 
+_TOC_DISK_CACHE_CLEANED: bool = False
+
+
+def _toc_disk_cache_cleanup(max_age_days: int = 30) -> int:
+    """Drop ``.cache/_toc/`` entries older than ``max_age_days``.
+
+    Run lazily — every EPUB ever opened leaves a sha1 entry behind, and
+    over months that grows unboundedly. Returns the number of entries
+    removed (0 when the dir is missing). Idempotent within a process: the
+    sweep runs once per process, gated by ``_TOC_DISK_CACHE_CLEANED``.
+    """
+    global _TOC_DISK_CACHE_CLEANED
+    if _TOC_DISK_CACHE_CLEANED:
+        return 0
+    _TOC_DISK_CACHE_CLEANED = True
+    try:
+        from .paths import CACHE_DIR  # type: ignore
+
+        toc_dir = Path(CACHE_DIR) / "_toc"
+    except Exception:
+        return 0
+    if not toc_dir.exists() or not toc_dir.is_dir():
+        return 0
+    cutoff = time.time() - max(1, max_age_days) * 86400
+    removed = 0
+    try:
+        entries = list(toc_dir.iterdir())
+    except OSError:
+        return 0
+    for entry in entries:
+        if not entry.is_file():
+            continue
+        try:
+            if entry.stat().st_mtime < cutoff:
+                entry.unlink()
+                removed += 1
+        except OSError:
+            continue
+    return removed
+
+
 def _toc_to_jsonable(items: List["TocItem"]) -> list:
     """Serialize TocItem tree to plain dicts."""
     out = []
@@ -1324,6 +1402,13 @@ def _toc_cache_put(file_path: str, opf_path: Optional[str], items: List[TocItem]
     _toc_cache[key] = list(items)
     while len(_toc_cache) > _TOC_CACHE_MAX:
         _toc_cache.popitem(last=False)
+    # Lazy GC of stale persistent entries — runs once per process the
+    # first time a TOC is written. Keeps the disk cache bounded across
+    # months of use without any explicit maintenance step.
+    try:
+        _toc_disk_cache_cleanup()
+    except Exception:
+        pass
     # Best-effort persistent cache write.
     disk_path = _toc_disk_cache_path(file_path)
     if disk_path is not None:
