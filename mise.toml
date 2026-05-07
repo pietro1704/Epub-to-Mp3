@@ -12,6 +12,12 @@ rust = "stable"
 "cargo:git-cliff" = "latest"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
 flutter = "3.41.9"
+# CocoaPods for the Flutter iOS target.
+cocoapods = "1.16.2"
+# Java + Android SDK for the Flutter Android target. android-sdk plugin
+# requires JAVA_HOME to be set; mise handles that when java is in [tools].
+java = "21.0.2"
+android-sdk = "11.0"
 
 [tasks.dev]
 description = "Start backend (uvicorn) and frontend (Vite) together"
