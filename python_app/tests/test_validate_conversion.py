@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,36 @@ class TestValidateConversionHelpers(unittest.TestCase):
         self.assertIn("derry segundo interludio", normalized)
         self.assertNotIn(":", normalized)
         self.assertNotIn("_", normalized)
+
+    def test_find_cache_dir_skips_empty_filename_candidate(self):
+        """Regression for batch validation skip (2026-05-07).
+
+        The same EPUB can produce two cache directories — one keyed by the
+        raw filename stem (sometimes left empty after promotion) and one
+        keyed by the resolved title. ``find_cache_dir`` must scan every
+        candidate and skip directories without a populated ``text/`` subdir.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            cache_root = tmp_path / ".cache"
+            cache_root.mkdir()
+            empty = cache_root / "A Divina Comédia (Z-Library)"
+            empty.mkdir()
+            populated = cache_root / "La Divina Commedia _ A Divina Comédia"
+            (populated / "edge" / "text").mkdir(parents=True)
+            (populated / "edge" / "text" / "1.txt").write_text("hello")
+
+            cwd = os.getcwd()
+            os.chdir(tmp_path)
+            try:
+                book = Path("/some/dir/A Divina Comédia (Z-Library).epub")
+                resolved = vc.find_cache_dir(book)
+                self.assertEqual(
+                    resolved,
+                    Path(".cache/La Divina Commedia _ A Divina Comédia/edge"),
+                )
+            finally:
+                os.chdir(cwd)
 
     def test_normalize_title_key_survives_long_hierarchical_prefix(self):
         """Regression for Piranesi false-positive (2026-05-07).

@@ -20,7 +20,7 @@ import re
 import sys
 import unicodedata
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 # Add project to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -33,23 +33,53 @@ from python_app.src.utils import FileManager, resolve_cache_root
 
 
 def find_cache_dir(book_path: Path) -> Path:
-    """Find cache directory for a book."""
+    """Find cache directory for a book.
+
+    The same EPUB may produce multiple cache directories (one keyed by the
+    raw filename stem and one keyed by the resolved book title). The filename-
+    based one is sometimes left empty after the parser promotes to the title-
+    based one. We must scan every candidate, and only the ones that actually
+    contain a populated ``text/`` subdir count as a hit. Falling back to a
+    looser token-based match catches cases where the EPUB filename has noise
+    like ``... (Z-Library)`` that the title doesn't share.
+    """
     cache_root = Path(".cache")
+    if not cache_root.is_dir():
+        raise FileNotFoundError(f"Cache root missing: {cache_root}")
 
-    # Try to find by book title
     book_name = book_path.stem
+    book_lower = book_name.lower()
+    book_tokens = [t for t in re.split(r"\W+", book_lower) if len(t) >= 4]
 
-    # Search for matching cache directories
-    for cache_dir in cache_root.iterdir():
-        if cache_dir.is_dir() and book_name.lower() in cache_dir.name.lower():
-            # Look for engine subdirectories
-            for engine_dir in cache_dir.iterdir():
-                if engine_dir.is_dir() and (engine_dir / "text").exists():
+    def _populated_text_dir(cache_dir: Path) -> Optional[Path]:
+        for engine_dir in cache_dir.iterdir():
+            if engine_dir.is_dir() and (engine_dir / "text").is_dir():
+                if any((engine_dir / "text").iterdir()):
                     return engine_dir
-            # Try nested structure
-            for subdir in cache_dir.rglob("text"):
-                if subdir.is_dir():
-                    return subdir.parent
+        for subdir in cache_dir.rglob("text"):
+            if subdir.is_dir() and any(subdir.iterdir()):
+                return subdir.parent
+        return None
+
+    candidates: list[Path] = []
+    for cache_dir in cache_root.iterdir():
+        if not cache_dir.is_dir():
+            continue
+        name_lower = cache_dir.name.lower()
+        # Direct substring containment in either direction.
+        if book_lower in name_lower or name_lower in book_lower:
+            candidates.append(cache_dir)
+            continue
+        # Fallback: at least 60% of significant tokens match.
+        if book_tokens:
+            matches = sum(1 for tok in book_tokens if tok in name_lower)
+            if matches / len(book_tokens) >= 0.6:
+                candidates.append(cache_dir)
+
+    for cache_dir in candidates:
+        engine_dir = _populated_text_dir(cache_dir)
+        if engine_dir is not None:
+            return engine_dir
 
     raise FileNotFoundError(f"Cache directory not found for {book_path.name}")
 
