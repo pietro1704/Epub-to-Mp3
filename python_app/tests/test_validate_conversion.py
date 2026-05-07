@@ -47,6 +47,30 @@ class TestValidateConversionHelpers(unittest.TestCase):
             finally:
                 os.chdir(cwd)
 
+    def test_find_cache_dir_accepts_txt_variant(self):
+        """Cache populated by --show-structure uses ``txt/`` not ``text/``.
+
+        ``find_cache_dir`` must accept either layout so validation works
+        regardless of which CLI path populated the cache.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            cache_root = tmp_path / ".cache"
+            (cache_root / "Voo Noturno").mkdir(parents=True)
+            (cache_root / "Voo Noturno" / "txt").mkdir()
+            (cache_root / "Voo Noturno" / "txt" / "1.txt").write_text("hello")
+
+            cwd = os.getcwd()
+            os.chdir(tmp_path)
+            try:
+                book = Path("/some/dir/Voo Noturno - Antoine de Saint-Exupery.epub")
+                resolved = vc.find_cache_dir(book)
+                # Should land on the cache dir; the txt → text symlink is
+                # created so downstream code can find ``text/``.
+                self.assertTrue((resolved / "text").exists())
+            finally:
+                os.chdir(cwd)
+
     def test_normalize_title_key_survives_long_hierarchical_prefix(self):
         """Regression for Piranesi false-positive (2026-05-07).
 
