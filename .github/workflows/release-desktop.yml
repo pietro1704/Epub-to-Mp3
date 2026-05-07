@@ -130,8 +130,13 @@ jobs:
           PY
 
       # ── Toolchain via mise ──────────────────────────────────────────────────
-      - name: Install mise + toolchain (Rust, Node, Python, tauri-cli)
+      # Desktop builds only need python+node+npm+rust. We skip
+      # android-sdk/java/cocoapods/flutter because the android-sdk@11.0 plugin
+      # fails to locate sdkmanager on Windows/macOS runners.
+      - name: Install mise + toolchain (Rust, Node, Python)
         uses: jdx/mise-action@v4
+        with:
+          install_args: python node npm rust
 
       - name: Rust target (cross-compile)
         if: matrix.rust-target != ''
@@ -556,6 +561,8 @@ jobs:
 
       - name: Install mise + toolchain (Node)
         uses: jdx/mise-action@v4
+        with:
+          install_args: node npm
 
       - name: Create Python venv (mise virtualenv)
         run: python -m venv .venv
@@ -645,8 +652,10 @@ jobs:
           package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
           PY
 
-      - name: Install mise + toolchain (Node)
+      - name: Install mise + toolchain (Node, cocoapods)
         uses: jdx/mise-action@v4
+        with:
+          install_args: node npm cocoapods
 
       - name: Create Python venv (mise virtualenv)
         run: python -m venv .venv
