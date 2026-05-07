@@ -46,7 +46,10 @@ print(candidates[0])
 PY
 }
 
-mapfile -t BOOKS < <(ls "$SRC_DIR" 2>/dev/null | grep -E '\.(epub|pdf)$' || true)
+BOOKS=()
+while IFS= read -r line; do
+  [ -n "$line" ] && BOOKS+=("$line")
+done < <(ls "$SRC_DIR" 2>/dev/null | grep -E '\.(epub|pdf)$' || true)
 TOTAL=${#BOOKS[@]}
 log "=== batch start: $TOTAL books ==="
 
