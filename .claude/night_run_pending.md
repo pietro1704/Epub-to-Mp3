@@ -9,10 +9,11 @@
 - Sugestão: documentar como opcional ou instalar Docker Desktop
 
 
-## Dependabot major bump (needs user approval)
+## Resolved
 
-### PR #158: vite 7.3.2 → 8.0.11 (major)
-- Per workflow policy: major bumps require user decision
-- Vite 8 may have breaking changes for the React/Vite frontend
-- Action: leave open; user reviews changelog before merge
-- URL: https://github.com/pietro1704/Epub-to-Mp3/pull/158
+### PR #158: vite 7.3.2 → 8.0.11 (major) — MERGED 2026-05-07
+- User approved
+- Required changes: bump @vitejs/plugin-react to 6, switch
+  manualChunks to function form, replace optimizeDeps.esbuildOptions
+  with rolldownOptions (Vite 8 = Rolldown by default)
+- Verified: build green, 134/134 tests pass
