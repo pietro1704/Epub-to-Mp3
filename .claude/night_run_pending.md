@@ -40,3 +40,30 @@ by anchor target. Requires real EPUB fixture for regression test.
 
 Status: kept in source dir, batch halted. Skipping this book for now;
 will revisit after smaller books validate clean.
+
+## Jardim das Aflições — same TOC depth bug as Mindful Catholic
+
+EPUB has 4-level deep TOC (e.g. ``12.1.1.1``, ``13.1.3.2``). Conversion
+generates MP3s only at 3 levels (``12.1.2``, ``13.1.2``). Validator
+correctly detects:
+- 30+ ``Missing cache files`` for sub-sub-sub chapters
+- 20+ ``MP3 filename does not match EPUB heading`` for the same items
+
+Root cause hypothesis (same as Mindful Catholic): the TOC parser in
+``ebook_reader.get_chapter_structure`` walks the full hierarchy when
+asked, but the conversion path collapses 4-level entries into the
+3-level parents. ``validate_conversion`` then sees TOC-derived 4-level
+items with no matching cache or MP3.
+
+Books moved to ``~/Downloads/livros/_skipped/``:
+- ``The_Mindful_Catholic_Finding_God_One_z_library_sk,_1lib_sk,.epub``
+- ``O jardim das Aflições de Epicuro à ressurreicão de César … by Olavo de Carvalho … (z-lib.org).epub``
+
+Fix scope: **non-trivial** — requires either:
+(a) parser dedup at ``MAX_CHAPTER_DEPTH`` so reader and converter agree, or
+(b) converter respects the full TOC depth and produces MP3s for every leaf, or
+(c) validator collapses sub-sub levels to 3 before comparing.
+
+Recommended path: (a) — add ``MAX_CHAPTER_DEPTH=3`` env var
+(consistent with the ``MAX_CHAPTER_CHARS`` pattern), enforce in
+``get_chapter_structure``. Requires real EPUB fixture for regression test.
