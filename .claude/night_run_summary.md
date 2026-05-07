@@ -83,3 +83,16 @@ Auto Release detectou commits e bumpou — Release Desktop teve sucesso completo
 ## Loop encerrado em 2026-05-07 ~08:55 UTC
 
 Não há mais nada para auto-fixar. App em estado healthy. ScheduleWakeup terminado.
+
+## Verificação pós-encerramento (2026-05-07 ~13:34 UTC)
+
+Confirmado que todos os 7 workflows do commit `c9b0175` (summary docs) passaram:
+- CI ✅
+- Push on master ✅
+- Automatic Dependency Submission (Python) ✅ (após rerun — a 1ª attempt falhou por flake transitória da API GitHub Dependency Graph)
+- Auto Release ✅
+- Sync to Hugging Face Space ✅
+- Release Desktop ✅ (rolling rebuild v0.3.28)
+- CI failure diagnose ✅ (skipped, esperado)
+
+Estado final: **app 100% verde, deployado, todos artefatos publicados**.
