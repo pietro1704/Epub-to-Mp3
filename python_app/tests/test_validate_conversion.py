@@ -16,6 +16,26 @@ class TestValidateConversionHelpers(unittest.TestCase):
         self.assertNotIn(":", normalized)
         self.assertNotIn("_", normalized)
 
+    def test_normalize_title_key_survives_long_hierarchical_prefix(self):
+        """Regression for Piranesi false-positive (2026-05-07).
+
+        A long hierarchical prefix like ``9.11 - Parte 7: Matthew Rose Sorensen
+        - ...`` used to push the EPUB title past the 80-char limit, breaking
+        substring match in validate_book and producing spurious
+        ``Missing cache files`` alerts.
+        """
+        epub_title = "Valentine Ketterley desapareceu ENTRADA PARA O"
+        conv_title = (
+            "9.11 - Parte 7: Matthew Rose Sorensen - "
+            "Valentine Ketterley desapareceu ENTRADA PARA O - DIA 26 DE NOVEMBRO"
+        )
+        epub_norm = vc.normalize_title_key(epub_title)
+        conv_norm = vc.normalize_title_key(conv_title)
+        self.assertTrue(
+            epub_norm in conv_norm or conv_norm in epub_norm,
+            f"title match broken by truncation:\n  epub={epub_norm!r}\n  conv={conv_norm!r}",
+        )
+
     def test_build_cache_index_prefers_first_dir(self):
         with (
             tempfile.TemporaryDirectory() as first_dir,

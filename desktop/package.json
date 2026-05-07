@@ -1,0 +1,9 @@
+{
+  "name": "epub-to-mp3-desktop",
+  "private": true,
+  "dependencies": {
+    "@tauri-apps/api": "2.11",
+    "@tauri-apps/cli": "2.11",
+    "@tauri-apps/plugin-shell": "2"
+  }
+}

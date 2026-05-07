@@ -350,8 +350,14 @@ def normalize_title(text: str) -> str:
     return text
 
 
-def normalize_title_key(text: str, limit: int = 80) -> str:
-    """Normalize and shorten titles to improve matching with truncated filenames."""
+def normalize_title_key(text: str, limit: int = 160) -> str:
+    """Normalize and shorten titles to improve matching with truncated filenames.
+
+    The limit was raised from 80 to 160 because hierarchical chapter prefixes
+    (e.g. ``9.11 - Parte 7: Matthew Rose Sorensen - ...``) can push the EPUB
+    title past 80 chars in the converted filename, breaking substring match
+    in ``validate_book`` and producing spurious "Missing cache files" alerts.
+    """
     normalized = normalize_title(text)
     if limit:
         normalized = normalized[:limit].rstrip()
