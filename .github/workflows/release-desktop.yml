@@ -38,6 +38,11 @@ jobs:
   build:
     name: ${{ matrix.label }}
     timeout-minutes: 40
+    # Desktop builds don't need android-sdk/java/cocoapods/flutter; the
+    # android-sdk@11.0 vfox plugin fails outside Linux runners. Disable them
+    # globally for this job so mise activation never tries to resolve them.
+    env:
+      MISE_DISABLE_TOOLS: "android-sdk,java,cocoapods,flutter"
 
     strategy:
       fail-fast: false
@@ -547,6 +552,10 @@ jobs:
     needs: [build]
     timeout-minutes: 25
     runs-on: ubuntu-latest
+    env:
+      # Capacitor uses its own Android Gradle plugin; we don't need flutter
+      # or cocoapods here. Skip them so mise activation is fast.
+      MISE_DISABLE_TOOLS: "flutter,cocoapods"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -627,6 +636,8 @@ jobs:
     needs: [build]
     timeout-minutes: 25
     runs-on: macos-latest
+    env:
+      MISE_DISABLE_TOOLS: "android-sdk,java,flutter"
     # Signing cert required for App Store / TestFlight distribution
     # Unsigned IPA can be sideloaded with AltStore or Sideloadly
     continue-on-error: true
