@@ -51,6 +51,21 @@ def find_cache_dir(book_path: Path) -> Path:
     book_lower = book_name.lower()
     book_tokens = [t for t in re.split(r"\W+", book_lower) if len(t) >= 4]
 
+    # Filename and book title often diverge (e.g. ``pg50936-images-3.epub``
+    # → ``Man in a Sewing Machine``). Extract the EPUB metadata title and
+    # use it as an additional matching hint so caches keyed by title still
+    # resolve.
+    title_tokens: List[str] = []
+    title_lower = ""
+    try:
+        from python_app.src.ebook_reader import EbookReader as _Reader
+
+        title = _Reader(str(book_path)).title or ""
+        title_lower = title.lower()
+        title_tokens = [t for t in re.split(r"\W+", title_lower) if len(t) >= 4]
+    except Exception:
+        pass
+
     def _populated_text_dir(cache_dir: Path) -> Optional[Path]:
         # The CLI conversion path writes ``text/`` directly under the book
         # cache root; ``--show-structure`` instead writes ``txt/``. Accept
@@ -105,15 +120,21 @@ def find_cache_dir(book_path: Path) -> Path:
         if not cache_dir.is_dir():
             continue
         name_lower = cache_dir.name.lower()
-        # Direct substring containment in either direction.
-        if book_lower in name_lower or name_lower in book_lower:
+        # Direct substring containment in either direction (filename or title).
+        if (
+            book_lower in name_lower
+            or name_lower in book_lower
+            or (title_lower and (title_lower in name_lower or name_lower in title_lower))
+        ):
             candidates.append(cache_dir)
             continue
-        # Fallback: at least 60% of significant tokens match.
-        if book_tokens:
-            matches = sum(1 for tok in book_tokens if tok in name_lower)
-            if matches / len(book_tokens) >= 0.6:
-                candidates.append(cache_dir)
+        # Fallback: at least 60% of significant tokens match (filename or title).
+        for tokens in (book_tokens, title_tokens):
+            if tokens:
+                matches = sum(1 for tok in tokens if tok in name_lower)
+                if matches / len(tokens) >= 0.6:
+                    candidates.append(cache_dir)
+                    break
 
     for cache_dir in candidates:
         engine_dir = _populated_text_dir(cache_dir)

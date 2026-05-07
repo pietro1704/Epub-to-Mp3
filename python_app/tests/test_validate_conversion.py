@@ -47,6 +47,40 @@ class TestValidateConversionHelpers(unittest.TestCase):
             finally:
                 os.chdir(cwd)
 
+    def test_find_cache_dir_uses_epub_metadata_title(self):
+        """Filename and EPUB title often diverge (Project Gutenberg files).
+
+        ``find_cache_dir`` should fall back to the EPUB's metadata title
+        when filename tokens don't overlap with any cache directory.
+        Example: filename ``pg50936-images-3.epub`` → title
+        ``Man in a Sewing Machine`` → cache keyed by title.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            cache_root = tmp_path / ".cache"
+            populated = cache_root / "Man in a Sewing Machine"
+            (populated / "text").mkdir(parents=True)
+            (populated / "text" / "1.txt").write_text("hello")
+
+            cwd = os.getcwd()
+            os.chdir(tmp_path)
+            try:
+                # Stub EbookReader to return the metadata title we expect.
+                import python_app.src.ebook_reader as reader_mod
+
+                class _StubReader:
+                    title = "Man in a Sewing Machine"
+
+                    def __init__(self, _path):
+                        pass
+
+                with patch.object(reader_mod, "EbookReader", _StubReader):
+                    book = Path("/some/dir/pg50936-images-3.epub")
+                    resolved = vc.find_cache_dir(book)
+                    self.assertEqual(resolved, Path(".cache/Man in a Sewing Machine"))
+            finally:
+                os.chdir(cwd)
+
     def test_find_cache_dir_accepts_txt_variant(self):
         """Cache populated by --show-structure uses ``txt/`` not ``text/``.
 
