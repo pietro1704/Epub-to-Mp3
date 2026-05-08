@@ -147,12 +147,11 @@ def find_cache_dir(book_path: Path) -> Path:
 def load_epub_chapters(epub_path: Path) -> List[Tuple[object, str, str]]:
     """Load all chapters from EPUB matching what the converter actually iterates.
 
-    Mirrors the converter's structure pipeline by calling
-    ``_generate_structure_items`` (which is what feeds the chapter loop).
-    Earlier versions also called ``_apply_text_transforms`` /
-    ``_apply_structure_to_reader`` which applied additional sub-chapter
-    splits non-deterministically (Metro 2033 went 23 → 35); we drop those
-    so the chapter count matches what is actually synthesised to MP3.
+    Mirrors the converter's structure pipeline exactly: ``_generate_structure_items``
+    + ``_apply_text_transforms``. The transforms include the duplicate-index
+    sub-splitter (lines main.py:1485-1514) which assigns ``X.Y.Z`` labels to
+    chapters that share an index — without this step the validator and
+    converter disagree on the chapter count for hierarchical-TOC EPUBs.
     """
     print(f"📖 Reading EPUB: {epub_path.name}")
     reader = EbookReader(str(epub_path))
@@ -160,9 +159,16 @@ def load_epub_chapters(epub_path: Path) -> List[Tuple[object, str, str]]:
         from python_app.main import ConverterApplication
 
         app = ConverterApplication()
+        preview_config = app.config.create_conversion_config(
+            engine="edge",
+            output_dir=str(Path.cwd() / "output"),
+            book_title=reader.title,
+            preserve_all_chapters=True,
+        )
+        preview_config.footnote_mode = "inline"
+        preview_config.footnote_context_words = app.FOOTNOTE_CONTEXT_WORDS
         structure_items = app._generate_structure_items(reader, filter_chapters=False)
-        # Build (label, name, text) triples directly from structure_items so
-        # the validator compares against the exact list the converter built.
+        structure_items = app._apply_text_transforms(structure_items, preview_config, reader)
         result: List[Tuple[object, str, str]] = []
         for i, item in enumerate(structure_items, 1):
             label = getattr(item, "index", None) or i
