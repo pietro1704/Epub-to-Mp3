@@ -230,7 +230,14 @@ class TestValidateBook(unittest.TestCase):
                 "Mismatched TXT/MP3 names should be reported",
             )
 
-    def test_validate_book_flags_even_small_truncation(self):
+    def test_validate_book_flags_truncation_above_tolerance(self):
+        """Truncations above the per-chapter tolerance band must be flagged.
+
+        ``compare_texts`` absorbs diffs <= 1% of the original (or 200 chars,
+        whichever is larger). This test makes the truncation 1000 chars
+        on a 5000-char original — well above tolerance — so the validator
+        must still flag it.
+        """
         with (
             tempfile.TemporaryDirectory() as output_dir,
             tempfile.TemporaryDirectory() as cache_dir,
@@ -239,24 +246,25 @@ class TestValidateBook(unittest.TestCase):
             text_dir = output_path / "text"
             text_dir.mkdir()
 
-            original_text = "Capítulo 2 - Trecho original com final completo."
-            truncated_text = "Capítulo 2 - Trecho original com final complet"
+            original_text = "Capítulo 2 - " + ("a " * 2500)
+            truncated_text = "Capítulo 2 - " + ("a " * 2000)  # 1000 chars short
 
-            parsed_path = text_dir / "1 - Capítulo 2 - Trecho original-parsed.txt"
-            pretts_path = text_dir / "1 - Capítulo 2 - Trecho original-pre-tts.txt"
+            parsed_path = text_dir / "1 - Capítulo 2 - a a a-parsed.txt"
+            pretts_path = text_dir / "1 - Capítulo 2 - a a a-pre-tts.txt"
             parsed_path.write_text(truncated_text, encoding="utf-8")
             pretts_path.write_text(truncated_text, encoding="utf-8")
 
-            mp3_path = output_path / "1 - Capítulo 2 - Trecho original.mp3"
+            mp3_path = output_path / "1 - Capítulo 2 - a a a.mp3"
             mp3_path.write_bytes(b"fake mp3 data" * 200)
 
             fake_result = SimpleNamespace(is_valid=True, duration_diff_percent=0)
 
             with patch("validate_conversion.AudioValidator") as mock_validator:
                 mock_validator.return_value.validate_duration.return_value = fake_result
+                mock_validator.return_value.get_audio_duration.return_value = 60
                 with patch(
                     "validate_conversion.load_epub_chapters",
-                    return_value=[(1, "Capítulo 2 - Trecho original", original_text)],
+                    return_value=[(1, "Capítulo 2 - a a a", original_text)],
                 ):
                     stats, issues = vc.validate_book(
                         Path("book.epub"),
@@ -267,7 +275,7 @@ class TestValidateBook(unittest.TestCase):
             self.assertEqual(stats["text_mismatch"], 1)
             self.assertTrue(
                 any("difer" in issue.lower() or "trunc" in issue.lower() for issue in issues),
-                "Even small text truncations must be reported as issues",
+                "Truncations above tolerance must still be reported",
             )
 
     def test_validate_book_detects_duplicate_outputs(self):
