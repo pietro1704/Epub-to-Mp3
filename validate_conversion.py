@@ -145,26 +145,18 @@ def find_cache_dir(book_path: Path) -> Path:
 
 
 def load_epub_chapters(epub_path: Path) -> List[Tuple[object, str, str]]:
-    """Load all chapters from EPUB."""
+    """Load all chapters from EPUB.
+
+    Reads the EPUB through ``EbookReader`` exactly as the converter does, with
+    NO post-processing transforms applied. Applying ``_apply_text_transforms``
+    here used to inflate the chapter count (e.g. 23 → 35 for Metro 2033)
+    because subchapter splitters fired non-deterministically depending on
+    cached state. The validator must compare against the same chapter set
+    the converter actually iterates over, which is the raw ``EbookReader``
+    output.
+    """
     print(f"📖 Reading EPUB: {epub_path.name}")
     reader = EbookReader(str(epub_path))
-    try:
-        from python_app.main import ConverterApplication
-
-        app = ConverterApplication()
-        preview_config = app.config.create_conversion_config(
-            engine="edge",
-            output_dir=str(Path.cwd() / "output"),
-            book_title=reader.title,
-            preserve_all_chapters=True,
-        )
-        preview_config.footnote_mode = "inline"
-        preview_config.footnote_context_words = app.FOOTNOTE_CONTEXT_WORDS
-        structure_items = app._generate_structure_items(reader, filter_chapters=False)
-        structure_items = app._apply_text_transforms(structure_items, preview_config, reader)
-        app._apply_structure_to_reader(reader, structure_items)
-    except Exception as exc:
-        print(f"⚠️  Validation fallback: failed to apply structure transforms ({exc})")
 
     chapters = reader.get_chapter_structure(preserve_all=True)
 
