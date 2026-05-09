@@ -46,11 +46,18 @@ extension ToolbarItemPlacement {
 }
 
 /// True when SwiftUI is rendering inside the Xcode preview canvas.
-/// Xcode sets `XCODE_RUNNING_FOR_PREVIEWS=1` in the injected dylib's
-/// environment. Use this to short-circuit network calls and bookmark
-/// resolution that would crash or hang in the preview sandbox.
+///
+/// Xcode 26 unified the preview pipeline with Playgrounds and now
+/// sets `XCODE_RUNNING_FOR_PLAYGROUNDS=1` in the injected dylib's
+/// environment (the older `XCODE_RUNNING_FOR_PREVIEWS` is gone). We
+/// check both so the same code keeps working on Xcode 15/16.
+///
+/// Use this to short-circuit network calls and bookmark resolution
+/// that would crash or hang in the preview sandbox.
 var isSwiftUIPreview: Bool {
-    ProcessInfo.processInfo.environment["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
+    let env = ProcessInfo.processInfo.environment
+    return env["XCODE_RUNNING_FOR_PLAYGROUNDS"] == "1"
+        || env["XCODE_RUNNING_FOR_PREVIEWS"] == "1"
 }
 
 extension Color {

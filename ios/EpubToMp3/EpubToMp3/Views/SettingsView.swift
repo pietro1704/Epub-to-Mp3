@@ -271,6 +271,7 @@ struct SettingsView: View {
 #Preview("Settings") {
     NavigationStack { SettingsView() }
         .environment(AppSettings())
+        .environment(LibraryStore())
         #if os(macOS)
         .environment(SidecarManager())
         #endif

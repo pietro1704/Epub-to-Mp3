@@ -39,7 +39,18 @@ struct EpubToMp3App: App {
     /// sets only inside `xcodebuild test` runs.
     @MainActor
     private func startSidecarIfNeeded() async {
+        // Skip the sidecar boot under unit tests (xctest hosts the
+        // app — without this guard SwiftUI would try to spin up the
+        // Python server and hang the test bundle for 30 s).
         if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+            return
+        }
+        // Same story for the Xcode preview canvas. Xcode 26 sets
+        // `XCODE_RUNNING_FOR_PLAYGROUNDS=1` (older Xcodes used the
+        // legacy `XCODE_RUNNING_FOR_PREVIEWS=1`).
+        let env = ProcessInfo.processInfo.environment
+        if env["XCODE_RUNNING_FOR_PLAYGROUNDS"] == "1"
+            || env["XCODE_RUNNING_FOR_PREVIEWS"] == "1" {
             return
         }
         guard settings.useEmbeddedSidecar else { return }
