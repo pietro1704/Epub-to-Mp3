@@ -75,7 +75,10 @@ struct PlayerReaderView: View {
                 .presentationDetents([.medium, .large])
             }
         }
-        .onAppear(perform: bootstrap)
+        .onAppear {
+            guard !isSwiftUIPreview else { return }
+            bootstrap()
+        }
         .onDisappear(perform: teardown)
     }
 

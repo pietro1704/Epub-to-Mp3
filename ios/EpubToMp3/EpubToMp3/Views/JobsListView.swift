@@ -67,7 +67,10 @@ struct JobsListView: View {
                 .disabled(viewModel.isLoading)
             }
         }
-        .task { await viewModel.reload(client: client) }
+        .task {
+            guard !isSwiftUIPreview else { return }
+            await viewModel.reload(client: client)
+        }
         .refreshable { await viewModel.reload(client: client) }
     }
 }

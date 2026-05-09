@@ -100,7 +100,10 @@ struct LogsView: View {
                 .toggleStyle(.button)
             }
         }
-        .onAppear { viewModel.start(client: client, jobId: jobId) }
+        .onAppear {
+            guard !isSwiftUIPreview else { return }
+            viewModel.start(client: client, jobId: jobId)
+        }
         .onDisappear { viewModel.stop() }
         .overlay(alignment: .bottom) {
             if let err = viewModel.error {

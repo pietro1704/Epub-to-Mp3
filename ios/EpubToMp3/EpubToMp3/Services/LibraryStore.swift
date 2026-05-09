@@ -143,10 +143,24 @@ final class LibraryStore {
     /// Resolve the bookmark to a file URL the caller can read. Marks
     /// `lastOpenedAt = now` as a side effect so the Library can sort by
     /// "recently opened".
+    ///
+    /// Throws when the bookmark is missing or empty (preview fixtures,
+    /// or an iOS import where bookmark creation failed). Without this
+    /// guard, `URL(resolvingBookmarkData: Data())` raises
+    /// `fatalError` inside libswiftCore — which is exactly what was
+    /// crashing the SwiftUI preview canvas.
     func openBookFile(id: String) throws -> URL {
         guard let i = books.firstIndex(where: { $0.id == id }) else {
             throw NSError(domain: "LibraryStore", code: 404,
                           userInfo: [NSLocalizedDescriptionKey: "Book not found in library"])
+        }
+        guard !books[i].bookmark.isEmpty else {
+            throw NSError(
+                domain: "LibraryStore",
+                code: 410,
+                userInfo: [NSLocalizedDescriptionKey:
+                    "This book has no security-scoped bookmark (re-import \(books[i].displayFilename) from the file picker to restore access)."]
+            )
         }
         var stale = false
         let url = try URL(

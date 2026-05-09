@@ -78,6 +78,15 @@ struct BookOpenView: View {
 
     @MainActor
     private func bootstrap() async {
+        // Skip the network + bookmark resolution dance under the
+        // SwiftUI preview canvas — those code paths assume a real
+        // app environment (sandbox, security-scoped URLs, sidecar)
+        // that the canvas doesn't provide, and they would
+        // `fatalError` inside libswiftCore on `URL(resolvingBookmarkData:)`.
+        if isSwiftUIPreview {
+            phase = .ready
+            return
+        }
         phase = .resolving
         guard let client else {
             // No backend — open in text-only mode if we can.
