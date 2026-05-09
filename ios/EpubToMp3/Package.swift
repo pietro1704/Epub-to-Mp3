@@ -49,6 +49,7 @@ let package = Package(
                 "Services/LibraryStore.swift",
                 "Services/EpubMetadataReader.swift",
                 "Services/SidecarManager.swift",
+                "Services/ZipReader.swift",
             ]
         ),
         .testTarget(

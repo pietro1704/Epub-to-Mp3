@@ -2,15 +2,14 @@ import Foundation
 
 /// Best-effort EPUB metadata reader. EPUB is a ZIP container with an
 /// `OPF` manifest at a path advertised by `META-INF/container.xml`.
-/// Parsing the ZIP requires either a system-provided unzip (macOS) or a
-/// pure-Swift implementation (iOS). For now:
 ///
-/// - **macOS**: shells out to `/usr/bin/unzip -p` to extract individual
-///   members in memory.
-/// - **iOS / iPadOS**: returns an empty payload — the importer falls
-///   back to the filename for the title and shows no cover. A future
-///   iteration can swap in a Swift-only zip reader (e.g.
-///   `MiniZip`/`ZipFoundation`) without changing callers.
+/// Implementation: in-process `ZipReader` (Compression.framework). We
+/// used to shell out to `/usr/bin/unzip -p` on macOS, but App Sandbox
+/// strips the parent's security-scoped access from any subprocess —
+/// the user picks an EPUB from `~/Books/`, the parent gets read access,
+/// `Process` spawns `unzip`, the subprocess can't read the file, and
+/// the import fails with "couldn't be opened". A pure-Swift reader
+/// also gives us iOS support without a third-party dependency.
 enum EpubMetadataReader {
 
     struct Payload {
@@ -26,22 +25,13 @@ enum EpubMetadataReader {
     }
 
     static func readMetadata(from url: URL) throws -> Payload {
-        #if os(macOS)
-        return try readMetadataMacOS(url: url)
-        #else
-        return Payload()
-        #endif
-    }
-
-    #if os(macOS)
-    private static func readMetadataMacOS(url: URL) throws -> Payload {
         // 1. Extract container.xml to discover the OPF path.
-        guard let containerXML = try unzipMember(zipURL: url, member: "META-INF/container.xml"),
+        guard let containerXML = ZipReader.extract(member: "META-INF/container.xml", from: url),
               let opfPath = parseOPFPath(in: containerXML) else {
             return Payload()
         }
         // 2. Extract the OPF manifest itself.
-        guard let opfData = try unzipMember(zipURL: url, member: opfPath) else {
+        guard let opfData = ZipReader.extract(member: opfPath, from: url) else {
             return Payload()
         }
         let parsed = parseOPF(data: opfData)
@@ -53,26 +43,10 @@ enum EpubMetadataReader {
         if let coverHref = parsed.coverHref {
             let opfDir = (opfPath as NSString).deletingLastPathComponent
             let coverPath = opfDir.isEmpty ? coverHref : "\(opfDir)/\(coverHref)"
-            payload.cover = try? unzipMember(zipURL: url, member: coverPath)
+            payload.cover = ZipReader.extract(member: coverPath, from: url)
         }
         return payload
     }
-
-    private static func unzipMember(zipURL: URL, member: String) throws -> Data? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/unzip")
-        proc.arguments = ["-p", zipURL.path, member]
-        let outPipe = Pipe()
-        let errPipe = Pipe()
-        proc.standardOutput = outPipe
-        proc.standardError = errPipe
-        try proc.run()
-        proc.waitUntilExit()
-        if proc.terminationStatus != 0 { return nil }
-        let data = outPipe.fileHandleForReading.readDataToEndOfFile()
-        return data.isEmpty ? nil : data
-    }
-    #endif
 
     // MARK: - XML parsing
 

@@ -45,11 +45,51 @@ final class LibraryStore {
     ///    refresh its bookmark + filename and skip the rest.
     @discardableResult
     func importBook(from url: URL) throws -> BookEntity {
+        // Sandbox: the parent grants us access to the user-picked URL
+        // for the duration of this scope. We must ensure every read
+        // (hash, bookmark, metadata) happens INSIDE the same
+        // start/stop pair — re-entering `startAccessing…` later in
+        // a different stack frame is not equivalent.
         let started = url.startAccessingSecurityScopedResource()
         defer { if started { url.stopAccessingSecurityScopedResource() } }
 
-        let id = try Self.contentHash(of: url)
-        let bookmark = try Self.makeBookmark(for: url)
+        // Verify we can actually read the file before touching disk
+        // for the bookmark — this gives the user a clearer error than
+        // the generic "couldn't be opened" surfaced by the system.
+        guard FileManager.default.isReadableFile(atPath: url.path) else {
+            throw NSError(
+                domain: "LibraryStore",
+                code: 1,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Cannot read \(url.lastPathComponent). The system denied access — try moving the file to a folder the app has permission to read (Documents, Downloads), or re-pick it from the file picker."
+                ]
+            )
+        }
+
+        let id: String
+        do {
+            id = try Self.contentHash(of: url)
+        } catch {
+            throw NSError(
+                domain: "LibraryStore",
+                code: 2,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Failed to read \(url.lastPathComponent): \(error.localizedDescription)"
+                ]
+            )
+        }
+
+        let bookmark: Data
+        do {
+            bookmark = try Self.makeBookmark(for: url)
+        } catch {
+            // Bookmark creation can fail on iOS for files that aren't
+            // cloud-backed; fall back to an empty bookmark and let the
+            // caller re-prompt the user when they reopen the book.
+            bookmark = Data()
+        }
         let filename = url.lastPathComponent
 
         let metadata = (try? EpubMetadataReader.readMetadata(from: url)) ?? .init()
@@ -174,20 +214,20 @@ final class LibraryStore {
 
     // MARK: - Hashing
 
-    /// SHA-256 of the file contents (streamed, so 10 MB EPUBs don't
-    /// allocate 10 MB upfront). 32 hex chars are plenty for a stable id
-    /// inside a single user's library.
+    /// SHA-256 of the file contents. 32 hex chars are plenty for a
+    /// stable id inside a single user's library. Uses memory-mapped
+    /// `Data(contentsOf:)` so the kernel pages the file in lazily —
+    /// hashes a 50 MB EPUB without allocating 50 MB of RAM.
+    ///
+    /// Memory-mapped also dodges a class of sandbox failures: where
+    /// `FileHandle(forReadingFrom:)` would surface "couldn't be
+    /// opened" inconsistently if the security-scoped access window had
+    /// just expired between calls, `Data(contentsOf:)` reads in one
+    /// shot under the still-active scope.
     static func contentHash(of url: URL) throws -> String {
-        let handle = try FileHandle(forReadingFrom: url)
-        defer { try? handle.close() }
+        let data = try Data(contentsOf: url, options: [.alwaysMapped])
         var hasher = SHA256()
-        let chunk = 1 << 16   // 64 KiB
-        while autoreleasepool(invoking: { () -> Bool in
-            let data = handle.readData(ofLength: chunk)
-            if data.isEmpty { return false }
-            hasher.update(data: data)
-            return true
-        }) {}
+        hasher.update(data: data)
         let digest = hasher.finalize()
         return digest.compactMap { String(format: "%02x", $0) }.joined().prefix(32).description
     }
