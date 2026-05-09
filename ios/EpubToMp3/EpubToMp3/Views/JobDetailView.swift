@@ -175,7 +175,12 @@ struct JobDetailView: View {
         .onDisappear { viewModel.stop() }
         .compatFullScreenCover(isPresented: $showingPlayer) {
             if let snap = viewModel.snapshot {
+                // sheet / fullScreenCover roots a new view tree —
+                // re-inject the environments that PlayerReaderView
+                // (and its `TocDrawer` sheet) read so SwiftUI doesn't
+                // crash with "missing Environment Object".
                 PlayerReaderView(snapshot: snap, backendBaseURL: settings.resolvedBaseURL)
+                    .environment(settings)
             }
         }
     }
