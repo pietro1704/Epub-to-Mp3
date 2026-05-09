@@ -1,5 +1,5 @@
 import XCTest
-@testable import EpubToMp3Core
+@testable import EpubToMp3
 
 final class SyncEngineTests: XCTestCase {
 
@@ -78,7 +78,7 @@ final class SyncEngineTests: XCTestCase {
 
     // MARK: Sentence-change stream
 
-    func testStreamEmitsOnlyOnChange() async {
+    func testStreamEmitsOnlyOnChange() async throws {
         let chapter = EbookFulltext.Chapter(
             index: 1, name: "Ch", text: "A. B.",
             html: nil, css: nil, charCount: nil,
@@ -90,27 +90,38 @@ final class SyncEngineTests: XCTestCase {
         let engine = SyncEngine()
         engine.load(chapter: chapter, chapterDurationSeconds: 2)
 
-        var received: [String?] = []
-        let collector = Task {
-            for await id in engine.currentSentence {
-                received.append(id)
-                if received.count >= 3 { break }
+        // Subscribe BEFORE pushing updates. Without this ordering the
+        // synchronous `update()` calls fire before the consumer
+        // suspends on the AsyncStream, the yields go to /dev/null,
+        // and the `for await` blocks forever.
+        let stream = engine.currentSentence
+        let collector = Task { () -> [String?] in
+            var got: [String?] = []
+            for await id in stream {
+                got.append(id)
+                if got.count >= 3 { break }
             }
+            return got
         }
-
-        // Initial yield is `nil` (no current sentence yet).
-        // Tick repeatedly within sentence 0 — should NOT emit again.
+        // Give the collector one tick to enter `for await`.
+        await Task.yield()
         _ = engine.update(positionSeconds: 0.1)
         _ = engine.update(positionSeconds: 0.2)
         _ = engine.update(positionSeconds: 0.3)
-        // Cross into sentence 1 — should emit.
         _ = engine.update(positionSeconds: 1.5)
-        // Past the end — should emit nil.
         _ = engine.update(positionSeconds: 2.5)
 
-        _ = await collector.value
-        // Expect: nil (initial), "s0", "s1" (the trailing nil arrives
-        // only after the third yield broke the loop).
+        // 2-second wall-clock guard so a missing yield surfaces as a
+        // test failure instead of a stuck CI runner.
+        let received = try await withThrowingTaskGroup(of: [String?].self) { group in
+            group.addTask { await collector.value }
+            group.addTask {
+                try await Task.sleep(nanoseconds: 2_000_000_000)
+                throw XCTestError(.timeoutWhileWaiting)
+            }
+            defer { group.cancelAll() }
+            return try await group.next() ?? []
+        }
         XCTAssertEqual(received.prefix(3).map { $0 ?? "nil" }, ["nil", "s0", "s1"])
     }
 

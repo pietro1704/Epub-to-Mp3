@@ -1,5 +1,5 @@
 import XCTest
-@testable import EpubToMp3Core
+@testable import EpubToMp3
 
 private final class InMemoryStorage: ResumeStorage {
     var blob: Data?

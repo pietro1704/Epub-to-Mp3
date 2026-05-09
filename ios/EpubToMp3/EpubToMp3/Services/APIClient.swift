@@ -139,6 +139,185 @@ struct APIClient {
         }
     }
 
+    // MARK: Conversion submission
+
+    /// Options forwarded as multipart form fields to `POST /api/convert`.
+    /// Only the most common knobs are surfaced — the FastAPI handler
+    /// accepts dozens of optional fields, callers can extend this struct
+    /// without changing the endpoint contract.
+    struct ConvertOptions: Sendable {
+        var engine: String = "edge"
+        var voice: String? = nil
+        var language: String? = nil
+        var chapters: String? = nil
+        var fromChapterToEnd: String? = nil
+        var fromChapterToChapter: String? = nil
+        var clearCache: Bool = false
+        var forceReprocess: Bool = false
+        var formattingCues: Bool = true
+        var maxPerformance: Bool = false
+        var uiLanguage: String = "pt"
+
+        static let `default` = ConvertOptions()
+    }
+
+    struct ConvertResponse: Decodable, Sendable {
+        let jobId: String
+        let status: String?
+
+        enum CodingKeys: String, CodingKey {
+            case jobId = "jobId"
+            case status
+        }
+    }
+
+    /// Tell the backend to convert a file the user already has on disk.
+    /// Backed by `POST /api/uploads/local` (desktop-only path, hits the
+    /// loopback sidecar) so we don't have to upload hundreds of MB of
+    /// EPUB/PDF for a local file. Returns the upload id that
+    /// `submitConversion` then forwards.
+    func registerLocalUpload(path: URL) async throws -> String {
+        let endpoint = baseURL.appendingPathComponent("api/uploads/local")
+        var req = URLRequest(url: endpoint)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body = try JSONSerialization.data(withJSONObject: ["path": path.path])
+        req.httpBody = body
+        do {
+            let (data, response) = try await session.data(for: req)
+            try Self.assertOK(response: response, data: data)
+            let decoded = try JSONDecoder().decode([String: String].self, from: data)
+            guard let id = decoded["uploadId"] ?? decoded["upload_id"] ?? decoded["id"] else {
+                throw APIError.decoding(NSError(domain: "APIClient", code: 100,
+                                                userInfo: [NSLocalizedDescriptionKey: "uploadId missing"]))
+            }
+            return id
+        } catch let err as APIError {
+            throw err
+        } catch let decErr as DecodingError {
+            throw APIError.decoding(decErr)
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
+    /// Submit a conversion. Either `localPath` (desktop) or `uploadedFile`
+    /// (mobile or remote backend) must be provided. Returns the new job id.
+    func submitConversion(
+        localPath: URL? = nil,
+        uploadedFile: (data: Data, filename: String)? = nil,
+        options: ConvertOptions = .default
+    ) async throws -> ConvertResponse {
+        let endpoint = baseURL.appendingPathComponent("api/convert")
+        let boundary = "Boundary-\(UUID().uuidString)"
+        var req = URLRequest(url: endpoint)
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)",
+                     forHTTPHeaderField: "Content-Type")
+
+        var body = Data()
+
+        func appendField(name: String, value: String) {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n"
+                        .data(using: .utf8)!)
+            body.append(value.data(using: .utf8)!)
+            body.append("\r\n".data(using: .utf8)!)
+        }
+
+        if let localPath {
+            // Path 1 — desktop-local: register the path with the sidecar
+            // and forward only the `upload_id`.
+            let uploadId = try await registerLocalUpload(path: localPath)
+            appendField(name: "upload_id", value: uploadId)
+        } else if let uploadedFile {
+            // Path 2 — multipart upload of the raw bytes.
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"file\"; filename=\"\(uploadedFile.filename)\"\r\n"
+                        .data(using: .utf8)!)
+            body.append("Content-Type: application/octet-stream\r\n\r\n"
+                        .data(using: .utf8)!)
+            body.append(uploadedFile.data)
+            body.append("\r\n".data(using: .utf8)!)
+        } else {
+            throw APIError.invalidBaseURL
+        }
+
+        appendField(name: "engine", value: options.engine)
+        if let v = options.voice { appendField(name: "voice", value: v) }
+        if let l = options.language { appendField(name: "language", value: l) }
+        if let ch = options.chapters { appendField(name: "chapters", value: ch) }
+        if let f = options.fromChapterToEnd { appendField(name: "fromChapterToEnd", value: f) }
+        if let r = options.fromChapterToChapter { appendField(name: "fromChapterToChapter", value: r) }
+        appendField(name: "clear_cache", value: options.clearCache ? "1" : "0")
+        appendField(name: "force_reprocess", value: options.forceReprocess ? "1" : "0")
+        appendField(name: "formatting_cues", value: options.formattingCues ? "on" : "off")
+        appendField(name: "max_performance", value: options.maxPerformance ? "1" : "0")
+        appendField(name: "ui_language", value: options.uiLanguage)
+
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+        req.httpBody = body
+
+        do {
+            let (data, response) = try await session.data(for: req)
+            try Self.assertOK(response: response, data: data)
+            return try JSONDecoder().decode(ConvertResponse.self, from: data)
+        } catch let err as APIError {
+            throw err
+        } catch let decErr as DecodingError {
+            throw APIError.decoding(decErr)
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
+    // MARK: Telemetry
+
+    struct TelemetrySnapshot: Decodable, Sendable {
+        struct EngineSample: Decodable, Sendable {
+            let engine: String
+            let charsPerSecond: Double?
+            let totalChars: Int?
+            let totalChapters: Int?
+        }
+        let recent: [EngineSample]?
+        let perEngine: [String: EngineSample]?
+    }
+
+    /// Best-effort GET /api/telemetry — backend shape varies between
+    /// versions, so we accept anything decodable and let the UI pick
+    /// the bits it knows about.
+    func fetchTelemetry() async throws -> Data {
+        let url = baseURL.appendingPathComponent("api/telemetry")
+        do {
+            let (data, response) = try await session.data(from: url)
+            try Self.assertOK(response: response, data: data)
+            return data
+        } catch let err as APIError {
+            throw err
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
+    // MARK: Logs
+
+    /// Tail the conversion log for a job. Returns the raw text body of
+    /// `GET /api/jobs/{id}/log`. Backend serves this as a plain-text
+    /// response, so we don't decode JSON.
+    func fetchJobLog(id: String) async throws -> String {
+        let url = baseURL.appendingPathComponent("api/jobs/\(id)/log")
+        do {
+            let (data, response) = try await session.data(from: url)
+            try Self.assertOK(response: response, data: data)
+            return String(data: data, encoding: .utf8) ?? ""
+        } catch let err as APIError {
+            throw err
+        } catch {
+            throw APIError.transport(error)
+        }
+    }
+
     // MARK: Helpers
 
     private static func assertOK(response: URLResponse, data: Data) throws {

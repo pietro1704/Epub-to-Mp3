@@ -139,6 +139,11 @@ struct JobDetailView: View {
                     } label: {
                         Label("Download all", systemImage: "arrow.down.circle")
                     }
+                    NavigationLink {
+                        LogsView(jobId: jobId)
+                    } label: {
+                        Label("Open logs", systemImage: "doc.text.magnifyingglass")
+                    }
                     if let dlLabel = viewModel.downloadProgressLabel {
                         Text(dlLabel).font(.caption).foregroundStyle(.secondary)
                     }
@@ -165,13 +170,20 @@ struct JobDetailView: View {
             }
         }
         .navigationTitle("Job detail")
-        .navigationBarTitleDisplayMode(.inline)
+        .compatInlineNavigationTitle()
         .onAppear { viewModel.start(client: client, jobId: jobId) }
         .onDisappear { viewModel.stop() }
-        .fullScreenCover(isPresented: $showingPlayer) {
+        .compatFullScreenCover(isPresented: $showingPlayer) {
             if let snap = viewModel.snapshot {
                 PlayerReaderView(snapshot: snap, backendBaseURL: settings.resolvedBaseURL)
             }
         }
     }
+}
+
+#Preview("JobDetail — empty state") {
+    NavigationStack {
+        JobDetailView(jobId: "preview-job-id")
+    }
+    .environment(AppSettings())
 }

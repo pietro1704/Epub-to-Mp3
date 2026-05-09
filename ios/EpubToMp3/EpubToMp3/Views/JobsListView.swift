@@ -58,7 +58,7 @@ struct JobsListView: View {
             JobDetailView(jobId: session.bookTitle)
         }
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .compatPrimaryTrailing) {
                 Button {
                     Task { await viewModel.reload(client: client) }
                 } label: {
@@ -72,7 +72,7 @@ struct JobsListView: View {
     }
 }
 
-private struct SessionRow: View {
+struct SessionRow: View {
     let session: SessionRecord
 
     var body: some View {
@@ -110,4 +110,38 @@ private struct SessionRow: View {
         default:        return .secondary
         }
     }
+}
+
+#Preview("SessionRow — success") {
+    List {
+        SessionRow(session: SessionRecord(
+            timestamp: "2026-05-08T10:23:45",
+            bookTitle: "Foundation",
+            engine: "edge",
+            chaptersConverted: 24,
+            durationSeconds: 1800,
+            outcome: "success",
+            mode: "cli"))
+        SessionRow(session: SessionRecord(
+            timestamp: "2026-05-07T22:01:11",
+            bookTitle: "O Hobbit",
+            engine: "piper",
+            chaptersConverted: 19,
+            durationSeconds: 4200,
+            outcome: "partial",
+            mode: "web"))
+        SessionRow(session: SessionRecord(
+            timestamp: "2026-05-07T08:15:00",
+            bookTitle: "Metro 2033",
+            engine: "kokoro",
+            chaptersConverted: 0,
+            durationSeconds: 12,
+            outcome: "failed",
+            mode: "cli"))
+    }
+}
+
+#Preview("JobsList — empty") {
+    NavigationStack { JobsListView() }
+        .environment(AppSettings())
 }

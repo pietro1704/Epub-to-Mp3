@@ -190,7 +190,7 @@ struct ReaderView: View {
 
     private var themeBackground: Color {
         switch settings.readerTheme {
-        case .light: return Color(.systemBackground)
+        case .light: return .platformSystemBackground
         case .sepia: return Color(red: 0.96, green: 0.93, blue: 0.85)
         case .dark:  return Color(red: 0.12, green: 0.12, blue: 0.14)
         case .black: return .black
@@ -206,3 +206,40 @@ struct ReaderView: View {
         }
     }
 }
+
+#if DEBUG
+#Preview("Reader — light") {
+    ReaderView(
+        chapter: EbookFulltext.previewSample.chapters[0],
+        spans: EbookFulltext.previewSample.chapters[0].splitSentences(),
+        currentSentenceId: "1:1",
+        onJumpToSentence: { _ in }
+    )
+    .environment(AppSettings())
+}
+
+#Preview("Reader — sepia") {
+    let settings = AppSettings()
+    settings.readerTheme = .sepia
+    return ReaderView(
+        chapter: EbookFulltext.previewSample.chapters[0],
+        spans: EbookFulltext.previewSample.chapters[0].splitSentences(),
+        currentSentenceId: "1:0",
+        onJumpToSentence: { _ in }
+    )
+    .environment(settings)
+}
+
+#Preview("Reader — dark + larger font") {
+    let settings = AppSettings()
+    settings.readerTheme = .dark
+    settings.readerFontSize = 3
+    return ReaderView(
+        chapter: EbookFulltext.previewSample.chapters[1],
+        spans: EbookFulltext.previewSample.chapters[1].splitSentences(),
+        currentSentenceId: nil,
+        onJumpToSentence: { _ in }
+    )
+    .environment(settings)
+}
+#endif

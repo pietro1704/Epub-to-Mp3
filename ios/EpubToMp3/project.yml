@@ -1,0 +1,123 @@
+name: EpubToMp3
+options:
+  bundleIdPrefix: com.pietrocode
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3
+    MARKETING_VERSION: "0.3.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: ""
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3.entitlements
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
+    SUPPORTS_MACCATALYST: NO
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+    INFOPLIST_KEY_UIBackgroundModes: "audio"
+    INFOPLIST_KEY_UIFileSharingEnabled: YES
+    INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
+    INFOPLIST_KEY_NSAppTransportSecurity: "{NSAllowsLocalNetworking=YES;}"
+    INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Pietro Pugliesi"
+    INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_PREVIEWS: YES
+
+targets:
+  EpubToMp3:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    deploymentTarget:
+      iOS: "17.0"
+      macOS: "14.0"
+    sources:
+      - path: EpubToMp3
+        excludes:
+          - "Resources/EpubToMp3.entitlements"
+    settings:
+      base:
+        ENABLE_HARDENED_RUNTIME: YES
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+          CODE_SIGNING_REQUIRED: NO
+          CODE_SIGNING_ALLOWED: NO
+        Release:
+          CODE_SIGN_STYLE: Automatic
+    postBuildScripts:
+      - name: "Embed Python sidecar (macOS only)"
+        runOnlyWhenInstalling: false
+        shell: /bin/bash
+        outputFiles:
+          - "$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/epub-to-mp3-server"
+        script: |
+          set -euo pipefail
+          if [[ "${PLATFORM_NAME}" != "macosx" ]]; then
+            echo "Skipping sidecar embed for ${PLATFORM_NAME}"
+            exit 0
+          fi
+          REPO_ROOT="${SRCROOT}/../.."
+          # Prefer the platform-suffixed binary if present (mise task output);
+          # fall back to the unsuffixed one (manual builds).
+          ARCH_TRIPLE_ARM="aarch64-apple-darwin"
+          ARCH_TRIPLE_X86="x86_64-apple-darwin"
+          CANDIDATES=(
+            "${REPO_ROOT}/desktop/src-tauri/binaries/epub-to-mp3-server-${ARCH_TRIPLE_ARM}"
+            "${REPO_ROOT}/desktop/src-tauri/binaries/epub-to-mp3-server-${ARCH_TRIPLE_X86}"
+            "${REPO_ROOT}/dist/epub-to-mp3-server"
+            "${REPO_ROOT}/binaries/epub-to-mp3-server"
+          )
+          SIDECAR_SRC=""
+          for c in "${CANDIDATES[@]}"; do
+            if [[ -x "$c" ]]; then SIDECAR_SRC="$c"; break; fi
+          done
+          if [[ -z "$SIDECAR_SRC" ]]; then
+            echo "warning: sidecar binary not found in any of: ${CANDIDATES[*]}. App will start in remote-backend mode only."
+            exit 0
+          fi
+          DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/epub-to-mp3-server"
+          mkdir -p "$(dirname "${DEST}")"
+          cp "${SIDECAR_SRC}" "${DEST}"
+          chmod +x "${DEST}"
+          echo "Embedded sidecar: ${SIDECAR_SRC} → ${DEST}"
+
+  EpubToMp3Tests:
+    type: bundle.unit-test
+    supportedDestinations: [iOS, macOS]
+    deploymentTarget:
+      iOS: "17.0"
+      macOS: "14.0"
+    sources:
+      - path: EpubToMp3Tests
+    dependencies:
+      - target: EpubToMp3
+    settings:
+      base:
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EpubToMp3"
+
+schemes:
+  EpubToMp3:
+    build:
+      targets:
+        EpubToMp3: all
+        EpubToMp3Tests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - EpubToMp3Tests
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release

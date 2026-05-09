@@ -58,9 +58,26 @@ final class AppSettings {
     @ObservationIgnored
     @AppStorage("readerAutoScroll") private var storedReaderAutoScroll: Bool = true
 
+    @ObservationIgnored
+    @AppStorage("useEmbeddedSidecar") private var storedUseEmbeddedSidecar: Bool = true
+
+    /// Filled in by `SidecarManager` once the bundled Python server is
+    /// healthy. When non-nil and `useEmbeddedSidecar == true`, all API
+    /// calls go to this URL instead of the user-typed `backendURL`. Not
+    /// persisted — the port is recomputed on each app launch.
+    var sidecarURL: URL? = nil
+
     var backendURL: String {
         get { storedBackendURL }
         set { storedBackendURL = newValue }
+    }
+
+    /// Whether to prefer the embedded sidecar over the user-configured
+    /// backend URL. macOS-only switch (iOS / iPadOS always use
+    /// `backendURL` since they cannot embed a Python process).
+    var useEmbeddedSidecar: Bool {
+        get { storedUseEmbeddedSidecar }
+        set { storedUseEmbeddedSidecar = newValue }
     }
 
     var readerFontSize: Int {
@@ -85,7 +102,11 @@ final class AppSettings {
 
     /// Best-effort parsed URL — returns nil if the user typed garbage so the
     /// caller can surface a validation error instead of silently failing.
+    /// On macOS, when `useEmbeddedSidecar` is on and the sidecar has come
+    /// up healthy, the sidecar URL wins so the app stays self-contained
+    /// even if the user once pointed `backendURL` at HF Spaces.
     var resolvedBaseURL: URL? {
+        if useEmbeddedSidecar, let sidecarURL { return sidecarURL }
         let trimmed = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return URL(string: trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed)

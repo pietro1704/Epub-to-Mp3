@@ -21,7 +21,7 @@ struct PlayerView: View {
             }
             .padding(.horizontal, 24)
             .navigationTitle("Now playing")
-            .navigationBarTitleDisplayMode(.inline)
+            .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { player.pause(); dismiss() }
@@ -123,3 +123,11 @@ struct PlayerView: View {
         return String(format: "%d:%02d", m, s)
     }
 }
+
+#Preview("Player") {
+    PlayerView(
+        snapshot: JobSnapshot.previewSample,
+        backendBaseURL: URL(string: "http://localhost:8000")
+    )
+}
+

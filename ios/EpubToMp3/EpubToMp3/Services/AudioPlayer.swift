@@ -132,6 +132,41 @@ final class AudioPlayer {
         updateNowPlayingInfo()
     }
 
+    /// Live-update the snapshot. Used by `PlayerReaderView`'s SSE
+    /// subscription so newly-finished chapters can be appended to the
+    /// AVQueuePlayer without interrupting the chapter currently playing.
+    /// We do NOT replace existing items — that would skip back to chapter
+    /// 0 and break the playhead.
+    func updateSnapshot(_ newSnapshot: JobSnapshot) {
+        guard let queue = player else {
+            // No player yet — defer to the caller's normal `play()` flow.
+            self.snapshot = newSnapshot
+            return
+        }
+
+        let oldCount = self.snapshot?.playableChapters.count ?? 0
+        let newChapters = newSnapshot.playableChapters
+        self.snapshot = newSnapshot
+
+        guard newChapters.count > oldCount else {
+            updateNowPlayingInfo()
+            return
+        }
+
+        // Append every chapter that wasn't in the queue yet. AVQueuePlayer
+        // requires `canInsert(_:after:)` to be true; if Apple ever rejects
+        // an item we just stop appending and surface what we have.
+        let toAppend = newChapters.suffix(newChapters.count - oldCount)
+        for chapter in toAppend {
+            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { continue }
+            let item = AVPlayerItem(url: absolute)
+            if queue.canInsert(item, after: nil) {
+                queue.insert(item, after: nil)
+            }
+        }
+        updateNowPlayingInfo()
+    }
+
     func pause() {
         player?.pause()
         isPlaying = false

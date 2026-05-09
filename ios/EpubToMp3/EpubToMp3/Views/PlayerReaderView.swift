@@ -32,6 +32,7 @@ struct PlayerReaderView: View {
     @State private var positionTask: Task<Void, Never>?
     @State private var sentenceTask: Task<Void, Never>?
     @State private var fulltextTask: Task<Void, Never>?
+    @State private var streamTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -53,7 +54,7 @@ struct PlayerReaderView: View {
                 }
             }
             .navigationTitle(snapshot.bookTitle ?? "Audiobook")
-            .navigationBarTitleDisplayMode(.inline)
+            .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { player.pause(); dismiss() }
@@ -191,6 +192,7 @@ struct PlayerReaderView: View {
             player.play(snapshot: snapshot, startingAt: 0)
         }
         triggerFulltextLoad()
+        subscribeToJobStream()
 
         // Drive SyncEngine from the player's position stream.
         positionTask?.cancel()
@@ -220,6 +222,32 @@ struct PlayerReaderView: View {
         positionTask?.cancel(); positionTask = nil
         sentenceTask?.cancel(); sentenceTask = nil
         fulltextTask?.cancel(); fulltextTask = nil
+        streamTask?.cancel(); streamTask = nil
+    }
+
+    /// Live-stream the backend's per-chapter progress and feed each
+    /// new snapshot back to the AudioPlayer so newly-finished chapters
+    /// get appended to the queue. This is what gives the user
+    /// chapter-by-chapter streaming playback while the rest of the
+    /// audiobook is still being synthesised.
+    private func subscribeToJobStream() {
+        guard let baseURL = backendBaseURL else { return }
+        streamTask?.cancel()
+        let client = APIClient(baseURL: baseURL)
+        let jobId = snapshot.jobId
+        streamTask = Task { @MainActor in
+            do {
+                for try await event in client.eventStream(jobId: jobId) {
+                    if Task.isCancelled { break }
+                    if let updated = APIClient.decodeSnapshot(from: event.rawPayload) {
+                        player.updateSnapshot(updated)
+                    }
+                }
+            } catch {
+                // Network drop / job ended — playback continues with
+                // whatever's in the queue already.
+            }
+        }
     }
 
     private func triggerFulltextLoad() {
@@ -307,3 +335,13 @@ struct PlayerReaderView: View {
         return String(format: "%d:%02d", m, s)
     }
 }
+
+#if DEBUG
+#Preview("PlayerReader") {
+    PlayerReaderView(
+        snapshot: JobSnapshot.previewSample,
+        backendBaseURL: URL(string: "http://localhost:8000")
+    )
+    .environment(AppSettings())
+}
+#endif

@@ -1,5 +1,5 @@
 import XCTest
-@testable import EpubToMp3Core
+@testable import EpubToMp3
 
 final class JobSnapshotTests: XCTestCase {
 

@@ -4,9 +4,9 @@ struct RootView: View {
     var body: some View {
         TabView {
             NavigationStack {
-                JobsListView()
+                LibraryView()
             }
-            .tabItem { Label("Jobs", systemImage: "list.bullet.rectangle") }
+            .tabItem { Label("Library", systemImage: "books.vertical") }
 
             NavigationStack {
                 SettingsView()
@@ -14,4 +14,9 @@ struct RootView: View {
             .tabItem { Label("Settings", systemImage: "gearshape") }
         }
     }
+}
+
+#Preview("Root") {
+    RootView()
+        .environment(AppSettings())
 }

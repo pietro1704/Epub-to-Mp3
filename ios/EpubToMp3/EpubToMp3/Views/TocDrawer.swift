@@ -41,7 +41,7 @@ struct TocDrawer: View {
             }
             .listStyle(.plain)
             .navigationTitle("Chapters")
-            .navigationBarTitleDisplayMode(.inline)
+            .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
@@ -101,3 +101,23 @@ struct TocDrawer: View {
         snapshot.playableChapters.contains { $0.index == idx && $0.downloadUrl != nil }
     }
 }
+
+#if DEBUG
+#Preview("TocDrawer — fulltext") {
+    TocDrawer(
+        fulltext: EbookFulltext.previewSample,
+        snapshot: JobSnapshot.previewSample,
+        currentChapterIndex: 1,
+        onJump: { _ in }
+    )
+}
+
+#Preview("TocDrawer — fallback (no fulltext)") {
+    TocDrawer(
+        fulltext: nil,
+        snapshot: JobSnapshot.previewSample,
+        currentChapterIndex: 0,
+        onJump: { _ in }
+    )
+}
+#endif
