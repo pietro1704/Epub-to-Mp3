@@ -81,14 +81,26 @@ final class LibraryStore {
             )
         }
 
+        // Bookmark creation must succeed on macOS — the sandbox needs
+        // it to grant the app access on the next launch. On iOS the
+        // file URL is more permissive and an empty bookmark is OK
+        // (the system will reprompt next time).
         let bookmark: Data
         do {
             bookmark = try Self.makeBookmark(for: url)
         } catch {
-            // Bookmark creation can fail on iOS for files that aren't
-            // cloud-backed; fall back to an empty bookmark and let the
-            // caller re-prompt the user when they reopen the book.
+            #if os(macOS)
+            throw NSError(
+                domain: "LibraryStore",
+                code: 3,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Cannot remember access to \(url.lastPathComponent). The system refused to create a security-scoped bookmark — try moving the file to ~/Documents and re-import."
+                ]
+            )
+            #else
             bookmark = Data()
+            #endif
         }
         let filename = url.lastPathComponent
 

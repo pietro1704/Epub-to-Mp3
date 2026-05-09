@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Routes a tapped library book to the right experience:
 ///
@@ -25,6 +26,7 @@ struct BookOpenView: View {
     @State private var snapshot: JobSnapshot?
     @State private var phase: Phase = .resolving
     @State private var errorMessage: String?
+    @State private var showingPicker = false
 
     enum Phase: Equatable {
         case resolving                 // figuring out which job (if any) to attach
@@ -57,11 +59,26 @@ struct BookOpenView: View {
             case .textOnly(let fileURL):
                 LocalEpubReaderView(fileURL: fileURL, book: book)
             case .error(let msg):
-                VStack(spacing: 12) {
-                    Label(msg, systemImage: "exclamationmark.triangle")
+                VStack(spacing: 16) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 40))
+                        .foregroundStyle(.orange)
+                    Text(msg)
                         .multilineTextAlignment(.center)
-                        .padding()
-                    Button("Retry") { Task { await bootstrap() } }
+                        .padding(.horizontal, 28)
+                        .frame(maxWidth: 480)
+                    HStack(spacing: 12) {
+                        if needsRePick(message: msg) {
+                            Button {
+                                showingPicker = true
+                            } label: {
+                                Label("Locate file…", systemImage: "doc.badge.plus")
+                            }
+                            .buttonStyle(.borderedProminent)
+                        }
+                        Button("Retry") { Task { await bootstrap() } }
+                            .buttonStyle(.bordered)
+                    }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -69,6 +86,38 @@ struct BookOpenView: View {
         .navigationTitle(book.resolvedTitle)
         .compatInlineNavigationTitle()
         .task { await bootstrap() }
+        .fileImporter(
+            isPresented: $showingPicker,
+            allowedContentTypes: [.epub],
+            allowsMultipleSelection: false
+        ) { result in
+            handleRePick(result)
+        }
+    }
+
+    /// True when the error implies the user needs to grant access to
+    /// the file again — broken bookmarks, missing files, anything our
+    /// `LibraryStore.openBookFile` flagged as needing re-import.
+    private func needsRePick(message: String) -> Bool {
+        let m = message.lowercased()
+        return m.contains("re-import")
+            || m.contains("security-scoped")
+            || m.contains("couldn't be opened")
+            || m.contains("cannot open the epub")
+    }
+
+    /// Re-import path: the user picked the file from the system file
+    /// picker; we run it through the importer (which de-dupes by SHA-256
+    /// content hash, so the existing entry's bookmark gets refreshed),
+    /// then re-trigger bootstrap.
+    private func handleRePick(_ result: Result<[URL], Error>) {
+        guard case .success(let urls) = result, let picked = urls.first else { return }
+        do {
+            _ = try library.importBook(from: picked)
+            Task { await bootstrap() }
+        } catch {
+            phase = .error("Re-import failed: \(error.localizedDescription)")
+        }
     }
 
     private var loadingLabel: String {
