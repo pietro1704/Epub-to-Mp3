@@ -212,6 +212,30 @@ mise run audit          # Scan Python dependencies for CVEs (pip-audit)
 
 ## Architecture
 
+### Client surfaces — three apps, one backend
+
+The repo ships three GUI clients on top of the same FastAPI backend.
+Each one is its own codebase; the backend is the single source of truth.
+
+| Client | Path | Platforms | Role |
+|---|---|---|---|
+| **SwiftUI** | `ios/EpubToMp3/` | macOS · iPadOS · iOS | Official Apple client. Library-first reader. macOS embeds the Python server as a sidecar (PyInstaller binary copied into `Contents/Resources/` at build time). iOS / iPadOS talk to a remote backend (`mise run web` or HF Spaces). |
+| **Flutter** | `flutter_app/` | Linux · Windows · Android · macOS · iOS | Official non-Apple client. Single Dart codebase. Talks to the same FastAPI surface. |
+| **Tauri** | `desktop/` | macOS · Linux · Windows | Alternative WebView shell wrapping `web/dist/` + the same PyInstaller sidecar. Kept working but no longer the default Apple/desktop story. |
+
+Generic rules:
+
+- **Backend contract is the only shared API** — never reach across
+  clients (e.g. don't import Swift types from the Tauri Rust side).
+- **`/api/jobs/{id}/stream` (SSE)** drives chapter-by-chapter streaming
+  playback in SwiftUI's `PlayerReaderView` — `AudioPlayer.updateSnapshot`
+  appends new chapters to the `AVQueuePlayer` queue without
+  interrupting playback.
+- The **SwiftUI Library hero** persists imported EPUBs in
+  `UserDefaults` via `LibraryStore`. Books are identified by SHA-256 of
+  file content (survives renames). macOS uses security-scoped
+  bookmarks; iOS uses `suitableForBookmarkFile`.
+
 ### Dual Conversion Paths — CRITICAL
 
 There are **two completely separate conversion pipelines**:

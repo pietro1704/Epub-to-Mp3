@@ -1,8 +1,79 @@
-# EpubToMp3 iOS Companion (vertical slice)
+# EpubToMp3 — Apple native app (SwiftUI)
 
-Minimal SwiftUI scaffold that talks to the Python backend (FastAPI) running
-either locally (`mise run web`, default `http://localhost:8000`) or on a
-remote tunnel / HF Spaces deploy.
+The official Apple client for the project. Single SwiftUI codebase
+that ships to **macOS, iPadOS and iOS** out of the same Xcode project.
+On macOS the app embeds the Python backend (PyInstaller sidecar) so it
+runs offline; on iOS / iPadOS it talks to a remote backend (`mise run
+web` locally, or HF Spaces).
+
+## Mental model
+
+The app is **a reader first, a converter second**:
+
+1. The **Library** is the home screen — every EPUB the user has
+   imported, identified by SHA-256 of file content (survives renames).
+2. **Tap a book** → opens `BookOpenView`. If the book already has a
+   conversion job, the existing audio is reattached. Otherwise the
+   sidecar starts a fresh conversion and `PlayerReaderView` mounts
+   immediately — the reader pane shows the EPUB text from
+   `/api/jobs/{id}/fulltext`, while the player streams chapters as
+   their `downloadUrl` becomes available via SSE.
+3. Conversion knobs (engine, voice, telemetry, raw logs) live under
+   **Settings → Advanced** — reachable but not the front door.
+
+## Building
+
+Open in Xcode 26 (project is generated via XcodeGen):
+
+```bash
+cd ios/EpubToMp3
+xcodegen generate
+open EpubToMp3.xcodeproj
+```
+
+Pick **My Mac** for native macOS, **iPhone/iPad simulator** for iOS.
+For the macOS sidecar to be embedded, build the PyInstaller binary
+first:
+
+```bash
+mise run desktop:sidecar    # writes desktop/src-tauri/binaries/epub-to-mp3-server-<triple>
+```
+
+The Xcode `postBuildScripts` phase copies the most recent binary into
+the `.app`'s Resources folder. Without it the macOS app falls back to
+the user-configured backend URL (Settings → Backend).
+
+## Streaming playback
+
+`AudioPlayer.updateSnapshot(_:)` is the entry point: it merges a fresh
+`JobSnapshot` into the running `AVQueuePlayer` queue without
+interrupting the chapter currently playing. `PlayerReaderView`
+subscribes to `/api/jobs/{id}/stream` (SSE) and drives the merge,
+which is what gives the user "tap → start listening" while the rest
+of the book is still being synthesised.
+
+## Library persistence
+
+`LibraryStore` keeps a JSON list of `BookEntity` records under
+`UserDefaults` key `library.books.v1`. Each entry holds:
+
+- `id` — SHA-256 of file content (32 hex chars)
+- `bookmark` — security-scoped bookmark to the EPUB on disk
+- `title`, `author`, `coverPNG` — best-effort from EPUB metadata
+- `lastJobId` — last conversion run (so taps reattach to existing audio)
+- `cachedOffline` — whether the user opted in to keeping the full MP3
+
+EPUB metadata is parsed by `EpubMetadataReader`. On macOS we shell out
+to `/usr/bin/unzip -p`; on iOS we currently fall back to filename
+heuristics (a Swift-only zip reader is the obvious next iteration).
+
+---
+
+## Legacy slice notes (kept for archeology)
+
+The sections below describe the slice-2 / slice-3 work that the
+current redesign builds on. Field semantics still apply — the Library
+hero is a layer on top of the same backend contract.
 
 **Slice 2** added: `JobSnapshot` Codable model mirroring the
 `JobStatus` Pydantic schema, `AVQueuePlayer`-backed audio engine with

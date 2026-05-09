@@ -34,6 +34,50 @@ Pre-built desktop app (updated on every commit):
 
 ---
 
+## Apps
+
+The repository ships **three** client surfaces, each optimised for a
+different platform:
+
+| Surface | Platforms | Where | Status |
+|---|---|---|---|
+| **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Python sidecar on macOS, streaming TTS chapter-by-chapter |
+| **Flutter native** | Linux · Windows · Android · macOS · iOS | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend |
+| **Tauri** | macOS · Linux · Windows | `desktop/` | **Alternative** — keeps a working WebView build for users who prefer the React UI as a native shell |
+
+### SwiftUI app (Apple)
+
+Open the project in Xcode 26 and run:
+
+```bash
+cd ios/EpubToMp3
+xcodegen generate
+open EpubToMp3.xcodeproj
+```
+
+Pick **My Mac** for native macOS, or any iPhone/iPad simulator. The
+`mise run desktop:sidecar` task builds the embedded Python server the
+macOS build embeds inside the `.app`.
+
+### Flutter app
+
+```bash
+mise run flutter:run                # host platform
+mise run flutter:build-linux        # Linux desktop release
+mise run flutter:build-windows      # Windows desktop release
+mise run flutter:build-macos        # macOS (alternative to SwiftUI)
+mise run flutter:build-apk          # Android
+```
+
+### Tauri (alternative)
+
+```bash
+mise run desktop:dev                # WebView dev shell
+./scripts/build_desktop.sh          # build .app/.dmg/.AppImage
+```
+
+---
+
 ## Features
 
 - **Three TTS engines**: Edge-TTS (cloud, fastest), Kokoro (local neural, EN/JA/ZH), Piper (offline ONNX, all languages)

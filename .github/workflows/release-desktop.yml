@@ -839,3 +839,170 @@ jobs:
             --urls $INSTALLER_URL `
             --submit `
             --token $env:WINGET_TOKEN
+
+  # ──────────────────────────────────────────────────────────────────────
+  # SwiftUI native Apple build (macOS .app + iOS .ipa unsigned)
+  #
+  # Builds the official Apple client out of `ios/EpubToMp3/`. Reuses the
+  # PyInstaller sidecar produced by the `build` job (cached via Actions
+  # artifacts) so the macOS .app embeds the Python server. The iOS
+  # build is a "Develop" archive without code signing — users sideload
+  # via AltStore.
+  # ──────────────────────────────────────────────────────────────────────
+  swiftui-apple:
+    name: SwiftUI · Apple
+    needs: build
+    runs-on: macos-latest
+    timeout-minutes: 30
+    env:
+      MISE_DISABLE_TOOLS: "android-sdk,java,cocoapods,flutter"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Install mise + Xcode tooling
+        uses: jdx/mise-action@v3
+        with:
+          version: 2025.1.6
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Restore cached Python sidecar
+        uses: actions/cache@v4
+        with:
+          path: desktop/src-tauri/binaries
+          key: sidecar-macos-aarch64-apple-darwin-v1
+          restore-keys: |
+            sidecar-macos-
+
+      - name: Generate Xcode project
+        working-directory: ios/EpubToMp3
+        run: xcodegen generate
+
+      - name: Build macOS .app
+        working-directory: ios/EpubToMp3
+        run: |
+          xcodebuild \
+            -project EpubToMp3.xcodeproj \
+            -scheme EpubToMp3 \
+            -destination 'generic/platform=macOS' \
+            -configuration Release \
+            -derivedDataPath build \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Package macOS .app into .zip
+        working-directory: ios/EpubToMp3
+        run: |
+          APP_PATH="build/Build/Products/Release/EpubToMp3.app"
+          if [[ ! -d "$APP_PATH" ]]; then
+            echo "::error::App bundle missing at $APP_PATH"
+            exit 1
+          fi
+          ditto -c -k --keepParent "$APP_PATH" "EpubToMp3-macos-${RELEASE_TAG}.zip"
+
+      - name: Build iOS .ipa (unsigned)
+        working-directory: ios/EpubToMp3
+        run: |
+          xcodebuild \
+            -project EpubToMp3.xcodeproj \
+            -scheme EpubToMp3 \
+            -destination 'generic/platform=iOS' \
+            -configuration Release \
+            -derivedDataPath build-ios \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            archive -archivePath build-ios/EpubToMp3.xcarchive || echo "::warning::iOS archive failed; continuing with macOS-only release"
+
+      - name: Upload macOS .zip to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: ios/EpubToMp3/EpubToMp3-macos-*.zip
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ──────────────────────────────────────────────────────────────────────
+  # Flutter desktop builds (Linux + Windows)
+  #
+  # Official non-Apple desktop client. macOS Flutter build is offered
+  # locally (`mise run flutter:build-macos`) but not packaged here —
+  # the SwiftUI app is the official Apple story.
+  # ──────────────────────────────────────────────────────────────────────
+  flutter-desktop:
+    name: Flutter · ${{ matrix.label }}
+    needs: build
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-x64
+            os: ubuntu-22.04
+            target: linux
+          - label: windows-x64
+            os: windows-latest
+            target: windows
+    runs-on: ${{ matrix.os }}
+    env:
+      MISE_DISABLE_TOOLS: "android-sdk,java,cocoapods"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_REF }}
+
+      - name: Linux desktop deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
+
+      - name: Install mise + Flutter
+        uses: jdx/mise-action@v3
+        with:
+          version: 2025.1.6
+
+      - name: Enable desktop platform
+        working-directory: flutter_app
+        run: |
+          mise exec -- flutter config --enable-${{ matrix.target }}-desktop
+
+      - name: Build
+        working-directory: flutter_app
+        run: |
+          mise exec -- flutter pub get
+          mise exec -- flutter build ${{ matrix.target }} --release
+
+      - name: Package Linux build
+        if: runner.os == 'Linux'
+        working-directory: flutter_app
+        run: |
+          cd build/linux/x64/release/bundle
+          tar czf "../../../../../EpubToMp3-flutter-linux-${RELEASE_TAG}.tar.gz" .
+
+      - name: Package Windows build
+        if: runner.os == 'Windows'
+        working-directory: flutter_app
+        shell: pwsh
+        run: |
+          cd build/windows/x64/runner/Release
+          Compress-Archive -Path * -DestinationPath "..\..\..\..\..\..\EpubToMp3-flutter-windows-${env:RELEASE_TAG}.zip"
+
+      - name: Upload Flutter desktop artefact
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: |
+            flutter_app/EpubToMp3-flutter-*.tar.gz
+            flutter_app/EpubToMp3-flutter-*.zip
+          fail_on_unmatched_files: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
