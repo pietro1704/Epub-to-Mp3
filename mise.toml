@@ -597,3 +597,19 @@ run = "cd flutter_app && flutter analyze"
 [tasks."flutter:build-apk"]
 description = "Build a debug APK for Android"
 run = "cd flutter_app && flutter build apk --debug"
+
+[tasks."flutter:build-linux"]
+description = "Build the Flutter Linux desktop app (release)"
+run = "cd flutter_app && flutter build linux --release"
+
+[tasks."flutter:build-windows"]
+description = "Build the Flutter Windows desktop app (release)"
+run = "cd flutter_app && flutter build windows --release"
+
+[tasks."flutter:build-macos"]
+description = "Build the Flutter macOS desktop app (release) — alternative to the SwiftUI app"
+run = "cd flutter_app && flutter build macos --release"
+
+[tasks."flutter:run-desktop"]
+description = "Run the Flutter desktop app on the host platform"
+run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/')"
