@@ -50,6 +50,8 @@ let package = Package(
                 "Services/EpubMetadataReader.swift",
                 "Services/SidecarManager.swift",
                 "Services/ZipReader.swift",
+                "Services/LocalEpubParser.swift",
+                "Services/LocalFulltextCache.swift",
             ]
         ),
         .testTarget(
