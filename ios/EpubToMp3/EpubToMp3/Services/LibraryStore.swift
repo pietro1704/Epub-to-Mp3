@@ -174,13 +174,35 @@ final class LibraryStore {
                     "This book has no security-scoped bookmark (re-import \(books[i].displayFilename) from the file picker to restore access)."]
             )
         }
+        // Try security-scoped resolution first (matches a sandboxed
+        // signed build); fall back to a plain resolution so unsigned
+        // Debug runs still work after switching configs.
         var stale = false
-        let url = try URL(
+        let url: URL
+        #if os(macOS)
+        if let scoped = try? URL(
             resolvingBookmarkData: books[i].bookmark,
-            options: Self.bookmarkResolutionOptions,
+            options: [.withSecurityScope],
+            relativeTo: nil,
+            bookmarkDataIsStale: &stale
+        ) {
+            url = scoped
+        } else {
+            url = try URL(
+                resolvingBookmarkData: books[i].bookmark,
+                options: [],
+                relativeTo: nil,
+                bookmarkDataIsStale: &stale
+            )
+        }
+        #else
+        url = try URL(
+            resolvingBookmarkData: books[i].bookmark,
+            options: [],
             relativeTo: nil,
             bookmarkDataIsStale: &stale
         )
+        #endif
         if stale {
             // Refresh the bookmark so we don't keep prompting on every open.
             if let fresh = try? Self.makeBookmark(for: url) {
@@ -197,7 +219,17 @@ final class LibraryStore {
     private func load() {
         guard let data = defaults.data(forKey: defaultsKey) else { return }
         do {
-            self.books = try JSONDecoder().decode([BookEntity].self, from: data)
+            let decoded = try JSONDecoder().decode([BookEntity].self, from: data)
+            // One-shot migration: drop entries persisted by an older
+            // build that swallowed bookmark-creation failures and
+            // ended up with `bookmark = Data()`. Those rows are
+            // un-openable; pruning them turns a hard error into a
+            // re-import next time the user picks the file.
+            let pruned = decoded.filter { !$0.bookmark.isEmpty }
+            self.books = pruned
+            if pruned.count != decoded.count {
+                persist()
+            }
         } catch {
             self.loadError = error.localizedDescription
         }
@@ -214,28 +246,43 @@ final class LibraryStore {
 
     // MARK: - Bookmark helpers
 
-    private static var bookmarkCreationOptions: URL.BookmarkCreationOptions {
-        #if os(macOS)
-        return [.withSecurityScope]
-        #else
-        return [.suitableForBookmarkFile]
-        #endif
-    }
-
     private static var bookmarkResolutionOptions: URL.BookmarkResolutionOptions {
         #if os(macOS)
+        // We may hold a non-security-scoped bookmark when the app is
+        // running unsigned (Debug builds) — the system lets us resolve
+        // either kind with the same call when we leave the option off.
+        // We try the scoped resolution first via the resolver below.
         return [.withSecurityScope]
         #else
         return []
         #endif
     }
 
+    /// Best-effort bookmark creation. macOS sandbox + signed app →
+    /// security-scoped bookmark. Unsigned Debug runs (no sandbox) →
+    /// regular bookmark. iOS → `suitableForBookmarkFile`. We always
+    /// return *something* the user can resolve next launch.
     private static func makeBookmark(for url: URL) throws -> Data {
-        try url.bookmarkData(
-            options: bookmarkCreationOptions,
+        #if os(macOS)
+        if let scoped = try? url.bookmarkData(
+            options: [.withSecurityScope],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        ) {
+            return scoped
+        }
+        return try url.bookmarkData(
+            options: [],
             includingResourceValuesForKeys: nil,
             relativeTo: nil
         )
+        #else
+        return try url.bookmarkData(
+            options: [.suitableForBookmarkFile],
+            includingResourceValuesForKeys: nil,
+            relativeTo: nil
+        )
+        #endif
     }
 
     // MARK: - Hashing

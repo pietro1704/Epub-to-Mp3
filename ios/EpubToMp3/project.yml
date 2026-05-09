@@ -14,7 +14,6 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
-    CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3.entitlements
     SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
     SUPPORTS_MACCATALYST: NO
     GENERATE_INFOPLIST_FILE: YES
@@ -41,15 +40,22 @@ targets:
       - path: EpubToMp3
         excludes:
           - "Resources/EpubToMp3.entitlements"
+          - "Resources/EpubToMp3-Debug.entitlements"
     settings:
       base:
         ENABLE_HARDENED_RUNTIME: YES
       configs:
         Debug:
+          # Unsigned local Debug builds can't activate the App Sandbox,
+          # so we ship a sandbox-disabled entitlement file. Without
+          # this, every `bookmarkData(.withSecurityScope)` fails and
+          # imports break silently.
+          CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3-Debug.entitlements
           CODE_SIGN_IDENTITY: "-"
           CODE_SIGNING_REQUIRED: NO
           CODE_SIGNING_ALLOWED: NO
         Release:
+          CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3.entitlements
           CODE_SIGN_STYLE: Automatic
     postBuildScripts:
       - name: "Embed Python sidecar (macOS only)"
