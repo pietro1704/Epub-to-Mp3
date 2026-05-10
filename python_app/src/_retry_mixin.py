@@ -191,7 +191,7 @@ class _RetryMixin:
             if cli_fallback == "none":
                 # Strict mode: only the engine the user picked.
                 _append_candidate(requested_engine if requested_engine != "auto" else "edge")
-            elif cli_fallback in {"piper", "kokoro", "coqui", "spark"}:
+            elif cli_fallback in {"piper", "kokoro", "coqui"}:
                 # Operator pinned a specific fallback tier.
                 _append_candidate(requested_engine if requested_engine != "auto" else "edge")
                 _append_candidate(cli_fallback)
@@ -200,7 +200,6 @@ class _RetryMixin:
                 _append_candidate("piper")
                 _append_candidate("coqui")
                 _append_candidate("kokoro")
-                _append_candidate("spark")
             else:
                 _append_candidate(requested_engine)
                 if requested_engine == "edge":

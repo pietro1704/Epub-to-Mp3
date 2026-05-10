@@ -44,10 +44,6 @@ class TuningProfile:
     kokoro_max_workers: int
     kokoro_chunk_chars: int
 
-    # Spark TTS
-    spark_max_workers: int
-    spark_chunk_chars: int
-
     # Piper TTS
     piper_max_workers: int
 
@@ -68,8 +64,6 @@ class AutoTuner:
             coqui_chunk_chars=1000,
             kokoro_max_workers=1,
             kokoro_chunk_chars=1500,
-            spark_max_workers=1,
-            spark_chunk_chars=1000,
             piper_max_workers=2,
         ),
         "balanced": TuningProfile(
@@ -83,8 +77,6 @@ class AutoTuner:
             coqui_chunk_chars=1500,
             kokoro_max_workers=2,
             kokoro_chunk_chars=2000,
-            spark_max_workers=1,
-            spark_chunk_chars=1500,
             piper_max_workers=4,
         ),
         "performance": TuningProfile(
@@ -98,8 +90,6 @@ class AutoTuner:
             coqui_chunk_chars=2000,
             kokoro_max_workers=3,
             kokoro_chunk_chars=2500,
-            spark_max_workers=2,
-            spark_chunk_chars=1500,
             piper_max_workers=6,
         ),
         "maximum": TuningProfile(
@@ -113,8 +103,6 @@ class AutoTuner:
             coqui_chunk_chars=2500,
             kokoro_max_workers=4,
             kokoro_chunk_chars=3000,
-            spark_max_workers=2,
-            spark_chunk_chars=2000,
             piper_max_workers=8,
         ),
     }
@@ -150,8 +138,6 @@ class AutoTuner:
             "coqui_chunk_chars",
             "kokoro_max_workers",
             "kokoro_chunk_chars",
-            "spark_max_workers",
-            "spark_chunk_chars",
             "piper_max_workers",
         }
         if not required.issubset(payload):
@@ -168,8 +154,6 @@ class AutoTuner:
                 coqui_chunk_chars=int(payload["coqui_chunk_chars"]),
                 kokoro_max_workers=int(payload["kokoro_max_workers"]),
                 kokoro_chunk_chars=int(payload["kokoro_chunk_chars"]),
-                spark_max_workers=int(payload["spark_max_workers"]),
-                spark_chunk_chars=int(payload["spark_chunk_chars"]),
                 piper_max_workers=int(payload["piper_max_workers"]),
             )
         except (TypeError, ValueError):
@@ -215,8 +199,6 @@ class AutoTuner:
                     "coqui_chunk_chars": profile.coqui_chunk_chars,
                     "kokoro_max_workers": profile.kokoro_max_workers,
                     "kokoro_chunk_chars": profile.kokoro_chunk_chars,
-                    "spark_max_workers": profile.spark_max_workers,
-                    "spark_chunk_chars": profile.spark_chunk_chars,
                     "piper_max_workers": profile.piper_max_workers,
                 },
             }
@@ -362,10 +344,6 @@ class AutoTuner:
         # Kokoro TTS
         set_if_not_exists("KOKORO_MAX_WORKERS", str(profile.kokoro_max_workers))
         set_if_not_exists("KOKORO_CHUNK_CHARS", str(profile.kokoro_chunk_chars))
-
-        # Spark TTS
-        set_if_not_exists("SPARK_MAX_WORKERS", str(profile.spark_max_workers))
-        set_if_not_exists("SPARK_CHUNK_CHARS", str(profile.spark_chunk_chars))
 
         # Piper TTS
         set_if_not_exists("PIPER_MAX_WORKERS", str(profile.piper_max_workers))

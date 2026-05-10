@@ -238,9 +238,6 @@ class _EdgeThrottleMixin:
         elif engine_name == "kokoro":
             params["kokoro_max_workers"] = int(os.getenv("KOKORO_MAX_WORKERS", "2") or 2)
             params["kokoro_chunk_chars"] = int(os.getenv("KOKORO_CHUNK_CHARS", "2000") or 2000)
-        elif engine_name == "spark":
-            params["spark_max_workers"] = int(os.getenv("SPARK_MAX_WORKERS", "1") or 1)
-            params["spark_chunk_chars"] = int(os.getenv("SPARK_CHUNK_CHARS", "1500") or 1500)
         return params
 
     def _apply_runtime_feature_overrides(self, config: Optional[ConversionConfig]) -> None:
@@ -401,14 +398,6 @@ class _EdgeThrottleMixin:
             )
             os.environ["KOKORO_CHUNK_CHARS"] = str(
                 int(params.get("kokoro_chunk_chars", os.getenv("KOKORO_CHUNK_CHARS", "2000")))
-            )
-            changed = True
-        elif engine_name == "spark":
-            os.environ["SPARK_MAX_WORKERS"] = str(
-                int(params.get("spark_max_workers", os.getenv("SPARK_MAX_WORKERS", "1")))
-            )
-            os.environ["SPARK_CHUNK_CHARS"] = str(
-                int(params.get("spark_chunk_chars", os.getenv("SPARK_CHUNK_CHARS", "1500")))
             )
             changed = True
         return changed

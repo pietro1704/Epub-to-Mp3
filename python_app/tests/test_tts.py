@@ -118,22 +118,6 @@ class TestTTSFactory(unittest.TestCase):
         fake_module.KokoroTTSEngine.assert_called_once()
         self.assertIs(engine, mock_engine)
 
-    def test_create_spark_engine(self):
-        """Test creating Spark TTS engine when dependencies are available."""
-        config = ConversionConfig(engine="spark", voice="spark-voice")
-        fake_module = types.ModuleType("src.tts.spark_engine")
-        mock_engine = Mock()
-        fake_module.SparkTTSEngine = Mock(return_value=mock_engine)
-
-        with (
-            patch("src.tts.factory.is_spark_supported_environment", return_value=True),
-            patch.dict(sys.modules, {"src.tts.spark_engine": fake_module}),
-        ):
-            engine = self.factory.create_engine(config)
-
-        fake_module.SparkTTSEngine.assert_called_once()
-        self.assertIs(engine, mock_engine)
-
     def test_available_engines_includes_piper_without_models(self):
         """Piper should be advertised when the binary exists even if no models are cached."""
         with (
@@ -141,7 +125,6 @@ class TestTTSFactory(unittest.TestCase):
             patch("src.tts.factory.is_piper_supported_environment", return_value=True),
             patch("src.tts.factory.is_coqui_supported_environment", return_value=False),
             patch("src.tts.factory.is_kokoro_supported_environment", return_value=False),
-            patch("src.tts.factory.is_spark_supported_environment", return_value=False),
         ):
             engines = self.factory.available_engines()
         self.assertIn("piper", engines)

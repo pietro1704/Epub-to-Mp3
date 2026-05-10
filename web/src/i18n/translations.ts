@@ -829,11 +829,6 @@ export const translations: Record<Locale, Translations> = {
           help: "Modelo leve (82M params). Rápido e offline. EN/JA/ZH.",
         },
         {
-          value: "spark",
-          label: "Spark-TTS",
-          help: "Baseado em Qwen2.5. Suporta clonagem de voz.",
-        },
-        {
           value: "piper",
           label: "Piper",
           help: "Modelos PT/EN incluídos. Offline, qualidade básica.",
@@ -907,29 +902,6 @@ export const translations: Record<Locale, Translations> = {
             "Licença CPML (não-comercial)",
           ],
           languages: "pt, en, es, fr, de e mais (XTTS v2 multilíngue)",
-        },
-        spark: {
-          tagline:
-            "IA generativa de voz baseada em Qwen2.5 — clonagem zero-shot",
-          quality: "Alta — voz natural com clonagem precisa",
-          speed: "~15 chars/s — o mais lento",
-          requirements: "GPU recomendada, ~1 GB VRAM, transformers",
-          bestVoice: "default",
-          bestVoiceNote:
-            "Use 'default' para a voz padrão ou 'clone' com áudio de referência para clonar qualquer voz.",
-          pros: [
-            "Clonagem de voz zero-shot (sem treinamento)",
-            "Baseado em LLM (Qwen2.5) — prosódia inteligente",
-            "Multilíngue nativo",
-            "Modelo open-source (500M params)",
-          ],
-          cons: [
-            "O mais lento de todos",
-            "Requer GPU para uso prático",
-            "Modelo grande (~1 GB download)",
-            "Projeto relativamente novo",
-          ],
-          languages: "Multilíngue (automático)",
         },
         piper: {
           tagline: "Leve, offline e garantido — o fallback confiável",
@@ -1758,11 +1730,6 @@ export const translations: Record<Locale, Translations> = {
           help: "Lightweight (82M params). Fast and offline. EN/JA/ZH.",
         },
         {
-          value: "spark",
-          label: "Spark-TTS",
-          help: "Built on Qwen2.5. Supports voice cloning.",
-        },
-        {
           value: "piper",
           label: "Piper",
           help: "Bundled PT/EN voices. Offline, basic quality.",
@@ -1835,28 +1802,6 @@ export const translations: Record<Locale, Translations> = {
             "CPML license (non-commercial)",
           ],
           languages: "pt, en, es, fr, de and more (XTTS v2 multilingual)",
-        },
-        spark: {
-          tagline: "Generative voice AI powered by Qwen2.5 — zero-shot cloning",
-          quality: "High — natural voice with accurate cloning",
-          speed: "~15 chars/s — the slowest",
-          requirements: "GPU recommended, ~1 GB VRAM, transformers",
-          bestVoice: "default",
-          bestVoiceNote:
-            "Use 'default' for the built-in voice or 'clone' with reference audio to clone any voice.",
-          pros: [
-            "Zero-shot voice cloning (no training needed)",
-            "LLM-based (Qwen2.5) — intelligent prosody",
-            "Native multilingual",
-            "Open-source model (500M params)",
-          ],
-          cons: [
-            "Slowest of all engines",
-            "Requires GPU for practical use",
-            "Large model (~1 GB download)",
-            "Relatively new project",
-          ],
-          languages: "Multilingual (automatic)",
         },
         piper: {
           tagline: "Lightweight, offline, and reliable — the trusty fallback",

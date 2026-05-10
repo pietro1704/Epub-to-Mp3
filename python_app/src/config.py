@@ -459,20 +459,6 @@ class VoiceConfigProvider:
                 "language": "zh",
             },
         ]
-        self._spark_voice_catalog: List[Dict[str, object]] = [
-            {
-                "id": "default",
-                "label": "Default – Spark Voice",
-                "multilingual": True,
-                "language": "auto",
-            },
-            {
-                "id": "clone",
-                "label": "Clone – Custom Voice (reference audio)",
-                "multilingual": True,
-                "language": "auto",
-            },
-        ]
         self._auto_voice_catalog = [
             {
                 "id": "pt-BR-ThalitaMultilingualNeural",
@@ -533,7 +519,6 @@ class VoiceConfigProvider:
             "edge": clone(self._edge_voice_catalog),
             "coqui": clone(self._coqui_model_catalog),
             "kokoro": clone(self._kokoro_voice_catalog),
-            "spark": clone(self._spark_voice_catalog),
             "piper": piper_entries,
             "auto": clone(self._auto_voice_catalog),
         }

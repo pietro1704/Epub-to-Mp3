@@ -824,7 +824,7 @@ class TestArgumentParser(unittest.TestCase):
         parser = create_argument_parser()
 
         # Valid engines
-        for engine in ["edge", "coqui", "piper", "kokoro", "spark"]:
+        for engine in ["edge", "coqui", "piper", "kokoro"]:
             args = parser.parse_args(["convert", "test.epub", "--engine", engine])
             self.assertEqual(args.engine, engine)
 
@@ -1308,7 +1308,6 @@ class TestCacheBypassFlag(unittest.TestCase):
             auto_fix_output=False,
             piper_chunk_chars=None,
             kokoro_chunk_chars=None,
-            spark_chunk_chars=None,
             verify_only=False,
             fix_mode=False,
             footnote_mode=None,

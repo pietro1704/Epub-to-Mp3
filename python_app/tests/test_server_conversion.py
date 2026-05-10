@@ -176,7 +176,6 @@ def test_build_engine_chain_respects_guards(monkeypatch):
     monkeypatch.setattr(server, "_has_coqui_support", lambda: False)
     monkeypatch.setattr(server, "_has_kokoro_support", lambda _: False)
     monkeypatch.setattr(server, "_has_piper_support", lambda: False)
-    monkeypatch.setattr(server, "_has_spark_support", lambda: False)
     # Suppress monolingual fallback so only the primary Edge entry appears.
     monkeypatch.setattr(
         server.tts_factory.voice_provider, "get_monolingual_voice", lambda _lang: None
@@ -193,7 +192,6 @@ def test_build_engine_chain_includes_edge_monolingual_fallback(monkeypatch):
     monkeypatch.setattr(server, "_has_coqui_support", lambda: False)
     monkeypatch.setattr(server, "_has_kokoro_support", lambda _: False)
     monkeypatch.setattr(server, "_has_piper_support", lambda: False)
-    monkeypatch.setattr(server, "_has_spark_support", lambda: False)
     # Simulate a multilingual primary voice and a distinct monolingual alternative.
     monkeypatch.setattr(
         server.tts_factory.voice_provider,
@@ -219,7 +217,6 @@ def test_build_engine_chain_includes_supported_fallbacks(monkeypatch):
     monkeypatch.setattr(server, "_has_coqui_support", lambda: True)
     monkeypatch.setattr(server, "_has_kokoro_support", lambda _: True)
     monkeypatch.setattr(server, "_has_piper_support", lambda: True)
-    monkeypatch.setattr(server, "_has_spark_support", lambda: False)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     chain = server._build_engine_chain(config)
@@ -247,7 +244,6 @@ def test_rank_fallbacks_penalises_recently_failed_engines(monkeypatch):
     monkeypatch.setattr(server, "_has_coqui_support", lambda: False)
     monkeypatch.setattr(server, "_has_kokoro_support", lambda _: True)
     monkeypatch.setattr(server, "_has_piper_support", lambda: True)
-    monkeypatch.setattr(server, "_has_spark_support", lambda: False)
 
     # Kokoro nominally faster than Piper (400 vs 300 cps) — baseline order.
     fake_summary = {

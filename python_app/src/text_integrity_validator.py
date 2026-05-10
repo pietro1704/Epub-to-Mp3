@@ -353,7 +353,7 @@ class TextIntegrityValidator:
         if not self.cache_dir.exists():
             return False
 
-        engine_dirs = ["edge", "kokoro", "coqui", "piper", "spark"]
+        engine_dirs = ["edge", "kokoro", "coqui", "piper"]
         for engine_dir in engine_dirs:
             if (self.cache_dir / engine_dir).exists():
                 return True

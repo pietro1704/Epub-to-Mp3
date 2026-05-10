@@ -16,7 +16,7 @@ interface ChapterProgressListProps {
 
 function engineBadgeClass(engine: string): string {
   const key = engine.toLowerCase().split(/[-_]/)[0];
-  const known = ["edge", "kokoro", "piper", "coqui", "spark"];
+  const known = ["edge", "kokoro", "piper", "coqui"];
   return known.includes(key)
     ? `engine-badge engine-badge--${key}`
     : "engine-badge";

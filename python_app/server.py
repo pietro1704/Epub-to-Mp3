@@ -76,7 +76,6 @@ from src.tts.edge_engine import reset_adaptive_settings
 from src.tts.factory import TTSFactory
 from src.tts.kokoro_guard import load_kokoro_supports_language
 from src.tts.piper_guard import is_piper_supported_environment
-from src.tts.spark_guard import is_spark_supported_environment
 from src.utils import AudioProcessor, FileManager, TextValidator, TimeFormatter
 
 
@@ -704,7 +703,6 @@ if _IS_TEST_ENV and _kokoro_support_check is None:
         pass
 _COQUI_SUPPORTED = _IS_TEST_ENV or is_coqui_supported_environment()
 _PIPER_SUPPORTED = _IS_TEST_ENV or is_piper_supported_environment()
-_SPARK_SUPPORTED = _IS_TEST_ENV or is_spark_supported_environment()
 
 
 def _has_kokoro_support(language: Optional[str]) -> bool:
@@ -721,7 +719,9 @@ def _has_piper_support() -> bool:
 
 
 def _has_spark_support() -> bool:
-    return _SPARK_SUPPORTED
+    """Stub kept for test back-compat after the Spark engine was removed.
+    Always returns False — Spark TTS is no longer available."""
+    return False
 
 
 def _has_coqui_support() -> bool:
@@ -3179,7 +3179,7 @@ async def voice_preview(
         )
 
     engine = engine.lower().strip()
-    if engine not in ("edge", "kokoro", "piper", "coqui", "spark"):
+    if engine not in ("edge", "kokoro", "piper", "coqui"):
         raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine}")
 
     lang_code = language.lower().split("-")[0] if language else "pt"

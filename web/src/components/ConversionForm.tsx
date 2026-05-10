@@ -92,17 +92,9 @@ const DEFAULT_VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
       label: "Xiaobei – Chinese Female",
     },
   ],
-  spark: [
-    { name: "default", multilingual: true, label: "Default – Spark Voice" },
-    {
-      name: "clone",
-      multilingual: true,
-      label: "Clone – Custom Voice (reference audio)",
-    },
-  ],
 };
 
-type KnownEngine = "edge" | "piper" | "coqui" | "kokoro" | "spark";
+type KnownEngine = "edge" | "piper" | "coqui" | "kokoro";
 
 interface EngineInsights {
   defaultVoice: string;
@@ -135,12 +127,6 @@ const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
     multiLingual: true,
     autoLanguage: false,
     languages: ["en", "ja", "zh"],
-  },
-  spark: {
-    defaultVoice: "default",
-    multiLingual: true,
-    autoLanguage: true,
-    languages: ["auto"],
   },
 };
 
@@ -1475,7 +1461,7 @@ export default function ConversionForm({
                     </thead>
                     <tbody>
                       {(
-                        ["edge", "kokoro", "coqui", "spark", "piper"] as const
+                        ["edge", "kokoro", "coqui", "piper"] as const
                       ).map((eng) => {
                         const d = t.form.engineDetails[eng];
                         if (!d) return null;

@@ -2673,11 +2673,6 @@ select {
   --engine-bg: #fef3c7;
   --engine-color: #92400e;
 }
-.engine-badge--spark {
-  --engine-bg: #fce7f3;
-  --engine-color: #9d174d;
-}
-
 @media (prefers-color-scheme: dark) {
   .engine-badge--edge {
     --engine-bg: #1e3a5f;
@@ -2694,10 +2689,6 @@ select {
   .engine-badge--coqui {
     --engine-bg: #78350f;
     --engine-color: #fcd34d;
-  }
-  .engine-badge--spark {
-    --engine-bg: #831843;
-    --engine-color: #fbcfe8;
   }
 }
 

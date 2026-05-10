@@ -374,11 +374,9 @@ ENGINE_CHAIN_FALLBACK=0          # Default off: stay on Edge (multi → mono) an
 FALLBACK_ENGINE_OVERRIDE=auto    # Operator-level fallback constraint, read by
                                  # both the CLI (secondary to --fallback-engine)
                                  # and server's _build_engine_chain. Values:
-                                 # auto|none|piper|kokoro|coqui|spark.
+                                 # auto|none|piper|kokoro|coqui.
                                  # "none" strips all offline fallbacks; a specific
                                  # engine filters the chain to that tier only.
-SPARK_CHUNK_CHARS=1500           # Chars per Spark chunk
-SPARK_MAX_WORKERS=1              # GPU-bound
 ```
 
 ### Server Timeouts (auto-tuned by profile)

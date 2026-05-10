@@ -20,7 +20,7 @@ def _piper_fallback_disabled() -> bool:
 
 
 def _engine_chain_fallback_enabled(config: Optional[object] = None) -> bool:
-    """Whether to append offline engine tiers (kokoro/piper/coqui/spark) after Edge.
+    """Whether to append offline engine tiers (kokoro/piper/coqui) after Edge.
 
     Defaults to ``False``: the project's priority is to maximise Edge usage
     in both CLI and web paths, with per-chunk fallback handling isolated
@@ -53,7 +53,7 @@ def _fallback_engine_override() -> Optional[str]:
     raw = (os.getenv("FALLBACK_ENGINE_OVERRIDE") or "").strip().lower()
     if not raw or raw == "auto":
         return None
-    if raw in {"none", "piper", "kokoro", "coqui", "spark"}:
+    if raw in {"none", "piper", "kokoro", "coqui"}:
         return raw
     return None
 
@@ -279,8 +279,6 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
         if _srv._has_coqui_support():
             fallback_candidates.append("coqui")
         fallback_candidates.append("kokoro")
-        if _srv._has_spark_support():
-            fallback_candidates.append("spark")
         if _srv._has_piper_support() and not _piper_fallback_disabled():
             fallback_candidates.append("piper")
         if override and override in fallback_candidates:
@@ -290,8 +288,6 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
             if engine_name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):
                 continue
             if engine_name == "piper" and not _srv._has_piper_support():
-                continue
-            if engine_name == "spark" and not _srv._has_spark_support():
                 continue
             if engine_name == "coqui" and not _srv._has_coqui_support():
                 continue
@@ -306,20 +302,16 @@ def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, ConversionC
     from python_app import server as _srv  # lazy to avoid circular import
 
     pool: dict[str, ConversionConfig] = {}
-    # Priority: edge (fast cloud), coqui (quality), kokoro (fast local), spark (LLM-based)
-    # Piper excluded from auto due to lower quality
+    # Priority: edge (fast cloud), coqui (quality), kokoro (fast local).
+    # Piper excluded from auto due to lower quality.
     candidate_order = ["edge"]
     if _srv._has_coqui_support():
         candidate_order.append("coqui")
     candidate_order.append("kokoro")
-    if _srv._has_spark_support():
-        candidate_order.append("spark")
     for name in candidate_order:
         if name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):
             continue
         if name == "coqui" and not _srv._has_coqui_support():
-            continue
-        if name == "spark" and not _srv._has_spark_support():
             continue
         try:
             candidate = _clone_config_for_engine(config, name)

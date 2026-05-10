@@ -13,7 +13,6 @@ from ..config import ConversionConfig, VoiceConfigProvider
 from .coqui_guard import is_coqui_supported_environment
 from .kokoro_guard import is_kokoro_supported_environment
 from .piper_guard import is_piper_supported_environment
-from .spark_guard import is_spark_supported_environment
 
 
 def _is_testing_environment() -> bool:
@@ -104,13 +103,6 @@ class TTSFactory:
         if is_kokoro_supported_environment() and importlib.util.find_spec("kokoro") is not None:
             engines.append("kokoro")
 
-        # Check Spark-TTS
-        if (
-            is_spark_supported_environment()
-            and importlib.util.find_spec("transformers") is not None
-        ):
-            engines.append("spark")
-
         return engines
 
     def _resolve_project_root(self) -> Path:
@@ -128,7 +120,7 @@ class TTSFactory:
         #   * edge   — dialogue splitter (v0.3.7).
         #   * piper  — two ONNX model paths (v0.3.18).
         #   * kokoro — two voice IDs (v0.3.20).
-        #   * coqui / spark — single voice only.
+        #   * coqui — single voice only.
         # When the user configured a narrator/character split but picked
         # an engine that won't honour it, surface a clear warning so the
         # config isn't silently dropped.
@@ -291,34 +283,6 @@ class TTSFactory:
                 enable_character_voices=bool(getattr(config, "enable_character_voices", False)),
                 narrator_voice=getattr(config, "narrator_voice", None),
                 character_voice=getattr(config, "character_voice", None),
-            )
-
-        if engine == "spark":
-            if not is_spark_supported_environment():
-                raise RuntimeError(
-                    "Spark-TTS unavailable on this system (NumPy/Accelerate incompatible). "
-                    "Set ENABLE_SPARK_TTS=1 to force usage at your own risk."
-                )
-            from .spark_engine import SparkTTSEngine
-
-            voice = config.voice or "default"
-            model_dir = getattr(config, "spark_model_dir", None)
-            reference_audio = getattr(config, "spark_reference_audio", None)
-            reference_text = getattr(config, "spark_reference_text", None)
-
-            return SparkTTSEngine(
-                voice,
-                model_dir=model_dir,
-                primary_language=config.primary_language,
-                language_voices=config.language_voices,
-                verbose=config.verbose,
-                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
-                formatting_locale=getattr(config, "formatting_locale", "pt"),
-                status_callback=config.log_callback,
-                chunk_char_limit=getattr(config, "spark_chunk_chars", None),
-                max_workers=getattr(config, "spark_max_workers", None),
-                reference_audio=reference_audio,
-                reference_text=reference_text,
             )
 
         raise ValueError(f"Unsupported engine: {config.engine}")

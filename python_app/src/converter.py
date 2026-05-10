@@ -178,7 +178,7 @@ def _chain_tier_allowed(tier_engine: str) -> bool:
     override = (os.getenv("FALLBACK_ENGINE_OVERRIDE") or "").strip().lower()
     if override == "none":
         return False
-    if override in {"piper", "kokoro", "coqui", "spark"}:
+    if override in {"piper", "kokoro", "coqui"}:
         return override == tier_engine
     return ENGINE_CHAIN_FALLBACK
 

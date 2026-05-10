@@ -56,7 +56,7 @@ from src.text_formatting import PRESERVE_TTS_LAYOUT, TextFormattingProcessor
 from src.ui.menu import MenuInterface
 from src.utils import FileManager, resolve_cache_root
 
-_FALLBACK_ENGINE_CHOICES = {"piper", "kokoro", "coqui", "spark", "none"}
+_FALLBACK_ENGINE_CHOICES = {"piper", "kokoro", "coqui", "none"}
 
 
 def _resolve_cli_fallback_engine(
@@ -4865,9 +4865,9 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["auto", "edge", "coqui", "piper", "kokoro", "spark"],
+        choices=["auto", "edge", "coqui", "piper", "kokoro"],
         default="edge",
-        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, coqui=neural local, kokoro=fast local, spark=LLM-based",
+        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, coqui=neural local, kokoro=fast local",
     )
     parser.add_argument(
         "--fallback-engine",
@@ -4926,7 +4926,7 @@ def _add_conversion_arguments(
         ),
     )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
-    parser.add_argument("--model", help="Model path (for Piper/Coqui/Spark)")
+    parser.add_argument("--model", help="Model path (for Piper/Coqui)")
     parser.add_argument("--output-dir", help="Output directory")
     parser.add_argument(
         "--show-structure",

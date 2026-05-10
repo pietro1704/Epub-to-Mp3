@@ -249,19 +249,10 @@ class TestVoiceCatalog:
         assert "af_heart" in kokoro_ids
         assert "bf_emma" in kokoro_ids
 
-    def test_voices_includes_spark(self, client: TestClient):
-        resp = client.get("/api/voices")
-        assert resp.status_code == 200
-        voices = resp.json()["voices"]
-        assert "spark" in voices
-        spark_ids = [v["id"] for v in voices["spark"]]
-        assert "default" in spark_ids
-        assert "clone" in spark_ids
-
     def test_voices_all_engines_present(self, client: TestClient):
         resp = client.get("/api/voices")
         voices = resp.json()["voices"]
-        for engine in ("edge", "coqui", "kokoro", "spark", "piper", "auto"):
+        for engine in ("edge", "coqui", "kokoro", "piper", "auto"):
             assert engine in voices, f"Missing engine: {engine}"
 
 

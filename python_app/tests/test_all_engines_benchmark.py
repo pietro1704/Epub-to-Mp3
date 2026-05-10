@@ -3,7 +3,7 @@
 Benchmark Completo: Todas as Engines TTS com Multi-idioma
 
 Testa:
-- Edge-TTS, Coqui, Kokoro, Spark, Piper
+- Edge-TTS, Coqui, Kokoro, Piper
 - Detecção de idioma por frase
 - Performance e throughput
 - Suporte multilíngue
@@ -193,22 +193,6 @@ def detect_available_engines() -> Dict[str, EngineInfo]:
         speed_estimate="fast",
     )
 
-    # Spark-TTS
-    spark_available = (
-        importlib.util.find_spec("torch") is not None
-        and importlib.util.find_spec("huggingface_hub") is not None
-    )
-
-    engines["spark"] = EngineInfo(
-        name="Spark-TTS",
-        available=spark_available,
-        multilingual=True,
-        languages=["en", "zh"],
-        default_voice="default",
-        speed_estimate="slow",
-        requires_gpu=True,
-    )
-
     # Piper
     import shutil
 
@@ -342,23 +326,6 @@ async def synthesize_kokoro(text: str, language: str, output_path: Path) -> Tupl
         return False, 0.0
 
 
-async def synthesize_spark(text: str, language: str, output_path: Path) -> Tuple[bool, float]:
-    """Sintetiza com Spark-TTS."""
-    try:
-        from python_app.src.tts.spark_engine import SparkTTSEngine
-
-        engine = SparkTTSEngine("default", primary_language=language)
-
-        start = time.perf_counter()
-        result = await engine.synthesize_async(text, output_path)
-        elapsed = time.perf_counter() - start
-
-        return result is not None, elapsed
-    except Exception as e:
-        print(f"    Spark error: {e}")
-        return False, 0.0
-
-
 async def synthesize_piper(text: str, language: str, output_path: Path) -> Tuple[bool, float]:
     """Sintetiza com Piper."""
     try:
@@ -387,7 +354,6 @@ SYNTHESIZERS = {
     "edge": synthesize_edge,
     "coqui": synthesize_coqui,
     "kokoro": synthesize_kokoro,
-    "spark": synthesize_spark,
     "piper": synthesize_piper,
 }
 
@@ -575,7 +541,7 @@ async def run_benchmark(real_mode: bool = False):
                 fastest = engine_averages[0][0]
                 print(f"  Para máxima velocidade: {fastest.upper()}")
 
-                quality_engines = ["coqui", "spark"]
+                quality_engines = ["coqui"]
                 quality_available = [e for e, _, _, _, _ in engine_averages if e in quality_engines]
                 if quality_available:
                     print(f"  Para máxima qualidade: {quality_available[0].upper()}")
