@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1] — 2026-05-10
+
+### Fixes (post-0.4.0 CI)
+
+- **`PlayerView.swift` `#Preview` now guarded by `#if DEBUG`.** The preview body referenced `JobSnapshot.previewSample`, which lives behind `#if DEBUG` in `PreviewFixtures.swift`. Release builds (CI's "SwiftUI · Apple" job) failed to compile. All other Views/* previews already had the guard; this one drifted.
+- **`test_desktop_main.py` env restore was leaking `DISABLE_PIPER_FALLBACK`.** `_apply_desktop_env_defaults()` setdefaults three env vars but the legacy test only restored two — when the CI Linux runner reused the polluted process, downstream `test_server_conversion` + `test_server_fallback_override` saw piper stripped from the engine chain and 5 tests failed. Replaced the per-key restore with a `dict(os.environ)` snapshot/restore so any future toggle can't leak.
+
 ## [0.4.0] — 2026-05-10
 
 ### SwiftUI Apple app (new official Apple client)
