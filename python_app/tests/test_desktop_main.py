@@ -46,15 +46,17 @@ class TestDesktopEnvDefaults(unittest.TestCase):
         # Importing the module must NOT mutate os.environ — otherwise it leaks
         # DISABLE_PIPER_FALLBACK into unrelated tests (regression 2026-04-16).
         env_before = dict(os.environ)
-        desktop_main._apply_desktop_env_defaults()
-        self.assertEqual(os.environ.get("DISABLE_PIPER_FALLBACK"), "1")
-        self.assertEqual(os.environ.get("EPUB_TO_MP3_ENGINE"), "edge")
-        # Restore for other tests in this process.
-        for k in ("DISABLE_PIPER_FALLBACK", "EPUB_TO_MP3_ENGINE"):
-            if k not in env_before:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = env_before[k]
+        try:
+            desktop_main._apply_desktop_env_defaults()
+            self.assertEqual(os.environ.get("DISABLE_PIPER_FALLBACK"), "1")
+            self.assertEqual(os.environ.get("EPUB_TO_MP3_ENGINE"), "edge")
+        finally:
+            # Hard restore — every key the function might setdefault must
+            # be reverted, not just the two listed above. A blanket
+            # snapshot/restore catches new toggles (e.g. DISABLE_AUTO_RECOVERY)
+            # without forcing this test to enumerate them.
+            os.environ.clear()
+            os.environ.update(env_before)
 
 
 class TestSetupFfmpeg(unittest.TestCase):
@@ -98,21 +100,18 @@ class TestDesktopEnvDefaultsToggleSet(unittest.TestCase):
     request workers) — these tests guard the toggles."""
 
     def _run_in_clean_env(self, keys):
-        original = {k: os.environ.get(k) for k in keys}
+        # Snapshot the FULL env. _apply_desktop_env_defaults() may
+        # setdefault any number of keys; only a snapshot+restore is
+        # guaranteed to leave the test environment untouched.
+        env_before = dict(os.environ)
         for k in keys:
             os.environ.pop(k, None)
         try:
             desktop_main._apply_desktop_env_defaults()
+            captured = {k: os.environ.get(k) for k in keys}
         finally:
-            # Don't leak the desktop defaults into other tests.
-            pass
-        captured = {k: os.environ.get(k) for k in keys}
-        # Restore.
-        for k, v in original.items():
-            if v is None:
-                os.environ.pop(k, None)
-            else:
-                os.environ[k] = v
+            os.environ.clear()
+            os.environ.update(env_before)
         return captured
 
     def test_disables_piper_fallback(self):
@@ -134,12 +133,14 @@ class TestDesktopEnvDefaultsToggleSet(unittest.TestCase):
     def test_setdefault_does_not_override_user_value(self):
         # Power users can re-enable AutoRecovery (or any toggle) by
         # exporting the env var before launching the sidecar.
+        env_before = dict(os.environ)
         os.environ["DISABLE_AUTO_RECOVERY"] = "0"
         try:
             desktop_main._apply_desktop_env_defaults()
             self.assertEqual(os.environ["DISABLE_AUTO_RECOVERY"], "0")
         finally:
-            os.environ.pop("DISABLE_AUTO_RECOVERY", None)
+            os.environ.clear()
+            os.environ.update(env_before)
 
 
 if __name__ == "__main__":
