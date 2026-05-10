@@ -24,6 +24,15 @@ def _apply_desktop_env_defaults() -> None:
     """
     os.environ.setdefault("DISABLE_PIPER_FALLBACK", "1")
     os.environ.setdefault("EPUB_TO_MP3_ENGINE", "edge")
+    # AutoRecovery interprets idle ThreadPoolExecutor / AnyIO worker
+    # threads as "stuck" and raises KeyboardInterrupt in them, which
+    # kills FastAPI's request workers and leaves every submitted job
+    # frozen in `queued`. The desktop sidecar boots once and stays up
+    # for hours of light use — that pattern looks like "stuck" to
+    # AutoRecovery. Disable it for the desktop binary; the watchdog
+    # logic still runs inside the conversion pipeline itself
+    # (HealthMonitor, edge throttle, etc.).
+    os.environ.setdefault("DISABLE_AUTO_RECOVERY", "1")
 
 
 def resolve_ffmpeg_cache_dir() -> "os.PathLike[str] | None":

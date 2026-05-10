@@ -91,5 +91,56 @@ class TestSetupFfmpeg(unittest.TestCase):
                 sys.modules["static_ffmpeg"] = sentinel
 
 
+class TestDesktopEnvDefaultsToggleSet(unittest.TestCase):
+    """`_apply_desktop_env_defaults()` populates env vars the desktop
+    sidecar relies on. Regressions here have stranded every submitted
+    job in `queued` (AutoRecovery raising KeyboardInterrupt in idle
+    request workers) — these tests guard the toggles."""
+
+    def _run_in_clean_env(self, keys):
+        original = {k: os.environ.get(k) for k in keys}
+        for k in keys:
+            os.environ.pop(k, None)
+        try:
+            desktop_main._apply_desktop_env_defaults()
+        finally:
+            # Don't leak the desktop defaults into other tests.
+            pass
+        captured = {k: os.environ.get(k) for k in keys}
+        # Restore.
+        for k, v in original.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+        return captured
+
+    def test_disables_piper_fallback(self):
+        env = self._run_in_clean_env(["DISABLE_PIPER_FALLBACK"])
+        self.assertEqual(env["DISABLE_PIPER_FALLBACK"], "1")
+
+    def test_forces_edge_engine(self):
+        env = self._run_in_clean_env(["EPUB_TO_MP3_ENGINE"])
+        self.assertEqual(env["EPUB_TO_MP3_ENGINE"], "edge")
+
+    def test_disables_auto_recovery_by_default(self):
+        # Regression: AutoRecovery interpreted the sidecar's idle
+        # ThreadPoolExecutor workers as "stuck" and KeyboardInterrupt'd
+        # them, killing FastAPI's request-handling pool. The desktop
+        # default must opt out.
+        env = self._run_in_clean_env(["DISABLE_AUTO_RECOVERY"])
+        self.assertEqual(env["DISABLE_AUTO_RECOVERY"], "1")
+
+    def test_setdefault_does_not_override_user_value(self):
+        # Power users can re-enable AutoRecovery (or any toggle) by
+        # exporting the env var before launching the sidecar.
+        os.environ["DISABLE_AUTO_RECOVERY"] = "0"
+        try:
+            desktop_main._apply_desktop_env_defaults()
+            self.assertEqual(os.environ["DISABLE_AUTO_RECOVERY"], "0")
+        finally:
+            os.environ.pop("DISABLE_AUTO_RECOVERY", None)
+
+
 if __name__ == "__main__":
     unittest.main()

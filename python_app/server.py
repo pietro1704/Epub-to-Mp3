@@ -171,14 +171,17 @@ async def _lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ Failed to start Health Monitor: {e}")
 
-    try:
-        from auto_recovery import start_auto_recovery
+    if os.environ.get("DISABLE_AUTO_RECOVERY", "").lower() in {"1", "true", "yes", "on"}:
+        logger.info("Auto-Recovery skipped (DISABLE_AUTO_RECOVERY)")
+    else:
+        try:
+            from auto_recovery import start_auto_recovery
 
-        recovery = start_auto_recovery()
-        recovery.set_activity_provider(_has_active_jobs)
-        logger.info("✅ Auto-Recovery System started")
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to start Auto-Recovery: {e}")
+            recovery = start_auto_recovery()
+            recovery.set_activity_provider(_has_active_jobs)
+            logger.info("✅ Auto-Recovery System started")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to start Auto-Recovery: {e}")
 
     logger.info("Started periodic job cleanup task")
     try:
