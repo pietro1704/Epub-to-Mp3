@@ -195,18 +195,14 @@ struct ReaderView: View {
                 .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            .simultaneousGesture(
-                DragGesture(minimumDistance: 8)
-                    .onChanged { _ in userIsScrolling = true }
-                    .onEnded { _ in
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                            userIsScrolling = false
-                        }
-                    }
-            )
+            // No simultaneousGesture here — that previously stole
+            // touches on iOS and competed with the system scroll
+            // recogniser, making the reader feel "stuck". The
+            // userIsScrolling lockout is still useful but we drive
+            // it from `onScrollGeometryChange`-style hints in iOS 18+.
             .onChange(of: currentSentenceId) { _, newId in
                 guard let newId else { return }
-                guard settings.readerAutoScroll, !userIsScrolling else { return }
+                guard settings.readerAutoScroll else { return }
                 lastAutoScrollAt = Date()
                 withAnimation(.easeInOut(duration: 0.35)) {
                     proxy.scrollTo(newId, anchor: .center)
@@ -218,10 +214,6 @@ struct ReaderView: View {
     // MARK: Paginated content
 
     private var paginatedContent: some View {
-        // Chunk the chapter into pages by character count, sized to
-        // roughly fit the column width × screen height. This is a
-        // fast approximation; SwiftUI doesn't ship a TextKit-backed
-        // paginator for arbitrary fonts. Good enough for novels.
         GeometryReader { geo in
             let pages = Paginator.paginate(
                 spans: spans,
@@ -239,6 +231,10 @@ struct ReaderView: View {
                 } else {
                     let pageIndex = max(0, min(pages.count - 1, currentPage))
                     pageView(pages: pages, pageIndex: pageIndex)
+                        // Tap zones first (foreground), drag/scroll second.
+                        // Without `.allowsHitTesting(true)` here, the
+                        // text body's hit-testing wins on macOS.
+                        .overlay(tapZones(totalPages: pages.count))
                         #if os(iOS)
                         .gesture(
                             DragGesture(minimumDistance: 30)
@@ -251,10 +247,10 @@ struct ReaderView: View {
                                 }
                         )
                         #endif
-                        .contentShape(Rectangle())
 
                     pageFooter(index: pageIndex, total: pages.count)
                         .padding(.bottom, 8)
+                        .allowsHitTesting(false)
                 }
             }
             .focusable()
@@ -263,9 +259,6 @@ struct ReaderView: View {
             .onKeyPress { press in
                 handleKeyPress(press, totalPages: pages.count)
             }
-            .background(
-                tapZones(totalPages: pages.count)
-            )
             #if os(macOS)
             .modifier(ScrollWheelPager(
                 onPrev: { if currentPage > 0 { currentPage -= 1 } },
@@ -276,22 +269,24 @@ struct ReaderView: View {
     }
 
     private func pageView(pages: [String], pageIndex: Int) -> some View {
+        // No ScrollView here — paginated mode means the page must
+        // fit. A nested ScrollView would (a) eat scroll-wheel events
+        // we want for paging and (b) intercept clicks before our
+        // tap-zone overlay.
         let pageText = pages[pageIndex]
-        return ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                if pageIndex == 0 { chapterTitleHeader }
-                Text(pageText)
-                    .font(bodyFont)
-                    .lineSpacing(settings.readerLineSpacing)
-                    .multilineTextAlignment(.leading)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, settings.readerMargin)
-            .padding(.vertical, 24)
-            .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
-            .frame(maxWidth: .infinity, alignment: .center)
+        return VStack(alignment: .leading, spacing: 0) {
+            if pageIndex == 0 { chapterTitleHeader }
+            Text(pageText)
+                .font(bodyFont)
+                .lineSpacing(settings.readerLineSpacing)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Spacer(minLength: 0)
         }
-        .scrollDisabled(true)
+        .padding(.horizontal, settings.readerMargin)
+        .padding(.vertical, 24)
+        .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private func pageFooter(index: Int, total: Int) -> some View {

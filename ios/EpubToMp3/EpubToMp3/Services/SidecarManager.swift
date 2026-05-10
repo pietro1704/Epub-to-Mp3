@@ -55,8 +55,8 @@ final class SidecarManager {
     private var terminationObserver: NSObjectProtocol?
     #endif
 
-    private let healthcheckTimeout: TimeInterval = 30
-    private let healthcheckInterval: TimeInterval = 0.5
+    private let healthcheckTimeout: TimeInterval = 90
+    private let healthcheckInterval: TimeInterval = 0.4
 
     /// Start the sidecar and resolve when `/api/health` answers OK, or
     /// return the failure reason otherwise. Idempotent — if the process

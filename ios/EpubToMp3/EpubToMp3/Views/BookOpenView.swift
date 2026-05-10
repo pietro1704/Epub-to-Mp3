@@ -139,13 +139,35 @@ struct BookOpenView: View {
     @MainActor
     private func startAudioBootstrap() {
         audioBootstrapTask?.cancel()
-        guard let client else {
-            statusBanner = "Audio unavailable — set a backend URL in Settings."
-            return
-        }
         statusBanner = "Generating audio…"
         audioBootstrapTask = Task {
-            await self.bootstrapAudio(client: client)
+            await self.waitForBackendThenBootstrap()
+        }
+    }
+
+    /// Polls until either a `client` is available (sidecar ready or
+    /// remote URL configured) or the user has waited 2 minutes —
+    /// whichever comes first. The Python sidecar takes ~20–30 s of
+    /// cold start the very first time the app launches, so we can't
+    /// just give up immediately.
+    private func waitForBackendThenBootstrap() async {
+        var waited: TimeInterval = 0
+        while !Task.isCancelled, waited < 120 {
+            if let client = await MainActor.run(body: { self.client }) {
+                await MainActor.run { self.statusBanner = "Generating audio…" }
+                await bootstrapAudio(client: client)
+                return
+            }
+            await MainActor.run {
+                self.statusBanner = waited < 5
+                    ? "Starting audio engine…"
+                    : "Starting audio engine — first launch takes ~30 s…"
+            }
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            waited += 0.8
+        }
+        await MainActor.run {
+            self.statusBanner = "Audio unavailable — open Settings to point at a backend."
         }
     }
 
