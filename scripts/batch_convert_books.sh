@@ -27,10 +27,14 @@ resolve_output_dir() {
 }
 
 # Build size-sorted list of remaining books (smallest first).
+BOOK_LIMIT="${BATCH_LIMIT:-0}"  # 0 = no limit
 BOOKS=()
 while IFS= read -r line; do
   [ -n "$line" ] && BOOKS+=("$line")
 done < <(python3 scripts/_list_books_by_size.py "$SRC_DIR")
+if [ "$BOOK_LIMIT" -gt 0 ] && [ "${#BOOKS[@]}" -gt "$BOOK_LIMIT" ]; then
+  BOOKS=("${BOOKS[@]:0:$BOOK_LIMIT}")
+fi
 TOTAL=${#BOOKS[@]}
 log "=== batch start: $TOTAL books (smallest first, strict-stop) ==="
 
