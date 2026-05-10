@@ -56,6 +56,7 @@ struct BookOpenView: View {
                         statusBanner: statusBanner,
                         hasAudio: hasAudio,
                         backendBaseURL: settings.resolvedBaseURL,
+                        coverPNG: book.coverPNG,
                         onRequestAudioRetry: { startAudioBootstrap() }
                     )
                 } else {

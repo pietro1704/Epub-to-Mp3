@@ -854,19 +854,15 @@ jobs:
     needs: build
     runs-on: macos-latest
     timeout-minutes: 30
-    env:
-      MISE_DISABLE_TOOLS: "android-sdk,java,cocoapods,flutter"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ env.RELEASE_REF }}
 
-      - name: Install mise + Xcode tooling
-        uses: jdx/mise-action@v3
-        with:
-          version: 2025.1.6
-
+      # SwiftUI build doesn't need mise — Xcode + xcodegen are enough.
+      # Skipping mise dodges a known macos-15 runner bug where GPG
+      # verification of node@26 fails and aborts `mise install`.
       - name: Install xcodegen
         run: brew install xcodegen
 

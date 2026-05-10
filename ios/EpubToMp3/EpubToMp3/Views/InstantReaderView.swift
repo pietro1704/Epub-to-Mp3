@@ -15,6 +15,7 @@ struct InstantReaderView: View {
     let statusBanner: String?
     let hasAudio: Bool
     let backendBaseURL: URL?
+    let coverPNG: Data?
     let onRequestAudioRetry: () -> Void
 
     @Environment(AppSettings.self) private var settings
@@ -115,56 +116,183 @@ struct InstantReaderView: View {
     @ViewBuilder
     private var playerBar: some View {
         if let player {
-            HStack(spacing: 16) {
-                Button {
-                    if currentChapterIndex > 0 { currentChapterIndex -= 1 }
-                    player.previousChapter()
-                } label: {
-                    Image(systemName: "backward.fill").font(.title3)
-                }
-                .disabled(currentChapterIndex == 0)
+            VStack(spacing: 8) {
+                // Top row: artwork + title/author + transport
+                HStack(spacing: 12) {
+                    coverArtwork
+                        .frame(width: 44, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                Button {
-                    player.togglePlayPause()
-                } label: {
-                    Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 40))
-                }
-                .buttonStyle(.plain)
-
-                Button {
-                    if currentChapterIndex + 1 < fulltext.chapters.count {
-                        currentChapterIndex += 1
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(currentChapterTitle)
+                            .font(.callout.weight(.medium))
+                            .lineLimit(1)
+                        if let author = fulltext.bookAuthor, !author.isEmpty {
+                            Text(author)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
-                    player.nextChapter()
-                } label: {
-                    Image(systemName: "forward.fill").font(.title3)
-                }
-                .disabled(currentChapterIndex + 1 >= fulltext.chapters.count)
+                    .frame(maxWidth: .infinity, alignment: .leading)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(currentChapterTitle)
-                        .font(.callout)
-                        .lineLimit(1)
-                    Text(positionLabel(player))
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                    transportControls(player: player)
 
-                Picker("", selection: Binding(
-                    get: { player.rate },
-                    set: { player.setRate($0) }
-                )) {
-                    ForEach(PlaybackRate.allCases) { rate in
-                        Text(rate.label).tag(rate)
+                    Menu {
+                        rateMenu(player: player)
+                        sleepTimerMenu(player: player)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.title3)
                     }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
+
+                scrubber(player: player)
             }
             .padding(.horizontal, 20)
+            .padding(.vertical, 4)
+        }
+    }
+
+    @ViewBuilder
+    private var coverArtwork: some View {
+        // Pull the book cover from the library (LibraryStore writes
+        // it during importBook). Falls back to a tinted glyph.
+        if let cover = currentBookCover, let img = platformImage(from: cover) {
+            img.resizable().aspectRatio(contentMode: .fill)
+        } else {
+            ZStack {
+                LinearGradient(colors: [Color.accentColor.opacity(0.4),
+                                         Color.accentColor.opacity(0.1)],
+                               startPoint: .topLeading,
+                               endPoint: .bottomTrailing)
+                Image(systemName: "headphones")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+            }
+        }
+    }
+
+    private var currentBookCover: Data? { coverPNG }
+
+    private func platformImage(from data: Data) -> Image? {
+        #if canImport(UIKit)
+        if let ui = UIImage(data: data) { return Image(uiImage: ui) }
+        #endif
+        #if canImport(AppKit)
+        if let ns = NSImage(data: data) { return Image(nsImage: ns) }
+        #endif
+        return nil
+    }
+
+    private func transportControls(player: AudioPlayer) -> some View {
+        HStack(spacing: 14) {
+            Button {
+                if currentChapterIndex > 0 { currentChapterIndex -= 1 }
+                player.previousChapter()
+            } label: {
+                Image(systemName: "backward.fill").font(.body)
+            }
+            .buttonStyle(.plain)
+            .disabled(currentChapterIndex == 0)
+
+            Button {
+                player.skip(by: -15)
+            } label: {
+                Image(systemName: "gobackward.15").font(.title3)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                player.togglePlayPause()
+            } label: {
+                Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    .font(.system(size: 36))
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                player.skip(by: 30)
+            } label: {
+                Image(systemName: "goforward.30").font(.title3)
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                if currentChapterIndex + 1 < fulltext.chapters.count {
+                    currentChapterIndex += 1
+                }
+                player.nextChapter()
+            } label: {
+                Image(systemName: "forward.fill").font(.body)
+            }
+            .buttonStyle(.plain)
+            .disabled(currentChapterIndex + 1 >= fulltext.chapters.count)
+        }
+    }
+
+    private func scrubber(player: AudioPlayer) -> some View {
+        HStack(spacing: 8) {
+            Text(format(seconds: player.positionSeconds))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .trailing)
+            Slider(
+                value: Binding(
+                    get: { player.positionSeconds },
+                    set: { player.seek(to: $0) }
+                ),
+                in: 0...max(player.durationSeconds, 1)
+            )
+            Text(format(seconds: player.durationSeconds))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 44, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private func rateMenu(player: AudioPlayer) -> some View {
+        Section("Speed") {
+            ForEach(PlaybackRate.allCases) { rate in
+                Button {
+                    player.setRate(rate)
+                } label: {
+                    HStack {
+                        Text(rate.label)
+                        if player.rate == rate {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sleepTimerMenu(player: AudioPlayer) -> some View {
+        Section("Sleep timer") {
+            ForEach([0, 5, 15, 30, 45, 60], id: \.self) { mins in
+                Button {
+                    player.setSleepTimer(seconds: TimeInterval(mins * 60))
+                } label: {
+                    HStack {
+                        Text(mins == 0 ? "Off" : "\(mins) min")
+                        if mins == 0, player.sleepTimerRemaining <= 0 {
+                            Image(systemName: "checkmark")
+                        } else if mins != 0,
+                                  abs(player.sleepTimerRemaining - TimeInterval(mins * 60)) < 60 {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+            if player.sleepTimerRemaining > 0 {
+                Text("Active: \(format(seconds: player.sleepTimerRemaining)) left")
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -218,6 +346,7 @@ struct InstantReaderView: View {
     private func mountPlayerIfPossible() {
         guard let snap = snapshot, !snap.playableChapters.isEmpty else { return }
         let p = AudioPlayer(backendBaseURL: backendBaseURL)
+        p.coverArtData = coverPNG     // surface to MPNowPlayingInfoCenter
         p.play(snapshot: snap, startingAt: currentChapterIndex)
         self.player = p
 

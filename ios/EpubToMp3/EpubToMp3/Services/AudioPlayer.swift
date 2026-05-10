@@ -3,6 +3,12 @@ import Foundation
 import AVFoundation
 import MediaPlayer
 import Observation
+#if canImport(UIKit)
+import UIKit
+#endif
+#if canImport(AppKit)
+import AppKit
+#endif
 
 /// Allowed playback rates surfaced in `PlayerView`.
 /// Anything outside this list collapses to 1.0.
@@ -43,6 +49,16 @@ final class AudioPlayer {
     private(set) var rate: PlaybackRate = .x100
     private(set) var positionSeconds: TimeInterval = 0
     private(set) var durationSeconds: TimeInterval = 0
+
+    /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
+    /// Now Playing widget so lock screen / Control Center / AirPods
+    /// menu show the book cover instead of a generic glyph.
+    var coverArtData: Data?
+
+    /// Sleep-timer state. When > 0, playback auto-pauses after this
+    /// many wall-clock seconds. Decremented by the time observer.
+    private(set) var sleepTimerRemaining: TimeInterval = 0
+    private var sleepTimerExpiresAt: Date?
 
     // MARK: AsyncStreams (positions + chapter changes)
 
@@ -222,6 +238,25 @@ final class AudioPlayer {
         updateNowPlayingInfo()
     }
 
+    /// Skip relative to the current playhead. Negative values rewind,
+    /// positive fast-forward. Clamped to [0, duration].
+    func skip(by deltaSeconds: TimeInterval) {
+        let target = max(0, min(durationSeconds, positionSeconds + deltaSeconds))
+        seek(to: target)
+    }
+
+    /// Set or cancel the sleep timer. Pass 0 to cancel; any positive
+    /// value schedules an auto-pause that many seconds from now.
+    func setSleepTimer(seconds: TimeInterval) {
+        if seconds <= 0 {
+            sleepTimerRemaining = 0
+            sleepTimerExpiresAt = nil
+            return
+        }
+        sleepTimerRemaining = seconds
+        sleepTimerExpiresAt = Date().addingTimeInterval(seconds)
+    }
+
     // MARK: Observers
 
     private func attachObservers() {
@@ -237,6 +272,7 @@ final class AudioPlayer {
                 }
                 self.broadcastPosition()
                 self.persistResumePoint(force: false)
+                self.tickSleepTimer()
             }
         }
         endObserver = NotificationCenter.default.addObserver(
@@ -298,6 +334,29 @@ final class AudioPlayer {
             Task { @MainActor in self?.seek(to: event.positionTime) }
             return .success
         }
+        // Skip ±N seconds (Control Center, AirPods double-tap, lock-screen
+        // arrow buttons). 15 / 30 are the standard audiobook intervals.
+        center.skipForwardCommand.preferredIntervals = [30]
+        center.skipForwardCommand.addTarget { [weak self] event in
+            guard let e = event as? MPSkipIntervalCommandEvent else { return .commandFailed }
+            Task { @MainActor in self?.skip(by: e.interval) }
+            return .success
+        }
+        center.skipBackwardCommand.preferredIntervals = [15]
+        center.skipBackwardCommand.addTarget { [weak self] event in
+            guard let e = event as? MPSkipIntervalCommandEvent else { return .commandFailed }
+            Task { @MainActor in self?.skip(by: -e.interval) }
+            return .success
+        }
+        center.changePlaybackRateCommand.supportedPlaybackRates = PlaybackRate.allCases.map { NSNumber(value: $0.rawValue) }
+        center.changePlaybackRateCommand.addTarget { [weak self] event in
+            guard let e = event as? MPChangePlaybackRateCommandEvent,
+                  let rate = PlaybackRate(rawValue: e.playbackRate) else {
+                return .commandFailed
+            }
+            Task { @MainActor in self?.setRate(rate) }
+            return .success
+        }
     }
 
     private func updateNowPlayingInfo() {
@@ -308,7 +367,38 @@ final class AudioPlayer {
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = positionSeconds
         info[MPMediaItemPropertyPlaybackDuration] = durationSeconds
         info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? rate.rawValue : 0
+        info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
+
+        if let coverArtData, let artwork = makeArtwork(from: coverArtData) {
+            info[MPMediaItemPropertyArtwork] = artwork
+        }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func makeArtwork(from data: Data) -> MPMediaItemArtwork? {
+        #if canImport(UIKit)
+        guard let image = UIImage(data: data) else { return nil }
+        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        #elseif canImport(AppKit)
+        guard let image = NSImage(data: data) else { return nil }
+        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+        #else
+        return nil
+        #endif
+    }
+
+    /// Decrement the sleep timer once per time observer tick (~250 ms).
+    /// When it reaches zero, pause playback.
+    private func tickSleepTimer() {
+        guard let expiry = sleepTimerExpiresAt else { return }
+        let remaining = expiry.timeIntervalSinceNow
+        if remaining <= 0 {
+            sleepTimerRemaining = 0
+            sleepTimerExpiresAt = nil
+            pause()
+        } else {
+            sleepTimerRemaining = remaining
+        }
     }
 
     // MARK: Helpers
