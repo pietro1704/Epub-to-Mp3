@@ -50,7 +50,18 @@ jobs:
           sed -i "s/sha256sums = SKIP/sha256sums = ${SHA}/" aur/.SRCINFO
           sed -i "s|/releases/download/v[^/]*/|/releases/download/v${VERSION}/|g" aur/.SRCINFO
 
+      # AUR publish step is gated on the AUR_SSH_KEY secret. When it
+      # isn't configured (most forks, fresh repo clones), skip the
+      # publish entirely so the workflow finishes green instead of
+      # failing every release on a non-load-bearing step.
+      - name: Skip AUR publish (no secret)
+        if: ${{ secrets.AUR_SSH_KEY == '' }}
+        run: |
+          echo "::warning::AUR_SSH_KEY secret is not configured; skipping aurpublish."
+          echo "Set the secret in the repository settings to enable automatic AUR publishing."
+
       - name: Publish to AUR
+        if: ${{ secrets.AUR_SSH_KEY != '' }}
         uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: epub-to-mp3-bin
