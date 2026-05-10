@@ -65,6 +65,13 @@
             "timeout": 120,
             "async": true,
             "statusMessage": "Re-running Swift tests after edit..."
+          },
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/web_typecheck_after_edit.sh",
+            "timeout": 60,
+            "async": true,
+            "statusMessage": "Re-running web typecheck after edit..."
           }
         ]
       }
