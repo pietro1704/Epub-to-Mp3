@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.2] — 2026-05-10
+
+### CI hotfix
+
+- **Flutter desktop CI bypasses mise** (subosito/flutter-action). The mise install of `node@26.1.0` is currently failing GPG verify on ubuntu-22.04 hosted runners; same upstream bug previously took out the SwiftUI Apple job. Flutter desktop doesn't need node, so we install Flutter SDK directly. Should also clear the cascading CMake Generate failure on Windows.
+
 ## [0.4.1] — 2026-05-10
 
 ### Fixes (post-0.4.0 CI)
