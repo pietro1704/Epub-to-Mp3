@@ -23,12 +23,12 @@ final class JobDetailViewModel {
         errorMessage = nil
         // 1. Pull initial snapshot via REST so the UI is populated even if
         //    the SSE stream takes time to deliver its first event.
-        fetchTask = Task { [weak self] in
+        fetchTask = Task { @MainActor [weak self] in
             do {
                 let snap = try await client.fetchJob(id: jobId)
-                await MainActor.run { self?.snapshot = snap }
+                self?.snapshot = snap
             } catch {
-                await MainActor.run { self?.errorMessage = error.localizedDescription }
+                self?.errorMessage = error.localizedDescription
             }
         }
         // 2. Subscribe to SSE for live updates.

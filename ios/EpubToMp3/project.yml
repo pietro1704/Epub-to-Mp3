@@ -33,6 +33,12 @@ settings:
     ENABLE_TESTABILITY: YES
     # Strip nothing in Debug — speeds linker; Release strips debug.
     STRIP_INSTALLED_PRODUCT: NO
+    # Treat warnings as errors. Catches drift early and forces every
+    # commit to ship clean code.
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    # Stricter Swift warnings worth promoting.
+    SWIFT_STRICT_CONCURRENCY: minimal
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
