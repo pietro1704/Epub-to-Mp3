@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.3] — 2026-05-10
+
+### CI hotfix
+
+- **Track `flutter_app/windows/runner/runner.exe.manifest`.** The root `.gitignore`'s PyInstaller `*.manifest` rule was swallowing it, so the Flutter Windows job hit `CMake Error: Cannot find source file: runner.exe.manifest`. Whitelisted explicitly.
+
 ## [0.4.2] — 2026-05-10
 
 ### CI hotfix
