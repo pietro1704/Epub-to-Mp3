@@ -152,16 +152,6 @@ class TestPiperFallbackMonitoring(unittest.TestCase):
             result = mixin._resolve_offline_fallback_engine()
         self.assertIsNone(result)
 
-    def test_returns_coqui_when_piper_unavailable_and_coqui_available(self):
-        """Returns 'coqui' when Piper is not available but Coqui is."""
-        mixin = _make_mixin()
-        with (
-            patch("src._engine_selection_mixin._has_piper_support", return_value=False),
-            patch("src._engine_selection_mixin._has_coqui_support", return_value=True),
-        ):
-            result = mixin._resolve_offline_fallback_engine()
-        self.assertEqual(result, "coqui")
-
 
 class TestCliFallbackEngineOverride(unittest.TestCase):
     """--fallback-engine CLI flag overrides default resolution."""
@@ -196,11 +186,10 @@ class TestCliFallbackEngineOverride(unittest.TestCase):
         mixin = _make_mixin()
         mixin._cli_fallback_engine = "kokoro"  # not in available set
         with (
-            patch("src._engine_selection_mixin._has_piper_support", return_value=False),
-            patch("src._engine_selection_mixin._has_coqui_support", return_value=True),
+            patch("src._engine_selection_mixin._has_piper_support", return_value=True),
         ):
-            result = mixin._resolve_offline_fallback_engine(available={"coqui"})
-        self.assertEqual(result, "coqui")
+            result = mixin._resolve_offline_fallback_engine(available={"piper"})
+        self.assertEqual(result, "piper")
 
 
 if __name__ == "__main__":

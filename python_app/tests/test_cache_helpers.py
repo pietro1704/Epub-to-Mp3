@@ -20,16 +20,6 @@ class TestComputeCacheModelBucket(unittest.TestCase):
         cfg = ConversionConfig(engine="piper", model_path="/tmp/pt_BR-faber-medium.onnx")
         self.assertEqual(compute_cache_model_bucket(cfg), "piper__pt_BR-faber-medium")
 
-    def test_coqui_prefers_voice_over_model(self):
-        cfg = ConversionConfig(
-            engine="coqui",
-            voice="tts_models/pt/cv/vits",
-            model_path="/tmp/ignored.pth",
-        )
-        bucket = compute_cache_model_bucket(cfg)
-        self.assertIn("coqui", bucket)
-        self.assertIn("vits", bucket)
-
     def test_unknown_engine_with_voice(self):
         cfg = ConversionConfig(engine="", voice="something")
         self.assertEqual(compute_cache_model_bucket(cfg), "unknown__something")

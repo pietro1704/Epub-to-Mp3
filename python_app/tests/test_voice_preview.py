@@ -252,7 +252,7 @@ class TestVoiceCatalog:
     def test_voices_all_engines_present(self, client: TestClient):
         resp = client.get("/api/voices")
         voices = resp.json()["voices"]
-        for engine in ("edge", "coqui", "kokoro", "piper", "auto"):
+        for engine in ("edge", "kokoro", "piper", "auto"):
             assert engine in voices, f"Missing engine: {engine}"
 
 

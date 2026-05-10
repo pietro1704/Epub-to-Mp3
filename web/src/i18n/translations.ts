@@ -241,16 +241,6 @@ export interface FormText {
   engineChainFallbackHint: string;
   engineChainFallbackOn: string;
   engineChainFallbackOff: string;
-  coquiChunkCharsLabel: string;
-  coquiChunkCharsPlaceholder: string;
-  coquiChunkCharsHint: string;
-  coquiMaxWorkersLabel: string;
-  coquiMaxWorkersPlaceholder: string;
-  coquiMaxWorkersHint: string;
-  coquiSafeModeLabel: string;
-  coquiSafeModeHint: string;
-  coquiSafeModeOn: string;
-  coquiSafeModeOff: string;
   piperMaxProcsLabel: string;
   piperMaxProcsPlaceholder: string;
   piperMaxProcsHint: string;
@@ -819,11 +809,6 @@ export const translations: Record<Locale, Translations> = {
           help: "Vozes de nuvem da Microsoft. Mais rápido (~70 chars/s). Multilíngue.",
         },
         {
-          value: "coqui",
-          label: "Coqui XTTS",
-          help: "Motor neural multilíngue de alta qualidade. Requer GPU. Lento.",
-        },
-        {
           value: "kokoro",
           label: "Kokoro",
           help: "Modelo leve (82M params). Rápido e offline. EN/JA/ZH.",
@@ -880,28 +865,6 @@ export const translations: Record<Locale, Translations> = {
             "Precisa de espeak-ng no sistema",
           ],
           languages: "EN (americano/britânico), JA, ZH",
-        },
-        coqui: {
-          tagline: "Clonagem de voz e qualidade premium — para quem tem GPU",
-          quality: "Premium — a mais expressiva e emocional",
-          speed: "~20 chars/s — lento, ideal com GPU",
-          requirements: "GPU recomendada (CUDA), ~2 GB VRAM",
-          bestVoice: "tts_models/multilingual/multi-dataset/xtts_v2",
-          bestVoiceNote:
-            "XTTS v2 é multilíngue e suporta clonagem de voz com áudio de referência. VITS pt é mais leve mas monolíngue.",
-          pros: [
-            "Maior expressividade e emoção na fala",
-            "Suporta clonagem de voz (use sua própria voz!)",
-            "Multilíngue nativo com XTTS v2",
-            "Ótimo para projetos artísticos/profissionais",
-          ],
-          cons: [
-            "Muito lento sem GPU",
-            "Alto consumo de memória (~2 GB+)",
-            "Setup mais complexo",
-            "Licença CPML (não-comercial)",
-          ],
-          languages: "pt, en, es, fr, de e mais (XTTS v2 multilíngue)",
         },
         piper: {
           tagline: "Leve, offline e garantido — o fallback confiável",
@@ -1075,7 +1038,7 @@ export const translations: Record<Locale, Translations> = {
       edgeNetworkTierFast: "Rápida",
       edgeNetworkTierUltra: "Ultra",
       engineTuningLegend: "Ajustes por engine",
-      modelLabel: "Modelo (Piper/Coqui) opcional",
+      modelLabel: "Modelo (Piper) opcional",
       modelPlaceholder: "Ex.: tts_models/multilingual/multi-dataset/xtts_v2",
       modelHint:
         "Informe o ID do modelo ou caminho local no servidor (se aplicável).",
@@ -1107,19 +1070,6 @@ export const translations: Record<Locale, Translations> = {
         "Por padrão, permanecemos no Edge; falhas isoladas usam fallback por chunk. Ative para reabrir a cascata Edge → Kokoro → Piper quando o Edge estiver rate-limitado.",
       engineChainFallbackOn: "Cascata ativa",
       engineChainFallbackOff: "Só Edge",
-      coquiChunkCharsLabel: "Coqui: tamanho do chunk (chars)",
-      coquiChunkCharsPlaceholder: "Ex.: 8000",
-      coquiChunkCharsHint:
-        "Chunks maiores reduzem overhead, mas podem usar mais memória.",
-      coquiMaxWorkersLabel: "Coqui: workers",
-      coquiMaxWorkersPlaceholder: "Ex.: 4",
-      coquiMaxWorkersHint:
-        "Mais workers aceleram, porém aumentam uso de CPU/RAM.",
-      coquiSafeModeLabel: "Coqui: modo seguro",
-      coquiSafeModeHint:
-        "Recomendado em macOS/HF para evitar falhas de memória.",
-      coquiSafeModeOn: "Ativado",
-      coquiSafeModeOff: "Desativado",
       piperMaxProcsLabel: "Piper: processos simultâneos",
       piperMaxProcsPlaceholder: "Ex.: 3",
       piperMaxProcsHint: "Define o limite de processos Piper em paralelo.",
@@ -1720,11 +1670,6 @@ export const translations: Record<Locale, Translations> = {
           help: "Microsoft cloud voices. Fastest (~70 chars/s). Multilingual.",
         },
         {
-          value: "coqui",
-          label: "Coqui XTTS",
-          help: "High-quality multilingual neural TTS. Requires GPU. Slow.",
-        },
-        {
           value: "kokoro",
           label: "Kokoro",
           help: "Lightweight (82M params). Fast and offline. EN/JA/ZH.",
@@ -1780,28 +1725,6 @@ export const translations: Record<Locale, Translations> = {
             "Requires espeak-ng on the system",
           ],
           languages: "EN (American/British), JA, ZH",
-        },
-        coqui: {
-          tagline: "Voice cloning and premium quality — for GPU owners",
-          quality: "Premium — the most expressive and emotional",
-          speed: "~20 chars/s — slow, best with GPU",
-          requirements: "GPU recommended (CUDA), ~2 GB VRAM",
-          bestVoice: "tts_models/multilingual/multi-dataset/xtts_v2",
-          bestVoiceNote:
-            "XTTS v2 is multilingual and supports voice cloning with reference audio. VITS pt is lighter but monolingual.",
-          pros: [
-            "Greatest expressiveness and emotion in speech",
-            "Supports voice cloning (use your own voice!)",
-            "Native multilingual with XTTS v2",
-            "Great for artistic/professional projects",
-          ],
-          cons: [
-            "Very slow without GPU",
-            "High memory usage (~2 GB+)",
-            "More complex setup",
-            "CPML license (non-commercial)",
-          ],
-          languages: "pt, en, es, fr, de and more (XTTS v2 multilingual)",
         },
         piper: {
           tagline: "Lightweight, offline, and reliable — the trusty fallback",
@@ -1971,7 +1894,7 @@ export const translations: Record<Locale, Translations> = {
       edgeNetworkTierFast: "Fast",
       edgeNetworkTierUltra: "Ultra",
       engineTuningLegend: "Engine tuning",
-      modelLabel: "Model (Piper/Coqui) optional",
+      modelLabel: "Model (Piper) optional",
       modelPlaceholder: "e.g., tts_models/multilingual/multi-dataset/xtts_v2",
       modelHint: "Provide the model ID or a server path when applicable.",
       edgeChunkCharsLabel: "Edge: chunk size (chars)",
@@ -2001,16 +1924,6 @@ export const translations: Record<Locale, Translations> = {
         "By default we stay on Edge; isolated failures use per-chunk fallback. Enable to restore the Edge → Kokoro → Piper cascade when Edge is rate-limited.",
       engineChainFallbackOn: "Cascade on",
       engineChainFallbackOff: "Edge only",
-      coquiChunkCharsLabel: "Coqui: chunk size (chars)",
-      coquiChunkCharsPlaceholder: "e.g., 8000",
-      coquiChunkCharsHint: "Larger chunks reduce overhead but use more memory.",
-      coquiMaxWorkersLabel: "Coqui: workers",
-      coquiMaxWorkersPlaceholder: "e.g., 4",
-      coquiMaxWorkersHint: "More workers can be faster but use more CPU/RAM.",
-      coquiSafeModeLabel: "Coqui: safe mode",
-      coquiSafeModeHint: "Recommended on macOS/HF to avoid memory crashes.",
-      coquiSafeModeOn: "Enabled",
-      coquiSafeModeOff: "Disabled",
       piperMaxProcsLabel: "Piper: parallel processes",
       piperMaxProcsPlaceholder: "e.g., 3",
       piperMaxProcsHint: "Sets the max number of Piper processes.",

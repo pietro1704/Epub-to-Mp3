@@ -191,26 +191,20 @@ class _RetryMixin:
             if cli_fallback == "none":
                 # Strict mode: only the engine the user picked.
                 _append_candidate(requested_engine if requested_engine != "auto" else "edge")
-            elif cli_fallback in {"piper", "kokoro", "coqui"}:
+            elif cli_fallback in {"piper", "kokoro"}:
                 # Operator pinned a specific fallback tier.
                 _append_candidate(requested_engine if requested_engine != "auto" else "edge")
                 _append_candidate(cli_fallback)
             elif requested_engine == "auto":
                 _append_candidate("edge")
                 _append_candidate("piper")
-                _append_candidate("coqui")
                 _append_candidate("kokoro")
             else:
                 _append_candidate(requested_engine)
                 if requested_engine == "edge":
                     _append_candidate("piper")
-                    _append_candidate("coqui")
-                elif requested_engine == "coqui":
-                    _append_candidate("piper")
-                    _append_candidate("edge")
                 elif requested_engine == "piper":
                     _append_candidate("edge")
-                    _append_candidate("coqui")
 
             engine_candidates = [
                 name for name in ordered_candidates if name == "edge" or name in available_engines
@@ -516,7 +510,7 @@ class _RetryMixin:
 
         # Honour `--fallback-engine none`: if the operator forbade
         # falling back, the last-resort path must keep using the
-        # requested engine instead of jumping to piper/coqui (the
+        # requested engine instead of jumping to piper (the
         # Carl regression — Piper would emit 16 kHz English-tinged
         # audio for pt-BR text).
         cli_fallback = (getattr(self, "_cli_fallback_engine", None) or "").lower()
@@ -524,8 +518,6 @@ class _RetryMixin:
             pass  # keep the originally requested engine
         elif "piper" in available:
             engine_name = "piper"
-        elif "coqui" in available:
-            engine_name = "coqui"
         elif "edge" in {"edge"}:
             engine_name = "edge"
 

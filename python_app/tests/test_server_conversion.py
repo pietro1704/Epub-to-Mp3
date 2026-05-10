@@ -214,14 +214,13 @@ def test_build_engine_chain_includes_edge_monolingual_fallback(monkeypatch):
 def test_build_engine_chain_includes_supported_fallbacks(monkeypatch):
     config = ConversionConfig(engine="edge", primary_language="pt-BR")
 
-    monkeypatch.setattr(server, "_has_coqui_support", lambda: True)
     monkeypatch.setattr(server, "_has_kokoro_support", lambda _: True)
     monkeypatch.setattr(server, "_has_piper_support", lambda: True)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     chain = server._build_engine_chain(config)
     engines = [cfg.engine for cfg in chain]
-    assert "edge" in engines and "coqui" in engines and "piper" in engines
+    assert "edge" in engines and "kokoro" in engines and "piper" in engines
 
 
 def test_should_retry_edge_before_fallback_prefers_one_local_retry():
@@ -636,7 +635,7 @@ def test_job_fulltext_returns_422_when_parsing_yields_no_chapters_on_failed_job(
     server.jobs.pop(job_id, None)
 
 
-def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
+def test_edge_fallbacks_to_kokoro_and_recovers(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
@@ -661,7 +660,7 @@ def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
 
     creators = {
         "edge": lambda: DummyTTSEngine("edge", fail_times=1),
-        "coqui": lambda: DummyTTSEngine("coqui"),
+        "kokoro": lambda: DummyTTSEngine("kokoro"),
         "piper": lambda: DummyTTSEngine("piper"),
     }
     dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
@@ -681,7 +680,7 @@ def test_edge_fallbacks_to_coqui_and_recovers(tmp_path, monkeypatch):
     server.jobs.pop(job_id, None)
 
 
-def test_edge_fallbacks_to_piper_when_coqui_fails(tmp_path, monkeypatch):
+def test_edge_fallbacks_to_piper_when_kokoro_fails(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
@@ -706,7 +705,7 @@ def test_edge_fallbacks_to_piper_when_coqui_fails(tmp_path, monkeypatch):
 
     creators = {
         "edge": lambda: DummyTTSEngine("edge", fail_times=1),
-        "coqui": lambda: DummyTTSEngine("coqui", fail_times=1),
+        "kokoro": lambda: DummyTTSEngine("kokoro", fail_times=1),
         "piper": lambda: DummyTTSEngine("piper"),
     }
     dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
@@ -729,9 +728,9 @@ def test_edge_fallbacks_to_piper_when_coqui_fails(tmp_path, monkeypatch):
 def test_pick_auto_engine_prefers_fastest_telemetry():
     pool = {
         "edge": (ConversionConfig(engine="edge"), SimpleNamespace()),
-        "coqui": (ConversionConfig(engine="coqui"), SimpleNamespace()),
+        "kokoro": (ConversionConfig(engine="kokoro"), SimpleNamespace()),
     }
-    telemetry_speeds = {"edge": 180.0, "coqui": 50.0}
+    telemetry_speeds = {"edge": 180.0, "kokoro": 50.0}
     selected, order = server._pick_auto_engine(12_000, 600, pool, telemetry_speeds=telemetry_speeds)
     assert order[0] == "edge"
     assert selected == order[0]

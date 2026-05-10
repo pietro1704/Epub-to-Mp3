@@ -172,18 +172,6 @@ class TestEnsureVoiceAndLanguages:
         assert config.voice == "en-US-AriaNeural"
         assert "en-US" in config.languages
 
-    def test_coqui_gets_default_model_when_no_voice(self):
-        from python_app.src import _server_engine_helpers as helpers
-        from python_app.src.config import ConversionConfig
-
-        # Provider returns None → coqui fallback model should be used
-        fake_factory = self._make_fake_factory(None)
-        config = ConversionConfig(engine="coqui", voice=None, primary_language="en-US")
-        with self._patch_server_factory(fake_factory):
-            helpers._ensure_voice_and_languages(config)
-
-        assert config.voice == "tts_models/multilingual/multi-dataset/xtts_v2"
-
 
 # ---------------------------------------------------------------------------
 # _extract_chapter_details

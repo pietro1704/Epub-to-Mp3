@@ -6,13 +6,10 @@ from __future__ import annotations
 # **PERFORMANCE**: Apply system optimizations BEFORE heavy imports
 import os
 
-# Auto-accept Coqui TTS license (CPML non-commercial) — required for HF Space
-os.environ.setdefault("COQUI_TOS_AGREED", "1")
 # **CPU FIRST**: Force CPU mode in environments without GPU (HF Spaces zero-GPU)
 os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
 os.environ.setdefault("FORCE_CUDA", "0")
 os.environ.setdefault("FORCE_CPU_ONLY", "1")
-os.environ.setdefault("TTS_USE_GPU", "0")
 
 # Configure performance optimizations before any imports
 try:
@@ -71,7 +68,6 @@ from src.paths import (
 )
 from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
-from src.tts.coqui_guard import is_coqui_supported_environment
 from src.tts.edge_engine import reset_adaptive_settings
 from src.tts.factory import TTSFactory
 from src.tts.kokoro_guard import load_kokoro_supports_language
@@ -701,7 +697,6 @@ if _IS_TEST_ENV and _kokoro_support_check is None:
         _kokoro_support_check = _direct_kokoro_support
     except Exception:
         pass
-_COQUI_SUPPORTED = _IS_TEST_ENV or is_coqui_supported_environment()
 _PIPER_SUPPORTED = _IS_TEST_ENV or is_piper_supported_environment()
 
 
@@ -725,7 +720,9 @@ def _has_spark_support() -> bool:
 
 
 def _has_coqui_support() -> bool:
-    return _COQUI_SUPPORTED
+    """Stub kept for test back-compat after the Coqui engine was removed.
+    Always returns False — Coqui TTS is no longer available."""
+    return False
 
 
 _JOB_WORKERS = max(1, int(os.getenv("JOB_WORKERS", "1") or "1"))  # Processar 1 livro por vez
@@ -2234,9 +2231,6 @@ async def convert_ebook(
     edge_enable_parallel: Optional[str] = Form(None),
     edge_auto_tune: Optional[str] = Form(None),
     edge_stable_mode: Optional[str] = Form(None),
-    coqui_chunk_chars: Optional[str] = Form(None),
-    coqui_max_workers: Optional[str] = Form(None),
-    coqui_safe_mode: Optional[str] = Form(None),
     piper_max_procs: Optional[str] = Form(None),
     engine_chain_fallback: Optional[str] = Form(None),
     bitrate: Optional[str] = Form(None),
@@ -2291,9 +2285,6 @@ async def convert_ebook(
     edge_parallel_override = _parse_form_optional_bool(edge_enable_parallel)
     edge_auto_tune_override = _parse_form_optional_bool(edge_auto_tune)
     edge_stable_mode_flag = _parse_form_optional_bool(edge_stable_mode)
-    coqui_chunk_override = _parse_form_int(coqui_chunk_chars, min_value=800, max_value=8000)
-    coqui_workers_override = _parse_form_int(coqui_max_workers, min_value=1, max_value=12)
-    coqui_safe_override = _parse_form_optional_bool(coqui_safe_mode)
     piper_procs_override = _parse_form_int(piper_max_procs, min_value=1, max_value=12)
     engine_chain_fallback_flag = _parse_form_optional_bool(engine_chain_fallback)
     sample_rate_override = _parse_form_int(sample_rate, min_value=8000, max_value=96000)
@@ -2529,9 +2520,6 @@ async def convert_ebook(
         "edgeEnableParallel": edge_parallel_override,
         "edgeAutoTune": edge_auto_tune_override,
         "edgeStableMode": edge_stable_mode_flag,
-        "coquiChunkChars": coqui_chunk_override,
-        "coquiMaxWorkers": coqui_workers_override,
-        "coquiSafeMode": coqui_safe_override,
         "piperMaxProcs": piper_procs_override,
         "engineChainFallback": engine_chain_fallback_flag,
         # Multi-voice narration (default on; UI may override per-job).
@@ -3179,7 +3167,7 @@ async def voice_preview(
         )
 
     engine = engine.lower().strip()
-    if engine not in ("edge", "kokoro", "piper", "coqui"):
+    if engine not in ("edge", "kokoro", "piper"):
         raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine}")
 
     lang_code = language.lower().split("-")[0] if language else "pt"
@@ -3360,7 +3348,6 @@ async def estimate_conversion(
         "edge": 110.0,
         "kokoro": 35.0,
         "piper": 25.0,
-        "coqui": 20.0,
         "auto": 110.0,
     }
     # 128 kbps MP3: 16 KB/s
@@ -3429,7 +3416,7 @@ async def estimate_conversion(
 
 @app.get("/api/telemetry")
 async def get_engine_telemetry() -> dict:
-    """Return aggregated throughput data to compare Edge vs Coqui/Piper speeds."""
+    """Return aggregated throughput data to compare Edge vs Kokoro/Piper speeds."""
     summary = telemetry.summary()
     recent = [
         {
@@ -3635,9 +3622,6 @@ async def process_conversion(job_id: str) -> None:
         edge_stable_mode = job.get("edgeStableMode")
         chapter_stall_seconds = job.get("chapterStallSeconds")
         edge_network_tier = job.get("edgeNetworkTier")
-        coqui_chunk_override = job.get("coquiChunkChars")
-        coqui_workers_override = job.get("coquiMaxWorkers")
-        coqui_safe_override = job.get("coquiSafeMode")
         piper_procs_override = job.get("piperMaxProcs")
 
         if max_performance:
@@ -3647,16 +3631,6 @@ async def process_conversion(job_id: str) -> None:
                 edge_segment_override = 300
             if edge_parallel_override is None:
                 edge_parallel_override = True
-            if coqui_chunk_override is None:
-                coqui_chunk_override = 8000
-            if coqui_workers_override is None:
-                cpu_physical = int(getattr(_hardware_profile, "cpu_physical", 2) or 2)
-                has_gpu = bool(getattr(_hardware_profile, "has_gpu", False))
-                ram_total = float(getattr(_hardware_profile, "ram_total_gb", 0.0) or 0.0)
-                if has_gpu:
-                    coqui_workers_override = 3 if ram_total >= 8 else 2
-                else:
-                    coqui_workers_override = min(12, max(2, cpu_physical * 2))
             if piper_procs_override is None:
                 cpu_physical = int(getattr(_hardware_profile, "cpu_physical", 2) or 2)
                 piper_procs_override = min(6, max(1, cpu_physical))
@@ -3947,9 +3921,6 @@ async def process_conversion(job_id: str) -> None:
             priority_selectors=priority_selectors,
             speak_formatting_cues=job.get("formattingCues", True),
             formatting_locale=_normalize_locale(job.get("uiLanguage"), "pt"),
-            coqui_chunk_chars=coqui_chunk_override,
-            coqui_max_workers=coqui_workers_override,
-            coqui_safe_mode=coqui_safe_override,
             piper_max_procs=piper_procs_override,
             engine_chain_fallback=job.get("engineChainFallback"),
             verbose=verbose_enabled,  # Enable verbose logging for terminal-like output
@@ -4047,12 +4018,6 @@ async def process_conversion(job_id: str) -> None:
                 target.edge_max_segment_seconds = int(edge_segment_override)
             if edge_parallel_override is not None:
                 target.edge_enable_parallel = bool(edge_parallel_override)
-            if coqui_chunk_override is not None:
-                target.coqui_chunk_chars = int(coqui_chunk_override)
-            if coqui_workers_override is not None:
-                target.coqui_max_workers = int(coqui_workers_override)
-            if coqui_safe_override is not None:
-                target.coqui_safe_mode = bool(coqui_safe_override)
             if piper_procs_override is not None:
                 target.piper_max_procs = int(piper_procs_override)
 
@@ -4325,14 +4290,6 @@ async def process_conversion(job_id: str) -> None:
                     f"{auto_edge_profile.get('chunk_chars')} chars, "
                     f"{auto_edge_profile.get('max_segment_seconds')}s, "
                     f"{auto_edge_profile.get('words_per_minute')} wpm",
-                )
-            coqui_profile = auto_tuning_summary.get("coqui")
-            if coqui_profile:
-                _append_event(
-                    job,
-                    "⚡ Auto Coqui: "
-                    f"{coqui_profile.get('chunk_chars')} chars, "
-                    f"{coqui_profile.get('max_workers')} workers",
                 )
 
         _append_event(job, "")
@@ -5001,16 +4958,6 @@ async def process_conversion(job_id: str) -> None:
                             job,
                             f"🔧 Edge fallback: chunk={engine_config.edge_chunk_chars} seg={engine_config.edge_max_segment_seconds}s parallel=off",
                         )
-                    elif (engine_label or "").lower().startswith("coqui"):
-                        if hasattr(engine_config, "coqui_chunk_chars"):
-                            old_chunk = int(getattr(engine_config, "coqui_chunk_chars") or 0)
-                            new_chunk = max(800, int(max(old_chunk, 1200) * 0.75))
-                            engine_config.coqui_chunk_chars = new_chunk
-                            config.coqui_chunk_chars = new_chunk
-                            _append_event(
-                                job,
-                                f"🔧 Coqui fallback: chunk={new_chunk} (before {old_chunk or 'auto'})",
-                            )
                     if parallel_slots > 1:
                         parallel_slots = max(1, parallel_slots - 1)
                         engine_pool.update_parallel_slots(parallel_slots)
@@ -5192,7 +5139,7 @@ async def process_conversion(job_id: str) -> None:
                                 finally:
                                     await _safe_cancel_task(idle_task, grace=5.0)
                                 last_stage_timestamp = time.time()
-                                # Engines that write WAV (Piper/Coqui) return None on
+                                # Engines that write WAV (Piper) return None on
                                 # failure instead of raising.  Raise here so the
                                 # exception handler can trigger the proper fallback chain
                                 # rather than reaching the WAV→MP3 step with no input.

@@ -9,7 +9,7 @@ The retry mixin had two silent fallback paths that ignored the
 operator's "none" choice:
 
 1. ``_reconvert_chapters_with_engine``'s candidate-list builder
-   appended ``piper``/``coqui`` after ``edge`` regardless of CLI flag.
+   appended ``piper`` after ``edge`` regardless of CLI flag.
 2. The inner Edge-quick-synthesis catch block jumped straight to
    Piper for any exception when ``"piper" in available_engines``.
 3. ``_last_resort_recovery`` swapped the engine to Piper whenever it

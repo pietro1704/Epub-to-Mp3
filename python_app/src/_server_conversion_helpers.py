@@ -459,10 +459,10 @@ def reset_chapter_progress_tracking(
 def resolve_tts_output(target_mp3: Path, engine_name: str) -> tuple[Path, bool]:
     """Return *(tts_path, needs_transcode)* for the given engine.
 
-    Engines that emit WAV (coqui, piper) get a ``.wav`` side-car path and
+    Engines that emit WAV (piper) get a ``.wav`` side-car path and
     ``needs_transcode=True``; all others write directly to *target_mp3*.
     """
-    if engine_name.lower() in {"coqui", "piper"}:
+    if engine_name.lower() in {"piper"}:
         return target_mp3.with_suffix(".wav"), True
     return target_mp3, False
 

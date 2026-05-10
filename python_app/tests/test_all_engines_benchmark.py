@@ -170,18 +170,6 @@ def detect_available_engines() -> Dict[str, EngineInfo]:
         requires_internet=True,
     )
 
-    # Coqui TTS
-    coqui_available = importlib.util.find_spec("TTS.api") is not None
-    engines["coqui"] = EngineInfo(
-        name="Coqui XTTS",
-        available=coqui_available,
-        multilingual=True,
-        languages=["pt", "en", "es", "fr", "de"] if coqui_available else [],
-        default_voice="tts_models/multilingual/multi-dataset/xtts_v2" if coqui_available else "",
-        speed_estimate="slow",
-        requires_gpu=True,
-    )
-
     # Kokoro
     kokoro_available = importlib.util.find_spec("kokoro") is not None
     engines["kokoro"] = EngineInfo(
@@ -282,25 +270,6 @@ async def synthesize_edge(text: str, language: str, output_path: Path) -> Tuple[
         return False, 0.0
 
 
-async def synthesize_coqui(text: str, language: str, output_path: Path) -> Tuple[bool, float]:
-    """Sintetiza com Coqui XTTS."""
-    try:
-        from python_app.src.tts.coqui_engine import CoquiTTSEngine
-
-        engine = CoquiTTSEngine(
-            "tts_models/multilingual/multi-dataset/xtts_v2", primary_language=language
-        )
-
-        start = time.perf_counter()
-        result = await engine.synthesize_async(text, output_path)
-        elapsed = time.perf_counter() - start
-
-        return result is not None, elapsed
-    except Exception as e:
-        print(f"    Coqui error: {e}")
-        return False, 0.0
-
-
 async def synthesize_kokoro(text: str, language: str, output_path: Path) -> Tuple[bool, float]:
     """Sintetiza com Kokoro."""
     try:
@@ -352,7 +321,6 @@ async def synthesize_piper(text: str, language: str, output_path: Path) -> Tuple
 
 SYNTHESIZERS = {
     "edge": synthesize_edge,
-    "coqui": synthesize_coqui,
     "kokoro": synthesize_kokoro,
     "piper": synthesize_piper,
 }
@@ -540,11 +508,6 @@ async def run_benchmark(real_mode: bool = False):
             if engine_averages:
                 fastest = engine_averages[0][0]
                 print(f"  Para máxima velocidade: {fastest.upper()}")
-
-                quality_engines = ["coqui"]
-                quality_available = [e for e, _, _, _, _ in engine_averages if e in quality_engines]
-                if quality_available:
-                    print(f"  Para máxima qualidade: {quality_available[0].upper()}")
 
                 multilingual = [e for e, info in available_engines.items() if info.multilingual]
                 if multilingual:

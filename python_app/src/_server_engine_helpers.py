@@ -20,7 +20,7 @@ def _piper_fallback_disabled() -> bool:
 
 
 def _engine_chain_fallback_enabled(config: Optional[object] = None) -> bool:
-    """Whether to append offline engine tiers (kokoro/piper/coqui) after Edge.
+    """Whether to append offline engine tiers (kokoro/piper) after Edge.
 
     Defaults to ``False``: the project's priority is to maximise Edge usage
     in both CLI and web paths, with per-chunk fallback handling isolated
@@ -47,13 +47,13 @@ def _fallback_engine_override() -> Optional[str]:
     the server's engine chain is constrained accordingly.
 
     ``FALLBACK_ENGINE_OVERRIDE=none`` strips all offline fallbacks; setting it
-    to a specific engine (``piper``/``kokoro``/``coqui``) keeps only that tier.
+    to a specific engine (``piper``/``kokoro``) keeps only that tier.
     Unknown / empty values return None (no override → current ranking wins).
     """
     raw = (os.getenv("FALLBACK_ENGINE_OVERRIDE") or "").strip().lower()
     if not raw or raw == "auto":
         return None
-    if raw in {"none", "piper", "kokoro", "coqui"}:
+    if raw in {"none", "piper", "kokoro"}:
         return raw
     return None
 
@@ -117,7 +117,6 @@ def _apply_perf_defaults(profile: str, hw: HardwareProfile) -> None:
         _set_default("EDGE_CHUNK_CHARS", "12000")  # was 9000 — fewer requests
         _set_default("EDGE_MAX_SEGMENT_SECONDS", "180")
         _set_default("EDGE_ENABLE_PARALLEL", "false")  # force serial chunks
-        _set_default("COQUI_MAX_WORKERS", "2")
         _set_default("PIPER_MAX_PROCS", "1")
         # Healthcheck: detect rate-limit slowdowns faster on HF
         _set_default("JOB_HEALTHCHECK_INTERVAL_SECONDS", "10")
@@ -142,7 +141,6 @@ def _apply_perf_defaults(profile: str, hw: HardwareProfile) -> None:
         _set_default("EDGE_SAFE_MAX_SEGMENT_SECONDS", "90")
         _set_default("EDGE_SAFE_CHAPTER_PARALLEL", "1")
         _set_default("EDGE_SAFE_TIMEOUT_MAX", "120")
-        _set_default("COQUI_MAX_WORKERS", str(min(8, max(4, (hw.cpu_physical or 2) * 2))))
         _set_default("PIPER_MAX_PROCS", str(min(4, max(2, (hw.cpu_physical or 2) // 2 + 1))))
     else:  # local (balanced default)
         edge_cap = max(3, min(6, (hw.cpu_physical or 2) + 2))
@@ -157,7 +155,6 @@ def _apply_perf_defaults(profile: str, hw: HardwareProfile) -> None:
         _set_default("EDGE_SAFE_MAX_SEGMENT_SECONDS", "90")
         _set_default("EDGE_SAFE_CHAPTER_PARALLEL", "1")
         _set_default("EDGE_SAFE_TIMEOUT_MAX", "120")
-        _set_default("COQUI_MAX_WORKERS", str(min(6, max(3, (hw.cpu_physical or 2)))))
         _set_default("PIPER_MAX_PROCS", "2")
 
 
@@ -192,8 +189,6 @@ def _ensure_voice_and_languages(config: ConversionConfig) -> None:
     config.languages = languages
     provider = _srv.tts_factory.voice_provider
     fallback_voice = config.voice or provider.get_voice(config.engine, config.primary_language)
-    if (config.engine or "").lower() == "coqui" and not fallback_voice:
-        fallback_voice = "tts_models/multilingual/multi-dataset/xtts_v2"
     config.voice = fallback_voice
     config.language_voices = provider.build_language_voice_map(
         config.engine,
@@ -276,8 +271,6 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
         if override is None and not _engine_chain_fallback_enabled(config):
             return chain
         fallback_candidates = []
-        if _srv._has_coqui_support():
-            fallback_candidates.append("coqui")
         fallback_candidates.append("kokoro")
         if _srv._has_piper_support() and not _piper_fallback_disabled():
             fallback_candidates.append("piper")
@@ -288,8 +281,6 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
             if engine_name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):
                 continue
             if engine_name == "piper" and not _srv._has_piper_support():
-                continue
-            if engine_name == "coqui" and not _srv._has_coqui_support():
                 continue
             clone = _clone_config_for_engine(config, engine_name)
             if clone.engine.lower() == "edge":
@@ -302,16 +293,12 @@ def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, ConversionC
     from python_app import server as _srv  # lazy to avoid circular import
 
     pool: dict[str, ConversionConfig] = {}
-    # Priority: edge (fast cloud), coqui (quality), kokoro (fast local).
+    # Priority: edge (fast cloud), kokoro (fast local).
     # Piper excluded from auto due to lower quality.
     candidate_order = ["edge"]
-    if _srv._has_coqui_support():
-        candidate_order.append("coqui")
     candidate_order.append("kokoro")
     for name in candidate_order:
         if name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):
-            continue
-        if name == "coqui" and not _srv._has_coqui_support():
             continue
         try:
             candidate = _clone_config_for_engine(config, name)
@@ -412,43 +399,6 @@ def _auto_tune_engine_pool(
             "parallel": edge_cfg.edge_enable_parallel,
         }
 
-    coqui_cfg = pool.get("coqui")
-    if coqui_cfg:
-        has_gpu = bool(getattr(hardware_profile, "has_gpu", False))
-        cpu_physical = int(getattr(hardware_profile, "cpu_physical", 2) or 2)
-        ram_total = float(getattr(hardware_profile, "ram_total_gb", 0.0) or 0.0)
-
-        chunk_override = _env_int("COQUI_CHUNK_CHARS")
-        workers_override = _env_int("COQUI_MAX_WORKERS")
-
-        if has_gpu:
-            if turbo_mode:
-                base_chunk = 8000 if ram_total >= 8 else 6500
-                base_workers = 3 if ram_total >= 8 else 2
-            else:
-                base_chunk = 5000 if total_chars < 200000 else 6500
-                base_workers = 2 if ram_total >= 8 else 1
-        else:
-            if cpu_physical >= 8:
-                base_chunk = 6000 if turbo_mode else 3500
-                base_workers = min(12, cpu_physical * (2 if turbo_mode else 1))
-            elif cpu_physical >= 4:
-                base_chunk = 5000 if turbo_mode else 3500
-                base_workers = min(8, cpu_physical * (2 if turbo_mode else 1))
-            else:
-                base_chunk = 3500 if turbo_mode else 2500
-                base_workers = max(2, min(4, cpu_physical + 1))
-
-        coqui_cfg.coqui_chunk_chars = int(chunk_override or base_chunk)
-        coqui_cfg.coqui_max_workers = int(workers_override or base_workers)
-        coqui_cfg.coqui_chunk_chars = max(800, min(coqui_cfg.coqui_chunk_chars, 8000))
-        coqui_cfg.coqui_max_workers = max(1, min(coqui_cfg.coqui_max_workers, 12))
-
-        summary["coqui"] = {
-            "chunk_chars": coqui_cfg.coqui_chunk_chars,
-            "max_workers": coqui_cfg.coqui_max_workers,
-        }
-
     return summary
 
 
@@ -476,7 +426,7 @@ def _pick_auto_engine(
         if candidate in pool and candidate not in order:
             order.append(candidate)
 
-    # Order from fastest to slowest: edge > coqui
+    # Order from fastest to slowest: edge > kokoro
     order: list[str] = []
     if telemetry_speeds:
         ranked = sorted(
@@ -488,7 +438,6 @@ def _pick_auto_engine(
             append(order, name)
     else:
         append(order, "edge")
-        append(order, "coqui")
 
     for name in pool.keys():
         append(order, name)

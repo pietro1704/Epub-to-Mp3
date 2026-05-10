@@ -181,21 +181,6 @@ function buildFormData(values: ConversionFormValues): FormData {
     formData.append("edge_stable_mode", values.edgeStableMode ? "on" : "off");
   }
   if (
-    typeof values.coquiChunkChars === "number" &&
-    Number.isFinite(values.coquiChunkChars)
-  ) {
-    formData.append("coqui_chunk_chars", String(values.coquiChunkChars));
-  }
-  if (
-    typeof values.coquiMaxWorkers === "number" &&
-    Number.isFinite(values.coquiMaxWorkers)
-  ) {
-    formData.append("coqui_max_workers", String(values.coquiMaxWorkers));
-  }
-  if (typeof values.coquiSafeMode === "boolean") {
-    formData.append("coqui_safe_mode", values.coquiSafeMode ? "on" : "off");
-  }
-  if (
     typeof values.piperMaxProcs === "number" &&
     Number.isFinite(values.piperMaxProcs)
   ) {

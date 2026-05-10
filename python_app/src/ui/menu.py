@@ -103,8 +103,7 @@ class MenuInterface:
     def _choose_engine(self) -> Optional[str]:
         engines = {
             "1": ("edge", self.loc.t("engine_option_edge")),
-            "2": ("coqui", self.loc.t("engine_option_coqui")),
-            "3": ("piper", self.loc.t("engine_option_piper")),
+            "2": ("piper", self.loc.t("engine_option_piper")),
             "0": (None, self.loc.t("engine_option_exit")),
         }
         default_key = "1"
@@ -132,8 +131,6 @@ class MenuInterface:
     def _choose_voice(self, engine: str) -> Optional[str]:
         if engine == "edge":
             return self._choose_edge_voice()
-        if engine == "coqui":
-            return self._choose_coqui_model()
         if engine == "piper":
             return self._choose_piper_model()
         return None
@@ -163,28 +160,6 @@ class MenuInterface:
 
             print(self.loc.t("voice_selected", option=voices[choice][1]))
             return voices[choice][0]
-
-    def _choose_coqui_model(self) -> Optional[str]:
-        models = self.voice_provider.coqui_models
-        default_key = next(iter(models.keys()), None)
-
-        while True:
-            choices = [(key, f"{name} - {desc}") for key, (_, name, desc, _) in models.items()]
-            default_index = list(models.keys()).index(default_key) if default_key in models else 0
-            try:
-                choice = self.prompt.select(
-                    self.loc.t("model_title"),
-                    choices,
-                    default_index=default_index,
-                )
-            except EOFError:
-                return None
-            if not choice:
-                print(self.loc.t("invalid_option"))
-                continue
-
-            print(self.loc.t("model_selected", option=models[choice][1]))
-            return models[choice][0]
 
     def _choose_piper_model(self) -> Optional[str]:
         print(self.loc.t("piper_models_title"))

@@ -13,7 +13,7 @@ from unittest.mock import patch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from src.config import AppConfig, ConversionConfig, VoiceConfigProvider
-from src.paths import COQUI_CACHE_DIR, PIPER_MODEL_CACHE_DIR
+from src.paths import PIPER_MODEL_CACHE_DIR
 
 
 class TestConversionConfig(unittest.TestCase):
@@ -109,10 +109,10 @@ class TestAppConfig(unittest.TestCase):
     def test_create_conversion_config_with_kwargs(self):
         """Test creating conversion config with additional kwargs"""
         config = self.config.create_conversion_config(
-            engine="coqui", book_title="Test Book", output_dir="custom", preserve_all_chapters=False
+            engine="piper", book_title="Test Book", output_dir="custom", preserve_all_chapters=False
         )
 
-        self.assertEqual(config.engine, "coqui")
+        self.assertEqual(config.engine, "piper")
         self.assertEqual(config.book_title, "Test Book")
         self.assertIsInstance(config.output_dir, Path)  # output_dir is now Path
         self.assertEqual(str(config.output_dir), "custom")
@@ -147,29 +147,6 @@ class TestVoiceConfigProvider(unittest.TestCase):
         thalita_voice, thalita_desc = voices["1"]
         self.assertEqual(thalita_voice, "pt-BR-ThalitaMultilingualNeural")
         self.assertIn("Thalita", thalita_desc)
-
-    def test_coqui_models(self):
-        """Test Coqui TTS models"""
-        models = self.provider.coqui_models
-
-        self.assertIsInstance(models, dict)
-        self.assertGreater(len(models), 0)
-
-        # Check structure
-        for key, value in models.items():
-            self.assertIsInstance(key, str)
-            self.assertIsInstance(value, tuple)
-            self.assertEqual(len(value), 4)
-            model_id, name, desc, multilingual = value
-            self.assertIsInstance(model_id, str)
-            self.assertIsInstance(name, str)
-            self.assertIsInstance(desc, str)
-            self.assertIsInstance(multilingual, bool)
-
-        # Check for expected model
-        self.assertIn("1", models)
-        xtts_model, xtts_name, xtts_desc, xtts_multi = models["1"]
-        self.assertIn("xtts_v2", xtts_model)
 
     def test_get_piper_models_defaults_to_packaged_models(self):
         """Discover Piper models from a provided models directory."""
@@ -255,7 +232,7 @@ class TestVoiceConfigProvider(unittest.TestCase):
         """Ensure voice suggestions list includes known engines."""
         suggestions = self.provider.get_voice_suggestions()
         self.assertIsInstance(suggestions, dict)
-        for key in ("edge", "coqui", "piper", "auto"):
+        for key in ("edge", "piper", "auto"):
             self.assertIn(key, suggestions)
             self.assertIsInstance(suggestions[key], list)
             for entry in suggestions[key]:
@@ -265,11 +242,6 @@ class TestVoiceConfigProvider(unittest.TestCase):
 
 class TestPathConfiguration(unittest.TestCase):
     """Ensure cache directories are enforced via environment variables."""
-
-    def test_coqui_cache_env(self):
-        expected = str(COQUI_CACHE_DIR)
-        self.assertEqual(os.environ.get("TTS_HOME"), expected)
-        self.assertEqual(os.environ.get("COQUI_TTS_CACHE_DIR"), expected)
 
     def test_piper_cache_env(self):
         expected = str(PIPER_MODEL_CACHE_DIR)

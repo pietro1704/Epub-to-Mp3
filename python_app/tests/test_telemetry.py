@@ -23,8 +23,8 @@ def test_telemetry_summary_and_ranking(tmp_path):
         chapter="chapter-1",
     )
     recorder.record_sample(
-        engine="coqui",
-        voice="xtts",
+        engine="kokoro",
+        voice="af_heart",
         chars=8_000,
         synth_seconds=120.0,
         total_seconds=130.0,
@@ -33,13 +33,13 @@ def test_telemetry_summary_and_ranking(tmp_path):
         chapter="chapter-2",
     )
     summary = recorder.summary()
-    assert "edge" in summary and "coqui" in summary
-    assert summary["edge"]["avg_chars_per_second"] > summary["coqui"]["avg_chars_per_second"]
+    assert "edge" in summary and "kokoro" in summary
+    assert summary["edge"]["avg_chars_per_second"] > summary["kokoro"]["avg_chars_per_second"]
     ranked = recorder.ranked_engines()
     assert ranked[0] == "edge"
     recent = recorder.recent_samples(limit=1)
     assert len(recent) == 1
-    assert recent[0]["engine"] == "coqui"
+    assert recent[0]["engine"] == "kokoro"
 
 
 def test_telemetry_ignores_invalid_samples(tmp_path):

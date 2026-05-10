@@ -235,8 +235,6 @@ class _EngineSelectionMixin:
 
         if has_piper:
             candidates.append("piper")
-        if _has_coqui_support():
-            candidates.append("coqui")
         ordered: List[str] = []
         seen: Set[str] = set()
         for name in candidates:
@@ -272,8 +270,6 @@ class _EngineSelectionMixin:
                 return None
             _warn_piper_fallback()
             return "piper"
-        if _has_coqui_support() and (not available_set or "coqui" in available_set):
-            return "coqui"
         return None
 
     def _predict_edge_runtime_seconds(self, chapter_chars: int) -> float:
@@ -370,8 +366,6 @@ class _EngineSelectionMixin:
             )
             if monolingual_voice:
                 voice = monolingual_voice
-        if engine_name == "coqui" and not voice:
-            voice = "tts_models/multilingual/multi-dataset/xtts_v2"
         cloned.voice = voice
         cloned.language_voices = self.tts_factory.voice_provider.build_language_voice_map(
             engine_name,
@@ -500,8 +494,6 @@ class _EngineSelectionMixin:
         order: List[str] = []
         # Product decision: keep Edge as default attempt; local engines are fallback-only.
         base_candidates = ["edge", "piper"]
-        if _has_coqui_support():
-            base_candidates.append("coqui")
         for candidate in base_candidates:
             if candidate in pool and candidate not in order:
                 order.append(candidate)

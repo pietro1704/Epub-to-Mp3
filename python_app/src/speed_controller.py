@@ -40,7 +40,6 @@ class AdaptiveSpeedController:
     def __init__(self) -> None:
         self._history: Dict[str, Deque[ChapterPerf]] = {
             "edge": deque(maxlen=6),
-            "coqui": deque(maxlen=6),
             "piper": deque(maxlen=6),
         }
         self._edge_failure_streak = 0
@@ -53,7 +52,6 @@ class AdaptiveSpeedController:
         self._engine_scores: Dict[str, float] = {}
         self._connectivity_failures: Dict[str, Deque[float]] = {
             "edge": deque(maxlen=20),
-            "coqui": deque(maxlen=20),
             "piper": deque(maxlen=20),
         }
         self._last_switch_time: float = 0
@@ -187,13 +185,6 @@ class AdaptiveSpeedController:
             scale = 1.25
         elif chapter_chars >= 24000:
             scale = 1.15
-
-        # Coqui is slower on CPU: never reduce, and scale up for short chapters
-        if engine == "coqui":
-            if chapter_chars <= 8000:
-                scale = max(scale, 1.6)
-            else:
-                scale = max(scale, 1.2)
 
         recent = self._history.get(engine or "", deque())
         slow_recent = any(item.elapsed > 150 and item.success for item in recent)

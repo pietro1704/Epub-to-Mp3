@@ -291,9 +291,7 @@ class _HealthWatchdogMixin:
                         action="reduce_parallelism" if applied else "warn_only",
                     )
                 if not applied:
-                    print(
-                        "   Suggestion: check connection ou allow offline fallback (Coqui/Piper)."
-                    )
+                    print("   Suggestion: check connection ou allow offline fallback (Piper).")
             elif stalled >= warning_threshold and not state.get("warn_emitted"):
                 state["warn_emitted"] = True
                 print(

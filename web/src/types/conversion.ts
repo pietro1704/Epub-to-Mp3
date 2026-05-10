@@ -1,4 +1,4 @@
-export type EngineOption = "edge" | "coqui" | "piper" | string;
+export type EngineOption = "edge" | "piper" | string;
 export type FootnoteMode = "inline" | "chapter_end" | "skip";
 
 export interface ConversionFormValues {
@@ -34,9 +34,6 @@ export interface ConversionFormValues {
   edgeEnableParallel?: boolean;
   edgeAutoTune?: boolean;
   edgeStableMode?: boolean;
-  coquiChunkChars?: number;
-  coquiMaxWorkers?: number;
-  coquiSafeMode?: boolean;
   piperMaxProcs?: number;
   engineChainFallback?: boolean;
   bitrate?: string;

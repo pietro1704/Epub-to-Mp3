@@ -18,7 +18,7 @@ describe("ChapterProgressList", () => {
             index: 2,
             name: "Chapter 2",
             status: "processing",
-            engine: "coqui",
+            engine: "piper",
           },
         ]}
       />,
@@ -27,7 +27,7 @@ describe("ChapterProgressList", () => {
 
     // Engine badges render the engine name as a pill (lowercase)
     expect(screen.getAllByText("edge").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("coqui").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("piper").length).toBeGreaterThan(0);
   });
 
   it("shows full fallback trail when engineSequence is set", () => {

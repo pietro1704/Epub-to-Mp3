@@ -43,23 +43,6 @@ class TestTTSFactory(unittest.TestCase):
             self.assertEqual(kwargs.get("max_segment_seconds"), config.edge_max_segment_seconds)
             self.assertEqual(kwargs.get("chunk_char_limit"), config.edge_chunk_chars)
 
-    def test_create_coqui_engine(self):
-        """Test creating Coqui TTS engine"""
-        config = ConversionConfig(engine="coqui", voice="test_model")
-
-        with patch("src.tts.coqui_engine.CoquiTTSEngine") as mock_engine:
-            engine = self.factory.create_engine(config)
-
-            mock_engine.assert_called_once()
-            args, kwargs = mock_engine.call_args
-            self.assertEqual(args[0], "test_model")
-            self.assertEqual(kwargs.get("primary_language"), "auto")
-            self.assertEqual(kwargs.get("language_voices"), {})
-            self.assertEqual(kwargs.get("verbose"), False)
-            # Coqui may receive gpu flag; ensure bool if present
-            if "gpu" in kwargs:
-                self.assertIn(kwargs["gpu"], (True, False))
-
     def test_create_piper_engine(self):
         """Test creating Piper TTS engine"""
         model_path = Path("test_model.onnx")
@@ -123,7 +106,6 @@ class TestTTSFactory(unittest.TestCase):
         with (
             patch("shutil.which", return_value="/usr/bin/piper"),
             patch("src.tts.factory.is_piper_supported_environment", return_value=True),
-            patch("src.tts.factory.is_coqui_supported_environment", return_value=False),
             patch("src.tts.factory.is_kokoro_supported_environment", return_value=False),
         ):
             engines = self.factory.available_engines()
@@ -490,129 +472,6 @@ class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):
             timeout = engine._calculate_timeout(long_text)
             self.assertGreaterEqual(timeout, 45)
             self.assertLessEqual(timeout, 300)  # Maximum 300s
-
-
-class TestCoquiTTSEngine(unittest.IsolatedAsyncioTestCase):
-    """Test cases for CoquiTTSEngine"""
-
-    def setUp(self):
-        """Set up test fixtures"""
-        sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src", "tts"))
-        self.temp_dir = tempfile.mkdtemp()
-
-    def tearDown(self):
-        """Clean up test fixtures"""
-        import shutil
-
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
-
-    def test_init_success(self):
-        """Test successful CoquiTTSEngine initialization"""
-        with patch("src.tts.coqui_engine.TTS") as mock_tts:
-            from src.tts.coqui_engine import CoquiTTSEngine
-
-            engine = CoquiTTSEngine("test_model")
-
-            self.assertEqual(engine.model_name, "test_model")
-            self.assertIsNone(engine.tts)  # Lazy initialization
-            self.assertEqual(engine._tts_class, mock_tts)
-
-    def test_init_missing_dependency(self):
-        """Test CoquiTTSEngine initialization with missing dependency"""
-        with patch("src.tts.coqui_engine.TTS", side_effect=ImportError("No module")):
-            from src.tts.coqui_engine import CoquiTTSEngine
-
-            with self.assertRaises(ImportError) as context:
-                CoquiTTSEngine("test_model")
-
-            self.assertIn("Coqui TTS not installed", str(context.exception))
-
-    def test_initialize_model(self):
-        """Test lazy model initialization"""
-        with patch("src.tts.coqui_engine.TTS") as mock_tts_class:
-            from src.tts.coqui_engine import CoquiTTSEngine
-
-            mock_tts_instance = Mock()
-            mock_tts_class.return_value = mock_tts_instance
-
-            engine = CoquiTTSEngine("test_model")
-            engine._initialize_model()
-
-            self.assertEqual(engine.tts, mock_tts_instance)
-            mock_tts_class.assert_called_once()
-            args, kwargs = mock_tts_class.call_args
-            self.assertEqual(kwargs.get("model_name"), "test_model")
-            if "gpu" in kwargs:
-                self.assertIn(kwargs["gpu"], (True, False))
-
-    async def test_synthesize_async_success(self):
-        """Test successful text synthesis"""
-        with patch("src.tts.coqui_engine.TTS") as mock_tts_class:
-            from src.tts.coqui_engine import CoquiTTSEngine
-
-            mock_tts_instance = Mock()
-            mock_tts_instance.tts_to_file = Mock()
-            mock_tts_class.return_value = mock_tts_instance
-
-            engine = CoquiTTSEngine("test_model")
-            output_path = Path(self.temp_dir) / "output.wav"
-
-            # Create output file (simulating successful synthesis)
-            output_path.write_text("A" * 2000)
-
-            with patch("asyncio.get_event_loop") as mock_loop:
-                mock_executor = AsyncMock()
-                mock_loop.return_value.run_in_executor = mock_executor
-
-                result = await engine.synthesize_async("Hello world", output_path)
-
-                self.assertEqual(result, output_path)
-                mock_executor.assert_called_once()
-
-    async def test_synthesize_async_empty_text(self):
-        """Test synthesis with empty text"""
-        with patch("src.tts.coqui_engine.TTS"):
-            from src.tts.coqui_engine import CoquiTTSEngine
-
-            engine = CoquiTTSEngine("test_model")
-            output_path = Path(self.temp_dir) / "output.wav"
-
-            result = await engine.synthesize_async("", output_path)
-
-            self.assertIsNone(result)
-
-    def test_coqui_phonemizer_limit_chunks_segments(self):
-        """Ensure Coqui splits long PT text to avoid phonemizer truncation."""
-        from src.tts import coqui_engine
-
-        segments = [("pt", " ".join(["teste"] * 60))]  # ~360 chars
-        expanded = coqui_engine._expand_segments_with_limits(
-            segments, max_chars=500, verbose=False, phonemizer_limit_fn=lambda lang: 200
-        )
-
-        self.assertGreater(len(expanded), 1)
-        self.assertTrue(all(len(text) <= 200 for _, text in expanded))
-
-    async def test_synthesize_async_exception(self):
-        """Test synthesis with exception"""
-        with patch("src.tts.coqui_engine.TTS") as mock_tts_class:
-            from src.tts.coqui_engine import CoquiTTSEngine
-
-            mock_tts_instance = Mock()
-            mock_tts_instance.tts_to_file.side_effect = Exception("Test error")
-            mock_tts_class.return_value = mock_tts_instance
-
-            engine = CoquiTTSEngine("test_model")
-            output_path = Path(self.temp_dir) / "output.wav"
-
-            with patch("asyncio.get_event_loop") as mock_loop:
-                mock_executor = AsyncMock()
-                mock_executor.side_effect = Exception("Test error")
-                mock_loop.return_value.run_in_executor = mock_executor
-
-                result = await engine.synthesize_async("Hello world", output_path)
-
-                self.assertIsNone(result)
 
 
 class TestPiperTTSEngine(unittest.IsolatedAsyncioTestCase):

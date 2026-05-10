@@ -42,7 +42,6 @@ class CacheManager:
     # Directories that should not be deleted by a global cleanup (models, telemetry, etc.)
     _PROTECTED_DIRS = {
         "telemetry",
-        "coqui_models",
         "piper_models",
         "models",
         "hf_models",

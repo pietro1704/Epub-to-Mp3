@@ -671,14 +671,6 @@ class HardwareDetector:
             )
             _set_env_max("JOB_WORKERS", desired_workers)
 
-        coqui_workers = max(2, min(8, profile.cpu_physical or profile.cpu_count or 2))
-        if turbo_mode:
-            cpu_base = profile.cpu_physical or profile.cpu_count or 2
-            coqui_workers = max(coqui_workers, min(12, cpu_base * 2))
-        elif profile.performance_tier in ("high", "ultra"):
-            coqui_workers = max(coqui_workers, 4)
-        os.environ["COQUI_MAX_WORKERS"] = str(coqui_workers)
-
         piper_procs = max(1, min(6, max(2, (profile.cpu_physical or 1) // 2)))
         if profile.performance_tier in ("high", "ultra"):
             piper_procs = max(piper_procs, 3)

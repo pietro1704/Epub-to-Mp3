@@ -2669,10 +2669,6 @@ select {
   --engine-bg: #d1fae5;
   --engine-color: #065f46;
 }
-.engine-badge--coqui {
-  --engine-bg: #fef3c7;
-  --engine-color: #92400e;
-}
 @media (prefers-color-scheme: dark) {
   .engine-badge--edge {
     --engine-bg: #1e3a5f;
@@ -2685,10 +2681,6 @@ select {
   .engine-badge--piper {
     --engine-bg: #064e3b;
     --engine-color: #6ee7b7;
-  }
-  .engine-badge--coqui {
-    --engine-bg: #78350f;
-    --engine-color: #fcd34d;
   }
 }
 

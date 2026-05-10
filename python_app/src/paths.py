@@ -183,7 +183,7 @@ def _resolve_cache_dir() -> Path:
 # Directories rooted at the project root (with shared overrides)
 CACHE_DIR = _resolve_cache_dir()  # Temporary per-book data only
 OUTPUT_DIR = _resolve_output_dir()
-MODELS_DIR = PROJECT_ROOT / "models"  # TTS models (Piper, Coqui, etc.)
+MODELS_DIR = PROJECT_ROOT / "models"  # TTS models (Piper, Kokoro, etc.)
 JOBS_DIR = PERSISTENT_ROOT / ".jobs"
 UPLOADS_DIR = PERSISTENT_ROOT / ".uploads"
 JOB_INPUTS_DIR = PERSISTENT_ROOT / ".job_inputs"
@@ -199,13 +199,10 @@ JOB_INPUTS_DIR.mkdir(exist_ok=True, parents=True)
 SOURCE_BACKUPS_DIR.mkdir(exist_ok=True, parents=True)
 
 # Subdirectories for specific model types (inside root/models)
-COQUI_MODELS_DIR = MODELS_DIR / "coqui"
 PIPER_MODELS_DIR = MODELS_DIR / "piper"
-COQUI_MODELS_DIR.mkdir(exist_ok=True, parents=True)
 PIPER_MODELS_DIR.mkdir(exist_ok=True, parents=True)
 
 # Compat: aliases expected by tests/legacy code
-COQUI_CACHE_DIR = COQUI_MODELS_DIR
 PIPER_MODEL_CACHE_DIR = PIPER_MODELS_DIR
 
 # Telemetry lives in .cache (temporary data)
@@ -217,12 +214,7 @@ LOGS_DIR = PERSISTENT_ROOT / ".logs"
 LOGS_DIR.mkdir(exist_ok=True, parents=True)
 
 # Point external libraries to the project-root model directory
-os.environ.setdefault("TTS_HOME", str(COQUI_MODELS_DIR))
-os.environ.setdefault("COQUI_TTS_CACHE_DIR", str(COQUI_MODELS_DIR))
 os.environ.setdefault("PIPER_MODEL_DIR", str(PIPER_MODELS_DIR))
-
-# Auto-accept Coqui TTS license (CPML non-commercial)
-os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
 
 def get_cache_path(*parts: str) -> Path:

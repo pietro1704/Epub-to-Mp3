@@ -62,13 +62,6 @@ const DEFAULT_VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
     { name: "pt_BR-faber-medium.onnx", multilingual: false },
     { name: "en_US-lessac-medium.onnx", multilingual: false },
   ],
-  coqui: [
-    {
-      name: "tts_models/multilingual/multi-dataset/xtts_v2",
-      multilingual: true,
-    },
-    { name: "tts_models/pt/cv/vits", multilingual: false },
-  ],
   kokoro: [
     {
       name: "af_heart",
@@ -94,7 +87,7 @@ const DEFAULT_VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
   ],
 };
 
-type KnownEngine = "edge" | "piper" | "coqui" | "kokoro";
+type KnownEngine = "edge" | "piper" | "kokoro";
 
 interface EngineInsights {
   defaultVoice: string;
@@ -115,12 +108,6 @@ const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
     multiLingual: false,
     autoLanguage: false,
     languages: ["pt", "en"],
-  },
-  coqui: {
-    defaultVoice: "tts_models/multilingual/multi-dataset/xtts_v2",
-    multiLingual: true,
-    autoLanguage: false,
-    languages: ["pt", "en", "es", "fr", "de"],
   },
   kokoro: {
     defaultVoice: "af_heart",
@@ -307,9 +294,6 @@ export default function ConversionForm({
   const [edgeAutoTune, setEdgeAutoTune] = useState(true);
   const [edgeStableMode, setEdgeStableMode] = useState(false);
   const [engineChainFallback, setEngineChainFallback] = useState(false);
-  const [coquiChunkChars, setCoquiChunkChars] = useState("");
-  const [coquiMaxWorkers, setCoquiMaxWorkers] = useState("");
-  const [coquiSafeMode, setCoquiSafeMode] = useState(true);
   const [piperMaxProcs, setPiperMaxProcs] = useState("");
   const [bitrate, setBitrate] = useState("8k");
   const [sampleRate, setSampleRate] = useState("16000");
@@ -1015,9 +999,6 @@ export default function ConversionForm({
       edgeAutoTune,
       edgeStableMode,
       engineChainFallback,
-      coquiChunkChars: parseOptionalInt(coquiChunkChars),
-      coquiMaxWorkers: parseOptionalInt(coquiMaxWorkers),
-      coquiSafeMode,
       piperMaxProcs: parseOptionalInt(piperMaxProcs),
       bitrate: bitrate || undefined,
       sampleRate: parseOptionalInt(sampleRate),
@@ -1460,9 +1441,7 @@ export default function ConversionForm({
                       </tr>
                     </thead>
                     <tbody>
-                      {(
-                        ["edge", "kokoro", "coqui", "piper"] as const
-                      ).map((eng) => {
+                      {(["edge", "kokoro", "piper"] as const).map((eng) => {
                         const d = t.form.engineDetails[eng];
                         if (!d) return null;
                         const opt = t.form.engineOptions.find(
@@ -1954,58 +1933,6 @@ export default function ConversionForm({
               <p className="form-hint">{t.form.engineChainFallbackHint}</p>
             </div>
             <div className="form-row">
-              <label htmlFor="coquiChunkChars">
-                {t.form.coquiChunkCharsLabel}
-              </label>
-              <input
-                id="coquiChunkChars"
-                name="coquiChunkChars"
-                type="number"
-                min={800}
-                placeholder={t.form.coquiChunkCharsPlaceholder}
-                value={coquiChunkChars}
-                disabled={isSubmitting}
-                onChange={(event) => setCoquiChunkChars(event.target.value)}
-              />
-              <p className="form-hint">{t.form.coquiChunkCharsHint}</p>
-            </div>
-            <div className="form-row">
-              <label htmlFor="coquiMaxWorkers">
-                {t.form.coquiMaxWorkersLabel}
-              </label>
-              <input
-                id="coquiMaxWorkers"
-                name="coquiMaxWorkers"
-                type="number"
-                min={1}
-                placeholder={t.form.coquiMaxWorkersPlaceholder}
-                value={coquiMaxWorkers}
-                disabled={isSubmitting}
-                onChange={(event) => setCoquiMaxWorkers(event.target.value)}
-              />
-              <p className="form-hint">{t.form.coquiMaxWorkersHint}</p>
-            </div>
-            <div className="form-row">
-              <label htmlFor="coquiSafeModeToggle">
-                {t.form.coquiSafeModeLabel}
-              </label>
-              <label className="form-toggle" htmlFor="coquiSafeModeToggle">
-                <input
-                  id="coquiSafeModeToggle"
-                  type="checkbox"
-                  checked={coquiSafeMode}
-                  disabled={isSubmitting}
-                  onChange={(event) => setCoquiSafeMode(event.target.checked)}
-                />
-                <span>
-                  {coquiSafeMode
-                    ? t.form.coquiSafeModeOn
-                    : t.form.coquiSafeModeOff}
-                </span>
-              </label>
-              <p className="form-hint">{t.form.coquiSafeModeHint}</p>
-            </div>
-            <div className="form-row">
               <label htmlFor="piperMaxProcs">{t.form.piperMaxProcsLabel}</label>
               <input
                 id="piperMaxProcs"
@@ -2466,7 +2393,7 @@ export default function ConversionForm({
           </p>
           {engineEstimates && Object.keys(engineEstimates).length > 1 && (
             <div className="form-estimate__comparison">
-              {(["edge", "kokoro", "coqui", "piper"] as const)
+              {(["edge", "kokoro", "piper"] as const)
                 .filter((eng) => engineEstimates[eng])
                 .map((eng) => {
                   const est = engineEstimates[eng];

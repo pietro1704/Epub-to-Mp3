@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from ..config import ConversionConfig, VoiceConfigProvider
-from .coqui_guard import is_coqui_supported_environment
 from .kokoro_guard import is_kokoro_supported_environment
 from .piper_guard import is_piper_supported_environment
 
@@ -80,11 +79,7 @@ class TTSFactory:
         """Return list of available TTS engines."""
         engines = ["edge"]  # Edge is always available (cloud-based)
 
-        # Check Coqui TTS
         import importlib.util
-
-        if is_coqui_supported_environment() and importlib.util.find_spec("TTS") is not None:
-            engines.append("coqui")
 
         # Check Piper (needs to be in venv or PATH AND have models)
         import shutil
@@ -120,7 +115,6 @@ class TTSFactory:
         #   * edge   — dialogue splitter (v0.3.7).
         #   * piper  — two ONNX model paths (v0.3.18).
         #   * kokoro — two voice IDs (v0.3.20).
-        #   * coqui — single voice only.
         # When the user configured a narrator/character split but picked
         # an engine that won't honour it, surface a clear warning so the
         # config isn't silently dropped.
@@ -185,31 +179,6 @@ class TTSFactory:
                 enable_character_voices=enable_character_voices,
                 narrator_voice=narrator_voice,
                 character_voice=character_voice,
-            )
-
-        if engine == "coqui":
-            coqui_supported = is_coqui_supported_environment()
-            if not coqui_supported and not _is_testing_environment():
-                raise RuntimeError(
-                    "Coqui TTS unavailable on this system (NumPy/Accelerate incompatible). "
-                    "Set ENABLE_COQUI_TTS=1 to force usage at your own risk."
-                )
-            from .coqui_engine import CoquiTTSEngine
-
-            voice = config.voice or self.voice_provider.get_voice("coqui", config.primary_language)
-            if not voice:
-                voice = "tts_models/multilingual/multi-dataset/xtts_v2"  # Default model (Multilingual XTTS)
-            return CoquiTTSEngine(
-                voice,
-                primary_language=config.primary_language,
-                language_voices=config.language_voices,
-                verbose=config.verbose,
-                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
-                formatting_locale=getattr(config, "formatting_locale", "pt"),
-                status_callback=config.log_callback,  # Reusa log_callback para status do modelo
-                chunk_char_limit=getattr(config, "coqui_chunk_chars", None),
-                max_workers=getattr(config, "coqui_max_workers", None),
-                safe_mode=getattr(config, "coqui_safe_mode", None),
             )
 
         if engine == "piper":

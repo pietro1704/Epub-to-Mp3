@@ -26,7 +26,7 @@ def hash_text(value: str) -> str:
 def compute_cache_model_bucket(config: ConversionConfig) -> Optional[str]:
     """Return a filesystem-safe bucket name identifying (engine, voice/model).
 
-    Used by the audio/text cache so Edge, Kokoro, Piper, and Coqui outputs
+    Used by the audio/text cache so Edge, Kokoro, and Piper outputs
     coexist under the same book cache directory without clobbering each
     other. ``None`` is returned when engine+voice produce no identifying
     signal.
@@ -39,11 +39,6 @@ def compute_cache_model_bucket(config: ConversionConfig) -> Optional[str]:
 
     if engine == "piper" and model_path:
         parts.append(Path(model_path).stem)
-    elif engine == "coqui":
-        if voice:
-            parts.append(str(voice))
-        elif model_path:
-            parts.append(Path(model_path).stem)
     else:
         if voice:
             parts.append(str(voice))

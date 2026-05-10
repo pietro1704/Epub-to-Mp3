@@ -70,9 +70,6 @@ class ConversionConfig:
     edge_max_concurrency: int = 12  # Aggressive: saturate network with parallel requests
     prefer_monolingual_edge: Optional[bool] = None  # Signals when to prefer mono voices
     auto_prefer_piper: bool = False  # Auto-mode hint: Piper was benchmarked faster
-    coqui_chunk_chars: Optional[int] = None  # override Coqui chunk size when auto-tuning
-    coqui_max_workers: Optional[int] = None  # override Coqui worker pool size
-    coqui_safe_mode: Optional[bool] = None  # force safe mode for Coqui (limits parallelism)
     piper_max_procs: Optional[int] = None  # override Piper concurrent process limit
     piper_chunk_chars: Optional[int] = None  # override Piper chunk size when auto-tuning
     engine_chain_fallback: Optional[bool] = (
@@ -147,9 +144,6 @@ class ConversionConfig:
             "edge_max_concurrency": self.edge_max_concurrency,
             "prefer_monolingual_edge": self.prefer_monolingual_edge,
             "auto_prefer_piper": self.auto_prefer_piper,
-            "coqui_chunk_chars": self.coqui_chunk_chars,
-            "coqui_max_workers": self.coqui_max_workers,
-            "coqui_safe_mode": self.coqui_safe_mode,
             "piper_max_procs": self.piper_max_procs,
             "piper_chunk_chars": self.piper_chunk_chars,
         }
@@ -299,38 +293,6 @@ class VoiceConfigProvider:
         self._edge_voice_metadata = {
             str(entry["id"]): dict(entry) for entry in self._edge_voice_catalog if entry.get("id")
         }
-        self._coqui_model_catalog: List[Dict[str, object]] = [
-            {
-                "id": "tts_models/multilingual/multi-dataset/xtts_v2",
-                "label": "XTTS v2",
-                "description": "Universal multilingual model",
-                "multilingual": True,
-                "low_resource": False,
-            },
-            {
-                "id": "tts_models/pt/cv/vits",
-                "label": "VITS pt-BR",
-                "description": "Model optimized for Portuguese",
-                "multilingual": False,
-                "low_resource": True,
-            },
-            {
-                "id": "tts_models/multilingual/multi-dataset/xtts_v1",
-                "label": "XTTS v1",
-                "description": "Model compatible with older GPU",
-                "multilingual": True,
-                "low_resource": False,
-            },
-        ]
-        self._coqui_models = {
-            str(index): (
-                entry["id"],
-                entry["label"],
-                entry.get("description", ""),
-                bool(entry.get("low_resource")),
-            )
-            for index, entry in enumerate(self._coqui_model_catalog, start=1)
-        }
         self._edge_language_map = {
             "pt": "pt-BR-ThalitaMultilingualNeural",
             "en": "en-US-JennyNeural",
@@ -338,15 +300,6 @@ class VoiceConfigProvider:
             "fr": "fr-FR-DeniseNeural",
             "de": "de-DE-ConradNeural",
             "it": "it-IT-IsabellaNeural",
-        }
-        self._coqui_default_voice = "tts_models/multilingual/multi-dataset/xtts_v2"
-        self._coqui_language_map = {
-            "pt": self._coqui_default_voice,
-            "en": self._coqui_default_voice,
-            "es": self._coqui_default_voice,
-            "fr": self._coqui_default_voice,
-            "de": self._coqui_default_voice,
-            "it": self._coqui_default_voice,
         }
         self._piper_language_map = {
             "pt": "pt_BR",
@@ -466,27 +419,11 @@ class VoiceConfigProvider:
                 "multilingual": True,
                 "language": "pt-BR",
             },
-            {
-                "id": "tts_models/pt/cv/vits",
-                "label": "Coqui VITS (auto)",
-                "multilingual": False,
-                "language": "pt-BR",
-            },
-            {
-                "id": "tts_models/multilingual/multi-dataset/xtts_v2",
-                "label": "XTTS v2 (auto)",
-                "multilingual": True,
-                "language": "multi",
-            },
         ]
 
     @property
     def edge_voices(self) -> Dict[str, tuple[str, str]]:
         return dict(self._edge_voices)
-
-    @property
-    def coqui_models(self) -> Dict[str, tuple[str, str, str, bool]]:
-        return dict(self._coqui_models)
 
     def get_voice_suggestions(self) -> Dict[str, List[Dict[str, object]]]:
         """
@@ -517,7 +454,6 @@ class VoiceConfigProvider:
 
         return {
             "edge": clone(self._edge_voice_catalog),
-            "coqui": clone(self._coqui_model_catalog),
             "kokoro": clone(self._kokoro_voice_catalog),
             "piper": piper_entries,
             "auto": clone(self._auto_voice_catalog),
@@ -591,18 +527,9 @@ class VoiceConfigProvider:
             # Prefer multilingual voices for requested language; fallback to catalog first
             pick = _pick_multilingual(entries, language)
             return pick or self._edge_voices.get("1", (None,))[0]
-        if engine == "coqui":
-            code = (primary_language or "").split("-", 1)[0].lower()
-            if code == "pt":
-                return self._coqui_language_map.get("pt", self._coqui_default_voice)
-            return self._coqui_default_voice
         if engine == "auto":
-            # Prefer multilingual Coqui first, then multilingual Edge
-            if language == "pt":
-                return self._coqui_language_map.get("pt", self._edge_voices.get("1", (None,))[0])
-            coqui_pick = self._coqui_default_voice
             edge_pick = _pick_multilingual(self._edge_voice_catalog, language)
-            return coqui_pick or edge_pick or self._edge_voices.get("1", (None,))[0]
+            return edge_pick or self._edge_voices.get("1", (None,))[0]
         if engine == "piper":
             code = (primary_language or "").split("-", 1)[0].lower()
             return self._resolve_piper_model(code)
@@ -690,20 +617,8 @@ class VoiceConfigProvider:
                     voice = fallback_voice
                 if voice:
                     mapping[code] = voice
-            elif engine == "coqui":
-                voice = (
-                    self._coqui_language_map.get(code)
-                    or fallback_voice
-                    or self._coqui_default_voice
-                )
-                if voice:
-                    mapping[code] = voice
             elif engine == "auto":
-                voice = (
-                    self._coqui_language_map.get(code)
-                    or self._edge_language_map.get(code)
-                    or fallback_voice
-                )
+                voice = self._edge_language_map.get(code) or fallback_voice
                 if voice:
                     mapping[code] = voice
             elif engine == "piper":
@@ -830,9 +745,6 @@ class AppConfig:
             "edge_max_concurrency",
             _safe_int(os.getenv("EDGE_MAX_CONCURRENCY"), ConversionConfig.edge_max_concurrency),
         )
-        coqui_chunk_chars = kwargs.pop("coqui_chunk_chars", None)
-        coqui_max_workers = kwargs.pop("coqui_max_workers", None)
-        coqui_safe_mode = kwargs.pop("coqui_safe_mode", None)
         piper_max_procs = kwargs.pop("piper_max_procs", None)
         piper_chunk_chars = kwargs.pop("piper_chunk_chars", None)
 
@@ -917,9 +829,6 @@ class AppConfig:
             edge_auto_tune=edge_auto_tune,
             edge_enable_parallel=edge_enable_parallel,
             edge_max_concurrency=edge_max_concurrency,
-            coqui_chunk_chars=coqui_chunk_chars,
-            coqui_max_workers=coqui_max_workers,
-            coqui_safe_mode=coqui_safe_mode,
             piper_max_procs=piper_max_procs,
             piper_chunk_chars=piper_chunk_chars,
             speak_formatting_cues=speak_formatting_cues,

@@ -11,8 +11,6 @@ def reset_env(monkeypatch):
     for key in (
         "DISABLE_PIPER",
         "ENABLE_PIPER",
-        "DISABLE_COQUI_TTS",
-        "ENABLE_COQUI_TTS",
         "DISABLE_NUMPY_OPTIMIZATIONS",
     ):
         monkeypatch.delenv(key, raising=False)
@@ -48,12 +46,6 @@ def test_numpy_guard_enabled_on_non_macos(monkeypatch):
             "is_piper_supported_environment",
             "ENABLE_PIPER",
             "DISABLE_PIPER",
-        ),
-        (
-            "python_app.src.tts.coqui_guard",
-            "is_coqui_supported_environment",
-            "ENABLE_COQUI_TTS",
-            "DISABLE_COQUI_TTS",
         ),
     ],
 )

@@ -55,10 +55,10 @@ describe("ConversionForm", () => {
         screen.getByRole("button", { name: /converter agora/i }),
       ).toBeEnabled(),
     );
-    await user.selectOptions(screen.getByLabelText(/como quer/i), "coqui");
+    await user.selectOptions(screen.getByLabelText(/como quer/i), "piper");
     await user.selectOptions(
       screen.getByLabelText(/nome da voz/i),
-      "tts_models/pt/cv/vits",
+      "pt_BR-faber-medium.onnx",
     );
     await user.type(screen.getByLabelText(/quais capítulos você quer/i), "1,2");
     await user.selectOptions(screen.getByLabelText(/idioma do áudio/i), "en");
@@ -72,8 +72,8 @@ describe("ConversionForm", () => {
         file: null,
         fileName: "sample.epub",
         uploadId: "test",
-        engine: "coqui",
-        voice: "tts_models/pt/cv/vits",
+        engine: "piper",
+        voice: "pt_BR-faber-medium.onnx",
         chapters: "1,2",
         footnoteMode: "chapter_end",
         language: "en",

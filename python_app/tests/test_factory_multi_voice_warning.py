@@ -45,13 +45,12 @@ class TestMultiVoiceEdgeOnlyWarning(unittest.TestCase):
                 pass
         return buf.getvalue()
 
-    def test_warning_fires_for_coqui_with_split_voices(self):
-        # Coqui is in the unsupported set — multi-voice config is silently
-        # ignored, so the factory must emit the warning. (Piper joined the
-        # supported set in v0.3.18 and Kokoro in v0.3.20; both are covered
-        # by their own tests now.)
+    def test_warning_fires_for_unsupported_engine_with_split_voices(self):
+        # Engines outside the supported set ("edge", "piper", "kokoro") cause
+        # multi-voice configs to be silently ignored, so the factory must
+        # emit the warning.
         cfg = ConversionConfig(
-            engine="coqui",
+            engine="unknown",
             primary_language="en",
             enable_character_voices=True,
             narrator_voice="speaker-A",
@@ -59,7 +58,7 @@ class TestMultiVoiceEdgeOnlyWarning(unittest.TestCase):
         )
         stderr = self._capture_stderr(cfg)
         self.assertIn("Multi-voice narration", stderr)
-        self.assertIn("coqui", stderr)
+        self.assertIn("unknown", stderr)
 
     def test_no_warning_for_kokoro_with_split_voices(self):
         # v0.3.20 wired multi-voice into Kokoro; warning would mislead.
@@ -101,7 +100,7 @@ class TestMultiVoiceEdgeOnlyWarning(unittest.TestCase):
         # Same voice → splitter would be a no-op even on Edge, so the
         # other engines are not "missing" anything.
         cfg = ConversionConfig(
-            engine="coqui",
+            engine="unknown",
             primary_language="en",
             enable_character_voices=True,
             narrator_voice="speaker-A",
@@ -112,7 +111,7 @@ class TestMultiVoiceEdgeOnlyWarning(unittest.TestCase):
 
     def test_no_warning_when_split_disabled(self):
         cfg = ConversionConfig(
-            engine="coqui",
+            engine="unknown",
             primary_language="pt-BR",
             enable_character_voices=False,
             narrator_voice="a",

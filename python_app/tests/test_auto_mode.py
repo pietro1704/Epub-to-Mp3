@@ -7,7 +7,7 @@ def _mock_pool():
     dummy_engine = types.SimpleNamespace(last_error=None)
     pool = {
         "edge": (None, dummy_engine),
-        "coqui": (None, dummy_engine),
+        "kokoro": (None, dummy_engine),
     }
     return pool
 
@@ -19,7 +19,7 @@ def test_pick_auto_engine_long():
     # Edge is always prioritized first (line 1956-1957 in converter.py)
     assert selected == "edge"
     assert order[0] == "edge"
-    assert "coqui" in order
+    assert "kokoro" in order
 
 
 def test_pick_auto_engine_short():
@@ -32,8 +32,8 @@ def test_pick_auto_engine_short():
 
 def test_next_auto_engine():
     converter = AudioConverter()
-    order = ["coqui", "edge"]
-    attempted = {"coqui"}
+    order = ["kokoro", "edge"]
+    attempted = {"kokoro"}
     next_engine = converter._next_auto_engine(order, attempted)
     assert next_engine == "edge"
     attempted.update(order)

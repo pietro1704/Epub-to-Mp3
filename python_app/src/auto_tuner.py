@@ -7,7 +7,6 @@ Automatically configures optimization flags:
 - EDGE_MAX_CONCURRENCY
 - EDGE_CHUNK_CHARS
 - EDGE_SAFE_CHAPTER_PARALLEL
-- COQUI_MAX_WORKERS
 - KOKORO_MAX_WORKERS
 etc.
 """
@@ -36,10 +35,6 @@ class TuningProfile:
     edge_safe_chapter_parallel: int
     edge_max_segment_seconds: float
 
-    # Coqui TTS
-    coqui_max_workers: int
-    coqui_chunk_chars: int
-
     # Kokoro TTS
     kokoro_max_workers: int
     kokoro_chunk_chars: int
@@ -60,8 +55,6 @@ class AutoTuner:
             edge_chunk_chars=4000,
             edge_safe_chapter_parallel=1,
             edge_max_segment_seconds=120.0,
-            coqui_max_workers=1,
-            coqui_chunk_chars=1000,
             kokoro_max_workers=1,
             kokoro_chunk_chars=1500,
             piper_max_workers=2,
@@ -73,8 +66,6 @@ class AutoTuner:
             edge_chunk_chars=8000,
             edge_safe_chapter_parallel=2,
             edge_max_segment_seconds=85.0,
-            coqui_max_workers=2,
-            coqui_chunk_chars=1500,
             kokoro_max_workers=2,
             kokoro_chunk_chars=2000,
             piper_max_workers=4,
@@ -86,8 +77,6 @@ class AutoTuner:
             edge_chunk_chars=10000,
             edge_safe_chapter_parallel=4,
             edge_max_segment_seconds=85.0,
-            coqui_max_workers=3,
-            coqui_chunk_chars=2000,
             kokoro_max_workers=3,
             kokoro_chunk_chars=2500,
             piper_max_workers=6,
@@ -99,8 +88,6 @@ class AutoTuner:
             edge_chunk_chars=12000,
             edge_safe_chapter_parallel=6,
             edge_max_segment_seconds=85.0,
-            coqui_max_workers=4,
-            coqui_chunk_chars=2500,
             kokoro_max_workers=4,
             kokoro_chunk_chars=3000,
             piper_max_workers=8,
@@ -134,8 +121,6 @@ class AutoTuner:
             "edge_chunk_chars",
             "edge_safe_chapter_parallel",
             "edge_max_segment_seconds",
-            "coqui_max_workers",
-            "coqui_chunk_chars",
             "kokoro_max_workers",
             "kokoro_chunk_chars",
             "piper_max_workers",
@@ -150,8 +135,6 @@ class AutoTuner:
                 edge_chunk_chars=int(payload["edge_chunk_chars"]),
                 edge_safe_chapter_parallel=int(payload["edge_safe_chapter_parallel"]),
                 edge_max_segment_seconds=float(payload["edge_max_segment_seconds"]),
-                coqui_max_workers=int(payload["coqui_max_workers"]),
-                coqui_chunk_chars=int(payload["coqui_chunk_chars"]),
                 kokoro_max_workers=int(payload["kokoro_max_workers"]),
                 kokoro_chunk_chars=int(payload["kokoro_chunk_chars"]),
                 piper_max_workers=int(payload["piper_max_workers"]),
@@ -195,8 +178,6 @@ class AutoTuner:
                     "edge_chunk_chars": profile.edge_chunk_chars,
                     "edge_safe_chapter_parallel": profile.edge_safe_chapter_parallel,
                     "edge_max_segment_seconds": profile.edge_max_segment_seconds,
-                    "coqui_max_workers": profile.coqui_max_workers,
-                    "coqui_chunk_chars": profile.coqui_chunk_chars,
                     "kokoro_max_workers": profile.kokoro_max_workers,
                     "kokoro_chunk_chars": profile.kokoro_chunk_chars,
                     "piper_max_workers": profile.piper_max_workers,
@@ -297,11 +278,9 @@ class AutoTuner:
         # Reduce workers if RAM is low
         if hw.ram_available_gb < 4:
             adjusted.edge_safe_chapter_parallel = max(1, adjusted.edge_safe_chapter_parallel // 2)
-            adjusted.coqui_max_workers = max(1, adjusted.coqui_max_workers // 2)
 
         # Increase workers if GPU is available
         if hw.gpu_available and hw.gpu_type == "cuda":
-            adjusted.coqui_max_workers = min(6, adjusted.coqui_max_workers + 1)
             adjusted.kokoro_max_workers = min(6, adjusted.kokoro_max_workers + 1)
 
         # Reduce concurrency for slow networks
@@ -337,10 +316,6 @@ class AutoTuner:
         set_if_not_exists("EDGE_SAFE_CHAPTER_PARALLEL", str(profile.edge_safe_chapter_parallel))
         set_if_not_exists("EDGE_MAX_SEGMENT_SECONDS", str(profile.edge_max_segment_seconds))
 
-        # Coqui TTS
-        set_if_not_exists("COQUI_MAX_WORKERS", str(profile.coqui_max_workers))
-        set_if_not_exists("COQUI_CHUNK_CHARS", str(profile.coqui_chunk_chars))
-
         # Kokoro TTS
         set_if_not_exists("KOKORO_MAX_WORKERS", str(profile.kokoro_max_workers))
         set_if_not_exists("KOKORO_CHUNK_CHARS", str(profile.kokoro_chunk_chars))
@@ -366,9 +341,6 @@ class AutoTuner:
         print(f"  EDGE_CHUNK_CHARS: {profile.edge_chunk_chars}")
         print(f"  EDGE_SAFE_CHAPTER_PARALLEL: {profile.edge_safe_chapter_parallel}")
         print(f"  EDGE_MAX_SEGMENT_SECONDS: {profile.edge_max_segment_seconds}")
-        print("\nCoqui TTS:")
-        print(f"  COQUI_MAX_WORKERS: {profile.coqui_max_workers}")
-        print(f"  COQUI_CHUNK_CHARS: {profile.coqui_chunk_chars}")
         print("\nKokoro TTS:")
         print(f"  KOKORO_MAX_WORKERS: {profile.kokoro_max_workers}")
         print(f"  KOKORO_CHUNK_CHARS: {profile.kokoro_chunk_chars}")

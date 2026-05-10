@@ -82,7 +82,6 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 - **Intentional Portuguese** (do not translate):
   - Regex patterns matching Portuguese TTS artifacts spoken aloud (`transcription_verifier.py`)
   - Portuguese book-structure keywords used for detection: `capítulo`, `prefácio`, `sumário`, `posfácio`, `dedicatória`, `introdução`, `seção`, `página` (`main.py`, `ebook_reader.py`)
-  - Portuguese number words in Coqui pronunciation table: `três`, `três quartos` (`coqui_engine.py`)
   - PT-BR locale TTS verbal cues in `CUE_LABELS["pt"]`: `em itálico`, `em negrito`, etc. (`text_formatting.py`)
   - Portuguese sample text in language-detection test fixtures (`test_ambiguous_languages.py`, `test_new_features.py`, `test_benchmark_engines.py`)
 
@@ -132,7 +131,6 @@ Rules:
 - **Add tests for every new feature AND every bug fix**
 - Critical paths need both unit tests AND integration tests
 - Test edge cases: empty chapters, oversized chapters, engine failures
-- The 2 skipped tests are Coqui GPU tests — acceptable
 
 Before committing:
 ```bash
@@ -291,8 +289,7 @@ src/
 └── tts/
     ├── edge_engine.py  Edge-TTS (cloud, 12K chunks, rate-limit backoff)
     ├── kokoro_engine.py Kokoro (82M params, EN/JA/ZH, needs espeak-ng)
-    ├── piper_engine.py  Piper ONNX (all languages, subprocess-based)
-    └── coqui_engine.py  Coqui XTTS (GPU recommended)
+    └── piper_engine.py  Piper ONNX (all languages, subprocess-based)
 ```
 
 ### Frontend (`web/src/`)
@@ -374,7 +371,7 @@ ENGINE_CHAIN_FALLBACK=0          # Default off: stay on Edge (multi → mono) an
 FALLBACK_ENGINE_OVERRIDE=auto    # Operator-level fallback constraint, read by
                                  # both the CLI (secondary to --fallback-engine)
                                  # and server's _build_engine_chain. Values:
-                                 # auto|none|piper|kokoro|coqui.
+                                 # auto|none|piper|kokoro.
                                  # "none" strips all offline fallbacks; a specific
                                  # engine filters the chain to that tier only.
 ```

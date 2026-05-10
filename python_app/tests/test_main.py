@@ -369,9 +369,6 @@ class TestConverterApplication(unittest.TestCase):
             edge_max_segment_seconds=None,
             edge_enable_parallel=None,
             edge_auto_tune=None,
-            coqui_chunk_chars=None,
-            coqui_max_workers=None,
-            coqui_safe_mode=None,
             piper_max_procs=None,
             edge_stable_mode=None,
             bitrate=None,
@@ -422,9 +419,6 @@ class TestConverterApplication(unittest.TestCase):
             edge_max_segment_seconds=None,
             edge_enable_parallel=None,
             edge_auto_tune=None,
-            coqui_chunk_chars=None,
-            coqui_max_workers=None,
-            coqui_safe_mode=None,
             piper_max_procs=None,
             edge_stable_mode=None,
             bitrate=None,
@@ -824,7 +818,7 @@ class TestArgumentParser(unittest.TestCase):
         parser = create_argument_parser()
 
         # Valid engines
-        for engine in ["edge", "coqui", "piper", "kokoro"]:
+        for engine in ["edge", "piper", "kokoro"]:
             args = parser.parse_args(["convert", "test.epub", "--engine", engine])
             self.assertEqual(args.engine, engine)
 
@@ -915,7 +909,7 @@ class TestClearCacheFlag(unittest.TestCase):
 
         converter = AudioConverter()
         config = ConversionConfig(
-            engine="coqui",
+            engine="piper",
             output_dir=self.temp_dir,
             book_title="My_Test_Book",
         )

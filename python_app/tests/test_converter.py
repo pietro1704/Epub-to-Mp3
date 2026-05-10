@@ -607,8 +607,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertIn("chapter", stats.get("offline_reason", ""))
 
     @patch("src.converter._has_piper_support", return_value=True)
-    @patch("src.converter._has_coqui_support", return_value=False)
-    def test_apply_chapter_engine_preferences_auto(self, mock_coqui, mock_piper):
+    def test_apply_chapter_engine_preferences_auto(self, mock_piper):
         """Auto mode should not preemptively switch away from Edge first-attempt flow."""
         config = ConversionConfig(engine="auto", output_dir=self.temp_dir)
         stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
@@ -617,27 +616,16 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(config.engine, "auto")
 
     @patch("src.converter._has_piper_support", return_value=True)
-    @patch("src.converter._has_coqui_support", return_value=False)
-    def test_apply_chapter_engine_preferences_switches_edge(self, mock_coqui, mock_piper):
+    def test_apply_chapter_engine_preferences_switches_edge(self, mock_piper):
         """Explicit Edge engine should remain unchanged until a real failure happens."""
         config = ConversionConfig(engine="edge", output_dir=self.temp_dir)
         stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
         self.converter._apply_chapter_engine_preferences(config, stats)
         self.assertEqual(config.engine, "edge")
 
-    @patch("src.converter._has_piper_support", return_value=False)
-    @patch("src.converter._has_coqui_support", return_value=True)
-    def test_apply_chapter_engine_preferences_coqui_fallback(self, mock_coqui, mock_piper):
-        """Offline recommendation should remain advisory before any runtime failure."""
-        config = ConversionConfig(engine="edge", output_dir=self.temp_dir)
-        stats = {"prefer_offline_engine": True, "offline_reason": "long chapter"}
-        self.converter._apply_chapter_engine_preferences(config, stats)
-        self.assertEqual(config.engine, "edge")
-
     @patch("src.converter._has_piper_support", return_value=True)
-    @patch("src.converter._has_coqui_support", return_value=True)
-    def test_resolve_offline_fallback_prefers_piper(self, mock_coqui, mock_piper):
-        choice = self.converter._resolve_offline_fallback_engine({"edge", "piper", "coqui"})
+    def test_resolve_offline_fallback_prefers_piper(self, mock_piper):
+        choice = self.converter._resolve_offline_fallback_engine({"edge", "piper"})
         self.assertEqual(choice, "piper")
 
     def test_should_preempt_edge_timeout_for_long_chapter(self):
@@ -1848,7 +1836,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 return output_path
 
         edge_engine = RecordingEngine("edge")
-        coqui_engine = RecordingEngine("coqui")
+        kokoro_engine = RecordingEngine("kokoro")
         output_dir = Path(self.temp_dir)
 
         async def fake_convert_to_mp3(input_file, output_file, bitrate="8k"):
@@ -1874,8 +1862,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             validate_text=False,
             book_title="Auto Book",
         )
-        coqui_cfg = ConversionConfig(
-            engine="coqui",
+        kokoro_cfg = ConversionConfig(
+            engine="kokoro",
             output_dir=str(output_dir),
             validate_audio=False,
             validate_text=False,
@@ -1884,7 +1872,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
 
         auto_pool = {
             "edge": (edge_cfg, edge_engine),
-            "coqui": (coqui_cfg, coqui_engine),
+            "kokoro": (kokoro_cfg, kokoro_engine),
         }
 
         class DummyPool:
@@ -1907,8 +1895,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             self.converter,
             "_pick_auto_engine",
             side_effect=[
-                ("edge", ["edge", "coqui"]),
-                ("coqui", ["coqui", "edge"]),
+                ("edge", ["edge", "kokoro"]),
+                ("kokoro", ["kokoro", "edge"]),
             ],
         ) as mock_pick:
             with patch.object(self.converter, "_detect_short_audio_output", return_value=None):
@@ -1925,7 +1913,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.converted_chapters, 2)
         self.assertEqual(mock_pick.call_count, 2)
         self.assertEqual(edge_engine.calls, 1)
-        self.assertEqual(coqui_engine.calls, 1)
+        self.assertEqual(kokoro_engine.calls, 1)
 
     async def test_auto_mode_skips_edge_when_chapter_marked_with_connectivity_failure(self):
         """If chapter is marked as Edge-connectivity-failed, auto mode must not call Edge again."""
@@ -1945,7 +1933,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
                 return output_path
 
         edge_engine = RecordingEngine("edge")
-        coqui_engine = RecordingEngine("coqui")
+        kokoro_engine = RecordingEngine("kokoro")
         output_dir = Path(self.temp_dir)
 
         async def fake_convert_to_mp3(input_file, output_file, bitrate="8k"):
@@ -1972,8 +1960,8 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
             validate_text=False,
             book_title="Auto Retry Book",
         )
-        coqui_cfg = ConversionConfig(
-            engine="coqui",
+        kokoro_cfg = ConversionConfig(
+            engine="kokoro",
             output_dir=str(output_dir),
             validate_audio=False,
             validate_text=False,
@@ -1981,7 +1969,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         )
         auto_pool = {
             "edge": (edge_cfg, edge_engine),
-            "coqui": (coqui_cfg, coqui_engine),
+            "kokoro": (kokoro_cfg, kokoro_engine),
         }
 
         class DummyPool:
@@ -2003,7 +1991,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             self.converter,
             "_pick_auto_engine",
-            return_value=("edge", ["edge", "coqui"]),
+            return_value=("edge", ["edge", "kokoro"]),
         ):
             with patch.object(self.converter, "_detect_short_audio_output", return_value=None):
                 result = await self.converter._convert_chapters_sequential(
@@ -2018,7 +2006,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.success)
         self.assertEqual(result.converted_chapters, 1)
         self.assertEqual(edge_engine.calls, 0, "Edge must be skipped for blocked chapter")
-        self.assertEqual(coqui_engine.calls, 1)
+        self.assertEqual(kokoro_engine.calls, 1)
 
     async def test_auto_mode_parallel_forwards_pool_per_chapter(self):
         """Parallel mode should invoke sequential worker with auto engine context."""
@@ -2029,7 +2017,7 @@ class TestAudioConverter(unittest.IsolatedAsyncioTestCase):
         output_dir = Path(self.temp_dir)
         auto_pool = {
             "edge": (ConversionConfig(engine="edge", output_dir=str(output_dir)), object()),
-            "coqui": (ConversionConfig(engine="coqui", output_dir=str(output_dir)), object()),
+            "kokoro": (ConversionConfig(engine="kokoro", output_dir=str(output_dir)), object()),
         }
         config = ConversionConfig(
             engine="auto",
@@ -2904,7 +2892,7 @@ class TestAutoEngineCandidates(unittest.TestCase):
             order = converter._auto_engine_candidates(config)
 
         self.assertNotIn("piper", order)
-        self.assertNotIn("coqui", order)
+        self.assertNotIn("kokoro", order)
 
     def test_prefers_piper_when_supported(self):
         converter = self._make_converter()

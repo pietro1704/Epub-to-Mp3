@@ -96,7 +96,6 @@ def apply_env_overrides(
     if "edge_enable_parallel" in engine_profile:
         value = "true" if bool(engine_profile.get("edge_enable_parallel")) else "false"
         _set_env("EDGE_ENABLE_PARALLEL", value, force=force)
-    _set_env("COQUI_MAX_WORKERS", engine_profile.get("coqui_max_workers"), force=force)
     _set_env("PIPER_MAX_PROCS", engine_profile.get("piper_max_procs"), force=force)
 
     if apply_chapter_parallel:
@@ -116,9 +115,6 @@ def apply_global_overrides(
     edge_profile = resolve_engine_profile(profile, "edge")
     if edge_profile:
         apply_env_overrides(edge_profile, force=force, apply_chapter_parallel=True)
-    coqui_profile = resolve_engine_profile(profile, "coqui")
-    if coqui_profile:
-        apply_env_overrides(coqui_profile, force=force, apply_chapter_parallel=False)
     piper_profile = resolve_engine_profile(profile, "piper")
     if piper_profile:
         apply_env_overrides(piper_profile, force=force, apply_chapter_parallel=False)

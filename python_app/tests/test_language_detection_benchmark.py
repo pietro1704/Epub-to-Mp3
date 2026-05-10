@@ -3,7 +3,7 @@
 Benchmark: Language Detection + Specific Engines vs Multilingual Engines
 
 This test compares two approaches:
-1. Multilingual engines (Edge, Coqui XTTS) - use one engine for all languages
+1. Multilingual engines (Edge) - use one engine for all languages
 2. Language detection + specific engines (Piper, Kokoro) - detect language per sentence and route to the best engine for that language
 
 Hypothesis: Language-specific engines may be faster and/or higher quality for their target languages.
@@ -57,7 +57,6 @@ ENGINE_LANGUAGE_SUPPORT = {
     "piper": {"pt", "en"},  # Has good models for PT and EN
     "kokoro": {"en", "ja", "zh"},  # Supports EN, JA, ZH (82M model)
     "edge": {"pt", "en", "es", "ja", "zh", "fr", "de", "it"},  # Cloud, all languages
-    "coqui": {"pt", "en", "es", "ja", "zh", "fr", "de", "it"},  # XTTS multilingual
 }
 
 # Best voice for each language per engine
@@ -113,7 +112,7 @@ def select_best_engine_for_language(lang: str, available_engines: List[str]) -> 
     Priority: Fast local engines > Slow local > Cloud
     """
     # Priority order for language-specific routing
-    priority_order = ["kokoro", "piper", "edge", "coqui"]
+    priority_order = ["kokoro", "piper", "edge"]
 
     for engine in priority_order:
         if engine not in available_engines:
@@ -483,14 +482,6 @@ async def main():
         print("✅ Kokoro: Available (82M local)")
     else:
         print("❌ Kokoro: Not installed")
-
-    # Check Coqui
-    if importlib.util.find_spec("TTS.api") is not None:
-        # Don't add Coqui by default - it's very slow
-        # available_engines.append("coqui")
-        print("⚠️ Coqui: Available but skipped (very slow)")
-    else:
-        print("❌ Coqui: Not installed")
 
     print(f"\n🔧 Testing with engines: {available_engines}")
 

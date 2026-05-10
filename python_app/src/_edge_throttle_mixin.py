@@ -217,15 +217,6 @@ class _EdgeThrottleMixin:
             params["edge_max_segment_seconds"] = int(
                 getattr(cfg, "edge_max_segment_seconds", 85) or 85
             )
-        elif engine_name == "coqui":
-            params["coqui_chunk_chars"] = int(
-                getattr(cfg, "coqui_chunk_chars", 1500)
-                or os.getenv("COQUI_CHUNK_CHARS", "1500")
-                or 1500
-            )
-            params["coqui_max_workers"] = int(
-                getattr(cfg, "coqui_max_workers", 0) or os.getenv("COQUI_MAX_WORKERS", "2") or 2
-            )
         elif engine_name == "piper":
             params["piper_max_procs"] = int(
                 getattr(cfg, "piper_max_procs", 0) or os.getenv("PIPER_MAX_PROCS", "2") or 2
@@ -344,29 +335,6 @@ class _EdgeThrottleMixin:
                         chunk_char_limit=max(4000, int(chunk_chars)),
                         max_segment_seconds=max(30.0, float(max_segment_seconds)),
                     )
-            changed = True
-        elif engine_name == "coqui":
-            chunk_chars = int(
-                params.get(
-                    "coqui_chunk_chars",
-                    getattr(cfg, "coqui_chunk_chars", 1500)
-                    or os.getenv("COQUI_CHUNK_CHARS", "1500"),
-                )
-            )
-            max_workers = int(
-                params.get(
-                    "coqui_max_workers",
-                    getattr(cfg, "coqui_max_workers", 0) or os.getenv("COQUI_MAX_WORKERS", "2"),
-                )
-            )
-            if cfg is not None:
-                cfg.coqui_chunk_chars = chunk_chars
-                cfg.coqui_max_workers = max_workers
-            os.environ["COQUI_CHUNK_CHARS"] = str(chunk_chars)
-            os.environ["COQUI_MAX_WORKERS"] = str(max_workers)
-            if engine_obj is not None:
-                with contextlib.suppress(Exception):
-                    setattr(engine_obj, "_chunk_char_limit", chunk_chars)
             changed = True
         elif engine_name == "piper":
             max_procs = int(
@@ -638,19 +606,6 @@ class _EdgeThrottleMixin:
                 tuned = True
                 if self.verbose:
                     print(f"⚙️ Piper adaptive workers: {workers} → {new_workers} (seg ok)")
-        elif engine == "coqui":
-            chunk_chars = int(os.getenv("COQUI_CHUNK_CHARS", "1500") or "1500")
-            new_chunk = chunk_chars
-            if avg_cps > 120 and snapshot.cpu_percent < 88:
-                new_chunk = min(4000, chunk_chars + 200)
-            elif avg_cps < 70 or snapshot.cpu_percent > 95:
-                new_chunk = max(900, chunk_chars - 200)
-            if new_chunk != chunk_chars:
-                os.environ["COQUI_CHUNK_CHARS"] = str(new_chunk)
-                config.coqui_chunk_chars = new_chunk
-                tuned = True
-                if self.verbose:
-                    print(f"⚙️ Coqui adaptive chunk: {chunk_chars} → {new_chunk} (seg ok)")
         elif engine == "edge":
             edge_chunk = int(os.getenv("EDGE_CHUNK_CHARS", "12000") or "12000")
             new_chunk = edge_chunk
@@ -779,15 +734,6 @@ class _EdgeThrottleMixin:
                     setattr(engine_obj, "_chunk_char_limit", chunk_chars)
                 with contextlib.suppress(Exception):
                     setattr(engine_obj, "_semaphore", asyncio.Semaphore(max(1, workers)))
-        elif engine == "coqui":
-            chunk_chars = int(os.getenv("COQUI_CHUNK_CHARS", "1500") or "1500")
-            if snapshot.cpu_percent > 95:
-                chunk_chars = max(900, chunk_chars - 200)
-            elif snapshot.cpu_percent < 75 and segment_chars > 6000:
-                chunk_chars = min(4000, chunk_chars + 150)
-            os.environ["COQUI_CHUNK_CHARS"] = str(chunk_chars)
-            if config is not None:
-                config.coqui_chunk_chars = chunk_chars
 
     def _resource_snapshot(self) -> ResourceSnapshot:
         """Return a best-effort resource snapshot for tuning."""

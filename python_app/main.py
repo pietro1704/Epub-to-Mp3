@@ -56,7 +56,7 @@ from src.text_formatting import PRESERVE_TTS_LAYOUT, TextFormattingProcessor
 from src.ui.menu import MenuInterface
 from src.utils import FileManager, resolve_cache_root
 
-_FALLBACK_ENGINE_CHOICES = {"piper", "kokoro", "coqui", "none"}
+_FALLBACK_ENGINE_CHOICES = {"piper", "kokoro", "none"}
 
 
 def _resolve_cli_fallback_engine(
@@ -630,7 +630,7 @@ class ConverterApplication:
                             print("   ✅ Cache removed")
 
                         # Look for all directories that start with the book title
-                        # (ex: "Book_edge", "Book_piper", "Book_coqui")
+                        # (ex: "Book_edge", "Book_piper")
                         removed_count = 0
                         if output_base.exists():
                             for output_dir in output_base.iterdir():
@@ -3060,8 +3060,6 @@ class ConverterApplication:
             return False
         if engine_name == "edge":
             return "multilingual" in voice_name
-        if engine_name == "coqui":
-            return "xtts" in voice_name or "multi" in voice_name
         if engine_name == "piper":
             return True
         return False
@@ -4414,12 +4412,6 @@ class ConverterApplication:
         edge_max_segment_seconds = self._clamp_int(
             getattr(args, "edge_max_segment_seconds", None), min_value=30, max_value=600
         )
-        coqui_chunk_chars = self._clamp_int(
-            getattr(args, "coqui_chunk_chars", None), min_value=800, max_value=8000
-        )
-        coqui_max_workers = self._clamp_int(
-            getattr(args, "coqui_max_workers", None), min_value=1, max_value=12
-        )
         piper_max_procs = self._clamp_int(
             getattr(args, "piper_max_procs", None), min_value=1, max_value=12
         )
@@ -4441,12 +4433,6 @@ class ConverterApplication:
             overrides["edge_enable_parallel"] = bool(getattr(args, "edge_enable_parallel"))
         if getattr(args, "edge_auto_tune", None) is not None:
             overrides["edge_auto_tune"] = bool(getattr(args, "edge_auto_tune"))
-        if coqui_chunk_chars is not None:
-            overrides["coqui_chunk_chars"] = coqui_chunk_chars
-        if coqui_max_workers is not None:
-            overrides["coqui_max_workers"] = coqui_max_workers
-        if getattr(args, "coqui_safe_mode", None) is not None:
-            overrides["coqui_safe_mode"] = bool(getattr(args, "coqui_safe_mode"))
         if piper_max_procs is not None:
             overrides["piper_max_procs"] = piper_max_procs
         if piper_chunk_chars is not None:
@@ -4577,13 +4563,6 @@ class ConverterApplication:
         )
         edge_parallel_override = getattr(args, "edge_enable_parallel", None)
         edge_auto_tune_override = getattr(args, "edge_auto_tune", None)
-        coqui_chunk_chars = self._clamp_int(
-            getattr(args, "coqui_chunk_chars", None), min_value=800, max_value=8000
-        )
-        coqui_max_workers = self._clamp_int(
-            getattr(args, "coqui_max_workers", None), min_value=1, max_value=12
-        )
-        coqui_safe_mode = getattr(args, "coqui_safe_mode", None)
         piper_max_procs = self._clamp_int(
             getattr(args, "piper_max_procs", None), min_value=1, max_value=12
         )
@@ -4599,12 +4578,6 @@ class ConverterApplication:
             config.edge_enable_parallel = bool(edge_parallel_override)
         if edge_auto_tune_override is not None:
             config.edge_auto_tune = bool(edge_auto_tune_override)
-        if coqui_chunk_chars is not None:
-            config.coqui_chunk_chars = coqui_chunk_chars
-        if coqui_max_workers is not None:
-            config.coqui_max_workers = coqui_max_workers
-        if coqui_safe_mode is not None:
-            config.coqui_safe_mode = bool(coqui_safe_mode)
         if piper_max_procs is not None:
             config.piper_max_procs = piper_max_procs
         if piper_chunk_chars is not None:
@@ -4662,21 +4635,14 @@ class ConverterApplication:
         if max_performance:
             profile = getattr(self.converter, "hardware_profile", None)
             cpu_physical = int(getattr(profile, "cpu_physical", 2) or 2)
-            has_gpu = bool(getattr(profile, "has_gpu", False))
-            ram_total = float(getattr(profile, "ram_total_gb", 0.0) or 0.0)
+            bool(getattr(profile, "has_gpu", False))
+            float(getattr(profile, "ram_total_gb", 0.0) or 0.0)
             if edge_chunk_chars is None:
                 config.edge_chunk_chars = 24000
             if edge_max_segment_seconds is None:
                 config.edge_max_segment_seconds = 300
             if edge_parallel_override is None:
                 config.edge_enable_parallel = True
-            if coqui_chunk_chars is None:
-                config.coqui_chunk_chars = 8000
-            if coqui_max_workers is None:
-                if has_gpu:
-                    config.coqui_max_workers = 3 if ram_total >= 8 else 2
-                else:
-                    config.coqui_max_workers = min(12, max(2, cpu_physical * 2))
             if piper_max_procs is None:
                 config.piper_max_procs = min(6, max(1, cpu_physical))
             if piper_chunk_chars is None and getattr(config, "piper_chunk_chars", None) is None:
@@ -4865,9 +4831,9 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["auto", "edge", "coqui", "piper", "kokoro"],
+        choices=["auto", "edge", "piper", "kokoro"],
         default="edge",
-        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, coqui=neural local, kokoro=fast local",
+        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, kokoro=fast local",
     )
     parser.add_argument(
         "--fallback-engine",
@@ -4926,7 +4892,7 @@ def _add_conversion_arguments(
         ),
     )
     parser.add_argument("--voice", help="Voice to use (engine-specific)")
-    parser.add_argument("--model", help="Model path (for Piper/Coqui)")
+    parser.add_argument("--model", help="Model path (for Piper)")
     parser.add_argument("--output-dir", help="Output directory")
     parser.add_argument(
         "--show-structure",
@@ -5358,33 +5324,6 @@ def _add_conversion_arguments(
         action="store_false",
         default=None,
         help="Disable Edge stable mode overrides",
-    )
-    parser.add_argument(
-        "--coqui-chunk-chars",
-        dest="coqui_chunk_chars",
-        type=int,
-        help="Override Coqui chunk size (chars)",
-    )
-    parser.add_argument(
-        "--coqui-max-workers",
-        dest="coqui_max_workers",
-        type=int,
-        help="Override Coqui worker pool size",
-    )
-    coqui_safe_group = parser.add_mutually_exclusive_group()
-    coqui_safe_group.add_argument(
-        "--coqui-safe-mode",
-        dest="coqui_safe_mode",
-        action="store_true",
-        default=None,
-        help="Enable Coqui safe mode (limit parallelism)",
-    )
-    coqui_safe_group.add_argument(
-        "--no-coqui-safe-mode",
-        dest="coqui_safe_mode",
-        action="store_false",
-        default=None,
-        help="Disable Coqui safe mode",
     )
     parser.add_argument(
         "--piper-max-procs",

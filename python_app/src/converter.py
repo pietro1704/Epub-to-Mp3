@@ -56,14 +56,12 @@ from .performance_profile_store import PerformanceProfileStore
 from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController
 from .text_integrity_validator import TextIntegrityValidator
-from .tts.coqui_guard import is_coqui_supported_environment
 from .tts.factory import TTSFactory
 from .tts.kokoro_guard import load_kokoro_supports_language
 from .tts.piper_guard import is_piper_supported_environment
 from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
 
 _kokoro_support_check = load_kokoro_supports_language()
-_coqui_supported = is_coqui_supported_environment()
 _piper_supported = is_piper_supported_environment()
 
 
@@ -81,7 +79,8 @@ def _has_piper_support() -> bool:
 
 
 def _has_coqui_support() -> bool:
-    return _coqui_supported
+    """Stub kept for back-compat after the Coqui engine was removed."""
+    return False
 
 
 def _env_bool(name: str, default: bool = False) -> bool:
@@ -178,7 +177,7 @@ def _chain_tier_allowed(tier_engine: str) -> bool:
     override = (os.getenv("FALLBACK_ENGINE_OVERRIDE") or "").strip().lower()
     if override == "none":
         return False
-    if override in {"piper", "kokoro", "coqui"}:
+    if override in {"piper", "kokoro"}:
         return override == tier_engine
     return ENGINE_CHAIN_FALLBACK
 
@@ -1037,18 +1036,6 @@ class AudioConverter(
                     "PIPER_CHUNK_CHARS",
                     str(2600 if ram_total < 8 else 3200),
                 )
-            elif engine_name == "coqui":
-                if getattr(cfg, "coqui_max_workers", None) is None:
-                    workers = 1 if ram_total < 8 else min(4, max(1, cpu_physical // 2))
-                    cfg.coqui_max_workers = workers
-                if getattr(cfg, "coqui_chunk_chars", None) is None:
-                    cfg.coqui_chunk_chars = 1200 if ram_total < 8 else 1800
-                os.environ.setdefault(
-                    "COQUI_MAX_WORKERS", str(max(1, int(cfg.coqui_max_workers or 1)))
-                )
-                os.environ.setdefault(
-                    "COQUI_CHUNK_CHARS", str(max(800, int(cfg.coqui_chunk_chars or 1200)))
-                )
 
         if auto_engine_pool:
             for name, (pooled_config, engine_obj) in auto_engine_pool.items():
@@ -1057,11 +1044,6 @@ class AudioConverter(
                     target = max(1, int(getattr(pooled_config, "piper_max_procs", 1) or 1))
                     with contextlib.suppress(Exception):
                         setattr(engine_obj, "_semaphore", asyncio.Semaphore(target))
-                if engine_name == "coqui" and engine_obj is not None:
-                    chunk_limit = int(getattr(pooled_config, "coqui_chunk_chars", 0) or 0)
-                    if chunk_limit > 0:
-                        with contextlib.suppress(Exception):
-                            setattr(engine_obj, "_chunk_char_limit", chunk_limit)
 
     @staticmethod
     def _chapter_display_name(chapter: Chapter, index: int) -> str:
@@ -2228,7 +2210,7 @@ class AudioConverter(
             else:
                 raise
         if is_auto_engine:
-            voice_label = "Auto (Edge/Coqui/Piper)"
+            voice_label = "Auto (Edge/Kokoro/Piper)"
         else:
             primary_engine = engine_seeds.get((config.engine or "").lower())
             voice_label = getattr(primary_engine, "voice", None) or config.voice or "(auto)"
@@ -2579,7 +2561,7 @@ class AudioConverter(
                 and retry_engine == "edge"
             )
             if force_offline_after_persistent_edge:
-                fallback_engine = self._resolve_offline_fallback_engine({"piper", "coqui"})
+                fallback_engine = self._resolve_offline_fallback_engine({"piper"})
                 if fallback_engine and engine_pool.has_engine(fallback_engine):
                     force_offline_engine = fallback_engine
             if force_offline_engine:
@@ -2621,13 +2603,10 @@ class AudioConverter(
             retry_round += 1
 
         # Final rescue: switch engine for remaining failures (auto mode only)
-        # Priority: piper > coqui to avoid additional network stalls/timeouts.
         if pending_failures and is_auto_engine and auto_engine_pool:
             rescue_engine = None
             if "piper" in auto_engine_pool:
                 rescue_engine = "piper"
-            elif "coqui" in auto_engine_pool:
-                rescue_engine = "coqui"
             if rescue_engine:
                 failed_names = list(pending_failures.keys())
                 chapters_to_retry_info = []
@@ -3529,30 +3508,6 @@ class AudioConverter(
             if edge_auto_enabled:
                 self._apply_edge_slow_mode(reason, engine_pool=engine_pool, engine_obj=engine_obj)
 
-        def _maybe_apply_coqui_recovery(reason: str, engine_obj: Optional[object] = None) -> None:
-            if engine_obj is None:
-                return
-            adjusted = False
-            try:
-                if hasattr(engine_obj, "_safe_mode") and not getattr(engine_obj, "_safe_mode"):
-                    engine_obj._safe_mode = True
-                    adjusted = True
-                if hasattr(engine_obj, "_max_workers"):
-                    current_workers = getattr(engine_obj, "_max_workers", None)
-                    if current_workers is None or current_workers > 1:
-                        engine_obj._max_workers = 1
-                        adjusted = True
-                if hasattr(engine_obj, "_chunk_char_limit"):
-                    current_limit = getattr(engine_obj, "_chunk_char_limit", None) or 0
-                    target_limit = 1600
-                    if current_limit == 0 or current_limit > target_limit:
-                        engine_obj._chunk_char_limit = target_limit
-                        adjusted = True
-                if adjusted and self.verbose:
-                    print(f"   🛠️ Coqui safe mode ({reason}): chunks=1600, workers=1")
-            except Exception:
-                pass
-
         def available_auto_pool() -> Dict[str, tuple[ConversionConfig, object]]:
             if not auto_engine_pool:
                 return {}
@@ -3667,7 +3622,7 @@ class AudioConverter(
             final_mp3_path: Path, engine_name: Optional[str] = None
         ) -> tuple[Path, bool]:
             engine = (engine_name or config.engine or "").lower()
-            if engine in {"piper", "coqui"}:
+            if engine in {"piper"}:
                 return final_mp3_path.with_suffix(".wav"), True
             return final_mp3_path, False
 
@@ -4095,7 +4050,7 @@ class AudioConverter(
                                 model_path=Path(piper_model) if piper_model else config.model_path,
                             )
                             engine_pool.register_engine("piper", config)
-                    if (engine_tracker.get("label") or "").lower() in {"piper", "coqui", "kokoro"}:
+                    if (engine_tracker.get("label") or "").lower() in {"piper", "kokoro"}:
                         forced_auto_engine = (engine_tracker.get("label") or "").lower()
 
                 # **RESTORED**: Usar progress tracker (apenas uma vez por chapter)
@@ -4382,9 +4337,6 @@ class AudioConverter(
                     timeout_seconds = min(timeout_seconds, max_timeout)
                     if decision.timeout_scale:
                         timeout_seconds = timeout_seconds * decision.timeout_scale
-                    if current_engine_label == "coqui":
-                        coqui_min_timeout = int(os.getenv("COQUI_TIMEOUT_MIN", "180") or "180")
-                        timeout_seconds = max(timeout_seconds, coqui_min_timeout)
                     if (
                         edge_auto_enabled
                         and edge_state.get("slow_mode")
@@ -4471,9 +4423,9 @@ class AudioConverter(
                     stall_seconds = float(os.getenv("CHAPTER_STALL_SECONDS", "120") or "120")
                     if stall_seconds < 0:
                         stall_seconds = 0.0
-                    # Avoid false "stuck" detection on large local chapters (Piper/Coqui):
+                    # Avoid false "stuck" detection on large local chapters (Piper):
                     # synthesis can take >45-60s before first progress callback.
-                    if current_engine_label in {"piper", "coqui"} and chapter_chars >= 50000:
+                    if current_engine_label in {"piper"} and chapter_chars >= 50000:
                         local_floor = float(
                             os.getenv("LOCAL_ENGINE_STALL_MIN_SECONDS", "600") or "600"
                         )
@@ -4794,7 +4746,6 @@ class AudioConverter(
                                 }
                                 current_is_local = (current_engine_label or "").lower() in {
                                     "piper",
-                                    "coqui",
                                 }
                                 skip_slow_switch = (
                                     current_is_local
@@ -4969,10 +4920,6 @@ class AudioConverter(
                                 tracker=engine_tracker,
                                 engine_ref=engine_instance,
                             )
-                        elif current_engine_label == "coqui":
-                            _maybe_apply_coqui_recovery(
-                                f"timeout after {elapsed}s", engine_obj=tts_engine
-                            )
 
                         # **FALLBACK**: Remover language markup e tentar novamente
                         try:
@@ -5097,7 +5044,7 @@ class AudioConverter(
                                 current_label = (engine_tracker.get("label") or "").lower()
                                 if (
                                     is_auto_engine
-                                    and current_label in {"piper", "coqui"}
+                                    and current_label in {"piper"}
                                     and chapter_attempt < max_chapter_attempts
                                 ):
                                     # Keep retrying the same chapter locally with safer settings
@@ -5152,7 +5099,6 @@ class AudioConverter(
                     if not synthesis_result and is_auto_engine and auto_order:
                         if (not slow_engine_triggered) and current_engine_label in {
                             "piper",
-                            "coqui",
                         }:
                             blocked_engines_for_chapter.add("edge")
                             forced_auto_engine = current_engine_label

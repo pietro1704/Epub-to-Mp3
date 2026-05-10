@@ -5,8 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import os
-import platform
 from dataclasses import dataclass
 from typing import Callable, Dict, Optional
 
@@ -136,35 +134,12 @@ class JobEnginePool:
         active_jobs = max(1, int(snapshot.active_jobs or 1))
         profile = self._hardware_profile
         cpu_physical = profile.cpu_physical if profile else 2
-        has_gpu = bool(profile and profile.has_gpu)
-
-        def _coqui_safe_mode() -> bool:
-            raw = os.getenv("COQUI_SAFE_MODE")
-            if raw is not None:
-                normalized = str(raw).strip().lower()
-                return normalized in {"1", "true", "yes", "on", "enabled"}
-            if os.getenv("SPACE_ID"):
-                return True
-            try:
-                return platform.system().lower() == "darwin"
-            except Exception:
-                return False
+        bool(profile and profile.has_gpu)
 
         if name == "edge":
             cap = self._parallel_slots
             if self._edge_cap > 0:
                 cap = min(cap, self._edge_cap)
-            return max(1, cap)
-
-        if name == "coqui":
-            if _coqui_safe_mode():
-                return 1
-            cap = 1
-            if has_gpu and ram_gb >= 6 and cpu_idle > 10:
-                cap = 2 if ram_gb >= 10 and cpu_idle > 20 else 1
-            elif not has_gpu and cpu_physical >= 8 and ram_gb >= 8 and cpu_idle > 70:
-                cap = 2
-            cap = max(1, cap // active_jobs)
             return max(1, cap)
 
         if name == "piper":
@@ -207,11 +182,6 @@ class JobEnginePool:
             self._pools[name] = pool
         else:
             pool.config = config
-        if name == "coqui" and getattr(config, "coqui_safe_mode", None):
-            pool.update_limits(
-                max_instances=1,
-                edge_parallel_slots=self._parallel_slots,
-            )
         if engine_obj is not None:
             pool.seed(engine_obj)
 

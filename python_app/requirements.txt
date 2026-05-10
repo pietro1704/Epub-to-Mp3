@@ -1,6 +1,5 @@
 # python_app dependencies
 # Install via: mise run install (preferred) or pip install -r python_app/requirements.txt
-# Coqui XTTS (optional): pip install -r requirements-coqui.txt
 
 # Core TTS engines
 edge-tts>=7.2.8
