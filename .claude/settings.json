@@ -55,6 +55,18 @@
             "statusMessage": "Watching CI run..."
           }
         ]
+      },
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/swift_test_after_edit.sh",
+            "timeout": 120,
+            "async": true,
+            "statusMessage": "Re-running Swift tests after edit..."
+          }
+        ]
       }
     ],
     "Stop": [
@@ -69,6 +81,12 @@
             "type": "command",
             "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/test_coverage_gate.sh",
             "timeout": 15
+          },
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/xcode_build_smoke.sh",
+            "timeout": 180,
+            "statusMessage": "Smoke build (xcodebuild macOS Debug)..."
           }
         ]
       }
