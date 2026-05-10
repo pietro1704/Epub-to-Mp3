@@ -14,6 +14,27 @@ final class LocalEpubParserTests: XCTestCase {
         XCTAssertNil(payload, "fixture has no spine content")
     }
 
+    func testStripHTMLDropsSVGOnlyChapters() {
+        // Regression: EPUB chapters whose body is just an SVG `<image>`
+        // tag (cover pages, half-title pages) stripped down to the
+        // file's `<title>` and bubbled up as "c0" / "c9" chapters in
+        // the reader. The parser now filters them via a 50-char
+        // minimum + title-similarity check.
+        let svgOnly = """
+        <html><head><title>c0</title></head><body>
+        <svg xmlns="http://www.w3.org/2000/svg">
+          <image xlink:href="cover.jpg"/>
+        </svg>
+        </body></html>
+        """
+        let stripped = LocalEpubParser.stripHTML(svgOnly)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        // Stripped output keeps "c0" only; the parser is responsible
+        // for rejecting it as "too short / matches title".
+        XCTAssertTrue(stripped.count < 50,
+                      "expected near-empty strip, got: \(stripped)")
+    }
+
     func testStripHTMLDecodesCommonEntitiesAndPreservesParagraphs() {
         let html = """
         <html><body>

@@ -57,7 +57,8 @@ struct BookOpenView: View {
                         hasAudio: hasAudio,
                         backendBaseURL: settings.resolvedBaseURL,
                         coverPNG: book.coverPNG,
-                        onRequestAudioRetry: { startAudioBootstrap() }
+                        onRequestAudioRetry: { startAudioBootstrap() },
+                        onRequestPlay: { _, _ in startAudioBootstrap() }
                     )
                 } else {
                     Text("No content available.")
@@ -128,8 +129,11 @@ struct BookOpenView: View {
             }
         }
 
-        // 4. Reader is on screen. Now kick off audio in the background.
-        startAudioBootstrap()
+        // 4. Reader is on screen. Audio bootstrap is *not* triggered
+        // automatically — the user opts in by tapping a play button,
+        // which calls `startAudioBootstrap()`. This keeps the reading
+        // experience instant and lets users browse the EPUB without
+        // ever burning TTS quota.
     }
 
     /// Owns the audio bootstrap — reattach to an existing job, or

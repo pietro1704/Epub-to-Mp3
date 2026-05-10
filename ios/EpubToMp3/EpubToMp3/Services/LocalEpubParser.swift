@@ -42,7 +42,17 @@ enum LocalEpubParser {
             }
             let title = chapterTitle(in: html) ?? "Chapter \(index)"
             let text = stripHTML(html).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else { continue }
+
+            // Drop chapters with no useful prose. EPUBs commonly ship
+            // cover/half-title/colophon XHTML whose body is just an
+            // SVG `<image>` or a single line that equals the file's
+            // own title (e.g. `c0.xhtml` → strip → "c0"). 50 chars
+            // is the empirical floor where every test fixture's
+            // padding pages dropped while real chapters survived.
+            let minMeaningfulChars = 50
+            let titleMatches = text.count <= title.count + 10
+                && text.lowercased().contains(title.lowercased())
+            guard text.count >= minMeaningfulChars, !titleMatches else { continue }
 
             chapters.append(EbookFulltext.Chapter(
                 index: index,

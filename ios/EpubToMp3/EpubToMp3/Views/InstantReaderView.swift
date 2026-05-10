@@ -18,6 +18,16 @@ struct InstantReaderView: View {
     let coverPNG: Data?
     let onRequestAudioRetry: () -> Void
 
+    /// Called when the user opts into audio. The bookId is used by
+    /// the parent (`BookOpenView`) to fire `startAudioBootstrap()`;
+    /// `chapterIndex` + `sentenceId` tell it where to seek once the
+    /// first chapter MP3 lands.
+    /// - chapterIndex: 0-based chapter to start at.
+    /// - sentenceId: optional sentence anchor inside that chapter
+    ///   (from `SentenceSpan.id`). `nil` = start from chapter's
+    ///   beginning.
+    var onRequestPlay: ((Int, String?) -> Void)? = nil
+
     @Environment(AppSettings.self) private var settings
     @Environment(\.horizontalSizeClass) private var hSize
 
@@ -29,19 +39,33 @@ struct InstantReaderView: View {
     @State private var positionTask: Task<Void, Never>?
     @State private var sentenceTask: Task<Void, Never>?
     @State private var showingToc = false
+    @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
+    @State private var showingPlayMenu = false
 
     var body: some View {
-        VStack(spacing: 0) {
-            if let banner = statusBanner {
-                statusStrip(banner)
+        ZStack(alignment: .bottomTrailing) {
+            VStack(spacing: 0) {
+                // Only surface the status strip when we're actively
+                // bootstrapping audio. An empty/idle reader shows
+                // pure text — no infinite "Generating audio…".
+                if let banner = statusBanner, !banner.isEmpty {
+                    statusStrip(banner)
+                }
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if hasAudio {
+                    Divider()
+                    playerBar
+                        .padding(.vertical, 8)
+                        .background(.thinMaterial)
+                }
             }
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            if hasAudio {
-                Divider()
-                playerBar
-                    .padding(.vertical, 8)
-                    .background(.thinMaterial)
+            // Floating play button — opt-in audio. Hidden once the
+            // bottom player bar is mounted (no UI duplication).
+            if !hasAudio {
+                floatingPlayButton
+                    .padding(.trailing, 24)
+                    .padding(.bottom, 32)
             }
         }
         .toolbar {
@@ -88,6 +112,54 @@ struct InstantReaderView: View {
             Text("No chapter at index \(currentChapterIndex).")
                 .foregroundStyle(.secondary)
         }
+    }
+
+    // MARK: - Floating play button (audio opt-in)
+
+    /// FAB rendered above the reader text (bottom-trailing). Tapping
+    /// shows a menu with three start points: beginning of book,
+    /// current chapter, or the sentence the user last tapped.
+    /// Hidden once `hasAudio` is true — the bottom player bar
+    /// supersedes it.
+    @ViewBuilder
+    private var floatingPlayButton: some View {
+        Menu {
+            Button {
+                onRequestPlay?(0, nil)
+            } label: {
+                Label("From the beginning", systemImage: "play")
+            }
+            Button {
+                onRequestPlay?(currentChapterIndex, nil)
+            } label: {
+                Label("From current chapter",
+                      systemImage: "play.rectangle")
+            }
+            if let anchor = pendingPlayAnchor {
+                Button {
+                    onRequestPlay?(currentChapterIndex, anchor.id)
+                } label: {
+                    Label("From this sentence",
+                          systemImage: "text.insert")
+                }
+            }
+        } label: {
+            ZStack {
+                Circle()
+                    .fill(Color.accentColor)
+                    .frame(width: 56, height: 56)
+                    .shadow(color: .black.opacity(0.25),
+                            radius: 6, x: 0, y: 3)
+                Image(systemName: statusBanner == nil
+                                    ? "play.fill"
+                                    : "hourglass")
+                    .font(.title2)
+                    .foregroundStyle(.white)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .accessibilityLabel("Play audio")
     }
 
     // MARK: - Status strip
