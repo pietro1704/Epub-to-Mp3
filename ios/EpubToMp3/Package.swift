@@ -52,6 +52,7 @@ let package = Package(
                 "Services/ZipReader.swift",
                 "Services/LocalEpubParser.swift",
                 "Services/LocalFulltextCache.swift",
+                "Services/Paginator.swift",
             ]
         ),
         .testTarget(

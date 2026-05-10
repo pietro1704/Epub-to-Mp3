@@ -172,6 +172,46 @@ struct SettingsView: View {
             } label: {
                 Label("Theme", systemImage: "paintpalette")
             }
+            Picker(selection: Bindable(bindable).readerLayout) {
+                ForEach(ReaderLayout.allCases) { l in
+                    Text(l.displayName).tag(l)
+                }
+            } label: {
+                Label("Layout", systemImage: "doc.text")
+            }
+            HStack {
+                Label("Line spacing", systemImage: "arrow.up.and.down.text.horizontal")
+                Spacer()
+                Stepper(value: Bindable(bindable).readerLineSpacing,
+                        in: 0...16, step: 2) {
+                    Text("\(Int(self.settings.readerLineSpacing)) pt")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .labelsHidden()
+            }
+            HStack {
+                Label("Margin", systemImage: "rectangle.compress.vertical")
+                Spacer()
+                Stepper(value: Bindable(bindable).readerMargin,
+                        in: 8...80, step: 4) {
+                    Text("\(Int(self.settings.readerMargin)) pt")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .labelsHidden()
+            }
+            HStack {
+                Label("Column width", systemImage: "rectangle.split.3x1")
+                Spacer()
+                Stepper(value: Bindable(bindable).readerColumnWidth,
+                        in: 420...960, step: 40) {
+                    Text("\(Int(self.settings.readerColumnWidth)) pt")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+                .labelsHidden()
+            }
             Toggle(isOn: Bindable(bindable).readerAutoScroll) {
                 Label("Auto-scroll", systemImage: "arrow.down.to.line")
             }
