@@ -124,10 +124,12 @@ struct PlayerView: View {
     }
 }
 
+#if DEBUG
 #Preview("Player") {
     PlayerView(
         snapshot: JobSnapshot.previewSample,
         backendBaseURL: URL(string: "http://localhost:8000")
     )
 }
+#endif
 
