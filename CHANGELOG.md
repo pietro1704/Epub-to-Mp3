@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.4.0] — 2026-05-10
+
+### SwiftUI Apple app (new official Apple client)
+
+- **Library-first home** — grid of imported EPUBs (SHA-256 dedup, cover, status badges).
+- **Instant reader** — local EPUB parser (`ZipReader` + `LocalEpubParser`) renders text in <100 ms; subsequent opens hit `LocalFulltextCache` at sub-millisecond.
+- **Paginated mode** — tap zones, click, swipe, scroll wheel, ←/→/PageUp/PageDown/Space/J/K/Home/End all turn pages.
+- **Full audiobook player** — cover artwork, prev/–15s/play/+30s/next, scrubber, sleep timer, playback rate; Now Playing/Lock Screen/Control Center wired with `MPMediaItemArtwork`.
+- **Customisation** — 7 themes (Light/Sepia/Parchment/Paper/Dark/Black/Custom with ColorPickers), font family/size, line spacing, margin, column width, all persisted via `@AppStorage`.
+- **Embedded Python sidecar** on macOS — PyInstaller binary copied into `Contents/Resources/` at build, launched by `SidecarManager` on a free loopback port. iOS/iPadOS continue with user-configured backend URL.
+- **Stream-first audio** — conversion submitted in background; `AudioPlayer.updateSnapshot` appends new chapters to the queue as SSE delivers them, no playback restart.
+- **App icon** — `scripts/make_app_icon.py` (PIL) renders 27 PNGs (book + headphones).
+- **Settings (Apple HIG)** — grouped form, SF Symbols, sidecar status indicator.
+- **Tests** — 57 swift tests covering Models, Services, Paginator, ZipReader, LocalEpubParser, LocalFulltextCache, integration paths.
+- **Build matrix** — `xcodebuild macOS Debug` + `iOS Simulator Debug` green; warnings-as-errors in project config.
+- **Apple-architecture decision documented** — SwiftUI is the official Apple client (Mac/iPad/iOS), Flutter is the official non-Apple client (Linux/Windows/Android), Tauri stays as alternative cross-platform shell. Two new release jobs (`swiftui-apple`, `flutter-desktop`) + Flutter linux/macos/windows scaffolds.
+
+### Server fix
+
+- **AutoRecovery no longer kills idle FastAPI request workers.** Was raising `KeyboardInterrupt` in `ThreadPoolExecutor` workers sitting in `queue.get()` (their normal idle state), tearing down the request pool and stranding every submitted job in `queued`. Desktop sidecar now sets `DISABLE_AUTO_RECOVERY=1` by default; HF Spaces / `mise run web` keep AutoRecovery on.
+
+### Tooling
+
+- **Per-project Claude hooks** — PostToolUse Write|Edit runs `swift test` async on iOS edits and `tsc --noEmit` async on web edits; Stop hook runs `xcodebuild macOS Debug` smoke when Swift changed; pre-allowed read-only diagnostics commands.
+- **Auto-fix CI workflow** — headless Claude Code reads failing run logs and pushes a candidate patch to a side branch on PR CI failures.
+- **Strict warnings** in iOS project config (`SWIFT_TREAT_WARNINGS_AS_ERRORS=YES`).
+
+### Audit findings (captured for triage, no fixes shipped)
+
+See `AUDIT-0.4.0.md` for parallel-agent audits across CLI / web / desktop bundling / HF integration.
+
 ## [0.3.28] — 2026-05-06
 
 ### Performance — bottleneck batch (post performance-speed-monitor audit)

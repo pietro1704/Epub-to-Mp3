@@ -29,6 +29,11 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="0.4.0" date="2026-05-10">
+      <description>
+        <p>SwiftUI native Apple app (macOS / iPadOS / iOS) with embedded Python sidecar, Library-first reader, paginated layout with gesture/keyboard turn, full audiobook player, Now Playing artwork, customisable themes, on-device EPUB parser. Flutter desktop scaffolds for Linux/Windows/macOS. Server fix: AutoRecovery no longer kills FastAPI request workers in idle desktop sidecars.</p>
+      </description>
+    </release>
     <release version="0.3.3" date="2026-04-14">
       <description>
         <p>Publish stable desktop, mobile, and Linux release assets with synced tag versioning.</p>

@@ -1,6 +1,6 @@
 {
   "productName": "Epub to Mp3",
-  "version": "0.3.28",
+  "version": "0.4.0",
   "identifier": "com.epub-to-mp3.app",
   "build": {
     "frontendDist": "../../web/dist",
