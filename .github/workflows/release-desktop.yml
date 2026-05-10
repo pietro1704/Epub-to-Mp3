@@ -947,8 +947,6 @@ jobs:
             os: windows-latest
             target: windows
     runs-on: ${{ matrix.os }}
-    env:
-      MISE_DISABLE_TOOLS: "android-sdk,java,cocoapods"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -961,21 +959,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
 
-      - name: Install mise + Flutter
-        uses: jdx/mise-action@v3
+      # Skip mise — `node@26` GPG verify is currently failing on
+      # ubuntu-22.04 hosted runners and we don't need node here.
+      # subosito/flutter-action installs Flutter directly from the
+      # SDK release artefact, no toolchain dance.
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          version: 2025.1.6
+          channel: stable
+          flutter-version: 3.41.9
+          cache: true
 
       - name: Enable desktop platform
         working-directory: flutter_app
         run: |
-          mise exec -- flutter config --enable-${{ matrix.target }}-desktop
+          flutter config --enable-${{ matrix.target }}-desktop
 
       - name: Build
         working-directory: flutter_app
+        shell: bash
         run: |
-          mise exec -- flutter pub get
-          mise exec -- flutter build ${{ matrix.target }} --release
+          flutter pub get
+          flutter build ${{ matrix.target }} --release
 
       - name: Package Linux build
         if: runner.os == 'Linux'
