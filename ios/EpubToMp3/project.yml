@@ -59,6 +59,15 @@ settings:
     TARGETED_DEVICE_FAMILY: "1,2"
     ENABLE_PREVIEWS: YES
 
+# SPIKE (feat/ios-python-embed): PythonKit bridges Swift <-> the embedded
+# CPython interpreter loaded from Python.xcframework. The xcframework +
+# stdlib + site-packages are produced by
+# `ios/EpubToMp3/scripts/bootstrap-ios-python.sh` and gitignored.
+packages:
+  PythonKit:
+    url: https://github.com/pvieito/PythonKit.git
+    from: "0.4.0"
+
 targets:
   EpubToMp3:
     type: application
@@ -72,9 +81,35 @@ targets:
           - "Resources/EpubToMp3.entitlements"
           - "Resources/EpubToMp3-Debug.entitlements"
           - "Resources/Info.plist"
+      # Vendored Python stdlib + slim site-packages (iOS spike).
+      # Bundled as resources so `Bundle.main.path(forResource:)` finds
+      # them at runtime. Directories are referenced as folder-refs to
+      # preserve subpaths. Missing dirs are OK on a fresh clone — the
+      # bootstrap script populates them. xcodegen tolerates missing
+      # optional paths.
+      - path: Vendor/python-stdlib
+        optional: true
+        buildPhase: resources
+        type: folder
+      - path: Vendor/site-packages
+        optional: true
+        buildPhase: resources
+        type: folder
+    dependencies:
+      # Embed Python.xcframework only on iOS-flavoured slices; macOS
+      # keeps the PyInstaller sidecar.
+      - framework: Vendor/Python/Python.xcframework
+        embed: true
+        codeSign: true
+        platforms: [iOS]
+      - package: PythonKit
     settings:
       base:
         ENABLE_HARDENED_RUNTIME: YES
+        # PythonKit dlopens libpython at runtime — the embedded
+        # xcframework lives under Frameworks/. Default @rpath covers
+        # this on iOS, but make it explicit for the simulator.
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
       configs:
         Debug:
           # Unsigned local Debug builds can't activate the App Sandbox,

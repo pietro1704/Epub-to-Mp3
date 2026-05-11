@@ -173,3 +173,9 @@ releases/
 
 # Claude Code runtime artifacts
 .claude/scheduled_tasks.lock
+
+# iOS embedded-Python spike (feat/ios-python-embed) — vendored Python
+# runtime is ~150 MB; bootstrapped by
+# ios/EpubToMp3/scripts/bootstrap-ios-python.sh
+ios/EpubToMp3/EpubToMp3/Vendor/Python/
+ios/EpubToMp3/EpubToMp3/Vendor/site-packages/
