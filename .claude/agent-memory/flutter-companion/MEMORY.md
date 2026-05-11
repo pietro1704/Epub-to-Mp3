@@ -1,1 +1,2 @@
-- [Flutter scaffold 2026-05-06](project_scaffold_2026_05.md) — initial parity slice landed; freezed regen + iOS pods + Android SDK notes
+- [Flutter scaffold 2026-05-06](project_scaffold_2026_05.md) — initial parity slice landed; freezed regen + Android SDK notes
+- [Platforms scope: Linux + Windows + Android only](project_platforms_scope.md) — macOS/iOS scaffolds removed 2026-05-10; SwiftUI owns Apple. Never re-add `flutter_app/macos/` or `flutter_app/ios/`.
