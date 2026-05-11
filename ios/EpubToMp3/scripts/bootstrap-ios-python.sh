@@ -14,8 +14,10 @@ set -euo pipefail
 PY_VERSION="${PY_VERSION:-3.13}"
 PY_BUILD="${PY_BUILD:-b13}"
 TAG="${PY_VERSION}-${PY_BUILD}"
-TARBALL="Python-${PY_VERSION}-iOS-support.${PY_BUILD}.tar.gz"
-URL="https://github.com/beeware/Python-Apple-support/releases/download/${TAG}/${TARBALL}"
+IOS_TARBALL="Python-${PY_VERSION}-iOS-support.${PY_BUILD}.tar.gz"
+MACOS_TARBALL="Python-${PY_VERSION}-macOS-support.${PY_BUILD}.tar.gz"
+IOS_URL="https://github.com/beeware/Python-Apple-support/releases/download/${TAG}/${IOS_TARBALL}"
+MACOS_URL="https://github.com/beeware/Python-Apple-support/releases/download/${TAG}/${MACOS_TARBALL}"
 
 CACHE_DIR="${HOME}/.cache/epub-to-mp3/python-apple-support"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -27,19 +29,51 @@ STDLIB_OUT="${VENDOR_BASE}/python-stdlib"
 
 mkdir -p "${CACHE_DIR}" "${VENDOR_DIR}" "${SITE_PACKAGES_DIR}"
 
-if [[ ! -f "${CACHE_DIR}/${TARBALL}" ]]; then
-  echo "==> Downloading ${URL}"
-  curl -fL --retry 3 -o "${CACHE_DIR}/${TARBALL}.tmp" "${URL}"
-  mv "${CACHE_DIR}/${TARBALL}.tmp" "${CACHE_DIR}/${TARBALL}"
-else
-  echo "==> Using cached ${CACHE_DIR}/${TARBALL}"
-fi
+download_if_missing() {
+  local url="$1" path="$2"
+  if [[ ! -f "$path" ]]; then
+    echo "==> Downloading $url"
+    curl -fL --retry 3 -o "${path}.tmp" "$url"
+    mv "${path}.tmp" "$path"
+  else
+    echo "==> Using cached $path"
+  fi
+}
+download_if_missing "${IOS_URL}" "${CACHE_DIR}/${IOS_TARBALL}"
+download_if_missing "${MACOS_URL}" "${CACHE_DIR}/${MACOS_TARBALL}"
 
 if [[ ! -d "${VENDOR_DIR}/Python.xcframework" ]]; then
-  echo "==> Extracting Python.xcframework into ${VENDOR_DIR}"
+  echo "==> Building Python.xcframework with iOS + macOS slices"
   tmp_extract="$(mktemp -d)"
-  tar -xzf "${CACHE_DIR}/${TARBALL}" -C "${tmp_extract}"
-  cp -R "${tmp_extract}/Python.xcframework" "${VENDOR_DIR}/"
+  mkdir -p "${tmp_extract}/ios" "${tmp_extract}/macos"
+  tar -xzf "${CACHE_DIR}/${IOS_TARBALL}" -C "${tmp_extract}/ios"
+  tar -xzf "${CACHE_DIR}/${MACOS_TARBALL}" -C "${tmp_extract}/macos"
+  # Start from the iOS xcframework (it has the aux lib/, lib-arm64/,
+  # lib-x86_64/ trees alongside the framework slices — Beeware uses
+  # those for stdlib + lib-dynload at runtime). Then graft the macOS
+  # slice into the same xcframework so the linker has a slice on
+  # every build flavour of the SwiftUI target. `xcodebuild
+  # -create-xcframework` would discard the aux dirs, so we splice
+  # manually via Info.plist editing + filesystem copies.
+  cp -R "${tmp_extract}/ios/Python.xcframework" "${VENDOR_DIR}/"
+  # Copy macOS slice contents.
+  cp -R "${tmp_extract}/macos/Python.xcframework/macos-arm64_x86_64" \
+        "${VENDOR_DIR}/Python.xcframework/"
+  # Append macOS entry to AvailableLibraries in Info.plist.
+  python3 - <<PYEOF
+import plistlib, pathlib
+p = pathlib.Path("${VENDOR_DIR}/Python.xcframework/Info.plist")
+data = plistlib.loads(p.read_bytes())
+data["AvailableLibraries"].append({
+    "BinaryPath": "Python.framework/Versions/3.13/Python",
+    "LibraryIdentifier": "macos-arm64_x86_64",
+    "LibraryPath": "Python.framework",
+    "SupportedArchitectures": ["arm64", "x86_64"],
+    "SupportedPlatform": "macos",
+})
+p.write_bytes(plistlib.dumps(data))
+print("==> Patched Info.plist with macOS slice")
+PYEOF
   # b13+ packs the stdlib INSIDE the xcframework under
   #   ios-arm64/lib-arm64/python3.13/
   # and (for the simulator slice)

@@ -58,6 +58,20 @@ settings:
     INFOPLIST_KEY_NSSupportsAutomaticGraphicsSwitching: YES
     TARGETED_DEVICE_FAMILY: "1,2"
     ENABLE_PREVIEWS: YES
+    # Xcode 26 recommended-settings (auto-applied via "Perform Changes"
+    # dialog). Promoted here so xcodegen regeneration doesn't undo them.
+    # - Dead-code stripping: smaller binaries.
+    # - Symbol stripping defaults: smaller release binary.
+    # - User-script sandboxing: build correctness — scripts can only
+    #   touch files they declare.
+    # - String catalog symbol generation: Swift code-gen for localised
+    #   strings.
+    DEAD_CODE_STRIPPING: YES
+    STRIP_STYLE: all
+    STRIP_SWIFT_SYMBOLS: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    LOCALIZED_STRING_SWIFTUI_SUPPORT: YES
+    LOCALIZED_STRING_MACRO_NAMES: "String LocalizedStringResource"
 
 # SPIKE (feat/ios-python-embed): PythonKit bridges Swift <-> the embedded
 # CPython interpreter loaded from Python.xcframework. The xcframework +
@@ -106,13 +120,10 @@ targets:
         type: folder
         createIntermediateGroups: true
     dependencies:
-      # Embed Python.xcframework. The macOS slice does NOT get a slice
-      # of Python.xcframework (it's iOS-only from Beeware), so the
-      # macOS build will skip its dynamic linking; PythonEmbed.swift
-      # is `#if os(iOS) || targetEnvironment(simulator)` so the macOS
-      # build doesn't reference Python symbols. PythonKit itself is
-      # multi-platform and only fails at runtime if it tries to dlopen
-      # libpython — which only happens via PythonEmbed.shared.bootstrap().
+      # Python.xcframework is iOS-only (Beeware ships no macOS slice).
+      # We exclude it from the macOS link via EXCLUDED_SOURCE_FILE_NAMES
+      # below — macOS uses the PyInstaller sidecar embedded by the
+      # post-build script and shares `python_app/src/` via runtime IPC.
       - framework: Vendor/Python/Python.xcframework
         embed: true
         codeSign: true
@@ -124,6 +135,10 @@ targets:
         # xcframework lives under Frameworks/. Default @rpath covers
         # this on iOS, but make it explicit for the simulator.
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+        # Python.xcframework has no macOS slice — exclude the framework
+        # from the macOS link line entirely so xcodebuild stops yelling
+        # "no library for this platform was found".
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "Python.xcframework"
       configs:
         Debug:
           # Unsigned local Debug builds can't activate the App Sandbox,
