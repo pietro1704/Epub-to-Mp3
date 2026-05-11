@@ -62,32 +62,9 @@ const DEFAULT_VOICE_SUGGESTIONS: Record<string, VoiceInfo[]> = {
     { name: "pt_BR-faber-medium.onnx", multilingual: false },
     { name: "en_US-lessac-medium.onnx", multilingual: false },
   ],
-  kokoro: [
-    {
-      name: "af_heart",
-      multilingual: false,
-      label: "Heart – American English Female",
-    },
-    {
-      name: "af_bella",
-      multilingual: false,
-      label: "Bella – American English Female",
-    },
-    {
-      name: "bf_emma",
-      multilingual: false,
-      label: "Emma – British English Female",
-    },
-    { name: "jf_alpha", multilingual: false, label: "Alpha – Japanese Female" },
-    {
-      name: "zf_xiaobei",
-      multilingual: false,
-      label: "Xiaobei – Chinese Female",
-    },
-  ],
 };
 
-type KnownEngine = "edge" | "piper" | "kokoro";
+type KnownEngine = "edge" | "piper";
 
 interface EngineInsights {
   defaultVoice: string;
@@ -108,12 +85,6 @@ const ENGINE_INFO: Record<KnownEngine, EngineInsights> = {
     multiLingual: false,
     autoLanguage: false,
     languages: ["pt", "en"],
-  },
-  kokoro: {
-    defaultVoice: "af_heart",
-    multiLingual: true,
-    autoLanguage: false,
-    languages: ["en", "ja", "zh"],
   },
 };
 
@@ -1441,7 +1412,7 @@ export default function ConversionForm({
                       </tr>
                     </thead>
                     <tbody>
-                      {(["edge", "kokoro", "piper"] as const).map((eng) => {
+                      {(["edge", "piper"] as const).map((eng) => {
                         const d = t.form.engineDetails[eng];
                         if (!d) return null;
                         const opt = t.form.engineOptions.find(
@@ -2393,7 +2364,7 @@ export default function ConversionForm({
           </p>
           {engineEstimates && Object.keys(engineEstimates).length > 1 && (
             <div className="form-estimate__comparison">
-              {(["edge", "kokoro", "piper"] as const)
+              {(["edge", "piper"] as const)
                 .filter((eng) => engineEstimates[eng])
                 .map((eng) => {
                   const est = engineEstimates[eng];

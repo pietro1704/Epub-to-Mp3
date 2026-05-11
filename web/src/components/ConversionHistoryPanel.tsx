@@ -27,7 +27,7 @@ interface SessionStats {
 
 function engineClass(engine: string): string {
   const key = (engine || "").toLowerCase().split(/[-_]/)[0];
-  const known = ["edge", "kokoro", "piper"];
+  const known = ["edge", "piper"];
   return known.includes(key)
     ? `engine-badge engine-badge--${key}`
     : "engine-badge";

@@ -57,21 +57,15 @@ from .progress import ProgressTracker
 from .speed_controller import AdaptiveSpeedController
 from .text_integrity_validator import TextIntegrityValidator
 from .tts.factory import TTSFactory
-from .tts.kokoro_guard import load_kokoro_supports_language
 from .tts.piper_guard import is_piper_supported_environment
 from .utils import AudioProcessor, FileManager, TextValidator, resolve_cache_root
 
-_kokoro_support_check = load_kokoro_supports_language()
 _piper_supported = is_piper_supported_environment()
 
 
 def _has_kokoro_support(language: Optional[str]) -> bool:
-    if _kokoro_support_check is None:
-        return False
-    try:
-        return bool(_kokoro_support_check(language))
-    except Exception:
-        return False
+    """Stub kept for back-compat after the Kokoro engine was removed."""
+    return False
 
 
 def _has_piper_support() -> bool:
@@ -146,22 +140,19 @@ EDGE_SAFE_CHAPTER_PARALLEL = _env_int("EDGE_SAFE_CHAPTER_PARALLEL", 8)
 EDGE_SAFE_TIMEOUT_MAX = _env_float(
     "EDGE_SAFE_TIMEOUT_MAX", 3600.0
 )  # Up to 1h for very long chapters
-# Four-tier fallback: Edge multilingual → Edge monolingual → Kokoro → Piper
+# Three-tier fallback: Edge multilingual → Edge monolingual → Piper
 EDGE_MONOLINGUAL_THRESHOLD = _env_int(
     "EDGE_MONOLINGUAL_THRESHOLD", 3
 )  # Switch to monolingual Edge after N consecutive failures
-EDGE_KOKORO_THRESHOLD = _env_int(
-    "EDGE_KOKORO_THRESHOLD", 3
-)  # Switch to Kokoro after N consecutive failures (after monolingual)
 EDGE_PIPER_THRESHOLD = _env_int(
     "EDGE_PIPER_THRESHOLD", 3
-)  # Switch to Piper after N consecutive failures (after Kokoro)
+)  # Switch to Piper after N consecutive failures (after monolingual)
 # Legacy env var for backwards compatibility (maps to PIPER threshold)
 EDGE_FAILURE_THRESHOLD = _env_int("EDGE_FAILURE_THRESHOLD", EDGE_PIPER_THRESHOLD)
 EDGE_FORCE_SAFE_CHARS = _env_int("EDGE_FORCE_SAFE_CHARS", 60000)
 # When False (default), stay on Edge (multi → mono) and never switch the whole
-# chapter engine to Kokoro/Piper. Per-chunk fallback still handles isolated
-# hangs. Flip to True to restore the legacy four-tier cascade.
+# chapter engine to Piper. Per-chunk fallback still handles isolated hangs.
+# Flip to True to restore the legacy multi-tier cascade.
 ENGINE_CHAIN_FALLBACK = _env_bool("ENGINE_CHAIN_FALLBACK", False)
 
 
@@ -177,7 +168,7 @@ def _chain_tier_allowed(tier_engine: str) -> bool:
     override = (os.getenv("FALLBACK_ENGINE_OVERRIDE") or "").strip().lower()
     if override == "none":
         return False
-    if override in {"piper", "kokoro"}:
+    if override == "piper":
         return override == tier_engine
     return ENGINE_CHAIN_FALLBACK
 
@@ -1939,7 +1930,7 @@ class AudioConverter(
 
             if integrity_report.cache_engine_mismatch:
                 print("\n💡 Possible cause: cache from previous conversion with different engine")
-                print("   (e.g., Kokoro cache being used for Edge conversion)")
+                print("   (e.g., Piper cache being used for Edge conversion)")
 
             # Auto-clear cache if corruption detected
             print("\n🧹 Cleaning corrupted cache automatically...")
@@ -2210,7 +2201,7 @@ class AudioConverter(
             else:
                 raise
         if is_auto_engine:
-            voice_label = "Auto (Edge/Kokoro/Piper)"
+            voice_label = "Auto (Edge/Piper)"
         else:
             primary_engine = engine_seeds.get((config.engine or "").lower())
             voice_label = getattr(primary_engine, "voice", None) or config.voice or "(auto)"
@@ -3631,13 +3622,12 @@ class AudioConverter(
 
         async def _maybe_apply_edge_fallback() -> None:
             nonlocal edge_switched_to_monolingual
-            nonlocal edge_switched_to_kokoro
             nonlocal edge_switched_to_piper
             nonlocal edge_consecutive_failures
             nonlocal config
 
             current_engine = (config.engine or "").lower()
-            if current_engine not in ("edge", "kokoro"):
+            if current_engine != "edge":
                 return
 
             # TIER 2: Edge monolingual after MONOLINGUAL_THRESHOLD failures
@@ -3660,53 +3650,19 @@ class AudioConverter(
                     edge_consecutive_failures = 0
                     return
                 else:
-                    # No monolingual voice, skip to Kokoro
+                    # No monolingual voice, skip to Piper
                     edge_switched_to_monolingual = True
 
-            # TIER 3: Kokoro after KOKORO_THRESHOLD failures (from monolingual Edge)
-            if (
-                _chain_tier_allowed("kokoro")
-                and not edge_switched_to_kokoro
-                and edge_switched_to_monolingual
-                and current_engine == "edge"
-                and edge_consecutive_failures >= EDGE_KOKORO_THRESHOLD
-            ):
-                if not _has_kokoro_support(config.primary_language):
-                    if self.verbose:
-                        print("   ⚠️ Kokoro has no voice for this language; skipping fallback")
-                    edge_switched_to_kokoro = True
-                else:
-                    try:
-                        from .tts.kokoro_engine import KokoroTTSEngine
-
-                        KokoroTTSEngine()  # test availability
-                        print(
-                            f"\n🔄 Edge monolingual com {edge_consecutive_failures} failures consecutive"
-                        )
-                        print("   🔀 Switching to Kokoro (local, fast)")
-                        config = replace(config, engine="kokoro")
-                        engine_pool.register_engine("kokoro", config)
-                        edge_switched_to_kokoro = True
-                        edge_consecutive_failures = 0
-                        return
-                    except Exception as e:
-                        if self.verbose:
-                            print(f"   ⚠️ Kokoro unavailable: {e}")
-                        edge_switched_to_kokoro = True  # skip to piper
-
-            # TIER 4: Piper after PIPER_THRESHOLD failures (from Kokoro or Edge)
+            # TIER 3: Piper after PIPER_THRESHOLD failures (from monolingual Edge)
             if (
                 _chain_tier_allowed("piper")
                 and not edge_switched_to_piper
                 and edge_consecutive_failures >= EDGE_PIPER_THRESHOLD
-                and (edge_switched_to_kokoro or edge_switched_to_monolingual)
+                and edge_switched_to_monolingual
             ):
                 if can_use_piper():
                     piper_language = self._effective_primary_language(config)
-                    current_label = "Kokoro" if current_engine == "kokoro" else "Edge"
-                    print(
-                        f"\n🔄 {current_label} com {edge_consecutive_failures} failures consecutive"
-                    )
+                    print(f"\n🔄 Edge com {edge_consecutive_failures} failures consecutive")
                     print(f"   🛟 Switching to Piper (offline) for language: {piper_language}")
                     from .config import VoiceConfigProvider
 
@@ -3739,13 +3695,12 @@ class AudioConverter(
                     print(f"\n⚠️ {edge_consecutive_failures} failures consecutive")
                     print("   ⚠️ Piper not installed - fallback is not possible")
 
-        # Four-tier fallback: Edge multilingual → Edge monolingual → Kokoro → Piper
+        # Three-tier fallback: Edge multilingual → Edge monolingual → Piper
         edge_failure_count = 0
         edge_consecutive_failures = 0
         base_delay = 0.5  # Start with 0.5s delay
         max_delay = 30.0  # Cap at 30s
         edge_switched_to_monolingual = False
-        edge_switched_to_kokoro = False
         edge_switched_to_piper = False
         config.voice if (config.engine or "").lower() == "edge" else None
         stage_pipeline_enabled = self._is_stage_pipeline_enabled(config)
@@ -4050,7 +4005,7 @@ class AudioConverter(
                                 model_path=Path(piper_model) if piper_model else config.model_path,
                             )
                             engine_pool.register_engine("piper", config)
-                    if (engine_tracker.get("label") or "").lower() in {"piper", "kokoro"}:
+                    if (engine_tracker.get("label") or "").lower() == "piper":
                         forced_auto_engine = (engine_tracker.get("label") or "").lower()
 
                 # **RESTORED**: Usar progress tracker (apenas uma vez por chapter)

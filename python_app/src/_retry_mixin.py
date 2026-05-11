@@ -30,7 +30,7 @@ class _RetryMixin:
         chars = max(0, int(chars))
         if chars <= 0:
             return base
-        ref_chars = {"edge": 15000, "piper": 8000, "kokoro": 6000}.get(engine.lower(), 12000)
+        ref_chars = {"edge": 15000, "piper": 8000}.get(engine.lower(), 12000)
         if chars <= ref_chars:
             return base
         overflow = (chars - ref_chars) / float(ref_chars)
@@ -191,14 +191,13 @@ class _RetryMixin:
             if cli_fallback == "none":
                 # Strict mode: only the engine the user picked.
                 _append_candidate(requested_engine if requested_engine != "auto" else "edge")
-            elif cli_fallback in {"piper", "kokoro"}:
+            elif cli_fallback == "piper":
                 # Operator pinned a specific fallback tier.
                 _append_candidate(requested_engine if requested_engine != "auto" else "edge")
                 _append_candidate(cli_fallback)
             elif requested_engine == "auto":
                 _append_candidate("edge")
                 _append_candidate("piper")
-                _append_candidate("kokoro")
             else:
                 _append_candidate(requested_engine)
                 if requested_engine == "edge":

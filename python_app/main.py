@@ -56,7 +56,7 @@ from src.text_formatting import PRESERVE_TTS_LAYOUT, TextFormattingProcessor
 from src.ui.menu import MenuInterface
 from src.utils import FileManager, resolve_cache_root
 
-_FALLBACK_ENGINE_CHOICES = {"piper", "kokoro", "none"}
+_FALLBACK_ENGINE_CHOICES = {"piper", "none"}
 
 
 def _resolve_cli_fallback_engine(
@@ -119,30 +119,6 @@ def _prewarm_edge_pipeline(voice: Optional[str] = None) -> bool:
     else:
         print("⏭️  Edge-TTS pre-warm skipped (offline or unavailable)")
     return bool(ok)
-
-
-def _prewarm_kokoro_pipeline(language: Optional[str]) -> bool:
-    """Eagerly load the Kokoro KPipeline so the first chapter doesn't pay the cost.
-
-    Returns True on success, False if Kokoro is unsupported for the language or
-    the import failed. Never raises — pre-warm is best-effort.
-    """
-    try:
-        from src.tts.kokoro_engine import kokoro_supports_language
-    except Exception:
-        return False
-    if not kokoro_supports_language(language):
-        print(f"⏭️  Kokoro pre-warm skipped (language '{language}' not supported)")
-        return False
-    try:
-        from src.tts.kokoro_engine import _ensure_kokoro
-
-        _ensure_kokoro()
-        print("✅ Kokoro pipeline pre-warmed")
-        return True
-    except Exception as exc:
-        print(f"⏭️  Kokoro pre-warm failed: {exc}")
-        return False
 
 
 @dataclass
@@ -762,8 +738,6 @@ class ConverterApplication:
             if fallback_pref:
                 self.converter._cli_fallback_engine = fallback_pref
 
-            if getattr(args, "prewarm_kokoro", False):
-                _prewarm_kokoro_pipeline(getattr(config, "primary_language", None))
             if getattr(args, "prewarm_edge", False):
                 _prewarm_edge_pipeline(getattr(config, "voice", None))
             if getattr(args, "prewarm_piper", False):
@@ -4831,35 +4805,26 @@ def _add_conversion_arguments(
     )
     engine_arg = parser.add_argument(
         "--engine",
-        choices=["auto", "edge", "piper", "kokoro"],
+        choices=["auto", "edge", "piper"],
         default="edge",
-        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, kokoro=fast local",
+        help="TTS engine to use (default: edge). auto=edge (alias), edge=fast cloud, piper=offline fallback",
     )
     parser.add_argument(
         "--fallback-engine",
-        choices=["auto", "piper", "kokoro", "none"],
+        choices=["auto", "piper", "none"],
         default="none",
         help=(
             "Engine used to re-synthesize a single sentence if the primary engine hangs/fails. "
             "Default is 'none' — staying on the user-chosen engine instead of silently switching "
             "(the Carl regression: a pt-BR audiobook was narrated by an English Piper model "
             "because the previous default 'auto' fell through to Piper without telling the user). "
-            "Set explicitly to 'piper' / 'kokoro' / 'auto' to opt back into per-sentence fallback."
+            "Set explicitly to 'piper' / 'auto' to opt back into per-sentence fallback."
         ),
     )
     parser.add_argument(
         "--engine-chain-fallback",
         action="store_true",
-        help="Enable the legacy multi-engine cascade (Edge -> Kokoro -> Piper). Default is Edge-only with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
-    )
-    parser.add_argument(
-        "--prewarm-kokoro",
-        action="store_true",
-        help=(
-            "Pre-load the Kokoro pipeline before the chapter loop starts (saves ~3-5s "
-            "on the first chapter that triggers Kokoro). Off by default — only worth it "
-            "for en/ja/zh books that actually use Kokoro fallback."
-        ),
+        help="Enable the legacy multi-engine cascade (Edge -> Piper). Default is Edge-only with per-chunk fallback. Mirrors ENGINE_CHAIN_FALLBACK=1.",
     )
     parser.add_argument(
         "--prewarm-edge",
@@ -4995,7 +4960,7 @@ def _add_conversion_arguments(
         "--multi-engine",
         dest="multi_engine_parallel",
         action="store_true",
-        help="Run Edge and a local engine (Piper/Kokoro) simultaneously on different chapters for maximum throughput. Disabled by default — local engines may misdetect language.",
+        help="Run Edge and a local engine (Piper) simultaneously on different chapters for maximum throughput. Disabled by default — local engines may misdetect language.",
     )
     parser.add_argument(
         "--no-footnote",

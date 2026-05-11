@@ -226,9 +226,6 @@ class _EdgeThrottleMixin:
                 or os.getenv("PIPER_CHUNK_CHARS", "3000")
                 or 3000
             )
-        elif engine_name == "kokoro":
-            params["kokoro_max_workers"] = int(os.getenv("KOKORO_MAX_WORKERS", "2") or 2)
-            params["kokoro_chunk_chars"] = int(os.getenv("KOKORO_CHUNK_CHARS", "2000") or 2000)
         return params
 
     def _apply_runtime_feature_overrides(self, config: Optional[ConversionConfig]) -> None:
@@ -359,14 +356,6 @@ class _EdgeThrottleMixin:
                     setattr(engine_obj, "_chunk_char_limit", chunk_chars)
                 with contextlib.suppress(Exception):
                     setattr(engine_obj, "_semaphore", asyncio.Semaphore(max(1, max_procs)))
-            changed = True
-        elif engine_name == "kokoro":
-            os.environ["KOKORO_MAX_WORKERS"] = str(
-                int(params.get("kokoro_max_workers", os.getenv("KOKORO_MAX_WORKERS", "2")))
-            )
-            os.environ["KOKORO_CHUNK_CHARS"] = str(
-                int(params.get("kokoro_chunk_chars", os.getenv("KOKORO_CHUNK_CHARS", "2000")))
-            )
             changed = True
         return changed
 

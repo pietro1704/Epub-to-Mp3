@@ -126,43 +126,6 @@ class TestVoicePreviewEndpoint:
             finally:
                 server_mod._PREVIEW_CACHE_DIR = original_cache
 
-    def test_kokoro_language_defaults_to_en(self, client: TestClient, tmp_path: Path):
-        """Kokoro only supports en/ja/zh — pt should fallback to en."""
-        import python_app.server as server_mod
-
-        cache_dir = tmp_path / "voice-previews"
-        cache_dir.mkdir()
-
-        original_cache = server_mod._PREVIEW_CACHE_DIR
-        server_mod._PREVIEW_CACHE_DIR = cache_dir
-
-        captured_config = {}
-
-        def capture_engine(config):
-            captured_config["language"] = config.primary_language
-            engine = MagicMock()
-
-            async def synth(text, output_path, **kwargs):
-                output_path.write_bytes(b"\xff\xfb\x90\x00" + b"\x00" * 50)
-
-            engine.synthesize_async = synth
-            return engine
-
-        with patch.object(server_mod.tts_factory, "create_engine", side_effect=capture_engine):
-            try:
-                resp = client.get(
-                    "/api/voice-preview",
-                    params={
-                        "engine": "kokoro",
-                        "voice": "af_heart",
-                        "language": "pt",
-                    },
-                )
-                assert resp.status_code == 200
-                assert captured_config["language"] == "en"
-            finally:
-                server_mod._PREVIEW_CACHE_DIR = original_cache
-
     def test_default_language_is_pt(self, client: TestClient, tmp_path: Path):
         """When no language param is given, default to pt."""
         import python_app.server as server_mod
@@ -240,19 +203,10 @@ class TestVoicePreviewEndpoint:
 class TestVoiceCatalog:
     """Tests for the /api/voices endpoint voice catalog."""
 
-    def test_voices_includes_kokoro(self, client: TestClient):
-        resp = client.get("/api/voices")
-        assert resp.status_code == 200
-        voices = resp.json()["voices"]
-        assert "kokoro" in voices
-        kokoro_ids = [v["id"] for v in voices["kokoro"]]
-        assert "af_heart" in kokoro_ids
-        assert "bf_emma" in kokoro_ids
-
     def test_voices_all_engines_present(self, client: TestClient):
         resp = client.get("/api/voices")
         voices = resp.json()["voices"]
-        for engine in ("edge", "kokoro", "piper", "auto"):
+        for engine in ("edge", "piper", "auto"):
             assert engine in voices, f"Missing engine: {engine}"
 
 

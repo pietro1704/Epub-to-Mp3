@@ -39,7 +39,7 @@ describe("ChapterProgressList", () => {
             name: "Chapter 1",
             status: "completed",
             engine: "piper",
-            engineSequence: ["edge", "kokoro", "piper"],
+            engineSequence: ["edge", "piper"],
           },
         ]}
       />,
@@ -47,7 +47,6 @@ describe("ChapterProgressList", () => {
     );
 
     expect(screen.getAllByText("edge").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("kokoro").length).toBeGreaterThan(0);
     expect(screen.getAllByText("piper").length).toBeGreaterThan(0);
     // Arrow separator between engines
     expect(screen.getAllByText("→").length).toBeGreaterThan(0);

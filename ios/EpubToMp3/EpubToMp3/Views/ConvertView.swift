@@ -100,7 +100,6 @@ struct ConvertView: View {
             Section("Engine") {
                 Picker("Engine", selection: $viewModel.engine) {
                     Text("Edge-TTS (cloud)").tag("edge")
-                    Text("Kokoro (local)").tag("kokoro")
                     Text("Piper (offline)").tag("piper")
                     Text("Coqui XTTS").tag("coqui")
                 }

@@ -34,7 +34,6 @@ class BenchmarkItem:
 # separate integration benchmarks, not here.
 ENGINE_PROFILES: Dict[str, float] = {
     "edge": 450.0,
-    "kokoro": 220.0,
     "piper": 110.0,
 }
 

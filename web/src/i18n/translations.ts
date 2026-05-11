@@ -809,11 +809,6 @@ export const translations: Record<Locale, Translations> = {
           help: "Vozes de nuvem da Microsoft. Mais rápido (~70 chars/s). Multilíngue.",
         },
         {
-          value: "kokoro",
-          label: "Kokoro",
-          help: "Modelo leve (82M params). Rápido e offline. EN/JA/ZH.",
-        },
-        {
           value: "piper",
           label: "Piper",
           help: "Modelos PT/EN incluídos. Offline, qualidade básica.",
@@ -843,28 +838,6 @@ export const translations: Record<Locale, Translations> = {
           ],
           languages:
             "Todos (automático) — pt, en, es, fr, de, it, ja, zh e mais",
-        },
-        kokoro: {
-          tagline: "Qualidade surpreendente para 82M parâmetros — roda offline",
-          quality:
-            "Muito alta — voz extremamente natural, quase indistinguível de humana",
-          speed: "~35 chars/s — rápido para um modelo local",
-          requirements: "espeak-ng instalado, ~170 MB RAM",
-          bestVoice: "af_heart",
-          bestVoiceNote:
-            "Heart (feminina americana) é a voz mais natural. Para britânico, bf_emma. Para japonês, jf_alpha.",
-          pros: [
-            "Qualidade de áudio excepcionalmente natural",
-            "Funciona 100% offline após download",
-            "40+ vozes (homem, mulher) em 4 variantes de inglês",
-            "Leve — roda bem em CPU",
-          ],
-          cons: [
-            "Apenas inglês, japonês e chinês",
-            "Sem suporte a português",
-            "Precisa de espeak-ng no sistema",
-          ],
-          languages: "EN (americano/britânico), JA, ZH",
         },
         piper: {
           tagline: "Leve, offline e garantido — o fallback confiável",
@@ -1013,7 +986,7 @@ export const translations: Record<Locale, Translations> = {
       noParallelOff: "Automático",
       multiEngineParallelLabel: "Múltiplos engines em paralelo",
       multiEngineParallelDescription:
-        "Usa Edge e Piper/Kokoro simultaneamente em capítulos diferentes para máxima velocidade. Desligado por padrão — engines locais podem ter erros de detecção de idioma.",
+        "Usa Edge e Piper simultaneamente em capítulos diferentes para máxima velocidade. Desligado por padrão — engines locais podem ter erros de detecção de idioma.",
       multiEngineParallelOn: "Ativado",
       multiEngineParallelOff: "Desativado",
       maxPerformanceLabel: "Velocidade máxima",
@@ -1067,7 +1040,7 @@ export const translations: Record<Locale, Translations> = {
       edgeStableModeOff: "Normal",
       engineChainFallbackLabel: "Cascata de engines (legado)",
       engineChainFallbackHint:
-        "Por padrão, permanecemos no Edge; falhas isoladas usam fallback por chunk. Ative para reabrir a cascata Edge → Kokoro → Piper quando o Edge estiver rate-limitado.",
+        "Por padrão, permanecemos no Edge; falhas isoladas usam fallback por chunk. Ative para reabrir a cascata Edge → Piper quando o Edge estiver rate-limitado.",
       engineChainFallbackOn: "Cascata ativa",
       engineChainFallbackOff: "Só Edge",
       piperMaxProcsLabel: "Piper: processos simultâneos",
@@ -1670,11 +1643,6 @@ export const translations: Record<Locale, Translations> = {
           help: "Microsoft cloud voices. Fastest (~70 chars/s). Multilingual.",
         },
         {
-          value: "kokoro",
-          label: "Kokoro",
-          help: "Lightweight (82M params). Fast and offline. EN/JA/ZH.",
-        },
-        {
           value: "piper",
           label: "Piper",
           help: "Bundled PT/EN voices. Offline, basic quality.",
@@ -1703,28 +1671,6 @@ export const translations: Record<Locale, Translations> = {
           ],
           languages:
             "All (automatic) — pt, en, es, fr, de, it, ja, zh and more",
-        },
-        kokoro: {
-          tagline: "Stunning quality for 82M parameters — runs fully offline",
-          quality:
-            "Very high — extremely natural, almost indistinguishable from human",
-          speed: "~35 chars/s — fast for a local model",
-          requirements: "espeak-ng installed, ~170 MB RAM",
-          bestVoice: "af_heart",
-          bestVoiceNote:
-            "Heart (American female) is the most natural voice. For British, bf_emma. For Japanese, jf_alpha.",
-          pros: [
-            "Exceptionally natural audio quality",
-            "Works 100% offline after download",
-            "40+ voices (male, female) in 4 English variants",
-            "Lightweight — runs well on CPU",
-          ],
-          cons: [
-            "English, Japanese and Chinese only",
-            "No Portuguese support",
-            "Requires espeak-ng on the system",
-          ],
-          languages: "EN (American/British), JA, ZH",
         },
         piper: {
           tagline: "Lightweight, offline, and reliable — the trusty fallback",
@@ -1870,7 +1816,7 @@ export const translations: Record<Locale, Translations> = {
       noParallelOff: "Automatic",
       multiEngineParallelLabel: "Multi-engine parallel",
       multiEngineParallelDescription:
-        "Runs Edge and Piper/Kokoro simultaneously on different chapters for maximum throughput. Off by default — local engines may misdetect language.",
+        "Runs Edge and Piper simultaneously on different chapters for maximum throughput. Off by default — local engines may misdetect language.",
       multiEngineParallelOn: "Enabled",
       multiEngineParallelOff: "Disabled",
       maxPerformanceLabel: "Maximum speed",
@@ -1921,7 +1867,7 @@ export const translations: Record<Locale, Translations> = {
       edgeStableModeOff: "Normal",
       engineChainFallbackLabel: "Engine chain fallback (legacy)",
       engineChainFallbackHint:
-        "By default we stay on Edge; isolated failures use per-chunk fallback. Enable to restore the Edge → Kokoro → Piper cascade when Edge is rate-limited.",
+        "By default we stay on Edge; isolated failures use per-chunk fallback. Enable to restore the Edge → Piper cascade when Edge is rate-limited.",
       engineChainFallbackOn: "Cascade on",
       engineChainFallbackOff: "Edge only",
       piperMaxProcsLabel: "Piper: parallel processes",

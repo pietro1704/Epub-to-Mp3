@@ -9,19 +9,14 @@ python-multipart>=0.0.27
 # TTS Engine (Edge-TTS - Microsoft online)
 edge-tts>=7.2.8
 
-# Kokoro / Piper audio deps
+# Piper audio deps
 torch>=2.6.0  # PYSEC-2024-259, PYSEC-2025-41
 torchaudio>=2.11.0
 soundfile>=0.13.1
 pandas>=3.0.2,<4.0.0
 
-# Coqui XTTS (optional GPU engine) — see requirements-coqui.txt
-
 # Offline fallback (fast, small)
 piper-tts>=1.4.2
-
-# Kokoro TTS (fast, lightweight 82M model)
-kokoro>=0.9.4
 
 # Spark-TTS dependencies (LLM-based, voice cloning)
 huggingface_hub>=1.14.0

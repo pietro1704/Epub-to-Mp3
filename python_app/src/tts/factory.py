@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Optional, Protocol
 
 from ..config import ConversionConfig, VoiceConfigProvider
-from .kokoro_guard import is_kokoro_supported_environment
 from .piper_guard import is_piper_supported_environment
 
 
@@ -79,8 +78,6 @@ class TTSFactory:
         """Return list of available TTS engines."""
         engines = ["edge"]  # Edge is always available (cloud-based)
 
-        import importlib.util
-
         # Check Piper (needs to be in venv or PATH AND have models)
         import shutil
         import sys
@@ -93,10 +90,6 @@ class TTSFactory:
         if piper_available:
             # Piper downloads models on demand, so expose it whenever the binary exists.
             engines.append("piper")
-
-        # Check Kokoro
-        if is_kokoro_supported_environment() and importlib.util.find_spec("kokoro") is not None:
-            engines.append("kokoro")
 
         return engines
 
@@ -111,14 +104,13 @@ class TTSFactory:
     def create_engine(self, config: ConversionConfig) -> TTSEngine:
         engine = (config.engine or "").lower()
 
-        # Multi-voice narration support matrix (v0.3.20):
+        # Multi-voice narration support matrix:
         #   * edge   — dialogue splitter (v0.3.7).
         #   * piper  — two ONNX model paths (v0.3.18).
-        #   * kokoro — two voice IDs (v0.3.20).
         # When the user configured a narrator/character split but picked
         # an engine that won't honour it, surface a clear warning so the
         # config isn't silently dropped.
-        _ENGINES_WITH_MULTI_VOICE = {"edge", "piper", "kokoro"}
+        _ENGINES_WITH_MULTI_VOICE = {"edge", "piper"}
         if engine not in _ENGINES_WITH_MULTI_VOICE:
             wants_split = bool(getattr(config, "enable_character_voices", False))
             has_distinct_voices = (
@@ -131,7 +123,7 @@ class TTSFactory:
 
                 print(
                     "⚠️  Multi-voice narration (narrator/character split) is only "
-                    f"supported by Edge-TTS, Piper, and Kokoro. Engine '{engine}' "
+                    f"supported by Edge-TTS and Piper. Engine '{engine}' "
                     "will use a single voice; narrator_voice and character_voice are ignored.",
                     file=_sys.stderr,
                 )
@@ -212,48 +204,6 @@ class TTSFactory:
             engine_instance.verbose = config.verbose
             return engine_instance
 
-        if engine == "kokoro":
-            kokoro_supported = is_kokoro_supported_environment()
-            if not kokoro_supported and not _is_testing_environment():
-                raise RuntimeError(
-                    "Kokoro TTS unavailable on this system (NumPy/Accelerate incompatible). "
-                    "Set ENABLE_KOKORO=1 to force usage at your own risk."
-                )
-            from .kokoro_engine import KokoroTTSEngine, kokoro_supports_language
-
-            if not kokoro_supports_language(config.primary_language):
-                raise ValueError(
-                    "Kokoro TTS currently supports only English, Japanese and Chinese voices. "
-                    f"Requested language: {config.primary_language or 'unknown'}"
-                )
-            voice = config.voice or self.voice_provider.get_voice("kokoro", config.primary_language)
-            if not voice:
-                # Select default voice based on language
-                lang = (config.primary_language or "en").lower().split("-")[0]
-                if lang in ("ja", "jp"):
-                    voice = "jf_alpha"
-                elif lang in ("zh", "cn"):
-                    voice = "zf_xiaobei"
-                elif lang == "en" and "gb" in (config.primary_language or "").lower():
-                    voice = "bf_emma"
-                else:
-                    voice = "af_heart"  # American English default
-
-            return KokoroTTSEngine(
-                voice,
-                primary_language=config.primary_language,
-                language_voices=config.language_voices,
-                verbose=config.verbose,
-                formatting_cues_enabled=getattr(config, "speak_formatting_cues", True),
-                formatting_locale=getattr(config, "formatting_locale", "pt"),
-                status_callback=config.log_callback,
-                chunk_char_limit=getattr(config, "kokoro_chunk_chars", None),
-                max_workers=getattr(config, "kokoro_max_workers", None),
-                enable_character_voices=bool(getattr(config, "enable_character_voices", False)),
-                narrator_voice=getattr(config, "narrator_voice", None),
-                character_voice=getattr(config, "character_voice", None),
-            )
-
         raise ValueError(f"Unsupported engine: {config.engine}")
 
     def _find_piper_model(
@@ -320,7 +270,7 @@ class TTSFactory:
         # silent fallback, but it produces unlistenable output: a pt-BR
         # audiobook narrated by `en_US-lessac-medium` reads Portuguese with
         # English phonemes (the Carl regression). Refuse instead so the
-        # caller falls through to Edge/Kokoro on the next tier rather than
+        # caller falls through to Edge on the next tier rather than
         # synthesising audio in the wrong language.
         if preferred:
             raise FileNotFoundError(

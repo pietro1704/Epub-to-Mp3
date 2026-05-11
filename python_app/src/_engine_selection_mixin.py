@@ -261,8 +261,6 @@ class _EngineSelectionMixin:
                     return None
                 _warn_piper_fallback()
                 return "piper"
-            if override == "kokoro" and (not available_set or "kokoro" in available_set):
-                return "kokoro"
             # If explicit override is unavailable, fall through to default resolution.
         if _has_piper_support() and (not available_set or "piper" in available_set):
             if _piper_fallback_disabled():

@@ -17,11 +17,9 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
-# espeak-ng: required by Kokoro TTS for phoneme generation (local neural fallback)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     libsndfile1 \
-    espeak-ng \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for caching

@@ -3,7 +3,7 @@
 Benchmark Completo: Todas as Engines TTS com Multi-idioma
 
 Testa:
-- Edge-TTS, Coqui, Kokoro, Piper
+- Edge-TTS, Piper
 - Detecção de idioma por frase
 - Performance e throughput
 - Suporte multilíngue
@@ -170,17 +170,6 @@ def detect_available_engines() -> Dict[str, EngineInfo]:
         requires_internet=True,
     )
 
-    # Kokoro
-    kokoro_available = importlib.util.find_spec("kokoro") is not None
-    engines["kokoro"] = EngineInfo(
-        name="Kokoro",
-        available=kokoro_available,
-        multilingual=True,
-        languages=["en", "ja", "zh"] if kokoro_available else [],
-        default_voice="af_heart" if kokoro_available else "",
-        speed_estimate="fast",
-    )
-
     # Piper
     import shutil
 
@@ -270,31 +259,6 @@ async def synthesize_edge(text: str, language: str, output_path: Path) -> Tuple[
         return False, 0.0
 
 
-async def synthesize_kokoro(text: str, language: str, output_path: Path) -> Tuple[bool, float]:
-    """Sintetiza com Kokoro."""
-    try:
-        from python_app.src.tts.kokoro_engine import KokoroTTSEngine
-
-        # Seleciona voz por idioma
-        voices = {
-            "en": "af_heart",
-            "ja": "jf_alpha",
-            "zh": "zf_xiaobei",
-        }
-        voice = voices.get(language, "af_heart")
-
-        engine = KokoroTTSEngine(voice, primary_language=language)
-
-        start = time.perf_counter()
-        result = await engine.synthesize_async(text, output_path)
-        elapsed = time.perf_counter() - start
-
-        return result is not None and output_path.exists(), elapsed
-    except Exception as e:
-        print(f"    Kokoro error: {e}")
-        return False, 0.0
-
-
 async def synthesize_piper(text: str, language: str, output_path: Path) -> Tuple[bool, float]:
     """Sintetiza com Piper."""
     try:
@@ -321,7 +285,6 @@ async def synthesize_piper(text: str, language: str, output_path: Path) -> Tuple
 
 SYNTHESIZERS = {
     "edge": synthesize_edge,
-    "kokoro": synthesize_kokoro,
     "piper": synthesize_piper,
 }
 

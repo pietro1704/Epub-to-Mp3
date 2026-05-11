@@ -2661,10 +2661,6 @@ select {
   --engine-bg: #dbeafe;
   --engine-color: #1d4ed8;
 }
-.engine-badge--kokoro {
-  --engine-bg: #ede9fe;
-  --engine-color: #6d28d9;
-}
 .engine-badge--piper {
   --engine-bg: #d1fae5;
   --engine-color: #065f46;
@@ -2673,10 +2669,6 @@ select {
   .engine-badge--edge {
     --engine-bg: #1e3a5f;
     --engine-color: #93c5fd;
-  }
-  .engine-badge--kokoro {
-    --engine-bg: #3b2a6e;
-    --engine-color: #c4b5fd;
   }
   .engine-badge--piper {
     --engine-bg: #064e3b;

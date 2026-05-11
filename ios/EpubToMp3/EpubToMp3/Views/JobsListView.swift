@@ -136,7 +136,7 @@ struct SessionRow: View {
         SessionRow(session: SessionRecord(
             timestamp: "2026-05-07T08:15:00",
             bookTitle: "Metro 2033",
-            engine: "kokoro",
+            engine: "piper",
             chaptersConverted: 0,
             durationSeconds: 12,
             outcome: "failed",

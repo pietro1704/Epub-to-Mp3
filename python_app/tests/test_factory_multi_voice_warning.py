@@ -60,18 +60,6 @@ class TestMultiVoiceEdgeOnlyWarning(unittest.TestCase):
         self.assertIn("Multi-voice narration", stderr)
         self.assertIn("unknown", stderr)
 
-    def test_no_warning_for_kokoro_with_split_voices(self):
-        # v0.3.20 wired multi-voice into Kokoro; warning would mislead.
-        cfg = ConversionConfig(
-            engine="kokoro",
-            primary_language="en",
-            enable_character_voices=True,
-            narrator_voice="af_heart",
-            character_voice="bf_heart",
-        )
-        stderr = self._capture_stderr(cfg)
-        self.assertNotIn("Multi-voice narration", stderr)
-
     def test_no_warning_for_piper_with_split_voices(self):
         # v0.3.18 wired multi-voice into Piper; the warning would be
         # misleading now.

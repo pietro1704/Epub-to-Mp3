@@ -11,8 +11,8 @@ class TestRecommendEngineForChapter:
 
     def _make_controller(self) -> AdaptiveSpeedController:
         ctrl = AdaptiveSpeedController()
-        # Ensure piper/kokoro buckets exist
-        for engine in ("edge", "piper", "kokoro"):
+        # Ensure piper buckets exist
+        for engine in ("edge", "piper"):
             if engine not in ctrl._history:
                 from collections import deque
 
@@ -40,11 +40,6 @@ class TestRecommendEngineForChapter:
         ctrl = self._make_controller()
         pick = ctrl.recommend_engine_for_chapter(2000, ["edge", "piper"])
         assert pick == "piper"
-
-    def test_short_chapter_prefers_kokoro_if_available(self):
-        ctrl = self._make_controller()
-        pick = ctrl.recommend_engine_for_chapter(3000, ["edge", "kokoro"])
-        assert pick == "kokoro"
 
     def test_long_chapter_prefers_edge(self):
         ctrl = self._make_controller()

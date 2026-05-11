@@ -214,13 +214,12 @@ def test_build_engine_chain_includes_edge_monolingual_fallback(monkeypatch):
 def test_build_engine_chain_includes_supported_fallbacks(monkeypatch):
     config = ConversionConfig(engine="edge", primary_language="pt-BR")
 
-    monkeypatch.setattr(server, "_has_kokoro_support", lambda _: True)
     monkeypatch.setattr(server, "_has_piper_support", lambda: True)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     chain = server._build_engine_chain(config)
     engines = [cfg.engine for cfg in chain]
-    assert "edge" in engines and "kokoro" in engines and "piper" in engines
+    assert "edge" in engines and "piper" in engines
 
 
 def test_should_retry_edge_before_fallback_prefers_one_local_retry():
@@ -229,53 +228,20 @@ def test_should_retry_edge_before_fallback_prefers_one_local_retry():
     assert server._should_retry_edge_before_fallback("piper", edge_slow_mode=False) is False
 
 
-def test_rank_fallbacks_penalises_recently_failed_engines(monkeypatch):
-    """The server-side fallback ranking must mirror the CLI reliability
-    weighting: a slightly slower but reliable engine should outrank a fast
-    one that just failed several times."""
+def test_rank_fallbacks_includes_piper(monkeypatch):
+    """After the multi-engine cleanup only Piper remains in the offline chain;
+    confirm it is appended when ENGINE_CHAIN_FALLBACK is enabled."""
     from dataclasses import replace
-
-    from python_app.src import _server_engine_helpers
 
     base = ConversionConfig(engine="edge", primary_language="pt-BR")
 
-    # Stub server-side feature detection to keep the chain deterministic.
-    monkeypatch.setattr(server, "_has_coqui_support", lambda: False)
-    monkeypatch.setattr(server, "_has_kokoro_support", lambda _: True)
     monkeypatch.setattr(server, "_has_piper_support", lambda: True)
-
-    # Kokoro nominally faster than Piper (400 vs 300 cps) — baseline order.
-    fake_summary = {
-        "kokoro": {"avg_chars_per_second": 400.0},
-        "piper": {"avg_chars_per_second": 300.0},
-    }
-
-    class _FakeTelemetry:
-        def summary(self):
-            return fake_summary
-
-        def __init__(self):
-            self._kokoro_fails = 0
-
-        def reliability_factor(self, engine):
-            if engine == "kokoro":
-                # 5 recent failures → 0.85**5 ≈ 0.44 → effective cps 176 (below Piper).
-                return 0.85**5
-            return 1.0
-
-    monkeypatch.setattr(server, "telemetry", _FakeTelemetry())
-    # Also patch the lazy-imported reference inside _server_engine_helpers.
-    monkeypatch.setattr(_server_engine_helpers, "__name__", _server_engine_helpers.__name__)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
 
     chain = server._build_engine_chain(replace(base))
     engines = [cfg.engine for cfg in chain]
-    # Edge stays first (primary). Among fallbacks, Piper must come before
-    # Kokoro because the reliability penalty pushed Kokoro below it.
     assert engines[0] == "edge"
-    fallback_engines = engines[1:]
-    assert "piper" in fallback_engines and "kokoro" in fallback_engines
-    assert fallback_engines.index("piper") < fallback_engines.index("kokoro")
+    assert "piper" in engines[1:]
 
 
 def test_engine_is_disabled_respects_unavailable_set():
@@ -635,7 +601,7 @@ def test_job_fulltext_returns_422_when_parsing_yields_no_chapters_on_failed_job(
     server.jobs.pop(job_id, None)
 
 
-def test_edge_fallbacks_to_kokoro_and_recovers(tmp_path, monkeypatch):
+def test_edge_fallbacks_to_piper(tmp_path, monkeypatch):
     job_id = str(uuid4())
     _configure_server_paths(tmp_path, monkeypatch)
     monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
@@ -660,52 +626,6 @@ def test_edge_fallbacks_to_kokoro_and_recovers(tmp_path, monkeypatch):
 
     creators = {
         "edge": lambda: DummyTTSEngine("edge", fail_times=1),
-        "kokoro": lambda: DummyTTSEngine("kokoro"),
-        "piper": lambda: DummyTTSEngine("piper"),
-    }
-    dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
-    monkeypatch.setattr(server, "tts_factory", dummy_factory)
-    monkeypatch.setattr(server.AudioProcessor, "convert_to_mp3", staticmethod(_fake_convert_to_mp3))
-    monkeypatch.setattr(
-        server, "_should_retry_edge_before_fallback", lambda *_args, **_kwargs: False
-    )
-
-    asyncio.run(server.process_conversion(job_id))
-    job = server.jobs[job_id]
-    assert job["state"] == "finished"
-    assert any("trying fallback" in event for event in job["events"])
-    assert all(entry["status"] == "completed" for entry in job.get("chapterProgress", []))
-    assert all(entry.get("engine") for entry in job.get("chapterProgress", []))
-    assert job["outputs"], "expected generated assets"
-    server.jobs.pop(job_id, None)
-
-
-def test_edge_fallbacks_to_piper_when_kokoro_fails(tmp_path, monkeypatch):
-    job_id = str(uuid4())
-    _configure_server_paths(tmp_path, monkeypatch)
-    monkeypatch.setenv("ENGINE_CHAIN_FALLBACK", "1")
-
-    upload_path = tmp_path / f"{job_id}_book.epub"
-    upload_path.write_bytes(FIXTURE_BOOK.read_bytes())
-
-    server.jobs[job_id] = {
-        "jobId": job_id,
-        "state": "queued",
-        "events": [],
-        "file_path": str(upload_path),
-        "engine": "edge",
-        "voice": None,
-        "chapters": None,
-        "footnote_mode": "inline",
-        "language": "pt-BR",
-        "outputs": [],
-    }
-
-    _make_telemetry(tmp_path, monkeypatch)
-
-    creators = {
-        "edge": lambda: DummyTTSEngine("edge", fail_times=1),
-        "kokoro": lambda: DummyTTSEngine("kokoro", fail_times=1),
         "piper": lambda: DummyTTSEngine("piper"),
     }
     dummy_factory = DummyFactory(creators, server.tts_factory.voice_provider)
@@ -728,9 +648,9 @@ def test_edge_fallbacks_to_piper_when_kokoro_fails(tmp_path, monkeypatch):
 def test_pick_auto_engine_prefers_fastest_telemetry():
     pool = {
         "edge": (ConversionConfig(engine="edge"), SimpleNamespace()),
-        "kokoro": (ConversionConfig(engine="kokoro"), SimpleNamespace()),
+        "piper": (ConversionConfig(engine="piper"), SimpleNamespace()),
     }
-    telemetry_speeds = {"edge": 180.0, "kokoro": 50.0}
+    telemetry_speeds = {"edge": 180.0, "piper": 50.0}
     selected, order = server._pick_auto_engine(12_000, 600, pool, telemetry_speeds=telemetry_speeds)
     assert order[0] == "edge"
     assert selected == order[0]

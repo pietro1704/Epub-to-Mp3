@@ -73,7 +73,7 @@ class ConversionConfig:
     piper_max_procs: Optional[int] = None  # override Piper concurrent process limit
     piper_chunk_chars: Optional[int] = None  # override Piper chunk size when auto-tuning
     engine_chain_fallback: Optional[bool] = (
-        None  # mirrors ENGINE_CHAIN_FALLBACK env var; when True, legacy Edge→Kokoro→Piper cascade is re-enabled
+        None  # mirrors ENGINE_CHAIN_FALLBACK env var; when True, legacy Edge→Piper cascade is re-enabled
     )
     speak_formatting_cues: bool = True
     formatting_locale: str = "pt"
@@ -325,93 +325,6 @@ class VoiceConfigProvider:
                 "multilingual": False,
             },
         ]
-        self._kokoro_voice_catalog: List[Dict[str, object]] = [
-            # Curated subset — most natural per language/gender
-            {
-                "id": "af_heart",
-                "label": "Heart – American English Female (default)",
-                "multilingual": False,
-                "language": "en-US",
-            },
-            {
-                "id": "af_bella",
-                "label": "Bella – American English Female",
-                "multilingual": False,
-                "language": "en-US",
-            },
-            {
-                "id": "af_nova",
-                "label": "Nova – American English Female",
-                "multilingual": False,
-                "language": "en-US",
-            },
-            {
-                "id": "af_sarah",
-                "label": "Sarah – American English Female",
-                "multilingual": False,
-                "language": "en-US",
-            },
-            {
-                "id": "am_adam",
-                "label": "Adam – American English Male",
-                "multilingual": False,
-                "language": "en-US",
-            },
-            {
-                "id": "am_michael",
-                "label": "Michael – American English Male",
-                "multilingual": False,
-                "language": "en-US",
-            },
-            {
-                "id": "bf_emma",
-                "label": "Emma – British English Female",
-                "multilingual": False,
-                "language": "en-GB",
-            },
-            {
-                "id": "bf_alice",
-                "label": "Alice – British English Female",
-                "multilingual": False,
-                "language": "en-GB",
-            },
-            {
-                "id": "bm_george",
-                "label": "George – British English Male",
-                "multilingual": False,
-                "language": "en-GB",
-            },
-            {
-                "id": "bm_daniel",
-                "label": "Daniel – British English Male",
-                "multilingual": False,
-                "language": "en-GB",
-            },
-            {
-                "id": "jf_alpha",
-                "label": "Alpha – Japanese Female",
-                "multilingual": False,
-                "language": "ja",
-            },
-            {
-                "id": "jm_kumo",
-                "label": "Kumo – Japanese Male",
-                "multilingual": False,
-                "language": "ja",
-            },
-            {
-                "id": "zf_xiaobei",
-                "label": "Xiaobei – Chinese Female",
-                "multilingual": False,
-                "language": "zh",
-            },
-            {
-                "id": "zm_yunxi",
-                "label": "Yunxi – Chinese Male",
-                "multilingual": False,
-                "language": "zh",
-            },
-        ]
         self._auto_voice_catalog = [
             {
                 "id": "pt-BR-ThalitaMultilingualNeural",
@@ -454,7 +367,6 @@ class VoiceConfigProvider:
 
         return {
             "edge": clone(self._edge_voice_catalog),
-            "kokoro": clone(self._kokoro_voice_catalog),
             "piper": piper_entries,
             "auto": clone(self._auto_voice_catalog),
         }

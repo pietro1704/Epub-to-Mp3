@@ -70,7 +70,6 @@ from src.telemetry import TelemetryRecorder
 from src.text_formatting import TextFormattingProcessor
 from src.tts.edge_engine import reset_adaptive_settings
 from src.tts.factory import TTSFactory
-from src.tts.kokoro_guard import load_kokoro_supports_language
 from src.tts.piper_guard import is_piper_supported_environment
 from src.utils import AudioProcessor, FileManager, TextValidator, TimeFormatter
 
@@ -689,24 +688,13 @@ def _clear_restart_marker() -> None:
 
 
 _skip_resume_on_startup = bool(_load_restart_marker())
-_kokoro_support_check = load_kokoro_supports_language()
-if _IS_TEST_ENV and _kokoro_support_check is None:
-    try:
-        from src.tts.kokoro_engine import kokoro_supports_language as _direct_kokoro_support
-
-        _kokoro_support_check = _direct_kokoro_support
-    except Exception:
-        pass
 _PIPER_SUPPORTED = _IS_TEST_ENV or is_piper_supported_environment()
 
 
 def _has_kokoro_support(language: Optional[str]) -> bool:
-    if _kokoro_support_check is None:
-        return False
-    try:
-        return bool(_kokoro_support_check(language))
-    except Exception:
-        return False
+    """Stub kept for test back-compat after the Kokoro engine was removed.
+    Always returns False — Kokoro TTS is no longer available."""
+    return False
 
 
 def _has_piper_support() -> bool:
@@ -3167,15 +3155,13 @@ async def voice_preview(
         )
 
     engine = engine.lower().strip()
-    if engine not in ("edge", "kokoro", "piper"):
+    if engine not in ("edge", "piper"):
         raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine}")
 
     lang_code = language.lower().split("-")[0] if language else "pt"
 
     # Pick sample text matching language (or engine default)
-    if engine == "kokoro" and lang_code not in ("en", "ja", "zh"):
-        lang_code = "en"
-    elif engine == "piper" and lang_code not in ("pt", "en", "es", "fr", "de", "it"):
+    if engine == "piper" and lang_code not in ("pt", "en", "es", "fr", "de", "it"):
         lang_code = "pt"
 
     sample_text = _PREVIEW_SAMPLE_TEXTS.get(lang_code, _PREVIEW_SAMPLE_TEXTS["en"])
@@ -3346,7 +3332,6 @@ async def estimate_conversion(
     # ── Default throughput per engine (chars/s, conservative) ────────────
     _DEFAULTS: dict[str, float] = {
         "edge": 110.0,
-        "kokoro": 35.0,
         "piper": 25.0,
         "auto": 110.0,
     }
@@ -3416,7 +3401,7 @@ async def estimate_conversion(
 
 @app.get("/api/telemetry")
 async def get_engine_telemetry() -> dict:
-    """Return aggregated throughput data to compare Edge vs Kokoro/Piper speeds."""
+    """Return aggregated throughput data to compare Edge vs Piper speeds."""
     summary = telemetry.summary()
     recent = [
         {

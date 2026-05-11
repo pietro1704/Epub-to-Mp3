@@ -349,11 +349,11 @@ class TextIntegrityValidator:
 
     def _detect_engine_mismatch(self) -> bool:
         """Detect if cache is from a different TTS engine"""
-        # Check if cache has subdirectories like "edge", "kokoro", "piper"
+        # Check if cache has subdirectories like "edge", "piper"
         if not self.cache_dir.exists():
             return False
 
-        engine_dirs = ["edge", "kokoro", "piper"]
+        engine_dirs = ["edge", "piper"]
         for engine_dir in engine_dirs:
             if (self.cache_dir / engine_dir).exists():
                 return True

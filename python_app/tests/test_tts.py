@@ -7,10 +7,9 @@ import asyncio
 import os
 import sys
 import tempfile
-import types
 import unittest
 from pathlib import Path
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -84,29 +83,11 @@ class TestTTSFactory(unittest.TestCase):
 
         self.assertIn("Unsupported engine", str(context.exception))
 
-    def test_create_kokoro_engine(self):
-        """Test creating Kokoro TTS engine when environment is supported."""
-        config = ConversionConfig(engine="kokoro", primary_language="en-US", voice="kokoro_voice")
-        fake_module = types.ModuleType("src.tts.kokoro_engine")
-        mock_engine = Mock()
-        fake_module.KokoroTTSEngine = Mock(return_value=mock_engine)
-        fake_module.kokoro_supports_language = Mock(return_value=True)
-
-        with (
-            patch("src.tts.factory.is_kokoro_supported_environment", return_value=True),
-            patch.dict(sys.modules, {"src.tts.kokoro_engine": fake_module}),
-        ):
-            engine = self.factory.create_engine(config)
-
-        fake_module.KokoroTTSEngine.assert_called_once()
-        self.assertIs(engine, mock_engine)
-
     def test_available_engines_includes_piper_without_models(self):
         """Piper should be advertised when the binary exists even if no models are cached."""
         with (
             patch("shutil.which", return_value="/usr/bin/piper"),
             patch("src.tts.factory.is_piper_supported_environment", return_value=True),
-            patch("src.tts.factory.is_kokoro_supported_environment", return_value=False),
         ):
             engines = self.factory.available_engines()
         self.assertIn("piper", engines)
@@ -178,15 +159,6 @@ class TestTTSFactory(unittest.TestCase):
                         any("pt_BR" in url for url in downloaded_paths),
                         f"Should not download Portuguese model for unknown language: {downloaded_paths}",
                     )
-
-    def test_kokoro_rejected_for_portuguese(self):
-        """Kokoro should not be used for pt-BR since there is no native voice."""
-        config = ConversionConfig(engine="kokoro", primary_language="pt-BR")
-        with self.assertRaises(ValueError) as exc:
-            self.factory.create_engine(config)
-        message = str(exc.exception)
-        self.assertIn("Kokoro", message)
-        self.assertIn("pt-BR", message)
 
 
 class TestEdgeTTSEngine(unittest.IsolatedAsyncioTestCase):

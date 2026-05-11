@@ -7,7 +7,7 @@ Automatically configures optimization flags:
 - EDGE_MAX_CONCURRENCY
 - EDGE_CHUNK_CHARS
 - EDGE_SAFE_CHAPTER_PARALLEL
-- KOKORO_MAX_WORKERS
+- PIPER_MAX_WORKERS
 etc.
 """
 
@@ -35,10 +35,6 @@ class TuningProfile:
     edge_safe_chapter_parallel: int
     edge_max_segment_seconds: float
 
-    # Kokoro TTS
-    kokoro_max_workers: int
-    kokoro_chunk_chars: int
-
     # Piper TTS
     piper_max_workers: int
 
@@ -55,8 +51,6 @@ class AutoTuner:
             edge_chunk_chars=4000,
             edge_safe_chapter_parallel=1,
             edge_max_segment_seconds=120.0,
-            kokoro_max_workers=1,
-            kokoro_chunk_chars=1500,
             piper_max_workers=2,
         ),
         "balanced": TuningProfile(
@@ -66,8 +60,6 @@ class AutoTuner:
             edge_chunk_chars=8000,
             edge_safe_chapter_parallel=2,
             edge_max_segment_seconds=85.0,
-            kokoro_max_workers=2,
-            kokoro_chunk_chars=2000,
             piper_max_workers=4,
         ),
         "performance": TuningProfile(
@@ -77,8 +69,6 @@ class AutoTuner:
             edge_chunk_chars=10000,
             edge_safe_chapter_parallel=4,
             edge_max_segment_seconds=85.0,
-            kokoro_max_workers=3,
-            kokoro_chunk_chars=2500,
             piper_max_workers=6,
         ),
         "maximum": TuningProfile(
@@ -88,8 +78,6 @@ class AutoTuner:
             edge_chunk_chars=12000,
             edge_safe_chapter_parallel=6,
             edge_max_segment_seconds=85.0,
-            kokoro_max_workers=4,
-            kokoro_chunk_chars=3000,
             piper_max_workers=8,
         ),
     }
@@ -121,8 +109,6 @@ class AutoTuner:
             "edge_chunk_chars",
             "edge_safe_chapter_parallel",
             "edge_max_segment_seconds",
-            "kokoro_max_workers",
-            "kokoro_chunk_chars",
             "piper_max_workers",
         }
         if not required.issubset(payload):
@@ -135,8 +121,6 @@ class AutoTuner:
                 edge_chunk_chars=int(payload["edge_chunk_chars"]),
                 edge_safe_chapter_parallel=int(payload["edge_safe_chapter_parallel"]),
                 edge_max_segment_seconds=float(payload["edge_max_segment_seconds"]),
-                kokoro_max_workers=int(payload["kokoro_max_workers"]),
-                kokoro_chunk_chars=int(payload["kokoro_chunk_chars"]),
                 piper_max_workers=int(payload["piper_max_workers"]),
             )
         except (TypeError, ValueError):
@@ -178,8 +162,6 @@ class AutoTuner:
                     "edge_chunk_chars": profile.edge_chunk_chars,
                     "edge_safe_chapter_parallel": profile.edge_safe_chapter_parallel,
                     "edge_max_segment_seconds": profile.edge_max_segment_seconds,
-                    "kokoro_max_workers": profile.kokoro_max_workers,
-                    "kokoro_chunk_chars": profile.kokoro_chunk_chars,
                     "piper_max_workers": profile.piper_max_workers,
                 },
             }
@@ -279,10 +261,6 @@ class AutoTuner:
         if hw.ram_available_gb < 4:
             adjusted.edge_safe_chapter_parallel = max(1, adjusted.edge_safe_chapter_parallel // 2)
 
-        # Increase workers if GPU is available
-        if hw.gpu_available and hw.gpu_type == "cuda":
-            adjusted.kokoro_max_workers = min(6, adjusted.kokoro_max_workers + 1)
-
         # Reduce concurrency for slow networks
         if network and network.tier == "slow":
             adjusted.edge_max_concurrency = max(2, adjusted.edge_max_concurrency // 2)
@@ -316,10 +294,6 @@ class AutoTuner:
         set_if_not_exists("EDGE_SAFE_CHAPTER_PARALLEL", str(profile.edge_safe_chapter_parallel))
         set_if_not_exists("EDGE_MAX_SEGMENT_SECONDS", str(profile.edge_max_segment_seconds))
 
-        # Kokoro TTS
-        set_if_not_exists("KOKORO_MAX_WORKERS", str(profile.kokoro_max_workers))
-        set_if_not_exists("KOKORO_CHUNK_CHARS", str(profile.kokoro_chunk_chars))
-
         # Piper TTS
         set_if_not_exists("PIPER_MAX_WORKERS", str(profile.piper_max_workers))
         # Piper runtime uses PIPER_MAX_PROCS; keep both for compatibility.
@@ -341,9 +315,6 @@ class AutoTuner:
         print(f"  EDGE_CHUNK_CHARS: {profile.edge_chunk_chars}")
         print(f"  EDGE_SAFE_CHAPTER_PARALLEL: {profile.edge_safe_chapter_parallel}")
         print(f"  EDGE_MAX_SEGMENT_SECONDS: {profile.edge_max_segment_seconds}")
-        print("\nKokoro TTS:")
-        print(f"  KOKORO_MAX_WORKERS: {profile.kokoro_max_workers}")
-        print(f"  KOKORO_CHUNK_CHARS: {profile.kokoro_chunk_chars}")
         print("=" * 70 + "\n")
 
     async def auto_configure(

@@ -219,7 +219,7 @@ class TestTextIntegrityValidator(unittest.TestCase):
         self.assertFalse(self.validator._detect_engine_mismatch())
 
         # Create an engine directory
-        (self.cache_dir / "kokoro").mkdir(parents=True, exist_ok=True)
+        (self.cache_dir / "piper").mkdir(parents=True, exist_ok=True)
         self.assertTrue(self.validator._detect_engine_mismatch())
 
 

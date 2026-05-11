@@ -165,12 +165,6 @@ class TestCliFallbackEngineOverride(unittest.TestCase):
         ):
             self.assertIsNone(mixin._resolve_offline_fallback_engine())
 
-    def test_cli_override_kokoro_returns_kokoro(self):
-        mixin = _make_mixin()
-        mixin._cli_fallback_engine = "kokoro"
-        with patch("src._engine_selection_mixin._has_piper_support", return_value=True):
-            self.assertEqual(mixin._resolve_offline_fallback_engine(), "kokoro")
-
     def test_cli_override_piper_honored(self):
         mixin = _make_mixin()
         mixin._cli_fallback_engine = "piper"
@@ -184,7 +178,7 @@ class TestCliFallbackEngineOverride(unittest.TestCase):
     def test_cli_override_falls_through_when_unavailable(self):
         """If the override engine isn't available, default resolution still runs."""
         mixin = _make_mixin()
-        mixin._cli_fallback_engine = "kokoro"  # not in available set
+        mixin._cli_fallback_engine = "unknown"  # not in available set
         with (
             patch("src._engine_selection_mixin._has_piper_support", return_value=True),
         ):

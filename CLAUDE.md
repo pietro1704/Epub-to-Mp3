@@ -55,7 +55,7 @@ Full-stack EPUB/PDF to MP3 audiobook converter. Python backend (FastAPI) + React
 
 CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `PERSISTENT_ROOT`. To override, set `PERSISTENT_ROOT`, `CACHE_DIR`, or `OUTPUT_DIR` env vars.
 
-**TTS Engines** (fastest → slowest): Edge-TTS (cloud) → Kokoro (local neural, EN/JA/ZH) → Piper (offline ONNX, all languages)
+**TTS Engines** (fastest → slowest): Edge-TTS (cloud) → Piper (offline ONNX, all languages)
 
 ---
 
@@ -66,7 +66,7 @@ CLI and web-local automatically share cache because both use `PROJECT_ROOT` as `
 - Maximize CPU and RAM usage by default — never artificially limit resources
 - Scale chapter parallelism to available CPU cores automatically
 - Use aggressive chunk sizes and concurrency for Edge-TTS
-- Scale Kokoro/Piper workers to match available cores
+- Scale Piper workers to match available cores
 - Prefer parallel chapter conversion over sequential when possible
 - Cache parsed text aggressively — never re-parse if cache is valid
 - Skip validation overhead for short chapters (< 1500 chars)
@@ -218,7 +218,7 @@ Each one is its own codebase; the backend is the single source of truth.
 | Client | Path | Platforms | Role |
 |---|---|---|---|
 | **SwiftUI** | `ios/EpubToMp3/` | macOS · iPadOS · iOS | Official Apple client. Library-first reader. macOS embeds the Python server as a sidecar (PyInstaller binary copied into `Contents/Resources/` at build time). iOS / iPadOS talk to a remote backend (`mise run web` or HF Spaces). |
-| **Flutter** | `flutter_app/` | Linux · Windows · Android · macOS · iOS | Official non-Apple client. Single Dart codebase. Talks to the same FastAPI surface. |
+| **Flutter** | `flutter_app/` | Linux · Windows · Android | Official non-Apple client. Single Dart codebase. Talks to the same FastAPI surface. **macOS/iOS are NOT supported** — the SwiftUI app owns those platforms. |
 | **Tauri** | `desktop/` | macOS · Linux · Windows | Alternative WebView shell wrapping `web/dist/` + the same PyInstaller sidecar. Kept working but no longer the default Apple/desktop story. |
 
 Generic rules:
@@ -240,7 +240,7 @@ There are **two completely separate conversion pipelines**:
 
 1. **`converter.py`** — CLI path (`python -m python_app.main convert`)
    - `AudioConverter._convert_chapters_parallel()` — main chapter loop
-   - Four-tier fallback: Edge multilingual → Edge monolingual → Kokoro → Piper
+   - Three-tier fallback: Edge multilingual → Edge monolingual → Piper
    - Adaptive delays, retry backoff, deferred safe pass
    - `AudioConverter` uses 8 mixins:
      `_HealthWatchdogMixin`, `_MetricsReportMixin`, `_OutputFileMixin`, `_CacheMixin`,
@@ -262,7 +262,7 @@ There are **two completely separate conversion pipelines**:
 ```
 main.py            CLI entry — argument parsing, book loading, orchestration
 server.py          FastAPI server — job queue, async conversion, SSE streaming
-hf_app.py          HF Spaces wrapper — serves React + API, Kokoro pre-warm
+hf_app.py          HF Spaces wrapper — serves React + API
 src/
 ├── config.py                    ConversionConfig dataclass
 ├── converter.py                 CLI conversion orchestration (DUAL PATH)
@@ -288,7 +288,6 @@ src/
 ├── error_classifier.py TTS error → stable category mapping
 └── tts/
     ├── edge_engine.py  Edge-TTS (cloud, 12K chunks, rate-limit backoff)
-    ├── kokoro_engine.py Kokoro (82M params, EN/JA/ZH, needs espeak-ng)
     └── piper_engine.py  Piper ONNX (all languages, subprocess-based)
 ```
 
@@ -356,22 +355,19 @@ EDGE_SLOW_RATIO_THRESHOLD=2.5    # Slow mode trigger ratio (HF auto-sets to 1.5)
 
 ### Local Engines
 ```bash
-KOKORO_CHUNK_CHARS=3000          # Chars per Kokoro chunk (was 2000)
-KOKORO_MAX_WORKERS=0             # Auto-detect from CPU (0=auto)
 PIPER_CHUNK_CHARS=5000           # Chars per Piper chunk (was 3000; fewer subprocess calls)
 PIPER_MAX_PROCS=0                # Auto-detect from CPU (0=auto)
 DISABLE_PIPER_FALLBACK=0         # Set to 1 to skip Piper and retry Edge instead
-                                 # (faster for PT-BR where Kokoro is unavailable)
 ENGINE_CHAIN_FALLBACK=0          # Default off: stay on Edge (multi → mono) and
-                                 # never cascade to Kokoro/Piper for whole
+                                 # never cascade to Piper for whole
                                  # chapters. Per-chunk fallback still handles
                                  # isolated hangs (CLI --fallback-engine or
                                  # FALLBACK_ENGINE_OVERRIDE). Set to 1 to
-                                 # restore the legacy four-tier cascade.
+                                 # restore the legacy multi-tier cascade.
 FALLBACK_ENGINE_OVERRIDE=auto    # Operator-level fallback constraint, read by
                                  # both the CLI (secondary to --fallback-engine)
                                  # and server's _build_engine_chain. Values:
-                                 # auto|none|piper|kokoro.
+                                 # auto|none|piper.
                                  # "none" strips all offline fallbacks; a specific
                                  # engine filters the chain to that tier only.
 ```
@@ -411,18 +407,17 @@ CLI_CHAPTER_HARD_TIMEOUT_SECONDS=900  # Hard per-chapter ceiling for the CLI
 ## TTS Engine Fallback System
 
 ### CLI Path (`converter.py`)
-Four-tier progressive fallback per chapter, with adaptive delays:
+Three-tier progressive fallback per chapter, with adaptive delays:
 
 1. **Edge multilingual** — best quality, prone to rate limiting on HF shared IPs
    - Chapter backoff: 0.5s → 1s → 2s → 4s → 8s → 16s → 30s (cap)
    - Request backoff: 5s → 10s → 20s → 40s → 60s (cap), resets after 15 successes + 60s
 2. **Edge monolingual** — after `EDGE_MONOLINGUAL_THRESHOLD=3` failures
-3. **Kokoro** — after `EDGE_KOKORO_THRESHOLD=3` more failures (EN/JA/ZH only)
-4. **Piper** — after `EDGE_PIPER_THRESHOLD=3` more failures (all languages)
+3. **Piper** — after `EDGE_PIPER_THRESHOLD=3` more failures (all languages)
 
 ### Server Path (`server.py`)
 Per-job engine chain + slow detection:
-- `_build_engine_chain()` → `edge → kokoro → piper` (ranked by telemetry speed)
+- `_build_engine_chain()` → `edge → piper` (ranked by telemetry speed)
 - Slow mode: if `chars/s < EDGE_MIN_CHARS_PER_SECOND` OR `elapsed > estimated × ratio`
   → `_apply_edge_slow_mode()` (reduces chunks, disables parallel)
 - **Edge disabled for whole job** if: slow mode active + next healthcheck still slow,
@@ -430,9 +425,7 @@ Per-job engine chain + slow detection:
 - `_CHAPTER_RETRY_FOREVER = False` — prevents infinite loops when all engines fail
 
 ### Language Support
-- **Kokoro**: EN, JA, ZH only. For pt-BR → skipped, falls to Piper
 - **Piper**: all languages (model downloaded on first use, cached in `/models/piper/`)
-- **espeak-ng system package** required for Kokoro — must be in Dockerfile
 
 ---
 
@@ -457,10 +450,8 @@ COMPLETED_JOB_TTL_HOURS=48     (outputs survive overnight on /data)
 
 ### Dockerfile requirements
 ```dockerfile
-RUN apt-get install -y ffmpeg libsndfile1 espeak-ng
+RUN apt-get install -y ffmpeg libsndfile1
 ```
-- `espeak-ng` is required for Kokoro to work (phoneme generation)
-- Without it, Kokoro silently fails and only Piper is available
 
 ### Persistent Storage
 - Files on `/data/epub-to-mp3/` survive restarts
@@ -501,7 +492,6 @@ These features exist specifically to improve the audiobook listening experience:
 |-----|-----|
 | `_CHAPTER_RETRY_FOREVER = True` → infinite loop when all engines fail | Set to `False`, use `_CHAPTER_RETRY_ROUNDS=3` |
 | `EXPECTED_WPM=160` → 80% coverage on complete Edge audio → false truncation | Changed to `200` |
-| Missing `espeak-ng` in Dockerfile → Kokoro fails silently on HF | Added to apt-get |
 | 35 CVEs in pip-audit (aiohttp, pypdf, flask, nltk, requests, filelock, etc.) | Bumped direct deps + added transitive security pins in requirements.txt; `pip upgrade` in Dockerfile |
 | Keep-alive pinging public URL → HF 429 for users | Use localhost only |
 | Edge slow (66 chars/s) never triggered fallback on HF | HF threshold 100 chars/s, 1.5x ratio |

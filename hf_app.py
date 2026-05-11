@@ -79,30 +79,12 @@ _base_lifespan = app.router.lifespan_context
 async def _prewarm_local_engines() -> None:
     """Pre-warm local TTS engines so they are ready when Edge-TTS falls back.
 
-    Kokoro supports EN/JA/ZH only — for pt-BR and other languages, Piper is
-    the local fallback and its model is downloaded on first use (cached on /data).
-
-    Engines and their supported languages:
-      - Kokoro: en, ja, zh  (fast neural, ~82M params, CPU-friendly)
-      - Piper:  all languages via ONNX (model downloaded per-language on demand)
+    Piper is the local fallback (all languages via ONNX, model downloaded per
+    language on demand and cached on /data).
     """
     import asyncio
 
     await asyncio.sleep(10)  # Let the server fully start first
-    try:
-        import sys
-
-        sys.path.insert(0, str(Path(__file__).parent / "python_app"))
-        from src.tts.kokoro_engine import _ensure_kokoro
-
-        logger.info("Pre-warming Kokoro TTS for English (en/ja/zh supported only)...")
-        KP = _ensure_kokoro()
-        # Instantiate the English pipeline — triggers model download/cache
-        _ = KP(lang_code="a")  # 'a' = American English
-        logger.info("✅ Kokoro ready — fallback for EN/JA/ZH books")
-    except Exception as exc:
-        logger.warning(f"Kokoro pre-warm skipped (will load on demand): {exc}")
-
     try:
         import shutil
 

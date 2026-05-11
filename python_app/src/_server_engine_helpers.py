@@ -1,8 +1,8 @@
 """Engine selection, performance profiles, voice/language configuration helpers.
 
 These are extracted from server.py to reduce its line count.  All server-level
-globals (_has_kokoro_support, _has_piper_support, telemetry, tts_factory, …)
-are accessed via a lazy import to avoid circular-import issues.
+globals (_has_piper_support, telemetry, tts_factory, …) are accessed via a
+lazy import to avoid circular-import issues.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ def _piper_fallback_disabled() -> bool:
 
 
 def _engine_chain_fallback_enabled(config: Optional[object] = None) -> bool:
-    """Whether to append offline engine tiers (kokoro/piper) after Edge.
+    """Whether to append offline engine tiers (piper) after Edge.
 
     Defaults to ``False``: the project's priority is to maximise Edge usage
     in both CLI and web paths, with per-chunk fallback handling isolated
@@ -47,13 +47,13 @@ def _fallback_engine_override() -> Optional[str]:
     the server's engine chain is constrained accordingly.
 
     ``FALLBACK_ENGINE_OVERRIDE=none`` strips all offline fallbacks; setting it
-    to a specific engine (``piper``/``kokoro``) keeps only that tier.
+    to ``piper`` keeps only that tier.
     Unknown / empty values return None (no override → current ranking wins).
     """
     raw = (os.getenv("FALLBACK_ENGINE_OVERRIDE") or "").strip().lower()
     if not raw or raw == "auto":
         return None
-    if raw in {"none", "piper", "kokoro"}:
+    if raw in {"none", "piper"}:
         return raw
     return None
 
@@ -271,15 +271,12 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
         if override is None and not _engine_chain_fallback_enabled(config):
             return chain
         fallback_candidates = []
-        fallback_candidates.append("kokoro")
         if _srv._has_piper_support() and not _piper_fallback_disabled():
             fallback_candidates.append("piper")
         if override and override in fallback_candidates:
             fallback_candidates = [override]
         fallback_engines = _rank_fallbacks(fallback_candidates)
         for engine_name in fallback_engines:
-            if engine_name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):
-                continue
             if engine_name == "piper" and not _srv._has_piper_support():
                 continue
             clone = _clone_config_for_engine(config, engine_name)
@@ -290,16 +287,10 @@ def _build_engine_chain(config: ConversionConfig) -> list[ConversionConfig]:
 
 
 def _prepare_auto_engine_pool(config: ConversionConfig) -> dict[str, ConversionConfig]:
-    from python_app import server as _srv  # lazy to avoid circular import
-
     pool: dict[str, ConversionConfig] = {}
-    # Priority: edge (fast cloud), kokoro (fast local).
-    # Piper excluded from auto due to lower quality.
+    # Priority: edge (fast cloud). Piper excluded from auto due to lower quality.
     candidate_order = ["edge"]
-    candidate_order.append("kokoro")
     for name in candidate_order:
-        if name == "kokoro" and not _srv._has_kokoro_support(config.primary_language):
-            continue
         try:
             candidate = _clone_config_for_engine(config, name)
             pool[name] = candidate
@@ -426,7 +417,7 @@ def _pick_auto_engine(
         if candidate in pool and candidate not in order:
             order.append(candidate)
 
-    # Order from fastest to slowest: edge > kokoro
+    # Order from fastest to slowest: edge
     order: list[str] = []
     if telemetry_speeds:
         ranked = sorted(

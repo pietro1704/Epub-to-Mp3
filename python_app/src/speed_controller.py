@@ -474,7 +474,7 @@ class AdaptiveSpeedController:
     ) -> Optional[str]:
         """Pick the best engine for a specific chapter based on size and history.
 
-        Short chapters benefit from local engines (Piper/Kokoro) which avoid
+        Short chapters benefit from local engines (Piper) which avoid
         network overhead.  Long chapters benefit from Edge which streams
         efficiently.  When enough history exists the actual measured throughput
         per size bucket overrides the heuristic.
@@ -486,7 +486,7 @@ class AdaptiveSpeedController:
             return None
 
         # --- Heuristic: chapter-size based preference ---
-        local_engines = [e for e in available_engines if e in ("piper", "kokoro")]
+        local_engines = [e for e in available_engines if e == "piper"]
         cloud_engines = [e for e in available_engines if e == "edge"]
 
         # If we only have one type, nothing to decide

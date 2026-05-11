@@ -183,7 +183,7 @@ def _resolve_cache_dir() -> Path:
 # Directories rooted at the project root (with shared overrides)
 CACHE_DIR = _resolve_cache_dir()  # Temporary per-book data only
 OUTPUT_DIR = _resolve_output_dir()
-MODELS_DIR = PROJECT_ROOT / "models"  # TTS models (Piper, Kokoro, etc.)
+MODELS_DIR = PROJECT_ROOT / "models"  # TTS models (Piper)
 JOBS_DIR = PERSISTENT_ROOT / ".jobs"
 UPLOADS_DIR = PERSISTENT_ROOT / ".uploads"
 JOB_INPUTS_DIR = PERSISTENT_ROOT / ".job_inputs"

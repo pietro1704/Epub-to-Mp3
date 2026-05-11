@@ -761,10 +761,10 @@ class TestArgumentParser(unittest.TestCase):
 
         # --fallback-engine defaults to "none" (strict: don't silently
         # switch engines mid-chapter — the Carl regression). Accepts
-        # auto/piper/kokoro/none when set explicitly.
+        # auto/piper/none when set explicitly.
         args = parser.parse_args(["convert", "test.epub"])
         self.assertEqual(args.fallback_engine, "none")
-        for choice in ("auto", "piper", "kokoro", "none"):
+        for choice in ("auto", "piper", "none"):
             args = parser.parse_args(["convert", "test.epub", "--fallback-engine", choice])
             self.assertEqual(args.fallback_engine, choice)
         with self.assertRaises(SystemExit):
@@ -818,7 +818,7 @@ class TestArgumentParser(unittest.TestCase):
         parser = create_argument_parser()
 
         # Valid engines
-        for engine in ["edge", "piper", "kokoro"]:
+        for engine in ["edge", "piper"]:
             args = parser.parse_args(["convert", "test.epub", "--engine", engine])
             self.assertEqual(args.engine, engine)
 
@@ -1301,7 +1301,6 @@ class TestCacheBypassFlag(unittest.TestCase):
             preserve_all_chapters=False,
             auto_fix_output=False,
             piper_chunk_chars=None,
-            kokoro_chunk_chars=None,
             verify_only=False,
             fix_mode=False,
             footnote_mode=None,
