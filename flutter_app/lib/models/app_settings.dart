@@ -84,15 +84,100 @@ class CustomReaderColors {
 /// Reader / backend settings. Same key names as the Swift @AppStorage
 /// wrappers so the iOS and Flutter clients could share a settings file
 /// if a Codable bridge is ever needed (today they do not).
+///
+/// Legacy keys from the old `state/providers.dart` AppSettings
+/// (`backendUrl`, `wpm`, `audioRate`, `fontSize`, `darkMode`) are
+/// migrated to the new key space on first construction via
+/// [migrateLegacyKeysIfNeeded]. Idempotent — sets a sentinel
+/// `_settingsMigratedV1` flag so the migration runs at most once.
 class MirrorAppSettings {
-  MirrorAppSettings(this._prefs);
+  MirrorAppSettings(this._prefs) {
+    migrateLegacyKeysIfNeeded();
+  }
 
   final SharedPreferences _prefs;
+
+  /// One-shot migration from the legacy `state/providers.dart` AppSettings
+  /// key space. Runs only if `_settingsMigratedV1` isn't set yet.
+  ///
+  /// Mapping:
+  ///   backendUrl → backendURL   (camelCase change)
+  ///   wpm        → wpm          (kept; new key for player WPM)
+  ///   audioRate  → audioRate    (kept; new key for playback speed)
+  ///   fontSize   → readerFontSize (was raw point size; bucket into 0..4 step)
+  ///   darkMode   → readerTheme   (bool → enum: true ⇒ dark, false ⇒ light)
+  ///
+  /// Old keys are NOT deleted — keeps a one-shot rollback path. Future
+  /// versions can drop the legacy reads + delete the keys.
+  void migrateLegacyKeysIfNeeded() {
+    if (_prefs.getBool('_settingsMigratedV1') == true) return;
+
+    final legacyBackend = _prefs.getString('backendUrl');
+    if (legacyBackend != null && _prefs.getString('backendURL') == null) {
+      _prefs.setString('backendURL', legacyBackend);
+    }
+
+    final legacyFontSize = _prefs.getDouble('fontSize');
+    if (legacyFontSize != null && _prefs.getInt('readerFontSize') == null) {
+      // Bucket raw point size into the 0..4 step. The Swift side keys
+      // off step, not point size, so we coerce.
+      final pt = legacyFontSize;
+      final step = pt <= 14 ? 0
+          : pt <= 17 ? 1
+          : pt <= 20 ? 2
+          : pt <= 24 ? 3
+          : 4;
+      _prefs.setInt('readerFontSize', step);
+    }
+
+    final legacyDarkMode = _prefs.getBool('darkMode');
+    if (legacyDarkMode != null && _prefs.getString('readerTheme') == null) {
+      _prefs.setString(
+        'readerTheme',
+        legacyDarkMode ? ReaderTheme.dark.rawValue : ReaderTheme.light.rawValue,
+      );
+    }
+    // `wpm` and `audioRate` keep the same key; no rename needed.
+
+    _prefs.setBool('_settingsMigratedV1', true);
+  }
 
   // backendURL ----------------------------------------------------------
   String get backendURL =>
       _prefs.getString('backendURL') ?? 'http://localhost:8000';
   Future<void> setBackendURL(String v) => _prefs.setString('backendURL', v);
+
+  // Legacy compatibility — `wpm` and `audioRate` were on the old
+  // AppSettings; Swift exposes them on the AudioPlayer/SyncEngine
+  // layer instead, but we surface them here so the existing JobsList
+  // UI keeps working after the provider swap.
+  int get wpm => _prefs.getInt('wpm') ?? 200;
+  Future<void> setWpm(int v) => _prefs.setInt('wpm', v);
+
+  double get audioRate => _prefs.getDouble('audioRate') ?? 1.0;
+  Future<void> setAudioRate(double v) => _prefs.setDouble('audioRate', v);
+
+  // Legacy double-valued font size in points, used by the existing
+  // settings UI's slider. Backed by the same `readerFontSize` step,
+  // bidirectionally converted to/from the integer step bucket.
+  double get fontSize => readerPointSize;
+  Future<void> setFontSize(double pt) async {
+    final step = pt <= 14 ? 0
+        : pt <= 17 ? 1
+        : pt <= 20 ? 2
+        : pt <= 24 ? 3
+        : 4;
+    await setReaderFontSize(step);
+  }
+
+  // Legacy boolean dark-mode toggle. Maps to ReaderTheme.dark / .light.
+  bool get darkMode => readerTheme == ReaderTheme.dark;
+  Future<void> setDarkMode(bool v) =>
+      setReaderTheme(v ? ReaderTheme.dark : ReaderTheme.light);
+
+  // Legacy lowercase alias used by call sites that haven't migrated to
+  // the camelCase Swift-mirror name yet.
+  String get backendUrl => backendURL;
 
   // Sidecar (macOS only on Swift; on Flutter only the Linux/Windows
   // desktop builds spin up a sidecar — see PythonBridge).

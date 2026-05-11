@@ -17,7 +17,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    _urlCtl = TextEditingController(text: ref.read(settingsProvider).backendUrl);
+    _urlCtl = TextEditingController(text: ref.read(settingsProvider).backendURL);
   }
 
   @override

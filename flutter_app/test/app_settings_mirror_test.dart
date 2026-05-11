@@ -70,4 +70,72 @@ void main() {
       expect(s.resolvedBaseURL.toString(), 'http://127.0.0.1:12345');
     });
   });
+
+  group('MirrorAppSettings legacy migration', () {
+    test('legacy backendUrl is copied into backendURL on first construction',
+        () async {
+      final s = await make({'backendUrl': 'http://legacy.example/api'});
+      expect(s.backendURL, 'http://legacy.example/api');
+    });
+
+    test('legacy fontSize (raw points) is bucketed into readerFontSize step',
+        () async {
+      final s = await make({'fontSize': 28.0});
+      expect(s.readerFontSize, 4);
+      final s2 = await make({'fontSize': 14.0});
+      expect(s2.readerFontSize, 0);
+      final s3 = await make({'fontSize': 18.0});
+      expect(s3.readerFontSize, 2);
+    });
+
+    test('legacy darkMode bool maps to readerTheme enum', () async {
+      final s = await make({'darkMode': true});
+      expect(s.readerTheme, ReaderTheme.dark);
+      final s2 = await make({'darkMode': false});
+      expect(s2.readerTheme, ReaderTheme.light);
+    });
+
+    test('migration sentinel is idempotent — no double-write', () async {
+      // First boot migrates.
+      SharedPreferences.setMockInitialValues({
+        'backendUrl': 'http://legacy.example',
+        'darkMode': true,
+      });
+      final prefs = await SharedPreferences.getInstance();
+      MirrorAppSettings(prefs); // first construction migrates
+      expect(prefs.getBool('_settingsMigratedV1'), isTrue);
+
+      // Now the user explicitly changes the new keys; the migration
+      // must NOT clobber them on subsequent constructions.
+      await prefs.setString('backendURL', 'http://new.example');
+      await prefs.setString('readerTheme', ReaderTheme.sepia.rawValue);
+      final s = MirrorAppSettings(prefs);
+      expect(s.backendURL, 'http://new.example');
+      expect(s.readerTheme, ReaderTheme.sepia);
+    });
+
+    test('legacy values are not migrated if new keys already exist',
+        () async {
+      // Both old and new present: new wins (user opted into new key
+      // explicitly before the migration ran).
+      final s = await make({
+        'backendUrl': 'http://old.example',
+        'backendURL': 'http://already-migrated.example',
+      });
+      expect(s.backendURL, 'http://already-migrated.example');
+    });
+
+    test('shim getters surface the new key space via legacy names',
+        () async {
+      final s = await make();
+      await s.setBackendURL('http://shim.example');
+      expect(s.backendUrl, 'http://shim.example');
+      await s.setFontSize(28);
+      expect(s.fontSize, 28);
+      expect(s.readerFontSize, 4);
+      await s.setDarkMode(true);
+      expect(s.darkMode, isTrue);
+      expect(s.readerTheme, ReaderTheme.dark);
+    });
+  });
 }
