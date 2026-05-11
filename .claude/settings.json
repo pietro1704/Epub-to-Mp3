@@ -72,6 +72,11 @@
             "timeout": 60,
             "async": true,
             "statusMessage": "Re-running web typecheck after edit..."
+          },
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/flutter_mirror_after_swift.sh",
+            "timeout": 5
           }
         ]
       }
