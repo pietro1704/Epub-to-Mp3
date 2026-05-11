@@ -28,14 +28,14 @@ What's NOT mirrored (each platform stays idiomatic):
 |----------------------------------------------|-------------------------------------------------|-----------------|--------|
 | `Views/BookOpenView.swift`                   | `lib/views/book_open_view.dart`                 | —               | TODO   |
 | `Views/ConvertView.swift`                    | `lib/views/convert_view.dart`                   | —               | TODO   |
-| `Views/InstantReaderView.swift`              | `lib/views/instant_reader_view.dart`            | —               | TODO   |
+| `Views/InstantReaderView.swift`              | `lib/views/instant_reader_view.dart`            | 1f20d54         | synced |
 | `Views/JobDetailView.swift`                  | `lib/views/job_detail_view.dart`                | —               | TODO   |
 | `Views/JobsListView.swift`                   | `lib/views/jobs_list_view.dart`                 | —               | TODO   |
 | `Views/LibraryView.swift`                    | `lib/views/library_view.dart`                   | —               | TODO   |
 | `Views/LocalEpubReaderView.swift`            | `lib/views/local_epub_reader_view.dart`         | —               | TODO   |
 | `Views/LogsView.swift`                       | `lib/views/logs_view.dart`                      | —               | TODO   |
 | `Views/PlayerReaderView.swift`               | `lib/views/player_reader_view.dart`             | —               | TODO   |
-| `Views/ReaderView.swift`                     | `lib/views/reader_view.dart`                    | —               | TODO   |
+| `Views/ReaderView.swift`                     | `lib/views/reader_view.dart`                    | 1f20d54         | synced |
 | `Views/RootView.swift`                       | `lib/views/root_view.dart`                      | —               | TODO   |
 | `Views/SettingsView.swift`                   | `lib/views/settings_view.dart`                  | —               | TODO   |
 | `Views/TelemetryView.swift`                  | `lib/views/telemetry_view.dart`                 | —               | TODO   |
@@ -46,7 +46,7 @@ What's NOT mirrored (each platform stays idiomatic):
 
 | SwiftUI                                      | Dart counterpart                                | Last synced SHA | Status |
 |----------------------------------------------|-------------------------------------------------|-----------------|--------|
-| `Services/Paginator.swift`                   | `lib/services/paginator.dart`                   | —               | TODO   |
+| `Services/Paginator.swift`                   | `lib/services/paginator.dart`                   | 1f20d54         | synced |
 | `Services/AudioPlayer.swift`                 | `lib/services/audio_player.dart`                | —               | TODO   |
 | `Services/SyncEngine.swift`                  | `lib/services/sync_engine.dart`                 | —               | TODO   |
 | `Services/DownloadManager.swift`             | `lib/services/download_manager.dart`            | —               | TODO   |
