@@ -53,12 +53,33 @@ final class SidecarManager {
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
     private var terminationObserver: NSObjectProtocol?
+    /// Suppresses the `onSidecarDied` callback for terminations that
+    /// were initiated by us (`stop()` during a failed health probe,
+    /// app shutdown). Without this, a sidecar that times out its
+    /// 90 s health check fires `onSidecarDied` → the host's restart
+    /// path calls `start()` again → which spawns another sidecar →
+    /// which also times out, ad infinitum. The user-visible symptom
+    /// is hundreds of "Connection refused" lines and a fully-spinning
+    /// CPU. We only want the death callback for SPONTANEOUS deaths
+    /// (segfault, OOM, SIGPIPE), not deliberate teardowns.
+    private var suppressDeathCallback = false
+    /// Wall-clock instants of the last few sidecar deaths. Restart is
+    /// rate-limited to 3 spontaneous deaths in any 60-second window —
+    /// past that the manager goes `.failed` and *stops* respawning so
+    /// the user can fix the underlying issue (missing python_app,
+    /// disk full, conflicting port, etc.) instead of watching the
+    /// CPU pin.
+    private var recentDeaths: [Date] = []
+    private let restartWindow: TimeInterval = 60
+    private let maxRestartsPerWindow = 3
     #endif
 
-    /// Fired (on main) when the sidecar process dies *after* having been
-    /// healthy. Lets the host app clear `AppSettings.sidecarURL` so
-    /// stale endpoints don't keep firing into a dead loopback port and
-    /// optionally re-call `start()` to spawn a fresh one.
+    /// Fired (on main) when the sidecar process dies *spontaneously*
+    /// after having been healthy. Lets the host app clear
+    /// `AppSettings.sidecarURL` so stale endpoints don't keep firing
+    /// into a dead loopback port and optionally re-call `start()` to
+    /// spawn a fresh one. NOT fired for `stop()`-initiated or
+    /// healthcheck-timeout terminations.
     var onSidecarDied: (@MainActor () -> Void)?
 
     private let healthcheckTimeout: TimeInterval = 90
@@ -126,7 +147,25 @@ final class SidecarManager {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.process = nil
+                let suppressed = self.suppressDeathCallback
+                self.suppressDeathCallback = false
+                if suppressed {
+                    // Deliberate teardown — leave state alone (the
+                    // caller already set it to .idle or .failed).
+                    return
+                }
                 self.state = .idle
+                // Rate-limit auto-restart so a chronically-failing
+                // sidecar can't pin the CPU. After N deaths in a
+                // sliding window, give up and let the user see the
+                // `.failed` state.
+                let now = Date()
+                self.recentDeaths.append(now)
+                self.recentDeaths.removeAll { now.timeIntervalSince($0) > self.restartWindow }
+                if self.recentDeaths.count > self.maxRestartsPerWindow {
+                    self.state = .failed("Sidecar died \(self.recentDeaths.count) times in \(Int(self.restartWindow)) s. Stopping auto-restart; check logs.")
+                    return
+                }
                 self.onSidecarDied?()
             }
         }
@@ -137,6 +176,10 @@ final class SidecarManager {
         if !healthOk {
             // Capture last bytes of stderr to surface why it died.
             let tail = readPipeTail(errPipe) ?? readPipeTail(outPipe) ?? ""
+            // Suppress the death callback — this is OUR teardown, not
+            // a spontaneous crash. Without this flag the callback
+            // fires, the host respawns, and we loop forever.
+            suppressDeathCallback = true
             stop()
             state = .failed("Sidecar did not become healthy within \(Int(healthcheckTimeout))s. \(tail)")
             return state
@@ -151,8 +194,11 @@ final class SidecarManager {
     }
 
     /// Terminate the child process if any. Safe to call multiple times.
+    /// User-initiated teardown — sets `suppressDeathCallback = true`
+    /// so the spontaneous-death restart path doesn't fire.
     func stop() {
         #if canImport(AppKit)
+        suppressDeathCallback = true
         if let proc = process, proc.isRunning {
             proc.terminate()
             // Give it 2s to exit cleanly, then SIGKILL.
