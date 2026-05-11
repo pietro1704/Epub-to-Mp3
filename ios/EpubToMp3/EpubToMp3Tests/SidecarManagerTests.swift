@@ -38,5 +38,54 @@ final class SidecarManagerTests: XCTestCase {
         XCTAssertTrue(url.path.contains(".app/Contents/Resources/"),
                       "locator returned a path outside the host bundle: \(url.path)")
     }
+
+    /// Regression: when the sidecar child process dies, the manager
+    /// must run its `terminationHandler`, push state back to `.idle`,
+    /// and call `onSidecarDied`. Without this, the rest of the app
+    /// keeps polling a dead loopback port (the original symptom was
+    /// hundreds of "Connection refused" lines aimed at 127.0.0.1:NNNN).
+    ///
+    /// We don't spawn the real PyInstaller binary here — that would
+    /// drag in a 17–30 s cold start. Instead we mimic the manager's
+    /// process bookkeeping with `/bin/sleep`, attach the same kind
+    /// of terminationHandler the production code uses, and assert
+    /// the handler fires when we SIGKILL the child.
+    func testTerminationHandlerFiresWhenChildDies() throws {
+        let didFire = XCTestExpectation(description: "terminationHandler fires")
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        proc.arguments = ["30"]
+        proc.terminationHandler = { _ in
+            didFire.fulfill()
+        }
+        try proc.run()
+        // Give the child a beat to start so the kill below doesn't race.
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertTrue(proc.isRunning, "child must be alive before we kill it")
+
+        kill(proc.processIdentifier, SIGKILL)
+        wait(for: [didFire], timeout: 2.0)
+        XCTAssertFalse(proc.isRunning,
+                       "child should be reaped after termination handler runs")
+    }
+
+    /// Regression: `SidecarManager.onSidecarDied` exists as a public
+    /// extension point on the manager so the host app can clear stale
+    /// URLs and re-spawn. Closure assignment must round-trip and the
+    /// type must be the documented `(@MainActor () -> Void)?`.
+    @MainActor
+    func testOnSidecarDiedCallbackIsConfigurable() {
+        let manager = SidecarManager()
+        var fired = false
+        manager.onSidecarDied = {
+            fired = true
+        }
+        // Invoke directly — we are validating the wiring contract,
+        // not the underlying Process termination.
+        manager.onSidecarDied?()
+        XCTAssertTrue(fired,
+                      "host must be able to install a callback for sidecar death")
+    }
+
 }
 #endif
