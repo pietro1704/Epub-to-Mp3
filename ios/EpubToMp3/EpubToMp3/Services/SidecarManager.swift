@@ -55,6 +55,12 @@ final class SidecarManager {
     private var terminationObserver: NSObjectProtocol?
     #endif
 
+    /// Fired (on main) when the sidecar process dies *after* having been
+    /// healthy. Lets the host app clear `AppSettings.sidecarURL` so
+    /// stale endpoints don't keep firing into a dead loopback port and
+    /// optionally re-call `start()` to spawn a fresh one.
+    var onSidecarDied: (@MainActor () -> Void)?
+
     private let healthcheckTimeout: TimeInterval = 90
     private let healthcheckInterval: TimeInterval = 0.4
 
@@ -108,6 +114,22 @@ final class SidecarManager {
         self.stdoutPipe = outPipe
         self.stderrPipe = errPipe
         installTerminationHandler()
+
+        // Watch for the child dying. PyInstaller onefile binaries on
+        // macOS sometimes exit unexpectedly (signal/memory issues),
+        // and without this callback the rest of the app keeps polling
+        // a dead loopback port forever — the user-visible symptom is
+        // an unending stream of "Connection refused" log spam to
+        // 127.0.0.1:NNNN. Push the .idle state back and notify
+        // listeners so they can clear cached URLs / re-spawn.
+        proc.terminationHandler = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.process = nil
+                self.state = .idle
+                self.onSidecarDied?()
+            }
+        }
 
         // Wait for /api/health.
         let baseURL = URL(string: "http://127.0.0.1:\(port)")!

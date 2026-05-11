@@ -54,6 +54,21 @@ struct EpubToMp3App: App {
             return
         }
         guard settings.useEmbeddedSidecar else { return }
+        // If the child process dies later, clear the stale URL on
+        // AppSettings so the rest of the app stops hammering the dead
+        // loopback port — and try a single restart. Without this, the
+        // user-visible symptom is hundreds of "Connection refused"
+        // log lines to 127.0.0.1:NNNN until the app is force-quit.
+        sidecar.onSidecarDied = { [weak settings, weak sidecar] in
+            settings?.sidecarURL = nil
+            guard let sidecar else { return }
+            Task { @MainActor in
+                let result = await sidecar.start()
+                if case .running(let url) = result {
+                    settings?.sidecarURL = url
+                }
+            }
+        }
         let result = await sidecar.start()
         if case .running(let url) = result {
             settings.sidecarURL = url
