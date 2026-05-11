@@ -135,11 +135,23 @@ struct BookOpenView: View {
                 return
             }
             #else
-            // macOS uses the sidecar; this view is currently iOS-only,
-            // but keep a compile-time fallback so the file builds in
-            // any future macOS-Catalyst target.
-            phase = .textOnly(fileURL)
-            return
+            // macOS: invoke the same python_app pipeline via a
+            // short-lived python3 subprocess. Same `EbookFulltext`
+            // shape as iOS, so TocDrawer / ReaderView / chapter
+            // advancement all work identically. See MacEpubParser.
+            do {
+                let parsed = try await MacEpubParser.parse(
+                    at: fileURL, bookId: book.id
+                )
+                self.fulltext = parsed
+                self.phase = .ready
+                Task.detached(priority: .background) {
+                    LocalFulltextCache.save(parsed, bookId: book.id)
+                }
+            } catch {
+                phase = .error("EPUB parse failed: \(error.localizedDescription)")
+                return
+            }
             #endif
         }
 
