@@ -176,7 +176,7 @@ jobs:
         run: brew install xcodegen
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -240,7 +240,7 @@ jobs:
             archive -archivePath build-ios/EpubToMp3.xcarchive || echo "::warning::iOS archive failed; continuing with macOS-only release"
 
       - name: Upload macOS .zip to release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: ios/EpubToMp3/EpubToMp3-macos-*.zip
@@ -315,7 +315,7 @@ jobs:
           Compress-Archive -Path * -DestinationPath "..\..\..\..\..\..\EpubToMp3-flutter-windows-${env:RELEASE_TAG}.zip"
 
       - name: Upload Flutter desktop artefact
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ env.RELEASE_TAG }}
           files: |
