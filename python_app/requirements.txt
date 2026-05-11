@@ -31,7 +31,7 @@ python-multipart>=0.0.28
 
 # Data
 pydantic>=2.13.4,<3.0.0
-pandas>=3.0.2,<4.0.0
+pandas>=3.0.3,<4.0.0
 fsspec<=2026.4.0,>=2026.4.0
 packaging>=26.2,<27.0
 
