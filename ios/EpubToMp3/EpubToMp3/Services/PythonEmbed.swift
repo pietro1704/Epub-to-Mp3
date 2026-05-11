@@ -94,34 +94,32 @@ final class PythonEmbed: @unchecked Sendable {
     /// Synthesizes `text` with the given Edge voice and writes a single
     /// MP3 into `outputDir`. Returns the resulting file URL.
     ///
-    /// Hacky-on-purpose: no streaming, no SSE, no chunking. This proves
-    /// the path; the production version will mirror server.py.
+    /// Architecture: Swift owns the network (URLSession +
+    /// URLSessionWebSocketTask via EdgeTTSBridge); Python is kept in the
+    /// call signature for parity with the desktop pipeline but no longer
+    /// participates in synthesis. This bypasses the aiohttp -> _socket
+    /// dependency chain that iOS refuses to dlopen.
     func convertWithEdgeTTS(text: String, voice: String, outputDir: URL) async throws -> URL {
-        try bootstrap()
+        // Bootstrap is best-effort: even if Python isn't available we can
+        // still synthesize, since the bridge owns the network. We swallow
+        // bootstrap failures here so simulator runs without the vendored
+        // Python.xcframework still work for the synth smoke test.
+        do { try bootstrap() } catch { /* fall through — Python not used in this path */ }
 
-        let outputPath = outputDir
+        let outputURL = outputDir
             .appendingPathComponent("edge_\(UUID().uuidString).mp3")
-            .path
 
-        // PythonKit calls don't throw to Swift — Python exceptions surface
-        // as runtime traps. Run on a detached task so the GIL release/
-        // acquire doesn't block the actor we were called from.
-        await Task.detached(priority: .userInitiated) {
-            let asyncio = Python.import("asyncio")
-            let edgeTTS = Python.import("edge_tts")
-
-            // Build the coroutine in Python, then asyncio.run() it.
-            // edge_tts.Communicate(text, voice).save(path) returns a
-            // coroutine because .save is `async def`.
-            let comm = edgeTTS.Communicate(text, voice)
-            let coro = comm.save(outputPath)
-            _ = asyncio.run(coro)
-        }.value
-
-        guard FileManager.default.fileExists(atPath: outputPath) else {
-            throw PythonEmbedError.outputFileMissing(outputPath)
+        do {
+            let mp3 = try await EdgeTTSBridge().synthesize(text: text, voice: voice)
+            try mp3.write(to: outputURL)
+        } catch {
+            throw PythonEmbedError.edgeSynthFailed("\(error)")
         }
-        return URL(fileURLWithPath: outputPath)
+
+        guard FileManager.default.fileExists(atPath: outputURL.path) else {
+            throw PythonEmbedError.outputFileMissing(outputURL.path)
+        }
+        return outputURL
     }
 }
 

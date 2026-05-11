@@ -76,40 +76,33 @@ else
 fi
 
 # --- site-packages slim build -------------------------------------------------
-# Strategy: install host wheels normally, then DELETE all .so files. aiohttp,
-# multidict, yarl, frozenlist, propcache all check for their compiled extension
-# at import time and silently fall back to pure-Python siblings (_*.py) when
-# the .so is missing. Slower HTTP parsing but cross-platform — same .py files
-# work in iOS simulator + device + macOS without any cross-compile.
-#
-# Why not --no-binary :all: + NO_EXTENSIONS=1 env vars? Setuptools in older
-# Pythons rejects modern pyproject.toml license tables, breaking sdist builds.
-# Simpler to install binary wheels then strip the .so.
-if [[ -z "$(ls -A "${SITE_PACKAGES_DIR}" 2>/dev/null)" ]]; then
-  echo "==> Installing edge-tts + aiohttp into ${SITE_PACKAGES_DIR}"
-  python3 -m pip install \
-    --target "${SITE_PACKAGES_DIR}" \
-    --no-compile \
-    edge-tts aiohttp
-  echo "==> Stripping platform-specific .so files (force pure-Python fallback)"
-  find "${SITE_PACKAGES_DIR}" -name "*.so" -delete 2>/dev/null || true
-  find "${SITE_PACKAGES_DIR}" -name "*.pyd" -delete 2>/dev/null || true
-  find "${SITE_PACKAGES_DIR}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
-  find "${SITE_PACKAGES_DIR}" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
-  # Smoke-test that aiohttp imports cleanly after .so removal.
-  PYTHONPATH="${SITE_PACKAGES_DIR}" python3 -c "
-import sys
-sys.path.insert(0, '${SITE_PACKAGES_DIR}')
-import aiohttp, edge_tts
-print(f'  aiohttp {aiohttp.__version__}  edge_tts {edge_tts.__version__}  (pure-Python)')
-" || {
-    echo "error: aiohttp/edge_tts import failed after .so strip" >&2
-    echo "       this means some package does not have a pure-Python fallback." >&2
-    exit 1
-  }
-else
-  echo "==> site-packages already populated"
-fi
+# After the Swift EdgeTTSBridge (URLSession + URLSessionWebSocketTask) took
+# over Edge-TTS networking, Python no longer needs aiohttp / edge_tts /
+# _socket / _ssl on iOS. site-packages stays present but empty — keep the
+# directory so the Bundle.main.path(forResource:) lookup in PythonEmbed
+# still succeeds. Future Python-side helpers (text processors etc.) can be
+# added here without pulling any TCP-stack deps.
+mkdir -p "${SITE_PACKAGES_DIR}"
+# Drop any pre-existing aiohttp/edge_tts install from older spike runs.
+for pkg in aiohttp aiohappyeyeballs aiosignal attr attrs certifi edge_playback \
+           edge_tts frozenlist idna multidict propcache tabulate yarl bin; do
+  rm -rf "${SITE_PACKAGES_DIR}/${pkg}" 2>/dev/null || true
+done
+rm -f "${SITE_PACKAGES_DIR}/typing_extensions.py" 2>/dev/null || true
+find "${SITE_PACKAGES_DIR}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+find "${SITE_PACKAGES_DIR}" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+
+# NOTE: we deliberately leave lib-dynload/*.so in place. iOS refuses to
+# `dlopen` them outside a .framework, but CPython only triggers that dlopen
+# when an `import` actually references the module. Since the Swift bridge
+# owns all networking we never `import socket` / `_socket` / `_ssl` from
+# Python, so the broken .so files sit harmlessly on disk. Real-device
+# universal builds will need to wrap each .so in its own framework, but
+# that's an orthogonal piece of work tracked in PYTHON-EMBED.md.
+# A placeholder file inside the site-packages dir so xcodegen's folder-ref
+# stays valid (an empty dir gets pruned by some Xcode setups).
+echo "# Edge-TTS now uses the Swift bridge; this dir is intentionally empty." \
+  > "${SITE_PACKAGES_DIR}/README.txt"
 
 echo ""
 echo "==> Done. Vendor sizes:"

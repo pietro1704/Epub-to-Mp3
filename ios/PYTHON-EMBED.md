@@ -19,6 +19,10 @@ runtime.
 |                                                    |
 |   SwiftUI views                                    |
 |        |                                           |
+|        +----> EdgeTTSBridge.swift   (network I/O) |
+|        |          URLSession + URLSessionWebSocketTask
+|        |          wss://speech.platform.bing.com/...
+|        |                                           |
 |        v                                           |
 |   PythonEmbed.swift  ----PythonKit---->            |
 |        |                                           |
@@ -26,12 +30,21 @@ runtime.
 |        v                                           |
 |   Python.xcframework  (Beeware build, libpython3.13)
 |        + python-stdlib/        (in .app/Resources) |
-|        + site-packages/        (in .app/Resources) |
-|             |                                      |
-|             +-- edge_tts (pure Python)             |
-|             +-- aiohttp + transitive C exts        |
+|        + site-packages/        (empty placeholder) |
 +----------------------------------------------------+
 ```
+
+Swift owns **all** networking. Python stays available for text/data
+processing (Piper preprocessing, language detection, etc.) but never
+imports `socket`, `ssl`, `aiohttp`, or any other module that needs a
+C-extension we can't dlopen on iOS.
+
+This is the production-shippable shape — `aiohttp` and the rest of the
+TCP/TLS chain are gone, so we don't need cibuildwheel cross-compiles to
+ship a real-device build for the Edge-TTS path. (Bundling more Python
+libraries later still requires the lib-dynload framework-wrap work for
+modules that *do* need `_socket`/`_ssl`, but that's optional for the
+current pipeline.)
 
 macOS keeps using the sidecar binary (`SidecarManager.swift`,
 `epub-to-mp3-server`); all new code is wrapped in
@@ -86,7 +99,7 @@ The test `XCTSkip`s itself if the bootstrap hasn't been run.
 
 | Limit | Why | Unblock |
 |---|---|---|
-| **Simulator only** | `aiohttp` C extensions installed via pip ship macOS arm64 wheels. Those load in the iOS simulator (same Mach-O slice) but **not** on real device. | Cross-compile `aiohttp` + transitive C deps with `kivy-ios` or `cibuildwheel --platform ios` (3.13 supports this since CPython PEP 730). |
+| **Simulator-validated only** (real-device pending separate test) | The Swift bridge uses first-class iOS APIs (URLSession, URLSessionWebSocketTask) that work identically on device. Python's `lib-dynload/*.so` files still can't be `dlopen`'d outside `.framework` bundles on device, but the current pipeline doesn't import any of them. | Regenerate the bootstrap on an iOS-device-targeted run and ship. Wrapping each `lib-dynload/*.so` in its own framework is an independent task only required if future Python code adds a TCP-dependent stdlib import. |
 | **pt-BR only** | Test only exercises one voice. | Edge supports every locale already; no further work. |
 | **Edge-TTS only** | Piper is the offline fallback in production. ONNX Runtime ships an iOS pod but is not wired here. | Add `onnxruntime` iOS pod, embed Piper ONNX models, port `tts/piper_engine.py` minimal surface. |
 | **One-shot synth** | `Communicate.save()` blocks until the whole MP3 is on disk. No SSE / streaming chapters. | Wire `Communicate.stream()` async generator into an `AsyncStream<Data>` to match the existing `AudioPlayer.updateSnapshot` contract. |
