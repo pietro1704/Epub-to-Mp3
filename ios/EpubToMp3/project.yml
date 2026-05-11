@@ -5,6 +5,13 @@ options:
     iOS: "17.0"
     macOS: "14.0"
   createIntermediateGroups: true
+  # Xcode 26 reads `attributes.LastUpgradeCheck` to decide whether
+  # the project has been audited against the current recommended-
+  # settings list. Stale values (e.g. 1430 = Xcode 14.3) trigger the
+  # "Update to recommended settings" dialog on every open. Bump to
+  # 2630 (Xcode 26.3) so xcodegen regeneration writes a fresh value
+  # and the dialog disappears.
+  xcodeVersion: "2630"
 
 settings:
   base:
