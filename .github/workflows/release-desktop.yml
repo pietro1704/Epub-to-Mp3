@@ -292,6 +292,17 @@ jobs:
         run: |
           flutter config --enable-${{ matrix.target }}-desktop
 
+      - name: Bootstrap python_app into flutter_app/assets
+        # pubspec.yaml declares `assets/python_app/src/` as a Flutter
+        # asset directory. The repo doesn't commit it (it's a synced
+        # copy of python_app/src/), so without this step the Windows
+        # build dies with "unable to find directory entry in
+        # pubspec.yaml: assets/python_app/src/". Linux happens to
+        # tolerate the missing dir on some runner generations, but
+        # Windows MSBuild fails hard — run it on both for symmetry.
+        shell: bash
+        run: bash flutter_app/scripts/bootstrap-desktop-python.sh
+
       - name: Build
         working-directory: flutter_app
         shell: bash
