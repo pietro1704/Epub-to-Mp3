@@ -26,6 +26,23 @@ Android needs the Android SDK + an emulator or USB device. Linux/Windows
 desktop need their respective Flutter desktop deps (GTK on Linux, Visual
 Studio on Windows).
 
+### Embedded Python (Android only)
+
+The Android build embeds CPython 3.13 via Chaquopy so the app can call
+`python_app/src/` directly (EPUB parser, Edge-TTS pipeline) instead of
+relying on the remote FastAPI backend for everything. Before any APK
+build, sync the Python source set into the Android tree:
+
+```bash
+mise run android:bootstrap-python   # mirrors python_app/src into android/app/src/main/python
+mise run flutter:build-apk-debug    # APK build; Chaquopy pip-installs edge-tts + aiohttp
+```
+
+Expect the APK to land around **~150 MB** because Chaquopy bundles
+CPython + stdlib + `edge_tts` + `aiohttp` for `arm64-v8a` and `x86_64`.
+Architecture and trimming notes live in
+[`PYTHON-EMBED-ANDROID.md`](PYTHON-EMBED-ANDROID.md).
+
 ## Backend URL
 
 Default: `http://localhost:8000`. Configurable in **Settings → Backend
