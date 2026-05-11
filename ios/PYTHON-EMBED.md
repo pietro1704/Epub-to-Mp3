@@ -115,6 +115,50 @@ The test `XCTSkip`s itself if the bootstrap hasn't been run.
 | **One-shot synth** | `Communicate.save()` blocks until the whole MP3 is on disk. No SSE / streaming chapters. | Wire `Communicate.stream()` async generator into an `AsyncStream<Data>` to match the existing `AudioPlayer.updateSnapshot` contract. |
 | **No `server.py`** | The HTTP server isn't running inside the app. | Two paths: (a) stand up `Hypercorn`-in-process listening on `127.0.0.1`, or (b) write a Swift shim that translates `APIClient` calls directly into Python function calls — skips HTTP entirely. |
 
+## Runtime validation gap (slice: converter.py driving iOS synth)
+
+The transport seam (`python_app/src/tts/_edge_transport.py`) and the iOS
+entrypoint (`python_app/src/ios_entrypoints.py`) are fully covered by
+the Python test suite: `pytest python_app/tests/test_edge_transport_swap.py`
+exercises the swap, the chunker, the byte concatenation, the no-audio
+error path, and the env-var clamping. 13 tests, all green; full suite
+now 1654 passed / 2 skipped.
+
+The Swift side -- `PythonEmbed.installEdgeTransport()` registering an
+`EdgeTTSBridge`-backed `PythonFunction` via PythonKit, and
+`PythonBridge.convertChapter` routing through
+`ios_entrypoints.synthesize_chapter_via_transport` -- **cannot be
+validated without a real iOS device or simulator runtime**. The Xcode
+26.3 SDK on this build host has no iOS slice. Even
+`swiftc -typecheck` against the macOS SDK would not be conclusive
+because:
+
+* `PythonKit`'s `PythonFunction` initializer signature and the
+  `Python.bytes(...)` / `Python.list(...)` bridges behave subtly
+  differently between SDKs; the exact call shape used in
+  `installEdgeTransport` needs an iOS-runtime smoke before we trust
+  it.
+* The `DispatchSemaphore` bridge from `async` Swift back to a sync
+  Python callable can deadlock if the calling thread already owns
+  the semaphore -- needs a real run to verify the
+  `Task.detached(priority: .userInitiated)` escape hatch is enough.
+* `Python.import("builtins").RuntimeError(msg)` returns a
+  *constructed* exception object; we currently *return* it instead of
+  raising it. PythonKit may need an explicit `throw` shape (e.g.
+  `PythonError.exception`) for the Python side to see it as a real
+  exception. First device run will tell us.
+
+Followups before declaring this slice production-ready:
+
+1. Run a new `EpubToMp3Tests/PythonBridgeChapterTests` on a real iOS
+   simulator that includes `Python.xcframework`.
+2. Confirm the `RuntimeError` return-vs-throw path actually surfaces a
+   Python exception that `synthesize_chapter_via_transport` doesn't
+   swallow.
+3. Measure latency overhead of the Swift-to-Python-to-Swift hop per
+   chunk vs the direct `EdgeTTSBridge.synthesize` path used in the
+   previous slice.
+
 ## Next steps (post-spike, if approved)
 
 1. Confirm real-device build via cibuildwheel cross-compile of `aiohttp`,

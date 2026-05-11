@@ -44,6 +44,13 @@ final class PythonEmbed: @unchecked Sendable {
 
     private let lock = NSLock()
     private var initialized = false
+    /// Strong reference to the PythonKit closure object we install as
+    /// the Edge-TTS transport. PythonKit wraps Swift closures in
+    /// `PythonFunction`; if Swift drops its reference the Python side
+    /// gets a dangling callback and segfaults the first time it fires.
+    /// Holding the closure here for the interpreter's lifetime is
+    /// cheap (one slot) and keeps the bridge alive.
+    private var edgeTransport: PythonObject?
 
     private init() {}
 
@@ -86,7 +93,92 @@ final class PythonEmbed: @unchecked Sendable {
         let sys = Python.import("sys")
         _ = sys.version
 
+        installEdgeTransport()
+
         initialized = true
+    }
+
+    // MARK: - Edge-TTS transport wiring
+
+    /// Registers `EdgeTTSBridge` as the active Edge-TTS transport on
+    /// the Python side via `python_app.src.tts._edge_transport.set_transport`.
+    ///
+    /// After this, any Python code that calls
+    /// `_edge_transport.synthesize_chunk(text, voice)` -- in
+    /// particular `ios_entrypoints.synthesize_chapter_via_transport` --
+    /// will hit our `URLSessionWebSocketTask` instead of the default
+    /// `edge_tts.Communicate` driver (which can't run on iOS because
+    /// aiohttp's `_socket` extension won't `dlopen`).
+    ///
+    /// Failures are swallowed: if the embedded site-packages doesn't
+    /// contain `python_app.src.tts._edge_transport` (e.g. running
+    /// against an older bundle), iOS still has a working synthesis
+    /// path via `convertWithEdgeTTS` -> `EdgeTTSBridge` directly. The
+    /// Python pipeline is the upgrade; the direct bridge is the
+    /// fallback.
+    private func installEdgeTransport() {
+        let transportModule: PythonObject
+        do {
+            transportModule = try Python.attemptImport(
+                "python_app.src.tts._edge_transport"
+            )
+        } catch {
+            // Older bundles without ios_entrypoints + _edge_transport
+            // — fall back to the direct EdgeTTSBridge path.
+            return
+        }
+
+        // Swift closure -> Python callable. PythonKit's `PythonFunction`
+        // initializer expects `(PythonObject) throws -> PythonObject`,
+        // receiving args as a Python tuple. We crack two positional args:
+        // (text: str, voice: str), drive `EdgeTTSBridge.synthesize`
+        // synchronously via DispatchSemaphore, and return Python `bytes`.
+        //
+        // Sync wrapping is deliberate: Python's transport contract is
+        // sync (see `_edge_transport.synthesize_chunk`). Blocking one
+        // Python thread per chunk is fine — chapter parallelism happens
+        // at a higher level in `converter.py`, not inside a chunk.
+        let bridge = EdgeTTSBridge()
+        let fn = PythonFunction { args -> PythonObject in
+            let text = String(args[0]) ?? ""
+            let voice = String(args[1]) ?? ""
+            let sem = DispatchSemaphore(value: 0)
+            var outcome: Result<Data, Error> = .failure(
+                EdgeTTSBridgeError.webSocketFailed("uninitialised")
+            )
+            Task.detached(priority: .userInitiated) {
+                do {
+                    let mp3 = try await bridge.synthesize(
+                        text: text, voice: voice
+                    )
+                    outcome = .success(mp3)
+                } catch {
+                    outcome = .failure(error)
+                }
+                sem.signal()
+            }
+            sem.wait()
+            switch outcome {
+            case .success(let data):
+                // PythonKit can convert `[UInt8]` to a Python list; we
+                // wrap it in `bytes(...)` so the Python side gets a
+                // proper bytes object (what edge_tts would have
+                // returned).
+                let pyBytes = Python.bytes(Python.list(Array(data)))
+                return pyBytes
+            case .failure(let err):
+                // Raise on the Python side. `PythonError` exists in
+                // PythonKit; throwing here propagates as a Python
+                // exception, which `ios_entrypoints` will let bubble
+                // up to Swift as a PythonKit trap unless caught.
+                let msg = "EdgeTTSBridge: \(err)"
+                return Python.import("builtins").RuntimeError(msg)
+            }
+        }
+        let pyFn = fn.pythonObject
+
+        edgeTransport = pyFn
+        _ = transportModule.set_transport(pyFn)
     }
 
     // MARK: - Edge-TTS one-shot synth

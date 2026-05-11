@@ -129,6 +129,82 @@ final class PythonBridge: @unchecked Sendable {
         }
         return decoded
     }
+
+    // MARK: - Chapter conversion (Python pipeline + Swift transport)
+
+    /// Synthesises one chapter through the canonical Python pipeline.
+    ///
+    /// Internally calls
+    /// `python_app.src.ios_entrypoints.synthesize_chapter_via_transport`,
+    /// which chunks `text` and invokes the currently-installed Edge-TTS
+    /// transport per chunk. `PythonEmbed.bootstrap()` registers
+    /// `EdgeTTSBridge` as that transport at app launch, so on iOS the
+    /// chunks go out over `URLSessionWebSocketTask` (Swift owns the
+    /// socket) while Python keeps owning the orchestration (chunking,
+    /// validation, future retry / fallback).
+    ///
+    /// This replaces the direct `EdgeTTSBridge().synthesize(...)` path
+    /// that `PythonEmbed.convertWithEdgeTTS` used during the spike --
+    /// the iOS app and the macOS sidecar now share a single conversion
+    /// pipeline, the only difference being which transport is wired
+    /// into `_edge_transport`.
+    func convertChapter(
+        text: String, voice: String, outputDir: URL
+    ) async throws -> URL {
+        try PythonEmbed.shared.bootstrap()
+
+        return try await withCheckedThrowingContinuation { cont in
+            queue.async {
+                do {
+                    let url = try self.convertChapterSync(
+                        text: text, voice: voice, outputDir: outputDir
+                    )
+                    cont.resume(returning: url)
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func convertChapterSync(
+        text: String, voice: String, outputDir: URL
+    ) throws -> URL {
+        let outURL = outputDir.appendingPathComponent(
+            "edge_\(UUID().uuidString).mp3"
+        )
+        try FileManager.default.createDirectory(
+            at: outputDir, withIntermediateDirectories: true
+        )
+
+        let entry: PythonObject
+        do {
+            entry = try Python.attemptImport(
+                "python_app.src.ios_entrypoints"
+            )
+        } catch {
+            throw PythonBridgeError.bootstrapFailed(
+                "import python_app.src.ios_entrypoints: \(error)"
+            )
+        }
+
+        // `synthesize_chapter_via_transport(text, voice, out_path) -> str`.
+        // PythonKit traps on a raised Python exception; the Swift caller
+        // sees a runtime crash if Edge fails, which matches the existing
+        // PythonBridge.parseEpub contract. We surface a wrapped error
+        // only for missing-file / decode-style issues we can detect
+        // from Swift.
+        _ = entry.synthesize_chapter_via_transport(
+            text, voice, outURL.path
+        )
+
+        guard FileManager.default.fileExists(atPath: outURL.path) else {
+            throw PythonBridgeError.parseFailed(
+                "ios_entrypoints did not write \(outURL.path)"
+            )
+        }
+        return outURL
+    }
 }
 
 #endif  // os(iOS) || targetEnvironment(simulator)
