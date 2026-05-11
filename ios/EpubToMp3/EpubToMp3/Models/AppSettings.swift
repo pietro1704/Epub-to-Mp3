@@ -60,48 +60,57 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
 /// Persisted user preferences. The backend URL drives every API call so the
 /// user can flip between localhost (dev), a tunnelled HF Spaces deploy, or
 /// any reachable server hosting the Python backend.
+///
+/// Why direct UserDefaults instead of @AppStorage:
+/// `@AppStorage` is a `DynamicProperty` that only emits change events when
+/// the wrapper is read from inside a SwiftUI `View`. Stashing it inside an
+/// `@Observable class` (even with `@ObservationIgnored`) means the
+/// surrounding View never gets notified that a stored value changed —
+/// so toolbar pickers in `ReaderView` looked like they did nothing.
+/// Plain stored properties + `didSet { UserDefaults.standard.set(...) }`
+/// gives both Observation tracking (the macro instruments stored vars)
+/// and persistence on the same channel.
 @Observable
 final class AppSettings {
-    @ObservationIgnored
-    @AppStorage("backendURL") private var storedBackendURL: String = "http://localhost:8000"
+    private let defaults: UserDefaults
 
-    /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
-    @ObservationIgnored
-    @AppStorage("readerFontSize") private var storedReaderFontSize: Int = 2
-
-    @ObservationIgnored
-    @AppStorage("readerFontFamily") private var storedReaderFontFamily: String = ReaderFontFamily.serif.rawValue
-
-    @ObservationIgnored
-    @AppStorage("readerTheme") private var storedReaderTheme: String = ReaderTheme.light.rawValue
-
-    @ObservationIgnored
-    @AppStorage("readerAutoScroll") private var storedReaderAutoScroll: Bool = true
-
-    @ObservationIgnored
-    @AppStorage("readerLayout") private var storedReaderLayout: String = ReaderLayout.scrolling.rawValue
-
-    /// Line spacing in points. 0 = system default (~1.2 line-height).
-    /// Range exposed to the UI: 0…16.
-    @ObservationIgnored
-    @AppStorage("readerLineSpacing") private var storedReaderLineSpacing: Double = 6
-
-    /// Horizontal text margin inside the reading column (px).
-    @ObservationIgnored
-    @AppStorage("readerMargin") private var storedReaderMargin: Double = 24
-
-    /// Maximum reading column width. Controls how wide a line gets on
-    /// large windows; iPad/Mac users typically want narrower columns.
-    @ObservationIgnored
-    @AppStorage("readerColumnWidth") private var storedReaderColumnWidth: Double = 720
-
-    /// Custom theme — packed RGB values stored as comma-separated
-    /// "r,g,b,r,g,b" (background then foreground). Doubles 0…1.
-    @ObservationIgnored
-    @AppStorage("readerCustomColors") private var storedReaderCustomColors: String = "1,1,1,0,0,0"
-
-    @ObservationIgnored
-    @AppStorage("useEmbeddedSidecar") private var storedUseEmbeddedSidecar: Bool = true
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        // Load persisted values. `??` falls back to the @Observable
+        // initial-value defaults if the key was never set.
+        self.backendURL = defaults.string(forKey: "backendURL") ?? "http://localhost:8000"
+        self.useEmbeddedSidecar = defaults.object(forKey: "useEmbeddedSidecar") as? Bool ?? true
+        self.readerFontSize = (defaults.object(forKey: "readerFontSize") as? Int) ?? 2
+        self.readerFontFamily = ReaderFontFamily(
+            rawValue: defaults.string(forKey: "readerFontFamily") ?? ""
+        ) ?? .serif
+        self.readerTheme = ReaderTheme(
+            rawValue: defaults.string(forKey: "readerTheme") ?? ""
+        ) ?? .light
+        self.readerAutoScroll = defaults.object(forKey: "readerAutoScroll") as? Bool ?? true
+        self.readerLayout = ReaderLayout(
+            rawValue: defaults.string(forKey: "readerLayout") ?? ""
+        ) ?? .scrolling
+        self.readerLineSpacing = (defaults.object(forKey: "readerLineSpacing") as? Double) ?? 6
+        self.readerMargin = (defaults.object(forKey: "readerMargin") as? Double) ?? 24
+        self.readerColumnWidth = (defaults.object(forKey: "readerColumnWidth") as? Double) ?? 720
+        self.storedReaderCustomColors =
+            defaults.string(forKey: "readerCustomColors") ?? "1,1,1,0,0,0"
+        self.readerOverrideFontFamily =
+            defaults.object(forKey: "readerOverrideFontFamily") as? Bool ?? false
+        self.readerOverrideFontSize =
+            defaults.object(forKey: "readerOverrideFontSize") as? Bool ?? false
+        self.readerOverrideColours =
+            defaults.object(forKey: "readerOverrideColours") as? Bool ?? false
+        self.readerBoldOverride =
+            defaults.object(forKey: "readerBoldOverride") as? Bool ?? false
+        self.readerSuppressItalic =
+            defaults.object(forKey: "readerSuppressItalic") as? Bool ?? false
+        self.readerLetterSpacing =
+            (defaults.object(forKey: "readerLetterSpacing") as? Double) ?? 0
+        self.readerWordSpacing =
+            (defaults.object(forKey: "readerWordSpacing") as? Double) ?? 0
+    }
 
     /// Filled in by `SidecarManager` once the bundled Python server is
     /// healthy. When non-nil and `useEmbeddedSidecar == true`, all API
@@ -109,61 +118,98 @@ final class AppSettings {
     /// persisted — the port is recomputed on each app launch.
     var sidecarURL: URL? = nil
 
-    var backendURL: String {
-        get { storedBackendURL }
-        set { storedBackendURL = newValue }
+    var backendURL: String = "http://localhost:8000" {
+        didSet { defaults.set(backendURL, forKey: "backendURL") }
     }
 
     /// Whether to prefer the embedded sidecar over the user-configured
     /// backend URL. macOS-only switch (iOS / iPadOS always use
     /// `backendURL` since they cannot embed a Python process).
-    var useEmbeddedSidecar: Bool {
-        get { storedUseEmbeddedSidecar }
-        set { storedUseEmbeddedSidecar = newValue }
+    var useEmbeddedSidecar: Bool = true {
+        didSet { defaults.set(useEmbeddedSidecar, forKey: "useEmbeddedSidecar") }
     }
 
-    var readerFontSize: Int {
-        get { max(0, min(4, storedReaderFontSize)) }
-        set { storedReaderFontSize = max(0, min(4, newValue)) }
+    /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
+    /// Clamped in `didSet` so the rest of the app can trust 0…4.
+    var readerFontSize: Int = 2 {
+        didSet {
+            let clamped = max(0, min(4, readerFontSize))
+            if clamped != readerFontSize {
+                readerFontSize = clamped
+                return  // recursive set will write defaults
+            }
+            defaults.set(readerFontSize, forKey: "readerFontSize")
+        }
     }
 
-    var readerFontFamily: ReaderFontFamily {
-        get { ReaderFontFamily(rawValue: storedReaderFontFamily) ?? .serif }
-        set { storedReaderFontFamily = newValue.rawValue }
+    var readerFontFamily: ReaderFontFamily = .serif {
+        didSet { defaults.set(readerFontFamily.rawValue, forKey: "readerFontFamily") }
     }
 
-    var readerTheme: ReaderTheme {
-        get { ReaderTheme(rawValue: storedReaderTheme) ?? .light }
-        set { storedReaderTheme = newValue.rawValue }
+    var readerTheme: ReaderTheme = .light {
+        didSet { defaults.set(readerTheme.rawValue, forKey: "readerTheme") }
     }
 
-    var readerAutoScroll: Bool {
-        get { storedReaderAutoScroll }
-        set { storedReaderAutoScroll = newValue }
+    var readerAutoScroll: Bool = true {
+        didSet { defaults.set(readerAutoScroll, forKey: "readerAutoScroll") }
     }
 
-    var readerLayout: ReaderLayout {
-        get { ReaderLayout(rawValue: storedReaderLayout) ?? .scrolling }
-        set { storedReaderLayout = newValue.rawValue }
+    var readerLayout: ReaderLayout = .scrolling {
+        didSet { defaults.set(readerLayout.rawValue, forKey: "readerLayout") }
     }
 
-    var readerLineSpacing: Double {
-        get { max(0, min(16, storedReaderLineSpacing)) }
-        set { storedReaderLineSpacing = max(0, min(16, newValue)) }
+    /// Line spacing in points. 0 = system default (~1.2 line-height).
+    /// Range exposed to the UI: 0…16.
+    var readerLineSpacing: Double = 6 {
+        didSet {
+            let clamped = max(0, min(16, readerLineSpacing))
+            if clamped != readerLineSpacing {
+                readerLineSpacing = clamped
+                return
+            }
+            defaults.set(readerLineSpacing, forKey: "readerLineSpacing")
+        }
     }
 
-    var readerMargin: Double {
-        get { max(8, min(80, storedReaderMargin)) }
-        set { storedReaderMargin = max(8, min(80, newValue)) }
+    /// Horizontal text margin inside the reading column (px).
+    var readerMargin: Double = 24 {
+        didSet {
+            let clamped = max(8, min(80, readerMargin))
+            if clamped != readerMargin {
+                readerMargin = clamped
+                return
+            }
+            defaults.set(readerMargin, forKey: "readerMargin")
+        }
     }
 
-    var readerColumnWidth: Double {
-        get { max(420, min(960, storedReaderColumnWidth)) }
-        set { storedReaderColumnWidth = max(420, min(960, newValue)) }
+    /// Maximum reading column width. Controls how wide a line gets on
+    /// large windows; iPad/Mac users typically want narrower columns.
+    var readerColumnWidth: Double = 720 {
+        didSet {
+            let clamped = max(420, min(960, readerColumnWidth))
+            if clamped != readerColumnWidth {
+                readerColumnWidth = clamped
+                return
+            }
+            defaults.set(readerColumnWidth, forKey: "readerColumnWidth")
+        }
+    }
+
+    /// Custom theme — packed RGB values stored as comma-separated
+    /// "r,g,b,r,g,b" (background then foreground). Doubles 0…1.
+    /// Stored as a string for back-compat with the old @AppStorage
+    /// key; surfaced via the typed `readerCustomColors` computed
+    /// property below.
+    private var storedReaderCustomColors: String = "1,1,1,0,0,0" {
+        didSet { defaults.set(storedReaderCustomColors, forKey: "readerCustomColors") }
     }
 
     /// Decoded (background, foreground) RGB tuple — six doubles in
     /// 0…1, defaults to white-on-black if the stored string is bad.
+    /// Backed by `storedReaderCustomColors`, which is the observed
+    /// stored property — assignment here flows through and triggers
+    /// the observation update.
     var readerCustomColors: (background: (Double, Double, Double),
                               foreground: (Double, Double, Double)) {
         get {
@@ -193,6 +239,106 @@ final class AppSettings {
         let trimmed = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return URL(string: trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed)
+    }
+
+    // MARK: Override knobs (opt-in)
+    //
+    // Every override defaults to **off** — fresh installs see the
+    // EPUB exactly as the author intended (rendered from raw HTML/CSS
+    // by `EpubHtmlRenderer`). When the user flips one on in the
+    // reader toolbar, the corresponding default (e.g. `readerFontFamily`
+    // or `readerTheme`) takes priority over the EPUB's own styling.
+    // `restoreOriginal()` resets every override-related field below.
+
+    /// When `true`, every text run is re-rendered in `readerFontFamily`,
+    /// overriding the font baked into the EPUB's CSS / inline styles.
+    var readerOverrideFontFamily: Bool = false {
+        didSet { defaults.set(readerOverrideFontFamily, forKey: "readerOverrideFontFamily") }
+    }
+
+    /// When `true`, every text run is forced to `readerPointSize`,
+    /// overriding the EPUB's font-size CSS.
+    var readerOverrideFontSize: Bool = false {
+        didSet { defaults.set(readerOverrideFontSize, forKey: "readerOverrideFontSize") }
+    }
+
+    /// When `true`, the reader theme (or custom RGB) wins over any
+    /// inline `color:` / `background-color:` declared by the EPUB.
+    var readerOverrideColours: Bool = false {
+        didSet { defaults.set(readerOverrideColours, forKey: "readerOverrideColours") }
+    }
+
+    /// When `true`, every run is rendered with `.bold` weight. Useful
+    /// for low-vision users; toggling it on does NOT modify the EPUB's
+    /// own bold-tag detection — it stacks on top.
+    var readerBoldOverride: Bool = false {
+        didSet { defaults.set(readerBoldOverride, forKey: "readerBoldOverride") }
+    }
+
+    /// When `true`, italic slant is stripped from every run. The
+    /// EPUB's own `<i>`/`<em>` markers are honoured by the renderer
+    /// (we still parse them), but the final attributed string flattens
+    /// the slant trait.
+    var readerSuppressItalic: Bool = false {
+        didSet { defaults.set(readerSuppressItalic, forKey: "readerSuppressItalic") }
+    }
+
+    /// Additional kerning per character glyph, in points. Range
+    /// surfaced in the UI: -2.0…4.0 step 0.25. Zero = no change.
+    var readerLetterSpacing: Double = 0 {
+        didSet {
+            let clamped = max(-2, min(4, readerLetterSpacing))
+            if clamped != readerLetterSpacing {
+                readerLetterSpacing = clamped
+                return
+            }
+            defaults.set(readerLetterSpacing, forKey: "readerLetterSpacing")
+        }
+    }
+
+    /// Additional space added after each whitespace character, in
+    /// points. Range 0…8. Implemented as paragraph-style `wordSpacing`
+    /// on the resulting NSAttributedString (NSKern on space glyphs).
+    var readerWordSpacing: Double = 0 {
+        didSet {
+            let clamped = max(0, min(8, readerWordSpacing))
+            if clamped != readerWordSpacing {
+                readerWordSpacing = clamped
+                return
+            }
+            defaults.set(readerWordSpacing, forKey: "readerWordSpacing")
+        }
+    }
+
+    /// One-tap "show me the book exactly as the author intended".
+    /// Clears every override-related field added above. Preserves
+    /// preferences that aren't tied to an override (e.g. layout,
+    /// auto-scroll, line-spacing/margin/column-width — those still
+    /// affect the surrounding chrome even when no override is on).
+    ///
+    /// Reset set (mirrors the brief):
+    ///   - readerOverrideFontFamily → false
+    ///   - readerOverrideFontSize → false
+    ///   - readerOverrideColours → false
+    ///   - readerBoldOverride → false
+    ///   - readerSuppressItalic → false
+    ///   - readerLetterSpacing → 0
+    ///   - readerWordSpacing → 0
+    ///
+    /// Theme is NOT reset because the user may want their dark
+    /// theme even when "show original" is requested — the override
+    /// flag (`readerOverrideColours`) is what gates whether the theme
+    /// actually wins over the EPUB. Same for `readerFontFamily` /
+    /// `readerFontSize`: the values stay but the overrides flip off,
+    /// so the next render falls back to EPUB-native styling.
+    func restoreOriginal() {
+        readerOverrideFontFamily = false
+        readerOverrideFontSize = false
+        readerOverrideColours = false
+        readerBoldOverride = false
+        readerSuppressItalic = false
+        readerLetterSpacing = 0
+        readerWordSpacing = 0
     }
 
     /// Resolved point size for the current font-size step.

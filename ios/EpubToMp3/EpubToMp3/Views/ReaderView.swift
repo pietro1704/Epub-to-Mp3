@@ -39,6 +39,34 @@ struct ReaderView: View {
     @State private var currentPage: Int = 0
     @FocusState private var paginatedFocus: Bool
 
+    /// Per-chapter HTML render cache. Re-populated when `chapter.id`
+    /// changes or when any settings field consumed by the renderer
+    /// mutates (see `renderedAttributedKey`). Nil = use plain-text
+    /// fallback (either because the EPUB had no HTML or the
+    /// importer failed).
+    @State private var renderedAttributed: AttributedString? = nil
+    /// Identity used to invalidate `renderedAttributed`. Combines the
+    /// chapter id with every settings field the renderer reads, so
+    /// flipping an override toggle triggers a re-parse the same way
+    /// switching chapter does.
+    private var renderedAttributedKey: String {
+        // Numbers stringified so we get cheap value equality.
+        let s = settings
+        return [
+            chapter.id,
+            s.readerFontFamily.rawValue,
+            String(format: "%.0f", s.readerPointSize),
+            s.readerTheme.rawValue,
+            s.readerOverrideFontFamily.description,
+            s.readerOverrideFontSize.description,
+            s.readerOverrideColours.description,
+            s.readerBoldOverride.description,
+            s.readerSuppressItalic.description,
+            String(format: "%.2f", s.readerLetterSpacing),
+            String(format: "%.2f", s.readerWordSpacing),
+        ].joined(separator: "|")
+    }
+
     init(
         chapter: EbookFulltext.Chapter,
         spans: [SentenceSpan],
@@ -56,6 +84,31 @@ struct ReaderView: View {
     }
 
     var body: some View {
+        // CRITICAL: explicitly touch every settings property the
+        // child views consume so Observation tracks them at THIS
+        // body's level. Without these reads, GeometryReader's
+        // content closure (the one inside `paginatedContent`) is the
+        // only place that touched `readerLineSpacing` / `readerMargin`
+        // / `readerColumnWidth`, and SwiftUI's Observation tracker
+        // would invalidate only the GeometryReader sub-body — not
+        // the surrounding chrome (toolbar pickers, background
+        // colour). Reading them here guarantees the whole reader
+        // re-renders on every change, fixing the long-standing
+        // "settings only apply on next page turn" bug.
+        _ = settings.readerFontSize
+        _ = settings.readerFontFamily
+        _ = settings.readerTheme
+        _ = settings.readerLayout
+        _ = settings.readerLineSpacing
+        _ = settings.readerMargin
+        _ = settings.readerColumnWidth
+        _ = settings.readerOverrideFontFamily
+        _ = settings.readerOverrideFontSize
+        _ = settings.readerOverrideColours
+        _ = settings.readerBoldOverride
+        _ = settings.readerSuppressItalic
+        _ = settings.readerLetterSpacing
+        _ = settings.readerWordSpacing
         return VStack(spacing: 0) {
             toolbar
             Divider()
@@ -67,6 +120,21 @@ struct ReaderView: View {
         .background(themeBackground)
         .foregroundStyle(themeForeground)
         .onChange(of: chapter.id) { _, _ in currentPage = 0 }
+        .task(id: renderedAttributedKey) {
+            renderedAttributed = renderHtmlForChapter()
+        }
+    }
+
+    /// Build the chapter's AttributedString lazily off the main hot
+    /// path. Returns nil if the chapter has no HTML payload (older
+    /// cache entries, plain-text-only fixtures) so the caller falls
+    /// back to the existing plain-text rendering.
+    @MainActor
+    private func renderHtmlForChapter() -> AttributedString? {
+        guard let html = chapter.html, !html.isEmpty else { return nil }
+        return EpubHtmlRenderer.render(
+            html: html, css: chapter.css, settings: settings
+        )
     }
 
     // MARK: Toolbar
@@ -193,6 +261,34 @@ struct ReaderView: View {
                 ))
             }
         }
+        Section("Overrides") {
+            Toggle("Override font", isOn: $bindable.readerOverrideFontFamily)
+            Toggle("Override size", isOn: $bindable.readerOverrideFontSize)
+            Toggle("Override colours", isOn: $bindable.readerOverrideColours)
+            Toggle("Bold all text", isOn: $bindable.readerBoldOverride)
+            Toggle("Suppress italic", isOn: $bindable.readerSuppressItalic)
+        }
+        Section("Letter spacing") {
+            ForEach([-1.0, 0.0, 0.5, 1.0, 2.0, 3.0], id: \.self) { v in
+                Button {
+                    settings.readerLetterSpacing = v
+                } label: {
+                    HStack {
+                        Text(v == 0 ? "Default" : String(format: "%+.1f pt", v))
+                        if abs(settings.readerLetterSpacing - v) < 0.1 {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        }
+        Section {
+            Button {
+                settings.restoreOriginal()
+            } label: {
+                Label("Restaurar original", systemImage: "arrow.uturn.backward")
+            }
+        }
     }
 
     // MARK: Scrolling content
@@ -293,17 +389,58 @@ struct ReaderView: View {
         let pageText = pages[pageIndex]
         return VStack(alignment: .leading, spacing: 0) {
             if pageIndex == 0 { chapterTitleHeader }
-            Text(pageText)
-                .font(bodyFont)
-                .lineSpacing(settings.readerLineSpacing)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            pageTextBody(plain: pageText, pageIndex: pageIndex, pages: pages)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, settings.readerMargin)
         .padding(.vertical, 24)
         .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Pick HTML-rendered AttributedString slice when available, fall
+    /// back to plain `Text(pageText)` otherwise. The slicing strategy
+    /// uses cumulative plain-text character offsets from `pages`
+    /// (each page is N chars long). When the rendered AttributedString
+    /// is shorter than the plain text (HTML collapsed whitespace etc.),
+    /// the slice clamps to the available range — worst case the last
+    /// page shows slightly less than the plain version would.
+    @ViewBuilder
+    private func pageTextBody(plain: String, pageIndex: Int, pages: [String]) -> some View {
+        if let attr = renderedAttributed,
+           let slice = slicedAttributed(from: attr, pages: pages, pageIndex: pageIndex) {
+            Text(slice)
+                .font(bodyFont)
+                .lineSpacing(settings.readerLineSpacing)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text(plain)
+                .font(bodyFont)
+                .lineSpacing(settings.readerLineSpacing)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    /// Map page index → AttributedString sub-range by counting Plain
+    /// text characters per page. Returns `nil` when the math drifts
+    /// off the rendered string (graceful fall back to plain text).
+    private func slicedAttributed(
+        from attr: AttributedString,
+        pages: [String],
+        pageIndex: Int
+    ) -> AttributedString? {
+        let cumulativeStart = pages[..<pageIndex].reduce(0) { $0 + $1.count }
+        let length = pages[pageIndex].count
+        let chars = attr.characters
+        let total = chars.count
+        guard cumulativeStart < total else { return nil }
+        let startOffset = cumulativeStart
+        let endOffset = min(total, cumulativeStart + length)
+        let startIdx = chars.index(chars.startIndex, offsetBy: startOffset)
+        let endIdx = chars.index(chars.startIndex, offsetBy: endOffset)
+        return AttributedString(attr[startIdx..<endIdx])
     }
 
     private func pageFooter(index: Int, total: Int) -> some View {
