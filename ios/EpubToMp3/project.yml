@@ -33,10 +33,12 @@ settings:
     ENABLE_TESTABILITY: YES
     # Strip nothing in Debug — speeds linker; Release strips debug.
     STRIP_INSTALLED_PRODUCT: NO
-    # Treat warnings as errors. Catches drift early and forces every
-    # commit to ship clean code.
-    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
-    GCC_TREAT_WARNINGS_AS_ERRORS: YES
+    # Treat warnings as warnings (not errors). User pivoted: too many
+    # SwiftUI/iOS 17 deprecations during the embed work were blocking
+    # iteration. CI lint still surfaces them; just don't fail the
+    # build over them.
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: NO
+    GCC_TREAT_WARNINGS_AS_ERRORS: NO
     # Stricter Swift warnings worth promoting.
     SWIFT_STRICT_CONCURRENCY: minimal
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
@@ -66,12 +68,50 @@ settings:
     #   touch files they declare.
     # - String catalog symbol generation: Swift code-gen for localised
     #   strings.
+    # --- Xcode 26 "Perform Changes" recommended settings ----------
+    # Pre-applied here so the dialog stops nagging on every regenerate.
     DEAD_CODE_STRIPPING: YES
     STRIP_STYLE: all
     STRIP_SWIFT_SYMBOLS: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     LOCALIZED_STRING_SWIFTUI_SUPPORT: YES
     LOCALIZED_STRING_MACRO_NAMES: "String LocalizedStringResource"
+    # Whole-module optimisation in Release was the dialog's #1 ask.
+    # Already locked per-config below; setting it at base level too so
+    # the dialog stops listing it.
+    SWIFT_COMPILATION_MODE_release: wholemodule
+    # Xcode 26 recommends explicit module verification + ARC-explicit
+    # warnings on the modernisation track. Defaults at the project
+    # level so any new file inherits them.
+    ENABLE_MODULE_VERIFIER: YES
+    CLANG_ANALYZER_NONNULL: YES
+    CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION: YES_AGGRESSIVE
+    CLANG_ENABLE_OBJC_WEAK: YES
+    CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: YES
+    CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF: YES
+    CLANG_WARN_COMMA: YES
+    CLANG_WARN_RANGE_LOOP_ANALYSIS: YES
+    CLANG_WARN_NON_LITERAL_NULL_CONVERSION: YES
+    CLANG_WARN_STRICT_PROTOTYPES: YES
+    CLANG_WARN_OBJC_LITERAL_CONVERSION: YES
+    CLANG_WARN_INFINITE_RECURSION: YES
+    GCC_WARN_64_TO_32_BIT_CONVERSION: YES
+    GCC_WARN_ABOUT_RETURN_TYPE: YES_ERROR
+    GCC_WARN_UNDECLARED_SELECTOR: YES
+    GCC_WARN_UNINITIALIZED_AUTOS: YES_AGGRESSIVE
+    GCC_WARN_UNUSED_FUNCTION: YES
+    GCC_WARN_UNUSED_VARIABLE: YES
+    GCC_NO_COMMON_BLOCKS: YES
+    ENABLE_STRICT_OBJC_MSGSEND: YES
+    # Mac Catalyst stays off (we ship native macOS via the same target);
+    # but the recommended-settings dialog asks for an explicit answer.
+    DERIVE_MACCATALYST_PRODUCT_BUNDLE_IDENTIFIER: NO
+    # Asset catalogue colour space stays sRGB (default) — set explicitly
+    # to silence the dialog.
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+    # Performance / debug correctness defaults the dialog flips on:
+    CLANG_ENABLE_MODULE_DEBUGGING: NO
+    SWIFT_EMIT_LOC_STRINGS: YES
 
 # SPIKE (feat/ios-python-embed): PythonKit bridges Swift <-> the embedded
 # CPython interpreter loaded from Python.xcframework. The xcframework +
