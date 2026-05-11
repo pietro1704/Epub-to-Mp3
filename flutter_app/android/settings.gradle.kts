@@ -23,7 +23,7 @@ plugins {
     id("org.jetbrains.kotlin.android") version "2.2.20" apply false
     // Chaquopy embeds CPython 3.13 into the APK so the app can call
     // python_app.src directly via a MethodChannel. See PYTHON-EMBED-ANDROID.md.
-    id("com.chaquo.python") version "16.1.0" apply false
+    id("com.chaquo.python") version "17.0.0" apply false
 }
 
 include(":app")
