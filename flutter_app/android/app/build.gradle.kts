@@ -56,6 +56,14 @@ android {
 chaquopy {
     defaultConfig {
         version = "3.13"
+        // Chaquopy needs a Python 3.13 on the build host to resolve pip
+        // dependencies. Read from gradle.properties so each contributor
+        // can point at their own install (mise, pyenv, system, …).
+        // Default: the mise-managed 3.13 path on macOS.
+        val buildPythonPath = project.findProperty("chaquopy.buildPython")
+            ?.toString()
+            ?: "${System.getProperty("user.home")}/.local/share/mise/installs/python/3.13.13/bin/python3.13"
+        buildPython(buildPythonPath)
         pip {
             install("edge-tts")
             install("aiohttp")
