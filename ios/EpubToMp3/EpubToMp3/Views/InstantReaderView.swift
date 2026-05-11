@@ -106,7 +106,9 @@ struct InstantReaderView: View {
                 chapter: chapter,
                 spans: spans,
                 currentSentenceId: currentSentenceId,
-                onJumpToSentence: jumpToSentence
+                onJumpToSentence: jumpToSentence,
+                onAdvanceChapter: advanceToNextChapter,
+                onPreviousChapter: returnToPreviousChapter
             )
         } else {
             Text("No chapter at index \(currentChapterIndex).")
@@ -458,6 +460,22 @@ struct InstantReaderView: View {
         guard let entry = sync.timing.first(where: { $0.id == span.id }) else { return }
         let seconds = TimeInterval(entry.startMs) / 1000.0
         player?.seek(to: seconds)
+    }
+
+    /// Returns `true` if there *is* a next chapter and we advanced.
+    /// Called from `ReaderView` when the user pages past the last page
+    /// of the current chapter — without this, paginated mode dead-ends
+    /// after page 1 of chapter 0 and the rest of the book is invisible.
+    private func advanceToNextChapter() -> Bool {
+        guard currentChapterIndex + 1 < fulltext.chapters.count else { return false }
+        currentChapterIndex += 1
+        return true
+    }
+
+    private func returnToPreviousChapter() -> Bool {
+        guard currentChapterIndex > 0 else { return false }
+        currentChapterIndex -= 1
+        return true
     }
 
     private var currentChapterTitle: String {

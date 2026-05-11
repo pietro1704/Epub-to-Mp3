@@ -19,6 +19,19 @@ struct ReaderView: View {
     let spans: [SentenceSpan]
     let currentSentenceId: String?
     let onJumpToSentence: ((SentenceSpan) -> Void)?
+    /// Called when the user advances past the last page of the current
+    /// chapter. The caller is expected to swap `chapter`/`spans` for the
+    /// next chapter; the reader resets `currentPage` to 0 via the
+    /// `onChange(of: chapter.id)` modifier. Returns `true` if the
+    /// caller handled the advance (= there *is* a next chapter); `false`
+    /// keeps the user on the last page of the current chapter.
+    let onAdvanceChapter: (() -> Bool)?
+    /// Called when the user goes back from page 0. Same contract as
+    /// `onAdvanceChapter`; returning `true` should land them on the
+    /// *last* page of the previous chapter — but we don't currently
+    /// track previous-chapter page count from here, so the caller is
+    /// responsible for any page positioning after the chapter swap.
+    let onPreviousChapter: (() -> Bool)?
 
     @Environment(AppSettings.self) private var settings
     @State private var userIsScrolling: Bool = false
@@ -30,12 +43,16 @@ struct ReaderView: View {
         chapter: EbookFulltext.Chapter,
         spans: [SentenceSpan],
         currentSentenceId: String?,
-        onJumpToSentence: ((SentenceSpan) -> Void)? = nil
+        onJumpToSentence: ((SentenceSpan) -> Void)? = nil,
+        onAdvanceChapter: (() -> Bool)? = nil,
+        onPreviousChapter: (() -> Bool)? = nil
     ) {
         self.chapter = chapter
         self.spans = spans
         self.currentSentenceId = currentSentenceId
         self.onJumpToSentence = onJumpToSentence
+        self.onAdvanceChapter = onAdvanceChapter
+        self.onPreviousChapter = onPreviousChapter
     }
 
     var body: some View {
@@ -239,10 +256,10 @@ struct ReaderView: View {
                         .gesture(
                             DragGesture(minimumDistance: 30)
                                 .onEnded { value in
-                                    if value.translation.width < -40, currentPage + 1 < pages.count {
-                                        currentPage += 1
-                                    } else if value.translation.width > 40, currentPage > 0 {
-                                        currentPage -= 1
+                                    if value.translation.width < -40 {
+                                        advancePage(totalPages: pages.count)
+                                    } else if value.translation.width > 40 {
+                                        retreatPage()
                                     }
                                 }
                         )
@@ -261,8 +278,8 @@ struct ReaderView: View {
             }
             #if os(macOS)
             .modifier(ScrollWheelPager(
-                onPrev: { if currentPage > 0 { currentPage -= 1 } },
-                onNext: { if currentPage + 1 < pages.count { currentPage += 1 } }
+                onPrev: { retreatPage() },
+                onNext: { advancePage(totalPages: pages.count) }
             ))
             #endif
         }
@@ -304,24 +321,20 @@ struct ReaderView: View {
         HStack(spacing: 0) {
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    if currentPage > 0 { currentPage -= 1 }
-                }
+                .onTapGesture { retreatPage() }
             Color.clear
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    if currentPage + 1 < totalPages { currentPage += 1 }
-                }
+                .onTapGesture { advancePage(totalPages: totalPages) }
         }
     }
 
     private func handleKeyPress(_ press: KeyPress, totalPages: Int) -> KeyPress.Result {
         switch press.key {
         case .leftArrow, .pageUp, "k":
-            if currentPage > 0 { currentPage -= 1 }
+            retreatPage()
             return .handled
         case .rightArrow, .pageDown, .space, "j":
-            if currentPage + 1 < totalPages { currentPage += 1 }
+            advancePage(totalPages: totalPages)
             return .handled
         case .home:
             currentPage = 0
@@ -331,6 +344,27 @@ struct ReaderView: View {
             return .handled
         default:
             return .ignored
+        }
+    }
+
+    /// Forward navigation in paginated mode. Within the chapter, walks
+    /// `currentPage` forward; on the last page, delegates to the host
+    /// view via `onAdvanceChapter` so the next chapter loads. When the
+    /// chapter actually changes, the `onChange(of: chapter.id)` modifier
+    /// resets `currentPage` to 0.
+    private func advancePage(totalPages: Int) {
+        if currentPage + 1 < totalPages {
+            currentPage += 1
+        } else if onAdvanceChapter?() == true {
+            // Caller swapped chapter; currentPage resets via onChange.
+        }
+    }
+
+    private func retreatPage() {
+        if currentPage > 0 {
+            currentPage -= 1
+        } else if onPreviousChapter?() == true {
+            // Caller swapped chapter; currentPage resets via onChange.
         }
     }
 
