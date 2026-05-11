@@ -78,10 +78,11 @@ fi
 # --- site-packages slim build -------------------------------------------------
 # After the Swift EdgeTTSBridge (URLSession + URLSessionWebSocketTask) took
 # over Edge-TTS networking, Python no longer needs aiohttp / edge_tts /
-# _socket / _ssl on iOS. site-packages stays present but empty — keep the
-# directory so the Bundle.main.path(forResource:) lookup in PythonEmbed
-# still succeeds. Future Python-side helpers (text processors etc.) can be
-# added here without pulling any TCP-stack deps.
+# _socket / _ssl on iOS. site-packages stays present but empty for the
+# network deps. We DO embed `python_app/src/` so the canonical EPUB
+# parser (`ebook_reader.parse_epub_to_dict`) and other pure-stdlib
+# helpers are importable from PythonBridge.swift — the same code the
+# macOS sidecar and HF Spaces backend run, no Swift reimplementation.
 mkdir -p "${SITE_PACKAGES_DIR}"
 # Drop any pre-existing aiohttp/edge_tts install from older spike runs.
 for pkg in aiohttp aiohappyeyeballs aiosignal attr attrs certifi edge_playback \
@@ -91,6 +92,32 @@ done
 rm -f "${SITE_PACKAGES_DIR}/typing_extensions.py" 2>/dev/null || true
 find "${SITE_PACKAGES_DIR}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 find "${SITE_PACKAGES_DIR}" -type d -name "*.dist-info" -exec rm -rf {} + 2>/dev/null || true
+
+# --- python_app embed --------------------------------------------------------
+# Copy only the bits the iOS app actually imports. We deliberately skip:
+#   - server.py / hf_app.py / desktop_main.py (FastAPI/uvicorn pull aiohttp)
+#   - main.py (CLI entry point)
+#   - tests/ scripts/ requirements.txt
+# The pure-stdlib parser modules (ebook_reader, text_formatting,
+# cache_manager, paths) ship as-is; native-dep modules under src/tts/
+# are kept off the path on iOS (we route synthesis through Swift).
+PYAPP_SRC="${IOS_DIR}/../../python_app"
+PYAPP_DEST="${SITE_PACKAGES_DIR}/python_app"
+if [[ -d "${PYAPP_SRC}" ]]; then
+  echo "==> Embedding python_app/src into ${PYAPP_DEST}"
+  rm -rf "${PYAPP_DEST}"
+  mkdir -p "${PYAPP_DEST}"
+  # __init__.py is required so `import python_app` resolves.
+  if [[ -f "${PYAPP_SRC}/__init__.py" ]]; then
+    cp "${PYAPP_SRC}/__init__.py" "${PYAPP_DEST}/"
+  else
+    touch "${PYAPP_DEST}/__init__.py"
+  fi
+  # Mirror only src/. Strip __pycache__ on the way out so the bundle
+  # stays small and reproducible.
+  cp -R "${PYAPP_SRC}/src" "${PYAPP_DEST}/src"
+  find "${PYAPP_DEST}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+fi
 
 # NOTE: we deliberately leave lib-dynload/*.so in place. iOS refuses to
 # `dlopen` them outside a .framework, but CPython only triggers that dlopen

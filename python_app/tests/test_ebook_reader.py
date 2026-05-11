@@ -10,7 +10,14 @@ import zipfile
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from src.ebook_reader import Book, Chapter, EbookReader, EpubParser, PdfParser
+from src.ebook_reader import (
+    Book,
+    Chapter,
+    EbookReader,
+    EpubParser,
+    PdfParser,
+    parse_epub_to_dict,
+)
 
 
 class TestEbookReader(unittest.TestCase):
@@ -1092,6 +1099,62 @@ class TestNumericHeadingSplitter(unittest.TestCase):
         markup = "<h2>1</h2><p>A.</p><h2>2</h2><p>B.</p>"
         result = self._split(markup)
         self.assertIsNone(result)
+
+
+class TestParseEpubToDict(unittest.TestCase):
+    """parse_epub_to_dict — iOS-friendly JSON shape used by PythonBridge."""
+
+    FIXTURE = Path(__file__).parent / "fixtures" / "epubs" / "test_multifeature.epub"
+
+    def test_returns_dict_with_wire_keys(self):
+        if not self.FIXTURE.exists():
+            self.skipTest(f"Fixture missing: {self.FIXTURE}")
+        payload = parse_epub_to_dict(str(self.FIXTURE), book_id="abc123")
+        self.assertIsInstance(payload, dict)
+        for key in ("jobId", "bookTitle", "bookAuthor", "chapters"):
+            self.assertIn(key, payload)
+        self.assertEqual(payload["jobId"], "abc123")
+        self.assertIsInstance(payload["chapters"], list)
+
+    def test_chapter_shape_matches_swift_decoder(self):
+        if not self.FIXTURE.exists():
+            self.skipTest(f"Fixture missing: {self.FIXTURE}")
+        payload = parse_epub_to_dict(str(self.FIXTURE))
+        self.assertGreater(len(payload["chapters"]), 0)
+        first = payload["chapters"][0]
+        # Keys expected by EbookFulltext.Chapter (Swift Codable).
+        for key in ("index", "name", "text", "html", "css", "charCount", "segments"):
+            self.assertIn(key, first)
+        self.assertIsInstance(first["index"], int)
+        self.assertIsInstance(first["text"], str)
+        self.assertIsInstance(first["charCount"], int)
+        self.assertEqual(first["charCount"], len(first["text"]))
+        # Optional fields are None on the iOS path (no raw HTML preserved).
+        self.assertIsNone(first["html"])
+        self.assertIsNone(first["css"])
+        self.assertIsNone(first["segments"])
+
+    def test_empty_chapters_dropped_and_indices_compact(self):
+        if not self.FIXTURE.exists():
+            self.skipTest(f"Fixture missing: {self.FIXTURE}")
+        payload = parse_epub_to_dict(str(self.FIXTURE))
+        indices = [c["index"] for c in payload["chapters"]]
+        self.assertEqual(indices, list(range(1, len(indices) + 1)))
+        for chapter in payload["chapters"]:
+            self.assertGreater(len(chapter["text"]), 0)
+
+    def test_json_roundtrip(self):
+        """The dict must be JSON-serialisable — PythonBridge crosses
+        the Swift boundary via json.dumps."""
+        import json
+
+        if not self.FIXTURE.exists():
+            self.skipTest(f"Fixture missing: {self.FIXTURE}")
+        payload = parse_epub_to_dict(str(self.FIXTURE), book_id="x")
+        encoded = json.dumps(payload)
+        decoded = json.loads(encoded)
+        self.assertEqual(decoded["jobId"], "x")
+        self.assertEqual(len(decoded["chapters"]), len(payload["chapters"]))
 
 
 if __name__ == "__main__":

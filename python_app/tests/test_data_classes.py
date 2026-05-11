@@ -251,7 +251,13 @@ class TestModuleImports(unittest.TestCase):
         """Test __all__ contains expected exports"""
         from src.ebook_reader import __all__
 
-        expected_exports = ["EbookReader", "read_book", "Book", "Chapter"]
+        expected_exports = [
+            "EbookReader",
+            "read_book",
+            "parse_epub_to_dict",
+            "Book",
+            "Chapter",
+        ]
         self.assertEqual(set(__all__), set(expected_exports))
 
     def test_imports_available(self):

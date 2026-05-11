@@ -3218,4 +3218,49 @@ def read_book(file_path: str | Path) -> Book:
     return reader.book
 
 
-__all__ = ["EbookReader", "read_book", "Book", "Chapter"]
+def parse_epub_to_dict(file_path: str, book_id: str = "") -> dict:
+    """iOS-friendly serialisation of a parsed Book.
+
+    Returns a plain dict whose shape matches the wire contract of
+    ``GET /api/jobs/{id}/fulltext`` (see ``EbookFulltext.swift``), so the
+    SwiftUI client can ``JSONDecoder().decode(EbookFulltext.self, ...)``
+    the result with no adapter layer.
+
+    Used by the in-process Python embed on iOS (``PythonBridge.swift``)
+    to share the canonical parser with the macOS sidecar and HF Spaces
+    backend instead of maintaining a parallel Swift implementation
+    (``LocalEpubParser.swift``, removed).
+
+    Drops zero-length chapters; ``charCount`` reflects only ``text``.
+    ``html`` / ``css`` / ``segments`` are emitted as ``None`` (iOS
+    decoder treats them as optional) because the on-device parse path
+    does not preserve raw HTML/CSS today.
+    """
+    book = read_book(file_path)
+    chapters: list[dict] = []
+    out_index = 1
+    for chapter in book.chapters:
+        text = (chapter.text or "").strip()
+        if not text:
+            continue
+        chapters.append(
+            {
+                "index": out_index,
+                "name": chapter.name,
+                "text": text,
+                "html": None,
+                "css": None,
+                "charCount": len(text),
+                "segments": None,
+            }
+        )
+        out_index += 1
+    return {
+        "jobId": book_id,
+        "bookTitle": book.title,
+        "bookAuthor": book.author,
+        "chapters": chapters,
+    }
+
+
+__all__ = ["EbookReader", "read_book", "parse_epub_to_dict", "Book", "Chapter"]

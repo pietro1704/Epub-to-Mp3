@@ -34,10 +34,15 @@ runtime.
 +----------------------------------------------------+
 ```
 
-Swift owns **all** networking. Python stays available for text/data
-processing (Piper preprocessing, language detection, etc.) but never
-imports `socket`, `ssl`, `aiohttp`, or any other module that needs a
-C-extension we can't dlopen on iOS.
+Swift owns **all** networking. Python stays in-process for the
+**canonical pipeline modules** — `python_app.src.ebook_reader`,
+`text_formatting`, `cache_manager`, `paths` — which are pure-stdlib and
+shared with the macOS sidecar and the HF Spaces backend. The iOS app
+imports them via `PythonBridge.swift` so there is exactly one EPUB
+parser in the codebase, not a Swift reimplementation racing the
+Python one. Python never imports `socket`, `ssl`, `aiohttp`, or any
+other module that needs a C-extension we can't dlopen on iOS;
+synthesis bytes come from `EdgeTTSBridge` on the Swift side.
 
 This is the production-shippable shape — `aiohttp` and the rest of the
 TCP/TLS chain are gone, so we don't need cibuildwheel cross-compiles to
@@ -64,8 +69,13 @@ The script:
 - Caches the tarball at `~/.cache/epub-to-mp3/python-apple-support/`.
 - Extracts `Python.xcframework` + `python-stdlib/` into
   `ios/EpubToMp3/EpubToMp3/Vendor/Python/` (gitignored, ~150 MB).
-- `pip install --target ios/EpubToMp3/EpubToMp3/Vendor/site-packages` for
-  `edge-tts` + `aiohttp`.
+- Copies `python_app/src/` into
+  `ios/EpubToMp3/EpubToMp3/Vendor/site-packages/python_app/` so the
+  Swift bridge can `Python.import("python_app.src.ebook_reader")` and
+  call the same parser the macOS sidecar / HF backend run.
+- Does NOT install `aiohttp` / `edge-tts` — the Swift `EdgeTTSBridge`
+  owns synthesis; `site-packages/` otherwise carries only the embedded
+  `python_app` tree.
 
 Override the Python version via env:
 

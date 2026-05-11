@@ -6,9 +6,11 @@ import UniformTypeIdentifiers
 /// Pipeline (target: visible text in <100 ms on the second open):
 ///   1. Read the cached `EbookFulltext` from disk → render reader
 ///      immediately. No network, no waiting.
-///   2. If the cache is empty, parse the EPUB on-device with
-///      `LocalEpubParser` (still no network) → render reader, save
-///      cache for next time.
+///   2. If the cache is empty, parse the EPUB on-device through
+///      `PythonBridge` — calls the canonical `python_app.src.ebook_reader`
+///      module embedded in the iOS bundle (same code as the macOS
+///      sidecar) — still no network → render reader, save cache for
+///      next time. On macOS the sidecar path handles this instead.
 ///   3. Kick off audio in the background: reattach to an existing
 ///      job if we know its id, otherwise submit a new conversion
 ///      via `/api/convert`. Either way the reader is already
@@ -111,22 +113,34 @@ struct BookOpenView: View {
             self.fulltext = cached
             self.phase = .ready
         } else {
-            // 3. No cache → parse on-device. This is fast (a few ms
-            //    on typical novels) and lets us render the reader
-            //    without any network round-trip.
-            if let parsed = LocalEpubParser.parse(url: fileURL, bookId: book.id) {
+            // 3. No cache → parse on-device. On iOS this hops into
+            //    the embedded Python interpreter and runs the same
+            //    `ebook_reader.parse_epub_to_dict` the backend uses,
+            //    so the iOS app and the sidecar/HF server always
+            //    agree on chapter boundaries.
+            #if os(iOS) || targetEnvironment(simulator)
+            do {
+                let parsed = try await PythonBridge.shared.parseEpub(
+                    at: fileURL, bookId: book.id
+                )
                 self.fulltext = parsed
                 self.phase = .ready
-                // Background save so we never hold up the first paint.
                 Task.detached(priority: .background) {
                     LocalFulltextCache.save(parsed, bookId: book.id)
                 }
-            } else {
-                // Fall back to local-text-only screen (clear messaging
-                // beats a blank reader).
+            } catch {
+                // Parser couldn't extract chapters — fall back to the
+                // local-text-only screen. Clearer than a blank reader.
                 phase = .textOnly(fileURL)
                 return
             }
+            #else
+            // macOS uses the sidecar; this view is currently iOS-only,
+            // but keep a compile-time fallback so the file builds in
+            // any future macOS-Catalyst target.
+            phase = .textOnly(fileURL)
+            return
+            #endif
         }
 
         // 4. Reader is on screen. Audio bootstrap is *not* triggered
