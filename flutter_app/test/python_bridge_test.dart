@@ -60,13 +60,12 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  test('isSupported is true only on Android', () {
-    // We can't override Platform.isAndroid from tests cleanly, so just
-    // assert the result is consistent with the current host.
-    final expected = !Platform.isIOS &&
-        !Platform.isMacOS &&
-        !Platform.isLinux &&
-        !Platform.isWindows;
+  test('isSupported is true only on Android or Linux/Windows desktop', () {
+    // We can't override Platform.* from tests cleanly, so just assert
+    // the result is consistent with the current host.
+    final expected = Platform.isAndroid ||
+        Platform.isLinux ||
+        Platform.isWindows;
     expect(PythonBridge.instance.isSupported, expected);
   });
 

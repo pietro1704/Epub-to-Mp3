@@ -34,3 +34,11 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   generate: true
+  assets:
+    # Synced from python_app/src/ by
+    # flutter_app/scripts/bootstrap-desktop-python.sh. Bundled into
+    # Linux / Windows desktop builds and extracted to a tmp dir at
+    # runtime so PYTHONPATH can point at it. Android uses Chaquopy
+    # (android/app/src/main/python/) and macOS/iOS use the SwiftUI app,
+    # so the asset is harmless on those platforms.
+    - assets/python_app/src/

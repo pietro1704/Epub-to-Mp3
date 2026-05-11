@@ -414,6 +414,10 @@ run = "cd flutter_app && flutter build apk --release"
 description = "Sync python_app/src into the Flutter Android Chaquopy source set"
 run = "bash flutter_app/scripts/bootstrap-android-python.sh"
 
+[tasks."desktop:bootstrap-python"]
+description = "Sync python_app/src into flutter_app/assets/python_app for Linux/Windows desktop builds"
+run = "bash flutter_app/scripts/bootstrap-desktop-python.sh"
+
 [tasks."flutter:run-desktop"]
 description = "Run the Flutter desktop app on the host platform (Linux/Windows only)"
 run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"
