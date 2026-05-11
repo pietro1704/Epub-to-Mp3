@@ -81,27 +81,41 @@ targets:
           - "Resources/EpubToMp3.entitlements"
           - "Resources/EpubToMp3-Debug.entitlements"
           - "Resources/Info.plist"
+          # Vendor/ is referenced explicitly below as folder-refs (opaque).
+          # Without this exclude, xcodegen recurses into it from the parent
+          # `path: EpubToMp3` and adds every .py as an individual resource,
+          # causing duplicate-output errors on common names (helpers.py,
+          # exceptions.py, etc.).
+          - "Vendor"
       # Vendored Python stdlib + slim site-packages (iOS spike).
       # Bundled as resources so `Bundle.main.path(forResource:)` finds
-      # them at runtime. Directories are referenced as folder-refs to
-      # preserve subpaths. Missing dirs are OK on a fresh clone — the
-      # bootstrap script populates them. xcodegen tolerates missing
-      # optional paths.
+      # them at runtime. `type: folder` is xcodegen's "blue folder
+      # reference" — opaque, preserves directory hierarchy verbatim
+      # (vs `type: group` which would flatten every nested .py into
+      # the .app root and collide on common names like `helpers.py`).
+      # Missing dirs are OK on a fresh clone — the bootstrap script
+      # populates them. xcodegen tolerates missing optional paths.
       - path: Vendor/python-stdlib
         optional: true
         buildPhase: resources
         type: folder
+        createIntermediateGroups: true
       - path: Vendor/site-packages
         optional: true
         buildPhase: resources
         type: folder
+        createIntermediateGroups: true
     dependencies:
-      # Embed Python.xcframework only on iOS-flavoured slices; macOS
-      # keeps the PyInstaller sidecar.
+      # Embed Python.xcframework. The macOS slice does NOT get a slice
+      # of Python.xcframework (it's iOS-only from Beeware), so the
+      # macOS build will skip its dynamic linking; PythonEmbed.swift
+      # is `#if os(iOS) || targetEnvironment(simulator)` so the macOS
+      # build doesn't reference Python symbols. PythonKit itself is
+      # multi-platform and only fails at runtime if it tries to dlopen
+      # libpython — which only happens via PythonEmbed.shared.bootstrap().
       - framework: Vendor/Python/Python.xcframework
         embed: true
         codeSign: true
-        platforms: [iOS]
       - package: PythonKit
     settings:
       base:

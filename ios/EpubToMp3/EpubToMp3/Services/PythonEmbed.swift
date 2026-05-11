@@ -80,14 +80,11 @@ final class PythonEmbed: @unchecked Sendable {
         // PythonKit lazy-loads libpython; the dylib lives inside
         // Python.xcframework/<slice>/Python.framework/Python.
         // The xcframework is embedded into the app bundle so the
-        // dynamic linker finds it via @rpath at launch.
-        do {
-            // First Python call triggers initialisation.
-            let sys = Python.import("sys")
-            _ = sys.version
-        } catch {
-            throw PythonEmbedError.pythonInitFailed(String(describing: error))
-        }
+        // dynamic linker finds it via @rpath at launch. Python failures
+        // raise a runtime trap (PythonKit doesn't bridge to Swift's
+        // throws system) so we have no catch path here.
+        let sys = Python.import("sys")
+        _ = sys.version
 
         initialized = true
     }
@@ -106,22 +103,18 @@ final class PythonEmbed: @unchecked Sendable {
             .appendingPathComponent("edge_\(UUID().uuidString).mp3")
             .path
 
-        // Run the synchronous PythonKit calls off the main actor.
-        try await Task.detached(priority: .userInitiated) {
+        // PythonKit calls don't throw to Swift — Python exceptions surface
+        // as runtime traps. Run on a detached task so the GIL release/
+        // acquire doesn't block the actor we were called from.
+        await Task.detached(priority: .userInitiated) {
             let asyncio = Python.import("asyncio")
             let edgeTTS = Python.import("edge_tts")
 
-            // Inline coroutine: build Communicate, save to disk.
-            let coroFactory = PythonFunction { args in
-                let t = args[0]
-                let v = args[1]
-                let p = args[2]
-                let comm = edgeTTS.Communicate(t, v)
-                // .save returns a coroutine — caller will await it.
-                return comm.save(p)
-            }
-
-            let coro = coroFactory.pythonObject(text, voice, outputPath)
+            // Build the coroutine in Python, then asyncio.run() it.
+            // edge_tts.Communicate(text, voice).save(path) returns a
+            // coroutine because .save is `async def`.
+            let comm = edgeTTS.Communicate(text, voice)
+            let coro = comm.save(outputPath)
             _ = asyncio.run(coro)
         }.value
 

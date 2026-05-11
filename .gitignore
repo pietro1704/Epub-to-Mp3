@@ -179,3 +179,6 @@ releases/
 # ios/EpubToMp3/scripts/bootstrap-ios-python.sh
 ios/EpubToMp3/EpubToMp3/Vendor/Python/
 ios/EpubToMp3/EpubToMp3/Vendor/site-packages/
+ios/EpubToMp3/Vendor/Python/
+ios/EpubToMp3/Vendor/site-packages/
+ios/EpubToMp3/Vendor/python-stdlib/
