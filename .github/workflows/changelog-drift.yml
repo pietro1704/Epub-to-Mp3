@@ -14,8 +14,6 @@ on:
       - "web/src/**"
       - "python_app/version.py"
       - "web/package.json"
-      - "desktop/src-tauri/Cargo.toml"
-      - "desktop/src-tauri/tauri.conf.json"
       - "CHANGELOG.md"
       - "cliff.toml"
 

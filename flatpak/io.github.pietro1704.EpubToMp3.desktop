@@ -1,9 +1,0 @@
-[Desktop Entry]
-Name=Epub to Mp3
-Comment=Convert EPUB/PDF ebooks into MP3 audiobooks
-Exec=epub-to-mp3
-Icon=io.github.pietro1704.EpubToMp3
-Terminal=false
-Type=Application
-Categories=AudioVideo;Audio;Education;
-Keywords=epub;pdf;audiobook;tts;mp3;ebook;

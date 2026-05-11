@@ -36,7 +36,13 @@ For the macOS sidecar to be embedded, build the PyInstaller binary
 first:
 
 ```bash
-mise run desktop:sidecar    # writes desktop/src-tauri/binaries/epub-to-mp3-server-<triple>
+mise run sidecar:build      # writes dist/epub-to-mp3-server
+```
+
+Or do both steps in one shot:
+
+```bash
+mise run mac:build          # sidecar:build + headless xcodebuild
 ```
 
 The Xcode `postBuildScripts` phase copies the most recent binary into

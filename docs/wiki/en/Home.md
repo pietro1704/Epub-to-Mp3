@@ -1,14 +1,15 @@
 # Wiki: EPUB to MP3
 
-Convert EPUB/PDF ebooks into MP3 audiobooks with multiple TTS engines, automatic fallback, per-book caching, a real-time web UI, and a Tauri desktop app.
+Convert EPUB/PDF ebooks into MP3 audiobooks with multiple TTS engines, automatic fallback, per-book caching, a real-time web UI, a SwiftUI app for Apple platforms, and a Flutter app for Linux/Windows/Android.
 
 ## Overview
 
-The project supports three main usage modes:
+The project supports four main usage modes:
 
 - `CLI`: local terminal conversion
 - `Web`: FastAPI backend plus React frontend
-- `Desktop`: Tauri app with the web frontend and a Python sidecar
+- `Apple` (`ios/EpubToMp3/`): SwiftUI app for macOS / iPadOS / iOS; macOS embeds the Python sidecar
+- `Non-Apple` (`flutter_app/`): Flutter app for Linux / Windows / Android
 
 By default, local CLI and web mode share the same persistent directories:
 
@@ -36,13 +37,15 @@ By default, local CLI and web mode share the same persistent directories:
 - Aggressive caching to avoid repeated parsing
 - Progressive playback while chunks are synthesized
 - Per-chapter download and full ZIP download
-- Packaged desktop app for macOS, Windows, and Linux
-- Mobile artifacts built in CI
+- Native macOS app (SwiftUI) with embedded Python sidecar
+- Native Linux / Windows / Android apps (Flutter)
+- iOS / iPadOS sideloadable archive
 
 ## Core stack
 
 - Backend: `Python`, `FastAPI`
 - Frontend: `React`, `TypeScript`, `Vite`
-- Desktop: `Tauri`
+- Apple client: `SwiftUI`
+- Non-Apple client: `Flutter`
 - CI/CD: `GitHub Actions`
 - Public demo: `Hugging Face Spaces`

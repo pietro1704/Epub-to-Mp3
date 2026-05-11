@@ -53,16 +53,3 @@ updates:
     commit-message:
       prefix: "chore(deps):"
 
-  # ── Cargo (Tauri desktop) ─────────────────────────────────────────────────
-  - package-ecosystem: "cargo"
-    directory: "/desktop/src-tauri"
-    schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
-    labels: ["dependencies", "rust"]
-    commit-message:
-      prefix: "chore(deps):"
-    groups:
-      cargo-non-security:
-        dependency-type: "production"
-        update-types: ["minor", "patch"]

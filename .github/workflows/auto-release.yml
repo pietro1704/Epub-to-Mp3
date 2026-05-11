@@ -46,16 +46,12 @@ jobs:
               r'__version__ = "(.+)"',
               Path("python_app/version.py").read_text(encoding="utf-8"),
           ).group(1)
-          tauri_version = json.loads(
-              Path("desktop/src-tauri/tauri.conf.json").read_text(encoding="utf-8")
-          )["version"]
           web_version = json.loads(
               Path("web/package.json").read_text(encoding="utf-8")
           )["version"]
 
           versions = {
               "python_app/version.py": python_version,
-              "desktop/src-tauri/tauri.conf.json": tauri_version,
               "web/package.json": web_version,
           }
           unique_versions = set(versions.values())

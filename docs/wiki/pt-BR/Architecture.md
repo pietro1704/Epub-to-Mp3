@@ -2,11 +2,12 @@
 
 ## Visão de alto nível
 
-O projeto é dividido em três camadas:
+O projeto é dividido em quatro camadas:
 
 1. `python_app/`: backend e pipeline de conversão
 2. `web/`: frontend React/TypeScript
-3. `desktop/`: shell Tauri e integração com sidecar
+3. `ios/EpubToMp3/`: cliente SwiftUI (macOS · iPadOS · iOS) com sidecar PyInstaller embutido no macOS
+4. `flutter_app/`: cliente Flutter (Linux · Windows · Android)
 
 ## Dois pipelines de conversão
 
@@ -38,12 +39,11 @@ Arquivos principais:
 - `web/src/services/ConversionService.ts`: cliente HTTP/SSE/polling
 - `web/src/i18n/translations.ts`: traduções
 
-## Desktop
+## Clientes nativos
 
-Arquivos principais:
-
-- `desktop/src-tauri/src/lib.rs`: bootstrap do app Tauri, sidecar, restart e eventos
-- `desktop/src-tauri/tauri.conf.json`: configuração do app
+- `ios/EpubToMp3/project.yml`: descritor xcodegen; o post-build script `Embed Python sidecar (macOS only)` copia `dist/epub-to-mp3-server` para os Resources do `.app`
+- `flutter_app/lib/`: código do cliente Flutter (Linux · Windows · Android)
+- `desktop.spec`: spec do PyInstaller para o binário sidecar gerado por `mise run sidecar:build`
 
 ## Persistência
 

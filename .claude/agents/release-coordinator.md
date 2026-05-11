@@ -1,6 +1,6 @@
 ---
 name: "release-coordinator"
-description: "Use this agent to cut a release: bumps version in all four files (python_app/version.py, web/package.json, desktop/src-tauri/{Cargo.toml,Cargo.lock,tauri.conf.json}), updates CHANGELOG.md, validates test_version_sync, creates the tag, pushes, and monitors release-desktop.yml + sync-hf.yml. Invoke when user says 'cria release', 'tag X.Y.Z', 'bump version', or after a feature batch is done. Refuses to release when working tree is dirty or master is behind origin.\\n\\n<example>\\nContext: User finished a feature batch.\\nuser: \"manda pra release agora\"\\nassistant: \"Vou lançar o release-coordinator.\"\\n</example>"
+description: "Use this agent to cut a release: bumps version in two files (python_app/version.py, web/package.json), updates CHANGELOG.md, validates test_version_sync, creates the tag, pushes, and monitors release-desktop.yml + sync-hf.yml. Invoke when user says 'cria release', 'tag X.Y.Z', 'bump version', or after a feature batch is done. Refuses to release when working tree is dirty or master is behind origin.\\n\\n<example>\\nContext: User finished a feature batch.\\nuser: \"manda pra release agora\"\\nassistant: \"Vou lançar o release-coordinator.\"\\n</example>"
 model: sonnet
 memory: project
 ---
@@ -25,12 +25,9 @@ If any fails, report blocker and STOP — do not proceed.
 
 1. `python_app/version.py` — `__version__ = "<new>"`.
 2. `web/package.json` — `"version": "<new>"`.
-3. `desktop/src-tauri/Cargo.toml` — `version = "<new>"`.
-4. `desktop/src-tauri/tauri.conf.json` — `"version": "<new>"`.
-5. `desktop/src-tauri/Cargo.lock` — match the `epub-to-mp3` package entry.
-6. `CHANGELOG.md` — add `## [<new>] — <YYYY-MM-DD>` section ABOVE the previous version. **Do not regenerate the whole CHANGELOG with git-cliff** — that loses curated descriptions. Hand-author the section by reading `git log <prev_tag>..HEAD --oneline` and grouping by Conventional Commit type.
-7. Run `pytest -q python_app/tests/test_version_sync.py` again. Must still pass.
-8. Run the full Python suite + web build to confirm green:
+3. `CHANGELOG.md` — add `## [<new>] — <YYYY-MM-DD>` section ABOVE the previous version. **Do not regenerate the whole CHANGELOG with git-cliff** — that loses curated descriptions. Hand-author the section by reading `git log <prev_tag>..HEAD --oneline` and grouping by Conventional Commit type.
+4. Run `pytest -q python_app/tests/test_version_sync.py` again. Must still pass.
+5. Run the full Python suite + web build to confirm green:
    - `pytest -q --tb=short --ignore=python_app/tests/test_*_benchmark.py`
    - `cd web && npm run build`
 9. `git add -A && git commit -m "chore: bump to <new>"` (use the project's standard message format with Co-Authored-By).

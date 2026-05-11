@@ -4,15 +4,12 @@ python = { version = "3.11.11", virtualenv = ".venv" }
 # Node LTS for frontend (Vite 7.x requires >=20.19.0)
 node = "latest"
 npm = "latest"
-# Rust toolchain for Tauri desktop builds
-rust = "stable"
-# Tauri CLI — installed via mise npm backend, available as `tauri` globally
-"npm:@tauri-apps/cli" = "2"
 # Changelog generator (conventional commits → CHANGELOG.md)
 "cargo:git-cliff" = "latest"
 # Flutter SDK for the cross-platform companion app under flutter_app/.
 flutter = "3.41.9"
-# CocoaPods for the Flutter iOS target.
+# CocoaPods is used by the Capacitor iOS build (web/ → web/ios/App/),
+# NOT by Flutter — Flutter does not target iOS/macOS in this repo.
 cocoapods = "1.16.2"
 # Java + Android SDK for the Flutter Android target. android-sdk plugin
 # requires JAVA_HOME to be set; mise handles that when java is in [tools].
@@ -122,7 +119,6 @@ set -euo pipefail
 
 mise run test:unit
 mise run test:integration
-mise run test:desktop
 mise run test:web
 """
 
@@ -274,19 +270,13 @@ set -euo pipefail
 .venv/bin/python scripts/benchmark_regression.py "$@"
 """
 
-# ── Desktop (Tauri) ────────────────────────────────────────────────────────────
+# ── Python sidecar + native macOS build ───────────────────────────────────────
+# The PyInstaller sidecar binary is consumed by the SwiftUI macOS app
+# (ios/EpubToMp3/) via its post-build script. Linux/Windows users run the
+# Flutter app under flutter_app/ — Flutter builds its own native packages.
 
-[tasks."desktop:server"]
-description = "Start Python backend sidecar locally (Edge-TTS, port 47860)"
-run = """
-#!/bin/bash
-set -euo pipefail
-source .venv/bin/activate
-DISABLE_PIPER_FALLBACK=1 python python_app/desktop_main.py
-"""
-
-[tasks."desktop:sidecar"]
-description = "Build PyInstaller sidecar binary (Edge-TTS only) and place in binaries/"
+[tasks."sidecar:build"]
+description = "Build PyInstaller sidecar binary (epub-to-mp3-server, Edge-TTS only) into dist/"
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -294,202 +284,46 @@ source .venv/bin/activate
 pip install pyinstaller -q
 pip install -r requirements-desktop.txt -q
 pyinstaller desktop.spec --noconfirm --clean
-
-TRIPLE=$(rustc -Vv | grep "^host" | cut -d' ' -f2)
-mkdir -p desktop/src-tauri/binaries
-cp dist/epub-to-mp3-server "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
-chmod +x "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
-echo "Sidecar ready: desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
+echo "Sidecar ready: dist/epub-to-mp3-server"
 """
 
-[tasks."desktop:web"]
-description = "Build React frontend for desktop (loads .env.desktop → VITE_API_BASE=127.0.0.1:47860)"
-dir = "web"
+[tasks."mac:build"]
+description = "Build SwiftUI macOS app with embedded Python sidecar"
 run = """
 #!/bin/bash
 set -euo pipefail
-npm run build:desktop
-# Postbuild guard: the bundle MUST contain the sidecar URL, otherwise the
-# webview will fall back to relative /api and report "backend offline".
-if ! grep -lqr "127.0.0.1:47860/api" dist/assets/*.js; then
-  echo "FATAL: dist bundle does not contain 127.0.0.1:47860/api — VITE_API_BASE was not applied."
-  echo "Check web/.env.desktop and that vite is loaded with --mode desktop."
+# 1. Regenerate the Python sidecar (PyInstaller onefile).
+mise run sidecar:build
+
+# 2. Build the SwiftUI app headlessly via xcodebuild.
+cd ios/EpubToMp3
+# Ensure project.yml is materialized to .xcodeproj.
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "error: xcodegen not installed. Install via: brew install xcodegen"
   exit 1
 fi
-echo "Desktop bundle OK (VITE_API_BASE baked into dist/assets/)"
-"""
+xcodegen generate
+xcodebuild \\
+  -project EpubToMp3.xcodeproj \\
+  -scheme EpubToMp3 \\
+  -configuration Release \\
+  -destination 'platform=macOS' \\
+  -derivedDataPath ./.build \\
+  SYMROOT=$(pwd)/.build \\
+  build | tail -20
 
-[tasks."desktop:icons"]
-description = "Generate all icon sizes from desktop/icon-source/icon.png"
-dir = "desktop"
-run = "tauri icon icon-source/icon.png"
-
-[tasks."desktop:build"]
-description = "Full desktop build for current platform + install + open"
-run = """
-#!/bin/bash
-set -euo pipefail
-case "$(uname)" in
-  Darwin) mise run desktop:build:mac ;;
-  Linux)  mise run desktop:build:linux && mise run desktop:run:linux ;;
-  *)      mise run desktop:build:windows ;;
-esac
-"""
-
-[tasks."desktop:dev"]
-description = "Open Tauri dev window (run mise run desktop:server in another terminal first)"
-dir = "desktop"
-run = "VITE_API_BASE=http://127.0.0.1:47860/api tauri dev"
-
-[tasks."desktop:run"]
-description = "Launch the last built desktop app for current platform"
-run = """
-#!/bin/bash
-set -euo pipefail
-case "$(uname)" in
-  Darwin) mise run desktop:run:mac ;;
-  Linux)  mise run desktop:run:linux ;;
-  *)      echo "Use the .exe in desktop/src-tauri/target/release/ on Windows" ;;
-esac
-"""
-
-# ── Desktop — build per platform ──────────────────────────────────────────────
-# macOS: mise run desktop:build → mise run desktop:run
-# Dev:   terminal 1: mise run desktop:server  |  terminal 2: mise run desktop:dev
-
-[tasks."desktop:build:mac"]
-description = "Build macOS desktop app (.app + .dmg)"
-run = """
-#!/bin/bash
-set -euo pipefail
-mise run desktop:sidecar
-mise run desktop:web
-TRIPLE=$(rustc -Vv | grep "^host" | cut -d' ' -f2)
-# Load updater signing key if available locally
-KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
-if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
-  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
-  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-fi
-# Build only the .app (skip DMG to avoid macOS opening Finder)
-cd desktop && tauri build --target "$TRIPLE" --bundles app
-echo ""
-echo "Done! Installing to /Applications and opening..."
-cd ..
-mise run desktop:run:mac
-"""
-
-[tasks."desktop:build:linux"]
-description = "Build Linux desktop app (.AppImage + .deb)"
-run = """
-#!/bin/bash
-set -euo pipefail
-mise run desktop:sidecar
-mise run desktop:web
-KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
-if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
-  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
-  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-fi
-cd desktop && tauri build
-echo ""
-echo "Done! Artifacts:"
-find desktop/src-tauri/target -name '*.AppImage' -o -name '*.deb' 2>/dev/null | head -5
-"""
-
-[tasks."desktop:build:windows"]
-description = "Build Windows desktop app (.msi + .exe) — run on Windows or cross-compile"
-run = """
-#!/bin/bash
-set -euo pipefail
-mise run desktop:sidecar
-mise run desktop:web
-KEY_FILE="$HOME/.config/epub-to-mp3/updater.key"
-if [[ -f "$KEY_FILE" && -z "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
-  export TAURI_SIGNING_PRIVATE_KEY=$(cat "$KEY_FILE")
-  export TAURI_SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}"
-fi
-cd desktop && tauri build
-echo ""
-echo "Done! Artifacts:"
-find desktop/src-tauri/target -name '*.msi' -o -name '*-setup.exe' 2>/dev/null | head -5
-"""
-
-[tasks."desktop:run:mac"]
-description = "Install built .app to /Applications (removing quarantine) and open it"
-run = """
-#!/bin/bash
-set -euo pipefail
-APP=$(find desktop/src-tauri/target -name "Epub to Mp3.app" -type d 2>/dev/null | grep -v "[.]cargo" | head -1)
-if [[ -z "$APP" || ! -d "$APP" ]]; then
-  echo "No .app found. Run: mise run desktop:build:mac"
+APP_OUT="ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app"
+if [[ -d "$APP_OUT" ]]; then
+  echo ""
+  echo "Built: $APP_OUT"
+  echo "   Sidecar embedded: $(ls -lh "$APP_OUT/Contents/Resources/epub-to-mp3-server" 2>/dev/null | awk '{print $5}')"
+  echo ""
+  echo "To install, copy to /Applications:"
+  echo "   cp -R \\"$APP_OUT\\" /Applications/"
+else
+  echo "error: build did not produce $APP_OUT"
   exit 1
 fi
-DEST="/Applications/Epub to Mp3.app"
-# Kill existing instance so macOS actually launches the new binary
-echo "Stopping any running instance..."
-osascript -e 'tell application "Epub to Mp3" to quit' 2>/dev/null || true
-sleep 1
-# Kill main app binary + sidecar server (both match "epub-to-mp3" or "epub-to-m3")
-pkill -9 -f "epub-to-mp3" 2>/dev/null || true
-# Also kill by port in case sidecar is orphaned
-lsof -ti :47860 2>/dev/null | xargs kill -9 2>/dev/null || true
-sleep 1
-echo "Installing to $DEST ..."
-rm -rf "$DEST"
-cp -r "$APP" "$DEST"
-# Remove macOS quarantine so the app opens without Gatekeeper prompts
-xattr -rd com.apple.quarantine "$DEST" 2>/dev/null || true
-echo "Opening $DEST"
-open "$DEST"
-"""
-
-[tasks."desktop:run:linux"]
-description = "Run the built Linux binary"
-run = """
-#!/bin/bash
-set -euo pipefail
-BIN="desktop/src-tauri/target/release/epub-to-mp3"
-if [[ ! -f "$BIN" ]]; then
-  echo "Binary not found. Run: mise run desktop:build:linux"
-  exit 1
-fi
-"$BIN" &
-"""
-
-# ── Generate all binaries (local build) ──────────────────────────────────────
-# Android/iOS/Linux/Windows are built by CI (GitHub Actions).
-
-[tasks."generate-binaries"]
-description = "Build all locally-buildable binaries: desktop app + Docker image; copies artifacts to releases/"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-RELEASES_DIR="$(pwd)/releases"
-mkdir -p "$RELEASES_DIR"
-
-echo "Building desktop app..."
-mise run desktop:build
-
-echo ""
-echo "Copying desktop artifacts to releases/..."
-if [[ "$(uname)" == "Darwin" ]]; then
-  DMG=$(find desktop/src-tauri/target/release/bundle/dmg -name "*.dmg" 2>/dev/null | head -1)
-  if [[ -n "$DMG" ]]; then
-    cp "$DMG" "$RELEASES_DIR/"
-    echo "  $(basename "$DMG") → releases/"
-  fi
-fi
-
-echo ""
-echo "Building Docker image..."
-mise run docker:build
-
-echo ""
-echo "Done! Artifacts in releases/:"
-ls -lh "$RELEASES_DIR/" 2>/dev/null || echo "  (empty)"
-echo "Docker image → epub-to-mp3:local  (run: mise run docker:run)"
 """
 
 # ── Docker ───────────────────────────────────────────────────────────────────────
@@ -538,40 +372,6 @@ fi
 (cd web && mise exec -- npm run build)
 """
 
-[tasks."test:desktop"]
-description = "Run desktop/Tauri unit tests"
-run = """
-#!/bin/bash
-set -euo pipefail
-
-if [ ! -d "desktop/src-tauri" ]; then
-  echo "desktop/src-tauri not found"
-  exit 1
-fi
-
-case "$(uname -s)-$(uname -m)" in
-  Darwin-arm64) target_triple="aarch64-apple-darwin" ;;
-  Darwin-x86_64) target_triple="x86_64-apple-darwin" ;;
-  Linux-x86_64) target_triple="x86_64-unknown-linux-gnu" ;;
-  *)
-    echo "Unsupported desktop test target: $(uname -s)-$(uname -m)"
-    exit 1
-    ;;
-esac
-
-sidecar_path="desktop/src-tauri/binaries/epub-to-mp3-server-${target_triple}"
-if [ ! -f "$sidecar_path" ]; then
-  mkdir -p "$(dirname "$sidecar_path")"
-  cat > "$sidecar_path" <<'SH'
-#!/bin/sh
-exit 0
-SH
-  chmod +x "$sidecar_path"
-fi
-
-(cd desktop/src-tauri && mise exec -- cargo test --lib)
-"""
-
 # ── Release ───────────────────────────────────────────────────────────────────────
 
 [tasks.bump]
@@ -594,7 +394,7 @@ run = "cd flutter_app && flutter test"
 description = "Static analysis of the Flutter app (lints + type errors)"
 run = "cd flutter_app && flutter analyze"
 
-[tasks."flutter:build-apk"]
+[tasks."flutter:build-apk-debug"]
 description = "Build a debug APK for Android"
 run = "cd flutter_app && flutter build apk --debug"
 
@@ -606,10 +406,10 @@ run = "cd flutter_app && flutter build linux --release"
 description = "Build the Flutter Windows desktop app (release)"
 run = "cd flutter_app && flutter build windows --release"
 
-[tasks."flutter:build-macos"]
-description = "Build the Flutter macOS desktop app (release) — alternative to the SwiftUI app"
-run = "cd flutter_app && flutter build macos --release"
+[tasks."flutter:build-apk"]
+description = "Build the Flutter Android APK (release)"
+run = "cd flutter_app && flutter build apk --release"
 
 [tasks."flutter:run-desktop"]
-description = "Run the Flutter desktop app on the host platform"
-run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' '[:lower:]' | sed 's/darwin/macos/')"
+description = "Run the Flutter desktop app on the host platform (Linux/Windows only)"
+run = "cd flutter_app && flutter run -d $(uname | tr '[:upper:]' 'a-z')"

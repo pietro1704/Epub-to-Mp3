@@ -1,74 +1,51 @@
 # Desktop, Mobile e Releases
 
-## Desktop
+## Apple (macOS / iPadOS / iOS) — SwiftUI
 
-O app desktop usa:
+O cliente oficial Apple está em `ios/EpubToMp3/`. No macOS o app embute
+o servidor Python como sidecar PyInstaller dentro do `.app`; iPadOS e
+iOS apontam para um backend remoto.
 
-- `Tauri` no shell nativo
-- frontend React em `web/`
-- sidecar Python empacotado para rodar o backend local
-
-## Tarefas principais
-
-Servidor local do desktop:
+Build headless do macOS:
 
 ```bash
-mise run desktop:server
+mise run mac:build
+# → ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app
 ```
 
-Build do sidecar:
+Build apenas do sidecar (PyInstaller onefile):
 
 ```bash
-mise run desktop:sidecar
+mise run sidecar:build
+# → dist/epub-to-mp3-server
 ```
 
-Build do frontend do desktop:
+Abrir no Xcode:
 
 ```bash
-mise run desktop:web
+cd ios/EpubToMp3
+xcodegen generate
+open EpubToMp3.xcodeproj
 ```
 
-Build do app desktop:
+## Não-Apple (Linux / Windows / Android) — Flutter
+
+O cliente oficial não-Apple está em `flutter_app/`. Um único codebase Dart,
+mesmo contrato FastAPI.
 
 ```bash
-mise run desktop:build
+mise run flutter:build-linux        # Linux desktop release
+mise run flutter:build-windows      # Windows desktop release
+mise run flutter:build-apk          # Android (release)
 ```
-
-Dev mode:
-
-```bash
-mise run desktop:dev
-```
-
-## Mobile
-
-O repositório também gera artefatos mobile via CI.
-
-Build web para mobile:
-
-```bash
-mise run mobile:build
-```
-
-Os pacotes nativos são gerados nos workflows de release.
 
 ## Releases
 
-O pipeline publica:
+`release-desktop.yml` roda em cada tag `v*.*.*` e publica:
 
-- nightly a partir da branch principal
-- releases versionadas por tag
-
-Artefatos comuns:
-
-- macOS `.dmg`
-- Windows `.exe` / `.msi`
-- Linux `.flatpak`, `.snap`, `.AppImage`, `.deb`
-- Android `.apk`
-- iOS `.ipa`
-
-## Observações importantes
-
-- o sidecar Python precisa existir em `desktop/src-tauri/binaries/`
-- o app desktop depende da disponibilidade local do backend Python
-- o fluxo de restart do sidecar tem cobertura de teste na CI
+- macOS `.zip` (SwiftUI, com sidecar embutido)
+- Linux `.tar.gz` (Flutter)
+- Windows `.zip` (Flutter)
+- Android `.apk` (Flutter)
+- Imagem Docker (`ghcr.io/<owner>/epub-to-mp3:latest`)
+- Arquivo iOS sem assinatura (sideload via AltStore)

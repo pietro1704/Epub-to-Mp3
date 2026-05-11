@@ -1,68 +1,51 @@
 # Desktop, Mobile, and Releases
 
-## Desktop
+## Apple (macOS / iPadOS / iOS) — SwiftUI
 
-The desktop app uses:
+The official Apple client lives in `ios/EpubToMp3/`. macOS embeds the
+Python server as a PyInstaller sidecar inside the `.app`; iPadOS and iOS
+talk to a remote backend.
 
-- `Tauri` as the native shell
-- the React frontend in `web/`
-- a packaged Python sidecar for the backend
-
-## Main tasks
-
-Desktop local server:
+Headless macOS build:
 
 ```bash
-mise run desktop:server
+mise run mac:build
+# → ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app
 ```
 
-Build the sidecar:
+Sidecar-only build (PyInstaller onefile):
 
 ```bash
-mise run desktop:sidecar
+mise run sidecar:build
+# → dist/epub-to-mp3-server
 ```
 
-Build the desktop frontend:
+Open in Xcode:
 
 ```bash
-mise run desktop:web
+cd ios/EpubToMp3
+xcodegen generate
+open EpubToMp3.xcodeproj
 ```
 
-Build the desktop app:
+## Non-Apple (Linux / Windows / Android) — Flutter
+
+The official non-Apple client lives in `flutter_app/`. Single Dart codebase,
+same FastAPI contract.
 
 ```bash
-mise run desktop:build
+mise run flutter:build-linux        # Linux desktop release
+mise run flutter:build-windows      # Windows desktop release
+mise run flutter:build-apk          # Android (release)
 ```
-
-Dev mode:
-
-```bash
-mise run desktop:dev
-```
-
-## Mobile
-
-The repository also produces mobile artifacts in CI.
-
-Mobile web bundle:
-
-```bash
-mise run mobile:build
-```
-
-Native packages are built by release workflows.
 
 ## Releases
 
-The pipeline publishes:
+`release-desktop.yml` runs on every `v*.*.*` tag and publishes:
 
-- nightly builds from the main branch
-- versioned releases from tags
-
-Common artifacts:
-
-- macOS `.dmg`
-- Windows `.exe` / `.msi`
-- Linux `.flatpak`, `.snap`, `.AppImage`, `.deb`
-- Android `.apk`
-- iOS `.ipa`
+- macOS `.zip` (SwiftUI, sidecar-embedded)
+- Linux `.tar.gz` (Flutter)
+- Windows `.zip` (Flutter)
+- Android `.apk` (Flutter)
+- Docker image (`ghcr.io/<owner>/epub-to-mp3:latest`)
+- iOS unsigned archive (sideload via AltStore)

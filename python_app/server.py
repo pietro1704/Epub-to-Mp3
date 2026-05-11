@@ -287,9 +287,6 @@ allowed_origins = [
     "http://127.0.0.1:8000",
     "http://localhost:7860",
     "http://127.0.0.1:7860",
-    # Tauri v2 webview origins (desktop app)
-    "tauri://localhost",
-    "https://tauri.localhost",
 ]
 
 # Add Cloudflare Pages domain from environment (for production)
@@ -306,11 +303,10 @@ if frontend_url:
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
-    # Dev-friendly local origins (localhost, loopback, private LAN, and Tauri webview)
+    # Dev-friendly local origins (localhost, loopback, private LAN)
     allow_origin_regex=(
-        r"^(https?|tauri)://("
+        r"^https?://("
         r"localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\]|::1|"
-        r"tauri\.localhost|"
         r"10(?:\.\d{1,3}){3}|"
         r"192\.168(?:\.\d{1,3}){2}|"
         r"172\.(?:1[6-9]|2\d|3[0-1])(?:\.\d{1,3}){2}"

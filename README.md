@@ -18,36 +18,38 @@ Convert EPUB/PDF ebooks into MP3 audiobooks using neural TTS engines.
 
 ## Download
 
-Pre-built desktop app (updated on every commit):
+Pre-built apps (updated on every release tag):
 
 | Platform | Download |
 |---|---|
-| **macOS** (Apple Silicon) | `.dmg` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) · `brew install --cask epub-to-mp3` |
-| **Windows** (x64) | `*_x64-setup.exe` or `*.msi` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
-| **Linux** (Flatpak) | `*.flatpak` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) · `flatpak install Epub.to.Mp3_x86_64.flatpak` |
-| **Linux** (Snap) | `*.snap` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) · `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
-| **Linux** (AppImage / deb) | `*.AppImage` or `*.deb` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
-| **Linux** (AUR) | `yay -S epub-to-mp3-bin` |
+| **macOS** (Apple Silicon · Intel) | `EpubToMp3-macos-*.zip` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) — unzip and drop into `/Applications` |
+| **Linux** (x64) | `EpubToMp3-flutter-linux-*.tar.gz` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
+| **Windows** (x64) | `EpubToMp3-flutter-windows-*.zip` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
 | **Android** | `EpubToMp3_android.apk` from [Releases](https://github.com/pietro1704/Epub-to-Mp3/releases) |
-| **iOS** (sideload) | `EpubToMp3_ios.ipa` — install via AltStore or Sideloadly |
+| **iOS / iPadOS** (sideload) | Build from `ios/EpubToMp3/` and sideload via AltStore |
 | **Docker** | `docker pull ghcr.io/pietro1704/epub-to-mp3:latest` |
 
 ---
 
 ## Apps
 
-The repository ships **three** client surfaces, each optimised for a
-different platform:
+The repository ships **two** client surfaces, each optimised for its
+platform family:
 
 | Surface | Platforms | Where | Status |
 |---|---|---|---|
 | **SwiftUI native** | macOS · iPadOS · iOS | `ios/EpubToMp3/` | **Official Apple client** — Library-first reader, embedded Python sidecar on macOS, streaming TTS chapter-by-chapter |
-| **Flutter native** | Linux · Windows · Android · macOS · iOS | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend |
-| **Tauri** | macOS · Linux · Windows | `desktop/` | **Alternative** — keeps a working WebView build for users who prefer the React UI as a native shell |
+| **Flutter native** | Linux · Windows · Android | `flutter_app/` | **Official non-Apple client** — single codebase, calls the same FastAPI backend. macOS/iOS are handled by SwiftUI, not Flutter. |
 
 ### SwiftUI app (Apple)
 
-Open the project in Xcode 26 and run:
+Headless build (no Xcode UI needed):
+
+```bash
+mise run mac:build      # builds sidecar + .app, opens path at end
+```
+
+Or open the project in Xcode:
 
 ```bash
 cd ios/EpubToMp3
@@ -55,9 +57,8 @@ xcodegen generate
 open EpubToMp3.xcodeproj
 ```
 
-Pick **My Mac** for native macOS, or any iPhone/iPad simulator. The
-`mise run desktop:sidecar` task builds the embedded Python server the
-macOS build embeds inside the `.app`.
+The `mise run sidecar:build` task builds the embedded Python server
+that the macOS build copies inside the `.app`'s Resources.
 
 ### Flutter app
 
@@ -65,15 +66,7 @@ macOS build embeds inside the `.app`.
 mise run flutter:run                # host platform
 mise run flutter:build-linux        # Linux desktop release
 mise run flutter:build-windows      # Windows desktop release
-mise run flutter:build-macos        # macOS (alternative to SwiftUI)
-mise run flutter:build-apk          # Android
-```
-
-### Tauri (alternative)
-
-```bash
-mise run desktop:dev                # WebView dev shell
-./scripts/build_desktop.sh          # build .app/.dmg/.AppImage
+mise run flutter:build-apk          # Android (release)
 ```
 
 ---

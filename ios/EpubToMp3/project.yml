@@ -45,7 +45,11 @@ settings:
     INFOPLIST_KEY_UIBackgroundModes: "audio"
     INFOPLIST_KEY_UIFileSharingEnabled: YES
     INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace: YES
-    INFOPLIST_KEY_NSAppTransportSecurity: "{NSAllowsLocalNetworking=YES;}"
+    # NSAppTransportSecurity is a dict — INFOPLIST_KEY_* only supports
+    # scalar/list values, so the dict goes in a real Info.plist file
+    # merged via INFOPLIST_FILE. xcodegen merges this with the
+    # auto-generated INFOPLIST_KEY_* entries at build time.
+    INFOPLIST_FILE: EpubToMp3/Resources/Info.plist
     INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Pietro Pugliesi"
     INFOPLIST_KEY_LSApplicationCategoryType: "public.app-category.productivity"
     # Intel Macs with discrete + integrated GPU: tell macOS we don't
@@ -67,6 +71,7 @@ targets:
         excludes:
           - "Resources/EpubToMp3.entitlements"
           - "Resources/EpubToMp3-Debug.entitlements"
+          - "Resources/Info.plist"
     settings:
       base:
         ENABLE_HARDENED_RUNTIME: YES
@@ -105,22 +110,12 @@ targets:
             exit 0
           fi
           REPO_ROOT="${SRCROOT}/../.."
-          # Prefer the platform-suffixed binary if present (mise task output);
-          # fall back to the unsuffixed one (manual builds).
-          ARCH_TRIPLE_ARM="aarch64-apple-darwin"
-          ARCH_TRIPLE_X86="x86_64-apple-darwin"
-          CANDIDATES=(
-            "${REPO_ROOT}/desktop/src-tauri/binaries/epub-to-mp3-server-${ARCH_TRIPLE_ARM}"
-            "${REPO_ROOT}/desktop/src-tauri/binaries/epub-to-mp3-server-${ARCH_TRIPLE_X86}"
-            "${REPO_ROOT}/dist/epub-to-mp3-server"
-            "${REPO_ROOT}/binaries/epub-to-mp3-server"
-          )
-          SIDECAR_SRC=""
-          for c in "${CANDIDATES[@]}"; do
-            if [[ -x "$c" ]]; then SIDECAR_SRC="$c"; break; fi
-          done
-          if [[ -z "$SIDECAR_SRC" ]]; then
-            echo "warning: sidecar binary not found in any of: ${CANDIDATES[*]}. App will start in remote-backend mode only."
+          # The PyInstaller sidecar is produced by `mise run sidecar:build`
+          # into dist/epub-to-mp3-server. The mac:build mise task chains the
+          # sidecar build immediately before invoking xcodebuild.
+          SIDECAR_SRC="${REPO_ROOT}/dist/epub-to-mp3-server"
+          if [[ ! -x "$SIDECAR_SRC" ]]; then
+            echo "warning: sidecar binary not found at ${SIDECAR_SRC}. Run 'mise run sidecar:build' first, or use 'mise run mac:build' to build sidecar+app together. App will start in remote-backend mode only."
             exit 0
           fi
           DEST="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}/epub-to-mp3-server"

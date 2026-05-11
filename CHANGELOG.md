@@ -1,5 +1,32 @@
 # Changelog
 
+## [Unreleased]
+
+### Removed
+
+- **Tauri desktop wrapper (deprecated in favor of SwiftUI + Flutter).** Removed
+  `desktop/` (Rust crate + Tauri config + icons), `flatpak/`, `snap/`,
+  `update-aur.yml`, Homebrew/Winget release jobs, and all `desktop:*` mise
+  tasks. macOS is now served by the SwiftUI app (`ios/EpubToMp3/`) with the
+  embedded PyInstaller sidecar; Linux/Windows by the Flutter app
+  (`flutter_app/`). New tasks: `mise run sidecar:build` (PyInstaller onefile
+  into `dist/`) and `mise run mac:build` (sidecar + headless xcodebuild
+  producing the SwiftUI `.app`).
+
+## [0.4.4] — 2026-05-10
+
+### Scope correction
+
+- **Flutter app: Linux + Windows + Android only.** Removed `flutter_app/macos/`
+  scaffold and `flutter:build-macos` task. macOS and iOS are owned by the
+  SwiftUI app at `ios/EpubToMp3/`. Docs (`CLAUDE.md`, `README.md`,
+  `flutter_app/README.md`, agent definitions) updated to reflect this.
+  Added `flutter:build-apk` (release) alongside `flutter:build-apk-debug`.
+- **VS Code workspace de-bloated.** New `scripts/vscode_profiles_setup.sh`
+  splits the 74-extension monolith into 8 lean per-domain profiles
+  (Flutter, iOS, Python, Web, Ruby, LaTeX, Cpp, Strudel) and prunes the
+  default profile down to 19 vim-first essentials.
+
 ## [0.4.3] — 2026-05-10
 
 ### CI hotfix

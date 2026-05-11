@@ -210,21 +210,20 @@ mise run audit          # Scan Python dependencies for CVEs (pip-audit)
 
 ## Architecture
 
-### Client surfaces — three apps, one backend
+### Client surfaces — two apps, one backend
 
-The repo ships three GUI clients on top of the same FastAPI backend.
+The repo ships two GUI clients on top of the same FastAPI backend.
 Each one is its own codebase; the backend is the single source of truth.
 
 | Client | Path | Platforms | Role |
 |---|---|---|---|
 | **SwiftUI** | `ios/EpubToMp3/` | macOS · iPadOS · iOS | Official Apple client. Library-first reader. macOS embeds the Python server as a sidecar (PyInstaller binary copied into `Contents/Resources/` at build time). iOS / iPadOS talk to a remote backend (`mise run web` or HF Spaces). |
 | **Flutter** | `flutter_app/` | Linux · Windows · Android | Official non-Apple client. Single Dart codebase. Talks to the same FastAPI surface. **macOS/iOS are NOT supported** — the SwiftUI app owns those platforms. |
-| **Tauri** | `desktop/` | macOS · Linux · Windows | Alternative WebView shell wrapping `web/dist/` + the same PyInstaller sidecar. Kept working but no longer the default Apple/desktop story. |
 
 Generic rules:
 
 - **Backend contract is the only shared API** — never reach across
-  clients (e.g. don't import Swift types from the Tauri Rust side).
+  clients (e.g. don't import Swift types from the Flutter Dart side).
 - **`/api/jobs/{id}/stream` (SSE)** drives chapter-by-chapter streaming
   playback in SwiftUI's `PlayerReaderView` — `AudioPlayer.updateSnapshot`
   appends new chapters to the `AVQueuePlayer` queue without
@@ -532,15 +531,15 @@ These features exist specifically to improve the audiobook listening experience:
 
 **Always use `mise` for all toolchain management and task execution — never install or invoke tools natively.**
 
-- **All tools** (Python, Node, Rust, tauri-cli, npm packages) are managed via `mise.toml` — never `brew install`, `rustup`, `nvm`, `pip install -g`, or `npm install -g` directly
-- **All project tasks** run via `mise run <task>` — never call `python`, `node`, `cargo`, `tauri`, `pyinstaller`, etc. directly in the terminal
+- **All tools** (Python, Node, npm packages) are managed via `mise.toml` — never `brew install`, `nvm`, `pip install -g`, or `npm install -g` directly
+- **All project tasks** run via `mise run <task>` — never call `python`, `node`, `pyinstaller`, etc. directly in the terminal
 - Adding a new tool: add it to `[tools]` in `mise.toml`, then `mise install`
 - Adding a new task: add it to `mise.toml` under `[tasks."name"]`, not as a standalone script
 
-### Desktop builds
-- Local: `mise run desktop:build`
-- Dev window: `mise run desktop:server` (terminal 1) + `mise run desktop:dev` (terminal 2)
-- No Xcode or Android Studio required locally — native mobile packages are built by CI (GitHub Actions)
+### Native macOS build (SwiftUI)
+- Local: `mise run mac:build` — runs `sidecar:build` then `xcodebuild` headlessly, producing `ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app`
+- Sidecar only: `mise run sidecar:build` — produces `dist/epub-to-mp3-server` (PyInstaller onefile)
+- Requires `xcodegen` (brew install xcodegen). Xcode is optional — `mac:build` is fully headless
 
 ### Mobile builds
 - Web bundle only (no IDE): `mise run mobile:build` — produces `web/dist/` configured for HF Spaces backend

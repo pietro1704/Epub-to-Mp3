@@ -2,7 +2,6 @@ name: Release Desktop
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  DESKTOP_PORT: "47860"
   # Required so mise can activate the .venv from mise.toml (virtualenv feature)
   MISE_EXPERIMENTAL: "1"
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
@@ -35,460 +34,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: ${{ matrix.label }}
-    timeout-minutes: 40
-    # Desktop builds don't need android-sdk/java/cocoapods/flutter; the
-    # android-sdk@11.0 vfox plugin fails outside Linux runners. Disable them
-    # globally for this job so mise activation never tries to resolve them.
-    env:
-      MISE_DISABLE_TOOLS: "android-sdk,java,cocoapods,flutter"
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - label: macos-arm64
-            os: macos-latest
-            rust-target: aarch64-apple-darwin
-            tauri-args: --target aarch64-apple-darwin
-
-          - label: windows-x64
-            os: windows-latest
-            rust-target: x86_64-pc-windows-msvc
-            tauri-args: ""
-
-          - label: linux-x64
-            os: ubuntu-22.04
-            rust-target: x86_64-unknown-linux-gnu
-            tauri-args: ""
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_REF }}
-
-      - name: Sync release version manifests
-        shell: bash
-        run: |
-          VERSION="${RELEASE_TAG#v}"
-          python3 - <<'PY' "$VERSION"
-          import json
-          import re
-          import sys
-          from pathlib import Path
-
-          version = sys.argv[1]
-
-          tauri_path = Path("desktop/src-tauri/tauri.conf.json")
-          tauri = json.loads(tauri_path.read_text(encoding="utf-8"))
-          tauri["version"] = version
-          tauri_path.write_text(json.dumps(tauri, indent=2) + "\n", encoding="utf-8")
-
-          package_path = Path("web/package.json")
-          package = json.loads(package_path.read_text(encoding="utf-8"))
-          package["version"] = version
-          package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
-
-          lock_path = Path("web/package-lock.json")
-          lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
-          lock_data["version"] = version
-          lock_data.setdefault("packages", {}).setdefault("", {})["version"] = version
-          lock_path.write_text(json.dumps(lock_data, indent=2) + "\n", encoding="utf-8")
-
-          cargo_toml = Path("desktop/src-tauri/Cargo.toml")
-          cargo_toml.write_text(
-              re.sub(
-                  r'^version = ".*"$',
-                  f'version = "{version}"',
-                  cargo_toml.read_text(encoding="utf-8"),
-                  count=1,
-                  flags=re.MULTILINE,
-              ),
-              encoding="utf-8",
-          )
-
-          cargo_lock = Path("desktop/src-tauri/Cargo.lock")
-          cargo_lock.write_text(
-              re.sub(
-                  r'(?m)^version = ".*"$',
-                  f'version = "{version}"',
-                  cargo_lock.read_text(encoding="utf-8"),
-                  count=1,
-              ),
-              encoding="utf-8",
-          )
-
-          python_version = Path("python_app/version.py")
-          python_version.write_text(
-              re.sub(
-                  r'__version__ = ".*"',
-                  f'__version__ = "{version}"',
-                  python_version.read_text(encoding="utf-8"),
-                  count=1,
-              ),
-              encoding="utf-8",
-          )
-          PY
-
-      # ── Toolchain via mise ──────────────────────────────────────────────────
-      # Desktop builds only need python+node+npm+rust. We skip
-      # android-sdk/java/cocoapods/flutter because the android-sdk@11.0 plugin
-      # fails to locate sdkmanager on Windows/macOS runners.
-      - name: Install mise + toolchain (Rust, Node, Python, tauri-cli)
-        uses: jdx/mise-action@v4
-        with:
-          install_args: python node npm rust npm:@tauri-apps/cli cargo:git-cliff
-
-      - name: Rust target (cross-compile)
-        if: matrix.rust-target != ''
-        run: rustup target add ${{ matrix.rust-target }}
-
-      - name: Rust build cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/src-tauri -> target
-          shared-key: tauri-${{ matrix.rust-target }}
-          cache-on-failure: true
-
-      # ── npm cache ────────────────────────────────────────────────────────────
-      - name: Cache npm
-        uses: actions/cache@v5
-        with:
-          path: ~/.npm
-          key: npm-${{ runner.os }}-${{ hashFiles('web/package-lock.json') }}
-          restore-keys: npm-${{ runner.os }}-
-
-      # ── pip cache ────────────────────────────────────────────────────────────
-      - name: Get pip cache dir
-        id: pip-cache-dir
-        shell: bash
-        run: echo "dir=$(pip cache dir)" >> $GITHUB_OUTPUT
-
-      - name: Cache pip
-        uses: actions/cache@v5
-        with:
-          path: ${{ steps.pip-cache-dir.outputs.dir }}
-          key: pip-${{ runner.os }}-${{ hashFiles('requirements-desktop.txt') }}
-          restore-keys: pip-${{ runner.os }}-
-
-      # ── Linux system deps ───────────────────────────────────────────────────
-      - name: Linux — Tauri system deps
-        if: matrix.os == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            flatpak \
-            flatpak-builder \
-            appstream \
-            xvfb
-          sudo flatpak remote-add --system --if-not-exists flathub \
-            https://dl.flathub.org/repo/flathub.flatpakrepo
-          # Pre-install runtime/SDK as root so flatpak-github-actions (which calls
-          # `flatpak --system install`) doesn't fail with "Deploy not allowed for user"
-          sudo flatpak install --system -y --noninteractive flathub \
-            org.gnome.Platform/x86_64/47 \
-            org.gnome.Sdk/x86_64/47 || true
-
-      # ── Python venv (required by mise virtualenv feature) ──────────────────
-      - name: Create Python venv
-        shell: bash
-        run: python -m venv .venv
-
-      # ── Python sidecar — cache binary, only rebuild on source/dep changes ──
-      - name: Cache Python sidecar binary
-        id: sidecar-cache
-        uses: actions/cache@v5
-        with:
-          path: desktop/src-tauri/binaries
-          key: >-
-            sidecar-${{ runner.os }}-${{ matrix.rust-target }}-${{
-              hashFiles(
-                'requirements-desktop.txt',
-                'desktop.spec',
-                'python_app/server.py',
-                'python_app/main.py',
-                'hf_app.py',
-                'python_app/src/**'
-              )
-            }}
-
-      - name: Install Python desktop deps + PyInstaller
-        if: steps.sidecar-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          pip install pyinstaller --quiet
-          pip install -r requirements-desktop.txt --quiet
-
-      - name: Build Python sidecar
-        if: steps.sidecar-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: |
-          pyinstaller desktop.spec --noconfirm --clean
-          TRIPLE="${{ matrix.rust-target }}"
-          mkdir -p desktop/src-tauri/binaries
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cp dist/epub-to-mp3-server.exe \
-               "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}.exe"
-          else
-            cp dist/epub-to-mp3-server \
-               "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
-            chmod +x "desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE}"
-          fi
-
-      # ── React frontend ──────────────────────────────────────────────────────
-      - name: Build web frontend
-        working-directory: web
-        shell: bash
-        run: |
-          npm ci --prefer-offline
-          VITE_API_BASE="http://127.0.0.1:${{ env.DESKTOP_PORT }}/api" npm run build
-
-      # ── Tauri build ─────────────────────────────────────────────────────────
-      - name: Build Tauri app
-        shell: bash
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        run: cd desktop && tauri build ${{ matrix.tauri-args }}
-
-      # ── Collect artifacts ───────────────────────────────────────────────────
-      - name: Collect build artifacts
-        id: artifacts
-        shell: bash
-        run: |
-          find desktop/src-tauri/target -type f \( \
-            -name "*.dmg" \
-            -o -name "*.msi" \
-            -o -name "*-setup.exe" \
-            -o -name "*.AppImage" \
-            -o -name "*.deb" \
-          \) 2>/dev/null | grep -v "\.cargo" > artifacts.txt || true
-          echo "Found artifacts:"
-          cat artifacts.txt
-
-      # ── Flatpak bundle (Linux only) ─────────────────────────────────────────
-      - name: Stage binaries for Flatpak
-        if: matrix.os == 'ubuntu-22.04'
-        shell: bash
-        env:
-          TRIPLE: ${{ matrix.rust-target }}
-        run: |
-          mkdir -p flatpak/flatpak-stage
-          cp desktop/src-tauri/target/release/epub-to-mp3 flatpak/flatpak-stage/
-          cp desktop/src-tauri/binaries/epub-to-mp3-server-${TRIPLE} flatpak/flatpak-stage/epub-to-mp3-server
-          cp flatpak/io.github.pietro1704.EpubToMp3.desktop flatpak/flatpak-stage/
-          cp desktop/src-tauri/icons/128x128.png flatpak/flatpak-stage/
-
-      - name: Build Flatpak bundle
-        if: matrix.os == 'ubuntu-22.04'
-        uses: flatpak/flatpak-github-actions/flatpak-builder@v6.7
-        with:
-          bundle: Epub.to.Mp3_x86_64.flatpak
-          manifest-path: flatpak/io.github.pietro1704.EpubToMp3.yaml
-          cache-key: flatpak-${{ hashFiles('flatpak/io.github.pietro1704.EpubToMp3.yaml') }}
-
-      # ── Snap bundle (Linux only) ────────────────────────────────────────────
-      - name: Build Snap bundle
-        if: matrix.os == 'ubuntu-22.04'
-        uses: snapcore/action-build@v1.3.0
-        id: snap-build
-
-      - name: Rename Snap artifact
-        if: matrix.os == 'ubuntu-22.04'
-        shell: bash
-        run: |
-          SNAP_FILE="${{ steps.snap-build.outputs.snap }}"
-          if [[ -n "$SNAP_FILE" && -f "$SNAP_FILE" ]]; then
-            cp "$SNAP_FILE" Epub.to.Mp3_x86_64.snap
-          fi
-
-      # ── Upload to GitHub Release ────────────────────────────────────────────
-      - name: Upload — versioned release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          name: "Epub to Mp3 ${{ env.RELEASE_TAG }}"
-          draft: false
-          prerelease: false
-          fail_on_unmatched_files: false
-          append_body: false
-          body: |
-            Automated release generated from a successful push.
-
-            ## Assets
-
-            | Platform | File |
-            |---|---|
-            | macOS app | `*.dmg` |
-            | Windows app | `*-setup.exe` or `*.msi` |
-            | Linux (Flatpak) | `*.flatpak` — `flatpak install Epub.to.Mp3_x86_64.flatpak` |
-            | Linux (Snap) | `*.snap` — `snap install --dangerous Epub.to.Mp3_x86_64.snap` |
-            | Linux (AppImage) | `*.AppImage` |
-            | Linux (deb) | `*.deb` |
-            | Android app | `EpubToMp3_android.apk` |
-            | iOS app (sideload) | `EpubToMp3_ios.ipa` |
-
-            **First launch**: ffmpeg is downloaded once (~60 MB) on first conversion.
-
-            **Docker**: `docker pull ghcr.io/${{ github.repository_owner }}/epub-to-mp3:latest`
-          files: |
-            desktop/src-tauri/target/**/bundle/dmg/*.dmg
-            desktop/src-tauri/target/**/bundle/dmg/*.dmg.sig
-            desktop/src-tauri/target/**/bundle/macos/*.tar.gz
-            desktop/src-tauri/target/**/bundle/macos/*.tar.gz.sig
-            desktop/src-tauri/target/**/bundle/msi/*.msi
-            desktop/src-tauri/target/**/bundle/msi/*.msi.sig
-            desktop/src-tauri/target/**/bundle/msi/*.msi.zip
-            desktop/src-tauri/target/**/bundle/msi/*.msi.zip.sig
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.exe
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.exe.sig
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip.sig
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.sig
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz.sig
-            desktop/src-tauri/target/**/bundle/deb/*.deb
-            Epub.to.Mp3_x86_64.flatpak
-            Epub.to.Mp3_x86_64.snap
-
-      - name: Upload updater artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: updater-${{ matrix.label }}
-          path: |
-            desktop/src-tauri/target/**/bundle/macos/*.tar.gz
-            desktop/src-tauri/target/**/bundle/macos/*.tar.gz.sig
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip
-            desktop/src-tauri/target/**/bundle/nsis/*-setup.nsis.zip.sig
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz
-            desktop/src-tauri/target/**/bundle/appimage/*.AppImage.tar.gz.sig
-          if-no-files-found: ignore
-
-  # ── Updater JSON (aggregates all platform signatures) ─────────────────────────
-  updater-json:
-    name: Generate latest.json
-    needs: [build]
-    if: needs.build.result == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout (for version detection)
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_REF }}
-          sparse-checkout: desktop/src-tauri/tauri.conf.json
-          sparse-checkout-cone-mode: false
-
-      - name: Sync release version manifests
-        shell: bash
-        run: |
-          VERSION="${RELEASE_TAG#v}"
-          python3 - <<'PY' "$VERSION"
-          import json
-          import sys
-          from pathlib import Path
-
-          version = sys.argv[1]
-          tauri_path = Path("desktop/src-tauri/tauri.conf.json")
-          tauri = json.loads(tauri_path.read_text(encoding="utf-8"))
-          tauri["version"] = version
-          tauri_path.write_text(json.dumps(tauri, indent=2) + "\n", encoding="utf-8")
-          PY
-
-      - name: Download updater artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: updater-*
-          merge-multiple: true
-          path: updater-artifacts
-
-      - name: Build latest.json
-        shell: bash
-        run: |
-          VERSION=$(python3 -c "import json; print(json.load(open('desktop/src-tauri/tauri.conf.json'))['version'])")
-          REPO="${{ github.repository }}"
-          TAG="${{ env.RELEASE_TAG }}"
-          BASE_URL="https://github.com/${REPO}/releases/download/${TAG}"
-          NOW=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-          echo "Updater artifacts:"
-          find updater-artifacts -type f 2>/dev/null || echo "(none)"
-
-          # Read signatures
-          read_sig() { cat "$1" 2>/dev/null || echo ""; }
-
-          MAC_SIG=$(find updater-artifacts -name "*.app.tar.gz.sig" 2>/dev/null | head -1)
-          MAC_URL=$(find updater-artifacts -name "*.app.tar.gz" ! -name "*.sig" 2>/dev/null | head -1)
-          WIN_SIG=$(find updater-artifacts -name "*-setup.nsis.zip.sig" 2>/dev/null | head -1)
-          WIN_URL=$(find updater-artifacts -name "*-setup.nsis.zip" ! -name "*.sig" 2>/dev/null | head -1)
-          LIN_SIG=$(find updater-artifacts -name "*.AppImage.tar.gz.sig" 2>/dev/null | head -1)
-          LIN_URL=$(find updater-artifacts -name "*.AppImage.tar.gz" ! -name "*.sig" 2>/dev/null | head -1)
-
-          # Build platform entries
-          platforms="{}"
-          if [[ -n "$MAC_SIG" && -n "$MAC_URL" ]]; then
-            MAC_FNAME=$(basename "$MAC_URL")
-            MAC_SIG_CONTENT=$(read_sig "$MAC_SIG")
-            platforms=$(echo "$platforms" | python3 -c "
-          import sys, json
-          p = json.load(sys.stdin)
-          p['darwin-aarch64'] = {'signature': '''$MAC_SIG_CONTENT''', 'url': '$BASE_URL/$MAC_FNAME'}
-          json.dump(p, sys.stdout)")
-          fi
-
-          if [[ -n "$WIN_SIG" && -n "$WIN_URL" ]]; then
-            WIN_FNAME=$(basename "$WIN_URL")
-            WIN_SIG_CONTENT=$(read_sig "$WIN_SIG")
-            platforms=$(echo "$platforms" | python3 -c "
-          import sys, json
-          p = json.load(sys.stdin)
-          p['windows-x86_64'] = {'signature': '''$WIN_SIG_CONTENT''', 'url': '$BASE_URL/$WIN_FNAME'}
-          json.dump(p, sys.stdout)")
-          fi
-
-          if [[ -n "$LIN_SIG" && -n "$LIN_URL" ]]; then
-            LIN_FNAME=$(basename "$LIN_URL")
-            LIN_SIG_CONTENT=$(read_sig "$LIN_SIG")
-            platforms=$(echo "$platforms" | python3 -c "
-          import sys, json
-          p = json.load(sys.stdin)
-          p['linux-x86_64'] = {'signature': '''$LIN_SIG_CONTENT''', 'url': '$BASE_URL/$LIN_FNAME'}
-          json.dump(p, sys.stdout)")
-          fi
-
-          python3 -c "
-          import json
-          platforms = json.loads('''$platforms''') if '''$platforms''' != '{}' else {}
-          manifest = {
-            'version': 'v$VERSION',
-            'notes': 'See release notes on GitHub.',
-            'pub_date': '$NOW',
-            'platforms': platforms
-          }
-          with open('latest.json', 'w') as f:
-            json.dump(manifest, f, indent=2)
-          print(json.dumps(manifest, indent=2))
-          "
-
-      - name: Upload latest.json to release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          fail_on_unmatched_files: false
-          files: latest.json
-
   # ── Docker image → ghcr.io ────────────────────────────────────────────────────
   docker:
     name: docker
-    needs: [build]
     timeout-minutes: 35
     runs-on: ubuntu-latest
     steps:
@@ -546,16 +94,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ── Android APK ───────────────────────────────────────────────────────────────
+  # ── Android APK (Flutter) ─────────────────────────────────────────────────────
   android:
     name: android
-    needs: [build]
     timeout-minutes: 25
     runs-on: ubuntu-latest
-    env:
-      # Capacitor uses its own Android Gradle plugin; we don't need flutter
-      # or cocoapods here. Skip them so mise activation is fast.
-      MISE_DISABLE_TOOLS: "flutter,cocoapods"
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -568,59 +111,22 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - name: Install mise + toolchain (Node)
-        uses: jdx/mise-action@v4
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
-          install_args: node npm
+          channel: stable
+          flutter-version: 3.41.9
+          cache: true
 
-      - name: Create Python venv (mise virtualenv)
-        run: python -m venv .venv
-
-      # ── Caches ────────────────────────────────────────────────────────────
-      - name: Cache npm
-        uses: actions/cache@v5
-        with:
-          path: ~/.npm
-          key: npm-Linux-${{ hashFiles('web/package-lock.json') }}
-          restore-keys: npm-Linux-
-
-      - name: Cache Gradle
-        uses: actions/cache@v5
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: gradle-${{ hashFiles('web/package.json') }}
-          restore-keys: gradle-
-
-      - name: Install JS deps
-        working-directory: web
-        run: npm ci --prefer-offline
-
-      - name: Build mobile web bundle
-        working-directory: web
-        env:
-          VITE_API_BASE: ""
-        run: npm run build:mobile:bundle
-
-      - name: Add Android platform
-        working-directory: web
-        run: npx cap add android
-
-      - name: Sync assets into Android project
-        working-directory: web
-        run: npx cap sync android
-
-      - name: Build debug APK
-        working-directory: web/android
-        env:
-          ANDROID_HOME: /usr/local/lib/android/sdk
-          ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
-        run: ./gradlew assembleDebug --no-daemon --parallel --build-cache
+      - name: Build APK (release)
+        working-directory: flutter_app
+        run: |
+          flutter pub get
+          flutter build apk --release
 
       - name: Rename APK
         run: |
-          cp web/android/app/build/outputs/apk/debug/app-debug.apk EpubToMp3_android.apk
+          cp flutter_app/build/app/outputs/flutter-apk/app-release.apk EpubToMp3_android.apk
 
       - name: Upload APK — versioned release
         uses: softprops/action-gh-release@v3
@@ -630,249 +136,39 @@ jobs:
           fail_on_unmatched_files: false
           files: EpubToMp3_android.apk
 
-  # ── iOS IPA (unsigned — sideloadable via AltStore/Sideloadly) ─────────────────
-  ios:
-    name: ios
-    needs: [build]
-    timeout-minutes: 25
-    runs-on: macos-latest
-    env:
-      MISE_DISABLE_TOOLS: "android-sdk,java,flutter"
-    # Signing cert required for App Store / TestFlight distribution
-    # Unsigned IPA can be sideloaded with AltStore or Sideloadly
-    continue-on-error: true
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          ref: ${{ env.RELEASE_REF }}
-
-      - name: Sync release version manifests
-        shell: bash
-        run: |
-          VERSION="${RELEASE_TAG#v}"
-          python3 - <<'PY' "$VERSION"
-          import json
-          import sys
-          from pathlib import Path
-
-          version = sys.argv[1]
-          package_path = Path("web/package.json")
-          package = json.loads(package_path.read_text(encoding="utf-8"))
-          package["version"] = version
-          package_path.write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
-          PY
-
-      - name: Install mise + toolchain (Node, cocoapods)
-        uses: jdx/mise-action@v4
-        with:
-          install_args: node npm cocoapods
-
-      - name: Create Python venv (mise virtualenv)
-        run: python -m venv .venv
-
-      # ── Caches ────────────────────────────────────────────────────────────
-      - name: Cache npm
-        uses: actions/cache@v5
-        with:
-          path: ~/.npm
-          key: npm-macOS-${{ hashFiles('web/package-lock.json') }}
-          restore-keys: npm-macOS-
-
-      - name: Cache SPM packages
-        uses: actions/cache@v5
-        with:
-          path: ~/Library/Caches/org.swift.swiftpm
-          key: spm-ios-${{ hashFiles('web/package.json') }}
-          restore-keys: spm-ios-
-
-      - name: Install JS deps
-        working-directory: web
-        run: npm ci --prefer-offline
-
-      - name: Build mobile web bundle
-        working-directory: web
-        env:
-          VITE_API_BASE: ""
-        run: npm run build:mobile:bundle
-
-      - name: Add iOS platform
-        working-directory: web
-        run: npx cap add ios
-
-      - name: Sync assets into iOS project
-        working-directory: web
-        run: npx cap sync ios
-
-      - name: Resolve SPM packages
-        run: |
-          # cap add ios (Capacitor 8 SPM) does not pre-resolve packages;
-          # resolve them before archiving so xcodebuild can find all dependencies
-          xcodebuild -resolvePackageDependencies \
-            -project web/ios/App/App.xcodeproj \
-            -scheme App
-
-      - name: Build iOS archive (unsigned)
-        run: |
-          # Capacitor 8 uses SPM — no .xcworkspace, use .xcodeproj directly
-          xcodebuild archive \
-            -project web/ios/App/App.xcodeproj \
-            -scheme App \
-            -configuration Release \
-            -archivePath "${{ runner.temp }}/App.xcarchive" \
-            -destination generic/platform=iOS \
-            -parallelizeTargets \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            SKIP_INSTALL=NO
-
-      - name: Package unsigned IPA
-        run: |
-          mkdir -p "${{ runner.temp }}/ipa/Payload"
-          APP=$(find "${{ runner.temp }}/App.xcarchive/Products/Applications" -name "*.app" | head -1)
-          cp -r "$APP" "${{ runner.temp }}/ipa/Payload/"
-          cd "${{ runner.temp }}/ipa"
-          zip -r "${{ runner.temp }}/EpubToMp3_ios.ipa" Payload/
-
-      - name: Upload IPA — versioned release
-        uses: softprops/action-gh-release@v3
-        with:
-          tag_name: ${{ env.RELEASE_TAG }}
-          draft: false
-          fail_on_unmatched_files: false
-          files: ${{ runner.temp }}/EpubToMp3_ios.ipa
-
-  # ── Homebrew cask update (versioned releases only) ───────────────────────────
-  homebrew:
-    name: Update Homebrew cask
-    needs: [build]
-    if: needs.build.result == 'success'
-    runs-on: ubuntu-latest
-    env:
-      HAS_HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
-    steps:
-      - name: Skip if no token
-        if: env.HAS_HOMEBREW_TOKEN != 'true'
-        run: echo "HOMEBREW_TAP_TOKEN not configured; skipping Homebrew update."
-
-      - name: Resolve tag and version
-        if: env.HAS_HOMEBREW_TOKEN == 'true'
-        id: meta
-        run: |
-          TAG="${{ env.RELEASE_TAG }}"
-          VERSION="${TAG#v}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "filename=Epub.to.Mp3_${VERSION}_aarch64.dmg" >> "$GITHUB_OUTPUT"
-
-      - name: Compute DMG SHA256
-        if: env.HAS_HOMEBREW_TOKEN == 'true'
-        id: dmg
-        run: |
-          TAG="${{ steps.meta.outputs.tag }}"
-          FILENAME="${{ steps.meta.outputs.filename }}"
-          URL="https://github.com/${{ github.repository }}/releases/download/${TAG}/${FILENAME}"
-          echo "Downloading $URL to compute SHA256..."
-          SHA=$(curl -sL "$URL" | sha256sum | awk '{print $1}')
-          echo "sha256=$SHA" >> "$GITHUB_OUTPUT"
-          echo "url=$URL" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout Homebrew tap
-        if: env.HAS_HOMEBREW_TOKEN == 'true'
-        uses: actions/checkout@v6
-        with:
-          repository: pietro1704/homebrew-epub-to-mp3
-          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          path: tap
-
-      - name: Update cask formula
-        if: env.HAS_HOMEBREW_TOKEN == 'true'
-        run: |
-          F="tap/Casks/epub-to-mp3.rb"
-          VERSION="${{ steps.meta.outputs.version }}"
-          SHA="${{ steps.dmg.outputs.sha256 }}"
-          sed -i "s|version \".*\"|version \"${VERSION}\"|" "$F"
-          sed -i "s|sha256 \".*\"|sha256 \"${SHA}\"|" "$F"
-
-      - name: Commit and push
-        if: env.HAS_HOMEBREW_TOKEN == 'true'
-        working-directory: tap
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Casks/epub-to-mp3.rb
-          git diff --quiet --cached || git commit -m "Update epub-to-mp3 to ${{ steps.meta.outputs.version }}"
-          git push
-
-  # ── Winget (versioned releases only) ─────────────────────────────────────────
-  winget:
-    name: Update Winget manifest
-    needs: [build]
-    if: >
-      (github.event_name == 'workflow_dispatch' ||
-       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) &&
-      needs.build.result == 'success'
-    runs-on: windows-latest
-    steps:
-      - name: Submit to winget-pkgs
-        env:
-          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINGET_TOKEN)) {
-            Write-Host "WINGET_TOKEN not configured; skipping winget publish."
-            exit 0
-          }
-
-          $TAG = "${{ env.RELEASE_TAG }}"
-          $VERSION = $TAG.TrimStart("v")
-          $INSTALLER_URL = "https://github.com/${{ github.repository }}/releases/download/${TAG}/Epub.to.Mp3_${VERSION}_x64-setup.exe"
-
-          # Install wingetcreate
-          iwr https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
-
-          # Submit update PR to microsoft/winget-pkgs
-          # Note: package 'Pietro1704.EpubToMp3' must be registered first via manual PR
-          .\wingetcreate.exe update Pietro1704.EpubToMp3 `
-            --version $VERSION `
-            --urls $INSTALLER_URL `
-            --submit `
-            --token $env:WINGET_TOKEN
-
   # ──────────────────────────────────────────────────────────────────────
   # SwiftUI native Apple build (macOS .app + iOS .ipa unsigned)
   #
-  # Builds the official Apple client out of `ios/EpubToMp3/`. Reuses the
-  # PyInstaller sidecar produced by the `build` job (cached via Actions
-  # artifacts) so the macOS .app embeds the Python server. The iOS
-  # build is a "Develop" archive without code signing — users sideload
-  # via AltStore.
+  # Builds the official Apple client out of `ios/EpubToMp3/`. Builds the
+  # PyInstaller sidecar inline (no longer reused from a Tauri build).
+  # The iOS build is unsigned — users sideload via AltStore.
   # ──────────────────────────────────────────────────────────────────────
   swiftui-apple:
     name: SwiftUI · Apple
-    needs: build
     runs-on: macos-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           ref: ${{ env.RELEASE_REF }}
 
-      # SwiftUI build doesn't need mise — Xcode + xcodegen are enough.
-      # Skipping mise dodges a known macos-15 runner bug where GPG
-      # verification of node@26 fails and aborts `mise install`.
       - name: Install xcodegen
         run: brew install xcodegen
 
-      - name: Restore cached Python sidecar
-        uses: actions/cache@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          path: desktop/src-tauri/binaries
-          key: sidecar-macos-aarch64-apple-darwin-v1
-          restore-keys: |
-            sidecar-macos-
+          python-version: "3.11"
+
+      - name: Build PyInstaller sidecar
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install pyinstaller --quiet
+          pip install -r requirements-desktop.txt --quiet
+          pyinstaller desktop.spec --noconfirm --clean
+          ls -lh dist/epub-to-mp3-server
 
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
@@ -928,13 +224,11 @@ jobs:
   # ──────────────────────────────────────────────────────────────────────
   # Flutter desktop builds (Linux + Windows)
   #
-  # Official non-Apple desktop client. macOS Flutter build is offered
-  # locally (`mise run flutter:build-macos`) but not packaged here —
-  # the SwiftUI app is the official Apple story.
+  # Official non-Apple desktop client. macOS/iOS are NOT supported by
+  # the Flutter app — the SwiftUI app owns Apple platforms.
   # ──────────────────────────────────────────────────────────────────────
   flutter-desktop:
     name: Flutter · ${{ matrix.label }}
-    needs: build
     timeout-minutes: 30
     strategy:
       fail-fast: false
@@ -959,10 +253,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
 
-      # Skip mise — `node@26` GPG verify is currently failing on
-      # ubuntu-22.04 hosted runners and we don't need node here.
-      # subosito/flutter-action installs Flutter directly from the
-      # SDK release artefact, no toolchain dance.
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:

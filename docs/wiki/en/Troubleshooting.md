@@ -29,13 +29,13 @@ Check:
 - active virtual environment
 - available binary/model
 
-## Desktop app fails during startup
+## macOS SwiftUI app fails during startup
 
 Check:
 
-- packaged Python sidecar in `desktop/src-tauri/binaries/`
-- Tauri logs
-- automatic sidecar restart flow
+- packaged Python sidecar at `EpubToMp3.app/Contents/Resources/epub-to-mp3-server`
+- Console.app filtered by `EpubToMp3` for sidecar stderr
+- Rerun `mise run sidecar:build && mise run mac:build` to refresh the embed
 
 ## CodeQL reports path-injection
 
