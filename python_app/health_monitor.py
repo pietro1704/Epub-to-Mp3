@@ -135,20 +135,20 @@ class HealthMonitor:
             target=self._monitor_loop, daemon=True, name="HealthMonitor"
         )
         self._thread.start()
-        print(f"✅ [HealthMonitor] Iniciado (intervalo: {self.interval}s)")
+        print(f"✅ [HealthMonitor] Started (interval: {self.interval}s)")
 
     def stop(self) -> None:
-        """Para monitoramento."""
+        """Stop monitoring."""
         if not self.running:
             return
 
         self.running = False
         if self._thread:
             self._thread.join(timeout=5.0)
-        print("🛑 [HealthMonitor] Parado")
+        print("🛑 [HealthMonitor] Stopped")
 
     def _monitor_loop(self) -> None:
-        """Loop principal de monitoramento."""
+        """Main monitoring loop."""
         try:
             while self.running:
                 try:
