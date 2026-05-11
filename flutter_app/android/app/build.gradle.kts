@@ -3,6 +3,10 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Chaquopy embeds CPython 3.13 + python_app/src into the APK. Run
+    // `mise run android:bootstrap-python` first to populate
+    // src/main/python/python_app/ before any build.
+    id("com.chaquo.python")
 }
 
 android {
@@ -28,6 +32,13 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Chaquopy ships CPython + the chosen wheels for every ABI we list
+        // here. Keep this in sync with the iOS Python.xcframework version
+        // (3.13) so both clients run the same interpreter family.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
     }
 
     buildTypes {
@@ -35,6 +46,32 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+}
+
+// Chaquopy: embed CPython and the pure-Python pipeline shared with iOS /
+// macOS sidecar. Android (unlike iOS) ships _socket + _ssl, so aiohttp
+// and edge_tts run unmodified — no Swift-side network bridge needed.
+chaquopy {
+    defaultConfig {
+        version = "3.13"
+        // Chaquopy needs a Python 3.13 on the build host to resolve pip
+        // dependencies. Read from gradle.properties so each contributor
+        // can point at their own install (mise, pyenv, system, …).
+        // Default: the mise-managed 3.13 path on macOS.
+        val buildPythonPath = project.findProperty("chaquopy.buildPython")
+            ?.toString()
+            ?: "${System.getProperty("user.home")}/.local/share/mise/installs/python/3.13.13/bin/python3.13"
+        buildPython(buildPythonPath)
+        pip {
+            install("edge-tts")
+            install("aiohttp")
+        }
+    }
+    sourceSets {
+        getByName("main") {
+            srcDir("src/main/python")
         }
     }
 }
