@@ -111,6 +111,19 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      - name: Setup Python 3.13 (Chaquopy buildPython requirement)
+        # Chaquopy needs a Python 3.13 on the build host to resolve
+        # pip dependencies before bundling them into the APK.
+        # Without this step the build dies with "Couldn't find Python 3.13".
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Bootstrap python_app into android/app/src/main/python
+        # Mirrors python_app/src/ into the Chaquopy source set so the
+        # APK's embedded Python can import python_app.src.*.
+        run: bash flutter_app/scripts/bootstrap-android-python.sh
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -120,9 +133,15 @@ jobs:
 
       - name: Build APK (release)
         working-directory: flutter_app
+        env:
+          # Point Chaquopy at the just-installed Python 3.13. The
+          # actions/setup-python step exposes it on PATH; we resolve
+          # the absolute path here so Gradle's `buildPython()` finds it.
+          PYTHON_EXE: ${{ env.pythonLocation }}/bin/python3.13
         run: |
           flutter pub get
-          flutter build apk --release
+          flutter build apk --release \
+            -Pchaquopy.buildPython="${PYTHON_EXE}"
 
       - name: Rename APK
         run: |
@@ -169,6 +188,14 @@ jobs:
           pip install -r requirements-desktop.txt --quiet
           pyinstaller desktop.spec --noconfirm --clean
           ls -lh dist/epub-to-mp3-server
+
+      - name: Bootstrap iOS Python.xcframework + python_app embed
+        # Downloads Beeware's Python-Apple-support, grafts the macOS
+        # slice in, copies python_app/src into Vendor/site-packages.
+        # The xcframework is too big to commit (~150 MB) so each CI
+        # run rebuilds it from cached upstream tarballs.
+        run: |
+          bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh
 
       - name: Generate Xcode project
         working-directory: ios/EpubToMp3
