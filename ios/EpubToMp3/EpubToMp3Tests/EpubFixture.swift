@@ -1,5 +1,5 @@
 import Foundation
-import Compression
+import zlib
 
 /// Generates a tiny, valid EPUB-shaped ZIP archive in a temp file so
 /// integration tests can exercise the real `ZipReader` +
@@ -209,24 +209,45 @@ enum EpubFixture {
         return out
     }
 
-    /// Raw DEFLATE — Compression.framework's `COMPRESSION_ZLIB`
-    /// produces the same bitstream that real EPUB writers emit and
-    /// `ZipReader.inflate` consumes.
+    /// Produce a raw-DEFLATE stream (RFC 1951, ZIP method 8) using
+    /// zlib's `deflateInit2` with negative windowBits, which strips the
+    /// zlib header and Adler-32 trailer. This matches what real EPUB
+    /// tools (epub-zip, calibre, etc.) emit and what `ZipReader.inflate`
+    /// expects. Using `Compression.framework`'s `COMPRESSION_ZLIB` here
+    /// would generate a zlib-wrapped stream (RFC 1950) — the simulator
+    /// ZipReader tolerated that by accident, but the real-device zlib
+    /// enforces strict raw-DEFLATE and silently returns 0 bytes.
     private static func deflate(_ src: Data) -> Data {
-        let dstCap = max(src.count + 64, 64)
+        let dstCap = max(src.count + src.count / 2 + 128, 128)
         var dst = Data(count: dstCap)
-        let n = dst.withUnsafeMutableBytes { dstRaw -> Int in
-            guard let dstPtr = dstRaw.bindMemory(to: UInt8.self).baseAddress else { return 0 }
-            return src.withUnsafeBytes { srcRaw -> Int in
-                guard let srcPtr = srcRaw.bindMemory(to: UInt8.self).baseAddress else { return 0 }
-                return compression_encode_buffer(
-                    dstPtr, dstCap,
-                    srcPtr, src.count,
-                    nil, COMPRESSION_ZLIB
+        var produced = 0
+
+        src.withUnsafeBytes { srcRaw in
+            guard let srcPtr = srcRaw.baseAddress else { return }
+            dst.withUnsafeMutableBytes { dstRaw in
+                guard let dstPtr = dstRaw.baseAddress else { return }
+
+                var strm = z_stream()
+                strm.next_in   = UnsafeMutablePointer<Bytef>(
+                    mutating: srcPtr.assumingMemoryBound(to: Bytef.self)
                 )
+                strm.avail_in  = uInt(src.count)
+                strm.next_out  = dstPtr.assumingMemoryBound(to: Bytef.self)
+                strm.avail_out = uInt(dstCap)
+
+                // level=6, method=Z_DEFLATED, windowBits=-15 (raw DEFLATE),
+                // memLevel=8, strategy=Z_DEFAULT_STRATEGY.
+                guard deflateInit2_(&strm, 6, Z_DEFLATED, -15, 8,
+                                    Z_DEFAULT_STRATEGY, ZLIB_VERSION,
+                                    Int32(MemoryLayout<z_stream>.size)) == Z_OK
+                else { return }
+
+                _ = zlib.deflate(&strm, Z_FINISH)
+                produced = Int(strm.total_out)
+                deflateEnd(&strm)
             }
         }
-        return dst.prefix(n)
+        return dst.prefix(produced)
     }
 
     private static func crc(_ data: Data) -> UInt32 {

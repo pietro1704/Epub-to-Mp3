@@ -1,5 +1,5 @@
 import Foundation
-import Compression
+import zlib
 
 /// Minimal in-process ZIP reader sufficient for EPUB metadata extraction.
 ///
@@ -23,18 +23,25 @@ enum ZipReader {
     static func extract(member: String, from archiveURL: URL) -> Data? {
         guard let archive = try? Data(contentsOf: archiveURL,
                                       options: [.alwaysMapped]) else {
+            print("[ZipReader] cannot read archive at \(archiveURL.lastPathComponent)")
             return nil
         }
         guard let centralDirectory = locateCentralDirectory(in: archive) else {
+            print("[ZipReader] EOCD not found in \(archiveURL.lastPathComponent) — not a ZIP or truncated")
             return nil
         }
         let entries = parseCentralDirectory(archive: archive,
                                             offset: centralDirectory.offset,
                                             count: centralDirectory.entryCount)
         guard let entry = entries.first(where: { $0.name == member }) else {
+            print("[ZipReader] member '\(member)' not found in \(archiveURL.lastPathComponent)")
             return nil
         }
-        return readLocalFile(archive: archive, entry: entry)
+        let data = readLocalFile(archive: archive, entry: entry)
+        if data == nil {
+            print("[ZipReader] failed to decompress '\(member)' (method=\(entry.compressionMethod)) in \(archiveURL.lastPathComponent)")
+        }
+        return data
     }
 
     // MARK: - Central directory
@@ -139,32 +146,70 @@ enum ZipReader {
         }
     }
 
-    /// Wraps `compression_decode_buffer` with the raw-DEFLATE algorithm.
-    /// `expectedSize` is the central-directory advertised size; we use
-    /// it as the destination buffer capacity. If the actual stream is
-    /// larger (rare — would imply a malformed entry), the call returns
-    /// the bytes that fit and `expectedSize` matches typical EPUBs
-    /// exactly.
+    /// Inflate a raw-DEFLATE stream (ZIP method 8) using zlib with a
+    /// negative windowBits value, which tells zlib to skip the zlib
+    /// header/trailer and treat the input as a bare RFC 1951 stream.
+    ///
+    /// Why not `compression_decode_buffer(…, COMPRESSION_ZLIB)`?
+    /// Apple's `Compression.framework` `COMPRESSION_ZLIB` algorithm
+    /// expects a **zlib-wrapped** stream (RFC 1950): two-byte header
+    /// `0x78 0xDA` and a four-byte Adler-32 trailer. ZIP method-8 is
+    /// raw DEFLATE (RFC 1951) with no wrapper. On the Simulator the
+    /// framework's zlib backend can sometimes tolerate the missing
+    /// header, but on a real device ARM hardware acceleration enforces
+    /// the spec and `compression_decode_buffer` returns 0, causing
+    /// every DEFLATE-compressed ZIP entry (including
+    /// `META-INF/container.xml`) to be silently dropped — the EPUB
+    /// appears unreadable.
+    ///
+    /// `zlib.inflateInit2(&strm, -15)` is the standard POSIX idiom for
+    /// raw-DEFLATE decompression and works identically on both device
+    /// and simulator.
     private static func inflate(deflated: Data, expectedSize: Int) -> Data? {
         guard expectedSize > 0 else { return Data() }
-        var dst = Data(count: expectedSize)
-        let n = dst.withUnsafeMutableBytes { dstRaw -> Int in
-            guard let dstPtr = dstRaw.bindMemory(to: UInt8.self).baseAddress else {
-                return 0
-            }
-            return deflated.withUnsafeBytes { srcRaw -> Int in
-                guard let srcPtr = srcRaw.bindMemory(to: UInt8.self).baseAddress else {
-                    return 0
-                }
-                return compression_decode_buffer(
-                    dstPtr, expectedSize,
-                    srcPtr, deflated.count,
-                    nil, COMPRESSION_ZLIB
+
+        // Allocate output buffer with a small safety margin; the
+        // central-directory uncompressed-size field is authoritative
+        // for valid EPUBs, but we defend against off-by-one situations.
+        let dstCap = expectedSize + 64
+        var dst = Data(count: dstCap)
+        var produced = 0
+
+        let rc = deflated.withUnsafeBytes { srcRaw -> Int32 in
+            guard let srcPtr = srcRaw.baseAddress else { return Z_STREAM_ERROR }
+            return dst.withUnsafeMutableBytes { dstRaw -> Int32 in
+                guard let dstPtr = dstRaw.baseAddress else { return Z_STREAM_ERROR }
+
+                var strm = z_stream()
+                strm.next_in   = UnsafeMutablePointer<Bytef>(
+                    mutating: srcPtr.assumingMemoryBound(to: Bytef.self)
                 )
+                strm.avail_in  = uInt(deflated.count)
+                strm.next_out  = dstPtr.assumingMemoryBound(to: Bytef.self)
+                // Use the pre-captured capacity — accessing `dst.count`
+                // here would be a second simultaneous access to `dst`
+                // (Swift exclusive-access violation).
+                strm.avail_out = uInt(dstCap)
+
+                // windowBits = -15 → raw DEFLATE (no zlib header/trailer).
+                guard inflateInit2_(&strm, -15,
+                                    ZLIB_VERSION, Int32(MemoryLayout<z_stream>.size)) == Z_OK
+                else { return Z_STREAM_ERROR }
+
+                let result = zlib.inflate(&strm, Z_FINISH)
+                produced = Int(strm.total_out)
+                inflateEnd(&strm)
+                return result
             }
         }
-        guard n > 0 else { return nil }
-        return dst.prefix(n)
+
+        // Z_STREAM_END = fully consumed, Z_OK = more output available
+        // (shouldn't happen when avail_out was set from the advertised
+        // uncompressed size, but accept both).
+        guard rc == Z_STREAM_END || rc == Z_OK, produced > 0 else {
+            return nil
+        }
+        return dst.prefix(produced)
     }
 }
 

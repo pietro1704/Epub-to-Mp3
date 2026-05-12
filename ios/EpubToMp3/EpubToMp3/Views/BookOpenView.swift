@@ -1,5 +1,6 @@
 import SwiftUI
 import UniformTypeIdentifiers
+import PDFKit
 
 /// Routes a tapped library book straight into the reader.
 ///
@@ -35,6 +36,12 @@ struct BookOpenView: View {
     @State private var audioBootstrapTask: Task<Void, Never>?
     @State private var streamTask: Task<Void, Never>?
     @State private var showingPicker = false
+    /// Resolved PDF document — set only for `book.fileType == .pdf`
+    /// once `openFlow()` has loaded the file. Kept on `BookOpenView`
+    /// (not inside `PdfReaderView`) so the same instance survives a
+    /// toolbar action like "Listen" without re-opening the file.
+    @State private var pdfDocument: PDFDocument?
+    @State private var pdfPageIndex: Int = 0
 
     enum Phase: Equatable {
         case resolving
@@ -56,7 +63,16 @@ struct BookOpenView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             case .ready:
-                if let fulltext {
+                // PDFs render via PDFView (HIG / Apple Books pattern).
+                // The reflow `InstantReaderView` is for EPUB only;
+                // forcing PDFs through it would strip layout, images,
+                // and break the user's mental model of "a PDF page".
+                if book.fileType == .pdf, let pdf = pdfDocument {
+                    PdfReaderView(
+                        document: pdf,
+                        currentPageIndex: $pdfPageIndex
+                    )
+                } else if let fulltext {
                     InstantReaderView(
                         fulltext: fulltext,
                         snapshot: $jobSnapshot,
@@ -87,7 +103,7 @@ struct BookOpenView: View {
         }
         .fileImporter(
             isPresented: $showingPicker,
-            allowedContentTypes: [.epub],
+            allowedContentTypes: [.epub, .pdf],
             allowsMultipleSelection: false
         ) { result in
             handleRePick(result)
@@ -114,6 +130,37 @@ struct BookOpenView: View {
             return
         }
 
+        // PDF path: PDFKit is fully on-device; no Python parse needed.
+        // We still extract pseudo-chapters via `PdfTextExtractor` so
+        // the TTS conversion path (when the user taps Listen) has a
+        // chapter manifest to feed the engine — but the reader is
+        // `PdfReaderView`, not the reflow text view.
+        if book.fileType == .pdf {
+            guard let doc = PDFDocument(url: fileURL) else {
+                phase = .unreadable(fileURL)
+                return
+            }
+            if doc.isEncrypted && !doc.unlock(withPassword: "") {
+                phase = .error("\(book.displayFilename) is password-protected. Remove the password before importing.")
+                return
+            }
+            self.pdfDocument = doc
+            // Best-effort pseudo-fulltext extraction. Failure here is
+            // non-fatal — the reader still works; only audio is gated.
+            if let cached = LocalFulltextCache.read(bookId: book.id) {
+                self.fulltext = cached
+            } else if let extracted = try? PdfTextExtractor.extract(
+                from: fileURL, bookId: book.id
+            ) {
+                self.fulltext = extracted
+                Task.detached(priority: .background) {
+                    LocalFulltextCache.save(extracted, bookId: book.id)
+                }
+            }
+            self.phase = .ready
+            return
+        }
+
         // 2. Try the on-disk fulltext cache first. Even on a fresh
         //    install of a book we built locally during the previous
         //    session, this hits.
@@ -128,6 +175,16 @@ struct BookOpenView: View {
             //    agree on chapter boundaries.
             #if os(iOS) || targetEnvironment(simulator)
             do {
+                // On a real device, `fileURL` is a security-scoped URL
+                // resolved from a bookmark. Without `startAccessing…`
+                // the file is visible in the directory listing but
+                // read(2) / open(2) return EPERM — the sandbox denies
+                // access. The simulator runs without the full iOS
+                // sandbox, so reads succeed even without the scope,
+                // masking this failure in every Simulator run.
+                let accessing = fileURL.startAccessingSecurityScopedResource()
+                defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+
                 let parsed = try await PythonBridge.shared.parseEpub(
                     at: fileURL, bookId: book.id
                 )
@@ -256,9 +313,20 @@ struct BookOpenView: View {
             #if os(macOS)
             let response = try await client.submitConversion(localPath: fileURL, options: opts)
             #else
-            let data = try Data(contentsOf: fileURL)
+            // On a real iOS device the file URL is a security-scoped
+            // bookmark URL; we must call startAccessingSecurityScopedResource
+            // before any read syscall and stop immediately after.
+            let scopeStarted = fileURL.startAccessingSecurityScopedResource()
+            let epubData: Data
+            do {
+                epubData = try Data(contentsOf: fileURL)
+            } catch {
+                if scopeStarted { fileURL.stopAccessingSecurityScopedResource() }
+                throw error
+            }
+            if scopeStarted { fileURL.stopAccessingSecurityScopedResource() }
             let response = try await client.submitConversion(
-                uploadedFile: (data, fileURL.lastPathComponent),
+                uploadedFile: (epubData, fileURL.lastPathComponent),
                 options: opts
             )
             #endif
