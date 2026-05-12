@@ -13,6 +13,8 @@ import asyncio
 import hashlib
 import json
 import re
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -43,6 +45,64 @@ def _hash_audio_file(path: Path) -> str:
 
 def _hash_text_payload(text: str) -> str:
     return hashlib.sha1(text.encode("utf-8", errors="ignore")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# MP3 SHA-256 for client-side verification
+#
+# The iOS client (and any future official client) verifies downloaded chapter
+# audio against the SHA-256 advertised by the backend.  Recomputing the digest
+# on every job-status read is expensive (chapter MP3s can be 5–50 MB), so we
+# memoise by (absolute path, mtime, size).  The cache is bounded (LRU) so a
+# long-lived server process cannot grow it unboundedly, and it is guarded by a
+# lock because both the SSE broadcaster and the conversion worker may race
+# on the same path right after a chapter finishes.
+# ---------------------------------------------------------------------------
+
+
+_SHA256_CACHE_MAX = 256
+_sha256_cache: "OrderedDict[tuple[str, int, int], str]" = OrderedDict()
+_sha256_cache_lock = threading.Lock()
+
+
+def compute_mp3_sha256(path: Path) -> str:
+    """Return the hex SHA-256 digest of *path*, with an LRU cache.
+
+    Cache key is ``(absolute path, mtime_ns, size)``: any of these changing
+    invalidates the cached digest.  Reads in 8 KB chunks so very large MP3s
+    do not blow up memory.  Caller is responsible for handling the IO/FS
+    error surface — this helper lets exceptions bubble.
+    """
+    path = Path(path)
+    stat_result = path.stat()
+    key = (str(path.resolve()), stat_result.st_mtime_ns, stat_result.st_size)
+
+    with _sha256_cache_lock:
+        cached = _sha256_cache.get(key)
+        if cached is not None:
+            # Mark as recently used.
+            _sha256_cache.move_to_end(key)
+            return cached
+
+    hasher = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8192), b""):
+            hasher.update(chunk)
+    digest = hasher.hexdigest()
+
+    with _sha256_cache_lock:
+        _sha256_cache[key] = digest
+        _sha256_cache.move_to_end(key)
+        while len(_sha256_cache) > _SHA256_CACHE_MAX:
+            _sha256_cache.popitem(last=False)
+
+    return digest
+
+
+def _reset_sha256_cache() -> None:
+    """Test-only hook: clear the LRU cache between cases."""
+    with _sha256_cache_lock:
+        _sha256_cache.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +377,10 @@ async def _preload_existing_outputs(
             "durationSeconds": round(duration, 2),
             "sizeBytes": output_file.stat().st_size,
         }
+        try:
+            entry["sha256"] = compute_mp3_sha256(output_file)
+        except Exception:
+            pass
         existing_outputs.append(entry)
         completed_indices.add(idx)
         _set_chapter_status(

@@ -1312,11 +1312,20 @@ def _restore_job_from_outputs(job_id: str) -> Optional[dict]:
         return None
 
     def _asset_entry(path: Path) -> dict:
-        return {
+        entry: dict = {
             "name": path.name,
             "url": f"/api/outputs/{job_id}/{path.name}",
             "sizeBytes": _safe_file_size(path),
         }
+        # Only MP3 chapters carry an SHA-256 (clients verify chapter audio,
+        # not zips/logs).  Failures are silently skipped — the field is
+        # optional for the iOS client.
+        if path.suffix.lower() == ".mp3":
+            with contextlib.suppress(Exception):
+                from src._server_audio_helpers import compute_mp3_sha256
+
+                entry["sha256"] = compute_mp3_sha256(path)
+        return entry
 
     outputs: list[dict] = []
     for zip_path in zip_files:
@@ -1333,15 +1342,22 @@ def _restore_job_from_outputs(job_id: str) -> Optional[dict]:
         fallback = _normalize_book_title(parent_name) or _normalize_book_title(job_id)
         book_title = fallback or "Livro Desconhecido"
 
-    chapter_progress = [
-        {
+    def _restore_chapter_entry(idx: int, path: Path) -> dict:
+        entry: dict = {
             "index": idx,
             "name": path.stem,
             "status": "completed",
             "downloadUrl": f"/api/outputs/{job_id}/{path.name}",
         }
-        for idx, path in enumerate(mp3_files)
-    ]
+        # Mirror the per-MP3 SHA-256 published in the outputs list so the
+        # iOS client can verify chapter downloads after a restore.
+        with contextlib.suppress(Exception):
+            from src._server_audio_helpers import compute_mp3_sha256
+
+            entry["sha256"] = compute_mp3_sha256(path)
+        return entry
+
+    chapter_progress = [_restore_chapter_entry(idx, path) for idx, path in enumerate(mp3_files)]
 
     timestamps: list[float] = []
     for path in mp3_files + zip_files:
@@ -4089,8 +4105,19 @@ async def process_conversion(job_id: str) -> None:
                 job, chapter_index, segment_text, len(chapters), total_text_chars
             )
 
-        def _complete_chapter_progress(chapter_index: int, *, broadcast: bool = True) -> None:
-            complete_chapter_progress(job, chapter_index, len(chapters), broadcast=broadcast)
+        def _complete_chapter_progress(
+            chapter_index: int,
+            *,
+            broadcast: bool = True,
+            output_path: Optional[Path] = None,
+        ) -> None:
+            complete_chapter_progress(
+                job,
+                chapter_index,
+                len(chapters),
+                broadcast=broadcast,
+                output_path=output_path,
+            )
 
         def _update_estimated_chapter_progress(chapter_index: int, ratio: float) -> None:
             _update_job_activity(job)
@@ -5495,6 +5522,12 @@ async def process_conversion(job_id: str) -> None:
                     "durationSeconds": round(duration_seconds, 2),
                     "sizeBytes": output_file.stat().st_size,
                 }
+                # SHA-256 lets the iOS client verify the downloaded chapter
+                # against the manifest.  Failures are non-fatal.
+                with contextlib.suppress(Exception):
+                    from src._server_audio_helpers import compute_mp3_sha256
+
+                    chapter_output["sha256"] = compute_mp3_sha256(output_file)
                 # Include retry count if chapter required retries
                 retry_count = attempt - 1 if attempt > 1 else None
                 _set_chapter_status(
@@ -5510,7 +5543,7 @@ async def process_conversion(job_id: str) -> None:
                     retry_count=retry_count,
                 )
                 _refresh_chapter_completion()
-                _complete_chapter_progress(idx)
+                _complete_chapter_progress(idx, output_path=output_file)
                 _update_job_activity(job, stage=f"chapter_{idx}_completed")
 
                 # **OPTIMIZATION #2**: Batch persist - only persist every 5 chapters or on critical milestones
@@ -6079,6 +6112,12 @@ async def process_conversion(job_id: str) -> None:
                 }
                 outputs_map[name] = entry
             entry["sizeBytes"] = mp3_path.stat().st_size
+            # SHA-256 for client-side chapter download verification.
+            if "sha256" not in entry:
+                with contextlib.suppress(Exception):
+                    from src._server_audio_helpers import compute_mp3_sha256
+
+                    entry["sha256"] = compute_mp3_sha256(mp3_path)
         outputs = list(outputs_map.values())
         _update_job_activity(job, stage="outputs_ready")
 

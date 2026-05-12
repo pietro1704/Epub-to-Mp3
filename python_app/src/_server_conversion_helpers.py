@@ -234,8 +234,17 @@ def complete_chapter_progress(
     chapters_count: int,
     *,
     broadcast: bool = True,
+    output_path: Optional[Path] = None,
 ) -> None:
-    """Mark a chapter as fully processed (fills any remaining chars gap)."""
+    """Mark a chapter as fully processed (fills any remaining chars gap).
+
+    When *output_path* is provided and the file exists, the chapter's
+    SHA-256 digest is computed and stored in the matching ``chapterProgress``
+    entry under the ``sha256`` key so the client can verify the download.
+    SHA computation is best-effort: any error (missing file, IO, hashing)
+    is logged at warning level and the field is omitted — it must never
+    block the conversion pipeline.
+    """
     chapter_totals = job.get("_chapterCharTotals") or {}
     chapter_processed = job.get("_chapterCharProcessed") or {}
     chapter_total = int(chapter_totals.get(chapter_index, 0) or 0)
@@ -252,7 +261,51 @@ def complete_chapter_progress(
     chapter_progress_ts[chapter_index] = time.time()
     job["_chapterLastProgressUpdate"] = chapter_progress_ts
     _sync_entry_progress(job, chapter_index)
+    if output_path is not None:
+        _attach_chapter_sha256(job, chapter_index, output_path)
     update_job_progress(job, chapters_count, force_broadcast=broadcast)
+
+
+def _attach_chapter_sha256(job: dict, chapter_index: int, output_path: Path) -> None:
+    """Compute the SHA-256 of *output_path* and store it on the chapter entry.
+
+    Failures are logged as warnings and swallowed: SHA is an optional field
+    for client-side verification and must not abort the job.
+    """
+    import logging
+
+    from src._server_audio_helpers import compute_mp3_sha256
+
+    logger = logging.getLogger(__name__)
+    output_path = Path(output_path)
+    try:
+        if not output_path.exists() or output_path.stat().st_size <= 0:
+            return
+        digest = compute_mp3_sha256(output_path)
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.warning(
+            "Failed to compute SHA-256 for chapter %s (%s): %s",
+            chapter_index,
+            output_path,
+            exc,
+        )
+        return
+
+    entries = job.get("chapterProgress")
+    if not isinstance(entries, list):
+        return
+    target = None
+    for entry in entries:
+        if isinstance(entry, dict) and entry.get("index") == chapter_index:
+            target = entry
+            break
+    if target is None:
+        # Fall back to 1-based positional lookup used elsewhere in the server.
+        idx = max(0, int(chapter_index) - 1)
+        if 0 <= idx < len(entries) and isinstance(entries[idx], dict):
+            target = entries[idx]
+    if target is not None:
+        target["sha256"] = digest
 
 
 def update_estimated_chapter_progress(
