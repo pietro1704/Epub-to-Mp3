@@ -68,6 +68,67 @@ enum EpubFixture {
         return url
     }
 
+    /// Build an EPUB that includes one short chapter HTML in the spine
+    /// so end-to-end conversion tests (`PythonBridge.convertEpub`) have
+    /// real text to synthesise. The plain `create()` path keeps the
+    /// metadata-only fixture other tests rely on.
+    static func createWithChapter(
+        chapterTitle: String = "Chapter 1",
+        body: String = "This is a short chapter used for end to end testing."
+    ) throws -> URL {
+        let url = FileManager.default.temporaryDirectory
+            .appendingPathComponent("fixture-\(UUID().uuidString).epub")
+
+        // EPUB3 spine pointing at a single XHTML file. Keep the markup
+        // minimal — `EbookReader` strips boilerplate and reads the text
+        // node, so anything we add beyond a paragraph just slows the
+        // parser without helping the test.
+        let chapterXHTML = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE html>
+        <html xmlns="http://www.w3.org/1999/xhtml">
+          <head><title>\(chapterTitle)</title></head>
+          <body>
+            <h1>\(chapterTitle)</h1>
+            <p>\(body)</p>
+          </body>
+        </html>
+        """.data(using: .utf8)!
+
+        let withSpineOPF = """
+        <?xml version="1.0" encoding="UTF-8"?>
+        <package xmlns="http://www.idpf.org/2007/opf" version="3.0" \
+        unique-identifier="bookid">
+          <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+            <dc:identifier id="bookid">urn:test:book</dc:identifier>
+            <dc:title>\(title)</dc:title>
+            <dc:creator>\(author)</dc:creator>
+            <dc:language>en</dc:language>
+            <meta name="cover" content="cover-img"/>
+          </metadata>
+          <manifest>
+            <item id="cover-img" href="cover.png" media-type="image/png" \
+        properties="cover-image"/>
+            <item id="ch1" href="chapter1.xhtml" \
+        media-type="application/xhtml+xml"/>
+          </manifest>
+          <spine>
+            <itemref idref="ch1"/>
+          </spine>
+        </package>
+        """.data(using: .utf8)!
+
+        let archive = try buildArchive(members: [
+            .stored("mimetype", Data("application/epub+zip".utf8)),
+            .deflated("META-INF/container.xml", containerXML),
+            .deflated("OEBPS/content.opf", withSpineOPF),
+            .deflated("OEBPS/chapter1.xhtml", chapterXHTML),
+            .stored("OEBPS/cover.png", coverPNG),
+        ])
+        try archive.write(to: url)
+        return url
+    }
+
     // MARK: - Tiny ZIP writer
 
     private struct Member {
