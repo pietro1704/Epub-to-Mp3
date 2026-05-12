@@ -119,6 +119,42 @@ settings:
     # Performance / debug correctness defaults the dialog flips on:
     CLANG_ENABLE_MODULE_DEBUGGING: NO
     SWIFT_EMIT_LOC_STRINGS: YES
+    # --- Base build hygiene (perf + correctness) -----------------------
+    # Pure-Swift app: skip Objective-C generated header. Cuts a tool
+    # invocation per module and avoids copying the .h into Frameworks/.
+    SWIFT_INSTALL_OBJC_HEADER: NO
+    # Bitcode was deprecated in Xcode 14 and removed in 15+. Explicit NO
+    # keeps the project file deterministic on a clean machine.
+    ENABLE_BITCODE: NO
+    # Default already NO but pin it — user paths in framework search slow
+    # the dependency scanner and have caused odd misses in the past.
+    ALWAYS_SEARCH_USER_PATHS: NO
+
+  configs:
+    Debug:
+      # Skip the codesign / framework validation pass on every Debug build.
+      # Saves ~2-5s per incremental rebuild; Release still validates.
+      VALIDATE_BUILT_PRODUCT: NO
+      # Correctness over speed in Debug — keep Swift safety checks ON
+      # (overflow / array bounds / nil-deref). Pinned so Xcode's
+      # "recommended settings" auto-applier doesn't flip it.
+      SWIFT_DISABLE_SAFETY_CHECKS: NO
+    Release:
+      # ThinLTO: cross-module inlining without full LTO's link-time cost.
+      # Typical 5-8% runtime win in Swift-heavy apps + ~10-15% smaller binary.
+      LLVM_LTO: YES_THIN
+      # NOTE: ENABLE_PREVIEWS stays ON (inherited from base) for Release.
+      # The codebase has #Preview blocks that reference fixtures gated by
+      # `#if DEBUG` (Views/PreviewFixtures.swift). Flipping previews off
+      # in Release would compile the #Preview body but strip the symbols
+      # it depends on, breaking the Release link. The metadata overhead
+      # is negligible vs the breakage risk.
+      # @testable expands the exported symbol surface; off in Release
+      # shrinks the binary and removes a re-export pass at link time.
+      ENABLE_TESTABILITY: NO
+      # Optimise asset catalogue for binary size (xcassets). Slightly
+      # slower compile, smaller .car payload on disk + in RAM.
+      ASSETCATALOG_COMPILER_OPTIMIZATION: space
 
 # SPIKE (feat/ios-python-embed): PythonKit bridges Swift <-> the embedded
 # CPython interpreter loaded from Python.xcframework. The xcframework +

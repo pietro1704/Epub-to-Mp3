@@ -4,8 +4,31 @@
 <dict>
 	<key>NSAppTransportSecurity</key>
 	<dict>
+		<!-- Backend may run on http://localhost:8000 (mise run web) or
+		     a private LAN IP — bypass ATS for loopback/.local only. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
+		<!-- Reader WebView renders EPUB chapter HTML extracted from the
+		     archive: data: / file:// URIs plus inline images. WKWebView
+		     enforces ATS otherwise, breaking the in-app reader. -->
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
 	</dict>
+	<!-- Edge-TTS conversion is network-intensive; this hints iOS to keep
+	     Wi-Fi awake during long jobs instead of dropping the radio. -->
+	<key>UIRequiresPersistentWiFi</key>
+	<true/>
+	<!-- iPadOS trackpad / Magic Mouse hover + scrub support for the
+	     player scrubber and library list. -->
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<!-- App ships pt-BR + en-US side-by-side; allow runtime mixing so a
+	     pt-BR user on an en-US device still sees localised strings. -->
+	<key>CFBundleAllowMixedLocalizations</key>
+	<true/>
+	<!-- macOS gate matches project.yml deploymentTarget.macOS — keep in
+	     sync with that field. -->
+	<key>LSMinimumSystemVersion</key>
+	<string>11.0</string>
 </dict>
 </plist>
