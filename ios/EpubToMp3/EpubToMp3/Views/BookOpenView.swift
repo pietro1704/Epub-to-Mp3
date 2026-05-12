@@ -1,6 +1,9 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PDFKit
+import os.log
+
+private let playerLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 
 /// Routes a tapped library book straight into the reader.
 ///
@@ -81,7 +84,7 @@ struct BookOpenView: View {
                         backendBaseURL: settings.resolvedBaseURL,
                         coverPNG: book.coverPNG,
                         onRequestAudioRetry: { startAudioBootstrap() },
-                        onRequestPlay: { _, _ in startAudioBootstrap() }
+                        onRequestPlay: { chapterIdx, _ in startAudioBootstrap(startChapterIndex: chapterIdx) }
                     )
                 } else {
                     Text("No content available.")
@@ -252,15 +255,139 @@ struct BookOpenView: View {
     /// submit a new conversion. Updates `statusBanner` so the reader
     /// can surface progress without remounting. Idempotent: cancels
     /// any in-flight task before starting a new one.
+    ///
+    /// Decision tree:
+    /// 1. iOS + `useEmbeddedRuntime` + no backend URL → call
+    ///    `PythonBridge.convertChapterStreaming` in-process; segments
+    ///    land in `globalPlayer.enqueueSegment` — first audio ≤ 500 ms.
+    /// 2. Otherwise → wait for the backend client and use the SSE path.
+    ///
+    /// - Parameter startChapterIndex: Zero-based chapter to start from.
+    ///   Passed by `InstantReaderView.onRequestPlay` so "Play from here"
+    ///   begins TTS at the chapter the user is reading, not always ch 0.
     @MainActor
-    private func startAudioBootstrap() {
+    private func startAudioBootstrap(startChapterIndex: Int = 0) {
         audioBootstrapTask?.cancel()
         statusBanner = "Generating audio…"
         globalPlayer.isConverting = true
+        playerLog.debug("[AudioBootstrap] startAudioBootstrap ch=\(startChapterIndex) — useEmbeddedRuntime=\(settings.useEmbeddedRuntime) hasClient=\(self.client != nil)")
+
+        #if os(iOS) || targetEnvironment(simulator)
+        if settings.useEmbeddedRuntime, client == nil {
+            // No backend configured — use embedded TTS directly.
+            playerLog.debug("[AudioBootstrap] iOS embedded path selected")
+            audioBootstrapTask = Task {
+                await self.bootstrapEmbedded(chapterIndex: startChapterIndex)
+            }
+            return
+        }
+        #endif
+
         audioBootstrapTask = Task {
             await self.waitForBackendThenBootstrap()
         }
     }
+
+    // MARK: - Embedded TTS path (iOS, no backend)
+
+    /// Drives in-process TTS via `PythonBridge.convertChapterStreaming`
+    /// when no backend is available.  Synthesises the chapter at
+    /// `chapterIndex` first (fast feedback), then continues with
+    /// subsequent chapters in order.
+    ///
+    /// Each MP3 segment is pushed to `globalPlayer.enqueueSegment` on the
+    /// main actor — first audio lands within ~500 ms, satisfying HIG
+    /// time-to-first-byte. The per-chapter output MP3 is written to the
+    /// app's cache directory so subsequent opens reuse it.
+    #if os(iOS) || targetEnvironment(simulator)
+    private func bootstrapEmbedded(chapterIndex startIndex: Int) async {
+        playerLog.debug("[AudioBootstrap] bootstrapEmbedded starting at chapter \(startIndex)")
+
+        guard let fulltext else {
+            await MainActor.run {
+                self.statusBanner = "No text available for audio generation."
+                self.globalPlayer.isConverting = false
+            }
+            playerLog.error("[AudioBootstrap] bootstrapEmbedded — fulltext is nil, aborting")
+            return
+        }
+
+        let chapters = fulltext.chapters
+        guard !chapters.isEmpty else {
+            await MainActor.run {
+                self.statusBanner = "No chapters to convert."
+                self.globalPlayer.isConverting = false
+            }
+            return
+        }
+
+        // Per-book output directory inside the app's Caches folder so
+        // the OS can evict it under storage pressure without data loss.
+        let cacheRoot = FileManager.default
+            .urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("epub2mp3-tts/\(book.id)", isDirectory: true)
+
+        // Default voice: system language mapped to the closest Edge neural
+        // voice.  "auto" lets the Python layer pick based on the book's
+        // detected language — same heuristic as the CLI.
+        let voice = "auto"
+
+        // Process from startIndex, then wrap to cover earlier chapters.
+        let safeStart = max(0, min(startIndex, chapters.count - 1))
+        let indices: [Int] = Array(safeStart..<chapters.count) + Array(0..<safeStart)
+        var chaptersDone = 0
+
+        for chapterArrayIndex in indices {
+            if Task.isCancelled { break }
+
+            // Use the EbookFulltext chapter that corresponds to this index.
+            // EbookFulltext.chapters is 0-based in the array but the `index`
+            // property is 1-based (matches backend convention). We address by
+            // position in the array, not by `.index`.
+            let chapter = chapters[chapterArrayIndex]
+            let chapterText = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !chapterText.isEmpty else {
+                chaptersDone += 1
+                continue
+            }
+
+            let totalChapters = chapters.count
+            await MainActor.run {
+                self.statusBanner = "Generating audio · \(chaptersDone)/\(totalChapters) ready"
+            }
+            playerLog.debug("[AudioBootstrap] synthesising chapter \(chapterArrayIndex) (\(chapterText.count) chars)")
+
+            do {
+                _ = try await PythonBridge.shared.convertChapterStreaming(
+                    text: chapterText,
+                    voice: voice,
+                    outputDir: cacheRoot,
+                    chapterIndex: chapterArrayIndex
+                ) { [weak globalPlayer] segData, chapIdx, segIdx in
+                    // Already dispatched to the main actor by PythonBridge.
+                    playerLog.debug("[AudioBootstrap] segment \(segIdx) ch=\(chapIdx) bytes=\(segData.count)")
+                    globalPlayer?.enqueueSegment(
+                        data: segData,
+                        chapterIndex: chapIdx,
+                        segmentIndex: segIdx
+                    )
+                }
+                chaptersDone += 1
+                playerLog.debug("[AudioBootstrap] chapter \(chapterArrayIndex) complete")
+            } catch {
+                playerLog.error("[AudioBootstrap] chapter \(chapterArrayIndex) failed: \(error.localizedDescription)")
+                // Non-fatal — continue with next chapter so the listener
+                // still hears the rest of the book.
+            }
+        }
+
+        await MainActor.run {
+            self.globalPlayer.isConverting = false
+            self.statusBanner = nil
+        }
+        playerLog.debug("[AudioBootstrap] bootstrapEmbedded finished, \(chaptersDone)/\(chapters.count) chapters done")
+    }
+    #endif
 
     /// Polls until either a `client` is available (sidecar ready or
     /// remote URL configured) or the user has waited 2 minutes —

@@ -3,12 +3,15 @@ import Foundation
 import AVFoundation
 import MediaPlayer
 import Combine
+import os.log
 #if canImport(UIKit)
 import UIKit
 #endif
 #if canImport(AppKit)
 import AppKit
 #endif
+
+private let audioLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 
 /// Allowed playback rates surfaced in `PlayerView`.
 /// Anything outside this list collapses to 1.0.
@@ -167,6 +170,12 @@ final class AudioPlayer: ObservableObject {
     private var player: AVQueuePlayer?
     private var timeObserverToken: Any?
     private var endObserver: NSObjectProtocol?
+    /// KVO token for `AVQueuePlayer.currentItem`. Fires whenever the queue
+    /// advances to the next item (including auto-advance at natural end) so
+    /// `MPNowPlayingInfoCenter` is always refreshed with the correct chapter
+    /// title and duration — even when the OS advances the item before our
+    /// `AVPlayerItemDidPlayToEndTime` handler runs.
+    private var currentItemObserver: NSKeyValueObservation?
     private var lastResumePersist: Date = .distantPast
     /// Throttle for `MPNowPlayingInfoCenter` updates — we update at most
     /// once per second so the lock-screen scrubber stays fresh without
@@ -196,12 +205,16 @@ final class AudioPlayer: ObservableObject {
     // MARK: Public API
 
     func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0) {
+        audioLog.debug("[play] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
         teardownPlayer()
         self.snapshot = snapshot
 
         let chapters = snapshot.playableChapters
         let safeIndex = max(0, min(chapterIndex, chapters.count - 1))
-        guard !chapters.isEmpty else { return }
+        guard !chapters.isEmpty else {
+            audioLog.warning("[play] no playable chapters — player not started")
+            return
+        }
 
         let items = chapters.compactMap { chapter -> AVPlayerItem? in
             guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { return nil }
@@ -227,6 +240,13 @@ final class AudioPlayer: ObservableObject {
         queue.rate = rate.rawValue
         queue.play()
         isPlaying = true
+        // Re-register for remote-control events every time playback starts.
+        // `beginReceivingRemoteControlEvents()` is idempotent; calling it
+        // again after a prior `stop()` restores delivery of headphone / BT
+        // hardware events that `endReceivingRemoteControlEvents()` removed.
+        #if os(iOS)
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+        #endif
         publishCurrentChapter()
         updateNowPlayingInfo()
     }
@@ -348,7 +368,11 @@ final class AudioPlayer: ObservableObject {
     /// Thread-safety: must be called on the main actor (same as all other
     /// AudioPlayer methods).
     func enqueueSegment(data: Data, chapterIndex: Int, segmentIndex: Int) {
-        guard !data.isEmpty else { return }
+        audioLog.debug("[enqueueSegment] ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(self.player == nil)")
+        guard !data.isEmpty else {
+            audioLog.warning("[enqueueSegment] empty data ignored ch=\(chapterIndex) seg=\(segmentIndex)")
+            return
+        }
 
         // Ensure a temp directory exists for this session.
         if segmentTempDir == nil {
@@ -382,10 +406,15 @@ final class AudioPlayer: ObservableObject {
             queue.rate = rate.rawValue
             queue.play()
             isPlaying = true
+            #if os(iOS)
+            UIApplication.shared.beginReceivingRemoteControlEvents()
+            #endif
+            audioLog.debug("[enqueueSegment] AVQueuePlayer created and playing. items=\(queue.items().count) rate=\(queue.rate) currentItemNil=\(queue.currentItem == nil)")
             publishCurrentChapter()
             updateNowPlayingInfo()
         } else if let queue = player, queue.canInsert(item, after: nil) {
             queue.insert(item, after: nil)
+            audioLog.debug("[enqueueSegment] appended to queue, total=\(queue.items().count)")
         }
 
         if !firstSegmentReady {
@@ -515,6 +544,17 @@ final class AudioPlayer: ObservableObject {
                 }
             }
         }
+        // KVO on `currentItem` catches auto-advance transitions that happen
+        // before the `AVPlayerItemDidPlayToEndTime` notification is delivered
+        // (e.g. buffer-ahead promotion on fast devices). This guarantees the
+        // lock-screen Now Playing widget always shows the correct chapter title
+        // and refreshes the scrubber duration immediately on transition.
+        currentItemObserver = player.observe(\.currentItem, options: [.new]) { [weak self] _, _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.updateNowPlayingInfo()
+            }
+        }
     }
 
     private func teardownPlayer() {
@@ -522,6 +562,8 @@ final class AudioPlayer: ObservableObject {
         timeObserverToken = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        currentItemObserver?.invalidate()
+        currentItemObserver = nil
         player?.pause()
         player = nil
         // Remove segment temp files from the previous session. Best-effort:
