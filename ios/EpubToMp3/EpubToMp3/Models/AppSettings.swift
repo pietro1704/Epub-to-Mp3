@@ -126,7 +126,10 @@ final class AppSettings: ObservableObject {
             rawValue: defaults.string(forKey: "readerLayout") ?? ""
         ) ?? .scrolling
         self.readerLineSpacing = (defaults.object(forKey: "readerLineSpacing") as? Double) ?? 6
-        self.readerMargin = (defaults.object(forKey: "readerMargin") as? Double) ?? 24
+        // Coerce stale persisted values from older builds (clamp was 8pt
+        // pre-2026-05-12, now 16pt to match Apple HIG portrait minimum).
+        let persistedMargin = (defaults.object(forKey: "readerMargin") as? Double) ?? 24
+        self.readerMargin = max(16, min(80, persistedMargin))
         self.readerColumnWidth = (defaults.object(forKey: "readerColumnWidth") as? Double) ?? 720
         self.storedReaderCustomColors =
             defaults.string(forKey: "readerCustomColors") ?? "1,1,1,0,0,0"
@@ -227,9 +230,18 @@ final class AppSettings: ObservableObject {
     }
 
     /// Horizontal text margin inside the reading column (px).
+    ///
+    /// Lower bound clamped to **16pt** to match Apple HIG (Books app uses
+    /// 16pt minimum on iPhone portrait). Values below this caused the
+    /// first/last glyphs to clip into the screen edge in portrait — bug
+    /// reported 2026-05-12 when the slider allowed 8-12pt and rendered
+    /// text outside the safe content area. The minimum is enforced at
+    /// the model layer; the consuming Views ALSO guard with
+    /// `max(16, settings.readerMargin)` so stale persisted values from
+    /// older builds get coerced on first render.
     @Published var readerMargin: Double = 24 {
         didSet {
-            let clamped = max(8, min(80, readerMargin))
+            let clamped = max(16, min(80, readerMargin))
             if clamped != readerMargin {
                 readerMargin = clamped
                 return

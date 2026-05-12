@@ -251,7 +251,9 @@ struct ReaderView: View {
             }
         }
         Section("Margin") {
-            ForEach([12.0, 24.0, 36.0, 48.0, 64.0], id: \.self) { v in
+            // HIG: Books uses 16pt minimum on iPhone portrait; anything
+            // tighter clips first/last glyphs into the screen edge.
+            ForEach([16.0, 24.0, 36.0, 48.0, 64.0], id: \.self) { v in
                 Button {
                     settings.readerMargin = v
                 } label: {
@@ -320,6 +322,19 @@ struct ReaderView: View {
         }
     }
 
+    // MARK: Layout helpers
+
+    /// HIG-floored horizontal text margin. Apple Books uses 16pt as the
+    /// portrait-iPhone minimum; tighter values clip first/last glyphs
+    /// into the screen edge — reported 2026-05-12 when an old build
+    /// allowed 12pt and a portrait paragraph rendered outside the safe
+    /// content area. The clamp is applied here (and at the model layer
+    /// in `AppSettings.readerMargin`) so stale persisted values from
+    /// older installs get coerced on first render too.
+    private var effectiveReaderMargin: CGFloat {
+        max(16, CGFloat(settings.readerMargin))
+    }
+
     // MARK: Scrolling content
 
     private var scrollingContent: some View {
@@ -332,7 +347,7 @@ struct ReaderView: View {
                             .id(span.id)
                     }
                 }
-                .padding(.horizontal, settings.readerMargin)
+                .padding(.horizontal, effectiveReaderMargin)
                 .padding(.vertical, 16)
                 .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
@@ -373,12 +388,12 @@ struct ReaderView: View {
                 fontSize: settings.readerPointSize,
                 lineSpacing: settings.readerLineSpacing,
                 columnWidth: settings.readerColumnWidth,
-                margin: settings.readerMargin
+                margin: Double(effectiveReaderMargin)
             )
             ZStack(alignment: .bottom) {
                 if pages.isEmpty {
                     chapterTitleHeader
-                        .padding(.horizontal, settings.readerMargin)
+                        .padding(.horizontal, effectiveReaderMargin)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
                     let pageIndex = max(0, min(pages.count - 1, currentPage))
@@ -432,7 +447,7 @@ struct ReaderView: View {
             pageTextBody(plain: pageText, pageIndex: pageIndex, pages: pages)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, settings.readerMargin)
+        .padding(.horizontal, effectiveReaderMargin)
         .padding(.vertical, 24)
         .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

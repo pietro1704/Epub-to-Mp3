@@ -138,23 +138,35 @@ private extension JobSnapshot {
         let chapters = (0..<playableCount).map { i in
             JobSnapshot.Chapter(
                 index: i,
-                title: "Chapter \(i + 1)",
+                name: "Chapter \(i + 1)",
                 status: "completed",
                 downloadUrl: "/fake/ch\(i).mp3",
+                chars: nil,
+                charsProcessed: nil,
+                progressRatio: 1.0,
                 durationSeconds: nil,
-                errorMessage: nil
+                startedAt: nil,
+                completedAt: nil
             )
         }
         return JobSnapshot(
             jobId: "stub-\(UUID().uuidString)",
+            state: "completed",
             bookTitle: "Stub Book",
             bookAuthor: nil,
-            status: "pending",
+            coverUrl: nil,
+            coverMimeType: nil,
+            engine: nil,
+            voice: nil,
+            language: nil,
+            progressPercent: nil,
             chaptersTotal: playableCount,
             chaptersCompleted: playableCount,
-            chapters: chapters,
-            createdAt: nil,
-            updatedAt: nil
+            chapterProgress: chapters.isEmpty ? nil : chapters,
+            outputs: nil,
+            logUrl: nil,
+            error: nil,
+            lastActivityAt: nil
         )
     }
 }

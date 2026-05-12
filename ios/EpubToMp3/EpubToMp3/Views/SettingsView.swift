@@ -236,7 +236,7 @@ struct SettingsView: View {
                 Label("Margin", systemImage: "rectangle.compress.vertical")
                 Spacer()
                 Stepper(value: $settings.readerMargin,
-                        in: 8...80, step: 4) {
+                        in: 16...80, step: 4) {
                     Text("\(Int(self.settings.readerMargin)) pt")
                         .font(.callout.monospacedDigit())
                         .foregroundStyle(.secondary)

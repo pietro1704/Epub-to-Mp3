@@ -93,6 +93,42 @@ final class AppSettingsObservationTests: XCTestCase {
         }
     }
 
+    /// Regression for the 2026-05-12 portrait-clipping bug: assigning a
+    /// margin below the HIG-minimum 16pt must be coerced upward, not
+    /// honoured. The reader's `effectiveReaderMargin` also guards but
+    /// the clamp belongs at the model layer first.
+    func testReaderMarginClampsBelowHIGMinimum() {
+        let s = makeSettings()
+        s.readerMargin = 12
+        XCTAssertGreaterThanOrEqual(s.readerMargin, 16,
+            "Margins below 16pt clipped portrait text and must be clamped")
+        s.readerMargin = 8
+        XCTAssertGreaterThanOrEqual(s.readerMargin, 16)
+        s.readerMargin = 0
+        XCTAssertGreaterThanOrEqual(s.readerMargin, 16)
+    }
+
+    /// Upper bound is unchanged but the test below pins it so a future
+    /// edit cannot accidentally remove the clamp altogether.
+    func testReaderMarginClampsAboveMaximum() {
+        let s = makeSettings()
+        s.readerMargin = 999
+        XCTAssertLessThanOrEqual(s.readerMargin, 80)
+    }
+
+    /// Stale persisted values from older builds (when the clamp was
+    /// 8pt) must be coerced on load too, otherwise the bug returns on
+    /// every existing install.
+    func testReaderMarginPersistedStaleValueIsCoercedOnLoad() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        // Simulate a pre-fix install that persisted 12pt.
+        defaults.set(12.0, forKey: "readerMargin")
+        let s = AppSettings(defaults: defaults)
+        XCTAssertGreaterThanOrEqual(s.readerMargin, 16,
+            "Persisted 12pt from older build must be clamped on load")
+    }
+
     func testReaderColumnWidthChangeFiresObservation() {
         let s = makeSettings()
         observe(\.readerColumnWidth, on: s, message: "columnWidth observed") {
