@@ -89,9 +89,17 @@ struct JobSnapshot: Codable, Equatable, Identifiable {
         guard let outputs else { return [] }
         return outputs.enumerated().compactMap { idx, asset in
             guard asset.isMP3 else { return nil }
+            // Strip "NNN - " numeric prefix and ".mp3" suffix so the user sees
+            // the human-readable chapter title, not a filename or a hash.
+            let stem = (asset.name as NSString).deletingPathExtension
+            // Require at least one space on each side of the dash so we never
+            // strip hyphens that are part of the real title (e.g. "42-Plain").
+            let humanName = stem.replacingOccurrences(
+                of: #"^\d+\s+[-–]\s+"#, with: "", options: .regularExpression
+            )
             return Chapter(
                 index: idx,
-                name: asset.name,
+                name: humanName.isEmpty ? nil : humanName,
                 status: "completed",
                 downloadUrl: asset.url,
                 chars: nil,

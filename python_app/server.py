@@ -1343,9 +1343,18 @@ def _restore_job_from_outputs(job_id: str) -> Optional[dict]:
         book_title = fallback or "Livro Desconhecido"
 
     def _restore_chapter_entry(idx: int, path: Path) -> dict:
+        # Strip the "NNN - " numeric prefix that FileManager.sanitize_filename
+        # prepends during conversion so the iOS client sees "Chapter Title"
+        # rather than "001 - Chapter Title" (or a sanitised hash).
+        stem = path.stem
+        # Strip the "NNN - " numeric prefix added by FileManager.sanitize_filename
+        # (format: "{index:03d} - {safe_name}").  Require at least one space on
+        # each side of the dash so we never strip hyphens inside real titles
+        # (e.g. "42-Plain" would be kept intact).
+        human_name = re.sub(r"^\d+\s+[-–]\s+", "", stem).strip() or stem
         entry: dict = {
             "index": idx,
-            "name": path.stem,
+            "name": human_name,
             "status": "completed",
             "downloadUrl": f"/api/outputs/{job_id}/{path.name}",
         }
