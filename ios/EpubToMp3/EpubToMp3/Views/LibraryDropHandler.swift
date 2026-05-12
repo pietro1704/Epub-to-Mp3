@@ -17,7 +17,7 @@ enum LibraryDropHandler {
     /// Accepted UTIs for drop operations. Mirror the file-importer
     /// list, with the macOS-only `.fileURL` fallback bolted on.
     static var acceptedTypes: [UTType] {
-        var types: [UTType] = [.epub]
+        var types: [UTType] = [.epub, .pdf]
         if let zip = UTType("org.idpf.epub-container") {
             types.append(zip)
         }
@@ -28,10 +28,15 @@ enum LibraryDropHandler {
     }
 
     /// Identifiers we will actively try to load from a provider. Order
-    /// matters: prefer the strongest identifier (`.epub`) before
-    /// falling back to the legacy IDPF type or the generic file URL.
+    /// matters: prefer the strongest book-shaped identifier (`.epub`,
+    /// `.pdf`) before falling back to the legacy IDPF type or the
+    /// generic file URL.
     static var loadableIdentifiers: [String] {
-        var ids: [String] = [UTType.epub.identifier, "org.idpf.epub-container"]
+        var ids: [String] = [
+            UTType.epub.identifier,
+            UTType.pdf.identifier,
+            "org.idpf.epub-container",
+        ]
         #if os(macOS)
         ids.append(UTType.fileURL.identifier)
         #endif
@@ -210,7 +215,7 @@ struct DropTargetOverlay: View {
                     )
                     .foregroundStyle(Color.accentColor)
                     .padding(8)
-                Label("Drop EPUB here", systemImage: "tray.and.arrow.down")
+                Label("Drop EPUB or PDF here", systemImage: "tray.and.arrow.down")
                     .font(.headline)
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 18)

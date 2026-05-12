@@ -49,7 +49,10 @@ struct LibraryView: View {
     }
 
     private static let acceptedTypes: [UTType] = {
-        var types: [UTType] = [.epub]
+        // EPUB + PDF — same picker / drop surface. The Library tile
+        // shows a per-book glyph so the user can tell them apart at
+        // a glance once imported.
+        var types: [UTType] = [.epub, .pdf]
         if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
         return types
     }()
@@ -135,19 +138,28 @@ struct LibraryView: View {
                 .foregroundStyle(.secondary)
             Text("Your library is empty.")
                 .font(.title3)
-            Text("Add an EPUB from your disk to start reading and listening.")
+            Text("Tap + to import an EPUB or PDF, or share one from Apple Books, Files, or Safari.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .frame(maxWidth: 360)
+                .frame(maxWidth: 380)
             Button {
                 showingPicker = true
             } label: {
-                Label("Add EPUB", systemImage: "plus")
+                Label("Add Book", systemImage: "plus")
                     .padding(.horizontal, 12)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            // Subtle hint about the DRM limitation. Books purchased
+            // from the iBookstore are FairPlay-protected and Apple
+            // does not expose their content to third-party apps.
+            Text("Books purchased from Apple Books are DRM-protected and cannot be opened by third-party apps.")
+                .font(.footnote)
+                .foregroundStyle(.tertiary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+                .padding(.top, 4)
         }
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -235,7 +247,9 @@ struct BookTile: View {
                                          Color.accentColor.opacity(0.08)],
                                startPoint: .topLeading,
                                endPoint: .bottomTrailing)
-                Image(systemName: "book.closed")
+                Image(systemName: book.fileType == .pdf
+                      ? "doc.richtext"
+                      : "book.closed")
                     .font(.system(size: 48, weight: .light))
                     .foregroundStyle(.tint)
             }

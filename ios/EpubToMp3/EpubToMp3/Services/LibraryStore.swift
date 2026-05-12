@@ -103,15 +103,47 @@ final class LibraryStore: ObservableObject {
         }
         let filename = url.lastPathComponent
 
-        let metadata = (try? EpubMetadataReader.readMetadata(from: url)) ?? .init()
+        // Route to the right metadata reader. PDFKit handles `.pdf`;
+        // the in-process EPUB reader handles `.epub` (plus anything we
+        // can't classify — the EPUB reader returns an empty payload
+        // for non-zip inputs, so the fall-through is safe).
+        let fileType = BookFileType.detect(from: url)
+        let resolvedTitle: String?
+        let resolvedAuthor: String?
+        let resolvedCover: Data?
+        switch fileType {
+        case .pdf:
+            let payload: PdfMetadataReader.Payload
+            do {
+                payload = try PdfMetadataReader.readMetadata(from: url)
+            } catch let err as PdfMetadataReader.ReaderError {
+                throw NSError(
+                    domain: "LibraryStore",
+                    code: 4,
+                    userInfo: [
+                        NSLocalizedDescriptionKey: err.errorDescription
+                            ?? "PDF metadata read failed for \(filename)."
+                    ]
+                )
+            }
+            resolvedTitle = payload.title
+            resolvedAuthor = payload.author
+            resolvedCover = payload.cover
+        case .epub:
+            let payload = (try? EpubMetadataReader.readMetadata(from: url)) ?? .init()
+            resolvedTitle = payload.title
+            resolvedAuthor = payload.author
+            resolvedCover = payload.cover
+        }
 
         if let existingIndex = books.firstIndex(where: { $0.id == id }) {
             var existing = books[existingIndex]
             existing.bookmark = bookmark
             existing.lastOpenedAt = Date()
-            if let t = metadata.title, !t.isEmpty { existing.title = t }
-            if let a = metadata.author, !a.isEmpty { existing.author = a }
-            if existing.coverPNG == nil, let cover = metadata.cover {
+            existing.fileType = fileType
+            if let t = resolvedTitle, !t.isEmpty { existing.title = t }
+            if let a = resolvedAuthor, !a.isEmpty { existing.author = a }
+            if existing.coverPNG == nil, let cover = resolvedCover {
                 existing.coverPNG = cover
             }
             books[existingIndex] = existing
@@ -121,17 +153,18 @@ final class LibraryStore: ObservableObject {
 
         let book = BookEntity(
             id: id,
-            title: metadata.title ?? Self.titleFromFilename(filename),
-            author: metadata.author,
+            title: resolvedTitle ?? Self.titleFromFilename(filename),
+            author: resolvedAuthor,
             bookmark: bookmark,
             displayFilename: filename,
             addedAt: Date(),
             lastOpenedAt: nil,
             lastChapterIndex: nil,
             lastPositionSeconds: nil,
-            coverPNG: metadata.cover,
+            coverPNG: resolvedCover,
             lastJobId: nil,
-            cachedOffline: false
+            cachedOffline: false,
+            fileType: fileType
         )
         books.append(book)
         persist()

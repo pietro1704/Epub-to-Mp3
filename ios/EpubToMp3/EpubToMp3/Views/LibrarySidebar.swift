@@ -20,7 +20,9 @@ struct LibrarySidebar: View {
     @State private var isDropTargeted = false
 
     private static let acceptedTypes: [UTType] = {
-        var types: [UTType] = [.epub]
+        // EPUB + PDF — same UTI list as `LibraryView` so the import
+        // surfaces stay symmetrical between phone and sidebar.
+        var types: [UTType] = [.epub, .pdf]
         if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
         return types
     }()
@@ -118,18 +120,18 @@ struct LibrarySidebar: View {
             CompatContentUnavailableView(
                 "Library is empty",
                 systemImage: "books.vertical",
-                description: Text("Tap the + button above to import an EPUB.")
+                description: Text("Tap the + button above to import an EPUB or PDF.")
             )
             Button {
                 showingPicker = true
             } label: {
-                Label("Import EPUB", systemImage: "plus.circle.fill")
+                Label("Import Book", systemImage: "plus.circle.fill")
                     .frame(minHeight: 44)
                     .padding(.horizontal, 8)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .accessibilityLabel("Import EPUB")
+            .accessibilityLabel("Import Book")
             .accessibilityIdentifier("library.importButton.empty")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -212,7 +214,9 @@ private struct LibrarySidebarRow: View {
                     startPoint: .topLeading,
                     endPoint: .bottomTrailing
                 )
-                Image(systemName: "book.closed")
+                Image(systemName: book.fileType == .pdf
+                      ? "doc.richtext"
+                      : "book.closed")
                     .font(.system(size: 18, weight: .light))
                     .foregroundStyle(.tint)
             }
