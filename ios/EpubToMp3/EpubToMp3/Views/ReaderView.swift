@@ -112,6 +112,7 @@ struct ReaderView: View {
         return VStack(spacing: 0) {
             toolbar
             Divider()
+                .background(themeForeground.opacity(0.15))
             switch settings.readerLayout {
             case .scrolling: scrollingContent
             case .paginated: paginatedContent
@@ -119,6 +120,13 @@ struct ReaderView: View {
         }
         .background(themeBackground)
         .foregroundStyle(themeForeground)
+        // Force all SwiftUI controls within the reader (pickers, menus,
+        // sheets) to inherit a color scheme that matches the reader
+        // background. Dark / Black themes → .dark so system materials and
+        // dropdown text are legible. Warm themes → .light. Custom → nil
+        // (follows OS). This does NOT affect the navigation bar, tab bar,
+        // or any UI outside this view.
+        .preferredColorScheme(settings.readerTheme.preferredColorScheme)
         .compatOnChange(of: chapter.id) { _ in currentPage = 0 }
         .task(id: renderedAttributedKey) {
             renderedAttributed = renderHtmlForChapter()
@@ -200,7 +208,28 @@ struct ReaderView: View {
         // get clipped by the notch / Dynamic Island in landscape.
         .compatHorizontalSafeAreaPadding(12)
         .padding(.vertical, 6)
-        .background(.ultraThinMaterial)
+        // Tint the toolbar background with the reader's own theme colour
+        // at 92 % opacity so it reads as a natural header continuation
+        // rather than a system-chrome island. The remaining translucency
+        // lets the top of the scrolled content bleed through (same as
+        // Apple Books). Icons and picker text inherit `themeForeground`
+        // from the outer `.foregroundStyle` modifier, so contrast is
+        // automatically correct for every theme.
+        .background(toolbarBackground)
+    }
+
+    /// A thin translucent layer that tints the toolbar in the reader theme
+    /// colour. Uses the same hue as the page background at slightly reduced
+    /// opacity so the top of the text is still barely visible beneath it,
+    /// matching the Apple Books scrolling affordance.
+    private var toolbarBackground: some View {
+        themeBackground
+            .opacity(0.94)
+            .overlay(
+                themeForeground
+                    .opacity(0.04)
+            )
+            .ignoresSafeArea(edges: .top)
     }
 
     @ViewBuilder
@@ -457,10 +486,16 @@ struct ReaderView: View {
     private func pageFooter(index: Int, total: Int) -> some View {
         Text("\(index + 1) / \(total)")
             .font(.caption2.monospacedDigit())
-            .foregroundStyle(.secondary)
+            .foregroundStyle(themeForeground.opacity(0.5))
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .background(.thinMaterial, in: Capsule())
+            // Use theme colour + low opacity instead of system material
+            // so the capsule blends with the reader background in dark/
+            // black themes rather than rendering as a bright white pill.
+            .background(
+                Capsule()
+                    .fill(themeForeground.opacity(0.1))
+            )
     }
 
     /// Two invisible tap zones for "tap left = previous, tap right =
@@ -770,6 +805,46 @@ struct ScrollWheelPager: ViewModifier {
         chapter: EbookFulltext.previewSample.chapters[1],
         spans: EbookFulltext.previewSample.chapters[1].splitSentences(),
         currentSentenceId: nil,
+        onJumpToSentence: { _ in }
+    )
+    .environmentObject(settings)
+}
+
+#Preview("Reader — Dark (toolbar contrast check)") {
+    let settings = AppSettings()
+    settings.readerTheme = .dark
+    return ReaderView(
+        chapter: EbookFulltext.previewSample.chapters[0],
+        spans: EbookFulltext.previewSample.chapters[0].splitSentences(),
+        currentSentenceId: nil,
+        onJumpToSentence: { _ in }
+    )
+    .environmentObject(settings)
+    // Simulate OS in light mode to expose the problem that
+    // .preferredColorScheme fixes.
+    .environment(\.colorScheme, .light)
+}
+
+#Preview("Reader — Sepia (toolbar contrast check)") {
+    let settings = AppSettings()
+    settings.readerTheme = .sepia
+    return ReaderView(
+        chapter: EbookFulltext.previewSample.chapters[0],
+        spans: EbookFulltext.previewSample.chapters[0].splitSentences(),
+        currentSentenceId: nil,
+        onJumpToSentence: { _ in }
+    )
+    .environmentObject(settings)
+}
+
+#Preview("Reader — Black (OLED)") {
+    let settings = AppSettings()
+    settings.readerTheme = .black
+    settings.readerFontSize = 2
+    return ReaderView(
+        chapter: EbookFulltext.previewSample.chapters[0],
+        spans: EbookFulltext.previewSample.chapters[0].splitSentences(),
+        currentSentenceId: "1:1",
         onJumpToSentence: { _ in }
     )
     .environmentObject(settings)

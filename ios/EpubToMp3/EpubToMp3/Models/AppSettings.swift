@@ -40,6 +40,28 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         case .custom:    return "Custom"
         }
     }
+
+    /// Preferred color scheme to inject via `.preferredColorScheme`.
+    ///
+    /// Dark and Black themes force `.dark` so all SwiftUI-native controls
+    /// (pickers, menus, sheets presented from within the reader) also
+    /// render in dark mode — matching the reader background. Warm themes
+    /// (Sepia, Parchment, Paper) and Light explicitly force `.light` so
+    /// they never accidentally inherit OS dark mode. Custom returns `nil`
+    /// (follows system) because we don't know whether the user's custom
+    /// colours are a dark or light palette.
+    ///
+    /// HIG note: this only affects views *below* the modifier in the
+    /// hierarchy — the navigation bar, tab bar, and any UI outside the
+    /// reader are not affected. This is the exact same scoping Apple
+    /// Books uses.
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .dark, .black:            return .dark
+        case .light, .sepia, .parchment, .paper: return .light
+        case .custom:                  return nil
+        }
+    }
 }
 
 enum ReaderLayout: String, CaseIterable, Identifiable {

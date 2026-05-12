@@ -77,10 +77,14 @@ struct InstantReaderView: View {
             if hasAudio {
                 VStack(spacing: 0) {
                     Divider()
+                        .background(readerForeground.opacity(0.15))
                     playerBar
                         .padding(.vertical, 8)
                 }
-                .background(.thinMaterial)
+                // Mirror the reader toolbar: tint the player bar with the
+                // reader theme colour so it feels like part of the same
+                // surface rather than an OS-chrome stripe floating over it.
+                .background(readerBackground.opacity(0.96))
             }
         }
         // Floating play button overlay. Using `.overlay` instead of
@@ -197,9 +201,10 @@ struct InstantReaderView: View {
         HStack(spacing: 10) {
             ProgressView()
                 .controlSize(.small)
+                .tint(readerForeground.opacity(0.6))
             Text(text)
                 .font(.footnote)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(readerForeground.opacity(0.7))
             Spacer()
             if text.lowercased().contains("failed") || text.lowercased().contains("unavailable") {
                 Button("Retry", action: onRequestAudioRetry)
@@ -211,7 +216,8 @@ struct InstantReaderView: View {
         // copy / Retry button never sit under the notch in landscape.
         .compatHorizontalSafeAreaPadding(16)
         .padding(.vertical, 6)
-        .background(.thickMaterial)
+        // Theme-aware tinted background, consistent with the reader toolbar.
+        .background(readerBackground.opacity(0.96))
     }
 
     // MARK: - Player bar
@@ -511,6 +517,40 @@ struct InstantReaderView: View {
         guard currentChapterIndex > 0 else { return false }
         currentChapterIndex -= 1
         return true
+    }
+
+    // MARK: - Theme colours (mirrors ReaderView)
+
+    /// Reader background colour derived from `settings.readerTheme`.
+    /// Used to tint the status strip and player bar so they feel like
+    /// continuations of the reading surface rather than system chrome.
+    private var readerBackground: Color {
+        switch settings.readerTheme {
+        case .light:     return .platformSystemBackground
+        case .sepia:     return Color(red: 0xF8/255.0, green: 0xF0/255.0, blue: 0xE0/255.0)
+        case .parchment: return Color(red: 0xF4/255.0, green: 0xEC/255.0, blue: 0xD8/255.0)
+        case .paper:     return Color(red: 0xE8/255.0, green: 0xE2/255.0, blue: 0xD5/255.0)
+        case .dark:      return Color(red: 0x1C/255.0, green: 0x1C/255.0, blue: 0x1E/255.0)
+        case .black:     return .black
+        case .custom:
+            let bg = settings.readerCustomColors.background
+            return Color(red: bg.0, green: bg.1, blue: bg.2)
+        }
+    }
+
+    /// Reader foreground colour derived from `settings.readerTheme`.
+    private var readerForeground: Color {
+        switch settings.readerTheme {
+        case .light:     return .primary
+        case .sepia:     return Color(red: 0x5B/255.0, green: 0x46/255.0, blue: 0x36/255.0)
+        case .parchment: return Color(red: 0x3D/255.0, green: 0x2F/255.0, blue: 0x1F/255.0)
+        case .paper:     return Color(red: 0x2A/255.0, green: 0x25/255.0, blue: 0x20/255.0)
+        case .dark:      return Color(red: 0xE8/255.0, green: 0xE8/255.0, blue: 0xE8/255.0)
+        case .black:     return Color(red: 0xE0/255.0, green: 0xE0/255.0, blue: 0xE0/255.0)
+        case .custom:
+            let fg = settings.readerCustomColors.foreground
+            return Color(red: fg.0, green: fg.1, blue: fg.2)
+        }
     }
 
     private var currentChapterTitle: String {
