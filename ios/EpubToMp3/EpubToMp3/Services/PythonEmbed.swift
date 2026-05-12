@@ -51,6 +51,14 @@ final class PythonEmbed: @unchecked Sendable {
     /// Holding the closure here for the interpreter's lifetime is
     /// cheap (one slot) and keeps the bridge alive.
     private var edgeTransport: PythonObject?
+    /// Strong reference to the Piper transport closure, same lifetime
+    /// rationale as ``edgeTransport`` — see comment above. The
+    /// transport always throws ``PiperBridgeError.notImplemented`` in
+    /// slice 1b; it is installed anyway so the Python pipeline can
+    /// observe the seam exists and so the wiring is exercised every
+    /// time the app boots (catches regressions early when the real
+    /// implementation lands).
+    private var piperTransport: PythonObject?
 
     private init() {}
 
@@ -94,6 +102,7 @@ final class PythonEmbed: @unchecked Sendable {
         _ = sys.version
 
         installEdgeTransport()
+        installPiperTransport()
 
         initialized = true
     }
@@ -178,6 +187,76 @@ final class PythonEmbed: @unchecked Sendable {
         let pyFn = fn.pythonObject
 
         edgeTransport = pyFn
+        _ = transportModule.set_transport(pyFn)
+    }
+
+    // MARK: - Piper transport wiring (stub-only — slice 1b)
+
+    /// Registers ``PiperBridge`` as the active Piper transport on the
+    /// Python side via
+    /// ``python_app.src.tts._piper_transport.set_transport``.
+    ///
+    /// In slice 1b the bridge always throws
+    /// ``PiperBridgeError.notImplemented`` (onnxruntime / espeak-ng /
+    /// lame are not yet cross-compiled for iOS). Installing the
+    /// transport anyway is intentional: it proves the Python ↔ Swift
+    /// seam is wired correctly, and the ``convert_epub`` gate (
+    /// "piper fallback requested but no piper transport installed")
+    /// distinguishes between "operator forgot to enable it" and
+    /// "bring-up not done" — a critical signal when the real engine
+    /// lands and an integration breaks.
+    ///
+    /// Failures are swallowed for the same reason as
+    /// ``installEdgeTransport``: an older bundle without the
+    /// ``_piper_transport`` module should not crash the app at launch.
+    private func installPiperTransport() {
+        let transportModule: PythonObject
+        do {
+            transportModule = try Python.attemptImport(
+                "python_app.src.tts._piper_transport"
+            )
+        } catch {
+            // Bundle predates slice 1b — Edge still works fine on its
+            // own; no need to throw.
+            return
+        }
+
+        let bridge = PiperBridge()
+        let fn = PythonFunction { args -> PythonObject in
+            let text = String(args[0]) ?? ""
+            let lang = String(args[1]) ?? ""
+            let sem = DispatchSemaphore(value: 0)
+            var outcome: Result<Data, Error> = .failure(
+                PiperBridgeError.notImplemented
+            )
+            Task.detached(priority: .userInitiated) {
+                do {
+                    let mp3 = try await bridge.synthesize(
+                        text: text, language: lang
+                    )
+                    outcome = .success(mp3)
+                } catch {
+                    outcome = .failure(error)
+                }
+                sem.signal()
+            }
+            sem.wait()
+            switch outcome {
+            case .success(let data):
+                let pyBytes = Python.bytes(Python.list(Array(data)))
+                return pyBytes
+            case .failure(let err):
+                // Surface PiperBridgeError verbatim so the Python side
+                // sees ``Piper iOS requires onnxruntime + espeak-ng +
+                // lame cross-compile`` — same string PiperBridgeError
+                // .notImplemented advertises.
+                let msg = "PiperBridge: \(err.localizedDescription)"
+                return Python.import("builtins").RuntimeError(msg)
+            }
+        }
+        let pyFn = fn.pythonObject
+
+        piperTransport = pyFn
         _ = transportModule.set_transport(pyFn)
     }
 

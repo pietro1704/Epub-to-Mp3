@@ -38,7 +38,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
 
-from .tts import _edge_transport
+from .tts import _edge_transport, _piper_transport
 
 # Mirror ``EdgeTTS._DEFAULT_CHUNK_SIZE`` (12_000) but cap a touch lower
 # so paragraph-boundary chunking has slack to land on whitespace
@@ -111,17 +111,28 @@ def _split_into_chunks(text: str, max_chars: int) -> List[str]:
     return chunks
 
 
-def synthesize_chapter_via_transport(text: str, voice: str, out_path: str) -> str:
+def synthesize_chapter_via_transport(
+    text: str,
+    voice: str,
+    out_path: str,
+    piper_fallback_lang: Optional[str] = None,
+) -> str:
     """iOS entrypoint. Chunks ``text``, synthesizes each chunk via the
-    currently-installed transport in
+    currently-installed Edge transport in
     ``python_app.src.tts._edge_transport``, concatenates the MP3 bytes,
     writes to ``out_path``.
 
+    If ``piper_fallback_lang`` is non-``None`` AND a Piper transport is
+    installed in ``python_app.src.tts._piper_transport``, per-chunk
+    Edge failures are retried through Piper before being counted as
+    failures. This is the slice-1b "stub-only" path: the seam exists,
+    but until Swift installs a real Piper transport
+    ``_piper_transport.synthesize_chunk`` raises
+    ``"piper transport not installed"`` -- which we treat as a hard
+    failure for that chunk (Edge already failed, Piper isn't there).
+
     Returns the resolved string path on success. Raises ``RuntimeError``
-    if the transport produced no audio at all (every chunk empty) --
-    matches what ``EdgeTTSBridge.swift`` does on
-    ``EdgeTTSBridgeError.noAudioReceived`` so the Swift caller can
-    surface a single error type regardless of which side failed.
+    if every chunk failed (no audio at all).
 
     NB: MP3 concatenation by raw byte append is the same trick
     ``EdgeTTS._synthesize_parallel`` uses (Edge emits ID3-less MP3
@@ -133,9 +144,42 @@ def synthesize_chapter_via_transport(text: str, voice: str, out_path: str) -> st
     if not chunks:
         raise RuntimeError("ios_entrypoints: empty input text")
 
+    piper_available = (
+        piper_fallback_lang is not None and _piper_transport.get_transport() is not None
+    )
+
     audio = bytearray()
     for chunk in chunks:
-        mp3 = _edge_transport.synthesize_chunk(chunk, voice)
+        mp3: bytes = b""
+        try:
+            mp3 = _edge_transport.synthesize_chunk(chunk, voice)
+        except Exception as edge_exc:  # noqa: BLE001 - any edge failure is a fallback trigger
+            if not piper_available:
+                raise
+            try:
+                mp3 = _piper_transport.synthesize_chunk(
+                    chunk,
+                    piper_fallback_lang,  # type: ignore[arg-type]
+                )
+            except Exception as piper_exc:  # noqa: BLE001
+                raise RuntimeError(
+                    "ios_entrypoints: edge failed and piper fallback failed: "
+                    f"edge={edge_exc!r} piper={piper_exc!r}"
+                ) from piper_exc
+        else:
+            # Edge returned empty bytes -- treat as a soft failure and
+            # try Piper if available (matches the Edge segment-integrity
+            # tolerance pattern in the desktop path).
+            if not mp3 and piper_available:
+                try:
+                    mp3 = _piper_transport.synthesize_chunk(
+                        chunk,
+                        piper_fallback_lang,  # type: ignore[arg-type]
+                    )
+                except Exception:  # noqa: BLE001
+                    # Piper failed too -- keep going; the no-audio check
+                    # below will raise if every chunk yielded nothing.
+                    mp3 = b""
         if mp3:
             audio.extend(mp3)
 
@@ -425,10 +469,28 @@ def convert_epub(
             f"convert_epub: engine={engine!r} is not supported on iOS in this slice. "
             "Slice 1a is Edge-only; Piper support arrives in slice 1b."
         )
-    if fallback_engine and fallback_engine.strip().lower() not in {"none", ""}:
+    # Piper fallback gate. The CLI uses ``--fallback-engine piper`` to
+    # enable per-chunk Piper retry when Edge fails. iOS slice 1b
+    # installs a seam (``_piper_transport.set_transport``) but the
+    # actual ONNX/espeak-ng/lame cross-compile is deferred -- so the
+    # transport is usually not installed at runtime. We honour the
+    # request only when the seam is wired; otherwise we raise with a
+    # pointer at the bring-up doc so the operator knows what to build.
+    normalised_fallback = (fallback_engine or "none").strip().lower()
+    piper_fallback_requested = False
+    if normalised_fallback in {"", "none"}:
+        piper_fallback_requested = False
+    elif normalised_fallback == "piper":
+        if _piper_transport.get_transport() is None:
+            raise RuntimeError(
+                "convert_epub: piper fallback requested but no piper transport "
+                "installed -- see ios/PIPER-EMBED.md"
+            )
+        piper_fallback_requested = True
+    else:
         raise RuntimeError(
-            f"convert_epub: fallback_engine={fallback_engine!r} is not supported on iOS "
-            "in this slice. Pass 'none' (default); per-chunk Piper fallback lands in slice 1b."
+            f"convert_epub: fallback_engine={fallback_engine!r} is not supported on iOS. "
+            "Accepted values: 'none' (default) or 'piper' (requires installed transport)."
         )
 
     # ---------------- Path sandbox ----------------
@@ -503,16 +565,26 @@ def convert_epub(
 
     # ---------------- Voice resolution ----------------
     voice_id = (voice or "auto").strip()
+    book_lang = (reader.language or "").lower()
     if voice_id.lower() == "auto":
         # Sensible default per book language. The Swift UI overrides
         # this when the user picks a voice; we deliberately don't reach
         # into the full ``VoiceConfigProvider`` here -- iOS surfaces
         # voice selection in its own settings sheet.
-        lang = (reader.language or "").lower()
-        if lang.startswith("pt"):
+        if book_lang.startswith("pt"):
             voice_id = "pt-BR-FranciscaNeural"
         else:
             voice_id = "en-US-AriaNeural"
+
+    # Piper fallback uses BCP-47 language tags rather than Edge voice
+    # names. Map the book's detected language to the closest tag the
+    # Swift PiperBridge knows about (pt-BR, en-US in slice 1b).
+    piper_lang: Optional[str] = None
+    if piper_fallback_requested:
+        if book_lang.startswith("pt"):
+            piper_lang = "pt-BR"
+        else:
+            piper_lang = "en-US"
 
     # ---------------- Synthesis loop ----------------
     manifest: List[Dict[str, Any]] = []
@@ -560,10 +632,17 @@ def convert_epub(
                 continue
 
         try:
-            synthesize_chapter_via_transport(text, voice_id, str(out_path))
+            synthesize_chapter_via_transport(
+                text,
+                voice_id,
+                str(out_path),
+                piper_fallback_lang=piper_lang,
+            )
             entry["status"] = "completed"
             entry["output_path"] = str(out_path)
             entry["voice"] = voice_id
+            if piper_lang is not None:
+                entry["piper_fallback_lang"] = piper_lang
             manifest.append(entry)
             outputs.append(str(out_path))
         except Exception as exc:  # noqa: BLE001 - surface every failure

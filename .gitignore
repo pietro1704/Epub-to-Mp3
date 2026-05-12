@@ -183,4 +183,8 @@ ios/EpubToMp3/EpubToMp3/Vendor/site-packages/
 ios/EpubToMp3/Vendor/Python/
 ios/EpubToMp3/Vendor/site-packages/
 ios/EpubToMp3/Vendor/python-stdlib/
+
+# Piper voice models for iOS (slice 1b) — fetched by
+# ios/EpubToMp3/scripts/fetch-piper-models.sh, ~80 MB total
+ios/EpubToMp3/Vendor/piper-models/
 .claude/mirror-queue.txt
