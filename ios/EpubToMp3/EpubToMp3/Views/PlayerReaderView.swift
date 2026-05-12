@@ -17,10 +17,9 @@ struct PlayerReaderView: View {
     let backendBaseURL: URL?
 
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var player: AudioPlayer
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.dismiss) private var dismiss
-
-    @StateObject private var player = AudioPlayer()
     @State private var fulltextStore = FulltextStore()
     @State private var fulltext: EbookFulltext?
     @State private var fulltextError: String?
@@ -511,5 +510,6 @@ struct PlayerReaderView: View {
         backendBaseURL: URL(string: "http://localhost:8000")
     )
     .environmentObject(AppSettings())
+    .environmentObject(AudioPlayer())
 }
 #endif

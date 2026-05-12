@@ -4,11 +4,10 @@ import SwiftUI
 ///
 ///   Nav sidebar | Content for current nav mode | Detail (library only)
 ///
-/// As of the Now-Playing landing-screen slice, the sidebar surfaces a
-/// short top-level navigation (`SplitNavMode`) rather than the library
-/// book list directly. Default selection is `.nowPlaying` — the player
-/// + reader for the user's most-recent audiobook — mirroring Apple
-/// Books / Apple Podcasts. Library is one step away.
+/// As of the Reader-landing slice, the sidebar surfaces a short
+/// top-level navigation (`SplitNavMode`). Default selection is `.reader`
+/// — the full-screen EPUB reader in Apple Books style. Now Playing is
+/// one sidebar row away (or accessible via the MiniPlayerBar footer).
 ///
 /// Falls back to `TabRoot` on iPhone compact and pre-iOS-16/macOS-13
 /// systems via the branch in `RootView`. This view is therefore safe
@@ -30,7 +29,11 @@ import SwiftUI
 /// Top-level destinations exposed in the split-view sidebar. Backed by
 /// `String` so it can flow through `List(selection:)` on every SDK
 /// without bridging through `Hashable`-only generic plumbing.
+///
+/// Order mirrors Apple Books sidebar: Reader first (default), then
+/// Now Playing, Library, Conversions, Settings.
 enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
+    case reader
     case nowPlaying
     case library
     case jobs
@@ -40,6 +43,7 @@ enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
+        case .reader:     return "Read"
         case .nowPlaying: return "Now Playing"
         case .library:    return "Library"
         case .jobs:       return "Conversions"
@@ -49,6 +53,7 @@ enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
 
     var systemImage: String {
         switch self {
+        case .reader:     return "text.book.closed"
         case .nowPlaying: return "headphones.circle"
         case .library:    return "books.vertical"
         case .jobs:       return "arrow.triangle.2.circlepath"
@@ -61,6 +66,7 @@ enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
 struct SplitViewRoot: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var player: AudioPlayer
 
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
@@ -68,9 +74,22 @@ struct SplitViewRoot: View {
     #endif
 
     @State private var columnVisibility: NavigationSplitViewVisibility = SplitViewRoot.defaultColumnVisibility
-    @State private var navMode: SplitNavMode = .nowPlaying
+    /// Default to `.reader` — the new landing screen.
+    @State private var navMode: SplitNavMode = .reader
     @State private var selectedBookID: String?
     @State private var selectedChapterIndex: Int?
+
+    @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
+    private var currentBookID: String?
+
+    /// True when the mini-player footer should appear in the sidebar:
+    /// something is playing AND the user is not on the Now Playing destination
+    /// (Sonos / Apple TV sidebar pattern).
+    private var showMiniPlayer: Bool {
+        guard let id = currentBookID, !id.isEmpty else { return false }
+        guard library.books.contains(where: { $0.id == id }) else { return false }
+        return navMode != .nowPlaying
+    }
 
     /// Currently-selected book, resolved through the library store.
     private var selectedBook: BookEntity? {
@@ -142,6 +161,15 @@ struct SplitViewRoot: View {
         #endif
         .navigationTitle("Epub-to-Mp3")
         .accessibilityIdentifier("split.navList")
+        // HIG sidebar footer: mini-player docked at the bottom of the
+        // sidebar (Sonos / Apple TV pattern). `safeAreaInset` adds the
+        // view outside the scroll area so it doesn't overlap list rows.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showMiniPlayer {
+                MiniPlayerBar(onTap: { navMode = .nowPlaying })
+                    .accessibilityIdentifier("miniPlayer.sidebar")
+            }
+        }
     }
 
     // MARK: - Content column
@@ -149,6 +177,11 @@ struct SplitViewRoot: View {
     @ViewBuilder
     private var contentColumn: some View {
         switch navMode {
+        case .reader:
+            MainReaderView(
+                onOpenPlayer: { navMode = .nowPlaying },
+                onBrowseLibrary: { navMode = .library }
+            )
         case .nowPlaying:
             NowPlayingView(onBrowseLibrary: { navMode = .library })
         case .library:
@@ -236,12 +269,12 @@ struct SplitViewRoot: View {
     @ViewBuilder
     private var detailColumn: some View {
         switch navMode {
-        case .nowPlaying, .jobs, .settings:
+        case .reader, .nowPlaying, .jobs, .settings:
             // These destinations are full-bleed inside the content
             // column — the detail column gets a quiet placeholder.
             CompatContentUnavailableView(
                 "—",
-                systemImage: "headphones",
+                systemImage: "book.closed",
                 description: Text("")
             )
             .hidden()
@@ -375,6 +408,7 @@ private struct PlayerReaderDetail: View {
     SplitViewRoot()
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore.previewPopulated)
+        .environmentObject(AudioPlayer())
 }
 
 @available(iOS 16, macOS 13, *)
@@ -382,5 +416,6 @@ private struct PlayerReaderDetail: View {
     SplitViewRoot()
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore.previewEmpty)
+        .environmentObject(AudioPlayer())
 }
 #endif
