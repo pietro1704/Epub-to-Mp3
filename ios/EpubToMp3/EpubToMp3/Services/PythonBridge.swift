@@ -74,15 +74,23 @@ final class PythonBridge: @unchecked Sendable {
     func parseEpub(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
         try PythonEmbed.shared.bootstrap()
 
-        return try await withCheckedThrowingContinuation { cont in
-            queue.async {
-                do {
-                    let result = try self.parseEpubSync(
-                        path: fileURL.path, bookId: bookId
-                    )
-                    cont.resume(returning: result)
-                } catch {
-                    cont.resume(throwing: error)
+        // Resilience: wrap the PythonKit call in a 30 s deadline. The
+        // canonical parser handles a 600-page EPUB in ~2-4 s on an
+        // iPhone 12; 30 s is a generous-but-bounded ceiling that turns a
+        // wedged interpreter into a recoverable error instead of an
+        // infinite spinner. Caller (``BookOpenView``) catches the
+        // ``TimeoutError`` and falls back to ``EpubFallbackParser``.
+        return try await withTimeout(seconds: 30, label: "EPUB parse") {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<EbookFulltext, Error>) in
+                self.queue.async {
+                    do {
+                        let result = try self.parseEpubSync(
+                            path: fileURL.path, bookId: bookId
+                        )
+                        cont.resume(returning: result)
+                    } catch {
+                        cont.resume(throwing: error)
+                    }
                 }
             }
         }

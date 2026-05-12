@@ -135,11 +135,24 @@ final class EdgeTTSBridge: NSObject, URLSessionWebSocketDelegate, @unchecked Sen
         // 3. Drain
         var audio = Data()
         let deadline = Date().addingTimeInterval(timeout)
+        // Per-frame deadline. Edge normally streams a binary frame every
+        // few hundred ms once synthesis starts; if 15 s elapse without a
+        // single frame the socket is wedged and we must bail. This
+        // catches the case where the overall `timeout` is generous (60 s
+        // for a 12 K-char chunk) but the connection itself has died.
+        let perFrameTimeout: TimeInterval = 15
 
         while Date() < deadline {
             let message: URLSessionWebSocketTask.Message
             do {
-                message = try await task.receive()
+                message = try await withTimeout(
+                    seconds: perFrameTimeout, label: "Edge frame"
+                ) {
+                    try await task.receive()
+                }
+            } catch is TimeoutError {
+                task.cancel(with: .abnormalClosure, reason: nil)
+                throw EdgeTTSBridgeError.timeout
             } catch {
                 throw EdgeTTSBridgeError.webSocketFailed("\(error)")
             }
