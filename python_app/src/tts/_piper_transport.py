@@ -85,4 +85,12 @@ def synthesize_chunk(text: str, lang: str) -> bytes:
     transport = _TRANSPORT
     if transport is None:
         raise RuntimeError("piper transport not installed; see ios/PIPER-EMBED.md")
-    return transport(text, lang)
+    result = transport(text, lang)
+    if not isinstance(result, (bytes, bytearray)):
+        raise TypeError(
+            "piper transport returned "
+            f"{type(result).__name__} (expected bytes); "
+            "likely a Swift bridge regression where an error object "
+            "was returned instead of raised"
+        )
+    return bytes(result)

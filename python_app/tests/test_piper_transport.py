@@ -114,3 +114,19 @@ def test_transport_can_raise_and_caller_observes_it():
     _piper_transport.set_transport(boom)
     with pytest.raises(TransportFailure, match="model not loaded"):
         _piper_transport.synthesize_chunk("text", "en-US")
+
+
+def test_synthesize_chunk_rejects_non_bytes_return():
+    """Same regression as the Edge seam: a Swift PythonFunction must not
+    return an exception instance in place of bytes. We type-check the
+    transport's return value and raise so the caller sees the bug
+    attached to the chunk that triggered it.
+    """
+    _piper_transport.set_transport(lambda t, lang: RuntimeError("simulated bridge regression"))
+    with pytest.raises(TypeError, match="expected bytes"):
+        _piper_transport.synthesize_chunk("hi", "pt-BR")
+
+
+def test_synthesize_chunk_accepts_bytearray():
+    _piper_transport.set_transport(lambda t, lang: bytearray(b"raw"))
+    assert _piper_transport.synthesize_chunk("hi", "pt-BR") == b"raw"

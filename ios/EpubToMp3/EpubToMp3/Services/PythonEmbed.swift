@@ -148,7 +148,7 @@ final class PythonEmbed: @unchecked Sendable {
         // Python thread per chunk is fine — chapter parallelism happens
         // at a higher level in `converter.py`, not inside a chunk.
         let bridge = EdgeTTSBridge()
-        let fn = PythonFunction { args -> PythonObject in
+        let fn = PythonFunction { args throws -> PythonObject in
             let text = String(args[0]) ?? ""
             let voice = String(args[1]) ?? ""
             let sem = DispatchSemaphore(value: 0)
@@ -173,15 +173,16 @@ final class PythonEmbed: @unchecked Sendable {
                 // wrap it in `bytes(...)` so the Python side gets a
                 // proper bytes object (what edge_tts would have
                 // returned).
-                let pyBytes = Python.bytes(Python.list(Array(data)))
-                return pyBytes
+                return Python.bytes(Python.list(Array(data)))
             case .failure(let err):
-                // Raise on the Python side. `PythonError` exists in
-                // PythonKit; throwing here propagates as a Python
-                // exception, which `ios_entrypoints` will let bubble
-                // up to Swift as a PythonKit trap unless caught.
-                let msg = "EdgeTTSBridge: \(err)"
-                return Python.import("builtins").RuntimeError(msg)
+                // Throw — PythonKit converts a Swift throw into a Python
+                // exception on the calling thread. The previous code
+                // *returned* a `RuntimeError` instance as if it were
+                // bytes, which made `audio.extend(mp3)` silently truthy
+                // or raise `TypeError` in `synthesize_chapter_streaming`,
+                // depending on the chunk index — symptoms: no audio,
+                // no clear failure log.
+                throw PythonEmbedError.edgeSynthFailed("\(err)")
             }
         }
         let pyFn = fn.pythonObject
@@ -222,7 +223,7 @@ final class PythonEmbed: @unchecked Sendable {
         }
 
         let bridge = PiperBridge()
-        let fn = PythonFunction { args -> PythonObject in
+        let fn = PythonFunction { args throws -> PythonObject in
             let text = String(args[0]) ?? ""
             let lang = String(args[1]) ?? ""
             let sem = DispatchSemaphore(value: 0)
@@ -243,15 +244,15 @@ final class PythonEmbed: @unchecked Sendable {
             sem.wait()
             switch outcome {
             case .success(let data):
-                let pyBytes = Python.bytes(Python.list(Array(data)))
-                return pyBytes
+                return Python.bytes(Python.list(Array(data)))
             case .failure(let err):
-                // Surface PiperBridgeError verbatim so the Python side
-                // sees ``Piper iOS requires onnxruntime + espeak-ng +
-                // lame cross-compile`` — same string PiperBridgeError
-                // .notImplemented advertises.
-                let msg = "PiperBridge: \(err.localizedDescription)"
-                return Python.import("builtins").RuntimeError(msg)
+                // Throw — same rationale as installEdgeTransport: returning
+                // a RuntimeError instance leaks into Python as if it were
+                // bytes. Throwing surfaces the failure as a real Python
+                // exception with the PiperBridgeError message preserved.
+                throw PythonEmbedError.edgeSynthFailed(
+                    "PiperBridge: \(err.localizedDescription)"
+                )
             }
         }
         let pyFn = fn.pythonObject

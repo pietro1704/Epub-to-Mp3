@@ -141,3 +141,24 @@ def test_chunk_chars_env_clamped(monkeypatch):
     assert ios_entrypoints._chunk_chars() == 15_000
     monkeypatch.setenv("IOS_EDGE_CHUNK_CHARS", "10")
     assert ios_entrypoints._chunk_chars() == 1_000
+
+
+def test_synthesize_chunk_rejects_non_bytes_return():
+    """Regression: a Swift PythonFunction once *returned* a RuntimeError
+    instance instead of raising it, so the Python pipeline received an
+    exception object where it expected bytes and stalled silently. The
+    seam now type-checks the transport result.
+    """
+    _edge_transport.set_transport(lambda t, v: RuntimeError("simulated bridge regression"))
+    with pytest.raises(TypeError, match="expected bytes"):
+        _edge_transport.synthesize_chunk("hi", "en-US-AriaNeural")
+
+
+def test_synthesize_chunk_accepts_bytearray():
+    """``bytearray`` is morally equivalent to ``bytes`` for our pipeline;
+    accept it and normalise to ``bytes`` so downstream ``audio.extend``
+    behaves identically regardless of which the transport happened to
+    return.
+    """
+    _edge_transport.set_transport(lambda t, v: bytearray(b"raw"))
+    assert _edge_transport.synthesize_chunk("hi", "en-US-AriaNeural") == b"raw"

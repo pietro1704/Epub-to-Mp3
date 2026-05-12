@@ -106,5 +106,21 @@ def reset_transport() -> None:
 def synthesize_chunk(text: str, voice: str) -> bytes:
     """The one call ``ios_entrypoints`` makes per chunk. Routes through
     whatever ``_transport`` is currently installed.
+
+    Defensive type check: an installed transport MUST return ``bytes``.
+    A regression in the iOS Swift bridge once *returned* a Python
+    ``RuntimeError`` instance instead of raising it, which then flowed
+    into ``audio.extend(...)`` and produced confusing downstream errors
+    (or worse, a silent stall when truthy-but-non-bytes squeaked past a
+    naive ``if mp3:`` check). Raising here keeps the failure attached
+    to the chunk that caused it.
     """
-    return _transport(text, voice)
+    result = _transport(text, voice)
+    if not isinstance(result, (bytes, bytearray)):
+        raise TypeError(
+            "edge transport returned "
+            f"{type(result).__name__} (expected bytes); "
+            "likely a Swift bridge regression where an error object "
+            "was returned instead of raised"
+        )
+    return bytes(result)
