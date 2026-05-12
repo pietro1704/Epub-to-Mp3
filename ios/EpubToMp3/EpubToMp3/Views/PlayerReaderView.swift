@@ -168,7 +168,11 @@ struct PlayerReaderView: View {
                 sleepTimerBadge
             }
         }
-        .padding(20)
+        // 20pt vertical + horizontal margin, with the horizontal axis
+        // sitting on top of any safe-area inset so the scrubber thumb
+        // and transport buttons never cross the notch in landscape.
+        .compatHorizontalSafeAreaPadding(20)
+        .padding(.vertical, 20)
     }
 
     private var scrubber: some View {

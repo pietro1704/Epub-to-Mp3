@@ -196,7 +196,9 @@ struct ReaderView: View {
             Spacer()
         }
         .font(.footnote)
-        .padding(.horizontal, 12)
+        // 12pt inside any safe-area inset so the picker rows don't
+        // get clipped by the notch / Dynamic Island in landscape.
+        .compatHorizontalSafeAreaPadding(12)
         .padding(.vertical, 6)
         .background(.ultraThinMaterial)
     }
@@ -306,6 +308,11 @@ struct ReaderView: View {
                 .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
+            // Keep sentence rows clear of the notch / Dynamic Island
+            // in iPhone landscape — even when the user dials the
+            // reader margin down to 12pt, the system safe-area inset
+            // still pushes content past the curved cutout.
+            .compatHorizontalSafeAreaPadding(0)
             // No simultaneousGesture here — that previously stole
             // touches on iOS and competed with the system scroll
             // recogniser, making the reader feel "stuck". The
@@ -325,6 +332,11 @@ struct ReaderView: View {
     // MARK: Paginated content
 
     private var paginatedContent: some View {
+        // Wrap the page-rendering GeometryReader in a horizontal
+        // safe-area inset so paginated mode never lays out a page
+        // under the notch / Dynamic Island. GeometryReader otherwise
+        // measures the *full* available width, which on iPhone
+        // landscape includes the curved cutout region.
         GeometryReader { geo in
             let pages = Paginator.paginate(
                 spans: spans,
@@ -377,6 +389,7 @@ struct ReaderView: View {
             ))
             #endif
         }
+        .compatHorizontalSafeAreaPadding(0)
     }
 
     private func pageView(pages: [String], pageIndex: Int) -> some View {

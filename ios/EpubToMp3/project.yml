@@ -48,7 +48,12 @@ settings:
     GCC_TREAT_WARNINGS_AS_ERRORS: NO
     # Stricter Swift warnings worth promoting.
     SWIFT_STRICT_CONCURRENCY: minimal
-    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    # Custom launch storyboard (was UILaunchScreen_Generation=YES auto).
+    # The storyboard lives at EpubToMp3/Resources/LaunchScreen.storyboard
+    # and is picked up automatically by xcodegen's group recursion (not
+    # excluded). macOS ignores this key — UILaunchStoryboardName only
+    # affects the iOS / iPadOS launch sequence.
+    INFOPLIST_KEY_UILaunchStoryboardName: LaunchScreen
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
     INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
     INFOPLIST_KEY_UIBackgroundModes: "audio"

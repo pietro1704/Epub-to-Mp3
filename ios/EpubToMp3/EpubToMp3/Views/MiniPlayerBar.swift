@@ -122,7 +122,10 @@ struct MiniPlayerBar: View {
                     .disabled(player.isConverting && !player.firstChapterReady)
                     .accessibilityLabel("Skip forward 15 seconds")
                 }
-                .padding(.horizontal, 12)
+                // 12pt internal spacing on top of any safe-area lateral
+                // inset so the cover and transport controls never sit
+                // under the notch / Dynamic Island in landscape.
+                .compatHorizontalSafeAreaPadding(12)
                 .frame(height: 62)
             }
             .frame(height: 64)

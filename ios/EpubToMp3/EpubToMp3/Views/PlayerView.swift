@@ -19,7 +19,10 @@ struct PlayerView: View {
                 speedPicker
                 Spacer()
             }
-            .padding(.horizontal, 24)
+            // 24pt sits on top of the system safe-area inset so artwork
+            // and transport controls stay clear of the notch in
+            // landscape iPhone.
+            .compatHorizontalSafeAreaPadding(24)
             .navigationTitle("Now playing")
             .compatInlineNavigationTitle()
             .toolbar {
