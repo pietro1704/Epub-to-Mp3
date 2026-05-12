@@ -54,6 +54,16 @@ final class PythonBridge: @unchecked Sendable {
         label: "epub2mp3.python-bridge", qos: .userInitiated
     )
 
+    /// Cached `python_app.src.ios_entrypoints` module handle. Without
+    /// this cache every chapter synthesis re-runs `attemptImport`,
+    /// which under memory pressure has been observed to crash inside
+    /// `_PyObject_Malloc` during repeat ``PyImport_ImportModule``
+    /// invocations. Module handles in CPython are forever-cached in
+    /// ``sys.modules``; once we own a strong PythonObject reference
+    /// we never need to ask the import machinery again.
+    /// Access only from `queue`.
+    private var _iosEntrypointsModule: PythonObject?
+
     private init() {}
 
     // MARK: - EPUB parse
@@ -72,18 +82,20 @@ final class PythonBridge: @unchecked Sendable {
     /// - Throws: `PythonBridgeError` if bootstrap, parse, or JSON
     ///   decode fails.
     func parseEpub(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
-        try PythonEmbed.shared.bootstrap()
-
         // Resilience: wrap the PythonKit call in a 30 s deadline. The
         // canonical parser handles a 600-page EPUB in ~2-4 s on an
         // iPhone 12; 30 s is a generous-but-bounded ceiling that turns a
         // wedged interpreter into a recoverable error instead of an
         // infinite spinner. Caller (``BookOpenView``) catches the
         // ``TimeoutError`` and falls back to ``EpubFallbackParser``.
+        // `bootstrap()` runs Py_Initialize + module imports + transport
+        // installation — multi-hundred-ms on first call. Run it on the
+        // dedicated queue so we never block the main actor during open.
         return try await withTimeout(seconds: 30, label: "EPUB parse") {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<EbookFulltext, Error>) in
                 self.queue.async {
                     do {
+                        try PythonEmbed.shared.bootstrap()
                         let result = try self.parseEpubSync(
                             path: fileURL.path, bookId: bookId
                         )
@@ -99,15 +111,13 @@ final class PythonBridge: @unchecked Sendable {
     /// Same as `parseEpub(at:bookId:)` but synchronous. Marked private
     /// because callers MUST land on `queue` first to avoid GIL races.
     private func parseEpubSync(path: String, bookId: String) throws -> EbookFulltext {
-        // PythonKit traps on its own errors; the `Python.attemptImport`
-        // surface is the safest entry point. Anything else (`Python.import`)
-        // raises a fatalError on import failure — not catchable.
-        let reader: PythonObject
-        do {
-            reader = try Python.attemptImport("python_app.src.ebook_reader")
-        } catch {
+        // Pre-imported in ``PythonEmbed.bootstrap`` on the same thread
+        // that ran ``Py_Initialize``. Running ``attemptImport`` here on
+        // a serial-queue worker has crashed inside
+        // ``_PyObject_Malloc`` / ``unicode_decode_utf8``.
+        guard let reader = PythonEmbed.shared.ebookReader else {
             throw PythonBridgeError.bootstrapFailed(
-                "import python_app.src.ebook_reader: \(error)"
+                "python_app.src.ebook_reader not preloaded — bootstrap must run first"
             )
         }
 
@@ -161,11 +171,13 @@ final class PythonBridge: @unchecked Sendable {
     func convertChapter(
         text: String, voice: String, outputDir: URL
     ) async throws -> URL {
-        try PythonEmbed.shared.bootstrap()
-
+        // Bootstrap on the worker queue — see notes on `parseEpub` and
+        // `convertChapterStreaming`. Calling on the main actor stalls
+        // the first chapter press.
         return try await withCheckedThrowingContinuation { cont in
             queue.async {
                 do {
+                    try PythonEmbed.shared.bootstrap()
                     let url = try self.convertChapterSync(
                         text: text, voice: voice, outputDir: outputDir
                     )
@@ -187,14 +199,12 @@ final class PythonBridge: @unchecked Sendable {
             at: outputDir, withIntermediateDirectories: true
         )
 
-        let entry: PythonObject
-        do {
-            entry = try Python.attemptImport(
-                "python_app.src.ios_entrypoints"
-            )
-        } catch {
+        // Pre-imported in ``PythonEmbed.bootstrap``; see the matching
+        // guard in ``convertChapterStreamingSync`` for the malloc-crash
+        // rationale.
+        guard let entry = PythonEmbed.shared.iosEntrypoints else {
             throw PythonBridgeError.bootstrapFailed(
-                "import python_app.src.ios_entrypoints: \(error)"
+                "python_app.src.ios_entrypoints not preloaded — bootstrap must run first"
             )
         }
 
@@ -245,11 +255,14 @@ final class PythonBridge: @unchecked Sendable {
         chapterIndex: Int,
         onSegment: @MainActor @escaping (Data, Int, Int) -> Void
     ) async throws -> URL {
-        try PythonEmbed.shared.bootstrap()
-
+        // `bootstrap()` is Py_Initialize + module imports + transport
+        // wiring — observably hundreds of ms on first invocation. Run it
+        // on the dedicated queue rather than the calling actor so the
+        // first chapter press never freezes the UI.
         return try await withCheckedThrowingContinuation { cont in
             queue.async {
                 do {
+                    try PythonEmbed.shared.bootstrap()
                     let url = try self.convertChapterStreamingSync(
                         text: text,
                         voice: voice,
@@ -279,14 +292,18 @@ final class PythonBridge: @unchecked Sendable {
             at: outputDir, withIntermediateDirectories: true
         )
 
-        let entry: PythonObject
-        do {
-            entry = try Python.attemptImport("python_app.src.ios_entrypoints")
-        } catch {
+        // ``PythonEmbed.bootstrap()`` pre-imports
+        // ``python_app.src.ios_entrypoints`` on the same thread that ran
+        // ``Py_Initialize`` (see ``preloadHotModules``). Doing the
+        // import here, on a different serial-queue worker, has crashed
+        // inside ``_PyObject_Malloc`` / ``unicode_decode_utf8`` — so we
+        // never call ``attemptImport`` from this hot path.
+        guard let entry = PythonEmbed.shared.iosEntrypoints else {
             throw PythonBridgeError.bootstrapFailed(
-                "import python_app.src.ios_entrypoints: \(error)"
+                "python_app.src.ios_entrypoints not preloaded — bootstrap must run first"
             )
         }
+        _iosEntrypointsModule = entry
 
         // Build a Python callable that Swift will receive per segment.
         // PythonKit lets us pass a Swift closure as a Python callable via
@@ -306,7 +323,7 @@ final class PythonBridge: @unchecked Sendable {
                 let raw = Data(byteArray)
                 let capturedIdx = chapterIndex
                 Task { @MainActor in
-                    await onSegment(raw, capturedIdx, segIdx)
+                    onSegment(raw, capturedIdx, segIdx)
                 }
             }
             return Python.None
@@ -497,11 +514,11 @@ final class PythonBridge: @unchecked Sendable {
         voice: String = "auto",
         options: ConvertOptions = .default
     ) async throws -> ConvertResult {
-        try PythonEmbed.shared.bootstrap()
-
+        // Bootstrap on the worker queue — see notes on `parseEpub`.
         return try await withCheckedThrowingContinuation { cont in
             queue.async {
                 do {
+                    try PythonEmbed.shared.bootstrap()
                     let result = try self.convertEpubSync(
                         epubURL: epubURL,
                         outputDir: outputDir,
@@ -531,14 +548,9 @@ final class PythonBridge: @unchecked Sendable {
             at: cacheDir, withIntermediateDirectories: true
         )
 
-        let entry: PythonObject
-        do {
-            entry = try Python.attemptImport(
-                "python_app.src.ios_entrypoints"
-            )
-        } catch {
+        guard let entry = PythonEmbed.shared.iosEntrypoints else {
             throw PythonBridgeError.bootstrapFailed(
-                "import python_app.src.ios_entrypoints: \(error)"
+                "python_app.src.ios_entrypoints not preloaded — bootstrap must run first"
             )
         }
 

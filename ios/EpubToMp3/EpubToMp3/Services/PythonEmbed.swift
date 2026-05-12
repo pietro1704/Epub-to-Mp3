@@ -60,6 +60,23 @@ final class PythonEmbed: @unchecked Sendable {
     /// implementation lands).
     private var piperTransport: PythonObject?
 
+    /// Pre-imported `python_app.src.ios_entrypoints` module handle. We
+    /// pin this during ``bootstrap()`` so the first chapter synthesis is
+    /// a `sys.modules` cache hit instead of a fresh
+    /// ``PyImport_ImportModule`` — the latter has been observed to crash
+    /// inside ``_PyObject_Malloc`` -> ``PyUnicode_New`` ->
+    /// ``unicode_decode_utf8`` on iOS when a worker thread different
+    /// from the one that initialised the interpreter triggers the
+    /// import machinery. Pre-importing on the bootstrap thread keeps the
+    /// allocator state local to that thread.
+    private(set) var iosEntrypoints: PythonObject?
+    /// Pre-imported `python_app.src.ebook_reader` module — same
+    /// rationale as ``iosEntrypoints``. Parsing is the very first
+    /// Python call the iOS pipeline issues, and we want it to land on a
+    /// hot `sys.modules` lookup, not a cold disk read + UTF-8 decode of
+    /// the source file.
+    private(set) var ebookReader: PythonObject?
+
     private init() {}
 
     // MARK: - Bootstrap
@@ -103,8 +120,30 @@ final class PythonEmbed: @unchecked Sendable {
 
         installEdgeTransport()
         installPiperTransport()
+        preloadHotModules()
 
         initialized = true
+    }
+
+    /// Pre-imports the Python modules the iOS pipeline will exercise on
+    /// its hot path. Performed once, on the same thread that ran
+    /// ``Py_Initialize``, so ``PyImport_ImportModule`` never has to run
+    /// later from an arbitrary serial-queue worker — that path crashed
+    /// inside ``_PyObject_Malloc`` when the import machinery's UTF-8
+    /// source-file decode allocated against an unfamiliar thread's
+    /// allocator state.
+    ///
+    /// Failures here are swallowed deliberately: each module has its
+    /// own fallback (``EpubFallbackParser`` for the reader, the direct
+    /// ``EdgeTTSBridge`` for synth), so a bundle missing one of these
+    /// should degrade rather than crash at app launch.
+    private func preloadHotModules() {
+        if iosEntrypoints == nil {
+            iosEntrypoints = try? Python.attemptImport("python_app.src.ios_entrypoints")
+        }
+        if ebookReader == nil {
+            ebookReader = try? Python.attemptImport("python_app.src.ebook_reader")
+        }
     }
 
     // MARK: - Edge-TTS transport wiring
