@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Compact, sidebar-friendly variant of the library grid. Renders one
 /// row per book — cover thumb, title, author, status pill — and binds
@@ -14,6 +15,14 @@ struct LibrarySidebar: View {
     @Binding var selectedBookID: String?
 
     @State private var sortMode: LibraryView.SortMode = .lastOpened
+    @State private var showingPicker = false
+    @State private var importError: String?
+
+    private static let acceptedTypes: [UTType] = {
+        var types: [UTType] = [.epub]
+        if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
+        return types
+    }()
 
     private var sorted: [BookEntity] {
         switch sortMode {
@@ -65,15 +74,69 @@ struct LibrarySidebar: View {
                     }
                 } label: { Image(systemName: "arrow.up.arrow.down.circle") }
             }
+            ToolbarItem(placement: .compatPrimaryTrailing) {
+                Button {
+                    showingPicker = true
+                } label: { Image(systemName: "plus.circle.fill") }
+                .accessibilityIdentifier("library.importButton")
+            }
+        }
+        .fileImporter(
+            isPresented: $showingPicker,
+            allowedContentTypes: Self.acceptedTypes,
+            allowsMultipleSelection: true
+        ) { result in
+            handleImport(result)
+        }
+        .alert("Import error",
+               isPresented: Binding(
+                get: { importError != nil },
+                set: { if !$0 { importError = nil } }
+               )) {
+            Button("OK") { importError = nil }
+        } message: {
+            Text(importError ?? "")
         }
     }
 
     private var emptyState: some View {
-        CompatContentUnavailableView(
-            "Library is empty",
-            systemImage: "books.vertical",
-            description: Text("Add an EPUB from the iPhone layout, then come back to the split view.")
-        )
+        VStack(spacing: 12) {
+            CompatContentUnavailableView(
+                "Library is empty",
+                systemImage: "books.vertical",
+                description: Text("Tap the + button above to import an EPUB.")
+            )
+            Button {
+                showingPicker = true
+            } label: {
+                Label("Import EPUB", systemImage: "plus.circle.fill")
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("library.importButton.empty")
+        }
+    }
+
+    /// Imports one or more EPUB URLs into the library store. Mirrors
+    /// `LibraryView.handleImport` — kept duplicated rather than
+    /// extracted so the sidebar can evolve independently of the
+    /// poster-style grid view if/when import UX diverges.
+    private func handleImport(_ result: Result<[URL], Error>) {
+        switch result {
+        case .success(let urls):
+            var firstError: String?
+            for url in urls {
+                do {
+                    _ = try library.importBook(from: url)
+                } catch {
+                    if firstError == nil {
+                        firstError = error.localizedDescription
+                    }
+                }
+            }
+            importError = firstError
+        case .failure(let err):
+            importError = err.localizedDescription
+        }
     }
 }
 
