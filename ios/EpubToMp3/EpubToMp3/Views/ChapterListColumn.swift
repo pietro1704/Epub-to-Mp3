@@ -105,11 +105,13 @@ struct ChapterListColumn: View {
         selectedChapterIndex = nil
         snapshot = nil
         loadError = nil
-        guard !isSwiftUIPreview else {
+        #if DEBUG
+        if isSwiftUIPreview {
             // Preview canvas: skip network entirely.
             snapshot = book.id == "preview-2" ? JobSnapshot.previewSample : nil
             return
         }
+        #endif
         guard let jobId = book.lastJobId else {
             // No previous conversion known. Stay in "no audio" state.
             return

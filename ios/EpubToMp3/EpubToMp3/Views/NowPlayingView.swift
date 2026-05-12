@@ -91,9 +91,11 @@ struct NowPlayingView: View {
     /// SSE on `bootstrap()`, so the stub only needs the identifiers.
     /// Returns `nil` when the book has never been converted.
     private func makeSnapshot(for book: BookEntity) -> JobSnapshot? {
+        #if DEBUG
         if isSwiftUIPreview {
             return book.lastJobId != nil ? JobSnapshot.previewSample : nil
         }
+        #endif
         guard let jobId = book.lastJobId else { return nil }
         return JobSnapshot(
             jobId: jobId,

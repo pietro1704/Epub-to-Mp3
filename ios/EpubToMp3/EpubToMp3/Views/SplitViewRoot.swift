@@ -326,9 +326,11 @@ struct SplitViewRoot: View {
     /// minimum required identifiers; live data lands via the event
     /// stream inside the player view.
     private func jobSnapshot(for book: BookEntity) -> JobSnapshot? {
+        #if DEBUG
         if isSwiftUIPreview {
             return book.lastJobId != nil ? JobSnapshot.previewSample : nil
         }
+        #endif
         guard let jobId = book.lastJobId else { return nil }
         return JobSnapshot(
             jobId: jobId,
