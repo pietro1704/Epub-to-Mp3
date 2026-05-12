@@ -49,29 +49,50 @@ struct InstantReaderView: View {
     @State private var showingPlayMenu = false
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            VStack(spacing: 0) {
-                // Only surface the status strip when we're actively
-                // bootstrapping audio. An empty/idle reader shows
-                // pure text — no infinite "Generating audio…".
-                if let banner = statusBanner, !banner.isEmpty {
-                    statusStrip(banner)
-                }
-                content
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if hasAudio {
+        // The reader content + (optional) status strip live in the
+        // base VStack. The audio player bar and the floating play FAB
+        // are docked via `.safeAreaInset(edge: .bottom)` so that, in
+        // portrait, they sit comfortably above the home indicator
+        // without us hardcoding its 34pt height (which varies by
+        // device generation — iPhone 13 mini is 21pt, the 16 Pro Max
+        // is 34pt). The inset also composes with the parent navigation
+        // stack so the reader's scrollable area can scroll its content
+        // *behind* a translucent player bar, the HIG audiobook pattern.
+        VStack(spacing: 0) {
+            // Only surface the status strip when we're actively
+            // bootstrapping audio. An empty/idle reader shows
+            // pure text — no infinite "Generating audio…".
+            if let banner = statusBanner, !banner.isEmpty {
+                statusStrip(banner)
+            }
+            content
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        // Dock the player bar at the bottom safe area. SwiftUI adds
+        // the system home-indicator inset for us automatically — no
+        // hardcoded 34pt — and the divider+material drift up so the
+        // last line of body text never gets clipped behind the
+        // player.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if hasAudio {
+                VStack(spacing: 0) {
                     Divider()
                     playerBar
                         .padding(.vertical, 8)
-                        .background(.thinMaterial)
                 }
+                .background(.thinMaterial)
             }
-            // Floating play button — opt-in audio. Hidden once the
-            // bottom player bar is mounted (no UI duplication).
+        }
+        // Floating play button overlay. Using `.overlay` instead of
+        // the prior `ZStack(alignment: .bottomTrailing)` keeps the FAB
+        // inside the host's safe area in portrait — the prior
+        // `padding(.bottom, 32)` was a fixed guess that fell **inside**
+        // the home indicator on iPhone Pro Max devices.
+        .overlay(alignment: .bottomTrailing) {
             if !hasAudio {
                 floatingPlayButton
                     .padding(.trailing, 24)
-                    .padding(.bottom, 32)
+                    .padding(.bottom, 16)
             }
         }
         .toolbar {
@@ -186,7 +207,9 @@ struct InstantReaderView: View {
                     .controlSize(.small)
             }
         }
-        .padding(.horizontal, 16)
+        // 16pt on top of the safe-area inset so the spinner / status
+        // copy / Retry button never sit under the notch in landscape.
+        .compatHorizontalSafeAreaPadding(16)
         .padding(.vertical, 6)
         .background(.thickMaterial)
     }
@@ -231,7 +254,10 @@ struct InstantReaderView: View {
 
                 scrubber(player: player)
             }
-            .padding(.horizontal, 20)
+            // 20pt internal margin on top of safe-area lateral inset
+            // — keeps artwork, transport buttons, and scrubber thumbs
+            // clear of the notch / Dynamic Island in landscape.
+            .compatHorizontalSafeAreaPadding(20)
             .padding(.vertical, 4)
         }
     }

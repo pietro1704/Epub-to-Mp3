@@ -73,49 +73,52 @@ struct TabRoot: View {
     }
 
     var body: some View {
-        ZStack(alignment: .bottom) {
-            TabView(selection: $selectedTab) {
-                // Tab 0 — Reader (default landing)
-                CompatNavigationStack {
-                    MainReaderView(
-                        onOpenPlayer: { playerPresentation.showFullPlayer() },
-                        onBrowseLibrary: { selectedTab = .library }
-                    )
-                }
-                .tabItem { Label("Read", systemImage: "text.book.closed") }
-                .tag(RootTab.reader)
-
-                // Tab 1 — Library
-                CompatNavigationStack {
-                    LibraryView()
-                }
-                .tabItem { Label("Library", systemImage: "books.vertical") }
-                .tag(RootTab.library)
-
-                // Tab 2 — Settings
-                CompatNavigationStack {
-                    SettingsView()
-                }
-                .tabItem { Label("Settings", systemImage: "gearshape") }
-                .tag(RootTab.settings)
-            }
-
-            if showMiniPlayer {
-                VStack(spacing: 0) {
-                    MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
-                    // Spacer that matches the system tab bar height so
-                    // the mini-player sits directly above it without
-                    // overlapping. The tab bar is ~49pt + safe-area inset;
-                    // Using a fixed 49pt footer is reliable across all iPhones.
-                    Color.clear.frame(height: 49)
-                }
-                .transition(
-                    reduceMotion
-                        ? .opacity
-                        : .move(edge: .bottom).combined(with: .opacity)
+        TabView(selection: $selectedTab) {
+            // Tab 0 — Reader (default landing)
+            CompatNavigationStack {
+                MainReaderView(
+                    onOpenPlayer: { playerPresentation.showFullPlayer() },
+                    onBrowseLibrary: { selectedTab = .library }
                 )
-                .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showMiniPlayer)
-                .accessibilityIdentifier("miniPlayer.tabBar")
+            }
+            .tabItem { Label("Read", systemImage: "text.book.closed") }
+            .tag(RootTab.reader)
+
+            // Tab 1 — Library
+            CompatNavigationStack {
+                LibraryView()
+            }
+            .tabItem { Label("Library", systemImage: "books.vertical") }
+            .tag(RootTab.library)
+
+            // Tab 2 — Settings
+            CompatNavigationStack {
+                SettingsView()
+            }
+            .tabItem { Label("Settings", systemImage: "gearshape") }
+            .tag(RootTab.settings)
+        }
+        // Dock the mini-player as a safe-area inset on the TabView so:
+        //   1. It sits directly above the system tab bar without any
+        //      hardcoded 49pt spacer — SwiftUI lays it out relative to
+        //      the live tab bar height.
+        //   2. The home-indicator safe area is honoured automatically
+        //      on every iPhone (the prior ZStack-based hack put the
+        //      bar over the home indicator in portrait).
+        //   3. The notch / Dynamic Island in landscape is still
+        //      respected because the inset composes with the system
+        //      safe area, not against it.
+        // This matches the Apple Books / Podcasts / Music persistent
+        // mini-player pattern exactly.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showMiniPlayer {
+                MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .move(edge: .bottom).combined(with: .opacity)
+                    )
+                    .accessibilityIdentifier("miniPlayer.tabBar")
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showMiniPlayer)

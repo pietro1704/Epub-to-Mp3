@@ -71,15 +71,30 @@ struct FullPlayerSheet: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 28) {
-                    Spacer(minLength: 8)
+                    // Top breathing room. The NavigationStack toolbar
+                    // already covers the notch, so we only need a
+                    // small visual gap below it — but bump from 8pt to
+                    // 16pt so the cover hero doesn't kiss the close
+                    // chevron on devices with a Dynamic Island where
+                    // the inline title sits lower.
+                    Spacer(minLength: 16)
                     coverHero
                     titleBlock
                     scrubberBlock
                     transportRow
                     secondaryRow
+                    // Bottom breathing room. The sheet draws over the
+                    // home indicator, so the system bottom safe-area
+                    // inset already lifts content above it; this
+                    // 32pt is in addition to that — gives the
+                    // secondaryRow buttons a comfortable gap.
                     Spacer(minLength: 32)
                 }
-                .padding(.horizontal, 32)
+                // 32pt margin sits on top of the system horizontal safe
+                // area so cover art / scrubber / transport buttons stay
+                // clear of the notch when the sheet is presented over a
+                // landscape iPhone.
+                .compatHorizontalSafeAreaPadding(32)
             }
             .scrollBounceBehaviorIfAvailable()
             .background(backgroundLayer.ignoresSafeArea())
@@ -107,20 +122,41 @@ struct FullPlayerSheet: View {
     }
 
     /// iOS 15 fallback: plain scroll layout without NavigationStack.
+    /// Because there is no NavigationStack here, nothing covers the
+    /// notch — so the cover hero would otherwise rise into the
+    /// Dynamic Island in portrait. Inject explicit top + bottom
+    /// breathing room above what the system safe-area inset already
+    /// provides on the ScrollView's content. `.ignoresSafeArea()` is
+    /// on the background only (full-bleed gradient is the HIG look),
+    /// so the ScrollView content stays inside the safe area.
     private var legacyBody: some View {
         ScrollView {
             VStack(spacing: 28) {
-                Spacer(minLength: 8)
+                // 24pt top margin above the system safe-area inset.
+                // The system inset on iPhone X-later is ~44-59pt
+                // (status bar + Dynamic Island). 24pt extra means the
+                // cover hero starts well clear of the notch in
+                // portrait — no crop on the curved corners either.
+                Spacer(minLength: 24)
                 coverHero
                 titleBlock
                 scrubberBlock
                 transportRow
                 secondaryRow
-                Spacer(minLength: 32)
+                Spacer(minLength: 24)
                 Button("Close") { dismiss() }
                     .buttonStyle(.bordered)
+                // Lift the Close button comfortably above the home
+                // indicator. The system safe-area bottom inset
+                // already accounts for the indicator itself (34pt);
+                // this 24pt is the additional visual breathing room.
+                Spacer(minLength: 24)
             }
-            .padding(.horizontal, 32)
+            // 32pt margin sits on top of the system horizontal safe
+            // area so cover art / scrubber / transport buttons stay
+            // clear of the notch when the sheet is presented over a
+            // landscape iPhone.
+            .compatHorizontalSafeAreaPadding(32)
         }
         .scrollBounceBehaviorIfAvailable()
         .background(backgroundLayer.ignoresSafeArea())

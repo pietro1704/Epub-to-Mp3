@@ -265,3 +265,61 @@ extension Color {
         #endif
     }
 }
+
+extension View {
+    /// HIG-aligned horizontal padding for content that needs to live
+    /// inside the safe area on every device. Adds the system-default
+    /// content margin (16pt iPhone, 20pt iPad/macOS) on top of any
+    /// existing safe area inset coming from the notch or Dynamic
+    /// Island in landscape orientation.
+    ///
+    /// Use this on bars/strips that draw a background full-width
+    /// (`.thinMaterial`, etc.) so the *content* inside the bar still
+    /// stays clear of the notch — the background can extend behind
+    /// the notch (that's the iOS HIG pattern) but the controls inside
+    /// must not.
+    ///
+    /// iOS 17+ ships `safeAreaPadding(_:)` which composes with the
+    /// existing safe area; on iOS 15-16 / macOS 12 we fall back to
+    /// the auto-applied default which, while less precise, still
+    /// avoids the cropped-by-notch failure mode because SwiftUI
+    /// applies an implicit safe-area inset to root content. The
+    /// 16pt baseline padding compounds correctly in both paths.
+    @ViewBuilder
+    func compatHorizontalSafeAreaPadding(_ amount: CGFloat = 16) -> some View {
+        if #available(iOS 17, macOS 14, *) {
+            self.safeAreaPadding(.horizontal, amount)
+        } else {
+            self.padding(.horizontal, amount)
+        }
+    }
+
+    /// Vertical-axis analogue of `compatHorizontalSafeAreaPadding`. Use
+    /// this on floating elements or full-bleed content that must stay
+    /// clear of the notch / Dynamic Island at the top and the home
+    /// indicator at the bottom in **portrait** orientation.
+    ///
+    /// Why this exists: SwiftUI's automatic safe-area handling is
+    /// reliable for first-party chrome (NavigationStack toolbar, tab
+    /// bar) but anything we draw ourselves inside a `ZStack` with
+    /// `.ignoresSafeArea`, or inside a non-NavigationStack root, will
+    /// silently bleed into the home indicator on iPhone X-and-later
+    /// devices. The portrait failure mode is much worse than the
+    /// landscape one because the home indicator is ~34pt tall and
+    /// users actively swipe through it.
+    ///
+    /// iOS 17+ uses `safeAreaPadding(.vertical, _:)` which composes
+    /// with the system inset. iOS 15-16 falls back to plain padding
+    /// applied **on top of** the system safe area — the parent view
+    /// must already be inside the safe area for this to compose
+    /// correctly. Pair with `.safeAreaInset(edge: .bottom)` on the
+    /// container if you are docking a floating bar.
+    @ViewBuilder
+    func compatVerticalSafeAreaPadding(_ amount: CGFloat = 8) -> some View {
+        if #available(iOS 17, macOS 14, *) {
+            self.safeAreaPadding(.vertical, amount)
+        } else {
+            self.padding(.vertical, amount)
+        }
+    }
+}

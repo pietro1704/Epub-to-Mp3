@@ -30,8 +30,14 @@ struct PdfReaderView: View {
 
     var body: some View {
         #if canImport(UIKit)
+        // Do NOT extend the PDFView under the home indicator in
+        // portrait. The previous `.edgesIgnoringSafeArea(.bottom)`
+        // pushed the last line of any single-page PDF behind the
+        // home-indicator drag area, where Apple Books explicitly
+        // reserves the safe area. PDFKit's own `usePageViewController`
+        // mode already handles internal page padding, so we just let
+        // the system safe area do its job.
         _PdfReaderViewIOS(document: document, currentPageIndex: $currentPageIndex)
-            .edgesIgnoringSafeArea(.bottom)
         #elseif canImport(AppKit)
         _PdfReaderViewMac(document: document, currentPageIndex: $currentPageIndex)
         #else

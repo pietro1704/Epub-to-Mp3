@@ -66,4 +66,34 @@ final class PlatformCompatTests: XCTestCase {
                                              description: Text("Add a book."))
         _ = v.body
     }
+
+    // MARK: - Safe-area padding shims (portrait fix, 2026-05-12)
+
+    /// `compatHorizontalSafeAreaPadding` covers the notch-clearance
+    /// case (Dynamic Island in landscape). `compatVerticalSafeAreaPadding`
+    /// is the portrait analogue — guards against floating elements
+    /// drifting under the notch (top) or home indicator (bottom) when
+    /// the host view uses `.ignoresSafeArea()` on the background.
+    /// Both shims must compile on every supported OS so we exercise
+    /// them in tandem here.
+    func testCompatHorizontalSafeAreaPaddingCompiles() {
+        let v = Text("hi").compatHorizontalSafeAreaPadding(16)
+        _ = v.body
+    }
+
+    func testCompatVerticalSafeAreaPaddingCompiles() {
+        let v = Text("hi").compatVerticalSafeAreaPadding(8)
+        _ = v.body
+    }
+
+    /// Default values match the HIG content margin / breathing room
+    /// recommendations (16pt horizontal, 8pt vertical). The default
+    /// is load-bearing because call sites omit the argument when
+    /// they want the system default.
+    func testCompatSafeAreaPaddingDefaults() {
+        let h = Text("hi").compatHorizontalSafeAreaPadding()
+        let v = Text("hi").compatVerticalSafeAreaPadding()
+        _ = h.body
+        _ = v.body
+    }
 }
