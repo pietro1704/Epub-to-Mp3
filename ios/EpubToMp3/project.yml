@@ -19,7 +19,7 @@ settings:
     PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3
     MARKETING_VERSION: "0.3.0"
     CURRENT_PROJECT_VERSION: "1"
-    DEVELOPMENT_TEAM: ""
+    DEVELOPMENT_TEAM: "HHRZ35A37Y"
     CODE_SIGN_STYLE: Automatic
     SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
     SUPPORTS_MACCATALYST: NO
@@ -236,9 +236,21 @@ targets:
           # this, every `bookmarkData(.withSecurityScope)` fails and
           # imports break silently.
           CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3-Debug.entitlements
-          CODE_SIGN_IDENTITY: "-"
-          CODE_SIGNING_REQUIRED: NO
-          CODE_SIGNING_ALLOWED: NO
+          # iOS device builds REQUIRE a valid signature — Apple's launchd
+          # refuses to install unsigned IPAs (LaunchExecutableValidationError).
+          # macOS local Debug + iOS Simulator stay unsigned for App-Sandbox
+          # off + faster turnaround; iOS device falls back to Automatic
+          # signing with whatever Development Team is configured in Xcode.
+          "CODE_SIGN_IDENTITY[sdk=macosx*]": "-"
+          "CODE_SIGNING_REQUIRED[sdk=macosx*]": NO
+          "CODE_SIGNING_ALLOWED[sdk=macosx*]": NO
+          "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
+          "CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]": NO
+          "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": NO
+          "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
+          "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
+          "CODE_SIGNING_ALLOWED[sdk=iphoneos*]": YES
+          "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
           # On a 2018 Intel Mac the discrete Radeon Pro draws the
           # window even in Debug; force dGPU so SwiftUI render is
           # smooth. (No effect on Apple Silicon — they have one GPU.)
