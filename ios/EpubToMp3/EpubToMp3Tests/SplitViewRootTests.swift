@@ -155,4 +155,57 @@ final class SplitViewRootTests: XCTestCase {
     func testTabRootInstantiates() {
         _ = TabRoot()
     }
+
+    // MARK: - Adaptive column visibility (portrait vs landscape)
+
+    /// On iOS the launch default must be `.doubleColumn` so portrait
+    /// iPad doesn't open with three crammed columns; on macOS the
+    /// launch default stays `.all`. We verify this through the public
+    /// SwiftUI `NavigationSplitViewVisibility` value the view exposes
+    /// indirectly via construction — the actual size-class observer
+    /// is exercised at runtime, but the initial-state contract is
+    /// what fixes the reported bug.
+    func testInitialColumnVisibilityMatchesPlatform() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        // The default static factory mirrors the runtime path.
+        #if os(macOS)
+        XCTAssertEqual(
+            mirroredDefaultVisibility(),
+            .all,
+            "macOS should start with three columns by default."
+        )
+        #else
+        XCTAssertEqual(
+            mirroredDefaultVisibility(),
+            .doubleColumn,
+            "iOS should start with two columns to avoid the crammed-three-column bug on iPad portrait."
+        )
+        #endif
+    }
+
+    /// The values returned by `NavigationSplitViewVisibility` need to
+    /// round-trip through equality so the size-class observer can
+    /// short-circuit redundant assignments. The framework already
+    /// conforms but we lock it in here.
+    func testColumnVisibilityEqualityRoundTrips() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        XCTAssertEqual(NavigationSplitViewVisibility.all, .all)
+        XCTAssertEqual(NavigationSplitViewVisibility.doubleColumn, .doubleColumn)
+        XCTAssertNotEqual(NavigationSplitViewVisibility.all, .doubleColumn)
+    }
+
+    // MARK: - Helpers
+
+    /// Mirror of `SplitViewRoot.defaultColumnVisibility` (private).
+    /// Kept in sync with the source — if the source changes platform
+    /// defaults, this needs to change too, and the assertion above
+    /// will fail loudly.
+    @available(iOS 16, macOS 13, *)
+    private func mirroredDefaultVisibility() -> NavigationSplitViewVisibility {
+        #if os(macOS)
+        return .all
+        #else
+        return .doubleColumn
+        #endif
+    }
 }

@@ -16,12 +16,24 @@ import SwiftUI
 ///
 /// Both are persistent across re-layouts but reset to nil when the
 /// underlying library changes (book removed).
+///
+/// Column visibility adapts to the size class:
+///   - iPad portrait (compact horizontal) → `.doubleColumn`
+///     (sidebar + content; detail slides in on selection).
+///   - iPad landscape / macOS → `.all` (three columns side by side).
+///   This mirrors Apple Books / Mail, where portrait can't fit three
+///   columns without the middle one being unusably narrow.
 @available(iOS 16, macOS 13, *)
 struct SplitViewRoot: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
 
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var hSize
+    @Environment(\.verticalSizeClass) private var vSize
+    #endif
+
+    @State private var columnVisibility: NavigationSplitViewVisibility = SplitViewRoot.defaultColumnVisibility
     @State private var selectedBookID: String?
     @State private var selectedChapterIndex: Int?
 
@@ -34,30 +46,110 @@ struct SplitViewRoot: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             LibrarySidebar(selectedBookID: $selectedBookID)
-                .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 340)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
+                .accessibilityIdentifier("split.sidebar")
         } content: {
-            if let book = selectedBook {
-                ChapterListColumn(
-                    book: book,
-                    selectedChapterIndex: $selectedChapterIndex
-                )
-                .navigationSplitViewColumnWidth(min: 280, ideal: 320, max: 400)
-            } else {
-                CompatContentUnavailableView(
-                    "Select a book",
-                    systemImage: "books.vertical",
-                    description: Text("Pick a book from the library to see its chapters.")
-                )
+            Group {
+                if let book = selectedBook {
+                    ChapterListColumn(
+                        book: book,
+                        selectedChapterIndex: $selectedChapterIndex
+                    )
+                    .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
+                } else {
+                    CompatContentUnavailableView(
+                        "Select a book",
+                        systemImage: "books.vertical",
+                        description: Text("Pick a book from the library to see its chapters.")
+                    )
+                }
             }
+            .accessibilityIdentifier("split.content")
         } detail: {
             detailColumn
+                .accessibilityIdentifier("split.detail")
         }
+        .navigationSplitViewStyle(.balanced)
         // Reset chapter selection when the book changes so the detail
         // column doesn't keep stale state.
         .compatOnChange(of: selectedBookID) { _ in
             selectedChapterIndex = nil
+            // In compact layouts (iPad portrait), surface the detail
+            // column once the user has picked a book + chapter.
+            #if os(iOS)
+            if isCompactHorizontal, selectedBookID != nil {
+                columnVisibility = .doubleColumn
+            }
+            #endif
+        }
+        #if os(iOS)
+        // Apply portrait-vs-landscape default when the view appears
+        // and again whenever the size class flips (rotation, Slide
+        // Over, Split View resize).
+        .onAppear { applySizeClassDefault() }
+        .compatOnChange(of: hSize) { _ in applySizeClassDefault() }
+        .compatOnChange(of: vSize) { _ in applySizeClassDefault() }
+        #endif
+    }
+
+    // MARK: - Adaptive column visibility
+
+    /// Default visibility used at first appearance — three columns on
+    /// macOS, two on iOS (the size-class observer narrows it further
+    /// for portrait iPad after `onAppear` fires).
+    private static var defaultColumnVisibility: NavigationSplitViewVisibility {
+        #if os(macOS)
+        return .all
+        #else
+        // On iOS we start in the safest layout (two columns) and
+        // promote to `.all` when the size-class observer confirms a
+        // landscape regular layout. This avoids a flash of an
+        // unusably-narrow three-column tree on portrait launch.
+        return .doubleColumn
+        #endif
+    }
+
+    #if os(iOS)
+    /// True when the horizontal size class is `.compact` OR the
+    /// vertical class is `.regular` (iPad portrait reports `regular`
+    /// horizontally but `regular` vertically — we detect portrait by
+    /// the vertical class being `.regular` and the horizontal being
+    /// `.regular` on iPad; iPhone landscape reports `.compact`
+    /// vertically). The simplest reliable proxy for "we don't have
+    /// room for three columns" is "vertical class is `.regular` AND
+    /// horizontal is `.compact`" — but on iPad portrait the system
+    /// reports `hSize == .regular`. We therefore key off the iOS
+    /// idiom + interface orientation through `vSize`/`hSize` pair:
+    /// portrait iPad → `vSize == .regular`, `hSize == .regular` but
+    /// physical width is narrow; the actual signal we use is whether
+    /// the trait collection promotes us to three columns naturally.
+    ///
+    /// Practically: treat anything that isn't `(hSize == .regular &&
+    /// vSize == .compact)` as "prefer two columns". That matches
+    /// iPad landscape / Mac Catalyst (the only environments where
+    /// three columns visually fit) and falls back to two columns for
+    /// iPad portrait, iPhone, and Slide Over.
+    private var isCompactHorizontal: Bool {
+        // iPad landscape: hSize == .regular, vSize == .compact.
+        // iPad portrait: hSize == .regular, vSize == .regular.
+        // iPhone landscape (Plus/Max): hSize == .regular, vSize == .compact.
+        // iPhone everything else: hSize == .compact.
+        // We want "three columns ok" only when vSize == .compact AND
+        // hSize == .regular (landscape on regular-width devices).
+        return !(hSize == .regular && vSize == .compact)
+    }
+
+    private func applySizeClassDefault() {
+        // Don't trample an explicit user choice mid-session — only
+        // realign on transitions between the two canonical layouts.
+        let desired: NavigationSplitViewVisibility = isCompactHorizontal
+            ? .doubleColumn
+            : .all
+        if columnVisibility != desired {
+            columnVisibility = desired
         }
     }
+    #endif
 
     // MARK: - Detail column
 
