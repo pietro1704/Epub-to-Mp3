@@ -109,17 +109,20 @@ final class NowPlayingViewTests: XCTestCase {
     /// `RootTab` raw values double as `TabView` selection tokens; they
     /// must stay stable across builds so SwiftUI's animation state
     /// machine doesn't reset every time the enum is reshuffled.
+    /// Reader is tab 0 (the new default landing screen).
     func testRootTabRawValuesAreStable() {
-        XCTAssertEqual(RootTab.nowPlaying.rawValue, 0)
-        XCTAssertEqual(RootTab.library.rawValue, 1)
-        XCTAssertEqual(RootTab.settings.rawValue, 2)
+        XCTAssertEqual(RootTab.reader.rawValue, 0)
+        XCTAssertEqual(RootTab.nowPlaying.rawValue, 1)
+        XCTAssertEqual(RootTab.library.rawValue, 2)
+        XCTAssertEqual(RootTab.settings.rawValue, 3)
     }
 
     /// `SplitNavMode` should expose every destination required by the
-    /// sidebar list. Guards against accidentally hiding "Now Playing"
-    /// (the landing destination) when the enum is reordered.
+    /// sidebar list. Reader is the first (default landing) destination.
     func testSplitNavModeIncludesNowPlayingFirst() {
-        XCTAssertEqual(SplitNavMode.allCases.first, .nowPlaying)
+        // Reader is now the first destination; nowPlaying follows.
+        XCTAssertEqual(SplitNavMode.allCases.first, .reader)
+        XCTAssertTrue(SplitNavMode.allCases.contains(.nowPlaying))
         XCTAssertTrue(SplitNavMode.allCases.contains(.library))
         XCTAssertTrue(SplitNavMode.allCases.contains(.settings))
     }
