@@ -1,10 +1,10 @@
 import SwiftUI
 
-@Observable
-final class JobsListViewModel {
-    var sessions: [SessionRecord] = []
-    var isLoading = false
-    var errorMessage: String?
+@MainActor
+final class JobsListViewModel: ObservableObject {
+    @Published var sessions: [SessionRecord] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
 
     func reload(client: APIClient?) async {
         guard let client else {
@@ -23,8 +23,8 @@ final class JobsListViewModel {
 }
 
 struct JobsListView: View {
-    @Environment(AppSettings.self) private var settings
-    @State private var viewModel = JobsListViewModel()
+    @EnvironmentObject private var settings: AppSettings
+    @StateObject private var viewModel = JobsListViewModel()
 
     private var client: APIClient? {
         settings.resolvedBaseURL.map(APIClient.init(baseURL:))
@@ -146,5 +146,5 @@ struct SessionRow: View {
 
 #Preview("JobsList — empty") {
     NavigationStack { JobsListView() }
-        .environment(AppSettings())
+        .environmentObject(AppSettings())
 }

@@ -1,5 +1,5 @@
 import Foundation
-import Observation
+import Combine
 
 #if canImport(AppKit)
 import AppKit
@@ -25,8 +25,7 @@ import AppKit
 /// the binary is fully self-contained (PyInstaller onefile). Resources
 /// is an executable-permitted location for app sandboxes; we copy it
 /// with `chmod +x` preserved by the Xcode build phase.
-@Observable
-final class SidecarManager {
+final class SidecarManager: ObservableObject {
 
     enum State: Equatable {
         case idle
@@ -46,7 +45,7 @@ final class SidecarManager {
         }
     }
 
-    private(set) var state: State = .idle
+    @Published private(set) var state: State = .idle
 
     #if canImport(AppKit)
     private var process: Process?

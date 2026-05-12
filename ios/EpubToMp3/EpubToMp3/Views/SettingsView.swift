@@ -11,27 +11,26 @@ import SwiftUI
 /// look — translucent panels, generous spacing). iOS / iPadOS keep
 /// the default inset-grouped style.
 struct SettingsView: View {
-    @Environment(AppSettings.self) private var settings
+    @EnvironmentObject private var settings: AppSettings
     #if os(macOS)
-    @Environment(SidecarManager.self) private var sidecar
+    @EnvironmentObject private var sidecar: SidecarManager
     #endif
 
     var body: some View {
-        @Bindable var bindable = settings
-        return Group {
+        Group {
             #if os(macOS)
             Form {
-                embeddedServerSection(bindable: bindable)
-                backendSection(bindable: bindable)
-                readerSection(bindable: bindable)
+                embeddedServerSection
+                backendSection
+                readerSection
                 advancedSection
                 aboutSection
             }
             .formStyle(.grouped)
             #else
             Form {
-                backendSection(bindable: bindable)
-                readerSection(bindable: bindable)
+                backendSection
+                readerSection
                 advancedSection
                 aboutSection
             }
@@ -44,9 +43,9 @@ struct SettingsView: View {
 
     #if os(macOS)
     @ViewBuilder
-    private func embeddedServerSection(bindable: AppSettings) -> some View {
+    private var embeddedServerSection: some View {
         Section {
-            Toggle(isOn: Bindable(bindable).useEmbeddedSidecar) {
+            Toggle(isOn: $settings.useEmbeddedSidecar) {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Use embedded server")
@@ -108,13 +107,13 @@ struct SettingsView: View {
     #endif
 
     @ViewBuilder
-    private func backendSection(bindable: AppSettings) -> some View {
+    private var backendSection: some View {
         Section {
             HStack {
                 Label("URL", systemImage: "network")
                 Spacer()
                 let field = TextField("http://localhost:8000",
-                                      text: Bindable(bindable).backendURL)
+                                      text: $settings.backendURL)
                     .multilineTextAlignment(.trailing)
                     .autocorrectionDisabled()
                 #if os(iOS)
@@ -146,33 +145,33 @@ struct SettingsView: View {
     }
 
     @ViewBuilder
-    private func readerSection(bindable: AppSettings) -> some View {
+    private var readerSection: some View {
         Section {
             HStack {
                 Label("Font size", systemImage: "textformat.size")
                 Spacer()
-                Stepper(value: Bindable(bindable).readerFontSize, in: 0...4) {
+                Stepper(value: $settings.readerFontSize, in: 0...4) {
                     Text("\(self.settings.readerFontSize + 1) of 5")
                         .font(.callout.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
                 .labelsHidden()
             }
-            Picker(selection: Bindable(bindable).readerFontFamily) {
+            Picker(selection: $settings.readerFontFamily) {
                 ForEach(ReaderFontFamily.allCases) { f in
                     Text(f.displayName).tag(f)
                 }
             } label: {
                 Label("Font", systemImage: "textformat")
             }
-            Picker(selection: Bindable(bindable).readerTheme) {
+            Picker(selection: $settings.readerTheme) {
                 ForEach(ReaderTheme.allCases) { t in
                     Text(t.displayName).tag(t)
                 }
             } label: {
                 Label("Theme", systemImage: "paintpalette")
             }
-            Picker(selection: Bindable(bindable).readerLayout) {
+            Picker(selection: $settings.readerLayout) {
                 ForEach(ReaderLayout.allCases) { l in
                     Text(l.displayName).tag(l)
                 }
@@ -182,7 +181,7 @@ struct SettingsView: View {
             HStack {
                 Label("Line spacing", systemImage: "arrow.up.and.down.text.horizontal")
                 Spacer()
-                Stepper(value: Bindable(bindable).readerLineSpacing,
+                Stepper(value: $settings.readerLineSpacing,
                         in: 0...16, step: 2) {
                     Text("\(Int(self.settings.readerLineSpacing)) pt")
                         .font(.callout.monospacedDigit())
@@ -193,7 +192,7 @@ struct SettingsView: View {
             HStack {
                 Label("Margin", systemImage: "rectangle.compress.vertical")
                 Spacer()
-                Stepper(value: Bindable(bindable).readerMargin,
+                Stepper(value: $settings.readerMargin,
                         in: 8...80, step: 4) {
                     Text("\(Int(self.settings.readerMargin)) pt")
                         .font(.callout.monospacedDigit())
@@ -204,7 +203,7 @@ struct SettingsView: View {
             HStack {
                 Label("Column width", systemImage: "rectangle.split.3x1")
                 Spacer()
-                Stepper(value: Bindable(bindable).readerColumnWidth,
+                Stepper(value: $settings.readerColumnWidth,
                         in: 420...960, step: 40) {
                     Text("\(Int(self.settings.readerColumnWidth)) pt")
                         .font(.callout.monospacedDigit())
@@ -212,7 +211,7 @@ struct SettingsView: View {
                 }
                 .labelsHidden()
             }
-            Toggle(isOn: Bindable(bindable).readerAutoScroll) {
+            Toggle(isOn: $settings.readerAutoScroll) {
                 Label("Auto-scroll", systemImage: "arrow.down.to.line")
             }
         } header: {
@@ -310,9 +309,9 @@ struct SettingsView: View {
 
 #Preview("Settings") {
     NavigationStack { SettingsView() }
-        .environment(AppSettings())
-        .environment(LibraryStore())
+        .environmentObject(AppSettings())
+        .environmentObject(LibraryStore())
         #if os(macOS)
-        .environment(SidecarManager())
+        .environmentObject(SidecarManager())
         #endif
 }

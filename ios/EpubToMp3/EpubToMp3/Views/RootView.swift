@@ -18,13 +18,13 @@ struct RootView: View {
 
 #Preview("Root") {
     // RootView mounts LibraryView (Library tab) which reads
-    // `@Environment(LibraryStore.self)` — provide all three
-    // observable singletons or the canvas crashes the moment
+    // `@EnvironmentObject var library: LibraryStore` — provide all
+    // three observable singletons or the canvas crashes the moment
     // SwiftUI tries to render the first tab.
     RootView()
-        .environment(AppSettings())
-        .environment(LibraryStore())
+        .environmentObject(AppSettings())
+        .environmentObject(LibraryStore())
         #if os(macOS)
-        .environment(SidecarManager())
+        .environmentObject(SidecarManager())
         #endif
 }

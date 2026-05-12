@@ -33,7 +33,7 @@ struct ReaderView: View {
     /// responsible for any page positioning after the chapter swap.
     let onPreviousChapter: (() -> Bool)?
 
-    @Environment(AppSettings.self) private var settings
+    @EnvironmentObject private var settings: AppSettings
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
@@ -140,8 +140,7 @@ struct ReaderView: View {
     // MARK: Toolbar
 
     private var toolbar: some View {
-        @Bindable var bindable = settings
-        return HStack(spacing: 16) {
+        HStack(spacing: 16) {
             // Font size A− / A+
             HStack(spacing: 4) {
                 Button {
@@ -157,7 +156,7 @@ struct ReaderView: View {
                 .disabled(settings.readerFontSize == 4)
             }
 
-            Picker("Font", selection: $bindable.readerFontFamily) {
+            Picker("Font", selection: $settings.readerFontFamily) {
                 ForEach(ReaderFontFamily.allCases) { f in
                     Text(f.displayName).tag(f)
                 }
@@ -165,7 +164,7 @@ struct ReaderView: View {
             .pickerStyle(.menu)
             .fixedSize()
 
-            Picker("Theme", selection: $bindable.readerTheme) {
+            Picker("Theme", selection: $settings.readerTheme) {
                 ForEach(ReaderTheme.allCases) { t in
                     Text(t.displayName).tag(t)
                 }
@@ -173,7 +172,7 @@ struct ReaderView: View {
             .pickerStyle(.menu)
             .fixedSize()
 
-            Picker("Layout", selection: $bindable.readerLayout) {
+            Picker("Layout", selection: $settings.readerLayout) {
                 ForEach(ReaderLayout.allCases) { l in
                     Text(l.displayName).tag(l)
                 }
@@ -188,7 +187,7 @@ struct ReaderView: View {
             }
             .menuStyle(.borderlessButton)
 
-            Toggle(isOn: $bindable.readerAutoScroll) {
+            Toggle(isOn: $settings.readerAutoScroll) {
                 Image(systemName: settings.readerAutoScroll ? "arrow.down.to.line" : "hand.raised")
             }
             .toggleStyle(.button)
@@ -204,7 +203,6 @@ struct ReaderView: View {
 
     @ViewBuilder
     private var appearanceMenu: some View {
-        @Bindable var bindable = settings
         Section("Spacing") {
             // Sliders inside menus aren't supported, so we expose
             // discrete steps that round to common values.
@@ -262,11 +260,11 @@ struct ReaderView: View {
             }
         }
         Section("Overrides") {
-            Toggle("Override font", isOn: $bindable.readerOverrideFontFamily)
-            Toggle("Override size", isOn: $bindable.readerOverrideFontSize)
-            Toggle("Override colours", isOn: $bindable.readerOverrideColours)
-            Toggle("Bold all text", isOn: $bindable.readerBoldOverride)
-            Toggle("Suppress italic", isOn: $bindable.readerSuppressItalic)
+            Toggle("Override font", isOn: $settings.readerOverrideFontFamily)
+            Toggle("Override size", isOn: $settings.readerOverrideFontSize)
+            Toggle("Override colours", isOn: $settings.readerOverrideColours)
+            Toggle("Bold all text", isOn: $settings.readerBoldOverride)
+            Toggle("Suppress italic", isOn: $settings.readerSuppressItalic)
         }
         Section("Letter spacing") {
             ForEach([-1.0, 0.0, 0.5, 1.0, 2.0, 3.0], id: \.self) { v in
@@ -684,7 +682,7 @@ struct ScrollWheelPager: ViewModifier {
         currentSentenceId: "1:1",
         onJumpToSentence: { _ in }
     )
-    .environment(AppSettings())
+    .environmentObject(AppSettings())
 }
 
 #Preview("Reader — paginated parchment") {
@@ -697,7 +695,7 @@ struct ScrollWheelPager: ViewModifier {
         currentSentenceId: nil,
         onJumpToSentence: { _ in }
     )
-    .environment(settings)
+    .environmentObject(settings)
 }
 
 #Preview("Reader — dark large font") {
@@ -710,6 +708,6 @@ struct ScrollWheelPager: ViewModifier {
         currentSentenceId: nil,
         onJumpToSentence: { _ in }
     )
-    .environment(settings)
+    .environmentObject(settings)
 }
 #endif

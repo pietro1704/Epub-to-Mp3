@@ -1,6 +1,6 @@
 import Foundation
 import CryptoKit
-import Observation
+import Combine
 
 /// Owns the user's personal book library. The library is **disk-first**
 /// — every book is an EPUB the user picked themselves; the backend is
@@ -12,10 +12,9 @@ import Observation
 /// can keep reading the user's `.epub` after the app restarts. The
 /// caller is responsible for invoking `startAccessingSecurityScopedResource()`
 /// once before each I/O burst — `LibraryStore.openBookFile` does that.
-@Observable
-final class LibraryStore {
-    private(set) var books: [BookEntity] = []
-    private(set) var loadError: String?
+final class LibraryStore: ObservableObject {
+    @Published private(set) var books: [BookEntity] = []
+    @Published private(set) var loadError: String?
 
     private let defaultsKey: String
     private let defaults: UserDefaults

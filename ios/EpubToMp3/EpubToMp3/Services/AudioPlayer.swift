@@ -2,7 +2,7 @@
 import Foundation
 import AVFoundation
 import MediaPlayer
-import Observation
+import Combine
 #if canImport(UIKit)
 import UIKit
 #endif
@@ -37,27 +37,26 @@ enum PlaybackRate: Float, CaseIterable, Identifiable {
 /// already been done — it does NOT call `setActive(true)` itself, because
 /// doing so on every player rebuild causes glitches when another media
 /// app is active.
-@Observable
 @MainActor
-final class AudioPlayer {
+final class AudioPlayer: ObservableObject {
 
     // MARK: Public observable state
 
-    private(set) var snapshot: JobSnapshot?
-    private(set) var currentChapterIndex: Int = 0
-    private(set) var isPlaying: Bool = false
-    private(set) var rate: PlaybackRate = .x100
-    private(set) var positionSeconds: TimeInterval = 0
-    private(set) var durationSeconds: TimeInterval = 0
+    @Published private(set) var snapshot: JobSnapshot?
+    @Published private(set) var currentChapterIndex: Int = 0
+    @Published private(set) var isPlaying: Bool = false
+    @Published private(set) var rate: PlaybackRate = .x100
+    @Published private(set) var positionSeconds: TimeInterval = 0
+    @Published private(set) var durationSeconds: TimeInterval = 0
 
     /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
     /// Now Playing widget so lock screen / Control Center / AirPods
     /// menu show the book cover instead of a generic glyph.
-    var coverArtData: Data?
+    @Published var coverArtData: Data?
 
     /// Sleep-timer state. When > 0, playback auto-pauses after this
     /// many wall-clock seconds. Decremented by the time observer.
-    private(set) var sleepTimerRemaining: TimeInterval = 0
+    @Published private(set) var sleepTimerRemaining: TimeInterval = 0
     private var sleepTimerExpiresAt: Date?
 
     // MARK: AsyncStreams (positions + chapter changes)
@@ -92,7 +91,13 @@ final class AudioPlayer {
     // MARK: Internals
 
     private let resumeStore: ResumeStore
-    private let backendBaseURL: URL?
+    /// Resolved backend base URL used to turn relative `downloadUrl`
+    /// paths into absolute fetch URLs. Mutable so the host view can
+    /// reconfigure an already-instantiated player after the sidecar
+    /// finishes booting (we keep the same `ObservableObject` instance
+    /// across reconfigurations so `@StateObject` subscriptions stay
+    /// live).
+    var backendBaseURL: URL?
     private var player: AVQueuePlayer?
     private var timeObserverToken: Any?
     private var endObserver: NSObjectProtocol?

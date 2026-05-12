@@ -19,8 +19,8 @@ import UniformTypeIdentifiers
 struct BookOpenView: View {
     let book: BookEntity
 
-    @Environment(LibraryStore.self) private var library
-    @Environment(AppSettings.self) private var settings
+    @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var settings: AppSettings
 
     @State private var phase: Phase = .resolving
     @State private var fulltext: EbookFulltext?
@@ -357,7 +357,7 @@ struct BookOpenView: View {
             cachedOffline: false
         ))
     }
-    .environment(AppSettings())
-    .environment(LibraryStore.previewPopulated)
+    .environmentObject(AppSettings())
+    .environmentObject(LibraryStore.previewPopulated)
 }
 #endif

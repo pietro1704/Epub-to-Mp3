@@ -1,20 +1,20 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-@Observable
-final class ConvertViewModel {
-    var selectedFile: URL? = nil
-    var engine: String = "edge"
-    var voice: String = ""
-    var language: String = ""
-    var chapters: String = ""
-    var clearCache: Bool = false
-    var forceReprocess: Bool = false
-    var maxPerformance: Bool = false
+@MainActor
+final class ConvertViewModel: ObservableObject {
+    @Published var selectedFile: URL? = nil
+    @Published var engine: String = "edge"
+    @Published var voice: String = ""
+    @Published var language: String = ""
+    @Published var chapters: String = ""
+    @Published var clearCache: Bool = false
+    @Published var forceReprocess: Bool = false
+    @Published var maxPerformance: Bool = false
 
-    var isSubmitting: Bool = false
-    var submittedJobId: String? = nil
-    var error: String? = nil
+    @Published var isSubmitting: Bool = false
+    @Published var submittedJobId: String? = nil
+    @Published var error: String? = nil
 
     func submit(client: APIClient?) async {
         guard let client else {
@@ -59,8 +59,8 @@ final class ConvertViewModel {
 }
 
 struct ConvertView: View {
-    @Environment(AppSettings.self) private var settings
-    @State private var viewModel = ConvertViewModel()
+    @EnvironmentObject private var settings: AppSettings
+    @StateObject private var viewModel = ConvertViewModel()
     @State private var showingPicker = false
 
     private var client: APIClient? {
@@ -178,6 +178,6 @@ struct ConvertView: View {
 #if DEBUG
 #Preview("Convert") {
     NavigationStack { ConvertView() }
-        .environment(AppSettings())
+        .environmentObject(AppSettings())
 }
 #endif

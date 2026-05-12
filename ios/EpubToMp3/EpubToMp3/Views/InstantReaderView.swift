@@ -28,11 +28,17 @@ struct InstantReaderView: View {
     ///   beginning.
     var onRequestPlay: ((Int, String?) -> Void)? = nil
 
-    @Environment(AppSettings.self) private var settings
+    @EnvironmentObject private var settings: AppSettings
     @Environment(\.horizontalSizeClass) private var hSize
 
     @State private var currentChapterIndex: Int = 0
-    @State private var player: AudioPlayer?
+    @StateObject private var player = AudioPlayer()
+    /// Tracks whether `player` has been wired with a snapshot via
+    /// `mountPlayerIfPossible()`. We can't make `player` itself
+    /// optional under Combine — `@StateObject` requires a concrete
+    /// instance for `objectWillChange` subscriptions to fire — so we
+    /// gate the UI on this flag instead.
+    @State private var playerMounted: Bool = false
     @State private var sync = SyncEngine()
     @State private var spans: [SentenceSpan] = []
     @State private var currentSentenceId: String?
@@ -79,7 +85,7 @@ struct InstantReaderView: View {
             tocSheet
         }
         .onChange(of: hasAudio) { _, isAudioReady in
-            if isAudioReady, player == nil { mountPlayerIfPossible() }
+            if isAudioReady, !playerMounted { mountPlayerIfPossible() }
         }
         .onChange(of: currentChapterIndex) { _, newIndex in
             reloadCurrentChapter(index: newIndex)
@@ -91,7 +97,7 @@ struct InstantReaderView: View {
         .onDisappear {
             positionTask?.cancel()
             sentenceTask?.cancel()
-            player?.pause()
+            if playerMounted { player.pause() }
         }
     }
 
@@ -189,7 +195,7 @@ struct InstantReaderView: View {
 
     @ViewBuilder
     private var playerBar: some View {
-        if let player {
+        if playerMounted {
             VStack(spacing: 8) {
                 // Top row: artwork + title/author + transport
                 HStack(spacing: 12) {
@@ -380,7 +386,7 @@ struct InstantReaderView: View {
                     Button {
                         let target = chapter.index - 1
                         currentChapterIndex = max(0, target)
-                        if let player {
+                        if playerMounted {
                             player.play(snapshot: snapshot ?? JobSnapshot.empty,
                                          startingAt: max(0, target))
                         }
@@ -419,18 +425,21 @@ struct InstantReaderView: View {
 
     private func mountPlayerIfPossible() {
         guard let snap = snapshot, !snap.playableChapters.isEmpty else { return }
-        let p = AudioPlayer(backendBaseURL: backendBaseURL)
-        p.coverArtData = coverPNG     // surface to MPNowPlayingInfoCenter
-        p.play(snapshot: snap, startingAt: currentChapterIndex)
-        self.player = p
+        // Reuse the @StateObject `player` instance so `objectWillChange`
+        // subscriptions stay valid. Reconfiguring is enough — `play()`
+        // already tears down the underlying AVQueuePlayer.
+        player.backendBaseURL = backendBaseURL
+        player.coverArtData = coverPNG     // surface to MPNowPlayingInfoCenter
+        player.play(snapshot: snap, startingAt: currentChapterIndex)
+        playerMounted = true
 
         positionTask?.cancel()
         positionTask = Task { @MainActor in
-            for await pos in p.position {
+            for await pos in player.position {
                 if Task.isCancelled { break }
                 _ = sync.update(positionSeconds: pos)
-                if p.currentChapterIndex != currentChapterIndex {
-                    currentChapterIndex = p.currentChapterIndex
+                if player.currentChapterIndex != currentChapterIndex {
+                    currentChapterIndex = player.currentChapterIndex
                 }
             }
         }
@@ -453,13 +462,13 @@ struct InstantReaderView: View {
         let computed = chapter.splitSentences()
         spans = computed
         sync.load(chapter: chapter,
-                  chapterDurationSeconds: player?.durationSeconds ?? 0)
+                  chapterDurationSeconds: playerMounted ? player.durationSeconds : 0)
     }
 
     private func jumpToSentence(_ span: SentenceSpan) {
         guard let entry = sync.timing.first(where: { $0.id == span.id }) else { return }
         let seconds = TimeInterval(entry.startMs) / 1000.0
-        player?.seek(to: seconds)
+        if playerMounted { player.seek(to: seconds) }
     }
 
     /// Returns `true` if there *is* a next chapter and we advanced.

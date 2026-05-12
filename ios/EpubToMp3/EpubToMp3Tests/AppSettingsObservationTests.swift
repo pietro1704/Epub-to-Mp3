@@ -1,19 +1,25 @@
 import XCTest
-import Observation
+import Combine
 @testable import EpubToMp3
 
 /// Regression for the long-standing bug where toolbar pickers in
 /// `ReaderView` looked dead until the next page-turn: the previous
-/// `@AppStorage`-on-an-@Observable hybrid only fired observation
-/// inside `View` bodies that re-read the wrapper directly, so any
-/// nested SwiftUI sub-body (GeometryReader, the menu sheet, etc.)
+/// `@AppStorage`-on-an-ObservableObject hybrid only published change
+/// events inside `View` bodies that re-read the wrapper directly, so
+/// any nested SwiftUI sub-body (GeometryReader, the menu sheet, etc.)
 /// kept seeing stale values.
 ///
-/// Each test below subscribes to `withObservationTracking { _ = s.field }`
-/// and asserts the change handler fires exactly once when the
-/// property mutates. If any case regresses, the reader UI will stop
-/// repainting on toolbar changes.
+/// Each test below subscribes to `settings.objectWillChange` and
+/// asserts the publisher fires when the property mutates. If any case
+/// regresses, the reader UI will stop repainting on toolbar changes.
 final class AppSettingsObservationTests: XCTestCase {
+
+    private var cancellables: Set<AnyCancellable> = []
+
+    override func tearDown() {
+        cancellables.removeAll()
+        super.tearDown()
+    }
 
     private func makeSettings() -> AppSettings {
         // Suite-name UUID guarantees a clean slate per test so we
@@ -23,6 +29,11 @@ final class AppSettingsObservationTests: XCTestCase {
         return AppSettings(defaults: defaults)
     }
 
+    /// Asserts `settings.objectWillChange` fires at least once when
+    /// `mutate` runs. The keyPath is taken so the test signature stays
+    /// identical to the previous `withObservationTracking`-based
+    /// version, even though Combine subscribes to the publisher itself
+    /// rather than a single property read.
     private func observe<T>(
         _ keyPath: KeyPath<AppSettings, T>,
         on settings: AppSettings,
@@ -30,11 +41,10 @@ final class AppSettingsObservationTests: XCTestCase {
         mutate: () -> Void
     ) {
         let exp = expectation(description: message)
-        withObservationTracking {
-            _ = settings[keyPath: keyPath]
-        } onChange: {
-            exp.fulfill()
-        }
+        exp.assertForOverFulfill = false
+        settings.objectWillChange
+            .sink { _ in exp.fulfill() }
+            .store(in: &cancellables)
         mutate()
         wait(for: [exp], timeout: 1.0)
     }
@@ -108,7 +118,7 @@ final class AppSettingsObservationTests: XCTestCase {
 
     // MARK: Persistence — values survive an AppSettings re-init
     //
-    // Critical: `@Observable` + `didSet` UserDefaults writes must
+    // Critical: `@Published` + `didSet` UserDefaults writes must
     // round-trip cleanly. A bug here used to drop every reader pref
     // on app relaunch.
 

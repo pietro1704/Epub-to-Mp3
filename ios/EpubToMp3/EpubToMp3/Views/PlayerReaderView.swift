@@ -13,11 +13,11 @@ struct PlayerReaderView: View {
     let snapshot: JobSnapshot
     let backendBaseURL: URL?
 
-    @Environment(AppSettings.self) private var settings
+    @EnvironmentObject private var settings: AppSettings
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.dismiss) private var dismiss
 
-    @State private var player = AudioPlayer()
+    @StateObject private var player = AudioPlayer()
     @State private var fulltextStore = FulltextStore()
     @State private var fulltext: EbookFulltext?
     @State private var fulltextError: String?
@@ -191,7 +191,10 @@ struct PlayerReaderView: View {
 
     private func bootstrap() {
         if player.snapshot?.jobId != snapshot.jobId {
-            player = AudioPlayer(backendBaseURL: backendBaseURL)
+            // Reuse the @StateObject `player` instance — assigning to it
+            // is not allowed under Combine ownership. Reconfigure
+            // backendBaseURL on the existing object then call play().
+            player.backendBaseURL = backendBaseURL
             player.play(snapshot: snapshot, startingAt: 0)
         }
         triggerFulltextLoad()
@@ -345,6 +348,6 @@ struct PlayerReaderView: View {
         snapshot: JobSnapshot.previewSample,
         backendBaseURL: URL(string: "http://localhost:8000")
     )
-    .environment(AppSettings())
+    .environmentObject(AppSettings())
 }
 #endif

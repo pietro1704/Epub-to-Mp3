@@ -1,11 +1,11 @@
 import SwiftUI
 
-@Observable
-final class LogsViewModel {
-    var content: String = ""
-    var isLoading: Bool = false
-    var error: String? = nil
-    var autoRefresh: Bool = true
+@MainActor
+final class LogsViewModel: ObservableObject {
+    @Published var content: String = ""
+    @Published var isLoading: Bool = false
+    @Published var error: String? = nil
+    @Published var autoRefresh: Bool = true
 
     private var pollingTask: Task<Void, Never>?
 
@@ -50,8 +50,8 @@ final class LogsViewModel {
 
 struct LogsView: View {
     let jobId: String
-    @Environment(AppSettings.self) private var settings
-    @State private var viewModel = LogsViewModel()
+    @EnvironmentObject private var settings: AppSettings
+    @StateObject private var viewModel = LogsViewModel()
 
     private var client: APIClient? {
         settings.resolvedBaseURL.map(APIClient.init(baseURL:))
@@ -124,6 +124,6 @@ struct LogsView: View {
     NavigationStack {
         LogsView(jobId: "preview-job-id")
     }
-    .environment(AppSettings())
+    .environmentObject(AppSettings())
 }
 #endif

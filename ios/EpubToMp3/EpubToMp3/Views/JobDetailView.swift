@@ -1,13 +1,13 @@
 import SwiftUI
 
-@Observable
-final class JobDetailViewModel {
-    var snapshot: JobSnapshot?
-    var latestPayload: String = ""
-    var receivedCount: Int = 0
-    var isStreaming: Bool = false
-    var errorMessage: String?
-    var downloadProgressLabel: String?
+@MainActor
+final class JobDetailViewModel: ObservableObject {
+    @Published var snapshot: JobSnapshot?
+    @Published var latestPayload: String = ""
+    @Published var receivedCount: Int = 0
+    @Published var isStreaming: Bool = false
+    @Published var errorMessage: String?
+    @Published var downloadProgressLabel: String?
 
     private var streamTask: Task<Void, Never>?
     private var fetchTask: Task<Void, Never>?
@@ -77,8 +77,8 @@ final class JobDetailViewModel {
 
 struct JobDetailView: View {
     let jobId: String
-    @Environment(AppSettings.self) private var settings
-    @State private var viewModel = JobDetailViewModel()
+    @EnvironmentObject private var settings: AppSettings
+    @StateObject private var viewModel = JobDetailViewModel()
     @State private var showingPlayer = false
 
     private var client: APIClient? {
@@ -183,7 +183,7 @@ struct JobDetailView: View {
                 // (and its `TocDrawer` sheet) read so SwiftUI doesn't
                 // crash with "missing Environment Object".
                 PlayerReaderView(snapshot: snap, backendBaseURL: settings.resolvedBaseURL)
-                    .environment(settings)
+                    .environmentObject(settings)
             }
         }
     }
@@ -193,5 +193,5 @@ struct JobDetailView: View {
     NavigationStack {
         JobDetailView(jobId: "preview-job-id")
     }
-    .environment(AppSettings())
+    .environmentObject(AppSettings())
 }

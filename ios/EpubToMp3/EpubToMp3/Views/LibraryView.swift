@@ -13,8 +13,8 @@ import UIKit
 /// book is a small + button in the toolbar that triggers the system
 /// file picker.
 struct LibraryView: View {
-    @Environment(LibraryStore.self) private var library
-    @Environment(AppSettings.self) private var settings
+    @EnvironmentObject private var library: LibraryStore
+    @EnvironmentObject private var settings: AppSettings
     @State private var showingPicker = false
     @State private var importError: String?
     @State private var openingBook: BookEntity?
@@ -253,13 +253,13 @@ struct BookTile: View {
 #if DEBUG
 #Preview("Library — empty") {
     NavigationStack { LibraryView() }
-        .environment(LibraryStore.previewEmpty)
-        .environment(AppSettings())
+        .environmentObject(LibraryStore.previewEmpty)
+        .environmentObject(AppSettings())
 }
 
 #Preview("Library — populated") {
     NavigationStack { LibraryView() }
-        .environment(LibraryStore.previewPopulated)
-        .environment(AppSettings())
+        .environmentObject(LibraryStore.previewPopulated)
+        .environmentObject(AppSettings())
 }
 #endif

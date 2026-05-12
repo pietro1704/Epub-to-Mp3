@@ -5,9 +5,9 @@ import AVFoundation
 
 @main
 struct EpubToMp3App: App {
-    @State private var settings = AppSettings()
-    @State private var sidecar = SidecarManager()
-    @State private var library = LibraryStore()
+    @StateObject private var settings = AppSettings()
+    @StateObject private var sidecar = SidecarManager()
+    @StateObject private var library = LibraryStore()
 
     init() {
         Self.configureAudioSession()
@@ -16,9 +16,9 @@ struct EpubToMp3App: App {
     var body: some Scene {
         WindowGroup {
             RootView()
-                .environment(settings)
-                .environment(sidecar)
-                .environment(library)
+                .environmentObject(settings)
+                .environmentObject(sidecar)
+                .environmentObject(library)
                 .task {
                     #if os(macOS)
                     await startSidecarIfNeeded()

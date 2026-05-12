@@ -1,12 +1,12 @@
 import SwiftUI
 
-@Observable
-final class TelemetryViewModel {
-    var rawJSON: String = ""
-    var perEngine: [(engine: String, charsPerSecond: Double?, samples: Int?)] = []
-    var isLoading: Bool = false
-    var error: String? = nil
-    var lastFetched: Date? = nil
+@MainActor
+final class TelemetryViewModel: ObservableObject {
+    @Published var rawJSON: String = ""
+    @Published var perEngine: [(engine: String, charsPerSecond: Double?, samples: Int?)] = []
+    @Published var isLoading: Bool = false
+    @Published var error: String? = nil
+    @Published var lastFetched: Date? = nil
 
     func reload(client: APIClient?) async {
         guard let client else {
@@ -59,8 +59,8 @@ final class TelemetryViewModel {
 }
 
 struct TelemetryView: View {
-    @Environment(AppSettings.self) private var settings
-    @State private var viewModel = TelemetryViewModel()
+    @EnvironmentObject private var settings: AppSettings
+    @StateObject private var viewModel = TelemetryViewModel()
 
     private var client: APIClient? {
         settings.resolvedBaseURL.map(APIClient.init(baseURL:))
@@ -140,6 +140,6 @@ struct TelemetryView: View {
 #if DEBUG
 #Preview("Telemetry") {
     NavigationStack { TelemetryView() }
-        .environment(AppSettings())
+        .environmentObject(AppSettings())
 }
 #endif
