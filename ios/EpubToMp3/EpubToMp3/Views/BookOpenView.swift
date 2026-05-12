@@ -341,7 +341,7 @@ struct BookOpenView: View {
 
 #if DEBUG
 #Preview("BookOpen — preview-3") {
-    NavigationStack {
+    CompatNavigationStack {
         BookOpenView(book: BookEntity(
             id: "preview-3",
             title: "O Hobbit",

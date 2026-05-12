@@ -77,7 +77,7 @@ struct ConvertView: View {
         Form {
             Section("File") {
                 if let file = viewModel.selectedFile {
-                    LabeledContent("Selected") {
+                    CompatLabeledContent("Selected") {
                         VStack(alignment: .leading) {
                             Text(file.lastPathComponent).font(.body)
                             Text(file.path)
@@ -125,8 +125,16 @@ struct ConvertView: View {
                 Section {
                     Label("Job submitted: \(jobId)", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
-                    NavigationLink(value: jobId) {
-                        Label("Open progress", systemImage: "arrow.right.circle")
+                    if #available(iOS 16, macOS 13, *) {
+                        NavigationLink(value: jobId) {
+                            Label("Open progress", systemImage: "arrow.right.circle")
+                        }
+                    } else {
+                        NavigationLink {
+                            JobDetailView(jobId: jobId)
+                        } label: {
+                            Label("Open progress", systemImage: "arrow.right.circle")
+                        }
                     }
                 }
             }
@@ -151,9 +159,7 @@ struct ConvertView: View {
             }
         }
         .navigationTitle("Convert")
-        .navigationDestination(for: String.self) { jobId in
-            JobDetailView(jobId: jobId)
-        }
+        .compatConvertDestination()
         .fileImporter(
             isPresented: $showingPicker,
             allowedContentTypes: Self.acceptedTypes,
@@ -175,9 +181,25 @@ struct ConvertView: View {
     }
 }
 
+/// Value-based navigation destination requires iOS 16 / macOS 13.
+/// The fallback path uses explicit `NavigationLink { destination }`
+/// above (inside the "Open progress" section).
+private extension View {
+    @ViewBuilder
+    func compatConvertDestination() -> some View {
+        if #available(iOS 16, macOS 13, *) {
+            self.navigationDestination(for: String.self) { jobId in
+                JobDetailView(jobId: jobId)
+            }
+        } else {
+            self
+        }
+    }
+}
+
 #if DEBUG
 #Preview("Convert") {
-    NavigationStack { ConvertView() }
+    CompatNavigationStack { ConvertView() }
         .environmentObject(AppSettings())
 }
 #endif

@@ -35,7 +35,7 @@ struct PlayerReaderView: View {
     @State private var streamTask: Task<Void, Never>?
 
     var body: some View {
-        NavigationStack {
+        CompatNavigationStack {
             Group {
                 if hSize == .regular {
                     HStack(spacing: 0) {
@@ -72,7 +72,7 @@ struct PlayerReaderView: View {
                     currentChapterIndex: player.currentChapterIndex,
                     onJump: jumpTo(chapterIndex:)
                 )
-                .presentationDetents([.medium, .large])
+                .compatPresentationDetents()
             }
         }
         .onAppear {

@@ -9,7 +9,7 @@ struct PlayerView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        CompatNavigationStack {
             VStack(spacing: 24) {
                 Spacer(minLength: 8)
                 artwork

@@ -12,7 +12,7 @@ struct TocDrawer: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
+        CompatNavigationStack {
             List {
                 if let fulltext, !fulltext.chapters.isEmpty {
                     ForEach(fulltext.chapters) { chapter in

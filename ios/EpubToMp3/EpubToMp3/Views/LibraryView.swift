@@ -110,9 +110,7 @@ struct LibraryView: View {
         } message: {
             Text(importError ?? "")
         }
-        .navigationDestination(item: $openingBook) { book in
-            BookOpenView(book: book)
-        }
+        .compatBookDestination($openingBook)
     }
 
     private var emptyState: some View {
@@ -250,15 +248,52 @@ struct BookTile: View {
     }
 }
 
+/// `.navigationDestination(item:)` requires iOS 17 / macOS 14.
+/// Older OSes get a value-based `NavigationLink(isActive:)` rendered
+/// invisibly behind the grid — same UX (tap a tile, push detail).
+private extension View {
+    @ViewBuilder
+    func compatBookDestination(_ binding: Binding<BookEntity?>) -> some View {
+        if #available(iOS 17, macOS 14, *) {
+            self.navigationDestination(item: binding) { book in
+                BookOpenView(book: book)
+            }
+        } else {
+            // Hidden NavigationLink driven by the optional binding —
+            // SwiftUI pushes when `binding.wrappedValue` flips non-nil
+            // and pops when it returns to nil.
+            self.background(
+                NavigationLink(
+                    isActive: Binding(
+                        get: { binding.wrappedValue != nil },
+                        set: { active in
+                            if !active { binding.wrappedValue = nil }
+                        }
+                    ),
+                    destination: {
+                        if let book = binding.wrappedValue {
+                            BookOpenView(book: book)
+                        } else {
+                            EmptyView()
+                        }
+                    },
+                    label: { EmptyView() }
+                )
+                .hidden()
+            )
+        }
+    }
+}
+
 #if DEBUG
 #Preview("Library — empty") {
-    NavigationStack { LibraryView() }
+    CompatNavigationStack { LibraryView() }
         .environmentObject(LibraryStore.previewEmpty)
         .environmentObject(AppSettings())
 }
 
 #Preview("Library — populated") {
-    NavigationStack { LibraryView() }
+    CompatNavigationStack { LibraryView() }
         .environmentObject(LibraryStore.previewPopulated)
         .environmentObject(AppSettings())
 }

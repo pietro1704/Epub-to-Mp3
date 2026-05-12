@@ -84,10 +84,10 @@ struct InstantReaderView: View {
         .sheet(isPresented: $showingToc) {
             tocSheet
         }
-        .onChange(of: hasAudio) { _, isAudioReady in
+        .compatOnChange(of: hasAudio) { isAudioReady in
             if isAudioReady, !playerMounted { mountPlayerIfPossible() }
         }
-        .onChange(of: currentChapterIndex) { _, newIndex in
+        .compatOnChange(of: currentChapterIndex) { newIndex in
             reloadCurrentChapter(index: newIndex)
         }
         .onAppear {
@@ -380,7 +380,7 @@ struct InstantReaderView: View {
 
     @ViewBuilder
     private var tocSheet: some View {
-        NavigationStack {
+        CompatNavigationStack {
             List {
                 ForEach(fulltext.chapters) { chapter in
                     Button {
@@ -418,7 +418,7 @@ struct InstantReaderView: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .compatPresentationDetents()
     }
 
     // MARK: - Player wiring

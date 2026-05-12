@@ -19,14 +19,27 @@ struct SettingsView: View {
     var body: some View {
         Group {
             #if os(macOS)
-            Form {
-                embeddedServerSection
-                backendSection
-                readerSection
-                advancedSection
-                aboutSection
+            if #available(macOS 13, *) {
+                Form {
+                    embeddedServerSection
+                    backendSection
+                    readerSection
+                    advancedSection
+                    aboutSection
+                }
+                .formStyle(.grouped)
+            } else {
+                // `.formStyle(.grouped)` is macOS 13+. The default Form
+                // chrome on Big Sur looks acceptable; the sections are
+                // still scannable.
+                Form {
+                    embeddedServerSection
+                    backendSection
+                    readerSection
+                    advancedSection
+                    aboutSection
+                }
             }
-            .formStyle(.grouped)
             #else
             Form {
                 backendSection
@@ -279,7 +292,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var aboutSection: some View {
         Section {
-            LabeledContent {
+            CompatLabeledContent {
                 Text("com.pietrocode.epubtomp3")
                     .font(.callout.monospaced())
                     .foregroundStyle(.secondary)
@@ -287,11 +300,11 @@ struct SettingsView: View {
             } label: {
                 Label("Bundle identifier", systemImage: "shippingbox")
             }
-            LabeledContent {
+            CompatLabeledContent {
                 #if os(iOS)
-                Text("iOS 17.0+")
+                Text("iOS 15.0+")
                 #elseif os(macOS)
-                Text("macOS 14.0+")
+                Text("macOS 12.0+")
                 #else
                 Text("—")
                 #endif
@@ -308,7 +321,7 @@ struct SettingsView: View {
 }
 
 #Preview("Settings") {
-    NavigationStack { SettingsView() }
+    CompatNavigationStack { SettingsView() }
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore())
         #if os(macOS)

@@ -88,15 +88,15 @@ struct JobDetailView: View {
     var body: some View {
         Form {
             Section("Job") {
-                LabeledContent("ID", value: jobId).font(.footnote.monospaced())
+                CompatLabeledContent("ID", value: jobId).font(.footnote.monospaced())
                 if let snap = viewModel.snapshot {
-                    LabeledContent("State", value: snap.state)
-                    if let title = snap.bookTitle { LabeledContent("Book", value: title) }
+                    CompatLabeledContent("State", value: snap.state)
+                    if let title = snap.bookTitle { CompatLabeledContent("Book", value: title) }
                     if let pct = snap.progressPercent {
-                        LabeledContent("Progress", value: String(format: "%.0f%%", pct))
+                        CompatLabeledContent("Progress", value: String(format: "%.0f%%", pct))
                     }
                 }
-                LabeledContent("Streaming") {
+                CompatLabeledContent("Streaming") {
                     if viewModel.isStreaming {
                         Label("Live", systemImage: "dot.radiowaves.left.and.right")
                             .foregroundStyle(.green)
@@ -104,7 +104,7 @@ struct JobDetailView: View {
                         Text("Idle").foregroundStyle(.secondary)
                     }
                 }
-                LabeledContent("Events received", value: "\(viewModel.receivedCount)")
+                CompatLabeledContent("Events received", value: "\(viewModel.receivedCount)")
             }
 
             if let chapters = viewModel.snapshot?.playableChapters, !chapters.isEmpty {
@@ -190,7 +190,7 @@ struct JobDetailView: View {
 }
 
 #Preview("JobDetail — empty state") {
-    NavigationStack {
+    CompatNavigationStack {
         JobDetailView(jobId: "preview-job-id")
     }
     .environmentObject(AppSettings())

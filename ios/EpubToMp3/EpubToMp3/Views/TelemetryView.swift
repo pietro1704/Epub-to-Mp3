@@ -66,6 +66,20 @@ struct TelemetryView: View {
         settings.resolvedBaseURL.map(APIClient.init(baseURL:))
     }
 
+    /// `Date.formatted(date:time:)` exists on iOS 15 / macOS 12 but
+    /// `time: .standard` returns a localised time string we can also
+    /// build with `DateFormatter` on Big Sur. Returns "HH:mm:ss" in
+    /// the user locale.
+    private static func formatTimestamp(_ when: Date) -> String {
+        if #available(iOS 15, macOS 12, *) {
+            return when.formatted(date: .omitted, time: .standard)
+        }
+        let f = DateFormatter()
+        f.dateStyle = .none
+        f.timeStyle = .medium
+        return f.string(from: when)
+    }
+
     var body: some View {
         Form {
             Section("Engines") {
@@ -105,8 +119,11 @@ struct TelemetryView: View {
 
             if let when = viewModel.lastFetched {
                 Section {
-                    LabeledContent("Last fetched",
-                                   value: when.formatted(date: .omitted, time: .standard))
+                    // `Date.formatted(...)` (the FormatStyle API) requires
+                    // iOS 15 / macOS 12, so we keep `.formatted` but route
+                    // through a thin formatter on macOS 11.
+                    CompatLabeledContent("Last fetched",
+                                         value: Self.formatTimestamp(when))
                 }
             }
 
@@ -139,7 +156,7 @@ struct TelemetryView: View {
 
 #if DEBUG
 #Preview("Telemetry") {
-    NavigationStack { TelemetryView() }
+    CompatNavigationStack { TelemetryView() }
         .environmentObject(AppSettings())
 }
 #endif

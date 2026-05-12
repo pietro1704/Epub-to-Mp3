@@ -3,12 +3,12 @@ import SwiftUI
 struct RootView: View {
     var body: some View {
         TabView {
-            NavigationStack {
+            CompatNavigationStack {
                 LibraryView()
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
 
-            NavigationStack {
+            CompatNavigationStack {
                 SettingsView()
             }
             .tabItem { Label("Settings", systemImage: "gearshape") }

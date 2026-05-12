@@ -119,7 +119,7 @@ struct ReaderView: View {
         }
         .background(themeBackground)
         .foregroundStyle(themeForeground)
-        .onChange(of: chapter.id) { _, _ in currentPage = 0 }
+        .compatOnChange(of: chapter.id) { _ in currentPage = 0 }
         .task(id: renderedAttributedKey) {
             renderedAttributed = renderHtmlForChapter()
         }
@@ -284,7 +284,7 @@ struct ReaderView: View {
             Button {
                 settings.restoreOriginal()
             } label: {
-                Label("Restaurar original", systemImage: "arrow.uturn.backward")
+                Label("Restore defaults", systemImage: "arrow.uturn.backward")
             }
         }
     }
@@ -311,7 +311,7 @@ struct ReaderView: View {
             // recogniser, making the reader feel "stuck". The
             // userIsScrolling lockout is still useful but we drive
             // it from `onScrollGeometryChange`-style hints in iOS 18+.
-            .onChange(of: currentSentenceId) { _, newId in
+            .compatOnChange(of: currentSentenceId) { newId in
                 guard let newId else { return }
                 guard settings.readerAutoScroll else { return }
                 lastAutoScrollAt = Date()
@@ -364,11 +364,11 @@ struct ReaderView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .focusable()
+            .compatFocusable()
             .focused($paginatedFocus)
             .onAppear { paginatedFocus = true }
-            .onKeyPress { press in
-                handleKeyPress(press, totalPages: pages.count)
+            .compatOnKeyPressArrowsAndPaging { key in
+                handleCompatKey(key, totalPages: pages.count)
             }
             #if os(macOS)
             .modifier(ScrollWheelPager(
@@ -463,22 +463,25 @@ struct ReaderView: View {
         }
     }
 
-    private func handleKeyPress(_ press: KeyPress, totalPages: Int) -> KeyPress.Result {
-        switch press.key {
-        case .leftArrow, .pageUp, "k":
+    /// Compat-key dispatch — returns true when the key was consumed so
+    /// the `compatOnKeyPressArrowsAndPaging` shim reports
+    /// `.handled`. Older OSes never reach this path (the shim is a
+    /// no-op below iOS 17 / macOS 14); macOS keeps page-turn via the
+    /// `ScrollWheelPager` modifier and the tap zones.
+    private func handleCompatKey(_ key: CompatKey, totalPages: Int) -> Bool {
+        switch key {
+        case .leftArrow, .pageUp, .k:
             retreatPage()
-            return .handled
-        case .rightArrow, .pageDown, .space, "j":
+            return true
+        case .rightArrow, .pageDown, .space, .j:
             advancePage(totalPages: totalPages)
-            return .handled
+            return true
         case .home:
             currentPage = 0
-            return .handled
+            return true
         case .end:
             currentPage = max(0, totalPages - 1)
-            return .handled
-        default:
-            return .ignored
+            return true
         }
     }
 

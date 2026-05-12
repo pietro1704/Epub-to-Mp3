@@ -76,7 +76,7 @@ struct LogsView: View {
             }
             .background(.black.opacity(0.85))
             .foregroundStyle(.green)
-            .onChange(of: viewModel.content) { _, _ in
+            .compatOnChange(of: viewModel.content) { _ in
                 if viewModel.autoRefresh {
                     withAnimation(.easeOut(duration: 0.2)) {
                         proxy.scrollTo("log-bottom", anchor: .bottom)
@@ -121,7 +121,7 @@ struct LogsView: View {
 
 #if DEBUG
 #Preview("Logs") {
-    NavigationStack {
+    CompatNavigationStack {
         LogsView(jobId: "preview-job-id")
     }
     .environmentObject(AppSettings())

@@ -35,28 +35,34 @@ struct JobsListView: View {
             if viewModel.isLoading && viewModel.sessions.isEmpty {
                 ProgressView().controlSize(.large)
             } else if let error = viewModel.errorMessage, viewModel.sessions.isEmpty {
-                ContentUnavailableView("Cannot reach backend",
-                                       systemImage: "wifi.exclamationmark",
-                                       description: Text(error))
+                CompatContentUnavailableView("Cannot reach backend",
+                                             systemImage: "wifi.exclamationmark",
+                                             description: Text(error))
             } else if viewModel.sessions.isEmpty {
-                ContentUnavailableView("No conversions yet",
-                                       systemImage: "tray",
-                                       description: Text("Run a conversion via the CLI or web app to populate the history."))
+                CompatContentUnavailableView("No conversions yet",
+                                             systemImage: "tray",
+                                             description: Text("Run a conversion via the CLI or web app to populate the history."))
             } else {
                 List(viewModel.sessions) { session in
-                    NavigationLink(value: session) {
-                        SessionRow(session: session)
+                    // `NavigationLink(value:)` requires the `.navigationDestination`
+                    // value-based router (iOS 16+). On iOS 15 we fall back to
+                    // the classic destination-based push.
+                    if #available(iOS 16, macOS 13, *) {
+                        NavigationLink(value: session) {
+                            SessionRow(session: session)
+                        }
+                    } else {
+                        NavigationLink {
+                            JobDetailView(jobId: session.bookTitle)
+                        } label: {
+                            SessionRow(session: session)
+                        }
                     }
                 }
             }
         }
         .navigationTitle("Jobs")
-        .navigationDestination(for: SessionRecord.self) { session in
-            // Sessions don't carry a job id (they're a historical log), so for
-            // this slice we let users tap and observe the live SSE for an
-            // arbitrary id derived from the session's title — tweak in v2.
-            JobDetailView(jobId: session.bookTitle)
-        }
+        .compatJobsDestination()
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Button {
@@ -144,7 +150,26 @@ struct SessionRow: View {
     }
 }
 
+/// `.navigationDestination(for:)` is iOS 16 / macOS 13. The legacy
+/// path uses inline `NavigationLink(destination:)` above; this
+/// modifier only applies on the modern OSes.
+private extension View {
+    @ViewBuilder
+    func compatJobsDestination() -> some View {
+        if #available(iOS 16, macOS 13, *) {
+            self.navigationDestination(for: SessionRecord.self) { session in
+                // Sessions don't carry a job id (they're a historical log), so for
+                // this slice we let users tap and observe the live SSE for an
+                // arbitrary id derived from the session's title — tweak in v2.
+                JobDetailView(jobId: session.bookTitle)
+            }
+        } else {
+            self
+        }
+    }
+}
+
 #Preview("JobsList — empty") {
-    NavigationStack { JobsListView() }
+    CompatNavigationStack { JobsListView() }
         .environmentObject(AppSettings())
 }
