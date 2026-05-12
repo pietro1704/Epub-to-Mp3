@@ -6,14 +6,11 @@ import SwiftUI
 /// `TabView` layout. Pre-iOS-16 / pre-macOS-13 fall through to the
 /// tab layout regardless — those SDKs don't ship `NavigationSplitView`.
 ///
-/// The branch lives here (and not inside `SplitViewRoot`) so that the
-/// availability check is co-located with the size-class check — it
-/// reads top-down without jumping between files.
-///
-/// As of the Reader-landing slice, both the tab and the split-view
-/// layouts default to **Reader** — the full-screen book text in
-/// Apple Books style. Now Playing is one tab / toolbar "Listen" tap
-/// away. Library is one more tab beyond that.
+/// As of the Music/Spotify-style player slice, the Now Playing tab /
+/// sidebar destination has been replaced by a **full-screen sheet**
+/// (`FullPlayerSheet`) that is presented by tapping the `MiniPlayerBar`.
+/// The sheet uses `.presentationDetents([.large])` on iOS 16+; on iOS
+/// 15 it fills the screen (the system default). Swipe-down dismisses it.
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
@@ -36,36 +33,32 @@ struct RootView: View {
 
 /// Tabs surfaced by the iPhone-compact root. The raw values double as
 /// `TabView` selection tokens so the empty-state CTAs inside individual
-/// tabs (e.g. "Browse Library" on `MainReaderView`) can flip to the
-/// matching tab without reaching across the view tree.
+/// tabs can flip to the matching tab without reaching across the view tree.
 ///
-/// Tab order (Apple Books / Apple Podcasts HIG pattern):
-///   0 reader     — default landing: full-screen EPUB reader
-///   1 nowPlaying — audio player (accessible via MiniPlayerBar tap)
-///   2 library    — book catalog
-///   3 settings   — preferences
+/// Tab order (Apple Books HIG pattern — no dedicated Now Playing tab):
+///   0 reader   — default landing: full-screen EPUB reader
+///   1 library  — book catalog
+///   2 settings — preferences
 enum RootTab: Int, Hashable {
     case reader
-    case nowPlaying
     case library
     case settings
 }
 
-/// The iPhone-compact / iOS 15 fallback layout. Pulled out of `RootView`
-/// so the split-vs-tab branch is the only thing the top-level sees.
+/// The iPhone-compact / iOS 15 fallback layout.
 ///
-/// Tab order (Apple Books / Apple Podcasts HIG pattern):
-///   0 Reader     — default landing: full-screen EPUB reader (Apple Books style)
-///   1 Now Playing — audio player, accessed via mini-player tap or this tab
-///   2 Library    — navigable book catalog
-///   3 Settings   — preferences
+/// Tab order:
+///   0 Reader   — default landing: full-screen EPUB reader
+///   1 Library  — navigable book catalog
+///   2 Settings — preferences
 ///
-/// MiniPlayerBar floats above the tab bar on every tab except Now Playing.
-/// Tap it to jump directly to the Now Playing tab (Apple Podcasts pattern).
+/// `MiniPlayerBar` floats above the tab bar on every tab. Tap it to open
+/// `FullPlayerSheet` (Apple Music style — sheet, not tab navigation).
 struct TabRoot: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var library: LibraryStore
-    /// Default to the Reader tab — that is the new landing screen.
+    @EnvironmentObject private var playerPresentation: PlayerPresentation
+
     @State private var selectedTab: RootTab = .reader
 
     @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
@@ -73,12 +66,10 @@ struct TabRoot: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    /// True when the mini-player should be shown: a book is playing AND
-    /// the user is not already on the Now Playing tab.
+    /// True when the mini-player should be shown: a book is active in the library.
     private var showMiniPlayer: Bool {
         guard let id = currentBookID, !id.isEmpty else { return false }
-        guard library.books.contains(where: { $0.id == id }) else { return false }
-        return selectedTab != .nowPlaying
+        return library.books.contains(where: { $0.id == id })
     }
 
     var body: some View {
@@ -87,28 +78,21 @@ struct TabRoot: View {
                 // Tab 0 — Reader (default landing)
                 CompatNavigationStack {
                     MainReaderView(
-                        onOpenPlayer: { selectedTab = .nowPlaying },
+                        onOpenPlayer: { playerPresentation.showFullPlayer() },
                         onBrowseLibrary: { selectedTab = .library }
                     )
                 }
                 .tabItem { Label("Read", systemImage: "text.book.closed") }
                 .tag(RootTab.reader)
 
-                // Tab 1 — Now Playing / audio player
-                CompatNavigationStack {
-                    NowPlayingView(onBrowseLibrary: { selectedTab = .library })
-                }
-                .tabItem { Label("Now Playing", systemImage: "headphones.circle") }
-                .tag(RootTab.nowPlaying)
-
-                // Tab 2 — Library
+                // Tab 1 — Library
                 CompatNavigationStack {
                     LibraryView()
                 }
                 .tabItem { Label("Library", systemImage: "books.vertical") }
                 .tag(RootTab.library)
 
-                // Tab 3 — Settings
+                // Tab 2 — Settings
                 CompatNavigationStack {
                     SettingsView()
                 }
@@ -118,7 +102,7 @@ struct TabRoot: View {
 
             if showMiniPlayer {
                 VStack(spacing: 0) {
-                    MiniPlayerBar(onTap: { selectedTab = .nowPlaying })
+                    MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
                     // Spacer that matches the system tab bar height so
                     // the mini-player sits directly above it without
                     // overlapping. The tab bar is ~49pt + safe-area inset;
@@ -135,18 +119,22 @@ struct TabRoot: View {
             }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showMiniPlayer)
+        // Full-player sheet — presented from mini-player tap or any
+        // "Open player" CTA. Swipe-down dismisses automatically.
+        .sheet(isPresented: $playerPresentation.showingFullPlayer) {
+            FullPlayerSheet()
+                .environmentObject(player)
+                .environmentObject(library)
+        }
     }
 }
 
 #Preview("Root") {
-    // RootView mounts LibraryView (Library tab) which reads
-    // `@EnvironmentObject var library: LibraryStore` — provide all
-    // four observable singletons or the canvas crashes the moment
-    // SwiftUI tries to render the first tab.
     RootView()
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore())
         .environmentObject(AudioPlayer())
+        .environmentObject(PlayerPresentation())
         #if os(macOS)
         .environmentObject(SidecarManager())
         #endif
@@ -157,6 +145,7 @@ struct TabRoot: View {
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore())
         .environmentObject(AudioPlayer())
+        .environmentObject(PlayerPresentation())
         #if os(macOS)
         .environmentObject(SidecarManager())
         #endif

@@ -109,20 +109,24 @@ final class NowPlayingViewTests: XCTestCase {
     /// `RootTab` raw values double as `TabView` selection tokens; they
     /// must stay stable across builds so SwiftUI's animation state
     /// machine doesn't reset every time the enum is reshuffled.
-    /// Reader is tab 0 (the new default landing screen).
+    /// As of the Music/Spotify player slice, Now Playing is no longer a
+    /// tab — the full player opens as a sheet from the MiniPlayerBar.
+    /// Reader is tab 0 (default landing), Library is 1, Settings is 2.
     func testRootTabRawValuesAreStable() {
         XCTAssertEqual(RootTab.reader.rawValue, 0)
-        XCTAssertEqual(RootTab.nowPlaying.rawValue, 1)
-        XCTAssertEqual(RootTab.library.rawValue, 2)
-        XCTAssertEqual(RootTab.settings.rawValue, 3)
+        XCTAssertEqual(RootTab.library.rawValue, 1)
+        XCTAssertEqual(RootTab.settings.rawValue, 2)
     }
 
     /// `SplitNavMode` should expose every destination required by the
-    /// sidebar list. Reader is the first (default landing) destination.
-    func testSplitNavModeIncludesNowPlayingFirst() {
-        // Reader is now the first destination; nowPlaying follows.
+    /// sidebar list. Now Playing was removed from the sidebar in the
+    /// Music/Spotify player slice — the full player surfaces via sheet.
+    func testSplitNavModeDoesNotIncludeNowPlaying() {
         XCTAssertEqual(SplitNavMode.allCases.first, .reader)
-        XCTAssertTrue(SplitNavMode.allCases.contains(.nowPlaying))
+        XCTAssertFalse(
+            SplitNavMode.allCases.contains(where: { $0.rawValue == "nowPlaying" }),
+            "nowPlaying must not be a sidebar destination — it is a sheet now."
+        )
         XCTAssertTrue(SplitNavMode.allCases.contains(.library))
         XCTAssertTrue(SplitNavMode.allCases.contains(.settings))
     }

@@ -4,37 +4,25 @@ import SwiftUI
 ///
 ///   Nav sidebar | Content for current nav mode | Detail (library only)
 ///
-/// As of the Reader-landing slice, the sidebar surfaces a short
-/// top-level navigation (`SplitNavMode`). Default selection is `.reader`
-/// — the full-screen EPUB reader in Apple Books style. Now Playing is
-/// one sidebar row away (or accessible via the MiniPlayerBar footer).
+/// As of the Music/Spotify-style player slice, the `.nowPlaying` sidebar
+/// destination has been removed. The full player is now presented as a
+/// `FullPlayerSheet` via `MiniPlayerBar` tap — the same sheet pattern as
+/// the iPhone tab layout. This keeps the sidebar lean (Read | Library |
+/// Conversions | Settings) and the full-screen player available from any
+/// surface.
 ///
 /// Falls back to `TabRoot` on iPhone compact and pre-iOS-16/macOS-13
-/// systems via the branch in `RootView`. This view is therefore safe
-/// to compile under iOS 15 / macOS 12 SDKs — the `@available` gate
-/// keeps the body from executing on older OSes.
-///
-/// Selection model:
-///   - `navMode: SplitNavMode` — drives the sidebar + content column.
-///   - `selectedBookID: String?` — relevant only when `navMode == .library`.
-///   - `selectedChapterIndex: Int?` — relevant only when `navMode == .library`.
-///
-/// Column visibility adapts to the size class:
-///   - iPad portrait (compact horizontal) → `.doubleColumn`
-///     (sidebar + content; detail slides in on selection).
-///   - iPad landscape / macOS → `.all` (three columns side by side).
-///   This mirrors Apple Books / Mail, where portrait can't fit three
-///   columns without the middle one being unusably narrow.
+/// systems via the branch in `RootView`. This view is therefore safe to
+/// compile under iOS 15 / macOS 12 SDKs — the `@available` gate keeps
+/// the body from executing on older OSes.
 
-/// Top-level destinations exposed in the split-view sidebar. Backed by
-/// `String` so it can flow through `List(selection:)` on every SDK
-/// without bridging through `Hashable`-only generic plumbing.
+/// Top-level destinations exposed in the split-view sidebar.
 ///
 /// Order mirrors Apple Books sidebar: Reader first (default), then
-/// Now Playing, Library, Conversions, Settings.
+/// Library, Conversions, Settings. Now Playing is intentionally absent —
+/// the full player surfaces via `FullPlayerSheet` from the `MiniPlayerBar`.
 enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
     case reader
-    case nowPlaying
     case library
     case jobs
     case settings
@@ -43,21 +31,19 @@ enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .reader:     return "Read"
-        case .nowPlaying: return "Now Playing"
-        case .library:    return "Library"
-        case .jobs:       return "Conversions"
-        case .settings:   return "Settings"
+        case .reader:   return "Read"
+        case .library:  return "Library"
+        case .jobs:     return "Conversions"
+        case .settings: return "Settings"
         }
     }
 
     var systemImage: String {
         switch self {
-        case .reader:     return "text.book.closed"
-        case .nowPlaying: return "headphones.circle"
-        case .library:    return "books.vertical"
-        case .jobs:       return "arrow.triangle.2.circlepath"
-        case .settings:   return "gearshape"
+        case .reader:   return "text.book.closed"
+        case .library:  return "books.vertical"
+        case .jobs:     return "arrow.triangle.2.circlepath"
+        case .settings: return "gearshape"
         }
     }
 }
@@ -67,6 +53,7 @@ struct SplitViewRoot: View {
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var playerPresentation: PlayerPresentation
 
     #if os(iOS)
     @Environment(\.horizontalSizeClass) private var hSize
@@ -74,7 +61,7 @@ struct SplitViewRoot: View {
     #endif
 
     @State private var columnVisibility: NavigationSplitViewVisibility = SplitViewRoot.defaultColumnVisibility
-    /// Default to `.reader` — the new landing screen.
+    /// Default to `.reader` — the landing screen.
     @State private var navMode: SplitNavMode = .reader
     @State private var selectedBookID: String?
     @State private var selectedChapterIndex: Int?
@@ -82,13 +69,10 @@ struct SplitViewRoot: View {
     @AppStorage(AudioPlayer.currentBookIDDefaultsKey)
     private var currentBookID: String?
 
-    /// True when the mini-player footer should appear in the sidebar:
-    /// something is playing AND the user is not on the Now Playing destination
-    /// (Sonos / Apple TV sidebar pattern).
+    /// True when the mini-player footer should appear in the sidebar.
     private var showMiniPlayer: Bool {
         guard let id = currentBookID, !id.isEmpty else { return false }
-        guard library.books.contains(where: { $0.id == id }) else { return false }
-        return navMode != .nowPlaying
+        return library.books.contains(where: { $0.id == id })
     }
 
     /// Currently-selected book, resolved through the library store.
@@ -110,12 +94,9 @@ struct SplitViewRoot: View {
                 .accessibilityIdentifier("split.detail")
         }
         .navigationSplitViewStyle(.balanced)
-        // Reset chapter selection when the book changes so the detail
-        // column doesn't keep stale state.
+        // Reset chapter selection when the book changes.
         .compatOnChange(of: selectedBookID) { _ in
             selectedChapterIndex = nil
-            // In compact layouts (iPad portrait), surface the detail
-            // column once the user has picked a book + chapter.
             #if os(iOS)
             if isCompactHorizontal, selectedBookID != nil {
                 columnVisibility = .doubleColumn
@@ -123,28 +104,23 @@ struct SplitViewRoot: View {
             #endif
         }
         #if os(iOS)
-        // Apply portrait-vs-landscape default when the view appears
-        // and again whenever the size class flips (rotation, Slide
-        // Over, Split View resize).
         .onAppear { applySizeClassDefault() }
         .compatOnChange(of: hSize) { _ in applySizeClassDefault() }
         .compatOnChange(of: vSize) { _ in applySizeClassDefault() }
-        // When the library is empty AND the user is on the Library
-        // destination, auto-expand to `.all` on iPad portrait so the
-        // Empty State + import CTA become the immediate focal point;
-        // once a book is imported, transition back to `.doubleColumn`.
         .compatOnChange(of: library.books.count) { _ in applyEmptyLibraryReveal() }
         .compatOnChange(of: navMode) { _ in applyEmptyLibraryReveal() }
         #endif
+        // Full-player sheet — presented from mini-player tap.
+        .sheet(isPresented: $playerPresentation.showingFullPlayer) {
+            FullPlayerSheet()
+                .environmentObject(player)
+                .environmentObject(library)
+        }
     }
 
     // MARK: - Sidebar
 
     private var navSidebar: some View {
-        // `List(_:selection:rowContent:)` for non-Set selection is
-        // macOS-only on the SDKs we support. Use the multi-purpose
-        // initializer with an explicit `ForEach` + tag so the same body
-        // compiles on iOS 15 / iPadOS 16 / macOS 12.
         List(selection: Binding<SplitNavMode?>(
             get: { navMode },
             set: { newValue in if let v = newValue { navMode = v } }
@@ -162,11 +138,11 @@ struct SplitViewRoot: View {
         .navigationTitle("Epub-to-Mp3")
         .accessibilityIdentifier("split.navList")
         // HIG sidebar footer: mini-player docked at the bottom of the
-        // sidebar (Sonos / Apple TV pattern). `safeAreaInset` adds the
-        // view outside the scroll area so it doesn't overlap list rows.
+        // sidebar (Sonos / Apple TV / Apple Music pattern). Tap opens
+        // the full player sheet.
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if showMiniPlayer {
-                MiniPlayerBar(onTap: { navMode = .nowPlaying })
+                MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
                     .accessibilityIdentifier("miniPlayer.sidebar")
             }
         }
@@ -179,11 +155,9 @@ struct SplitViewRoot: View {
         switch navMode {
         case .reader:
             MainReaderView(
-                onOpenPlayer: { navMode = .nowPlaying },
+                onOpenPlayer: { playerPresentation.showFullPlayer() },
                 onBrowseLibrary: { navMode = .library }
             )
-        case .nowPlaying:
-            NowPlayingView(onBrowseLibrary: { navMode = .library })
         case .library:
             LibrarySidebar(selectedBookID: $selectedBookID)
         case .jobs:
@@ -195,52 +169,30 @@ struct SplitViewRoot: View {
 
     // MARK: - Adaptive column visibility
 
-    /// Default visibility used at first appearance — three columns on
-    /// macOS, two on iOS (the size-class observer narrows it further
-    /// for portrait iPad after `onAppear` fires).
     fileprivate static var defaultColumnVisibility: NavigationSplitViewVisibility {
         #if os(macOS)
         return .all
         #else
-        // On iOS we start in the safest layout (two columns) and
-        // promote to `.all` when the size-class observer confirms a
-        // landscape regular layout. This avoids a flash of an
-        // unusably-narrow three-column tree on portrait launch.
         return .doubleColumn
         #endif
     }
 
     #if os(iOS)
-    /// Treat anything that isn't `(hSize == .regular && vSize ==
-    /// .compact)` as "prefer two columns". That matches iPad landscape
-    /// (the only environment where three columns visually fit) and
-    /// falls back to two columns for iPad portrait, iPhone, and Slide
-    /// Over.
     private var isCompactHorizontal: Bool {
         return !(hSize == .regular && vSize == .compact)
     }
 
     private func applySizeClassDefault() {
-        // Don't trample an explicit user choice mid-session — only
-        // realign on transitions between the two canonical layouts.
         let desired = preferredVisibility(for: shouldRevealEmptyLibrarySidebar)
         if columnVisibility != desired {
             columnVisibility = desired
         }
     }
 
-    /// True only on the Library destination with an empty library and
-    /// a compact horizontal class — that's the one case where the
-    /// import CTA needs the sidebar revealed.
     private var shouldRevealEmptyLibrarySidebar: Bool {
         return navMode == .library && library.books.isEmpty
     }
 
-    /// Compute the preferred visibility for the current size class +
-    /// library state. Empty library on a layout that would normally
-    /// hide the sidebar (iPad portrait → `.doubleColumn`) gets bumped
-    /// to `.all` so the Empty State + import button are visible without
-    /// requiring the user to tap the toggle.
     fileprivate func preferredVisibility(for needsEmptySidebarReveal: Bool) -> NavigationSplitViewVisibility {
         if needsEmptySidebarReveal && isCompactHorizontal {
             return .all
@@ -248,12 +200,6 @@ struct SplitViewRoot: View {
         return isCompactHorizontal ? .doubleColumn : .all
     }
 
-    /// Re-evaluate visibility after the library mutates (book imported
-    /// or removed). Mirrors `applySizeClassDefault` but keyed off
-    /// `library.books.count` so the first import transitions cleanly
-    /// from the reveal-the-sidebar layout to the standard two-column
-    /// layout and starts revealing the chapter list as the user picks
-    /// a book.
     private func applyEmptyLibraryReveal() {
         let desired = preferredVisibility(for: shouldRevealEmptyLibrarySidebar)
         if columnVisibility != desired {
@@ -269,9 +215,7 @@ struct SplitViewRoot: View {
     @ViewBuilder
     private var detailColumn: some View {
         switch navMode {
-        case .reader, .nowPlaying, .jobs, .settings:
-            // These destinations are full-bleed inside the content
-            // column — the detail column gets a quiet placeholder.
+        case .reader, .jobs, .settings:
             CompatContentUnavailableView(
                 "—",
                 systemImage: "book.closed",
@@ -294,9 +238,6 @@ struct SplitViewRoot: View {
                     onPreviousChapter: { advanceChapter(by: -1, in: snapshot) },
                     onNextChapter: { advanceChapter(by: +1, in: snapshot) }
                 )
-                // Re-mount when the chapter index changes so the
-                // PlayerReaderView's @State `player` reloads cleanly
-                // at the new starting chapter.
                 .id("\(book.id)-\(chapterIndex)")
             } else if selectedChapterIndex == nil, let book = selectedBook {
                 ChapterListColumn(
@@ -321,10 +262,6 @@ struct SplitViewRoot: View {
 
     // MARK: - Helpers
 
-    /// Resolve a `JobSnapshot` for the currently-selected book. Mirrors
-    /// the SSE-aware design of `PlayerReaderView` — the stub passes the
-    /// minimum required identifiers; live data lands via the event
-    /// stream inside the player view.
     private func jobSnapshot(for book: BookEntity) -> JobSnapshot? {
         #if DEBUG
         if isSwiftUIPreview {
@@ -353,8 +290,6 @@ struct SplitViewRoot: View {
         )
     }
 
-    /// Move the chapter selection by `delta`, clamped to the snapshot's
-    /// playable chapters. Used by the keyboard shortcuts.
     private func advanceChapter(by delta: Int, in snapshot: JobSnapshot) {
         let chapters = snapshot.playableChapters
         guard !chapters.isEmpty else { return }
@@ -369,9 +304,7 @@ struct SplitViewRoot: View {
     }
 }
 
-/// Thin wrapper around `PlayerReaderView` that adds keyboard
-/// shortcuts for hardware-keyboard users (Magic Keyboard on iPad,
-/// every Mac).
+/// Thin wrapper around `PlayerReaderView` that adds keyboard shortcuts.
 @available(iOS 16, macOS 13, *)
 private struct PlayerReaderDetail: View {
     let snapshot: JobSnapshot
@@ -385,10 +318,6 @@ private struct PlayerReaderDetail: View {
             snapshot: snapshot,
             backendBaseURL: backendBaseURL
         )
-        // Space toggles play/pause via the existing transport buttons.
-        // Arrow keys move chapter selection in the split layout — the
-        // player itself will follow when its state observer fires the
-        // re-render via `.id()`.
         .compatOnKeyPressArrowsAndPaging { key in
             switch key {
             case .leftArrow, .pageUp:
@@ -411,6 +340,7 @@ private struct PlayerReaderDetail: View {
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore.previewPopulated)
         .environmentObject(AudioPlayer())
+        .environmentObject(PlayerPresentation())
 }
 
 @available(iOS 16, macOS 13, *)
@@ -419,5 +349,6 @@ private struct PlayerReaderDetail: View {
         .environmentObject(AppSettings())
         .environmentObject(LibraryStore.previewEmpty)
         .environmentObject(AudioPlayer())
+        .environmentObject(PlayerPresentation())
 }
 #endif

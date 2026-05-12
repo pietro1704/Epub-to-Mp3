@@ -9,10 +9,14 @@ struct EpubToMp3App: App {
     @StateObject private var sidecar = SidecarManager()
     @StateObject private var library = LibraryStore()
     /// Global shared AudioPlayer. Injected as @EnvironmentObject so
-    /// MiniPlayerBar and PlayerReaderView share the same AVQueuePlayer
+    /// MiniPlayerBar and FullPlayerSheet share the same AVQueuePlayer
     /// instance — transport controls on the mini-player affect the full
     /// player and vice-versa.
     @StateObject private var player = AudioPlayer()
+    /// Controls the global full-player sheet presentation. Shared so any
+    /// surface (MiniPlayerBar, deep link, keyboard shortcut) can open the
+    /// full-screen player without passing callbacks through the view tree.
+    @StateObject private var playerPresentation = PlayerPresentation()
 
     init() {
         Self.configureAudioSession()
@@ -25,6 +29,7 @@ struct EpubToMp3App: App {
                 .environmentObject(sidecar)
                 .environmentObject(library)
                 .environmentObject(player)
+                .environmentObject(playerPresentation)
                 .task {
                     #if os(macOS)
                     await startSidecarIfNeeded()
