@@ -12,7 +12,21 @@
 
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// Default backend URL per platform. Android emulator routes host
+/// `localhost` to `10.0.2.2`; all other platforms reach the host
+/// loopback directly. Visible for testing so it can be exercised
+/// without spinning a full Flutter binding.
+@visibleForTesting
+String defaultBackendUrl({TargetPlatform? platform}) {
+  final p = platform ?? defaultTargetPlatform;
+  if (!kIsWeb && p == TargetPlatform.android) {
+    return 'http://10.0.2.2:8000';
+  }
+  return 'http://localhost:8000';
+}
 
 enum ReaderFontFamily { serif, sans, mono }
 
@@ -144,7 +158,7 @@ class MirrorAppSettings {
 
   // backendURL ----------------------------------------------------------
   String get backendURL =>
-      _prefs.getString('backendURL') ?? 'http://localhost:8000';
+      _prefs.getString('backendURL') ?? defaultBackendUrl();
   Future<void> setBackendURL(String v) => _prefs.setString('backendURL', v);
 
   // Legacy compatibility — `wpm` and `audioRate` were on the old
