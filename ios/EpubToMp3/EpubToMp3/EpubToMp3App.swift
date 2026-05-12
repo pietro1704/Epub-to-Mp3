@@ -17,6 +17,7 @@ struct EpubToMp3App: App {
     /// surface (MiniPlayerBar, deep link, keyboard shortcut) can open the
     /// full-screen player without passing callbacks through the view tree.
     @StateObject private var playerPresentation = PlayerPresentation()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         Self.configureAudioSession()
@@ -35,6 +36,49 @@ struct EpubToMp3App: App {
                     await startSidecarIfNeeded()
                     #endif
                 }
+                .task { drainSharedInbox() }
+                .compatOnChange(of: scenePhase) { phase in
+                    if phase == .active { drainSharedInbox() }
+                }
+                .onOpenURL { url in
+                    handleIncomingURL(url)
+                }
+        }
+    }
+
+    /// Drain the App Group inbox into the LibraryStore. Triggered on
+    /// every foreground transition so files dropped by the Share
+    /// Extension surface immediately when the user comes back to the
+    /// app. No-op when the inbox is empty.
+    private func drainSharedInbox() {
+        let outcomes = SharedContainerImporter.drain(into: library)
+        guard !outcomes.isEmpty else { return }
+        #if DEBUG
+        for o in outcomes {
+            if let err = o.error {
+                print("[ShareInbox] failed \(o.url.lastPathComponent): \(err)")
+            } else if let id = o.importedBookID {
+                print("[ShareInbox] imported \(o.url.lastPathComponent) as \(id)")
+            }
+        }
+        #endif
+    }
+
+    /// `.onOpenURL` is invoked when:
+    ///   * The user taps a `.epub` / `.pdf` file in Files / Mail and
+    ///     picks EpubToMp3 in "Open With".
+    ///   * The custom scheme `epubtomp3://` is triggered (deeplink).
+    /// We import the file URL directly into the library; opaque
+    /// scheme URLs are ignored for now (the scheme reservation is
+    /// kept for future Universal Links).
+    private func handleIncomingURL(_ url: URL) {
+        guard url.isFileURL else { return }
+        do {
+            _ = try library.importBook(from: url)
+        } catch {
+            #if DEBUG
+            print("[onOpenURL] import failed for \(url.lastPathComponent): \(error.localizedDescription)")
+            #endif
         }
     }
 

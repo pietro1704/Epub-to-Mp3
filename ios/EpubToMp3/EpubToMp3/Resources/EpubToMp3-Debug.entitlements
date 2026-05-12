@@ -9,5 +9,11 @@
          sandboxed entitlements file. -->
     <key>com.apple.security.app-sandbox</key>
     <false/>
+    <!-- App Group required at all times so the main app + Share
+         Extension can swap files even in unsigned Debug runs. -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.pietrocode.epubtomp3</string>
+    </array>
 </dict>
 </plist>

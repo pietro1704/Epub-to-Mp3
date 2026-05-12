@@ -12,5 +12,12 @@
     <true/>
     <key>com.apple.security.files.bookmarks.app-scope</key>
     <true/>
+    <!-- App Group shared with EpubToMp3ShareExtension. Used to
+         hand EPUB/PDF payloads from the Share Sheet (Apple Books,
+         Files, Safari, …) into the main app. -->
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>group.com.pietrocode.epubtomp3</string>
+    </array>
 </dict>
 </plist>
