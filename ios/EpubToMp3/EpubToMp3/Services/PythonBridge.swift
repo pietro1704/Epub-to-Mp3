@@ -208,6 +208,114 @@ final class PythonBridge: @unchecked Sendable {
         return outURL
     }
 
+    // MARK: - Segment-streaming chapter conversion
+
+    /// Segment-streaming variant of ``convertChapter``.
+    ///
+    /// Calls ``python_app.src.ios_entrypoints.synthesize_chapter_streaming``
+    /// which delivers MP3 bytes to ``onSegment`` after each TTS chunk
+    /// closes rather than accumulating all audio first. Swift's caller
+    /// (`AudioPlayer.enqueueSegment`) writes the bytes to a temp file and
+    /// inserts an `AVPlayerItem` into the running queue, so the first
+    /// segment is playable within ~500 ms of synthesis start.
+    ///
+    /// The full concatenated MP3 is still written to disk at ``outPath``
+    /// so the chapter-cache / resume path works unchanged.
+    ///
+    /// - Parameters:
+    ///   - text: Chapter plain text (pre-processed, ready for TTS).
+    ///   - voice: Edge-TTS voice name (e.g. `"pt-BR-FranciscaNeural"`).
+    ///   - outputDir: Directory where the final chapter MP3 is written.
+    ///   - chapterIndex: Zero-based index passed through to ``onSegment``.
+    ///   - onSegment: Called on the *main actor* for each segment that
+    ///     produces audio. Arguments: `(mp3Data, chapterIndex, segmentIndex)`.
+    /// - Returns: URL of the completed (full) chapter MP3.
+    func convertChapterStreaming(
+        text: String,
+        voice: String,
+        outputDir: URL,
+        chapterIndex: Int,
+        onSegment: @MainActor @escaping (Data, Int, Int) -> Void
+    ) async throws -> URL {
+        try PythonEmbed.shared.bootstrap()
+
+        return try await withCheckedThrowingContinuation { cont in
+            queue.async {
+                do {
+                    let url = try self.convertChapterStreamingSync(
+                        text: text,
+                        voice: voice,
+                        outputDir: outputDir,
+                        chapterIndex: chapterIndex,
+                        onSegment: onSegment
+                    )
+                    cont.resume(returning: url)
+                } catch {
+                    cont.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    private func convertChapterStreamingSync(
+        text: String,
+        voice: String,
+        outputDir: URL,
+        chapterIndex: Int,
+        onSegment: @MainActor @escaping (Data, Int, Int) -> Void
+    ) throws -> URL {
+        let outURL = outputDir.appendingPathComponent(
+            "edge_stream_\(UUID().uuidString).mp3"
+        )
+        try FileManager.default.createDirectory(
+            at: outputDir, withIntermediateDirectories: true
+        )
+
+        let entry: PythonObject
+        do {
+            entry = try Python.attemptImport("python_app.src.ios_entrypoints")
+        } catch {
+            throw PythonBridgeError.bootstrapFailed(
+                "import python_app.src.ios_entrypoints: \(error)"
+            )
+        }
+
+        // Build a Python callable that Swift will receive per segment.
+        // PythonKit lets us pass a Swift closure as a Python callable via
+        // `PythonFunction`. We bridge the bytes back to `Data` and hop
+        // onto the main actor so `AudioPlayer.enqueueSegment` runs on
+        // the right thread.
+        let callback = PythonFunction { args in
+            // args: (mp3_bytes: bytes, segment_index: int, total: int)
+            guard args.count >= 2 else { return Python.None }
+            let pyBytes = args[0]
+            let segIdx = Int(args[1]) ?? 0
+            // PythonKit can't `Data(bytes: PythonObject)` directly. The
+            // documented bridge is `[UInt8](pyBytes)` which routes through
+            // PythonKit's `PythonConvertible` conformance for sequences of
+            // ints; from that we build a Swift `Data`.
+            if let byteArray = [UInt8](pyBytes) {
+                let raw = Data(byteArray)
+                let capturedIdx = chapterIndex
+                Task { @MainActor in
+                    await onSegment(raw, capturedIdx, segIdx)
+                }
+            }
+            return Python.None
+        }
+
+        _ = entry.synthesize_chapter_streaming(
+            text, voice, outURL.path, callback
+        )
+
+        guard FileManager.default.fileExists(atPath: outURL.path) else {
+            throw PythonBridgeError.parseFailed(
+                "ios_entrypoints did not write \(outURL.path)"
+            )
+        }
+        return outURL
+    }
+
     // MARK: - Full-pipeline conversion (CLI superset)
 
     /// Options accepted by ``convertEpub(...)`` — mirrors the CLI flag

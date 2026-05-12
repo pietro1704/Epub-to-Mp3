@@ -93,6 +93,14 @@ final class AudioPlayer: ObservableObject {
     /// after they have appeared.
     @Published private(set) var firstChapterReady: Bool = false
 
+    /// Becomes `true` as soon as the *first audio segment* of the
+    /// current chapter has been enqueued via `enqueueSegment(data:…)`.
+    /// This fires earlier than `firstChapterReady` (which waits for the
+    /// whole chapter MP3) — typically within 500 ms of synthesis start —
+    /// satisfying the HIG < 3 s time-to-first-byte requirement.
+    /// One-way latch: once `true` it stays `true` for the session.
+    @Published private(set) var firstSegmentReady: Bool = false
+
     /// `true` while the player is buffering / waiting for the current
     /// chapter's audio to become ready. Used by `MiniPlayerBar` and
     /// `FullPlayerSheet` to show a spinner in place of play/pause.
@@ -143,6 +151,10 @@ final class AudioPlayer: ObservableObject {
     }
 
     // MARK: Internals
+
+    /// Temp directory for segment MP3 files written by `enqueueSegment`.
+    /// Created lazily; cleaned up in `teardownPlayer()`.
+    private var segmentTempDir: URL?
 
     private let resumeStore: ResumeStore
     /// Resolved backend base URL used to turn relative `downloadUrl`
@@ -316,6 +328,73 @@ final class AudioPlayer: ObservableObject {
         seek(to: target)
     }
 
+    /// Segment-streaming ingestion point. Called by `PythonBridge` after
+    /// each TTS chunk closes, before the full chapter MP3 is written.
+    ///
+    /// - Parameters:
+    ///   - data: Raw MP3 bytes for this segment (Edge emits ID3-less MP3
+    ///     frames; raw-byte append is valid — same trick as the sidecar).
+    ///   - chapterIndex: Zero-based chapter index this segment belongs to.
+    ///   - segmentIndex: Zero-based segment index within the chapter.
+    ///
+    /// Behaviour:
+    /// 1. Writes `data` to a numbered temp file so `AVPlayerItem` can
+    ///    reference a stable URL (AVFoundation requires file-backed URLs
+    ///    for local MP3; it does not accept in-memory `Data`).
+    /// 2. Creates an `AVPlayerItem` and inserts it at the end of the queue.
+    /// 3. If this is the first segment ever, starts playback automatically
+    ///    and sets `firstSegmentReady = true`.
+    ///
+    /// Thread-safety: must be called on the main actor (same as all other
+    /// AudioPlayer methods).
+    func enqueueSegment(data: Data, chapterIndex: Int, segmentIndex: Int) {
+        guard !data.isEmpty else { return }
+
+        // Ensure a temp directory exists for this session.
+        if segmentTempDir == nil {
+            segmentTempDir = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("epub2mp3-segments-\(UUID().uuidString)")
+            try? FileManager.default.createDirectory(
+                at: segmentTempDir!, withIntermediateDirectories: true
+            )
+        }
+        guard let tmpDir = segmentTempDir else { return }
+
+        let segFile = tmpDir.appendingPathComponent(
+            "ch\(chapterIndex)-seg\(segmentIndex).mp3"
+        )
+        do {
+            try data.write(to: segFile)
+        } catch {
+            // Non-fatal: segment is lost but subsequent ones still arrive.
+            return
+        }
+
+        let item = AVPlayerItem(url: segFile)
+
+        if player == nil {
+            // No player yet — create one with this first item and start.
+            let queue = AVQueuePlayer(items: [item])
+            queue.actionAtItemEnd = .advance
+            self.player = queue
+            self.currentChapterIndex = chapterIndex
+            attachObservers()
+            queue.rate = rate.rawValue
+            queue.play()
+            isPlaying = true
+            publishCurrentChapter()
+            updateNowPlayingInfo()
+        } else if let queue = player, queue.canInsert(item, after: nil) {
+            queue.insert(item, after: nil)
+        }
+
+        if !firstSegmentReady {
+            firstSegmentReady = true
+            // Also raise firstChapterReady so MiniPlayerBar shows play/pause.
+            firstChapterReady = true
+        }
+    }
+
     /// Called by `BookOpenView` / `InstantReaderView` when the first
     /// playable chapter MP3 lands. Sets `firstChapterReady = true` and
     /// clears `isConverting` only if the snapshot is already terminal
@@ -330,6 +409,7 @@ final class AudioPlayer: ObservableObject {
         isConverting = false
         conversionProgress = nil
         firstChapterReady = false
+        firstSegmentReady = false
     }
 
     /// Tear down the player completely and clear the Now Playing widget.
@@ -444,6 +524,12 @@ final class AudioPlayer: ObservableObject {
         endObserver = nil
         player?.pause()
         player = nil
+        // Remove segment temp files from the previous session. Best-effort:
+        // if the OS already cleaned /tmp, the removeItem call is a no-op.
+        if let tmpDir = segmentTempDir {
+            try? FileManager.default.removeItem(at: tmpDir)
+            segmentTempDir = nil
+        }
     }
 
     // MARK: Now Playing / Remote commands

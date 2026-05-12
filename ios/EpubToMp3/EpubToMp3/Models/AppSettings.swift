@@ -75,7 +75,17 @@ final class AppSettings: ObservableObject {
         self.defaults = defaults
         // Load persisted values. `??` falls back to the @Published
         // initial-value defaults if the key was never set.
+        // Default backend URL is empty on iOS device (no localhost server
+        // exists in the iPhone sandbox; resolving `localhost:8000` floods
+        // the system log with `Connection refused`). The embedded Python
+        // runtime handles everything in-process; users only set this in
+        // Settings if they actually want to point at a remote backend.
+        // macOS keeps the localhost default since the sidecar binds there.
+        #if os(macOS)
         self.backendURL = defaults.string(forKey: "backendURL") ?? "http://localhost:8000"
+        #else
+        self.backendURL = defaults.string(forKey: "backendURL") ?? ""
+        #endif
         self.useEmbeddedSidecar = defaults.object(forKey: "useEmbeddedSidecar") as? Bool ?? true
         // Default ON everywhere — iOS uses PythonEmbed (in-process CPython
         // via `Python.xcframework`); macOS uses the PyInstaller sidecar.
@@ -120,7 +130,7 @@ final class AppSettings: ObservableObject {
     /// persisted — the port is recomputed on each app launch.
     @Published var sidecarURL: URL? = nil
 
-    @Published var backendURL: String = "http://localhost:8000" {
+    @Published var backendURL: String = "" {
         didSet { defaults.set(backendURL, forKey: "backendURL") }
     }
 

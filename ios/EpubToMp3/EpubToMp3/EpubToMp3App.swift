@@ -140,18 +140,35 @@ struct EpubToMp3App: App {
     private static func configureAudioSession() {
         #if os(iOS) && !targetEnvironment(simulator)
         let session = AVAudioSession.sharedInstance()
+        // HIG long-form audio (Apple Books / Podcasts): `.playback` with
+        // `.spokenAudio` and the long-form policy ducks other audio +
+        // resumes after interruptions correctly. The previous form passed
+        // both `mode` AND `options` to `setCategory(...)`, which can
+        // return kAudio_ParamError (-50) on devices where the option set
+        // conflicts with the policy. Use the three-argument variant that
+        // takes a `RouteSharingPolicy` instead — that's the supported
+        // long-form-audio API and matches what `MPNowPlayingInfoCenter`
+        // expects.
         do {
             try session.setCategory(
                 .playback,
                 mode: .spokenAudio,
-                options: [.allowBluetoothA2DP, .allowAirPlay]
+                policy: .longFormAudio,
+                options: []
             )
-            try session.setActive(true)
+            try session.setActive(true, options: [])
         } catch {
-            // Non-fatal: simulator and unit-test contexts may reject this.
-            #if DEBUG
-            print("AVAudioSession configuration failed: \(error)")
-            #endif
+            // Fall back to the minimal form. `.playback` alone is enough
+            // for background audio + lock-screen controls; we lose
+            // long-form-audio policy niceties but the player still works.
+            do {
+                try session.setCategory(.playback)
+                try session.setActive(true)
+            } catch {
+                #if DEBUG
+                print("AVAudioSession configuration failed: \(error)")
+                #endif
+            }
         }
         #endif
     }

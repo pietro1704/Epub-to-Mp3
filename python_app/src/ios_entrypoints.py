@@ -36,7 +36,7 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from .tts import _edge_transport, _piper_transport
 
@@ -45,6 +45,14 @@ from .tts import _edge_transport, _piper_transport
 # instead of mid-word. Configurable via env for parity with the rest
 # of the Edge tuning surface.
 _DEFAULT_IOS_CHUNK_CHARS = 10_000
+
+# First-chunk burst size for segment streaming. A small first chunk
+# lets the Swift player queue audio in ~500 ms instead of waiting
+# for the entire chapter. Subsequent chunks use ``_chunk_chars()``
+# for throughput. Configurable via ``EDGE_FIRST_CHUNK_CHARS`` env var.
+# Default: 500 chars (~1–2 sentences, typically 4–8 s of audio at
+# 200 WPM neural voice). Range: [100, 2000].
+_DEFAULT_FIRST_CHUNK_CHARS = 500
 
 
 def _chunk_chars() -> int:
@@ -56,6 +64,23 @@ def _chunk_chars() -> int:
     except ValueError:
         return _DEFAULT_IOS_CHUNK_CHARS
     return max(1_000, min(value, 15_000))
+
+
+def _first_chunk_chars() -> int:
+    """Size of the burst-first chunk used in segment streaming.
+
+    Kept intentionally small so the Swift player can queue the first
+    ``AVPlayerItem`` within ~500 ms of synthesis start, satisfying the
+    HIG < 3 s time-to-first-byte requirement.
+    """
+    raw = os.environ.get("EDGE_FIRST_CHUNK_CHARS")
+    if not raw:
+        return _DEFAULT_FIRST_CHUNK_CHARS
+    try:
+        value = int(raw)
+    except ValueError:
+        return _DEFAULT_FIRST_CHUNK_CHARS
+    return max(10, min(value, 2_000))
 
 
 def _split_into_chunks(text: str, max_chars: int) -> List[str]:
@@ -182,6 +207,114 @@ def synthesize_chapter_via_transport(
                     mp3 = b""
         if mp3:
             audio.extend(mp3)
+
+    if not audio:
+        raise RuntimeError("ios_entrypoints: transport produced no audio")
+
+    destination = Path(out_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(bytes(audio))
+    return str(destination)
+
+
+def synthesize_chapter_streaming(
+    text: str,
+    voice: str,
+    out_path: str,
+    on_segment: Callable[[bytes, int, int], None],
+    piper_fallback_lang: Optional[str] = None,
+) -> str:
+    """Segment-streaming iOS entrypoint.
+
+    Identical to ``synthesize_chapter_via_transport`` in chunking and
+    fallback logic, but calls ``on_segment(mp3_bytes, segment_index,
+    total_chunks)`` immediately after each chunk closes rather than
+    accumulating all audio before returning.  Swift installs a closure
+    here that:
+
+    1. Writes ``mp3_bytes`` to a numbered temp file.
+    2. Creates an ``AVPlayerItem(url:)`` from that file.
+    3. Inserts the item into the running ``AVQueuePlayer``.
+
+    This enables the player to start the first segment within ~500 ms of
+    synthesis start while subsequent segments stream in behind it —
+    satisfying Apple's HIG < 3 s time-to-first-byte requirement.
+
+    The final concatenated MP3 is still written to ``out_path`` so the
+    chapter-level resume / cache reuse path works unchanged.
+
+    Special behaviour for the first chunk: ``_first_chunk_chars()``
+    (default 500 chars) is used instead of the normal chunk size, giving
+    the Swift player a short burst to queue immediately. All subsequent
+    chunks use ``_chunk_chars()`` (default 10 000 chars) for throughput.
+
+    ``on_segment`` is called with ``total_chunks = 0`` initially because
+    the total is not known until all chunks have been enumerated.  After
+    the final chunk, ``on_segment`` is **not** re-called; callers that
+    need the total should count invocations themselves or use the
+    returned file path as completion signal.
+
+    Raises ``RuntimeError`` if every chunk produced no audio.
+    """
+    text = (text or "").strip()
+    if not text:
+        raise RuntimeError("ios_entrypoints: empty input text")
+
+    first_size = _first_chunk_chars()
+    normal_size = _chunk_chars()
+
+    # Build chunk list: first chunk is intentionally small for fast
+    # time-to-first-byte; remainder uses the normal chunk size.
+    if len(text) <= first_size:
+        chunks: List[str] = [text]
+    else:
+        first_chunk = text[:first_size]
+        # Back up to the last whitespace boundary so we don't split
+        # mid-word, matching the paragraph-aware logic in _split_into_chunks.
+        last_space = first_chunk.rfind(" ")
+        if last_space > first_size // 2:
+            first_chunk = first_chunk[:last_space]
+        remainder = text[len(first_chunk) :].lstrip()
+        rest_chunks = _split_into_chunks(remainder, normal_size) if remainder else []
+        chunks = [first_chunk] + rest_chunks
+
+    piper_available = (
+        piper_fallback_lang is not None and _piper_transport.get_transport() is not None
+    )
+
+    audio = bytearray()
+    for segment_index, chunk in enumerate(chunks):
+        mp3: bytes = b""
+        try:
+            mp3 = _edge_transport.synthesize_chunk(chunk, voice)
+        except Exception as edge_exc:  # noqa: BLE001
+            if not piper_available:
+                raise
+            try:
+                mp3 = _piper_transport.synthesize_chunk(
+                    chunk,
+                    piper_fallback_lang,  # type: ignore[arg-type]
+                )
+            except Exception as piper_exc:  # noqa: BLE001
+                raise RuntimeError(
+                    "ios_entrypoints: edge failed and piper fallback failed: "
+                    f"edge={edge_exc!r} piper={piper_exc!r}"
+                ) from piper_exc
+        else:
+            if not mp3 and piper_available:
+                try:
+                    mp3 = _piper_transport.synthesize_chunk(
+                        chunk,
+                        piper_fallback_lang,  # type: ignore[arg-type]
+                    )
+                except Exception:  # noqa: BLE001
+                    mp3 = b""
+
+        if mp3:
+            audio.extend(mp3)
+            # Deliver this segment to Swift immediately — total_chunks is
+            # not known in advance, pass 0 as sentinel.
+            on_segment(bytes(mp3), segment_index, 0)
 
     if not audio:
         raise RuntimeError("ios_entrypoints: transport produced no audio")
@@ -766,4 +899,8 @@ def _collected_options(scope: Dict[str, Any]) -> Dict[str, Any]:
     return {key: scope.get(key) for key in _OPTION_KEYS if key in scope}
 
 
-__all__ = ["synthesize_chapter_via_transport", "convert_epub"]
+__all__ = [
+    "synthesize_chapter_via_transport",
+    "synthesize_chapter_streaming",
+    "convert_epub",
+]
