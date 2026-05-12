@@ -186,6 +186,13 @@ targets:
         # from the macOS link line entirely so xcodebuild stops yelling
         # "no library for this platform was found".
         "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "Python.xcframework"
+        # Both run-script phases on this target (the pre-build bootstrap
+        # and the post-build sidecar embed) write into directories that
+        # the sandbox cannot pre-declare (e.g. download caches under
+        # ~/.cache, the repo-rooted dist/ folder, large recursive copies
+        # into Vendor/). Disable script sandboxing for THIS TARGET only —
+        # the test target inherits the project-level YES.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
       configs:
         Debug:
           # Unsigned local Debug builds can't activate the App Sandbox,
@@ -208,6 +215,33 @@ targets:
           GCC_OPTIMIZATION_LEVEL: s
           DEBUG_INFORMATION_FORMAT: "dwarf-with-dsym"
           STRIP_INSTALLED_PRODUCT: YES
+    preBuildScripts:
+      - name: "Bootstrap Python.xcframework"
+        # Runs before Compile Sources / Link. If Vendor/Python/Python.xcframework
+        # already exists this is a fast no-op (echo + exit). Otherwise it invokes
+        # the canonical bootstrap script which downloads the Beeware Python-Apple-
+        # support tarball, splices iOS+macOS slices, and seeds Vendor/python-stdlib
+        # plus Vendor/site-packages/python_app. Idempotent and safe to re-run.
+        # `basedOnDependencyAnalysis: false` forces Xcode to evaluate the script
+        # every build (the existence check below handles the no-op fast path).
+        shell: /bin/bash
+        # No inputFiles/outputFiles: declaring Info.plist as an output causes
+        # a cycle because the ProcessXCFramework step reads the same path as
+        # its input. `basedOnDependencyAnalysis: false` already forces the
+        # script to evaluate on every build; the existence check below is
+        # the fast-path. `alwaysOutOfDate: true` is the Xcode 14+ way of
+        # saying "always run, don't try to resolve I/O dependencies".
+        basedOnDependencyAnalysis: false
+        alwaysOutOfDate: true
+        script: |
+          set -euo pipefail
+          XCF="${SRCROOT}/Vendor/Python/Python.xcframework"
+          if [ -d "${XCF}" ]; then
+            echo "==> Python.xcframework already vendored — skipping bootstrap"
+            exit 0
+          fi
+          echo "==> Python.xcframework missing — running bootstrap"
+          bash "${SRCROOT}/scripts/bootstrap-ios-python.sh"
     postBuildScripts:
       - name: "Embed Python sidecar (macOS only)"
         runOnlyWhenInstalling: false

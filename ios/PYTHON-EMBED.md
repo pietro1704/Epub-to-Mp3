@@ -57,6 +57,31 @@ macOS keeps using the sidecar binary (`SidecarManager.swift`,
 
 ## Bootstrap
 
+### Auto-bootstrap (default)
+
+The bootstrap is wired into the build pipeline at two layers so you never
+have to invoke the shell script directly:
+
+1. **Mise task dependency** — `mise run ios:build` and `mise run mac:build`
+   list `vendor:python` in their `depends`, so the xcframework is materialized
+   before `xcodebuild` runs. The task uses mise's `sources`/`outputs`
+   incremental cache, so it's a near-instant no-op once the framework is on
+   disk.
+2. **Xcode pre-build run-script phase** — the EpubToMp3 target has a
+   "Bootstrap Python.xcframework" phase as the first entry in `buildPhases`
+   (before Compile Sources). Opening the project in Xcode and pressing
+   Cmd+B fires the same script if `Vendor/Python/Python.xcframework` is
+   missing; otherwise it prints `already vendored` and exits 0.
+
+Manual override (force a re-bootstrap or run on a fresh clone before opening
+Xcode):
+
+```bash
+mise run vendor:python
+```
+
+### What it does
+
 ```bash
 ios/EpubToMp3/scripts/bootstrap-ios-python.sh
 cd ios/EpubToMp3

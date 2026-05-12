@@ -275,6 +275,14 @@ set -euo pipefail
 # (ios/EpubToMp3/) via its post-build script. Linux/Windows users run the
 # Flutter app under flutter_app/ — Flutter builds its own native packages.
 
+[tasks."vendor:python"]
+description = "Download + splice Beeware Python.xcframework into ios/EpubToMp3/Vendor (idempotent; iOS embed)"
+# `sources` + `outputs` let mise skip re-running when the xcframework is
+# already present and the bootstrap script itself hasn't changed.
+sources = ["ios/EpubToMp3/scripts/bootstrap-ios-python.sh"]
+outputs = ["ios/EpubToMp3/Vendor/Python/Python.xcframework/Info.plist"]
+run = "bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh"
+
 [tasks."sidecar:build"]
 description = "Build PyInstaller sidecar binary (epub-to-mp3-server, Edge-TTS only) into dist/"
 run = """
@@ -289,6 +297,11 @@ echo "Sidecar ready: dist/epub-to-mp3-server"
 
 [tasks."mac:build"]
 description = "Build SwiftUI macOS app with embedded Python sidecar"
+# Ensure Python.xcframework is on disk before xcodebuild evaluates the
+# `Vendor/Python/Python.xcframework` framework dependency. The Xcode
+# pre-build run-script phase is a second safety net (covers users who
+# open the .xcodeproj directly in Xcode without going through mise).
+depends = ["vendor:python"]
 run = """
 #!/bin/bash
 set -euo pipefail
@@ -324,6 +337,30 @@ else
   echo "error: build did not produce $APP_OUT"
   exit 1
 fi
+"""
+
+[tasks."ios:build"]
+description = "Build SwiftUI iOS app (Simulator) with embedded Python.xcframework"
+# vendor:python must finish before xcodebuild resolves the framework
+# dependency declared in project.yml.
+depends = ["vendor:python"]
+run = """
+#!/bin/bash
+set -euo pipefail
+cd ios/EpubToMp3
+if ! command -v xcodegen >/dev/null 2>&1; then
+  echo "error: xcodegen not installed. Install via: brew install xcodegen"
+  exit 1
+fi
+xcodegen generate
+DEST="${IOS_DEST:-platform=iOS Simulator,name=iPhone 16}"
+xcodebuild \\
+  -project EpubToMp3.xcodeproj \\
+  -scheme EpubToMp3 \\
+  -configuration Debug \\
+  -destination "${DEST}" \\
+  -derivedDataPath ./.build \\
+  build | tail -20
 """
 
 # ── Docker ───────────────────────────────────────────────────────────────────────
