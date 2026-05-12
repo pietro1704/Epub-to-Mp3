@@ -139,11 +139,38 @@ final class PythonEmbed: @unchecked Sendable {
     /// should degrade rather than crash at app launch.
     private func preloadHotModules() {
         if iosEntrypoints == nil {
-            iosEntrypoints = try? Python.attemptImport("python_app.src.ios_entrypoints")
+            do {
+                iosEntrypoints = try Python.attemptImport("python_app.src.ios_entrypoints")
+            } catch {
+                NSLog("[PythonEmbed] preload ios_entrypoints failed: %@", "\(error)")
+            }
         }
         if ebookReader == nil {
-            ebookReader = try? Python.attemptImport("python_app.src.ebook_reader")
+            do {
+                ebookReader = try Python.attemptImport("python_app.src.ebook_reader")
+            } catch {
+                NSLog("[PythonEmbed] preload ebook_reader failed: %@", "\(error)")
+            }
         }
+    }
+
+    /// Lazily imports a module on the calling thread when the bootstrap
+    /// preload didn't succeed (e.g. a transient hashlib/site-packages
+    /// glitch). The serial Python queue (``PythonBridge.queue``) is the
+    /// only legitimate caller — landing here from any other thread will
+    /// still race the GIL.
+    func ensureIosEntrypoints() throws -> PythonObject {
+        if let cached = iosEntrypoints { return cached }
+        let module = try Python.attemptImport("python_app.src.ios_entrypoints")
+        iosEntrypoints = module
+        return module
+    }
+
+    func ensureEbookReader() throws -> PythonObject {
+        if let cached = ebookReader { return cached }
+        let module = try Python.attemptImport("python_app.src.ebook_reader")
+        ebookReader = module
+        return module
     }
 
     // MARK: - Edge-TTS transport wiring

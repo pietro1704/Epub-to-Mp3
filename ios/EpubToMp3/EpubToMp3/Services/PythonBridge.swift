@@ -111,13 +111,17 @@ final class PythonBridge: @unchecked Sendable {
     /// Same as `parseEpub(at:bookId:)` but synchronous. Marked private
     /// because callers MUST land on `queue` first to avoid GIL races.
     private func parseEpubSync(path: String, bookId: String) throws -> EbookFulltext {
-        // Pre-imported in ``PythonEmbed.bootstrap`` on the same thread
-        // that ran ``Py_Initialize``. Running ``attemptImport`` here on
-        // a serial-queue worker has crashed inside
-        // ``_PyObject_Malloc`` / ``unicode_decode_utf8``.
-        guard let reader = PythonEmbed.shared.ebookReader else {
+        // Prefer the bootstrap-thread preload (avoids the
+        // ``_PyObject_Malloc`` malloc crash observed when
+        // ``PyImport_ImportModule`` runs on a worker that didn't run
+        // ``Py_Initialize``). Fall back to an on-demand import if the
+        // preload failed — caller surfaces the underlying Python error.
+        let reader: PythonObject
+        do {
+            reader = try PythonEmbed.shared.ensureEbookReader()
+        } catch {
             throw PythonBridgeError.bootstrapFailed(
-                "python_app.src.ebook_reader not preloaded — bootstrap must run first"
+                "import python_app.src.ebook_reader: \(error)"
             )
         }
 
@@ -202,9 +206,12 @@ final class PythonBridge: @unchecked Sendable {
         // Pre-imported in ``PythonEmbed.bootstrap``; see the matching
         // guard in ``convertChapterStreamingSync`` for the malloc-crash
         // rationale.
-        guard let entry = PythonEmbed.shared.iosEntrypoints else {
+        let entry: PythonObject
+        do {
+            entry = try PythonEmbed.shared.ensureIosEntrypoints()
+        } catch {
             throw PythonBridgeError.bootstrapFailed(
-                "python_app.src.ios_entrypoints not preloaded — bootstrap must run first"
+                "import python_app.src.ios_entrypoints: \(error)"
             )
         }
 
@@ -298,9 +305,12 @@ final class PythonBridge: @unchecked Sendable {
         // import here, on a different serial-queue worker, has crashed
         // inside ``_PyObject_Malloc`` / ``unicode_decode_utf8`` — so we
         // never call ``attemptImport`` from this hot path.
-        guard let entry = PythonEmbed.shared.iosEntrypoints else {
+        let entry: PythonObject
+        do {
+            entry = try PythonEmbed.shared.ensureIosEntrypoints()
+        } catch {
             throw PythonBridgeError.bootstrapFailed(
-                "python_app.src.ios_entrypoints not preloaded — bootstrap must run first"
+                "import python_app.src.ios_entrypoints: \(error)"
             )
         }
         _iosEntrypointsModule = entry
@@ -548,9 +558,12 @@ final class PythonBridge: @unchecked Sendable {
             at: cacheDir, withIntermediateDirectories: true
         )
 
-        guard let entry = PythonEmbed.shared.iosEntrypoints else {
+        let entry: PythonObject
+        do {
+            entry = try PythonEmbed.shared.ensureIosEntrypoints()
+        } catch {
             throw PythonBridgeError.bootstrapFailed(
-                "python_app.src.ios_entrypoints not preloaded — bootstrap must run first"
+                "import python_app.src.ios_entrypoints: \(error)"
             )
         }
 
