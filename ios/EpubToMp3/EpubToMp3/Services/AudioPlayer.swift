@@ -422,6 +422,8 @@ final class AudioPlayer: ObservableObject {
             // Also raise firstChapterReady so MiniPlayerBar shows play/pause.
             firstChapterReady = true
         }
+        conversionStatus.record(.chunkComplete,
+            "ch\(chapterIndex) segment \(segmentIndex) ready (\(data.count) bytes)")
     }
 
     /// Called by `BookOpenView` / `InstantReaderView` when the first
@@ -430,7 +432,21 @@ final class AudioPlayer: ObservableObject {
     /// (all chapters done). Idempotent — safe to call multiple times.
     func markFirstChapterReady() {
         firstChapterReady = true
+        conversionStatus.record(.chapterComplete, "First chapter audio ready")
     }
+
+    /// Record a conversion error in the status log. Called by
+    /// `BookOpenView` when a chapter synthesis fails so the user can
+    /// see the error in `ConversionStatusSheet` and tap Retry.
+    func recordConversionError(_ message: String) {
+        conversionStatus.record(.error, message)
+    }
+
+    /// Live conversion event log. Populated by `enqueueSegment`,
+    /// `markFirstChapterReady`, and error paths in `BookOpenView`.
+    /// Observed by `ConversionStatusSheet` so the user can inspect
+    /// segment-level progress without leaving the reader.
+    let conversionStatus = ConversionStatus()
 
     /// Reset conversion-tracking state when a new book session starts
     /// so stale progress from a previous book is never shown.
@@ -439,6 +455,7 @@ final class AudioPlayer: ObservableObject {
         conversionProgress = nil
         firstChapterReady = false
         firstSegmentReady = false
+        conversionStatus.endSession()
     }
 
     /// Tear down the player completely and clear the Now Playing widget.

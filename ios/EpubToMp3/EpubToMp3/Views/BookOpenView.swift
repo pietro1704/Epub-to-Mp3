@@ -39,6 +39,14 @@ struct BookOpenView: View {
     @State private var audioBootstrapTask: Task<Void, Never>?
     @State private var streamTask: Task<Void, Never>?
     @State private var showingPicker = false
+    /// Live watchdog over the active audio bootstrap. Started by
+    /// ``startAudioBootstrap``; stopped in ``onDisappear`` and on any
+    /// terminal-state branch. Cancels + auto-retries the bootstrap on
+    /// stall; after 2 silent stalls surfaces a banner with manual retry.
+    @State private var watchdog: ConversionWatchdog?
+    /// `true` once the watchdog has surfaced the give-up banner so the
+    /// UI shows an explicit retry CTA rather than the generic spinner.
+    @State private var conversionStalled: Bool = false
     /// Resolved PDF document — set only for `book.fileType == .pdf`
     /// once `openFlow()` has loaded the file. Kept on `BookOpenView`
     /// (not inside `PdfReaderView`) so the same instance survives a
@@ -103,6 +111,13 @@ struct BookOpenView: View {
         .onDisappear {
             audioBootstrapTask?.cancel()
             streamTask?.cancel()
+            watchdog?.stop()
+            watchdog = nil
+            // Guarantee the global player never gets stuck in "isConverting"
+            // when the user backs out of the reader mid-job. The book may
+            // still be processing in the background, but `BookOpenView` no
+            // longer owns the UI signal for it.
+            globalPlayer.clearConversionState()
         }
         .fileImporter(
             isPresented: $showingPicker,
@@ -199,6 +214,13 @@ struct BookOpenView: View {
                 parsed = try await PythonBridge.shared.parseEpub(
                     at: fileURL, bookId: book.id
                 )
+            } catch is TimeoutError {
+                // Resilience: a 30-second-stuck Python parse means the
+                // interpreter is wedged (rare, but observed when a giant
+                // OPF spine pegs CPU). Fall through to the pure-Swift
+                // walker so the reader still opens — never leave the
+                // user staring at "Opening…".
+                parsed = nil
             } catch {
                 parsed = nil
             }
@@ -269,8 +291,32 @@ struct BookOpenView: View {
     private func startAudioBootstrap(startChapterIndex: Int = 0) {
         audioBootstrapTask?.cancel()
         statusBanner = "Generating audio…"
+        conversionStalled = false
         globalPlayer.isConverting = true
+        globalPlayer.conversionStatus.beginSession()
         playerLog.debug("[AudioBootstrap] startAudioBootstrap ch=\(startChapterIndex) — useEmbeddedRuntime=\(settings.useEmbeddedRuntime) hasClient=\(self.client != nil)")
+
+        // Resilience: spin up a watchdog so a silent pipeline (network
+        // wedge, hung Edge socket, Python deadlock) is caught instead
+        // of leaving the user staring at a forever spinner. 90 s of
+        // silence ⇒ cancel + retry; after two consecutive silent
+        // stalls we expose a manual retry CTA.
+        watchdog?.stop()
+        let wd = ConversionWatchdog()
+        wd.onStall = {
+            playerLog.warning("[Watchdog] stall detected — cancelling and retrying")
+            audioBootstrapTask?.cancel()
+            startAudioBootstrap(startChapterIndex: startChapterIndex)
+        }
+        wd.onGaveUp = {
+            playerLog.error("[Watchdog] consecutive stalls; surfacing retry CTA")
+            audioBootstrapTask?.cancel()
+            globalPlayer.isConverting = false
+            conversionStalled = true
+            statusBanner = "Audio generation stalled. Tap retry."
+        }
+        wd.start()
+        watchdog = wd
 
         #if os(iOS) || targetEnvironment(simulator)
         if settings.useEmbeddedRuntime, client == nil {
@@ -354,6 +400,14 @@ struct BookOpenView: View {
             let totalChapters = chapters.count
             await MainActor.run {
                 self.statusBanner = "Generating audio · \(chaptersDone)/\(totalChapters) ready"
+                self.globalPlayer.conversionStatus.setCurrentChapter(
+                    index: chapterArrayIndex,
+                    name: chapter.displayTitle
+                )
+                self.globalPlayer.conversionStatus.record(
+                    .info,
+                    "Starting chapter \(chapterArrayIndex + 1)/\(totalChapters): \(chapter.displayTitle)"
+                )
             }
             playerLog.debug("[AudioBootstrap] synthesising chapter \(chapterArrayIndex) (\(chapterText.count) chars)")
 
@@ -371,11 +425,24 @@ struct BookOpenView: View {
                         chapterIndex: chapIdx,
                         segmentIndex: segIdx
                     )
+                    // Heartbeat — a segment landing is the strongest
+                    // possible "alive" signal. Reset the watchdog clock
+                    // so a slow next-chunk doesn't trip the stall wire.
+                    watchdog?.heartbeat()
                 }
                 chaptersDone += 1
+                // Chapter completed: another explicit heartbeat in case
+                // the chapter produced no segments (e.g. an empty front-
+                // matter chunk handled internally by the Python layer).
+                watchdog?.heartbeat()
                 playerLog.debug("[AudioBootstrap] chapter \(chapterArrayIndex) complete")
             } catch {
                 playerLog.error("[AudioBootstrap] chapter \(chapterArrayIndex) failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    self.globalPlayer.recordConversionError(
+                        "Chapter \(chapterArrayIndex + 1) failed: \(error.localizedDescription)"
+                    )
+                }
                 // Non-fatal — continue with next chapter so the listener
                 // still hears the rest of the book.
             }
@@ -383,7 +450,10 @@ struct BookOpenView: View {
 
         await MainActor.run {
             self.globalPlayer.isConverting = false
+            self.globalPlayer.conversionStatus.endSession()
             self.statusBanner = nil
+            // Terminal: shut the watchdog so it stops polling.
+            self.watchdog?.stop()
         }
         playerLog.debug("[AudioBootstrap] bootstrapEmbedded finished, \(chaptersDone)/\(chapters.count) chapters done")
     }
@@ -447,6 +517,11 @@ struct BookOpenView: View {
         } catch {
             await MainActor.run {
                 self.statusBanner = "Audio unavailable: \(error.localizedDescription)"
+                // Reset state so the global mini-player doesn't keep
+                // showing a spinner against a job that will never run.
+                self.globalPlayer.isConverting = false
+                self.watchdog?.stop()
+                self.conversionStalled = true
             }
             return
         }
@@ -499,6 +574,9 @@ struct BookOpenView: View {
         } catch {
             await MainActor.run {
                 self.statusBanner = "Audio failed: \(error.localizedDescription)"
+                self.globalPlayer.isConverting = false
+                self.watchdog?.stop()
+                self.conversionStalled = true
             }
         }
     }
@@ -509,6 +587,11 @@ struct BookOpenView: View {
             do {
                 for try await event in client.eventStream(jobId: jobId) {
                     if Task.isCancelled { break }
+                    // Any event — keepalive, snapshot, or error frame —
+                    // counts as a sign of life and resets the stall
+                    // clock. We do this before decoding so a "stuck on
+                    // decoding" loop doesn't starve the watchdog.
+                    self.watchdog?.heartbeat()
                     if let updated = APIClient.decodeSnapshot(from: event.rawPayload) {
                         self.jobSnapshot = updated
                         let playable = updated.playableChapters
@@ -528,13 +611,22 @@ struct BookOpenView: View {
                         if updated.isTerminal {
                             self.globalPlayer.isConverting = false
                             self.statusBanner = nil
+                            self.watchdog?.stop()
                             break
                         }
                     }
                 }
             } catch {
+                // Any failure here means the user is staring at a
+                // dead stream. Guarantee state reset so the UI
+                // never wedges in "isConverting=true" — that's the
+                // exact silent-stall bug this slice targets.
                 self.globalPlayer.isConverting = false
-                self.statusBanner = nil
+                self.globalPlayer.recordConversionError("Stream error: \(error.localizedDescription)")
+                self.globalPlayer.conversionStatus.endSession()
+                self.statusBanner = "Stream interrupted. Tap retry."
+                self.conversionStalled = true
+                self.watchdog?.stop()
             }
         }
     }

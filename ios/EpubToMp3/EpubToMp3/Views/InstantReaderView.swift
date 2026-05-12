@@ -47,6 +47,7 @@ struct InstantReaderView: View {
     @State private var showingToc = false
     @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
     @State private var showingPlayMenu = false
+    @State private var showingConversionStatus = false
 
     var body: some View {
         // The reader content + (optional) status strip live in the
@@ -108,6 +109,20 @@ struct InstantReaderView: View {
         }
         .sheet(isPresented: $showingToc) {
             tocSheet
+        }
+        .sheet(isPresented: $showingConversionStatus) {
+            ConversionStatusSheet(
+                status: player.conversionStatus,
+                bookTitle: fulltext.bookTitle ?? "Book",
+                onCancel: {
+                    showingConversionStatus = false
+                    onRequestAudioRetry()   // caller's cancel/retry handler
+                },
+                onRetry: {
+                    showingConversionStatus = false
+                    onRequestAudioRetry()
+                }
+            )
         }
         .compatOnChange(of: hasAudio) { isAudioReady in
             if isAudioReady, !playerMounted { mountPlayerIfPossible() }
@@ -197,27 +212,50 @@ struct InstantReaderView: View {
 
     // MARK: - Status strip
 
+    /// Tappable status strip shown while audio is being generated.
+    /// Tap → opens `ConversionStatusSheet`.
     private func statusStrip(_ text: String) -> some View {
-        HStack(spacing: 10) {
-            ProgressView()
-                .controlSize(.small)
-                .tint(readerForeground.opacity(0.6))
-            Text(text)
-                .font(.footnote)
-                .foregroundStyle(readerForeground.opacity(0.7))
-            Spacer()
-            if text.lowercased().contains("failed") || text.lowercased().contains("unavailable") {
-                Button("Retry", action: onRequestAudioRetry)
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
+        let isError = text.lowercased().contains("failed")
+                    || text.lowercased().contains("unavailable")
+        return Button {
+            showingConversionStatus = true
+        } label: {
+            HStack(spacing: 10) {
+                if isError {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                } else {
+                    ProgressView()
+                        .controlSize(.small)
+                        .tint(readerForeground.opacity(0.6))
+                }
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(text)
+                        .font(.footnote)
+                        .foregroundStyle(readerForeground.opacity(0.85))
+                    Text("Tap for details")
+                        .font(.caption2)
+                        .foregroundStyle(readerForeground.opacity(0.5))
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption2)
+                    .foregroundStyle(readerForeground.opacity(0.4))
             }
         }
+        .buttonStyle(.plain)
         // 16pt on top of the safe-area inset so the spinner / status
-        // copy / Retry button never sit under the notch in landscape.
+        // copy never sit under the notch in landscape.
         .compatHorizontalSafeAreaPadding(16)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         // Theme-aware tinted background, consistent with the reader toolbar.
         .background(readerBackground.opacity(0.96))
+        .accessibilityLabel("Conversion status: \(text). Tap for details.")
+        .accessibilityIdentifier("instantReader.statusStrip")
     }
 
     // MARK: - Player bar

@@ -169,6 +169,14 @@ packages:
   PythonKit:
     url: https://github.com/pvieito/PythonKit.git
     from: "0.4.0"
+  # swift-snapshot-testing — pointfree's view-snapshot harness. Used by
+  # the regression suite under EpubToMp3Tests/Snapshots/. Pinned to the
+  # 1.17 line which still supports iOS 13 / macOS 10.15 deployment
+  # (we target iOS 15 / macOS 12). Renders SwiftUI to UIKit/AppKit
+  # hosting and writes/compares PNGs on disk.
+  SnapshotTesting:
+    url: https://github.com/pointfreeco/swift-snapshot-testing.git
+    from: "1.17.0"
 
 targets:
   EpubToMp3:
@@ -332,6 +340,8 @@ targets:
       - path: EpubToMp3Tests
     dependencies:
       - target: EpubToMp3
+      - package: SnapshotTesting
+        product: SnapshotTesting
     settings:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"
