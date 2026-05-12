@@ -89,6 +89,13 @@ struct SplitViewRoot: View {
         .onAppear { applySizeClassDefault() }
         .compatOnChange(of: hSize) { _ in applySizeClassDefault() }
         .compatOnChange(of: vSize) { _ in applySizeClassDefault() }
+        // When the library is empty on iPad portrait the sidebar
+        // collapses behind a tiny toggle and the user can't see the
+        // import button. Auto-expand to `.all` so the Empty State +
+        // import CTA become the immediate focal point; once a book is
+        // imported, transition back to `.doubleColumn` so the chapter
+        // list owns the content column as before.
+        .compatOnChange(of: library.books.count) { _ in applyEmptyLibraryReveal() }
         #endif
     }
 
@@ -142,11 +149,39 @@ struct SplitViewRoot: View {
     private func applySizeClassDefault() {
         // Don't trample an explicit user choice mid-session — only
         // realign on transitions between the two canonical layouts.
-        let desired: NavigationSplitViewVisibility = isCompactHorizontal
-            ? .doubleColumn
-            : .all
+        let desired = preferredVisibility(for: library.books.isEmpty)
         if columnVisibility != desired {
             columnVisibility = desired
+        }
+    }
+
+    /// Compute the preferred visibility for the current size class +
+    /// library state. Empty library on a layout that would normally
+    /// hide the sidebar (iPad portrait → `.doubleColumn`) gets bumped
+    /// to `.all` so the Empty State + import button are visible without
+    /// requiring the user to tap the toggle. Non-empty libraries fall
+    /// back to the canonical size-class default.
+    fileprivate func preferredVisibility(for isLibraryEmpty: Bool) -> NavigationSplitViewVisibility {
+        if isLibraryEmpty && isCompactHorizontal {
+            // iPad portrait / Slide Over with no books: reveal the
+            // sidebar so the import CTA is discoverable.
+            return .all
+        }
+        return isCompactHorizontal ? .doubleColumn : .all
+    }
+
+    /// Re-evaluate visibility after the library mutates (book imported
+    /// or removed). Mirrors `applySizeClassDefault` but keyed off
+    /// `library.books.count` so the first import transitions cleanly
+    /// from the reveal-the-sidebar layout to the standard two-column
+    /// layout and starts revealing the chapter list as the user picks
+    /// a book.
+    private func applyEmptyLibraryReveal() {
+        let desired = preferredVisibility(for: library.books.isEmpty)
+        if columnVisibility != desired {
+            withAnimation(.easeInOut(duration: 0.25)) {
+                columnVisibility = desired
+            }
         }
     }
     #endif

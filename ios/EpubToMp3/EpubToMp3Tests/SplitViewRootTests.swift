@@ -194,6 +194,76 @@ final class SplitViewRootTests: XCTestCase {
         XCTAssertNotEqual(NavigationSplitViewVisibility.all, .doubleColumn)
     }
 
+    // MARK: - Empty library reveal (iPad portrait import-discoverability)
+
+    /// On iPad portrait (compact horizontal proxy) an empty library
+    /// must surface the sidebar so the Empty State + import button
+    /// are discoverable without the user first hitting the toggle.
+    /// This guards the fix for the "user sees only a toggle icon and
+    /// 'Select a book'" bug.
+    func testEmptyLibraryRevealsSidebarOnCompactHorizontal() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        #if os(iOS)
+        let visibility = SplitViewRootVisibilityProbe.preferred(
+            isLibraryEmpty: true,
+            isCompactHorizontal: true
+        )
+        XCTAssertEqual(
+            visibility, .all,
+            "Empty library on iPad portrait must reveal the sidebar with the import button."
+        )
+        #endif
+    }
+
+    /// iPad landscape with an empty library: three columns (sidebar
+    /// + content + detail). The sidebar is already visible by default
+    /// here, so the contract is "no regression to two-column".
+    func testEmptyLibraryOnRegularLayoutStaysAtThreeColumns() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        #if os(iOS)
+        let visibility = SplitViewRootVisibilityProbe.preferred(
+            isLibraryEmpty: true,
+            isCompactHorizontal: false
+        )
+        XCTAssertEqual(
+            visibility, .all,
+            "Empty library on iPad landscape must keep the three-column layout."
+        )
+        #endif
+    }
+
+    /// Library with at least one book on iPad portrait: fall back to
+    /// the canonical two-column layout so the chapter list (content
+    /// column) owns the focus once the user has something to read.
+    func testPopulatedLibraryOnCompactHorizontalUsesDoubleColumn() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        #if os(iOS)
+        let visibility = SplitViewRootVisibilityProbe.preferred(
+            isLibraryEmpty: false,
+            isCompactHorizontal: true
+        )
+        XCTAssertEqual(
+            visibility, .doubleColumn,
+            "Populated library on iPad portrait must collapse to two columns."
+        )
+        #endif
+    }
+
+    /// Library with at least one book on iPad landscape: three columns.
+    func testPopulatedLibraryOnRegularLayoutUsesAllColumns() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        #if os(iOS)
+        let visibility = SplitViewRootVisibilityProbe.preferred(
+            isLibraryEmpty: false,
+            isCompactHorizontal: false
+        )
+        XCTAssertEqual(
+            visibility, .all,
+            "Populated library on iPad landscape must keep three columns."
+        )
+        #endif
+    }
+
     // MARK: - Helpers
 
     /// Mirror of `SplitViewRoot.defaultColumnVisibility` (private).
@@ -209,3 +279,23 @@ final class SplitViewRootTests: XCTestCase {
         #endif
     }
 }
+
+#if os(iOS)
+/// Mirror of `SplitViewRoot.preferredVisibility(for:)` extracted to a
+/// pure-function probe so the tests can exercise the matrix
+/// (empty/populated × portrait/landscape) without needing to render
+/// the full split view. **Keep this in lockstep with the source**:
+/// any change to the production decision tree must be reflected here.
+@available(iOS 16, macOS 13, *)
+enum SplitViewRootVisibilityProbe {
+    static func preferred(
+        isLibraryEmpty: Bool,
+        isCompactHorizontal: Bool
+    ) -> NavigationSplitViewVisibility {
+        if isLibraryEmpty && isCompactHorizontal {
+            return .all
+        }
+        return isCompactHorizontal ? .doubleColumn : .all
+    }
+}
+#endif
