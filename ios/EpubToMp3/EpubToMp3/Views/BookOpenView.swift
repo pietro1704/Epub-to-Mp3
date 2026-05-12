@@ -174,31 +174,49 @@ struct BookOpenView: View {
             //    so the iOS app and the sidecar/HF server always
             //    agree on chapter boundaries.
             #if os(iOS) || targetEnvironment(simulator)
-            do {
-                // On a real device, `fileURL` is a security-scoped URL
-                // resolved from a bookmark. Without `startAccessing…`
-                // the file is visible in the directory listing but
-                // read(2) / open(2) return EPERM — the sandbox denies
-                // access. The simulator runs without the full iOS
-                // sandbox, so reads succeed even without the scope,
-                // masking this failure in every Simulator run.
-                let accessing = fileURL.startAccessingSecurityScopedResource()
-                defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
+            // On a real device, `fileURL` is a security-scoped URL
+            // resolved from a bookmark. Without `startAccessing…`
+            // the file is visible in the directory listing but
+            // read(2) / open(2) return EPERM — the sandbox denies
+            // access. The simulator runs without the full iOS
+            // sandbox, so reads succeed even without the scope,
+            // masking this failure in every Simulator run.
+            let accessing = fileURL.startAccessingSecurityScopedResource()
+            defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
 
-                let parsed = try await PythonBridge.shared.parseEpub(
+            // Two-tier parse: prefer the canonical Python pipeline
+            // (TOC-aware, hierarchy-preserving) but fall back to a
+            // pure-Swift spine-walker when the Python embed is not
+            // yet bootstrapped, when an EPUB uses an OPF dialect the
+            // canonical parser rejects, or when PythonKit traps.
+            // Either path produces an EbookFulltext the reader can
+            // render — we only surface "unreadable" if both fail.
+            var parsed: EbookFulltext?
+            do {
+                parsed = try await PythonBridge.shared.parseEpub(
                     at: fileURL, bookId: book.id
                 )
+            } catch {
+                parsed = nil
+            }
+            if parsed == nil || (parsed?.chapters.isEmpty ?? true) {
+                let fallback = EpubFallbackParser.parse(url: fileURL, bookId: book.id)
+                if !fallback.chapters.isEmpty {
+                    parsed = fallback
+                }
+            }
+            if let parsed, !parsed.chapters.isEmpty {
                 self.fulltext = parsed
                 self.phase = .ready
                 Task.detached(priority: .background) {
                     LocalFulltextCache.save(parsed, bookId: book.id)
                 }
-            } catch {
-                // Parser couldn't extract chapters — DRM-locked file or
-                // malformed EPUB. NOT a backend issue: parsing is fully
-                // local in this app (PythonBridge runs in-process). Show
-                // the soft-failure surface so the user can see the file
-                // path and re-pick if needed.
+            } else {
+                // Both parsers came back empty — DRM-locked file or
+                // truly malformed EPUB. NOT a backend issue: parsing
+                // is fully local in this app. Show the soft-failure
+                // surface so the user can see the file path and
+                // re-pick if needed.
                 phase = .unreadable(fileURL)
                 return
             }
