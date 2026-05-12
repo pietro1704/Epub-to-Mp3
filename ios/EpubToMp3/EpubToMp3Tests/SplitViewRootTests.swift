@@ -286,13 +286,20 @@ final class SplitViewRootTests: XCTestCase {
 /// (empty/populated × portrait/landscape) without needing to render
 /// the full split view. **Keep this in lockstep with the source**:
 /// any change to the production decision tree must be reflected here.
+///
+/// The "reveal the sidebar" branch fires only when the user is on the
+/// Library destination AND the library is empty — the Now-Playing
+/// landing screen has its own empty state, so it doesn't piggy-back on
+/// this column-visibility heuristic.
 @available(iOS 16, macOS 13, *)
 enum SplitViewRootVisibilityProbe {
     static func preferred(
         isLibraryEmpty: Bool,
-        isCompactHorizontal: Bool
+        isCompactHorizontal: Bool,
+        navMode: SplitNavMode = .library
     ) -> NavigationSplitViewVisibility {
-        if isLibraryEmpty && isCompactHorizontal {
+        let needsEmptySidebarReveal = (navMode == .library) && isLibraryEmpty
+        if needsEmptySidebarReveal && isCompactHorizontal {
             return .all
         }
         return isCompactHorizontal ? .doubleColumn : .all

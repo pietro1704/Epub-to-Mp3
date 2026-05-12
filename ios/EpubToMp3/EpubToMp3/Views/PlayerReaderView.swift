@@ -36,6 +36,23 @@ struct PlayerReaderView: View {
     @State private var sentenceTask: Task<Void, Never>?
     @State private var fulltextTask: Task<Void, Never>?
     @State private var streamTask: Task<Void, Never>?
+    @State private var downloadTask: Task<Void, Never>?
+    @State private var downloadState: DownloadButtonState = .idle
+    @State private var downloadProgressText: String?
+
+    /// Tri-state for the toolbar Download button. `idle` is the default
+    /// CTA; `downloading` shows a determinate progress label; `done`
+    /// confirms completion until the next mount.
+    enum DownloadButtonState: Equatable {
+        case idle
+        case downloading
+        case done
+        case failed
+    }
+
+    /// Shared download manager — chapter MP3s land in
+    /// `<documents>/Audiobooks/<jobId>/chapters/` and survive offline.
+    @State private var downloads = DownloadManager()
 
     var body: some View {
         CompatNavigationStack {
@@ -64,6 +81,7 @@ struct PlayerReaderView: View {
                 }
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 12) {
+                        downloadButton
                         #if os(iOS)
                         AirPlayPickerView()
                             .frame(width: 32, height: 32)
@@ -227,6 +245,72 @@ struct PlayerReaderView: View {
         }
     }
 
+    /// Toolbar Download CTA — fans out the snapshot's chapter MP3s to
+    /// `DownloadManager` so the audiobook survives offline. Hidden when
+    /// there's no resolvable backend URL or the snapshot carries no
+    /// playable chapters.
+    @ViewBuilder
+    private var downloadButton: some View {
+        if backendBaseURL != nil, !snapshot.playableChapters.isEmpty {
+            Button {
+                startDownload()
+            } label: {
+                switch downloadState {
+                case .idle:
+                    Image(systemName: "arrow.down.circle")
+                case .downloading:
+                    HStack(spacing: 4) {
+                        ProgressView()
+                            #if os(iOS)
+                            .controlSize(.small)
+                            #endif
+                        if let text = downloadProgressText {
+                            Text(text)
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                case .done:
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .failed:
+                    Image(systemName: "exclamationmark.circle")
+                        .foregroundStyle(.red)
+                }
+            }
+            .accessibilityLabel("Download all chapters for offline playback")
+            .accessibilityIdentifier("player.downloadAll")
+            .disabled(downloadState == .downloading)
+        }
+    }
+
+    /// Kick off the download fan-out and stream the progress states back
+    /// into `downloadState` / `downloadProgressText`.
+    private func startDownload() {
+        downloadTask?.cancel()
+        downloadState = .downloading
+        downloadProgressText = nil
+        downloads.enqueueAll(snapshot: snapshot, baseURL: backendBaseURL)
+        let jobId = snapshot.jobId
+        downloadTask = Task { @MainActor in
+            for await progress in downloads.watchProgress(jobId: jobId) {
+                if Task.isCancelled { break }
+                downloadProgressText =
+                    "\(progress.completedChapters)/\(progress.totalChapters)"
+                switch progress.state {
+                case .completed:
+                    downloadState = .done
+                    return
+                case .failed:
+                    downloadState = .failed
+                    return
+                case .queued, .downloading, .paused:
+                    downloadState = .downloading
+                }
+            }
+        }
+    }
+
     /// Sleep timer menu for the toolbar.
     private var sleepTimerMenu: some View {
         Menu {
@@ -298,6 +382,7 @@ struct PlayerReaderView: View {
         sentenceTask?.cancel(); sentenceTask = nil
         fulltextTask?.cancel(); fulltextTask = nil
         streamTask?.cancel(); streamTask = nil
+        downloadTask?.cancel(); downloadTask = nil
     }
 
     /// Live-stream the backend's per-chapter progress and feed each

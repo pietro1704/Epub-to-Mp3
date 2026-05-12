@@ -56,6 +56,15 @@ enum PlaybackRate: Float, CaseIterable, Identifiable {
 @MainActor
 final class AudioPlayer: ObservableObject {
 
+    /// UserDefaults key holding the `BookEntity.id` of the book that was
+    /// most recently surfaced in `NowPlayingView`. Written by the view
+    /// when the user begins playback so the landing screen rehydrates
+    /// after a cold launch. Centralised here so the rest of the app
+    /// shares a single source of truth.
+    static let currentBookIDDefaultsKey = "currentlyPlayingBookID"
+    /// Companion key — zero-based chapter index of the resumed book.
+    static let currentChapterIndexDefaultsKey = "currentlyPlayingChapterIndex"
+
     // MARK: Public observable state
 
     @Published private(set) var snapshot: JobSnapshot?

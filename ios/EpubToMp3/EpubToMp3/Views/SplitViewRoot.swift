@@ -1,8 +1,14 @@
 import SwiftUI
 
-/// Three-column root used on iPad regular-width and macOS. Layout:
+/// Multi-column root used on iPad regular-width and macOS. Layout:
 ///
-///   Library (sidebar) | ChapterList (content) | PlayerReader (detail)
+///   Nav sidebar | Content for current nav mode | Detail (library only)
+///
+/// As of the Now-Playing landing-screen slice, the sidebar surfaces a
+/// short top-level navigation (`SplitNavMode`) rather than the library
+/// book list directly. Default selection is `.nowPlaying` — the player
+/// + reader for the user's most-recent audiobook — mirroring Apple
+/// Books / Apple Podcasts. Library is one step away.
 ///
 /// Falls back to `TabRoot` on iPhone compact and pre-iOS-16/macOS-13
 /// systems via the branch in `RootView`. This view is therefore safe
@@ -10,12 +16,9 @@ import SwiftUI
 /// keeps the body from executing on older OSes.
 ///
 /// Selection model:
-///   - `selectedBookID: String?`  — drives the sidebar.
-///   - `selectedChapterIndex: Int?` — drives the chapter list, which
-///     in turn mounts the detail column on selection change.
-///
-/// Both are persistent across re-layouts but reset to nil when the
-/// underlying library changes (book removed).
+///   - `navMode: SplitNavMode` — drives the sidebar + content column.
+///   - `selectedBookID: String?` — relevant only when `navMode == .library`.
+///   - `selectedChapterIndex: Int?` — relevant only when `navMode == .library`.
 ///
 /// Column visibility adapts to the size class:
 ///   - iPad portrait (compact horizontal) → `.doubleColumn`
@@ -23,6 +26,37 @@ import SwiftUI
 ///   - iPad landscape / macOS → `.all` (three columns side by side).
 ///   This mirrors Apple Books / Mail, where portrait can't fit three
 ///   columns without the middle one being unusably narrow.
+
+/// Top-level destinations exposed in the split-view sidebar. Backed by
+/// `String` so it can flow through `List(selection:)` on every SDK
+/// without bridging through `Hashable`-only generic plumbing.
+enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
+    case nowPlaying
+    case library
+    case jobs
+    case settings
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .nowPlaying: return "Now Playing"
+        case .library:    return "Library"
+        case .jobs:       return "Conversions"
+        case .settings:   return "Settings"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .nowPlaying: return "headphones.circle"
+        case .library:    return "books.vertical"
+        case .jobs:       return "arrow.triangle.2.circlepath"
+        case .settings:   return "gearshape"
+        }
+    }
+}
+
 @available(iOS 16, macOS 13, *)
 struct SplitViewRoot: View {
     @EnvironmentObject private var library: LibraryStore
@@ -34,6 +68,7 @@ struct SplitViewRoot: View {
     #endif
 
     @State private var columnVisibility: NavigationSplitViewVisibility = SplitViewRoot.defaultColumnVisibility
+    @State private var navMode: SplitNavMode = .nowPlaying
     @State private var selectedBookID: String?
     @State private var selectedChapterIndex: Int?
 
@@ -45,26 +80,12 @@ struct SplitViewRoot: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
-            LibrarySidebar(selectedBookID: $selectedBookID)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 300)
+            navSidebar
+                .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
                 .accessibilityIdentifier("split.sidebar")
         } content: {
-            Group {
-                if let book = selectedBook {
-                    ChapterListColumn(
-                        book: book,
-                        selectedChapterIndex: $selectedChapterIndex
-                    )
-                    .navigationSplitViewColumnWidth(min: 240, ideal: 280, max: 360)
-                } else {
-                    CompatContentUnavailableView(
-                        "Select a book",
-                        systemImage: "books.vertical",
-                        description: Text("Pick a book from the library to see its chapters.")
-                    )
-                }
-            }
-            .accessibilityIdentifier("split.content")
+            contentColumn
+                .accessibilityIdentifier("split.content")
         } detail: {
             detailColumn
                 .accessibilityIdentifier("split.detail")
@@ -89,14 +110,54 @@ struct SplitViewRoot: View {
         .onAppear { applySizeClassDefault() }
         .compatOnChange(of: hSize) { _ in applySizeClassDefault() }
         .compatOnChange(of: vSize) { _ in applySizeClassDefault() }
-        // When the library is empty on iPad portrait the sidebar
-        // collapses behind a tiny toggle and the user can't see the
-        // import button. Auto-expand to `.all` so the Empty State +
-        // import CTA become the immediate focal point; once a book is
-        // imported, transition back to `.doubleColumn` so the chapter
-        // list owns the content column as before.
+        // When the library is empty AND the user is on the Library
+        // destination, auto-expand to `.all` on iPad portrait so the
+        // Empty State + import CTA become the immediate focal point;
+        // once a book is imported, transition back to `.doubleColumn`.
         .compatOnChange(of: library.books.count) { _ in applyEmptyLibraryReveal() }
+        .compatOnChange(of: navMode) { _ in applyEmptyLibraryReveal() }
         #endif
+    }
+
+    // MARK: - Sidebar
+
+    private var navSidebar: some View {
+        // `List(_:selection:rowContent:)` for non-Set selection is
+        // macOS-only on the SDKs we support. Use the multi-purpose
+        // initializer with an explicit `ForEach` + tag so the same body
+        // compiles on iOS 15 / iPadOS 16 / macOS 12.
+        List(selection: Binding<SplitNavMode?>(
+            get: { navMode },
+            set: { newValue in if let v = newValue { navMode = v } }
+        )) {
+            ForEach(SplitNavMode.allCases) { mode in
+                Label(mode.label, systemImage: mode.systemImage)
+                    .tag(Optional<SplitNavMode>.some(mode))
+            }
+        }
+        #if os(macOS)
+        .listStyle(.sidebar)
+        #else
+        .listStyle(.insetGrouped)
+        #endif
+        .navigationTitle("Epub-to-Mp3")
+        .accessibilityIdentifier("split.navList")
+    }
+
+    // MARK: - Content column
+
+    @ViewBuilder
+    private var contentColumn: some View {
+        switch navMode {
+        case .nowPlaying:
+            NowPlayingView(onBrowseLibrary: { navMode = .library })
+        case .library:
+            LibrarySidebar(selectedBookID: $selectedBookID)
+        case .jobs:
+            JobsListView()
+        case .settings:
+            SettingsView()
+        }
     }
 
     // MARK: - Adaptive column visibility
@@ -104,7 +165,7 @@ struct SplitViewRoot: View {
     /// Default visibility used at first appearance — three columns on
     /// macOS, two on iOS (the size-class observer narrows it further
     /// for portrait iPad after `onAppear` fires).
-    private static var defaultColumnVisibility: NavigationSplitViewVisibility {
+    fileprivate static var defaultColumnVisibility: NavigationSplitViewVisibility {
         #if os(macOS)
         return .all
         #else
@@ -117,54 +178,38 @@ struct SplitViewRoot: View {
     }
 
     #if os(iOS)
-    /// True when the horizontal size class is `.compact` OR the
-    /// vertical class is `.regular` (iPad portrait reports `regular`
-    /// horizontally but `regular` vertically — we detect portrait by
-    /// the vertical class being `.regular` and the horizontal being
-    /// `.regular` on iPad; iPhone landscape reports `.compact`
-    /// vertically). The simplest reliable proxy for "we don't have
-    /// room for three columns" is "vertical class is `.regular` AND
-    /// horizontal is `.compact`" — but on iPad portrait the system
-    /// reports `hSize == .regular`. We therefore key off the iOS
-    /// idiom + interface orientation through `vSize`/`hSize` pair:
-    /// portrait iPad → `vSize == .regular`, `hSize == .regular` but
-    /// physical width is narrow; the actual signal we use is whether
-    /// the trait collection promotes us to three columns naturally.
-    ///
-    /// Practically: treat anything that isn't `(hSize == .regular &&
-    /// vSize == .compact)` as "prefer two columns". That matches
-    /// iPad landscape / Mac Catalyst (the only environments where
-    /// three columns visually fit) and falls back to two columns for
-    /// iPad portrait, iPhone, and Slide Over.
+    /// Treat anything that isn't `(hSize == .regular && vSize ==
+    /// .compact)` as "prefer two columns". That matches iPad landscape
+    /// (the only environment where three columns visually fit) and
+    /// falls back to two columns for iPad portrait, iPhone, and Slide
+    /// Over.
     private var isCompactHorizontal: Bool {
-        // iPad landscape: hSize == .regular, vSize == .compact.
-        // iPad portrait: hSize == .regular, vSize == .regular.
-        // iPhone landscape (Plus/Max): hSize == .regular, vSize == .compact.
-        // iPhone everything else: hSize == .compact.
-        // We want "three columns ok" only when vSize == .compact AND
-        // hSize == .regular (landscape on regular-width devices).
         return !(hSize == .regular && vSize == .compact)
     }
 
     private func applySizeClassDefault() {
         // Don't trample an explicit user choice mid-session — only
         // realign on transitions between the two canonical layouts.
-        let desired = preferredVisibility(for: library.books.isEmpty)
+        let desired = preferredVisibility(for: shouldRevealEmptyLibrarySidebar)
         if columnVisibility != desired {
             columnVisibility = desired
         }
+    }
+
+    /// True only on the Library destination with an empty library and
+    /// a compact horizontal class — that's the one case where the
+    /// import CTA needs the sidebar revealed.
+    private var shouldRevealEmptyLibrarySidebar: Bool {
+        return navMode == .library && library.books.isEmpty
     }
 
     /// Compute the preferred visibility for the current size class +
     /// library state. Empty library on a layout that would normally
     /// hide the sidebar (iPad portrait → `.doubleColumn`) gets bumped
     /// to `.all` so the Empty State + import button are visible without
-    /// requiring the user to tap the toggle. Non-empty libraries fall
-    /// back to the canonical size-class default.
-    fileprivate func preferredVisibility(for isLibraryEmpty: Bool) -> NavigationSplitViewVisibility {
-        if isLibraryEmpty && isCompactHorizontal {
-            // iPad portrait / Slide Over with no books: reveal the
-            // sidebar so the import CTA is discoverable.
+    /// requiring the user to tap the toggle.
+    fileprivate func preferredVisibility(for needsEmptySidebarReveal: Bool) -> NavigationSplitViewVisibility {
+        if needsEmptySidebarReveal && isCompactHorizontal {
             return .all
         }
         return isCompactHorizontal ? .doubleColumn : .all
@@ -177,7 +222,7 @@ struct SplitViewRoot: View {
     /// layout and starts revealing the chapter list as the user picks
     /// a book.
     private func applyEmptyLibraryReveal() {
-        let desired = preferredVisibility(for: library.books.isEmpty)
+        let desired = preferredVisibility(for: shouldRevealEmptyLibrarySidebar)
         if columnVisibility != desired {
             withAnimation(.easeInOut(duration: 0.25)) {
                 columnVisibility = desired
@@ -190,6 +235,23 @@ struct SplitViewRoot: View {
 
     @ViewBuilder
     private var detailColumn: some View {
+        switch navMode {
+        case .nowPlaying, .jobs, .settings:
+            // These destinations are full-bleed inside the content
+            // column — the detail column gets a quiet placeholder.
+            CompatContentUnavailableView(
+                "—",
+                systemImage: "headphones",
+                description: Text("")
+            )
+            .hidden()
+        case .library:
+            libraryDetailColumn
+        }
+    }
+
+    @ViewBuilder
+    private var libraryDetailColumn: some View {
         if let book = selectedBook {
             if let snapshot = jobSnapshot(for: book), let chapterIndex = selectedChapterIndex {
                 PlayerReaderDetail(
@@ -203,44 +265,37 @@ struct SplitViewRoot: View {
                 // PlayerReaderView's @State `player` reloads cleanly
                 // at the new starting chapter.
                 .id("\(book.id)-\(chapterIndex)")
+            } else if selectedChapterIndex == nil, let book = selectedBook {
+                ChapterListColumn(
+                    book: book,
+                    selectedChapterIndex: $selectedChapterIndex
+                )
             } else {
                 CompatContentUnavailableView(
                     "Pick a chapter",
                     systemImage: "headphones",
-                    description: Text("Select a chapter from the middle column to start playback.")
+                    description: Text("Select a chapter to start playback.")
                 )
             }
         } else {
             CompatContentUnavailableView(
-                "Pick a chapter",
-                systemImage: "headphones",
-                description: Text("Choose a book first, then pick one of its chapters.")
+                "Pick a book",
+                systemImage: "books.vertical",
+                description: Text("Choose a book from the library to see its chapters.")
             )
         }
     }
 
     // MARK: - Helpers
 
-    /// Resolve a `JobSnapshot` for the currently-selected book. In
-    /// production this would mirror what `ChapterListColumn` fetches;
-    /// for the slice we read from the (in-progress) preview fixture
-    /// when running in the canvas and otherwise rely on the fact that
-    /// the user navigated through `ChapterListColumn` — which means
-    /// the snapshot has already been loaded over the wire and the
-    /// chapter index it produced is meaningful.
-    ///
-    /// The detail view passes the same `backendBaseURL`, so live
-    /// streaming updates land via `PlayerReaderView.subscribeToJobStream`.
+    /// Resolve a `JobSnapshot` for the currently-selected book. Mirrors
+    /// the SSE-aware design of `PlayerReaderView` — the stub passes the
+    /// minimum required identifiers; live data lands via the event
+    /// stream inside the player view.
     private func jobSnapshot(for book: BookEntity) -> JobSnapshot? {
-        // Preview fallback: keep the canvas alive without network.
         if isSwiftUIPreview {
             return book.lastJobId != nil ? JobSnapshot.previewSample : nil
         }
-        // We don't cache snapshots at this level; `PlayerReaderView`
-        // owns its own state. Compose a minimal snapshot stub anchored
-        // on the book's `lastJobId` so the player has something to
-        // hand to the AudioPlayer; PlayerReaderView re-fetches the
-        // full state via SSE on `bootstrap()`.
         guard let jobId = book.lastJobId else { return nil }
         return JobSnapshot(
             jobId: jobId,
@@ -281,9 +336,7 @@ struct SplitViewRoot: View {
 
 /// Thin wrapper around `PlayerReaderView` that adds keyboard
 /// shortcuts for hardware-keyboard users (Magic Keyboard on iPad,
-/// every Mac). Gated behind iOS 17 / macOS 14 because `onKeyPress`
-/// is what enables the shortcut delivery on SwiftUI containers
-/// without focus juggling.
+/// every Mac).
 @available(iOS 16, macOS 13, *)
 private struct PlayerReaderDetail: View {
     let snapshot: JobSnapshot
