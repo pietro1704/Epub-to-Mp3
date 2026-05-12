@@ -57,13 +57,22 @@ struct LibrarySidebar: View {
                     ForEach(sorted) { book in
                         LibrarySidebarRow(book: book)
                             .tag(book.id as String?)
-                            .contextMenu {
+                            // Swipe-to-delete is the HIG-canonical List
+                            // affordance and — critically — does not
+                            // route through ``UIContextMenuInteraction``,
+                            // so it doesn't trigger the iOS 18+
+                            // ``_UIMagicMorphView``/``_UIReparentingView``
+                            // "not supported as subview" console warnings
+                            // that ``.contextMenu`` emits inside a List.
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                                 Button(role: .destructive) {
                                     if selectedBookID == book.id {
                                         selectedBookID = nil
                                     }
                                     library.remove(id: book.id)
-                                } label: { Label("Remove from library", systemImage: "trash") }
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
                             }
                     }
                 }

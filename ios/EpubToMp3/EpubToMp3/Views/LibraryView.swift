@@ -20,6 +20,15 @@ struct LibraryView: View {
     @State private var openingBook: BookEntity?
     @State private var sortMode: SortMode = .lastOpened
     @State private var isDropTargeted = false
+    /// Book the user long-pressed on; surfaced via
+    /// ``confirmationDialog`` instead of ``.contextMenu``. The latter
+    /// invokes ``UIContextMenuInteraction``, which on iOS 18+ floods the
+    /// console with ``_UIMagicMorphView`` / ``_UIReparentingView``
+    /// "not supported" warnings when the previewed view is hosted
+    /// inside a ``LazyVGrid``. A confirmation dialog covers the only
+    /// destructive action (remove from library) without entering the
+    /// UIKit context-menu morph code path.
+    @State private var bookPendingRemoval: BookEntity?
 
     enum SortMode: String, CaseIterable, Identifiable {
         case lastOpened
@@ -77,13 +86,23 @@ struct LibraryView: View {
                     LazyVGrid(columns: grid, spacing: 24) {
                         ForEach(sorted) { book in
                             BookTile(book: book) {
+                                // Mark this book as the user's current
+                                // reading target so the Read tab lands
+                                // on it next time they switch back.
+                                // Without this write the Read tab keeps
+                                // showing whatever was last set by the
+                                // MainReaderView itself, which never
+                                // observed taps in the Library grid.
+                                UserDefaults.standard.set(
+                                    book.id,
+                                    forKey: MainReaderView.currentlyReadingBookIDKey
+                                )
                                 openingBook = book
                             }
-                            .contextMenu {
-                                Button(role: .destructive) {
-                                    library.remove(id: book.id)
-                                } label: { Label("Remove from library", systemImage: "trash") }
-                            }
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.45)
+                                    .onEnded { _ in bookPendingRemoval = book }
+                            )
                         }
                     }
                     .padding(20)
@@ -129,6 +148,21 @@ struct LibraryView: View {
             Text(importError ?? "")
         }
         .compatBookDestination($openingBook)
+        .confirmationDialog(
+            bookPendingRemoval?.resolvedTitle ?? "Remove book",
+            isPresented: Binding(
+                get: { bookPendingRemoval != nil },
+                set: { if !$0 { bookPendingRemoval = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: bookPendingRemoval
+        ) { book in
+            Button("Remove from library", role: .destructive) {
+                library.remove(id: book.id)
+                bookPendingRemoval = nil
+            }
+            Button("Cancel", role: .cancel) { bookPendingRemoval = nil }
+        }
     }
 
     private var emptyState: some View {
