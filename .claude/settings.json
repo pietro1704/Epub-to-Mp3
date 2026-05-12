@@ -99,6 +99,11 @@
             "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/xcode_build_smoke.sh",
             "timeout": 180,
             "statusMessage": "Smoke build (xcodebuild macOS Debug)..."
+          },
+          {
+            "type": "command",
+            "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/disk_pressure_check.sh",
+            "timeout": 5
           }
         ]
       }
