@@ -55,11 +55,21 @@ struct MiniPlayerBar: View {
     var body: some View {
         if let book = currentBook {
             VStack(spacing: 0) {
-                // 2pt progress bar at top — matches Apple Podcasts.
+                // 2pt progress bar at top.
+                // During conversion: shows TTS progress (orange tint).
+                // During playback: shows chapter playback position.
                 GeometryReader { geo in
+                    let barProgress: Double = {
+                        if player.isConverting, let cp = player.conversionProgress {
+                            return cp
+                        }
+                        return progress
+                    }()
+                    let barColor: Color = player.isConverting ? .orange : .accentColor
                     Rectangle()
-                        .fill(Color.accentColor)
-                        .frame(width: max(0, geo.size.width * progress), height: 2)
+                        .fill(barColor)
+                        .frame(width: max(0, geo.size.width * barProgress), height: 2)
+                        .animation(.linear(duration: 0.3), value: barProgress)
                 }
                 .frame(height: 2)
 
@@ -79,16 +89,26 @@ struct MiniPlayerBar: View {
 
                     Spacer()
 
-                    Button {
-                        player.togglePlayPause()
-                    } label: {
-                        Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 22))
+                    // Transport: spinner while converting & no audio yet;
+                    // play/pause once the first chapter is ready.
+                    if player.isConverting && !player.firstChapterReady {
+                        ProgressView()
                             .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                            .accessibilityLabel("Generating audio")
+                            .accessibilityIdentifier("miniPlayer.loadingSpinner")
+                    } else {
+                        Button {
+                            player.togglePlayPause()
+                        } label: {
+                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 22))
+                                .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                        .accessibilityIdentifier("miniPlayer.playPause")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
 
                     Button {
                         player.skipForward(seconds: 15)
@@ -99,6 +119,7 @@ struct MiniPlayerBar: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    .disabled(player.isConverting && !player.firstChapterReady)
                     .accessibilityLabel("Skip forward 15 seconds")
                 }
                 .padding(.horizontal, 12)
@@ -110,7 +131,8 @@ struct MiniPlayerBar: View {
             .onTapGesture { onTap() }
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Now playing: \(book.resolvedTitle), \(chapterLabel). Tap to expand.")
-            .accessibilityHint("Opens Now Playing screen.")
+            .accessibilityHint("Swipe up or tap to open full player.")
+            .accessibilityIdentifier("miniPlayer.bar")
             .transition(
                 reduceMotion
                     ? .opacity

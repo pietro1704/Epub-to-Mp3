@@ -179,4 +179,59 @@ final class AppSettingsObservationTests: XCTestCase {
         XCTAssertEqual(s.readerFontFamily, .mono)
         XCTAssertEqual(s.readerLineSpacing, 12, accuracy: 0.001)
     }
+
+    // MARK: useEmbeddedRuntime — read paths must not block on backend URL
+    //
+    // Regression for the "Reader needs the backend" bug: the reader
+    // pipeline (EpubMetadataReader + PythonBridge.parseEpub on iOS,
+    // SidecarManager on macOS) is fully on-device. The
+    // `useEmbeddedRuntime` flag must default to `true` on a fresh
+    // install so first-launch users never see the "Configure the URL"
+    // wall and `canReadOffline` mirrors the flag exactly.
+
+    func testEmbeddedRuntimeDefaultsToOnForFreshInstall() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        let s = AppSettings(defaults: defaults)
+        XCTAssertTrue(s.useEmbeddedRuntime,
+                      "Fresh installs must default to the embedded runtime so the reader never asks for a backend URL.")
+        XCTAssertTrue(s.canReadOffline,
+                      "canReadOffline must mirror useEmbeddedRuntime — it gates the BookOpenView audio bootstrap copy.")
+    }
+
+    func testEmbeddedRuntimePersistsAcrossInstances() {
+        let suite = UUID().uuidString
+        let defaults = UserDefaults(suiteName: suite)!
+        do {
+            let s = AppSettings(defaults: defaults)
+            s.useEmbeddedRuntime = false
+        }
+        let reloaded = AppSettings(defaults: defaults)
+        XCTAssertFalse(reloaded.useEmbeddedRuntime,
+                       "useEmbeddedRuntime must round-trip through UserDefaults — power users need their off-state to survive relaunch.")
+        XCTAssertFalse(reloaded.canReadOffline)
+    }
+
+    func testEmbeddedRuntimeChangeFiresObservation() {
+        let s = makeSettings()
+        observe(\.useEmbeddedRuntime, on: s, message: "useEmbeddedRuntime observed") {
+            s.useEmbeddedRuntime = false
+        }
+    }
+
+    /// The reader must not depend on the backend URL when the embedded
+    /// runtime is on. Concretely: with no `backendURL` and no
+    /// `sidecarURL`, `canReadOffline` is still `true`, so the
+    /// `BookOpenView` open flow won't gate parsing on a network
+    /// resource.
+    func testReaderCanReadOfflineEvenWithBlankBackendURL() {
+        let s = makeSettings()
+        s.useEmbeddedRuntime = true
+        s.backendURL = ""
+        s.sidecarURL = nil
+        XCTAssertNil(s.resolvedBaseURL,
+                     "Pre-condition: no URL resolvable.")
+        XCTAssertTrue(s.canReadOffline,
+                      "Reader must remain available without any backend URL when the embedded runtime is on.")
+    }
 }

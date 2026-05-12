@@ -18,7 +18,12 @@ final class ConvertViewModel: ObservableObject {
 
     func submit(client: APIClient?) async {
         guard let client else {
-            error = "No backend configured. Open Settings or wait for the embedded server."
+            // The job-queue / SSE pipeline relies on a reachable server.
+            // On iOS the embedded runtime handles conversion via
+            // `PythonBridge.convertEpub` directly (kicked off from
+            // `BookOpenView.startAudioBootstrap`), so this form is only
+            // surfaced for the explicit "send to remote" workflow.
+            error = "The audio engine is still warming up. Try again in a moment, or set a remote backend URL in Settings."
             return
         }
         guard let file = selectedFile else {

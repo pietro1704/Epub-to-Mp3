@@ -42,6 +42,7 @@ struct SettingsView: View {
             }
             #else
             Form {
+                embeddedRuntimeSection
                 backendSection
                 readerSection
                 advancedSection
@@ -118,6 +119,35 @@ struct SettingsView: View {
         }
     }
     #endif
+
+    /// iOS-only toggle that exposes ``AppSettings.useEmbeddedRuntime``.
+    /// On macOS the equivalent control lives in ``embeddedServerSection``
+    /// (the sidecar toggle). Hiding it on macOS keeps the Settings UI
+    /// from duplicating the same idea.
+    @ViewBuilder
+    private var embeddedRuntimeSection: some View {
+        Section {
+            Toggle(isOn: $settings.useEmbeddedRuntime) {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Use built-in audio engine")
+                        Text("Synthesises chapters on this device. No backend needed.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "iphone.gen3")
+                        .foregroundStyle(.tint)
+                }
+            }
+        } header: {
+            Text("Audio engine")
+        } footer: {
+            Text("Reading works offline either way — this only affects how chapters are converted to audio. Turn off only to force the legacy remote-backend mode.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
 
     @ViewBuilder
     private var backendSection: some View {

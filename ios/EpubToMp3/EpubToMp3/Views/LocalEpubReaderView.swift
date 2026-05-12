@@ -1,23 +1,28 @@
 import SwiftUI
 
-/// Last-resort reader for when the backend is unreachable. Surfaces
-/// a friendly message + lets the user paste in a backend URL or wait
-/// for the embedded sidecar. Doesn't render the EPUB locally — that
-/// would require re-implementing the parser the backend already
-/// provides via `/api/jobs/{id}/fulltext`. The point here is to NOT
-/// crash, NOT lose the user's place, and tell them clearly what to do.
+/// Soft-failure surface used when the on-device parser couldn't extract
+/// chapters from an EPUB (rare — usually a corrupted ZIP or a DRM-locked
+/// file). Used to say "Reader needs the backend"; that copy was wrong
+/// because EPUB parsing is fully local in this app — `BookOpenView`
+/// runs `EpubMetadataReader` + `PythonBridge.parseEpub` (iOS) or
+/// `MacEpubParser` (macOS) before ever needing a server.
+///
+/// The view shows the file path (selectable) and a small retry CTA;
+/// the host (`BookOpenView.errorView`) supplies the actual retry
+/// button. We keep the file path visible so power users can rule out
+/// the import path (e.g. a stale security-scoped bookmark).
 struct LocalEpubReaderView: View {
     let fileURL: URL
     let book: BookEntity
 
     var body: some View {
         VStack(spacing: 16) {
-            Image(systemName: "wifi.exclamationmark")
+            Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 56, weight: .light))
                 .foregroundStyle(.orange)
-            Text("Reader needs the backend")
+            Text("Couldn't read this book")
                 .font(.title2.weight(.semibold))
-            Text("To open \(book.resolvedTitle), the app needs to reach the conversion server. The embedded sidecar should be starting now — give it a moment, or check the URL in Settings.")
+            Text("\"\(book.resolvedTitle)\" didn't expose any readable chapters. The file may be DRM-locked or its EPUB container may be malformed.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 28)

@@ -77,6 +77,11 @@ final class AppSettings: ObservableObject {
         // initial-value defaults if the key was never set.
         self.backendURL = defaults.string(forKey: "backendURL") ?? "http://localhost:8000"
         self.useEmbeddedSidecar = defaults.object(forKey: "useEmbeddedSidecar") as? Bool ?? true
+        // Default ON everywhere — iOS uses PythonEmbed (in-process CPython
+        // via `Python.xcframework`); macOS uses the PyInstaller sidecar.
+        // Both ship inside the app bundle and let the reader work without
+        // any external backend URL.
+        self.useEmbeddedRuntime = defaults.object(forKey: "useEmbeddedRuntime") as? Bool ?? true
         self.readerFontSize = (defaults.object(forKey: "readerFontSize") as? Int) ?? 2
         self.readerFontFamily = ReaderFontFamily(
             rawValue: defaults.string(forKey: "readerFontFamily") ?? ""
@@ -125,6 +130,27 @@ final class AppSettings: ObservableObject {
     @Published var useEmbeddedSidecar: Bool = true {
         didSet { defaults.set(useEmbeddedSidecar, forKey: "useEmbeddedSidecar") }
     }
+
+    /// Master switch: when `true` the app uses its bundled runtime for
+    /// everything that *can* run on-device — EPUB parsing (pure Swift +
+    /// PythonBridge), TTS conversion (PythonEmbed on iOS, sidecar on
+    /// macOS) — and treats the configured `backendURL` only as an
+    /// optional remote fallback for users who genuinely want it.
+    ///
+    /// Reader paths NEVER require this to be false. EPUB parsing is
+    /// local (`EpubMetadataReader` + `ZipReader` + `PythonBridge.parseEpub`).
+    /// The flag exists so QA / power users can force the legacy
+    /// "remote-only" mode from the debug toggle in Settings.
+    @Published var useEmbeddedRuntime: Bool = true {
+        didSet { defaults.set(useEmbeddedRuntime, forKey: "useEmbeddedRuntime") }
+    }
+
+    /// True iff the reader and library can render the current book
+    /// without a configured backend URL. The reader pipeline is always
+    /// local on iOS (PythonBridge / EpubMetadataReader) and macOS uses
+    /// the auto-started sidecar, so this is `true` whenever the
+    /// embedded runtime is enabled — regardless of `backendURL`.
+    var canReadOffline: Bool { useEmbeddedRuntime }
 
     /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
     /// Clamped in `didSet` so the rest of the app can trust 0…4.

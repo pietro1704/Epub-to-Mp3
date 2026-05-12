@@ -74,6 +74,32 @@ final class AudioPlayer: ObservableObject {
     @Published private(set) var positionSeconds: TimeInterval = 0
     @Published private(set) var durationSeconds: TimeInterval = 0
 
+    /// `true` while a TTS conversion job is actively running for the
+    /// currently-open book. Set by `BookOpenView` / `InstantReaderView`
+    /// when they submit or reattach to a conversion job and cleared
+    /// when the job reaches a terminal state. Does NOT imply the
+    /// player has a loaded audio item — use `firstChapterReady` for that.
+    @Published var isConverting: Bool = false
+
+    /// 0.0–1.0 fraction of chapters whose audio is ready, or `nil`
+    /// when total chapter count is unknown. Drives the conversion
+    /// progress indicator in `MiniPlayerBar` and `InstantReaderView`.
+    @Published var conversionProgress: Double? = nil
+
+    /// Becomes `true` as soon as the first chapter MP3 is available
+    /// (i.e. `snapshot.playableChapters` becomes non-empty for the
+    /// first time). Once `true` it never goes back to `false` for the
+    /// same book session so the transport controls are never hidden
+    /// after they have appeared.
+    @Published private(set) var firstChapterReady: Bool = false
+
+    /// `true` while the player is buffering / waiting for the current
+    /// chapter's audio to become ready. Used by `MiniPlayerBar` and
+    /// `FullPlayerSheet` to show a spinner in place of play/pause.
+    /// Derived from `isConverting` + `firstChapterReady` so it costs
+    /// no extra KVO wiring.
+    var isLoading: Bool { isConverting && !firstChapterReady }
+
     /// Optional cover art bytes (PNG/JPEG). Surfaced to the system
     /// Now Playing widget so lock screen / Control Center / AirPods
     /// menu show the book cover instead of a generic glyph.
@@ -288,6 +314,22 @@ final class AudioPlayer: ObservableObject {
     func skip(by deltaSeconds: TimeInterval) {
         let target = max(0, min(durationSeconds, positionSeconds + deltaSeconds))
         seek(to: target)
+    }
+
+    /// Called by `BookOpenView` / `InstantReaderView` when the first
+    /// playable chapter MP3 lands. Sets `firstChapterReady = true` and
+    /// clears `isConverting` only if the snapshot is already terminal
+    /// (all chapters done). Idempotent — safe to call multiple times.
+    func markFirstChapterReady() {
+        firstChapterReady = true
+    }
+
+    /// Reset conversion-tracking state when a new book session starts
+    /// so stale progress from a previous book is never shown.
+    func clearConversionState() {
+        isConverting = false
+        conversionProgress = nil
+        firstChapterReady = false
     }
 
     /// Tear down the player completely and clear the Now Playing widget.

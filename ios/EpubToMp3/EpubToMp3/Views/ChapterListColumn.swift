@@ -117,7 +117,11 @@ struct ChapterListColumn: View {
             return
         }
         guard let baseURL = settings.resolvedBaseURL else {
-            loadError = "Configure the backend URL in Settings to load chapters."
+            // No backend URL configured AND no sidecar URL yet. This
+            // is normal on first launch / iOS — the audio runtime
+            // boots in-process and may not be ready yet. Don't surface
+            // an error: the reader is already on screen and the user
+            // doesn't need chapter-level audio metadata to read.
             return
         }
         isLoading = true

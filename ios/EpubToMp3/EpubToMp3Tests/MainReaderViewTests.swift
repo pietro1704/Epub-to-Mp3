@@ -146,9 +146,8 @@ final class MainReaderViewTests: XCTestCase {
     func testRootTabReaderIsFirstTab() {
         XCTAssertEqual(RootTab.reader.rawValue, 0,
                        "Reader must be the first tab (default landing screen).")
-        XCTAssertEqual(RootTab.nowPlaying.rawValue, 1)
-        XCTAssertEqual(RootTab.library.rawValue, 2)
-        XCTAssertEqual(RootTab.settings.rawValue, 3)
+        XCTAssertEqual(RootTab.library.rawValue, 1)
+        XCTAssertEqual(RootTab.settings.rawValue, 2)
     }
 
     // MARK: - SplitNavMode stability
@@ -165,7 +164,6 @@ final class MainReaderViewTests: XCTestCase {
     func testSplitNavModeContainsAllExpectedDestinations() {
         let modes = SplitNavMode.allCases
         XCTAssertTrue(modes.contains(.reader))
-        XCTAssertTrue(modes.contains(.nowPlaying))
         XCTAssertTrue(modes.contains(.library))
         XCTAssertTrue(modes.contains(.settings))
     }

@@ -21,6 +21,11 @@ struct BookOpenView: View {
 
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
+    /// Global audio player — receives conversion state (`isConverting`,
+    /// `conversionProgress`, `firstChapterReady`) so `MiniPlayerBar`
+    /// can show the spinner / conversion progress without requiring a
+    /// loaded audio item.
+    @EnvironmentObject private var globalPlayer: AudioPlayer
 
     @State private var phase: Phase = .resolving
     @State private var fulltext: EbookFulltext?
@@ -34,7 +39,7 @@ struct BookOpenView: View {
     enum Phase: Equatable {
         case resolving
         case ready                      // reader rendered, audio status in banner
-        case textOnly(URL)              // backend unreachable, just text
+        case unreadable(URL)            // local parser failed (DRM / malformed)
         case error(String)
     }
 
@@ -66,7 +71,7 @@ struct BookOpenView: View {
                     Text("No content available.")
                 }
 
-            case .textOnly(let fileURL):
+            case .unreadable(let fileURL):
                 LocalEpubReaderView(fileURL: fileURL, book: book)
 
             case .error(let msg):
@@ -94,6 +99,9 @@ struct BookOpenView: View {
     @MainActor
     private func openFlow() async {
         if isSwiftUIPreview { phase = .ready; return }
+
+        // Reset any stale conversion state from a prior book session.
+        globalPlayer.clearConversionState()
 
         // 1. Resolve the file URL — required for both local parse
         //    and (later) conversion submission. Failures here surface
@@ -129,9 +137,12 @@ struct BookOpenView: View {
                     LocalFulltextCache.save(parsed, bookId: book.id)
                 }
             } catch {
-                // Parser couldn't extract chapters — fall back to the
-                // local-text-only screen. Clearer than a blank reader.
-                phase = .textOnly(fileURL)
+                // Parser couldn't extract chapters — DRM-locked file or
+                // malformed EPUB. NOT a backend issue: parsing is fully
+                // local in this app (PythonBridge runs in-process). Show
+                // the soft-failure surface so the user can see the file
+                // path and re-pick if needed.
+                phase = .unreadable(fileURL)
                 return
             }
             #else
@@ -170,6 +181,7 @@ struct BookOpenView: View {
     private func startAudioBootstrap() {
         audioBootstrapTask?.cancel()
         statusBanner = "Generating audio…"
+        globalPlayer.isConverting = true
         audioBootstrapTask = Task {
             await self.waitForBackendThenBootstrap()
         }
@@ -197,7 +209,10 @@ struct BookOpenView: View {
             waited += 0.8
         }
         await MainActor.run {
-            self.statusBanner = "Audio unavailable — open Settings to point at a backend."
+            // Reader stays usable; this banner only surfaces the
+            // (optional) audio path. Wording avoids implying the reader
+            // depends on the backend — it does not.
+            self.statusBanner = "Audio engine is still warming up. Try again in a moment."
         }
     }
 
@@ -207,7 +222,14 @@ struct BookOpenView: View {
             if let snap = try? await client.fetchJob(id: existing) {
                 await MainActor.run {
                     self.jobSnapshot = snap
-                    self.hasAudio = !snap.playableChapters.isEmpty
+                    let playable = snap.playableChapters
+                    self.hasAudio = !playable.isEmpty
+                    if !playable.isEmpty { self.globalPlayer.markFirstChapterReady() }
+                    if let total = snap.chaptersTotal, total > 0 {
+                        let done = snap.chaptersCompleted ?? playable.count
+                        self.globalPlayer.conversionProgress = Double(done) / Double(total)
+                    }
+                    if snap.isTerminal { self.globalPlayer.isConverting = false }
                     self.statusBanner = self.bannerFor(snap)
                 }
                 subscribeToStream(client: client, jobId: existing)
@@ -250,7 +272,13 @@ struct BookOpenView: View {
             if let snap = try? await client.fetchJob(id: response.jobId) {
                 await MainActor.run {
                     self.jobSnapshot = snap
-                    self.hasAudio = !snap.playableChapters.isEmpty
+                    let playable = snap.playableChapters
+                    self.hasAudio = !playable.isEmpty
+                    if !playable.isEmpty { self.globalPlayer.markFirstChapterReady() }
+                    if let total = snap.chaptersTotal, total > 0 {
+                        let done = snap.chaptersCompleted ?? playable.count
+                        self.globalPlayer.conversionProgress = Double(done) / Double(total)
+                    }
                     self.statusBanner = self.bannerFor(snap)
                 }
             }
@@ -270,15 +298,29 @@ struct BookOpenView: View {
                     if Task.isCancelled { break }
                     if let updated = APIClient.decodeSnapshot(from: event.rawPayload) {
                         self.jobSnapshot = updated
-                        self.hasAudio = !updated.playableChapters.isEmpty
+                        let playable = updated.playableChapters
+                        self.hasAudio = !playable.isEmpty
+
+                        // Keep global player conversion state in sync so
+                        // MiniPlayerBar renders the correct indicator.
+                        if !playable.isEmpty {
+                            self.globalPlayer.markFirstChapterReady()
+                        }
+                        if let total = updated.chaptersTotal, total > 0 {
+                            let done = updated.chaptersCompleted ?? playable.count
+                            self.globalPlayer.conversionProgress = Double(done) / Double(total)
+                        }
                         self.statusBanner = self.bannerFor(updated)
+
                         if updated.isTerminal {
+                            self.globalPlayer.isConverting = false
                             self.statusBanner = nil
                             break
                         }
                     }
                 }
             } catch {
+                self.globalPlayer.isConverting = false
                 self.statusBanner = nil
             }
         }
@@ -359,5 +401,6 @@ struct BookOpenView: View {
     }
     .environmentObject(AppSettings())
     .environmentObject(LibraryStore.previewPopulated)
+    .environmentObject(AudioPlayer())
 }
 #endif
