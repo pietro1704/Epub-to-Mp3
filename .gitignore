@@ -173,6 +173,7 @@ releases/
 
 # Claude Code runtime artifacts
 .claude/scheduled_tasks.lock
+.claude/agent-memory/
 
 # iOS embedded-Python spike (feat/ios-python-embed) — vendored Python
 # runtime is ~150 MB; bootstrapped by
