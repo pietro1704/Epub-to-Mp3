@@ -102,11 +102,23 @@ final class AudioPlayer: ObservableObject {
     private var timeObserverToken: Any?
     private var endObserver: NSObjectProtocol?
     private var lastResumePersist: Date = .distantPast
+    /// Throttle for `MPNowPlayingInfoCenter` updates — we update at most
+    /// once per second so the lock-screen scrubber stays fresh without
+    /// hitting the system's info center on every 250ms tick.
+    private var lastNowPlayingUpdate: Date = .distantPast
 
     init(resumeStore: ResumeStore = ResumeStore(), backendBaseURL: URL? = nil) {
         self.resumeStore = resumeStore
         self.backendBaseURL = backendBaseURL
         configureRemoteCommands()
+        #if os(iOS)
+        // Required on iOS so the system delivers hardware button events
+        // (headphone controls, Bluetooth AVRCP) to MPRemoteCommandCenter.
+        // UIKit no longer mandates this call for apps built with scene
+        // lifecycle, but it is still the documented prerequisite and
+        // costs nothing.
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+        #endif
     }
 
     deinit {
@@ -250,6 +262,19 @@ final class AudioPlayer: ObservableObject {
         seek(to: target)
     }
 
+    /// Tear down the player completely and clear the Now Playing widget.
+    /// Call this when the reader session ends so the lock screen no
+    /// longer shows stale metadata for a book that is no longer active.
+    func stop() {
+        teardownPlayer()
+        isPlaying = false
+        snapshot = nil
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        #if os(iOS)
+        UIApplication.shared.endReceivingRemoteControlEvents()
+        #endif
+    }
+
     /// Set or cancel the sleep timer. Pass 0 to cancel; any positive
     /// value schedules an auto-pause that many seconds from now.
     func setSleepTimer(seconds: TimeInterval) {
@@ -278,6 +303,14 @@ final class AudioPlayer: ObservableObject {
                 self.broadcastPosition()
                 self.persistResumePoint(force: false)
                 self.tickSleepTimer()
+                // Refresh lock-screen / Control Center scrubber at ~1 Hz.
+                // Calling this on every 250ms tick is wasteful; the system
+                // only re-renders the widget at ~1 Hz anyway.
+                let now = Date()
+                if now.timeIntervalSince(self.lastNowPlayingUpdate) >= 1.0 {
+                    self.lastNowPlayingUpdate = now
+                    self.updateNowPlayingInfo()
+                }
             }
         }
         endObserver = NotificationCenter.default.addObserver(
@@ -367,11 +400,17 @@ final class AudioPlayer: ObservableObject {
     private func updateNowPlayingInfo() {
         var info: [String: Any] = [:]
         info[MPMediaItemPropertyTitle] = currentChapterValue?.displayTitle ?? "Chapter"
-        info[MPMediaItemPropertyAlbumTitle] = snapshot?.bookTitle ?? "EpubToMp3"
+        // "Album" maps to the book title; "Artist" maps to the author name.
+        info[MPMediaItemPropertyAlbumTitle] = snapshot?.bookTitle ?? "Epub-to-Mp3"
         info[MPMediaItemPropertyArtist] = snapshot?.bookAuthor ?? ""
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = positionSeconds
-        info[MPMediaItemPropertyPlaybackDuration] = durationSeconds
-        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? rate.rawValue : 0
+        info[MPMediaItemPropertyPlaybackDuration] = durationSeconds > 0 ? durationSeconds : 0
+        // Rate = 0 when paused; actual rate when playing. The system uses
+        // this to animate the scrubber in real time on the lock screen.
+        info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? rate.rawValue : 0.0
+        // Default rate tells the lock-screen widget what "1x" means so
+        // the rate indicator renders correctly at non-standard speeds.
+        info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = Float(1.0)
         info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
 
         if let coverArtData, let artwork = makeArtwork(from: coverArtData) {
