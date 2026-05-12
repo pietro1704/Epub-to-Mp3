@@ -19,6 +19,7 @@ struct LibraryView: View {
     @State private var importError: String?
     @State private var openingBook: BookEntity?
     @State private var sortMode: SortMode = .lastOpened
+    @State private var isDropTargeted = false
 
     enum SortMode: String, CaseIterable, Identifiable {
         case lastOpened
@@ -53,6 +54,13 @@ struct LibraryView: View {
         return types
     }()
 
+    /// Drop modifier accepts a superset of `acceptedTypes` —
+    /// on macOS it also takes generic file URLs from Finder, which the
+    /// `fileImporter` doesn't need to worry about.
+    private static var dropTypes: [UTType] {
+        LibraryDropHandler.acceptedTypes
+    }
+
     private var grid: [GridItem] {
         [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
     }
@@ -79,6 +87,13 @@ struct LibraryView: View {
                 }
             }
         }
+        .overlay(DropTargetOverlay(isActive: isDropTargeted))
+        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
+        .onDrop(
+            of: Self.dropTypes,
+            isTargeted: $isDropTargeted,
+            perform: handleDrop
+        )
         .navigationTitle("Library")
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
@@ -153,6 +168,20 @@ struct LibraryView: View {
         case .failure(let err):
             importError = err.localizedDescription
         }
+    }
+
+    /// Drag-and-drop entry point — mirrors `handleImport` but accepts
+    /// `NSItemProvider` payloads (the SwiftUI drop API). EPUBs that
+    /// dedupe against existing library entries simply refresh the
+    /// bookmark inside `LibraryStore.importBook` — no error surfaces.
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        LibraryDropHandler.handle(
+            providers: providers,
+            importer: { url in _ = try library.importBook(from: url) },
+            completion: { firstError, _ in
+                if let err = firstError { importError = err }
+            }
+        )
     }
 }
 

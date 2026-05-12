@@ -13,6 +13,7 @@ import AppKit
 /// Allowed playback rates surfaced in `PlayerView`.
 /// Anything outside this list collapses to 1.0.
 enum PlaybackRate: Float, CaseIterable, Identifiable {
+    case x050 = 0.5
     case x075 = 0.75
     case x100 = 1.0
     case x125 = 1.25
@@ -21,6 +22,21 @@ enum PlaybackRate: Float, CaseIterable, Identifiable {
     case x200 = 2.0
 
     var id: Float { rawValue }
+
+    /// Short label shown inline on the rate button (e.g. "1x", "1.25x").
+    var shortLabel: String {
+        switch self {
+        case .x050: return "0.5x"
+        case .x075: return "0.75x"
+        case .x100: return "1x"
+        case .x125: return "1.25x"
+        case .x150: return "1.5x"
+        case .x175: return "1.75x"
+        case .x200: return "2x"
+        }
+    }
+
+    /// Longer label used in segmented pickers / accessibility.
     var label: String { String(format: "%.2fx", rawValue) }
 }
 
@@ -58,6 +74,9 @@ final class AudioPlayer: ObservableObject {
     /// many wall-clock seconds. Decremented by the time observer.
     @Published private(set) var sleepTimerRemaining: TimeInterval = 0
     private var sleepTimerExpiresAt: Date?
+
+    /// Ordered list of playback rates available in the UI.
+    let availableRates: [Float] = PlaybackRate.allCases.map(\.rawValue)
 
     // MARK: AsyncStreams (positions + chapter changes)
 
@@ -285,6 +304,39 @@ final class AudioPlayer: ObservableObject {
         }
         sleepTimerRemaining = seconds
         sleepTimerExpiresAt = Date().addingTimeInterval(seconds)
+    }
+
+    /// Convenience: schedule sleep timer from a whole-minute value.
+    /// Pass 0 to cancel.
+    func startSleepTimer(minutes: Int) {
+        setSleepTimer(seconds: TimeInterval(minutes) * 60)
+    }
+
+    /// Cancel any active sleep timer.
+    func cancelSleepTimer() {
+        setSleepTimer(seconds: 0)
+    }
+
+    /// Advance to the next rate in `PlaybackRate.allCases`, wrapping
+    /// from the last entry back to the first.
+    func cycleRate() {
+        let cases = PlaybackRate.allCases
+        guard let idx = cases.firstIndex(of: rate) else {
+            setRate(.x100)
+            return
+        }
+        let next = cases[(idx + 1) % cases.count]
+        setRate(next)
+    }
+
+    /// Skip forward by `seconds` (default 15 s). Clamped to [0, duration].
+    func skipForward(seconds: Double = 15) {
+        skip(by: seconds)
+    }
+
+    /// Skip backward by `seconds` (default 15 s). Clamped to [0, duration].
+    func skipBackward(seconds: Double = 15) {
+        skip(by: -seconds)
     }
 
     // MARK: Observers

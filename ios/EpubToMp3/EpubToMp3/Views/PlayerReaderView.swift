@@ -1,4 +1,7 @@
 import SwiftUI
+#if os(iOS)
+import AVKit
+#endif
 
 /// Full-screen split view: reader pane + compact transport controls.
 ///
@@ -60,8 +63,15 @@ struct PlayerReaderView: View {
                     Button("Close") { player.pause(); dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    Button { showingToc = true } label: {
-                        Image(systemName: "list.bullet.indent")
+                    HStack(spacing: 12) {
+                        #if os(iOS)
+                        AirPlayPickerView()
+                            .frame(width: 32, height: 32)
+                        #endif
+                        sleepTimerMenu
+                        Button { showingToc = true } label: {
+                            Image(systemName: "list.bullet.indent")
+                        }
                     }
                 }
             }
@@ -135,7 +145,11 @@ struct PlayerReaderView: View {
             }
             scrubber
             transport
-            speedPicker
+            HStack {
+                rateButton
+                Spacer()
+                sleepTimerBadge
+            }
         }
         .padding(20)
     }
@@ -160,13 +174,19 @@ struct PlayerReaderView: View {
     }
 
     private var transport: some View {
-        HStack(spacing: 32) {
+        HStack(spacing: 20) {
             Button { player.previousChapter() } label: {
                 Image(systemName: "backward.fill").font(.title2)
+            }
+            Button { player.skipBackward(seconds: 15) } label: {
+                Image(systemName: "gobackward.15").font(.title)
             }
             Button { player.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 56))
+            }
+            Button { player.skipForward(seconds: 15) } label: {
+                Image(systemName: "goforward.15").font(.title)
             }
             Button { player.nextChapter() } label: {
                 Image(systemName: "forward.fill").font(.title2)
@@ -175,16 +195,65 @@ struct PlayerReaderView: View {
         .tint(.primary)
     }
 
-    private var speedPicker: some View {
-        Picker("Speed", selection: Binding(
-            get: { player.rate },
-            set: { player.setRate($0) }
-        )) {
-            ForEach(PlaybackRate.allCases) { rate in
-                Text(rate.label).tag(rate)
-            }
+    /// Inline rate button: shows current rate; tapping cycles to the next one.
+    private var rateButton: some View {
+        Button { player.cycleRate() } label: {
+            Text(player.rate.shortLabel)
+                .font(.footnote.weight(.semibold))
+                .monospacedDigit()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
         }
-        .pickerStyle(.segmented)
+        .buttonStyle(.plain)
+    }
+
+    /// Compact badge showing sleep timer countdown. Hidden when inactive.
+    @ViewBuilder
+    private var sleepTimerBadge: some View {
+        if player.sleepTimerRemaining > 0 {
+            Button { player.cancelSleepTimer() } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "moon.zzz.fill")
+                    Text(formatSleepTimer(player.sleepTimerRemaining))
+                }
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    /// Sleep timer menu for the toolbar.
+    private var sleepTimerMenu: some View {
+        Menu {
+            Button {
+                player.cancelSleepTimer()
+            } label: {
+                Label("Off", systemImage: "moon.slash")
+            }
+            Button { player.startSleepTimer(minutes: 5) } label: {
+                Label("5 minutes", systemImage: "moon")
+            }
+            Button { player.startSleepTimer(minutes: 15) } label: {
+                Label("15 minutes", systemImage: "moon")
+            }
+            Button { player.startSleepTimer(minutes: 30) } label: {
+                Label("30 minutes", systemImage: "moon")
+            }
+            Button { player.startSleepTimer(minutes: 60) } label: {
+                Label("1 hour", systemImage: "moon.fill")
+            }
+            // "End of chapter": deferred to v2 — requires knowing the
+            // remaining chapter duration at schedule time, which is only
+            // reliable after AVPlayerItem.duration loads asynchronously.
+        } label: {
+            Image(systemName: player.sleepTimerRemaining > 0 ? "moon.zzz.fill" : "moon.zzz")
+                .symbolRenderingMode(.monochrome)
+        }
     }
 
     // MARK: Bootstrap
@@ -338,6 +407,14 @@ struct PlayerReaderView: View {
         let m = (total % 3600) / 60
         let s = total % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
+        return String(format: "%d:%02d", m, s)
+    }
+
+    /// Compact "4:59" countdown for the sleep timer badge.
+    private func formatSleepTimer(_ remaining: TimeInterval) -> String {
+        let total = max(0, Int(remaining.rounded()))
+        let m = total / 60
+        let s = total % 60
         return String(format: "%d:%02d", m, s)
     }
 }

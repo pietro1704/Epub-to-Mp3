@@ -17,12 +17,19 @@ struct LibrarySidebar: View {
     @State private var sortMode: LibraryView.SortMode = .lastOpened
     @State private var showingPicker = false
     @State private var importError: String?
+    @State private var isDropTargeted = false
 
     private static let acceptedTypes: [UTType] = {
         var types: [UTType] = [.epub]
         if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
         return types
     }()
+
+    /// Drop modifier accepts a superset of `acceptedTypes` — on macOS
+    /// it also handles generic file URLs from Finder.
+    private static var dropTypes: [UTType] {
+        LibraryDropHandler.acceptedTypes
+    }
 
     private var sorted: [BookEntity] {
         switch sortMode {
@@ -65,6 +72,13 @@ struct LibrarySidebar: View {
                 #endif
             }
         }
+        .overlay(DropTargetOverlay(isActive: isDropTargeted))
+        .animation(.easeInOut(duration: 0.15), value: isDropTargeted)
+        .onDrop(
+            of: Self.dropTypes,
+            isTargeted: $isDropTargeted,
+            perform: handleDrop
+        )
         .navigationTitle("Library")
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
@@ -100,7 +114,7 @@ struct LibrarySidebar: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 16) {
             CompatContentUnavailableView(
                 "Library is empty",
                 systemImage: "books.vertical",
@@ -110,10 +124,17 @@ struct LibrarySidebar: View {
                 showingPicker = true
             } label: {
                 Label("Import EPUB", systemImage: "plus.circle.fill")
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 8)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .accessibilityLabel("Import EPUB")
             .accessibilityIdentifier("library.importButton.empty")
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 20)
+        .padding(.bottom, 32)
     }
 
     /// Imports one or more EPUB URLs into the library store. Mirrors
@@ -137,6 +158,19 @@ struct LibrarySidebar: View {
         case .failure(let err):
             importError = err.localizedDescription
         }
+    }
+
+    /// Drag-and-drop entry point — mirrors `handleImport` but accepts
+    /// `NSItemProvider` payloads (the SwiftUI drop API). Errors are
+    /// surfaced through the same alert as the file-picker path.
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        LibraryDropHandler.handle(
+            providers: providers,
+            importer: { url in _ = try library.importBook(from: url) },
+            completion: { firstError, _ in
+                if let err = firstError { importError = err }
+            }
+        )
     }
 }
 
