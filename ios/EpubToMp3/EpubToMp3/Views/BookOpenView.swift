@@ -89,7 +89,7 @@ struct BookOpenView: View {
                         snapshot: $jobSnapshot,
                         statusBanner: statusBanner,
                         hasAudio: hasAudio,
-                        backendBaseURL: settings.resolvedBaseURL,
+                        backendBaseURL: settings.useEmbeddedRuntime ? nil : settings.resolvedBaseURL,
                         coverPNG: book.coverPNG,
                         onRequestAudioRetry: { startAudioBootstrap() },
                         onRequestPlay: { chapterIdx, _ in startAudioBootstrap(startChapterIndex: chapterIdx) }
