@@ -109,12 +109,16 @@ final class PythonEmbed: @unchecked Sendable {
         setenv("PYTHONNOUSERSITE", "1", 1)
         // iOS has no DNS resolv.conf; aiohttp/asyncio default loop is fine.
 
-        // PythonKit lazy-loads libpython; the dylib lives inside
-        // Python.xcframework/<slice>/Python.framework/Python.
-        // The xcframework is embedded into the app bundle so the
-        // dynamic linker finds it via @rpath at launch. Python failures
-        // raise a runtime trap (PythonKit doesn't bridge to Swift's
-        // throws system) so we have no catch path here.
+        // PythonKit lazy-loads libpython via dlopen. If the framework
+        // is missing (simulator without bootstrap), dlopen returns NULL
+        // and PythonKit traps. Guard with a dlopen probe first so we
+        // throw a recoverable error instead of crashing.
+        guard dlopen("Python.framework/Python", RTLD_NOLOAD) != nil
+              || dlopen("@rpath/Python.framework/Python", RTLD_LAZY) != nil else {
+            throw PythonEmbedError.pythonInitFailed(
+                "libpython not loadable — Python.xcframework missing from bundle"
+            )
+        }
         let sys = Python.import("sys")
         _ = sys.version
 

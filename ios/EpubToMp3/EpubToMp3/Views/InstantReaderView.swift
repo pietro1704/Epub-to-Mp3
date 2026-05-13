@@ -31,7 +31,7 @@ struct InstantReaderView: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.horizontalSizeClass) private var hSize
 
-    @State private var currentChapterIndex: Int = -1
+    @State private var currentChapterIndex: Int = 0
     @StateObject private var player = AudioPlayer()
     /// Tracks whether `player` has been wired with a snapshot via
     /// `mountPlayerIfPossible()`. We can't make `player` itself
@@ -99,7 +99,7 @@ struct InstantReaderView: View {
             reloadCurrentChapter(index: newIndex)
         }
         .onAppear {
-            if currentChapterIndex < 0 {
+            if currentChapterIndex == 0 {
                 currentChapterIndex = firstReadableChapterIndex
             }
             reloadCurrentChapter(index: currentChapterIndex)
@@ -435,7 +435,9 @@ struct InstantReaderView: View {
     private var tocSheet: some View {
         CompatNavigationStack {
             List {
-                ForEach(fulltext.chapters) { chapter in
+                ForEach(fulltext.chapters.filter {
+                    $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+                }) { chapter in
                     Button {
                         let target = chapter.index - 1
                         currentChapterIndex = max(0, target)
