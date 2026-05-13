@@ -31,7 +31,7 @@ struct InstantReaderView: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.horizontalSizeClass) private var hSize
 
-    @State private var currentChapterIndex: Int = 0
+    @State private var currentChapterIndex: Int = -1
     @StateObject private var player = AudioPlayer()
     /// Tracks whether `player` has been wired with a snapshot via
     /// `mountPlayerIfPossible()`. We can't make `player` itself
@@ -99,6 +99,9 @@ struct InstantReaderView: View {
             reloadCurrentChapter(index: newIndex)
         }
         .onAppear {
+            if currentChapterIndex < 0 {
+                currentChapterIndex = firstReadableChapterIndex
+            }
             reloadCurrentChapter(index: currentChapterIndex)
             if hasAudio { mountPlayerIfPossible() }
         }
@@ -144,10 +147,26 @@ struct InstantReaderView: View {
     }
 
     private func resolveChapter(at index: Int) -> EbookFulltext.Chapter? {
-        fulltext.chapters.first(where: { $0.index == index + 1 })
-            ?? fulltext.chapters.first(where: { $0.index == index })
-            ?? (index < fulltext.chapters.count && index >= 0
-                ? fulltext.chapters[index] : nil)
+        let candidates = [
+            fulltext.chapters.first(where: { $0.index == index + 1 }),
+            fulltext.chapters.first(where: { $0.index == index }),
+            (index >= 0 && index < fulltext.chapters.count ? fulltext.chapters[index] : nil),
+        ]
+        for candidate in candidates {
+            if let ch = candidate, ch.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10 {
+                return ch
+            }
+        }
+        return candidates.compactMap { $0 }.first
+    }
+
+    private var firstReadableChapterIndex: Int {
+        if let first = fulltext.chapters.first(where: {
+            $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+        }) {
+            return max(0, first.index - 1)
+        }
+        return 0
     }
 
     // MARK: - Idle player bar (no audio yet)
