@@ -285,7 +285,7 @@ final class DownloadManager: NSObject, @unchecked Sendable {
 
     static func resolve(path: String, base: URL?) -> URL? {
         if path.lowercased().hasPrefix("http") { return URL(string: path) }
-        guard let base else { return URL(string: path) }
+        guard let base else { return nil }
         return URL(string: path, relativeTo: base)?.absoluteURL
     }
 

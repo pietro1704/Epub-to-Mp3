@@ -139,10 +139,17 @@ struct BookOpenView: View {
 
         // 1. Resolve the file URL — required for both local parse
         //    and (later) conversion submission. Failures here surface
-        //    the re-pick UI.
+        //    the re-pick UI.  This call is fast for a healthy bookmark
+        //    but can hop the sandbox + write UserDefaults; we
+        //    deliberately keep it on the main actor because
+        //    `LibraryStore` is `@MainActor`-affined ObservableObject
+        //    and resolving URLs is observably ~5 ms on cached
+        //    bookmarks. The heavy work (PDFKit / cache / fallback
+        //    parse) is offloaded below.
+        let bookId = book.id
         let fileURL: URL
         do {
-            fileURL = try library.openBookFile(id: book.id)
+            fileURL = try library.openBookFile(id: bookId)
         } catch {
             phase = .error(error.localizedDescription)
             return
@@ -154,7 +161,13 @@ struct BookOpenView: View {
         // chapter manifest to feed the engine — but the reader is
         // `PdfReaderView`, not the reflow text view.
         if book.fileType == .pdf {
-            guard let doc = PDFDocument(url: fileURL) else {
+            // PDFDocument(url:) maps the entire file + parses xref on
+            // the calling thread — easily 200-500 ms on a large PDF.
+            // Hop to a detached task so the UI doesn't stall.
+            let docResult: PDFDocument? = await Task.detached(
+                priority: .userInitiated
+            ) { PDFDocument(url: fileURL) }.value
+            guard let doc = docResult else {
                 phase = .unreadable(fileURL)
                 return
             }
@@ -165,14 +178,25 @@ struct BookOpenView: View {
             self.pdfDocument = doc
             // Best-effort pseudo-fulltext extraction. Failure here is
             // non-fatal — the reader still works; only audio is gated.
-            if let cached = LocalFulltextCache.read(bookId: book.id) {
+            let cachedPdf: EbookFulltext? = await Task.detached(
+                priority: .userInitiated
+            ) { LocalFulltextCache.read(bookId: bookId) }.value
+            if let cached = cachedPdf {
                 self.fulltext = cached
-            } else if let extracted = try? PdfTextExtractor.extract(
-                from: fileURL, bookId: book.id
-            ) {
-                self.fulltext = extracted
-                Task.detached(priority: .background) {
-                    LocalFulltextCache.save(extracted, bookId: book.id)
+            } else {
+                let capturedURL = fileURL
+                let extracted: EbookFulltext? = await Task.detached(
+                    priority: .userInitiated
+                ) {
+                    try? PdfTextExtractor.extract(
+                        from: capturedURL, bookId: bookId
+                    )
+                }.value
+                if let extracted {
+                    self.fulltext = extracted
+                    Task.detached(priority: .background) {
+                        LocalFulltextCache.save(extracted, bookId: bookId)
+                    }
                 }
             }
             self.phase = .ready
@@ -181,8 +205,12 @@ struct BookOpenView: View {
 
         // 2. Try the on-disk fulltext cache first. Even on a fresh
         //    install of a book we built locally during the previous
-        //    session, this hits.
-        if let cached = LocalFulltextCache.read(bookId: book.id) {
+        //    session, this hits.  Run off the main actor — even a
+        //    small JSON read can stall during sandbox warm-up.
+        let cachedEpub: EbookFulltext? = await Task.detached(
+            priority: .userInitiated
+        ) { LocalFulltextCache.read(bookId: bookId) }.value
+        if let cached = cachedEpub {
             self.fulltext = cached
             self.phase = .ready
         } else {
@@ -225,7 +253,21 @@ struct BookOpenView: View {
                 parsed = nil
             }
             if parsed == nil || (parsed?.chapters.isEmpty ?? true) {
-                let fallback = EpubFallbackParser.parse(url: fileURL, bookId: book.id)
+                // Pure-Swift ZIP + XML walker for the EPUB. Cheap on
+                // small books, but `Data(contentsOf:)` + XMLParser can
+                // burn 100-500 ms on a 600-page tome. Hop off the main
+                // actor so the gesture gate stays responsive — staying
+                // on it produces "Gesture: System gesture gate timed
+                // out" syslog entries and a frozen UI.
+                let capturedURL = fileURL
+                let capturedBookId = book.id
+                let fallback: EbookFulltext = await Task.detached(
+                    priority: .userInitiated
+                ) {
+                    EpubFallbackParser.parse(
+                        url: capturedURL, bookId: capturedBookId
+                    )
+                }.value
                 if !fallback.chapters.isEmpty {
                     parsed = fallback
                 }
@@ -319,10 +361,19 @@ struct BookOpenView: View {
         watchdog = wd
 
         #if os(iOS) || targetEnvironment(simulator)
-        if settings.useEmbeddedRuntime, client == nil {
-            // No backend configured — use embedded TTS directly.
-            playerLog.debug("[AudioBootstrap] iOS embedded path selected")
-            audioBootstrapTask = Task {
+        // On iOS the embedded runtime is authoritative when enabled —
+        // ignore any persisted `backendURL` (e.g. a legacy
+        // `http://localhost:8000` from before the default was emptied)
+        // because there is no loopback server in the iPhone sandbox and
+        // attempting the SSE path floods the syslog with
+        // `Connection refused` while leaving the reader hung.
+        if settings.useEmbeddedRuntime {
+            playerLog.debug("[AudioBootstrap] iOS embedded path selected (hasClient=\(self.client != nil))")
+            // Streaming runs at .utility — TTS synthesis is CPU-heavy and
+            // long-running; keeping it off the default-priority pool
+            // prevents it from starving UI-driven Tasks and matches Apple
+            // HIG guidance for "user-initiated but background" work.
+            audioBootstrapTask = Task(priority: .utility) {
                 await self.bootstrapEmbedded(chapterIndex: startChapterIndex)
             }
             return
@@ -382,6 +433,14 @@ struct BookOpenView: View {
         let safeStart = max(0, min(startIndex, chapters.count - 1))
         let indices: [Int] = Array(safeStart..<chapters.count) + Array(0..<safeStart)
         var chaptersDone = 0
+        // Bail out fast on systemic failure (e.g. Python module not found
+        // in the bundle): N consecutive identical errors means every
+        // chapter will hit the same wall — better to surface one banner
+        // than to spam the main actor with hundreds of error records,
+        // which froze the UI in the field.
+        var consecutiveFailures = 0
+        var lastFailureKey: String? = nil
+        let maxConsecutiveFailures = 3
 
         for chapterArrayIndex in indices {
             if Task.isCancelled { break }
@@ -392,7 +451,15 @@ struct BookOpenView: View {
             // position in the array, not by `.index`.
             let chapter = chapters[chapterArrayIndex]
             let chapterText = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !chapterText.isEmpty else {
+            // Skip trash chapters: anything below ~10 chars is residual
+            // navigation markup ("1", "I", a stray bullet) that the
+            // EPUB fallback parser couldn't strip but isn't worth a
+            // round-trip through Python TTS. The previous threshold
+            // of `isEmpty` let through "2-char chapters" which then
+            // bombarded the embedded interpreter with thousands of
+            // imports and crashed in `_PyObject_Malloc`.
+            guard chapterText.count >= 10 else {
+                playerLog.debug("[AudioBootstrap] skipping trash chapter \(chapterArrayIndex) (\(chapterText.count) chars)")
                 chaptersDone += 1
                 continue
             }
@@ -431,17 +498,37 @@ struct BookOpenView: View {
                     watchdog?.heartbeat()
                 }
                 chaptersDone += 1
+                consecutiveFailures = 0
+                lastFailureKey = nil
                 // Chapter completed: another explicit heartbeat in case
                 // the chapter produced no segments (e.g. an empty front-
                 // matter chunk handled internally by the Python layer).
                 watchdog?.heartbeat()
                 playerLog.debug("[AudioBootstrap] chapter \(chapterArrayIndex) complete")
             } catch {
-                playerLog.error("[AudioBootstrap] chapter \(chapterArrayIndex) failed: \(error.localizedDescription)")
+                let message = error.localizedDescription
+                playerLog.error("[AudioBootstrap] chapter \(chapterArrayIndex) failed: \(message)")
+                // De-duplicate by the first line of the error message —
+                // covers `Python bootstrap failed: …` where every chapter
+                // raises the identical traceback.
+                let key = message.split(separator: "\n").first.map(String.init) ?? message
+                if key == lastFailureKey {
+                    consecutiveFailures += 1
+                } else {
+                    consecutiveFailures = 1
+                    lastFailureKey = key
+                }
                 await MainActor.run {
                     self.globalPlayer.recordConversionError(
-                        "Chapter \(chapterArrayIndex + 1) failed: \(error.localizedDescription)"
+                        "Chapter \(chapterArrayIndex + 1) failed: \(message)"
                     )
+                }
+                if consecutiveFailures >= maxConsecutiveFailures {
+                    playerLog.error("[AudioBootstrap] aborting after \(consecutiveFailures) consecutive identical failures: \(key)")
+                    await MainActor.run {
+                        self.statusBanner = "Audio generation failed: \(key)"
+                    }
+                    break
                 }
                 // Non-fatal — continue with next chapter so the listener
                 // still hears the rest of the book.

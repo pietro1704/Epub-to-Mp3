@@ -729,7 +729,7 @@ final class AudioPlayer: ObservableObject {
     private func absoluteURL(forDownloadPath path: String?) -> URL? {
         guard let path, !path.isEmpty else { return nil }
         if path.lowercased().hasPrefix("http") { return URL(string: path) }
-        guard let baseURL = backendBaseURL else { return URL(string: path) }
+        guard let baseURL = backendBaseURL else { return nil }
         return URL(string: path, relativeTo: baseURL)?.absoluteURL
     }
 }

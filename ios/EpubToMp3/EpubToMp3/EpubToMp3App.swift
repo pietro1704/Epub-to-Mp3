@@ -37,6 +37,28 @@ struct EpubToMp3App: App {
                     #endif
                 }
                 .task { drainSharedInbox() }
+                .task(priority: .utility) {
+                    // Warm the embedded Python interpreter on a low-
+                    // priority background queue so the first tap on
+                    // Play / Open Book doesn't pay the multi-hundred-ms
+                    // Py_Initialize cost on the main actor. Safe to call
+                    // unconditionally — `PythonEmbed.bootstrap()` is
+                    // idempotent and `PythonBridge.queue` serialises
+                    // every subsequent caller, so a parallel parse
+                    // request just waits behind this prewarm rather
+                    // than re-entering Py_Initialize.
+                    #if os(iOS) || targetEnvironment(simulator)
+                    await Task.detached(priority: .utility) {
+                        do {
+                            try PythonEmbed.shared.bootstrap()
+                        } catch {
+                            #if DEBUG
+                            print("[Prewarm] Python bootstrap failed: \(error)")
+                            #endif
+                        }
+                    }.value
+                    #endif
+                }
                 .compatOnChange(of: scenePhase) { phase in
                     if phase == .active { drainSharedInbox() }
                 }
