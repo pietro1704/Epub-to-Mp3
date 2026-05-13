@@ -3,10 +3,8 @@
 
 from __future__ import annotations
 
-import hashlib
 import html
 import json
-import mimetypes
 import os
 import posixpath
 import re
@@ -18,7 +16,34 @@ from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import unquote
+
+try:
+    import hashlib
+except ImportError:
+    hashlib = None  # type: ignore[assignment]
+
+try:
+    import mimetypes
+except ImportError:
+    mimetypes = None  # type: ignore[assignment]
+
+try:
+    from urllib.parse import unquote
+except ImportError:
+
+    def unquote(s: str, encoding: str = "utf-8", errors: str = "replace") -> str:
+        parts = s.split("%")
+        if len(parts) == 1:
+            return s
+        result = [parts[0]]
+        for item in parts[1:]:
+            try:
+                result.append(bytes.fromhex(item[:2]).decode(encoding, errors) + item[2:])
+            except (ValueError, UnicodeDecodeError):
+                result.append("%" + item)
+        return "".join(result)
+
+
 from xml.etree import ElementTree as ET
 
 from .text_formatting import FormattingSegment, TextFormattingProcessor
@@ -372,9 +397,13 @@ class TextProcessor:
                 # blake2b is ~30% faster than sha1 on long XHTML payloads
                 # and we only need a stable in-memory cache key (no
                 # cryptographic property required).
-                cache_key = hashlib.blake2b(
-                    str(markup).encode("utf-8", errors="ignore"), digest_size=20
-                ).hexdigest()
+                cache_key = (
+                    hashlib.blake2b(
+                        str(markup).encode("utf-8", errors="ignore"), digest_size=20
+                    ).hexdigest()
+                    if hashlib is not None
+                    else None
+                )
             except Exception:
                 cache_key = None
             if cache_key is not None:
@@ -1301,6 +1330,8 @@ def _toc_disk_cache_path(file_path: str) -> Optional[Path]:
         # in length terms. The hash itself is different, so v0.3.24/v0.3.25
         # entries become orphans on first run after this change — they
         # are cleared by ``_toc_disk_cache_cleanup`` once they age past 30d.
+        if hashlib is None:
+            return None
         digest = hashlib.blake2b(
             str(file_path).encode("utf-8", errors="ignore"), digest_size=8
         ).hexdigest()
@@ -3010,14 +3041,16 @@ class EbookReader:
                     except KeyError:
                         data = archive.read(unquote(cover_path))
 
-                    media_type = (
-                        cover_entry.get("media_type")
-                        or mimetypes.guess_type(cover_href)[0]
-                        or "image/jpeg"
-                    )
-                    extension = (
-                        Path(cover_path).suffix or mimetypes.guess_extension(media_type) or ".jpg"
-                    )
+                    media_type = cover_entry.get("media_type") or "image/jpeg"
+                    if not media_type or media_type == "image/jpeg":
+                        if mimetypes is not None:
+                            media_type = mimetypes.guess_type(cover_href)[0] or "image/jpeg"
+                    extension = Path(cover_path).suffix
+                    if not extension:
+                        if mimetypes is not None:
+                            extension = mimetypes.guess_extension(media_type) or ".jpg"
+                        else:
+                            extension = ".jpg"
                     if not extension.startswith("."):
                         extension = f".{extension}"
                     return CoverImage(data=data, media_type=media_type, extension=extension)

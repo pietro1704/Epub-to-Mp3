@@ -538,8 +538,11 @@ struct BookOpenView: View {
         await MainActor.run {
             self.globalPlayer.isConverting = false
             self.globalPlayer.conversionStatus.endSession()
-            self.statusBanner = nil
-            // Terminal: shut the watchdog so it stops polling.
+            if chaptersDone == 0 {
+                self.statusBanner = self.statusBanner ?? "Audio generation failed"
+            } else {
+                self.statusBanner = nil
+            }
             self.watchdog?.stop()
         }
         playerLog.debug("[AudioBootstrap] bootstrapEmbedded finished, \(chaptersDone)/\(chapters.count) chapters done")

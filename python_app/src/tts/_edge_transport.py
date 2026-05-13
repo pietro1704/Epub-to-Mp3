@@ -30,8 +30,6 @@ module instead of the full ``EdgeTTS`` class.
 
 from __future__ import annotations
 
-import asyncio
-import importlib
 from typing import Callable, Optional
 
 # Public type alias: (text, voice) -> raw MP3 bytes. Sync on purpose --
@@ -52,6 +50,9 @@ def _default_transport(text: str, voice: str) -> bytes:
     running loop, else ``loop.run_until_complete`` after creating a new
     one in a thread (rare on iOS -- iOS never uses this default).
     """
+    import asyncio
+    import importlib
+
     edge_tts = importlib.import_module("edge_tts")
 
     async def _run() -> bytes:
