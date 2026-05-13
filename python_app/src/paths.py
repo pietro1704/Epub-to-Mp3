@@ -7,7 +7,6 @@ regardless of where Python commands are executed from.
 import os
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 
 SPACE_ID = os.getenv("SPACE_ID")
@@ -96,6 +95,8 @@ def _find_legacy_frozen_roots(temp_dir: Path | None = None) -> list[Path]:
     """Return candidate `_MEI*` directories that hold prior persistent state,
     sorted newest first by mtime.
     """
+    import tempfile
+
     base = temp_dir or Path(tempfile.gettempdir())
     candidates: list[Path] = []
     try:

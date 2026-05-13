@@ -136,7 +136,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         input_file.write_bytes(b"RIFF" + b"\x00" * 100)  # minimal valid-sized WAV stub
 
         # Mock ffmpeg subprocess
-        with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
+        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock successful ffmpeg process
             mock_process = AsyncMock()
             mock_process.communicate.return_value = (b"", b"")
@@ -167,7 +167,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
 
         input_file.write_bytes(b"RIFF" + b"\x00" * 100)  # minimal valid-sized WAV stub
 
-        with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
+        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             # Mock failed ffmpeg process
             mock_process = AsyncMock()
             mock_process.communicate.return_value = (b"", b"some ffmpeg error")
@@ -185,7 +185,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
 
         input_file.write_bytes(b"RIFF" + b"\x00" * 100)  # minimal valid-sized WAV stub
 
-        with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
+        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_subprocess.side_effect = Exception("Test error")
 
             result = await AudioProcessor.convert_to_mp3(input_file, output_file)
@@ -200,7 +200,7 @@ class TestAudioProcessor(unittest.IsolatedAsyncioTestCase):
         input_file.write_bytes(b"RIFF" + b"\x00" * 100)  # minimal valid-sized WAV stub
 
         # Mock ffmpeg subprocess
-        with patch("src.utils.asyncio.create_subprocess_exec") as mock_subprocess:
+        with patch("asyncio.create_subprocess_exec") as mock_subprocess:
             mock_process = AsyncMock()
             mock_process.communicate.return_value = (b"", b"")
             mock_process.returncode = 0

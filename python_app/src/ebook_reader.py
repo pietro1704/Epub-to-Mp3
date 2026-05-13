@@ -10,8 +10,12 @@ import posixpath
 import re
 import threading
 import time
-import zipfile
 from collections import OrderedDict
+
+try:
+    import zipfile
+except ImportError:
+    zipfile = None  # type: ignore[assignment]
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path

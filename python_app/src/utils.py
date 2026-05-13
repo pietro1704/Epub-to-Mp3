@@ -3,11 +3,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import re
 import shutil
 import sys
-import tempfile
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -238,6 +236,8 @@ class AudioProcessor:
             str(output_path),
         )
 
+        import asyncio
+
         subprocess_exec = asyncio.create_subprocess_exec
 
         async def _run_ffmpeg(command: tuple[str, ...]) -> bool:
@@ -266,6 +266,8 @@ class AudioProcessor:
             ok = await _run_ffmpeg(command_fallback)
         if not ok:
             # Final fallback: use short temporary paths to avoid path/encoding edge cases.
+            import tempfile
+
             tmp_in = Path(tempfile.mkstemp(prefix="tts_in_", suffix=input_path.suffix)[1])
             tmp_out = Path(tempfile.mkstemp(prefix="tts_out_", suffix=".mp3")[1])
             try:
@@ -338,6 +340,8 @@ class AudioProcessor:
             candidates.append(("afplay", str(file_path)))
         if shutil.which("cvlc"):
             candidates.append(("cvlc", "--play-and-exit", str(file_path)))
+
+        import asyncio
 
         for command in candidates:
             try:
