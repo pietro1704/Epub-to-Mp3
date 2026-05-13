@@ -33,7 +33,16 @@ enum EpubFallbackParser {
         let opfInfo = parseOPFForSpine(data: opfData)
         let opfDir = (opfPath as NSString).deletingLastPathComponent
 
-        // 3. Resolve each spine idref to its href and extract.
+        // 3. Parse NCX/nav TOC for proper chapter names keyed by href.
+        var tocNames: [String: String] = [:]
+        if let tocRelPath = opfInfo.tocHref {
+            let tocPath = opfDir.isEmpty ? tocRelPath : "\(opfDir)/\(tocRelPath)"
+            if let tocData = ZipReader.extract(member: tocPath, from: url) {
+                tocNames = parseNCXLabels(data: tocData)
+            }
+        }
+
+        // 4. Resolve each spine idref to its href and extract.
         var chapters: [EbookFulltext.Chapter] = []
         var index = 1
         for idref in opfInfo.spineOrder {
@@ -45,7 +54,8 @@ enum EpubFallbackParser {
             }
             let text = stripHTML(html).trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { continue }
-            let name: String? = extractTitle(from: html) ?? "Chapter \(index)"
+            let tocName = tocNames[href] ?? tocNames[chapterPath]
+            let name: String? = tocName ?? extractTitle(from: html) ?? "Chapter \(index)"
             chapters.append(EbookFulltext.Chapter(
                 index: index,
                 name: name,
@@ -72,7 +82,9 @@ enum EpubFallbackParser {
         var title: String?
         var author: String?
         var manifest: [String: String] = [:]  // idref → href
+        var manifestMediaTypes: [String: String] = [:]  // idref → media-type
         var spineOrder: [String] = []          // idrefs in reading order
+        var tocHref: String?                   // NCX or nav.xhtml path
     }
 
     fileprivate static func parseOPFForSpine(data: Data) -> OPFInfo {
@@ -152,28 +164,51 @@ enum EpubFallbackParser {
         return result
     }
 
-    /// Pull the chapter name from `<title>` or the first `<h1..h6>`.
-    /// Returns nil if neither is present.
     fileprivate static func extractTitle(from html: String) -> String? {
+        // 1. Prefer <h1..h6> — headings carry real chapter names.
+        //    Match headings with nested inline elements (span, em, b, etc.)
+        //    by stripping inner tags.
+        if let regex = try? NSRegularExpression(pattern: "<h[1-6][^>]*>(.*?)</h[1-6]>",
+                                                    options: .dotMatchesLineSeparators),
+           let match = regex.firstMatch(in: html, range: NSRange(html.startIndex..., in: html)),
+           let innerRange = Range(match.range(at: 1), in: html) {
+            let inner = String(html[innerRange])
+            let stripped = inner.replacingOccurrences(of: #"<[^>]+>"#, with: "",
+                                                      options: .regularExpression)
+            let trimmed = decodeEntities(stripped)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { return trimmed }
+        }
+        // 2. Fall back to <title>, but only if it looks like a real name
+        //    (not an opaque id like "c0", "section3", "ch-7a").
         if let range = html.range(of: #"<title>([^<]+)</title>"#, options: .regularExpression) {
             let raw = String(html[range])
             if let openEnd = raw.range(of: ">"),
                let closeStart = raw.range(of: "</title>", options: .backwards) {
                 let inner = raw[openEnd.upperBound..<closeStart.lowerBound]
-                let trimmed = inner.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { return decodeEntities(trimmed) }
-            }
-        }
-        if let hRange = html.range(of: #"<h[1-6][^>]*>([^<]+)</h[1-6]>"#, options: .regularExpression) {
-            let raw = String(html[hRange])
-            if let openEnd = raw.range(of: ">"),
-               let closeStart = raw.range(of: "</", options: .backwards) {
-                let inner = raw[openEnd.upperBound..<closeStart.lowerBound]
-                let trimmed = inner.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !trimmed.isEmpty { return decodeEntities(trimmed) }
+                let trimmed = decodeEntities(String(inner))
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty, looksLikeRealTitle(trimmed) {
+                    return trimmed
+                }
             }
         }
         return nil
+    }
+
+    fileprivate static func parseNCXLabels(data: Data) -> [String: String] {
+        let delegate = NCXDelegate()
+        let parser = XMLParser(data: data)
+        parser.delegate = delegate
+        _ = parser.parse()
+        return delegate.labels
+    }
+
+    private static func looksLikeRealTitle(_ s: String) -> Bool {
+        if s.count < 3 { return false }
+        if s.contains(" ") { return true }
+        if s.first?.isUppercase == true { return true }
+        return false
     }
 }
 
@@ -194,9 +229,16 @@ private final class SpineDelegate: NSObject, XMLParserDelegate {
            let id = attributeDict["id"],
            let href = attributeDict["href"] {
             info.manifest[id] = href
+            if let mt = attributeDict["media-type"] { info.manifestMediaTypes[id] = mt }
+            if attributeDict["properties"]?.contains("nav") == true {
+                info.tocHref = href
+            }
         }
         if tag == "itemref", let idref = attributeDict["idref"] {
             info.spineOrder.append(idref)
+        }
+        if tag == "spine", let toc = attributeDict["toc"] {
+            if let href = info.manifest[toc] { info.tocHref = href }
         }
     }
 
@@ -216,5 +258,58 @@ private final class SpineDelegate: NSObject, XMLParserDelegate {
         }
         buffer = ""
         currentTag = nil
+    }
+}
+
+// MARK: - NCX / nav.xhtml TOC delegate
+
+private final class NCXDelegate: NSObject, XMLParserDelegate {
+    var labels: [String: String] = [:]
+    private var buffer = ""
+    private var currentSrc: String?
+    private var currentLabel: String?
+    private var inNavLabel = false
+    private var inText = false
+    private var inNavPoint = false
+
+    func parser(_ parser: XMLParser, didStartElement elementName: String,
+                namespaceURI: String?, qualifiedName: String?,
+                attributes attributeDict: [String: String] = [:]) {
+        let tag = elementName.lowercased()
+        if tag == "navpoint" { inNavPoint = true; currentSrc = nil; currentLabel = nil }
+        if tag == "navlabel" { inNavLabel = true }
+        if inNavLabel && tag == "text" { inText = true; buffer = "" }
+        if tag == "content", let src = attributeDict["src"] {
+            currentSrc = src.components(separatedBy: "#").first
+        }
+        // EPUB3 nav.xhtml: <a href="ch1.xhtml">Chapter Name</a>
+        if tag == "a", let href = attributeDict["href"] {
+            currentSrc = href.components(separatedBy: "#").first
+            inText = true; buffer = ""
+        }
+    }
+
+    func parser(_ parser: XMLParser, foundCharacters string: String) {
+        if inText { buffer.append(string) }
+    }
+
+    func parser(_ parser: XMLParser, didEndElement elementName: String,
+                namespaceURI: String?, qualifiedName: String?) {
+        let tag = elementName.lowercased()
+        if inText && (tag == "text" || tag == "a") {
+            let trimmed = buffer.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty { currentLabel = trimmed }
+            inText = false
+            buffer = ""
+        }
+        if tag == "navlabel" { inNavLabel = false }
+        if tag == "navpoint" || tag == "li" {
+            if let src = currentSrc, let label = currentLabel {
+                labels[src] = label
+            }
+            if tag == "navpoint" { inNavPoint = false }
+            currentSrc = nil
+            currentLabel = nil
+        }
     }
 }
