@@ -50,55 +50,23 @@ struct InstantReaderView: View {
     @State private var showingConversionStatus = false
 
     var body: some View {
-        // The reader content + (optional) status strip live in the
-        // base VStack. The audio player bar and the floating play FAB
-        // are docked via `.safeAreaInset(edge: .bottom)` so that, in
-        // portrait, they sit comfortably above the home indicator
-        // without us hardcoding its 34pt height (which varies by
-        // device generation — iPhone 13 mini is 21pt, the 16 Pro Max
-        // is 34pt). The inset also composes with the parent navigation
-        // stack so the reader's scrollable area can scroll its content
-        // *behind* a translucent player bar, the HIG audiobook pattern.
         VStack(spacing: 0) {
-            // Only surface the status strip when we're actively
-            // bootstrapping audio. An empty/idle reader shows
-            // pure text — no infinite "Generating audio…".
-            if let banner = statusBanner, !banner.isEmpty {
-                statusStrip(banner)
-            }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        // Dock the player bar at the bottom safe area. SwiftUI adds
-        // the system home-indicator inset for us automatically — no
-        // hardcoded 34pt — and the divider+material drift up so the
-        // last line of body text never gets clipped behind the
-        // player.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if hasAudio {
-                VStack(spacing: 0) {
-                    Divider()
-                        .background(readerForeground.opacity(0.15))
+            VStack(spacing: 0) {
+                Divider()
+                    .background(readerForeground.opacity(0.15))
+                if hasAudio {
                     playerBar
                         .padding(.vertical, 8)
+                } else {
+                    idlePlayerBar
+                        .padding(.vertical, 8)
                 }
-                // Mirror the reader toolbar: tint the player bar with the
-                // reader theme colour so it feels like part of the same
-                // surface rather than an OS-chrome stripe floating over it.
-                .background(readerBackground.opacity(0.96))
             }
-        }
-        // Floating play button overlay. Using `.overlay` instead of
-        // the prior `ZStack(alignment: .bottomTrailing)` keeps the FAB
-        // inside the host's safe area in portrait — the prior
-        // `padding(.bottom, 32)` was a fixed guess that fell **inside**
-        // the home indicator on iPhone Pro Max devices.
-        .overlay(alignment: .bottomTrailing) {
-            if !hasAudio {
-                floatingPlayButton
-                    .padding(.trailing, 24)
-                    .padding(.bottom, 16)
-            }
+            .background(readerBackground.opacity(0.96))
         }
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
@@ -145,9 +113,7 @@ struct InstantReaderView: View {
 
     @ViewBuilder
     private var content: some View {
-        if let chapter = fulltext.chapters.first(where: { $0.index == currentChapterIndex + 1 })
-            ?? (currentChapterIndex < fulltext.chapters.count
-                ? fulltext.chapters[currentChapterIndex] : nil) {
+        if let chapter = resolveChapter(at: currentChapterIndex) {
             ReaderView(
                 chapter: chapter,
                 spans: spans,
@@ -156,106 +122,104 @@ struct InstantReaderView: View {
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter
             )
+        } else if !fulltext.chapters.isEmpty {
+            ReaderView(
+                chapter: fulltext.chapters[0],
+                spans: spans,
+                currentSentenceId: currentSentenceId,
+                onJumpToSentence: jumpToSentence,
+                onAdvanceChapter: advanceToNextChapter,
+                onPreviousChapter: returnToPreviousChapter
+            )
         } else {
-            Text("No chapter at index \(currentChapterIndex).")
-                .foregroundStyle(.secondary)
+            VStack(spacing: 12) {
+                Image(systemName: "text.book.closed")
+                    .font(.largeTitle)
+                    .foregroundStyle(.tertiary)
+                Text("No content available")
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
-    // MARK: - Floating play button (audio opt-in)
+    private func resolveChapter(at index: Int) -> EbookFulltext.Chapter? {
+        fulltext.chapters.first(where: { $0.index == index + 1 })
+            ?? fulltext.chapters.first(where: { $0.index == index })
+            ?? (index < fulltext.chapters.count && index >= 0
+                ? fulltext.chapters[index] : nil)
+    }
 
-    /// FAB rendered above the reader text (bottom-trailing). Tapping
-    /// shows a menu with three start points: beginning of book,
-    /// current chapter, or the sentence the user last tapped.
-    /// Hidden once `hasAudio` is true — the bottom player bar
-    /// supersedes it.
+    // MARK: - Idle player bar (no audio yet)
+
     @ViewBuilder
-    private var floatingPlayButton: some View {
-        Menu {
-            Button {
-                onRequestPlay?(0, nil)
-            } label: {
-                Label("From the beginning", systemImage: "play")
-            }
-            Button {
-                onRequestPlay?(currentChapterIndex, nil)
-            } label: {
-                Label("From current chapter",
-                      systemImage: "play.rectangle")
-            }
-            if let anchor = pendingPlayAnchor {
-                Button {
-                    onRequestPlay?(currentChapterIndex, anchor.id)
-                } label: {
-                    Label("From this sentence",
-                          systemImage: "text.insert")
+    private var idlePlayerBar: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                coverArtwork
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(currentChapterTitle)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
+                    if let banner = statusBanner, !banner.isEmpty {
+                        let isError = banner.lowercased().contains("failed")
+                            || banner.lowercased().contains("unavailable")
+                        HStack(spacing: 4) {
+                            if isError {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .font(.caption2)
+                                    .foregroundStyle(.orange)
+                            } else {
+                                ProgressView()
+                                    .controlSize(.mini)
+                            }
+                            Text(banner)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                    } else if let author = fulltext.bookAuthor, !author.isEmpty {
+                        Text(author)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
                 }
-            }
-        } label: {
-            ZStack {
-                Circle()
-                    .fill(Color.accentColor)
-                    .frame(width: 56, height: 56)
-                    .shadow(color: .black.opacity(0.25),
-                            radius: 6, x: 0, y: 3)
-                Image(systemName: statusBanner == nil
-                                    ? "play.fill"
-                                    : "hourglass")
-                    .font(.title2)
-                    .foregroundStyle(.white)
-            }
-        }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
-        .accessibilityLabel("Play audio")
-    }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-    // MARK: - Status strip
-
-    /// Tappable status strip shown while audio is being generated.
-    /// Tap → opens `ConversionStatusSheet`.
-    private func statusStrip(_ text: String) -> some View {
-        let isError = text.lowercased().contains("failed")
-                    || text.lowercased().contains("unavailable")
-        return Button {
-            showingConversionStatus = true
-        } label: {
-            HStack(spacing: 10) {
-                if isError {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.caption)
-                        .foregroundStyle(.orange)
+                if statusBanner != nil {
+                    Button { showingConversionStatus = true } label: {
+                        Image(systemName: "info.circle")
+                            .font(.title3)
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 } else {
-                    ProgressView()
-                        .controlSize(.small)
-                        .tint(readerForeground.opacity(0.6))
+                    Menu {
+                        Button {
+                            onRequestPlay?(0, nil)
+                        } label: {
+                            Label("From the beginning", systemImage: "play")
+                        }
+                        Button {
+                            onRequestPlay?(currentChapterIndex, nil)
+                        } label: {
+                            Label("From current chapter", systemImage: "play.rectangle")
+                        }
+                    } label: {
+                        Image(systemName: "play.circle.fill")
+                            .font(.system(size: 36))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
                 }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(text)
-                        .font(.footnote)
-                        .foregroundStyle(readerForeground.opacity(0.85))
-                    Text("Tap for details")
-                        .font(.caption2)
-                        .foregroundStyle(readerForeground.opacity(0.5))
-                }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.caption2)
-                    .foregroundStyle(readerForeground.opacity(0.4))
             }
         }
-        .buttonStyle(.plain)
-        // 16pt on top of the safe-area inset so the spinner / status
-        // copy never sit under the notch in landscape.
-        .compatHorizontalSafeAreaPadding(16)
-        .padding(.vertical, 8)
-        // Theme-aware tinted background, consistent with the reader toolbar.
-        .background(readerBackground.opacity(0.96))
-        .accessibilityLabel("Conversion status: \(text). Tap for details.")
-        .accessibilityIdentifier("instantReader.statusStrip")
+        .compatHorizontalSafeAreaPadding(20)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Player bar
@@ -524,8 +488,7 @@ struct InstantReaderView: View {
 
     private func reloadCurrentChapter(index: Int) {
         guard index >= 0,
-              let chapter = fulltext.chapters.first(where: { $0.index == index + 1 })
-                ?? (index < fulltext.chapters.count ? fulltext.chapters[index] : nil) else {
+              let chapter = resolveChapter(at: index) else {
             spans = []
             return
         }
@@ -592,12 +555,9 @@ struct InstantReaderView: View {
     }
 
     private var currentChapterTitle: String {
-        if let chapter = fulltext.chapters.first(where: { $0.index == currentChapterIndex + 1 })
-            ?? (currentChapterIndex < fulltext.chapters.count
-                ? fulltext.chapters[currentChapterIndex] : nil) {
-            return chapter.displayTitle
-        }
-        return "—"
+        resolveChapter(at: currentChapterIndex)?.displayTitle
+            ?? fulltext.bookTitle
+            ?? "—"
     }
 
     private func positionLabel(_ p: AudioPlayer) -> String {
