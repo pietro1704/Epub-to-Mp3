@@ -270,4 +270,26 @@ final class AppSettingsObservationTests: XCTestCase {
         XCTAssertTrue(s.canReadOffline,
                       "Reader must remain available without any backend URL when the embedded runtime is on.")
     }
+
+    /// Regression: legacy installs persisted `backendURL =
+    /// "http://localhost:8000"` from before the iOS default was emptied.
+    /// `resolvedBaseURL` still returns that URL, so `BookOpenView.client`
+    /// is non-nil — but on iOS there is no loopback server, and the SSE
+    /// path floods the syslog with `Connection refused` while the
+    /// reader hangs. `BookOpenView.startAudioBootstrap` must therefore
+    /// short-circuit to the embedded path whenever `useEmbeddedRuntime`
+    /// is on, regardless of whether a (stale) client could be built.
+    /// This test pins the precondition: with the legacy URL persisted,
+    /// `resolvedBaseURL` is still non-nil — so the bootstrap guard
+    /// cannot rely on `client == nil` to pick the embedded path.
+    func testLegacyLocalhostBackendDoesNotSuppressEmbeddedRuntime() {
+        let s = makeSettings()
+        s.useEmbeddedRuntime = true
+        s.backendURL = "http://localhost:8000"
+        s.sidecarURL = nil
+        XCTAssertNotNil(s.resolvedBaseURL,
+                        "Legacy persisted backendURL still resolves — bootstrap guard cannot use `client == nil` alone to pick the embedded path on iOS.")
+        XCTAssertTrue(s.useEmbeddedRuntime,
+                      "Embedded runtime must remain authoritative even when a legacy backend URL is present.")
+    }
 }
