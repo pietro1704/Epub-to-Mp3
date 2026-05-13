@@ -48,11 +48,14 @@ enum PythonBridgeError: Error, LocalizedError {
 final class PythonBridge: @unchecked Sendable {
     static let shared = PythonBridge()
 
-    /// Serial — `PythonKit` is not thread-safe. Cheap to bounce work
-    /// here because parsing a typical EPUB takes a few hundred ms.
-    private let queue = DispatchQueue(
-        label: "epub2mp3.python-bridge", qos: .userInitiated
-    )
+    /// Single-threaded executor for every PythonKit call. A plain
+    /// ``DispatchQueue`` — even a serial one — schedules blocks onto
+    /// arbitrary kernel threads from the global pool, and PythonKit
+    /// does not acquire the CPython GIL on entry. The resulting thread
+    /// hop tripped ``_PyObject_Malloc`` / ``PyImport_ImportModule``
+    /// into bad-access crashes. ``PythonRunner`` pins every Python
+    /// call to a dedicated kernel thread for the process lifetime.
+    private let queue = PythonRunner.shared
 
     /// Cached `python_app.src.ios_entrypoints` module handle. Without
     /// this cache every chapter synthesis re-runs `attemptImport`,
