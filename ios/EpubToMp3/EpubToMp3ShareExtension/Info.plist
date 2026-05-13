@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>EpubToMp3</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <key>NSExtensionActivationRule</key>
+            <dict>
+                <!-- Activation gating. Anything > 0 lets the
+                     extension show up in the Share Sheet when the
+                     host has at least one matching attachment.
+                     We accept EPUB / PDF file URLs primarily; the
+                     activation predicate below matches by UTI. -->
+                <key>NSExtensionActivationSupportsFileWithMaxCount</key>
+                <integer>10</integer>
+                <key>NSExtensionActivationSupportsAttachmentsWithMaxCount</key>
+                <integer>10</integer>
+            </dict>
+            <!-- Restrict the Share Sheet to apps whose attachments
+                 contain at least one EPUB / PDF. Apple Books uses
+                 the legacy IDPF UTI for exports. -->
+            <key>NSExtensionActivationDictionaryVersion</key>
+            <integer>2</integer>
+        </dict>
+        <key>NSExtensionMainStoryboard</key>
+        <string></string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>EpubToMp3ShareExtension.ShareViewController</string>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.share-services</string>
+    </dict>
+</dict>
+</plist>
