@@ -147,6 +147,13 @@ if [[ -d "${PYAPP_SRC}" ]]; then
   else
     touch "${PYAPP_DEST}/__init__.py"
   fi
+  # version.py is imported by __init__.py at module load — skipping it
+  # breaks every `import python_app.*` with `No module named
+  # 'python_app.version'` (regression seen on the iOS build before this
+  # line landed).
+  if [[ -f "${PYAPP_SRC}/version.py" ]]; then
+    cp "${PYAPP_SRC}/version.py" "${PYAPP_DEST}/"
+  fi
   # Mirror only src/. Strip __pycache__ on the way out so the bundle
   # stays small and reproducible.
   cp -R "${PYAPP_SRC}/src" "${PYAPP_DEST}/src"

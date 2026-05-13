@@ -38,6 +38,14 @@ import sys
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional
 
+# ``python_app.src.tts.__init__`` is intentionally lazy (PEP 562) so
+# this import does NOT pull in ``factory.py`` -> ``urllib.request``
+# -> ``base64`` -> ``struct`` -> ``_struct``. ``_struct`` is a
+# CPython C extension shipped as a .so under ``lib-dynload/`` and
+# iOS refuses to ``dlopen`` it outside a ``.framework`` bundle; if
+# you ever re-add an eager ``factory`` import to ``tts/__init__.py``,
+# every iOS chapter synthesis will crash here with
+# ``No module named '_struct'``.
 from .tts import _edge_transport, _piper_transport
 
 # Mirror ``EdgeTTS._DEFAULT_CHUNK_SIZE`` (12_000) but cap a touch lower
