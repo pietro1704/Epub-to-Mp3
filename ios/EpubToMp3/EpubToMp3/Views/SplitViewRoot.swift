@@ -215,12 +215,9 @@ struct SplitViewRoot: View {
     private var detailColumn: some View {
         switch navMode {
         case .reader, .jobs, .settings:
-            CompatContentUnavailableView(
-                "—",
-                systemImage: "book.closed",
-                description: Text("")
-            )
-            .hidden()
+            Color.clear
+                .frame(width: 0)
+                .navigationSplitViewColumnWidth(min: 0, ideal: 0, max: 0)
         case .library:
             libraryDetailColumn
         }
