@@ -94,7 +94,8 @@ struct EpubToMp3App: App {
     private func handleIncomingURL(_ url: URL) {
         guard url.isFileURL else { return }
         do {
-            _ = try library.importBook(from: url)
+            let book = try library.importBook(from: url)
+            MainReaderView.setCurrentlyReading(bookID: book.id)
         } catch {
             #if DEBUG
             print("[onOpenURL] import failed for \(url.lastPathComponent): \(error.localizedDescription)")
