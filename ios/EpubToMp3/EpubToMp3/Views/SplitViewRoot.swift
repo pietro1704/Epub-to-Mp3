@@ -1,20 +1,11 @@
 import SwiftUI
 
-/// Multi-column root used on iPad regular-width and macOS. Layout:
+/// Two-column root used on iPad regular-width and macOS. Layout:
 ///
-///   Nav sidebar | Content for current nav mode | Detail (library only)
-///
-/// As of the Music/Spotify-style player slice, the `.nowPlaying` sidebar
-/// destination has been removed. The full player is now presented as a
-/// `FullPlayerSheet` via `MiniPlayerBar` tap — the same sheet pattern as
-/// the iPhone tab layout. This keeps the sidebar lean (Read | Library |
-/// Conversions | Settings) and the full-screen player available from any
-/// surface.
+///   Nav sidebar | Detail (full-width content for current mode)
 ///
 /// Falls back to `TabRoot` on iPhone compact and pre-iOS-16/macOS-13
-/// systems via the branch in `RootView`. This view is therefore safe to
-/// compile under iOS 15 / macOS 12 SDKs — the `@available` gate keeps
-/// the body from executing on older OSes.
+/// systems via the branch in `RootView`.
 
 /// Top-level destinations exposed in the split-view sidebar.
 ///
@@ -86,11 +77,8 @@ struct SplitViewRoot: View {
             navSidebar
                 .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
                 .accessibilityIdentifier("split.sidebar")
-        } content: {
-            contentColumn
-                .accessibilityIdentifier("split.content")
         } detail: {
-            detailColumn
+            contentForMode
                 .accessibilityIdentifier("split.detail")
         }
         .navigationSplitViewStyle(.balanced)
@@ -150,10 +138,10 @@ struct SplitViewRoot: View {
         }
     }
 
-    // MARK: - Content column
+    // MARK: - Detail (single column)
 
     @ViewBuilder
-    private var contentColumn: some View {
+    private var contentForMode: some View {
         switch navMode {
         case .reader:
             MainReaderView(
@@ -161,11 +149,61 @@ struct SplitViewRoot: View {
                 onBrowseLibrary: { navMode = .library }
             )
         case .library:
-            LibrarySidebar(selectedBookID: $selectedBookID)
+            libraryContent
         case .jobs:
             JobsListView()
         case .settings:
             SettingsView()
+        }
+    }
+
+    @ViewBuilder
+    private var libraryContent: some View {
+        if let book = selectedBook {
+            VStack(spacing: 0) {
+                HStack {
+                    Button {
+                        selectedBookID = nil
+                        selectedChapterIndex = nil
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.backward")
+                            Text("Library")
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                    Button {
+                        MainReaderView.setCurrentlyReading(bookID: book.id)
+                        navMode = .reader
+                    } label: {
+                        Label("Open in Reader", systemImage: "book.fill")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                Divider()
+
+                if let snapshot = jobSnapshot(for: book), let chapterIndex = selectedChapterIndex {
+                    PlayerReaderDetail(
+                        snapshot: snapshot,
+                        startingChapterIndex: chapterIndex,
+                        backendBaseURL: settings.resolvedBaseURL,
+                        onPreviousChapter: { advanceChapter(by: -1, in: snapshot) },
+                        onNextChapter: { advanceChapter(by: +1, in: snapshot) }
+                    )
+                    .id("\(book.id)-\(chapterIndex)")
+                } else {
+                    ChapterListColumn(
+                        book: book,
+                        selectedChapterIndex: $selectedChapterIndex
+                    )
+                }
+            }
+        } else {
+            LibrarySidebar(selectedBookID: $selectedBookID)
         }
     }
 
@@ -212,63 +250,6 @@ struct SplitViewRoot: View {
     }
     #endif
 
-    // MARK: - Detail column
-
-    @ViewBuilder
-    private var detailColumn: some View {
-        switch navMode {
-        case .library:
-            libraryDetailColumn
-        default:
-            Text("")
-        }
-    }
-
-    @ViewBuilder
-    private var libraryDetailColumn: some View {
-        if let book = selectedBook {
-            if let snapshot = jobSnapshot(for: book), let chapterIndex = selectedChapterIndex {
-                PlayerReaderDetail(
-                    snapshot: snapshot,
-                    startingChapterIndex: chapterIndex,
-                    backendBaseURL: settings.resolvedBaseURL,
-                    onPreviousChapter: { advanceChapter(by: -1, in: snapshot) },
-                    onNextChapter: { advanceChapter(by: +1, in: snapshot) }
-                )
-                .id("\(book.id)-\(chapterIndex)")
-            } else if selectedChapterIndex == nil, let book = selectedBook {
-                VStack(spacing: 24) {
-                    ChapterListColumn(
-                        book: book,
-                        selectedChapterIndex: $selectedChapterIndex
-                    )
-                    Button {
-                        MainReaderView.setCurrentlyReading(bookID: book.id)
-                        navMode = .reader
-                    } label: {
-                        Label("Open in Reader", systemImage: "book.fill")
-                            .frame(minHeight: 44)
-                            .padding(.horizontal, 16)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .padding(.bottom, 16)
-                }
-            } else {
-                CompatContentUnavailableView(
-                    "Pick a chapter",
-                    systemImage: "headphones",
-                    description: Text("Select a chapter to start playback.")
-                )
-            }
-        } else {
-            CompatContentUnavailableView(
-                "Pick a book",
-                systemImage: "books.vertical",
-                description: Text("Choose a book from the library to see its chapters.")
-            )
-        }
-    }
 
     // MARK: - Helpers
 
