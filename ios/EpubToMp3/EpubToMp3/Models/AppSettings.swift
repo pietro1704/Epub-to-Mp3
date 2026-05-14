@@ -114,7 +114,7 @@ final class AppSettings: ObservableObject {
         // Both ship inside the app bundle and let the reader work without
         // any external backend URL.
         self.useEmbeddedRuntime = defaults.object(forKey: "useEmbeddedRuntime") as? Bool ?? true
-        self.readerFontSize = (defaults.object(forKey: "readerFontSize") as? Int) ?? 2
+        self.readerFontSize = (defaults.object(forKey: "readerFontSize") as? Int) ?? 3
         self.readerFontFamily = ReaderFontFamily(
             rawValue: defaults.string(forKey: "readerFontFamily") ?? ""
         ) ?? .serif
@@ -189,7 +189,7 @@ final class AppSettings: ObservableObject {
 
     /// 5-step font size scale: 0=XS, 1=S, 2=M (default), 3=L, 4=XL.
     /// Clamped in `didSet` so the rest of the app can trust 0…4.
-    @Published var readerFontSize: Int = 2 {
+    @Published var readerFontSize: Int = 3 {
         didSet {
             let clamped = max(0, min(4, readerFontSize))
             if clamped != readerFontSize {
@@ -411,6 +411,24 @@ final class AppSettings: ObservableObject {
         readerSuppressItalic = false
         readerLetterSpacing = 0
         readerWordSpacing = 0
+    }
+
+    // MARK: Reading position persistence
+
+    func savedChapterIndex(for bookId: String) -> Int {
+        defaults.integer(forKey: "readPos_ch_\(bookId)")
+    }
+
+    func saveChapterIndex(_ index: Int, for bookId: String) {
+        defaults.set(index, forKey: "readPos_ch_\(bookId)")
+    }
+
+    func savedPageIndex(for bookId: String) -> Int {
+        defaults.integer(forKey: "readPos_pg_\(bookId)")
+    }
+
+    func savePageIndex(_ index: Int, for bookId: String) {
+        defaults.set(index, forKey: "readPos_pg_\(bookId)")
     }
 
     /// Resolved point size for the current font-size step.

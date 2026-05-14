@@ -511,50 +511,28 @@ struct BookOpenView: View {
         globalPlayer: AudioPlayer,
         watchdog: ConversionWatchdog?
     ) async throws {
-        let firstChunkSize = 500
-        let normalChunkSize = 10_000
+        let normalized = EbookFulltext.Chapter.collapseHardWraps(text)
+        let sentences = Self.splitForTTS(normalized, chapterIndex: chapterIndex)
 
-        var chunks: [String] = []
-        if text.count <= firstChunkSize {
-            chunks = [text]
-        } else {
-            var first = String(text.prefix(firstChunkSize))
-            if let lastSpace = first.lastIndex(of: " "),
-               first.distance(from: first.startIndex, to: lastSpace) > firstChunkSize / 2 {
-                first = String(first[..<lastSpace])
-            }
-            chunks.append(first)
-            var remaining = String(text.dropFirst(first.count)).trimmingCharacters(in: .whitespaces)
-            while !remaining.isEmpty {
-                let size = min(normalChunkSize, remaining.count)
-                var chunk = String(remaining.prefix(size))
-                if chunk.count < remaining.count,
-                   let lastSpace = chunk.lastIndex(of: " "),
-                   chunk.distance(from: chunk.startIndex, to: lastSpace) > size / 2 {
-                    chunk = String(chunk[..<lastSpace])
-                }
-                chunks.append(chunk)
-                remaining = String(remaining.dropFirst(chunk.count))
-                    .trimmingCharacters(in: .whitespaces)
-            }
-        }
+        guard !sentences.isEmpty else { throw PythonBridgeError.emptyResult }
 
         var totalAudio = Data()
-        for (segIdx, chunk) in chunks.enumerated() {
+        for (segIdx, sentence) in sentences.enumerated() {
             let bridge = EdgeTTSBridge()
-            let chunkTimeout = max(30.0, Double(chunk.count) / 150.0)
-            let mp3 = try await withTimeout(seconds: chunkTimeout, label: "Direct Edge chunk \(segIdx)") {
-                try await bridge.synthesize(text: chunk, voice: voice)
+            let timeout = max(15.0, Double(sentence.text.count) / 100.0)
+            let mp3 = try await withTimeout(seconds: timeout, label: "Edge sentence \(segIdx)") {
+                try await bridge.synthesize(text: sentence.text, voice: voice)
             }
             totalAudio.append(mp3)
-            let segData = mp3
             let capturedChapter = chapterIndex
             let capturedSeg = segIdx
+            let capturedId = sentence.id
             await MainActor.run {
                 globalPlayer.enqueueSegment(
-                    data: segData,
+                    data: mp3,
                     chapterIndex: capturedChapter,
-                    segmentIndex: capturedSeg
+                    segmentIndex: capturedSeg,
+                    sentenceId: capturedId
                 )
             }
             watchdog?.heartbeat()
@@ -566,6 +544,45 @@ struct BookOpenView: View {
         let outURL = cacheRoot.appendingPathComponent("direct_ch\(chapterIndex).mp3")
         try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
         try totalAudio.write(to: outURL)
+    }
+
+    /// Split text into TTS-friendly sentences. Batches tiny fragments
+    /// (< 40 chars) with the next sentence to avoid excessive WebSocket
+    /// connections while keeping sentence-level highlight granularity.
+    private static func splitForTTS(_ text: String, chapterIndex: Int) -> [SentenceSpan] {
+        let chapter = EbookFulltext.Chapter(
+            index: chapterIndex, name: nil, text: text,
+            html: nil, css: nil, charCount: text.count, segments: nil
+        )
+        let raw = chapter.splitSentences()
+        var batched: [SentenceSpan] = []
+        var pendingText = ""
+        var pendingId = ""
+        var pendingStart = 0
+        for span in raw {
+            if pendingText.isEmpty {
+                pendingText = span.text
+                pendingId = span.id
+                pendingStart = span.startChar
+            } else {
+                pendingText += " " + span.text
+            }
+            if pendingText.count >= 40 {
+                batched.append(SentenceSpan(
+                    id: pendingId, text: pendingText,
+                    startChar: pendingStart, endChar: span.endChar
+                ))
+                pendingText = ""
+            }
+        }
+        if !pendingText.isEmpty {
+            let endChar = raw.last?.endChar ?? text.count
+            batched.append(SentenceSpan(
+                id: pendingId, text: pendingText,
+                startChar: pendingStart, endChar: endChar
+            ))
+        }
+        return batched
     }
 
     /// Polls until either a `client` is available (sidecar ready or

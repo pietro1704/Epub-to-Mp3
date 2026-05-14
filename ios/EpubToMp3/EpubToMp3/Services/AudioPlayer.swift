@@ -71,6 +71,10 @@ final class AudioPlayer: ObservableObject {
     @Published private(set) var positionSeconds: TimeInterval = 0
     @Published private(set) var durationSeconds: TimeInterval = 0
 
+    /// Active sentence ID in sentence-per-segment mode. Updated when the
+    /// AVQueuePlayer advances to the next item. `nil` in snapshot mode.
+    @Published private(set) var activeSentenceId: String?
+
     /// `true` while a TTS conversion job is actively running for the
     /// currently-open book. Set by `BookOpenView` / `InstantReaderView`
     /// when they submit or reattach to a conversion job and cleared
@@ -182,6 +186,11 @@ final class AudioPlayer: ObservableObject {
     private var isSegmentMode = false
     private var segmentChapterIndex: Int = -1
     private var segmentCumulativeBase: TimeInterval = 0
+    /// Maps segment queue position → sentence ID. When non-empty,
+    /// `activeSentenceId` tracks which sentence is playing by counting
+    /// AVPlayerItemDidPlayToEndTime firings.
+    private var segmentSentenceIds: [String] = []
+    private var segmentPlayedCount: Int = 0
 
     init(resumeStore: ResumeStore = ResumeStore(), backendBaseURL: URL? = nil) {
         self.resumeStore = resumeStore
@@ -233,6 +242,9 @@ final class AudioPlayer: ObservableObject {
         teardownPlayer()
         isSegmentMode = false
         segmentCumulativeBase = 0
+        segmentSentenceIds = []
+        segmentPlayedCount = 0
+        activeSentenceId = nil
         self.snapshot = snapshot
 
         let chapters = snapshot.playableChapters
@@ -396,7 +408,7 @@ final class AudioPlayer: ObservableObject {
     ///
     /// Thread-safety: must be called on the main actor (same as all other
     /// AudioPlayer methods).
-    func enqueueSegment(data: Data, chapterIndex: Int, segmentIndex: Int) {
+    func enqueueSegment(data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil) {
         ensureAudioSession()
         audioLog.debug("[enqueueSegment] ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(self.player == nil)")
         guard !data.isEmpty else {
@@ -430,7 +442,13 @@ final class AudioPlayer: ObservableObject {
         if chapterIndex != segmentChapterIndex {
             segmentCumulativeBase = 0
             segmentChapterIndex = chapterIndex
+            segmentSentenceIds = []
+            segmentPlayedCount = 0
             currentChapterIndex = chapterIndex
+        }
+        if let sentenceId {
+            segmentSentenceIds.append(sentenceId)
+            if segmentSentenceIds.count == 1 { activeSentenceId = sentenceId }
         }
 
         if player == nil {
@@ -594,6 +612,12 @@ final class AudioPlayer: ObservableObject {
                    let finished = notification.object as? AVPlayerItem {
                     let dur = finished.duration.seconds
                     if dur.isFinite { self.segmentCumulativeBase += dur }
+                    self.segmentPlayedCount += 1
+                    if self.segmentPlayedCount < self.segmentSentenceIds.count {
+                        self.activeSentenceId = self.segmentSentenceIds[self.segmentPlayedCount]
+                    } else {
+                        self.activeSentenceId = nil
+                    }
                 }
 
                 guard let snapshot = self.snapshot else { return }

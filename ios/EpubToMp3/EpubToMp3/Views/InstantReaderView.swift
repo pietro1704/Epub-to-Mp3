@@ -124,9 +124,13 @@ struct InstantReaderView: View {
         }
         .compatOnChange(of: currentChapterIndex) { newIndex in
             reloadCurrentChapter(index: newIndex)
+            settings.saveChapterIndex(newIndex, for: fulltext.jobId)
         }
         .onAppear {
-            if currentChapterIndex == 0 {
+            let saved = settings.savedChapterIndex(for: fulltext.jobId)
+            if saved > 0 {
+                currentChapterIndex = saved
+            } else if currentChapterIndex == 0 {
                 currentChapterIndex = firstReadableChapterIndex
             }
             reloadCurrentChapter(index: currentChapterIndex)
@@ -135,6 +139,7 @@ struct InstantReaderView: View {
         .onDisappear {
             positionTask?.cancel()
             sentenceTask?.cancel()
+            settings.saveChapterIndex(currentChapterIndex, for: fulltext.jobId)
             if playerMounted { player.pause() }
         }
     }
@@ -517,20 +522,15 @@ struct InstantReaderView: View {
     private func wireEmbeddedPositionObservers() {
         positionTask?.cancel()
         positionTask = Task { @MainActor in
-            var timingRecalibrated = false
             for await pos in globalPlayer.position {
                 if Task.isCancelled { break }
-                if !timingRecalibrated && globalPlayer.durationSeconds > 0 {
-                    if let chapter = resolveChapter(at: currentChapterIndex) {
-                        sync.load(chapter: chapter,
-                                  chapterDurationSeconds: globalPlayer.durationSeconds)
-                    }
-                    timingRecalibrated = true
+                if globalPlayer.activeSentenceId != nil {
+                    self.currentSentenceId = globalPlayer.activeSentenceId
+                } else {
+                    _ = sync.update(positionSeconds: pos)
                 }
-                _ = sync.update(positionSeconds: pos)
                 if globalPlayer.currentChapterIndex != currentChapterIndex {
                     currentChapterIndex = globalPlayer.currentChapterIndex
-                    timingRecalibrated = false
                 }
             }
         }
@@ -538,7 +538,9 @@ struct InstantReaderView: View {
         sentenceTask = Task { @MainActor in
             for await id in sync.currentSentence {
                 if Task.isCancelled { break }
-                self.currentSentenceId = id
+                if globalPlayer.activeSentenceId == nil {
+                    self.currentSentenceId = id
+                }
             }
         }
     }

@@ -74,19 +74,16 @@ struct EbookFulltext: Codable, Equatable {
         ///
         /// Returns `(id, text, startCharOffset, endCharOffset)` tuples.
         func splitSentences() -> [SentenceSpan] {
-            // Accumulate runs of characters; flush on a sentence terminator
-            // followed by whitespace OR at end-of-text. Keeps surrounding
-            // whitespace inside the span so character offsets stay 1:1
-            // with the source text.
+            let normalized = Self.collapseHardWraps(text)
             var spans: [SentenceSpan] = []
-            let chars = Array(text)
+            let chars = Array(normalized)
             var start = 0
             var i = 0
             var sentenceIdx = 0
 
             while i < chars.count {
                 let c = chars[i]
-                let isTerminator = (c == "." || c == "?" || c == "!" || c == "\n")
+                let isTerminator = (c == "." || c == "?" || c == "!")
                 let nextIsBoundary: Bool = {
                     guard i + 1 < chars.count else { return true }
                     let n = chars[i + 1]
@@ -106,8 +103,6 @@ struct EbookFulltext: Codable, Equatable {
                         ))
                         sentenceIdx += 1
                     }
-                    // Skip the trailing whitespace so it doesn't open the
-                    // next span with a leading space.
                     var j = endExclusive
                     while j < chars.count && (chars[j] == " " || chars[j] == "\t" || chars[j] == "\n" || chars[j] == "\r") {
                         j += 1
@@ -131,6 +126,16 @@ struct EbookFulltext: Codable, Equatable {
                 }
             }
             return spans
+        }
+
+        /// Join hard line-wraps (single `\n` mid-paragraph) into spaces.
+        /// Preserves paragraph breaks (`\n\n`). Handles PDF-style column
+        /// wrapping where words are split across lines ("f\ncado" → "ficado").
+        static func collapseHardWraps(_ text: String) -> String {
+            text.replacingOccurrences(of: "\r\n", with: "\n")
+                .replacingOccurrences(of: "\n\n", with: "\u{FFFE}")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\u{FFFE}", with: "\n\n")
         }
     }
 
