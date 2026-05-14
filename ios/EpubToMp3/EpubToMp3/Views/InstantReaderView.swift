@@ -160,7 +160,21 @@ struct InstantReaderView: View {
         return candidates.compactMap { $0 }.first
     }
 
+    private static let frontMatterNames: Set<String> = [
+        "capa", "rosto", "créditos", "creditos", "sumário", "sumario",
+        "copyright", "cover", "title page", "table of contents",
+        "dedicatória", "dedicatoria", "epígrafe", "epigrafe",
+    ]
+
     private var firstReadableChapterIndex: Int {
+        if let first = fulltext.chapters.first(where: { ch in
+            let text = ch.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.count >= 10 else { return false }
+            let name = (ch.name ?? "").lowercased()
+            return !Self.frontMatterNames.contains(where: { name.contains($0) })
+        }) {
+            return max(0, first.index - 1)
+        }
         if let first = fulltext.chapters.first(where: {
             $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
         }) {

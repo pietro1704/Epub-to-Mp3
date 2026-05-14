@@ -323,3 +323,14 @@ extension View {
         }
     }
 }
+
+struct HideFocusRingModifier: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(macOS 14.0, iOS 17.0, *) {
+            content.focusEffectDisabled()
+        } else {
+            content
+        }
+    }
+}
+

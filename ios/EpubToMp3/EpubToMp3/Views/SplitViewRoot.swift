@@ -147,7 +147,7 @@ struct SplitViewRoot: View {
         // sidebar (Sonos / Apple TV / Apple Music pattern). Tap opens
         // the full player sheet.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showMiniPlayer {
+            if showMiniPlayer, navMode != .reader {
                 MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
                     .accessibilityIdentifier("miniPlayer.sidebar")
             }

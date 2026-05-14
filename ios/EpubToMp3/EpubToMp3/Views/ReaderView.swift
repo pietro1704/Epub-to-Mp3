@@ -407,6 +407,7 @@ struct ReaderView: View {
             }
             .compatFocusable()
             .focused($paginatedFocus)
+            .modifier(HideFocusRingModifier())
             .onAppear { paginatedFocus = true }
             .compatOnKeyPressArrowsAndPaging { key in
                 handleCompatKey(key, totalPages: pages.count)
