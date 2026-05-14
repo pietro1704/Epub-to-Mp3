@@ -77,6 +77,11 @@ final class PythonEmbed: @unchecked Sendable {
     /// the source file.
     private(set) var ebookReader: PythonObject?
 
+    /// `true` once bootstrap completed AND `ebook_reader` imported
+    /// successfully. When `false`, callers should skip PythonBridge
+    /// and go straight to EpubFallbackParser.
+    var isParserAvailable: Bool { ebookReader != nil }
+
     private init() {}
 
     // MARK: - Bootstrap

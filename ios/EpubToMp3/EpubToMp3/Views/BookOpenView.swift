@@ -224,15 +224,16 @@ struct BookOpenView: View {
             self.phase = .ready
         } else {
             let accessing = fileURL.startAccessingSecurityScopedResource()
-            defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
 
             var parsed: EbookFulltext?
-            do {
-                parsed = try await PythonBridge.shared.parseEpub(
-                    at: fileURL, bookId: book.id
-                )
-            } catch {
-                parsed = nil
+            if PythonEmbed.shared.isParserAvailable {
+                do {
+                    parsed = try await PythonBridge.shared.parseEpub(
+                        at: fileURL, bookId: book.id
+                    )
+                } catch {
+                    parsed = nil
+                }
             }
             if parsed == nil || (parsed?.chapters.isEmpty ?? true) {
                 let capturedURL = fileURL
@@ -240,7 +241,9 @@ struct BookOpenView: View {
                 let fallback: EbookFulltext = await Task.detached(
                     priority: .userInitiated
                 ) {
-                    EpubFallbackParser.parse(
+                    let innerAccess = capturedURL.startAccessingSecurityScopedResource()
+                    defer { if innerAccess { capturedURL.stopAccessingSecurityScopedResource() } }
+                    return EpubFallbackParser.parse(
                         url: capturedURL, bookId: capturedBookId
                     )
                 }.value
@@ -248,6 +251,9 @@ struct BookOpenView: View {
                     parsed = fallback
                 }
             }
+
+            if accessing { fileURL.stopAccessingSecurityScopedResource() }
+
             if let parsed, !parsed.chapters.isEmpty {
                 self.fulltext = parsed
                 self.phase = .ready
