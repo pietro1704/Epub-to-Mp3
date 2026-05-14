@@ -1,13 +1,8 @@
 import Foundation
-#if canImport(AppKit)
-import AppKit
-typealias PlatformFont = NSFont
-typealias PlatformColor = NSColor
-#elseif canImport(UIKit)
 import UIKit
+
 typealias PlatformFont = UIFont
 typealias PlatformColor = UIColor
-#endif
 
 /// Renders a chapter's raw HTML body + per-chapter CSS into an
 /// AttributedString suitable for SwiftUI `Text(_:)`, then layers the
@@ -149,18 +144,6 @@ enum EpubHtmlRenderer {
         stripItalic: Bool
     ) -> PlatformFont {
         let pointSize = size ?? base.pointSize
-        #if canImport(AppKit)
-        var descriptor = base.fontDescriptor
-        if let family {
-            descriptor = descriptor.withFamily(family)
-        }
-        var traits = descriptor.symbolicTraits
-        if forceBold { traits.insert(.bold) }
-        if stripItalic { traits.remove(.italic) }
-        descriptor = descriptor.withSymbolicTraits(traits)
-        return NSFont(descriptor: descriptor, size: pointSize)
-            ?? NSFont.systemFont(ofSize: pointSize)
-        #else
         var descriptor = base.fontDescriptor
         if let family {
             descriptor = descriptor.withFamily(family)
@@ -172,29 +155,13 @@ enum EpubHtmlRenderer {
             descriptor = withTraits
         }
         return UIFont(descriptor: descriptor, size: pointSize)
-        #endif
     }
 
     private static func familyName(for family: ReaderFontFamily) -> String {
         switch family {
-        case .serif:
-            #if canImport(AppKit)
-            return "Times New Roman"
-            #else
-            return "Times New Roman"
-            #endif
-        case .sans:
-            #if canImport(AppKit)
-            return "Helvetica Neue"
-            #else
-            return "Helvetica Neue"
-            #endif
-        case .mono:
-            #if canImport(AppKit)
-            return "Menlo"
-            #else
-            return "Menlo"
-            #endif
+        case .serif: return "Times New Roman"
+        case .sans:  return "Helvetica Neue"
+        case .mono:  return "Menlo"
         }
     }
 
@@ -236,10 +203,6 @@ enum EpubHtmlRenderer {
     }
 
     private static func rgb(_ r: Double, _ g: Double, _ b: Double) -> PlatformColor {
-        #if canImport(AppKit)
-        return NSColor(srgbRed: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
-        #else
-        return UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
-        #endif
+        UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
     }
 }

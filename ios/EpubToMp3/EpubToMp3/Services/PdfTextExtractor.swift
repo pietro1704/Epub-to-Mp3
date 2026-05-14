@@ -362,8 +362,4 @@ enum PdfTextExtractor {
 // re-declare the typealias — Swift fails the build with
 // "invalid redeclaration" because both files end up in the same
 // module.
-#if canImport(UIKit)
 import UIKit
-#elseif canImport(AppKit)
-import AppKit
-#endif

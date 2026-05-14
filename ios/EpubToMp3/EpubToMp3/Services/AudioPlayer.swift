@@ -1,15 +1,9 @@
-#if canImport(AVFoundation) && canImport(MediaPlayer)
 import Foundation
 import AVFoundation
 import MediaPlayer
 import Combine
 import os.log
-#if canImport(UIKit)
 import UIKit
-#endif
-#if canImport(AppKit)
-import AppKit
-#endif
 
 private let audioLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 
@@ -668,15 +662,8 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func makeArtwork(from data: Data) -> MPMediaItemArtwork? {
-        #if canImport(UIKit)
         guard let image = UIImage(data: data) else { return nil }
         return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        #elseif canImport(AppKit)
-        guard let image = NSImage(data: data) else { return nil }
-        return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-        #else
-        return nil
-        #endif
     }
 
     /// Decrement the sleep timer once per time observer tick (~250 ms).
@@ -733,4 +720,3 @@ final class AudioPlayer: ObservableObject {
         return URL(string: path, relativeTo: baseURL)?.absoluteURL
     }
 }
-#endif

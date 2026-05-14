@@ -146,14 +146,18 @@ final class PythonEmbed: @unchecked Sendable {
             do {
                 iosEntrypoints = try Python.attemptImport("python_app.src.ios_entrypoints")
             } catch {
-                NSLog("[PythonEmbed] preload ios_entrypoints failed: %@", "\(error)")
+                #if DEBUG
+                print("[PythonEmbed] preload ios_entrypoints skipped (expected on simulator): \(error)")
+                #endif
             }
         }
         if ebookReader == nil {
             do {
                 ebookReader = try Python.attemptImport("python_app.src.ebook_reader")
             } catch {
-                NSLog("[PythonEmbed] preload ebook_reader failed: %@", "\(error)")
+                #if DEBUG
+                print("[PythonEmbed] preload ebook_reader skipped (expected on simulator): \(error)")
+                #endif
             }
         }
     }

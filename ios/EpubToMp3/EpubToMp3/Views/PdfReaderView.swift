@@ -1,12 +1,7 @@
 import SwiftUI
 import PDFKit
 
-#if canImport(UIKit)
 import UIKit
-#endif
-#if canImport(AppKit)
-import AppKit
-#endif
 
 /// HIG-aligned PDF surface. Apple Books renders PDFs natively via
 /// `PDFView` so the layout, images, and selectable text round-trip
@@ -29,26 +24,12 @@ struct PdfReaderView: View {
     }
 
     var body: some View {
-        #if canImport(UIKit)
-        // Do NOT extend the PDFView under the home indicator in
-        // portrait. The previous `.edgesIgnoringSafeArea(.bottom)`
-        // pushed the last line of any single-page PDF behind the
-        // home-indicator drag area, where Apple Books explicitly
-        // reserves the safe area. PDFKit's own `usePageViewController`
-        // mode already handles internal page padding, so we just let
-        // the system safe area do its job.
         _PdfReaderViewIOS(document: document, currentPageIndex: $currentPageIndex)
-        #elseif canImport(AppKit)
-        _PdfReaderViewMac(document: document, currentPageIndex: $currentPageIndex)
-        #else
-        Text("PDF rendering not supported on this platform.")
-        #endif
     }
 }
 
 // MARK: - iOS / iPadOS
 
-#if canImport(UIKit)
 private struct _PdfReaderViewIOS: UIViewRepresentable {
     let document: PDFDocument
     @Binding var currentPageIndex: Int
@@ -110,63 +91,3 @@ private struct _PdfReaderViewIOS: UIViewRepresentable {
         }
     }
 }
-#endif
-
-// MARK: - macOS
-
-#if canImport(AppKit) && !canImport(UIKit)
-private struct _PdfReaderViewMac: NSViewRepresentable {
-    let document: PDFDocument
-    @Binding var currentPageIndex: Int
-
-    func makeNSView(context: Context) -> PDFView {
-        let view = PDFView()
-        view.document = document
-        view.autoScales = true
-        view.displayMode = .singlePage
-        view.displayDirection = .horizontal
-        view.backgroundColor = NSColor.windowBackgroundColor
-        view.delegate = context.coordinator
-        if let page = document.page(at: max(0, min(currentPageIndex, document.pageCount - 1))) {
-            view.go(to: page)
-        }
-        NotificationCenter.default.addObserver(
-            context.coordinator,
-            selector: #selector(Coordinator.pageChanged(_:)),
-            name: .PDFViewPageChanged,
-            object: view
-        )
-        return view
-    }
-
-    func updateNSView(_ view: PDFView, context: Context) {
-        if view.document !== document {
-            view.document = document
-        }
-        guard let currentPage = view.currentPage else { return }
-        let viewIndex = document.index(for: currentPage)
-        if viewIndex != currentPageIndex,
-           let target = document.page(at: max(0, min(currentPageIndex, document.pageCount - 1))) {
-            view.go(to: target)
-        }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
-
-    final class Coordinator: NSObject, PDFViewDelegate {
-        var parent: _PdfReaderViewMac
-        init(parent: _PdfReaderViewMac) { self.parent = parent }
-
-        @objc func pageChanged(_ notification: Notification) {
-            guard let view = notification.object as? PDFView,
-                  let page = view.currentPage else { return }
-            let idx = parent.document.index(for: page)
-            if idx != parent.currentPageIndex {
-                DispatchQueue.main.async {
-                    self.parent.currentPageIndex = idx
-                }
-            }
-        }
-    }
-}
-#endif

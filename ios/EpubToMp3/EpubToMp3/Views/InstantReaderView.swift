@@ -330,13 +330,8 @@ struct InstantReaderView: View {
     private var currentBookCover: Data? { coverPNG }
 
     private func platformImage(from data: Data) -> Image? {
-        #if canImport(UIKit)
-        if let ui = UIImage(data: data) { return Image(uiImage: ui) }
-        #endif
-        #if canImport(AppKit)
-        if let ns = NSImage(data: data) { return Image(nsImage: ns) }
-        #endif
-        return nil
+        guard let ui = UIImage(data: data) else { return nil }
+        return Image(uiImage: ui)
     }
 
     private func transportControls(player: AudioPlayer) -> some View {

@@ -1,7 +1,4 @@
 import Foundation
-#if canImport(Combine)
-import Combine
-#endif
 
 /// Bridge between the Share Extension and the main app.
 ///
@@ -27,6 +24,17 @@ enum SharedContainerImporter {
     /// on both the main app and the Share Extension targets.
     static let appGroupID = "group.com.pietrocode.epubtomp3"
 
+    private static var groupAvailabilityCache: [String: Bool] = [:]
+
+    static var isAppGroupAvailable: Bool {
+        if let cached = groupAvailabilityCache[appGroupID] { return cached }
+        let available = FileManager.default.containerURL(
+            forSecurityApplicationGroupIdentifier: appGroupID
+        ) != nil
+        groupAvailabilityCache[appGroupID] = available
+        return available
+    }
+
     /// Subdirectory inside the group container where the extension
     /// drops incoming EPUB/PDF files. `Inbox/` mirrors the convention
     /// Apple uses for system-provided document drop folders.
@@ -48,11 +56,16 @@ enum SharedContainerImporter {
         fileManager: FileManager = .default,
         groupID: String = appGroupID
     ) -> URL? {
+        if let cached = groupAvailabilityCache[groupID], !cached {
+            return nil
+        }
         guard let container = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: groupID
         ) else {
+            groupAvailabilityCache[groupID] = false
             return nil
         }
+        groupAvailabilityCache[groupID] = true
         let inbox = container.appendingPathComponent(inboxSubpath, isDirectory: true)
         if !fileManager.fileExists(atPath: inbox.path) {
             try? fileManager.createDirectory(

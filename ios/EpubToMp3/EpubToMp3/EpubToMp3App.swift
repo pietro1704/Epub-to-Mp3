@@ -1,7 +1,5 @@
 import SwiftUI
-#if canImport(AVFoundation)
 import AVFoundation
-#endif
 
 @main
 struct EpubToMp3App: App {
@@ -73,6 +71,7 @@ struct EpubToMp3App: App {
     /// Extension surface immediately when the user comes back to the
     /// app. No-op when the inbox is empty.
     private func drainSharedInbox() {
+        guard SharedContainerImporter.isAppGroupAvailable else { return }
         let outcomes = SharedContainerImporter.drain(into: library)
         guard !outcomes.isEmpty else { return }
         #if DEBUG
@@ -160,7 +159,7 @@ struct EpubToMp3App: App {
     /// macOS doesn't have `AVAudioSession`; the entire body is gated to
     /// iOS / iPadOS where the type exists.
     private static func configureAudioSession() {
-        #if os(iOS) && !targetEnvironment(simulator)
+        #if os(iOS)
         let session = AVAudioSession.sharedInstance()
         // HIG long-form audio (Apple Books / Podcasts): `.playback` with
         // `.spokenAudio` and the long-form policy ducks other audio +

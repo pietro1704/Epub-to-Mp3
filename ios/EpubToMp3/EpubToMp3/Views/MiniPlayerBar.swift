@@ -1,5 +1,6 @@
-#if canImport(AVFoundation) && canImport(MediaPlayer)
 import SwiftUI
+import AVFoundation
+import MediaPlayer
 
 /// Persistent mini-player bar matching the Apple Podcasts / Apple Books HIG
 /// pattern. Shown at the bottom of every surface that is NOT the Now Playing
@@ -162,13 +163,8 @@ struct MiniPlayerBar: View {
     }
 
     private func platformImage(from data: Data) -> Image? {
-        #if canImport(UIKit)
-        if let ui = UIImage(data: data) { return Image(uiImage: ui) }
-        #endif
-        #if canImport(AppKit)
-        if let ns = NSImage(data: data) { return Image(nsImage: ns) }
-        #endif
-        return nil
+        guard let ui = UIImage(data: data) else { return nil }
+        return Image(uiImage: ui)
     }
 }
 
@@ -215,5 +211,4 @@ private struct MiniPlayerPreviewHidden: View {
 
 #Preview("MiniPlayerBar — playing") { MiniPlayerPreviewPlaying() }
 #Preview("MiniPlayerBar — hidden")  { MiniPlayerPreviewHidden() }
-#endif
 #endif

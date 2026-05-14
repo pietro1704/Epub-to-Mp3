@@ -1,12 +1,7 @@
 import Foundation
 import PDFKit
 
-#if canImport(UIKit)
 import UIKit
-#endif
-#if canImport(AppKit)
-import AppKit
-#endif
 
 /// Best-effort PDF metadata reader. PDFKit ships with iOS 11+ / macOS 10.4+,
 /// so we lean on `PDFDocument` for both metadata extraction and the
@@ -139,16 +134,12 @@ enum PdfMetadataReader {
         return platformRender(page: page, size: target)
     }
 
-    #if canImport(UIKit)
     private static func platformRender(page: PDFPage, size: CGSize) -> Data? {
         let renderer = UIGraphicsImageRenderer(size: size)
         let image = renderer.image { ctx in
             UIColor.white.setFill()
             ctx.fill(CGRect(origin: .zero, size: size))
             ctx.cgContext.saveGState()
-            // PDFs are PostScript-coordinated (origin at bottom-left).
-            // UIKit's CGContext uses top-left, so flip vertically
-            // before letting PDFKit draw.
             ctx.cgContext.translateBy(x: 0, y: size.height)
             ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
             let bounds = page.bounds(for: .mediaBox)
@@ -160,30 +151,4 @@ enum PdfMetadataReader {
         }
         return image.pngData()
     }
-    #elseif canImport(AppKit)
-    private static func platformRender(page: PDFPage, size: CGSize) -> Data? {
-        let image = NSImage(size: size)
-        image.lockFocus()
-        defer { image.unlockFocus() }
-        NSColor.white.setFill()
-        NSRect(origin: .zero, size: size).fill()
-        guard let ctx = NSGraphicsContext.current?.cgContext else { return nil }
-        let bounds = page.bounds(for: .mediaBox)
-        let scaleX = size.width / bounds.width
-        let scaleY = size.height / bounds.height
-        ctx.saveGState()
-        ctx.scaleBy(x: scaleX, y: scaleY)
-        page.draw(with: .mediaBox, to: ctx)
-        ctx.restoreGState()
-        guard let tiff = image.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff) else {
-            return nil
-        }
-        return rep.representation(using: .png, properties: [:])
-    }
-    #else
-    private static func platformRender(page: PDFPage, size: CGSize) -> Data? {
-        return nil
-    }
-    #endif
 }

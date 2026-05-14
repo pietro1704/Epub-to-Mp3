@@ -256,13 +256,7 @@ extension Color {
     /// the AppKit `windowBackgroundColor`. On iOS it round-trips to the
     /// real UIKit token.
     static var platformSystemBackground: Color {
-        #if canImport(UIKit)
         Color(.systemBackground)
-        #elseif canImport(AppKit)
-        Color(NSColor.windowBackgroundColor)
-        #else
-        Color(.white)
-        #endif
     }
 }
 

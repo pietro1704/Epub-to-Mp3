@@ -1,12 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-#if canImport(AppKit)
-import AppKit
-#endif
-#if canImport(UIKit)
 import UIKit
-#endif
 
 /// The hero of the app. Lists every EPUB the user has imported.
 /// Tapping a book takes them straight to the reader/player. Adding a
@@ -315,13 +310,8 @@ struct BookTile: View {
     }
 
     private func platformImage(from data: Data) -> Image? {
-        #if canImport(UIKit)
-        if let ui = UIImage(data: data) { return Image(uiImage: ui) }
-        #endif
-        #if canImport(AppKit)
-        if let ns = NSImage(data: data) { return Image(nsImage: ns) }
-        #endif
-        return nil
+        guard let ui = UIImage(data: data) else { return nil }
+        return Image(uiImage: ui)
     }
 }
 

@@ -1,5 +1,6 @@
-#if canImport(AVFoundation) && canImport(MediaPlayer)
 import SwiftUI
+import AVFoundation
+import MediaPlayer
 
 /// Full-screen audiobook player sheet. Mirrors the Apple Music /
 /// Apple Books HIG full-player pattern:
@@ -368,13 +369,8 @@ struct FullPlayerSheet: View {
     }
 
     private func platformImage(from data: Data) -> Image? {
-        #if canImport(UIKit)
-        if let ui = UIImage(data: data) { return Image(uiImage: ui) }
-        #endif
-        #if canImport(AppKit)
-        if let ns = NSImage(data: data) { return Image(nsImage: ns) }
-        #endif
-        return nil
+        guard let ui = UIImage(data: data) else { return nil }
+        return Image(uiImage: ui)
     }
 }
 
@@ -465,5 +461,4 @@ private extension View {
         .environmentObject(player)
         .environmentObject(lib)
 }
-#endif
 #endif
