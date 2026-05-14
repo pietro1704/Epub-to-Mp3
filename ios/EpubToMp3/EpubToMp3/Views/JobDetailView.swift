@@ -61,10 +61,10 @@ final class JobDetailViewModel: ObservableObject {
 
     func downloadAll(baseURL: URL?) {
         guard let snapshot else { return }
-        downloadManager.enqueueAll(snapshot: snapshot, baseURL: baseURL)
         downloadTask = Task { [weak self] in
             guard let self else { return }
-            for await progress in self.downloadManager.watchProgress(jobId: snapshot.jobId) {
+            await self.downloadManager.enqueueAll(snapshot: snapshot, baseURL: baseURL)
+            for await progress in await self.downloadManager.watchProgress(jobId: snapshot.jobId) {
                 await MainActor.run {
                     self.downloadProgressLabel =
                         "\(progress.completedChapters)/\(progress.totalChapters) — \(progress.state.rawValue)"

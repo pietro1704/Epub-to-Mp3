@@ -92,14 +92,17 @@ struct PlayerReaderView: View {
                     }
                 }
             }
-            .sheet(isPresented: $showingToc) {
-                TocDrawer(
-                    fulltext: fulltext,
-                    snapshot: snapshot,
-                    currentChapterIndex: player.currentChapterIndex,
-                    onJump: jumpTo(chapterIndex:)
-                )
-                .compatPresentationDetents()
+            .background {
+                Color.clear.allowsHitTesting(false)
+                    .sheet(isPresented: $showingToc) {
+                        TocDrawer(
+                            fulltext: fulltext,
+                            snapshot: snapshot,
+                            currentChapterIndex: player.currentChapterIndex,
+                            onJump: jumpTo(chapterIndex:)
+                        )
+                        .compatPresentationDetents()
+                    }
             }
         }
         .onAppear {
@@ -293,10 +296,10 @@ struct PlayerReaderView: View {
         downloadTask?.cancel()
         downloadState = .downloading
         downloadProgressText = nil
-        downloads.enqueueAll(snapshot: snapshot, baseURL: backendBaseURL)
         let jobId = snapshot.jobId
         downloadTask = Task { @MainActor in
-            for await progress in downloads.watchProgress(jobId: jobId) {
+            await downloads.enqueueAll(snapshot: snapshot, baseURL: backendBaseURL)
+            for await progress in await downloads.watchProgress(jobId: jobId) {
                 if Task.isCancelled { break }
                 downloadProgressText =
                     "\(progress.completedChapters)/\(progress.totalChapters)"
