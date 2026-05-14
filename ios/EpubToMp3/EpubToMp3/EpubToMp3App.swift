@@ -34,7 +34,6 @@ struct EpubToMp3App: App {
                     await startSidecarIfNeeded()
                     #endif
                 }
-                .task { drainSharedInbox() }
                 .task(priority: .utility) {
                     // Warm the embedded Python interpreter on a low-
                     // priority background queue so the first tap on
