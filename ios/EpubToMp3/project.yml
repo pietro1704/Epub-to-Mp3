@@ -191,6 +191,7 @@ targets:
           - "Resources/EpubToMp3.entitlements"
           - "Resources/EpubToMp3-Debug.entitlements"
           - "Resources/Info.plist"
+          - "Resources/LaunchScreen.storyboard"
           # Vendor/ is referenced explicitly below as folder-refs (opaque).
           # Without this exclude, xcodegen recurses into it from the parent
           # `path: EpubToMp3` and adds every .py as an individual resource,
