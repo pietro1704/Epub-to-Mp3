@@ -133,18 +133,8 @@ struct BookOpenView: View {
     private func openFlow() async {
         if isSwiftUIPreview { phase = .ready; return }
 
-        // Reset any stale conversion state from a prior book session.
         globalPlayer.clearConversionState()
 
-        // 1. Resolve the file URL — required for both local parse
-        //    and (later) conversion submission. Failures here surface
-        //    the re-pick UI.  This call is fast for a healthy bookmark
-        //    but can hop the sandbox + write UserDefaults; we
-        //    deliberately keep it on the main actor because
-        //    `LibraryStore` is `@MainActor`-affined ObservableObject
-        //    and resolving URLs is observably ~5 ms on cached
-        //    bookmarks. The heavy work (PDFKit / cache / fallback
-        //    parse) is offloaded below.
         let bookId = book.id
         let fileURL: URL
         do {
@@ -153,7 +143,6 @@ struct BookOpenView: View {
             phase = .error(error.localizedDescription)
             return
         }
-
         if book.fileType == .epub {
             let capturedURL = fileURL
             let fonts = await Task.detached(priority: .userInitiated) {

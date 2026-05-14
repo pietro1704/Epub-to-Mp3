@@ -327,9 +327,16 @@ struct ReaderView: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 8) {
                     chapterTitleHeader
-                    ForEach(spans) { span in
-                        sentenceRow(span)
-                            .id(span.id)
+                    if let attr = renderedAttributed, currentSentenceId == nil {
+                        Text(attr)
+                            .lineSpacing(settings.readerLineSpacing)
+                            .multilineTextAlignment(.leading)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ForEach(spans) { span in
+                            sentenceRow(span)
+                                .id(span.id)
+                        }
                     }
                 }
                 .padding(.horizontal, effectiveReaderMargin)
@@ -337,16 +344,7 @@ struct ReaderView: View {
                 .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
                 .frame(maxWidth: .infinity, alignment: .center)
             }
-            // Keep sentence rows clear of the notch / Dynamic Island
-            // in iPhone landscape — even when the user dials the
-            // reader margin down to 12pt, the system safe-area inset
-            // still pushes content past the curved cutout.
             .compatHorizontalSafeAreaPadding(0)
-            // No simultaneousGesture here — that previously stole
-            // touches on iOS and competed with the system scroll
-            // recogniser, making the reader feel "stuck". The
-            // userIsScrolling lockout is still useful but we drive
-            // it from `onScrollGeometryChange`-style hints in iOS 18+.
             .compatOnChange(of: currentSentenceId) { newId in
                 guard let newId else { return }
                 guard settings.readerAutoScroll else { return }
