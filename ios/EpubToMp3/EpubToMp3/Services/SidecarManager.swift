@@ -179,6 +179,21 @@ final class SidecarManager: ObservableObject {
         let baseURL = URL(string: "http://127.0.0.1:\(port)")!
         startGeneration += 1
         let myGeneration = startGeneration
+
+        // PyInstaller onefiles that fail to unpack or hit a missing
+        // dependency exit within ~100 ms. Catching DOA processes here
+        // avoids even a single wasted health-check HTTP request (which
+        // otherwise logs a "Connection refused" line per attempt).
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        guard myGeneration == startGeneration else { return state }
+        if !proc.isRunning {
+            let tail = readPipeTail(errPipe) ?? readPipeTail(outPipe) ?? ""
+            suppressDeathCallback = true
+            process = nil
+            state = .failed("Sidecar exited immediately after launch. \(tail)")
+            return state
+        }
+
         let healthOk = await waitForHealth(baseURL: baseURL, proc: proc)
 
         // A newer start() has taken over (process died → onSidecarDied
