@@ -94,13 +94,6 @@ struct SplitViewRoot: View {
                 .accessibilityIdentifier("split.detail")
         }
         .navigationSplitViewStyle(.balanced)
-        .compatOnChange(of: navMode) { newMode in
-            if newMode == .reader || newMode == .jobs || newMode == .settings {
-                columnVisibility = .doubleColumn
-            } else {
-                columnVisibility = .all
-            }
-        }
         .compatOnChange(of: selectedBookID) { _ in
             selectedChapterIndex = nil
             if let bookID = selectedBookID {
