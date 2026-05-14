@@ -174,7 +174,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
               children: [
                 const Spacer(),
                 IconButton(
-                  icon: Icon(Icons.text_format, color: fg.withOpacity(0.7)),
+                  icon: Icon(Icons.text_format, color: fg.withValues(alpha: 0.7)),
                   onPressed: _showReaderSettings,
                   tooltip: 'Reader settings',
                 ),
@@ -217,7 +217,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
         decoration: BoxDecoration(
           color: bg,
           border: Border(
-            top: BorderSide(color: fg.withOpacity(0.15)),
+            top: BorderSide(color: fg.withValues(alpha: 0.15)),
           ),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
@@ -242,9 +242,9 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                   height: 44,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(6),
-                    color: fg.withOpacity(0.1),
+                    color: fg.withValues(alpha: 0.1),
                   ),
-                  child: Icon(Icons.headphones, color: fg.withOpacity(0.6), size: 22),
+                  child: Icon(Icons.headphones, color: fg.withValues(alpha: 0.6), size: 22),
                 ),
               const SizedBox(width: 12),
 
@@ -274,7 +274,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                               height: 14,
                               child: CircularProgressIndicator(
                                 strokeWidth: 1.5,
-                                color: fg.withOpacity(0.5),
+                                color: fg.withValues(alpha: 0.5),
                               ),
                             ),
                           const SizedBox(width: 4),
@@ -283,7 +283,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                               banner,
                               style: TextStyle(
                                 fontSize: 12,
-                                color: fg.withOpacity(0.5),
+                                color: fg.withValues(alpha: 0.5),
                               ),
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
@@ -296,7 +296,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                         widget.fulltext.bookAuthor!,
                         style: TextStyle(
                           fontSize: 12,
-                          color: fg.withOpacity(0.5),
+                          color: fg.withValues(alpha: 0.5),
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,

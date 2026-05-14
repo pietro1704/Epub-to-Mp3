@@ -123,7 +123,7 @@ class _Sentence extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
       decoration: isActive
           ? BoxDecoration(
-              color: Colors.yellow.withOpacity(0.35),
+              color: Colors.yellow.withValues(alpha: 0.35),
               borderRadius: BorderRadius.circular(6),
             )
           : null,

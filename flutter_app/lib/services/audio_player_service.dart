@@ -252,7 +252,7 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
   bool _playing = false;
   List<ChapterProgress> _chapters = const [];
   Duration _position = Duration.zero;
-  Duration _duration = Duration.zero;
+  final Duration _duration = Duration.zero;
 
   final _positionController = StreamController<Duration>.broadcast();
   final _playingController = StreamController<bool>.broadcast();

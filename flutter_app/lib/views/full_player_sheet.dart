@@ -78,7 +78,7 @@ class FullPlayerSheet extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context)
                               .hintColor
-                              .withOpacity(0.7),
+                              .withValues(alpha: 0.7),
                         ),
                     textAlign: TextAlign.center,
                     maxLines: 2,
@@ -122,12 +122,12 @@ class FullPlayerSheet extends StatelessWidget {
       height: 280,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
-        color: Theme.of(context).colorScheme.primary.withOpacity(0.15),
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
       ),
       child: Icon(
         Icons.headphones,
         size: 80,
-        color: Theme.of(context).colorScheme.primary.withOpacity(0.5),
+        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
       ),
     );
   }
@@ -151,7 +151,7 @@ class FullPlayerSheet extends StatelessWidget {
                 activeTrackColor:
                     Theme.of(context).colorScheme.onSurface,
                 inactiveTrackColor:
-                    Theme.of(context).colorScheme.onSurface.withOpacity(0.2),
+                    Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
                 thumbColor:
                     Theme.of(context).colorScheme.onSurface,
               ),
@@ -240,7 +240,7 @@ class FullPlayerSheet extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(10),
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.08),
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
             ),
             child: Text(
               '${player.speed}x',
@@ -273,7 +273,7 @@ class FullPlayerSheet extends StatelessWidget {
                   color: Theme.of(context)
                       .colorScheme
                       .onSurface
-                      .withOpacity(0.08),
+                      .withValues(alpha: 0.08),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,

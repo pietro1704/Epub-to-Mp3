@@ -16,8 +16,8 @@ void main() {
     test('dark theme has dark background and light foreground', () {
       final bg = ReaderThemeColors.background(ReaderTheme.dark);
       final fg = ReaderThemeColors.foreground(ReaderTheme.dark);
-      expect(bg.value, const Color.fromRGBO(0x1C, 0x1C, 0x1E, 1).value);
-      expect(fg.value, const Color.fromRGBO(0xE8, 0xE8, 0xE8, 1).value);
+      expect(bg.toARGB32(), const Color.fromRGBO(0x1C, 0x1C, 0x1E, 1).toARGB32());
+      expect(fg.toARGB32(), const Color.fromRGBO(0xE8, 0xE8, 0xE8, 1).toARGB32());
     });
 
     test('black theme uses true OLED black', () {
@@ -27,9 +27,9 @@ void main() {
 
     test('sepia theme has warm tones', () {
       final bg = ReaderThemeColors.background(ReaderTheme.sepia);
-      // Color.red returns 0-255 int
-      expect(bg.red, greaterThan(230));
-      expect(bg.green, greaterThan(220));
+      // Color.r returns 0.0-1.0 double; scale to 0-255 for readability
+      expect((bg.r * 255.0).round(), greaterThan(230));
+      expect((bg.g * 255.0).round(), greaterThan(220));
     });
 
     test('custom theme uses provided colors', () {
@@ -39,8 +39,8 @@ void main() {
       );
       final bg = ReaderThemeColors.background(ReaderTheme.custom, custom: custom);
       final fg = ReaderThemeColors.foreground(ReaderTheme.custom, custom: custom);
-      expect(bg.red, closeTo(128, 2));
-      expect(fg.red, closeTo(230, 2));
+      expect((bg.r * 255.0).round(), closeTo(128, 2));
+      expect((fg.r * 255.0).round(), closeTo(230, 2));
     });
 
     test('brightness returns light for warm themes, dark for dark themes', () {

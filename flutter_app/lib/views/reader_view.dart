@@ -204,7 +204,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(6),
                         color: isActive
-                            ? Colors.yellow.withOpacity(0.35)
+                            ? Colors.yellow.withValues(alpha: 0.35)
                             : Colors.transparent,
                       ),
                       child: Text(s.text, style: bodyStyle),
@@ -308,13 +308,13 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                           horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(10),
-                        color: fg.withOpacity(0.1),
+                        color: fg.withValues(alpha: 0.1),
                       ),
                       child: Text(
                         '${pageIndex + 1} / ${_pages.length}',
                         style: TextStyle(
                           fontSize: 11,
-                          color: fg.withOpacity(0.5),
+                          color: fg.withValues(alpha: 0.5),
                           fontFeatures: const [
                             FontFeature.tabularFigures()
                           ],
@@ -340,7 +340,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               '${widget.chapter.charCount} characters',
-              style: TextStyle(fontSize: 12, color: fg.withOpacity(0.5)),
+              style: TextStyle(fontSize: 12, color: fg.withValues(alpha: 0.5)),
             ),
           ),
         const SizedBox(height: 12),
