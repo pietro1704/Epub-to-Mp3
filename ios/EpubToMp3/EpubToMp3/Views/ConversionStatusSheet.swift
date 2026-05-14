@@ -103,11 +103,21 @@ struct ConversionStatusSheet: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     if status.events.isEmpty {
-                        Text("No events yet.")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 32)
+                        VStack(spacing: 8) {
+                            if status.startedAt != nil {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Waiting for first audio chunk…")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text("Conversion not started.")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.top, 32)
                     } else {
                         ForEach(status.events) { event in
                             eventRow(event)
