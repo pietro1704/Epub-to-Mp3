@@ -382,7 +382,7 @@ struct ReaderView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
                     let pageIndex = max(0, min(pages.count - 1, currentPage))
-                    pageView(pages: pages, pageIndex: pageIndex)
+                    pageView(pages: pages, pageIndex: pageIndex, containerWidth: geo.size.width)
                         // Tap zones first (foreground), drag/scroll second.
                         // Without `.allowsHitTesting(true)` here, the
                         // text body's hit-testing wins on macOS.
@@ -421,12 +421,12 @@ struct ReaderView: View {
         .compatHorizontalSafeAreaPadding(0)
     }
 
-    private func pageView(pages: [String], pageIndex: Int) -> some View {
-        // No ScrollView here — paginated mode means the page must
-        // fit. A nested ScrollView would (a) eat scroll-wheel events
-        // we want for paging and (b) intercept clicks before our
-        // tap-zone overlay.
+    private func pageView(pages: [String], pageIndex: Int, containerWidth: CGFloat? = nil) -> some View {
         let pageText = pages[pageIndex]
+        let effectiveColumnWidth = min(
+            settings.readerColumnWidth,
+            (containerWidth ?? .infinity) - 2 * effectiveReaderMargin
+        )
         return VStack(alignment: .leading, spacing: 0) {
             if pageIndex == 0 { chapterTitleHeader }
             pageTextBody(plain: pageText, pageIndex: pageIndex, pages: pages)
@@ -434,8 +434,8 @@ struct ReaderView: View {
         }
         .padding(.horizontal, effectiveReaderMargin)
         .padding(.vertical, 24)
-        .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: max(200, effectiveColumnWidth + 2 * effectiveReaderMargin), alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 
     /// Pick HTML-rendered AttributedString slice when available, fall
