@@ -52,6 +52,12 @@ final class SidecarManager: ObservableObject {
     private var stdoutPipe: Pipe?
     private var stderrPipe: Pipe?
     private var terminationObserver: NSObjectProtocol?
+    /// Monotonic counter incremented on every `start()` call. After
+    /// `waitForHealth` returns, the caller checks whether the generation
+    /// still matches — if a newer `start()` has taken over (because the
+    /// process died and `onSidecarDied` spawned a replacement), the stale
+    /// caller bails instead of killing the newer process via `stop()`.
+    private var startGeneration: UInt = 0
     /// Suppresses the `onSidecarDied` callback for terminations that
     /// were initiated by us (`stop()` during a failed health probe,
     /// app shutdown). Without this, a sidecar that times out its
@@ -171,13 +177,16 @@ final class SidecarManager: ObservableObject {
 
         // Wait for /api/health.
         let baseURL = URL(string: "http://127.0.0.1:\(port)")!
-        let healthOk = await waitForHealth(baseURL: baseURL)
+        startGeneration += 1
+        let myGeneration = startGeneration
+        let healthOk = await waitForHealth(baseURL: baseURL, proc: proc)
+
+        // A newer start() has taken over (process died → onSidecarDied
+        // → restart). Don't touch state or kill the newer process.
+        guard myGeneration == startGeneration else { return state }
+
         if !healthOk {
-            // Capture last bytes of stderr to surface why it died.
             let tail = readPipeTail(errPipe) ?? readPipeTail(outPipe) ?? ""
-            // Suppress the death callback — this is OUR teardown, not
-            // a spontaneous crash. Without this flag the callback
-            // fires, the host respawns, and we loop forever.
             suppressDeathCallback = true
             stop()
             state = .failed("Sidecar did not become healthy within \(Int(healthcheckTimeout))s. \(tail)")
@@ -299,12 +308,15 @@ final class SidecarManager: ObservableObject {
     }
     #endif
 
-    private func waitForHealth(baseURL: URL) async -> Bool {
+    #if canImport(AppKit)
+    private func waitForHealth(baseURL: URL, proc: Process) async -> Bool {
         let deadline = Date().addingTimeInterval(healthcheckTimeout)
         let url = baseURL.appendingPathComponent("api/health")
         let session = URLSession(configuration: .ephemeral)
         var interval = healthcheckInterval
         while Date() < deadline {
+            if Task.isCancelled { return false }
+            if !proc.isRunning { return false }
             do {
                 let (_, resp) = try await session.data(from: url)
                 if let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) {
@@ -318,6 +330,7 @@ final class SidecarManager: ObservableObject {
         }
         return false
     }
+    #endif
 
     #if canImport(AppKit)
     private func readPipeTail(_ pipe: Pipe?) -> String? {
