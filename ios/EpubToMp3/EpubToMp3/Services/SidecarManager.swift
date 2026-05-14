@@ -303,6 +303,7 @@ final class SidecarManager: ObservableObject {
         let deadline = Date().addingTimeInterval(healthcheckTimeout)
         let url = baseURL.appendingPathComponent("api/health")
         let session = URLSession(configuration: .ephemeral)
+        var interval = healthcheckInterval
         while Date() < deadline {
             do {
                 let (_, resp) = try await session.data(from: url)
@@ -310,9 +311,10 @@ final class SidecarManager: ObservableObject {
                     return true
                 }
             } catch {
-                // Process not listening yet — keep waiting.
+                // Process not listening yet — back off.
             }
-            try? await Task.sleep(nanoseconds: UInt64(healthcheckInterval * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            interval = min(interval * 1.5, 5)
         }
         return false
     }

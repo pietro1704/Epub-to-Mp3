@@ -300,9 +300,14 @@ final class AppSettings: ObservableObject {
     /// caller can surface a validation error instead of silently failing.
     /// On macOS, when `useEmbeddedSidecar` is on and the sidecar has come
     /// up healthy, the sidecar URL wins so the app stays self-contained
-    /// even if the user once pointed `backendURL` at HF Spaces.
+    /// even if the user once pointed `backendURL` at HF Spaces. When the
+    /// sidecar is expected but not yet healthy, returns nil so the rest of
+    /// the app doesn't flood `localhost:8000` with connection-refused spam.
     var resolvedBaseURL: URL? {
         if useEmbeddedSidecar, let sidecarURL { return sidecarURL }
+        #if os(macOS)
+        if useEmbeddedSidecar { return nil }
+        #endif
         let trimmed = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         return URL(string: trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed)

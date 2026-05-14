@@ -271,25 +271,36 @@ final class AppSettingsObservationTests: XCTestCase {
                       "Reader must remain available without any backend URL when the embedded runtime is on.")
     }
 
-    /// Regression: legacy installs persisted `backendURL =
-    /// "http://localhost:8000"` from before the iOS default was emptied.
-    /// `resolvedBaseURL` still returns that URL, so `BookOpenView.client`
-    /// is non-nil — but on iOS there is no loopback server, and the SSE
-    /// path floods the syslog with `Connection refused` while the
-    /// reader hangs. `BookOpenView.startAudioBootstrap` must therefore
-    /// short-circuit to the embedded path whenever `useEmbeddedRuntime`
-    /// is on, regardless of whether a (stale) client could be built.
-    /// This test pins the precondition: with the legacy URL persisted,
-    /// `resolvedBaseURL` is still non-nil — so the bootstrap guard
-    /// cannot rely on `client == nil` to pick the embedded path.
-    func testLegacyLocalhostBackendDoesNotSuppressEmbeddedRuntime() {
+    /// On macOS, when `useEmbeddedSidecar` is true but the sidecar
+    /// hasn't started yet, `resolvedBaseURL` must return nil — not the
+    /// stale default `http://localhost:8000`. Falling through to the
+    /// default URL floods the system log with hundreds of
+    /// "Connection refused" requests per second.
+    func testMacOSSidecarExpectedButNotRunningReturnsNil() {
         let s = makeSettings()
         s.useEmbeddedRuntime = true
+        s.useEmbeddedSidecar = true
+        s.backendURL = "http://localhost:8000"
+        s.sidecarURL = nil
+        #if os(macOS)
+        XCTAssertNil(s.resolvedBaseURL,
+                     "macOS must not fall through to backendURL when the sidecar is expected but not running.")
+        #else
+        XCTAssertNotNil(s.resolvedBaseURL,
+                        "iOS ignores the sidecar gate — legacy URL still resolves for remote-backend users.")
+        #endif
+        XCTAssertTrue(s.useEmbeddedRuntime,
+                      "Embedded runtime must remain authoritative even when a legacy backend URL is present.")
+    }
+
+    /// When `useEmbeddedSidecar` is false, `backendURL` is respected
+    /// regardless of sidecar state.
+    func testManualBackendURLRespectedWhenSidecarDisabled() {
+        let s = makeSettings()
+        s.useEmbeddedSidecar = false
         s.backendURL = "http://localhost:8000"
         s.sidecarURL = nil
         XCTAssertNotNil(s.resolvedBaseURL,
-                        "Legacy persisted backendURL still resolves — bootstrap guard cannot use `client == nil` alone to pick the embedded path on iOS.")
-        XCTAssertTrue(s.useEmbeddedRuntime,
-                      "Embedded runtime must remain authoritative even when a legacy backend URL is present.")
+                        "Manual backend URL must resolve when the sidecar toggle is off.")
     }
 }
