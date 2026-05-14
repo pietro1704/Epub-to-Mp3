@@ -148,60 +148,45 @@ struct ReaderView: View {
     // MARK: Toolbar
 
     private var toolbar: some View {
-        HStack(spacing: 16) {
-            // Font size A− / A+
-            HStack(spacing: 4) {
-                Button {
-                    settings.readerFontSize = max(0, settings.readerFontSize - 1)
-                } label: { Image(systemName: "textformat.size.smaller") }
-                .disabled(settings.readerFontSize == 0)
-                Text("\(settings.readerFontSize + 1)/5")
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                Button {
-                    settings.readerFontSize = min(4, settings.readerFontSize + 1)
-                } label: { Image(systemName: "textformat.size.larger") }
-                .disabled(settings.readerFontSize == 4)
-            }
-
-            Picker("Font", selection: $settings.readerFontFamily) {
-                ForEach(ReaderFontFamily.allCases) { f in
-                    Text(f.displayName).tag(f)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 12) {
+                Picker("Font", selection: $settings.readerFontFamily) {
+                    ForEach(ReaderFontFamily.allCases) { f in
+                        Text(f.displayName).tag(f)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
+                .pickerStyle(.menu)
+                .fixedSize()
 
-            Picker("Theme", selection: $settings.readerTheme) {
-                ForEach(ReaderTheme.allCases) { t in
-                    Text(t.displayName).tag(t)
+                Picker("Theme", selection: $settings.readerTheme) {
+                    ForEach(ReaderTheme.allCases) { t in
+                        Text(t.displayName).tag(t)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
+                .pickerStyle(.menu)
+                .fixedSize()
 
-            Picker("Layout", selection: $settings.readerLayout) {
-                ForEach(ReaderLayout.allCases) { l in
-                    Text(l.displayName).tag(l)
+                Picker("Layout", selection: $settings.readerLayout) {
+                    ForEach(ReaderLayout.allCases) { l in
+                        Text(l.displayName).tag(l)
+                    }
                 }
-            }
-            .pickerStyle(.menu)
-            .fixedSize()
+                .pickerStyle(.menu)
+                .fixedSize()
 
-            Menu {
-                appearanceMenu
-            } label: {
-                Image(systemName: "slider.horizontal.3")
-            }
-            .menuStyle(.borderlessButton)
+                Menu {
+                    appearanceMenu
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                }
+                .menuStyle(.borderlessButton)
 
-            Toggle(isOn: $settings.readerAutoScroll) {
-                Image(systemName: settings.readerAutoScroll ? "arrow.down.to.line" : "hand.raised")
+                Toggle(isOn: $settings.readerAutoScroll) {
+                    Image(systemName: settings.readerAutoScroll ? "arrow.down.to.line" : "hand.raised")
+                }
+                .toggleStyle(.button)
+                .help(settings.readerAutoScroll ? "Auto-scroll on" : "Auto-scroll off")
             }
-            .toggleStyle(.button)
-            .help(settings.readerAutoScroll ? "Auto-scroll on" : "Auto-scroll off")
-
-            Spacer()
         }
         .font(.footnote)
         // 12pt inside any safe-area inset so the picker rows don't
