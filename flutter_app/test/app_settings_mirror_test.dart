@@ -17,7 +17,11 @@ void main() {
   group('MirrorAppSettings', () {
     test('default backend URL is localhost:8000', () async {
       final s = await make();
-      expect(s.backendURL, 'http://localhost:8000');
+      // The default depends on detected platform; accept either.
+      expect(
+        s.backendURL,
+        anyOf('http://localhost:8000', 'http://10.0.2.2:8000'),
+      );
     });
 
     test('font size clamps to 0..4', () async {

@@ -5,48 +5,84 @@ import 'package:just_audio/just_audio.dart';
 
 import '../models/job_snapshot.dart';
 
-class AudioPlayerService {
-  AudioPlayerService({String? backendBase}) : _baseUrl = backendBase;
+abstract class AudioPlayerInterface {
+  Stream<Duration> get position;
+  Stream<bool> get playing;
+  Stream<int?> get currentIndex;
+  String? get activeSentenceId;
+  Stream<String?> get activeSentenceStream;
+  double get speed;
+  double get sleepTimerRemaining;
+  Stream<double> get sleepTimerStream;
+  double get positionSeconds;
+  double get durationSeconds;
+  Uint8List? coverArtData;
+  List<ChapterProgress> get chapters;
 
-  final AudioPlayer _player = AudioPlayer();
+  Future<void> setQueue(List<ChapterProgress> chapters);
+  void enqueueSegment(Uri uri, {String? sentenceId, int chapterIndex});
+  Future<void> play();
+  Future<void> pause();
+  Future<void> seek(Duration position, {int? index});
+  Future<void> setSpeed(double speed);
+  void skipForward({int seconds});
+  void skipBackward({int seconds});
+  void nextChapter();
+  void previousChapter();
+  void togglePlayPause();
+  void setSleepTimer({required double seconds});
+  void clearSegmentState();
+  Future<void> dispose();
+}
+
+class AudioPlayerService implements AudioPlayerInterface {
+  AudioPlayerService({String? backendBase, AudioPlayer? player})
+      : _baseUrl = backendBase,
+        _player = player ?? AudioPlayer();
+
+  final AudioPlayer _player;
   final String? _baseUrl;
   List<ChapterProgress> _chapters = const [];
 
+  @override
   Stream<Duration> get position => _player.positionStream;
+  @override
   Stream<bool> get playing => _player.playingStream;
+  @override
   Stream<int?> get currentIndex => _player.currentIndexStream;
   AudioPlayer get raw => _player;
 
-  // Segment mode — sentence-level tracking
   bool _isSegmentMode = false;
   int _segmentChapterIndex = -1;
-  // ignore: unused_field
-  double _segmentCumulativeBase = 0;
   final List<String> _segmentSentenceIds = [];
   int _segmentPlayedCount = 0;
   String? _activeSentenceId;
   StreamSubscription<int?>? _indexSub;
 
+  @override
   String? get activeSentenceId => _activeSentenceId;
 
   final _sentenceController = StreamController<String?>.broadcast();
+  @override
   Stream<String?> get activeSentenceStream => _sentenceController.stream;
 
-  // Cover art for notification/lock screen
+  @override
   Uint8List? coverArtData;
 
-  // Sleep timer
   Timer? _sleepTimer;
   double _sleepTimerRemaining = 0;
+  @override
   double get sleepTimerRemaining => _sleepTimerRemaining;
 
   final _sleepController = StreamController<double>.broadcast();
+  @override
   Stream<double> get sleepTimerStream => _sleepController.stream;
 
-  // Playback speed
   double _speed = 1.0;
+  @override
   double get speed => _speed;
 
+  @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
     _chapters = chapters;
     final base = _baseUrl ?? '';
@@ -63,10 +99,11 @@ class AudioPlayerService {
     );
   }
 
-  void enqueueSegment(Uri uri, {String? sentenceId, int chapterIndex = 0}) {
+  @override
+  void enqueueSegment(Uri uri,
+      {String? sentenceId, int chapterIndex = 0}) {
     if (chapterIndex != _segmentChapterIndex) {
       _segmentChapterIndex = chapterIndex;
-      _segmentCumulativeBase = 0;
       _segmentSentenceIds.clear();
       _segmentPlayedCount = 0;
     }
@@ -93,10 +130,6 @@ class AudioPlayerService {
     _indexSub?.cancel();
     _indexSub = _player.currentIndexStream.listen((idx) {
       if (idx != null && _isSegmentMode) {
-        final duration = _player.duration;
-        if (duration != null) {
-          _segmentCumulativeBase += duration.inMilliseconds / 1000.0;
-        }
         _segmentPlayedCount++;
         if (_segmentPlayedCount < _segmentSentenceIds.length) {
           _activeSentenceId = _segmentSentenceIds[_segmentPlayedCount];
@@ -114,17 +147,22 @@ class AudioPlayerService {
     return Uri.parse('$cleanBase$cleanPath');
   }
 
+  @override
   Future<void> play() => _player.play();
+  @override
   Future<void> pause() => _player.pause();
 
+  @override
   Future<void> seek(Duration position, {int? index}) =>
       _player.seek(position, index: index);
 
+  @override
   Future<void> setSpeed(double speed) async {
     _speed = speed;
     await _player.setSpeed(speed);
   }
 
+  @override
   void skipForward({int seconds = 15}) {
     final pos = _player.position;
     final dur = _player.duration ?? Duration.zero;
@@ -132,15 +170,19 @@ class AudioPlayerService {
     _player.seek(target > dur ? dur : target);
   }
 
+  @override
   void skipBackward({int seconds = 15}) {
     final pos = _player.position;
     final target = pos - Duration(seconds: seconds);
     _player.seek(target < Duration.zero ? Duration.zero : target);
   }
 
+  @override
   void nextChapter() => _player.seekToNext();
+  @override
   void previousChapter() => _player.seekToPrevious();
 
+  @override
   void togglePlayPause() {
     if (_player.playing) {
       _player.pause();
@@ -149,6 +191,7 @@ class AudioPlayerService {
     }
   }
 
+  @override
   void setSleepTimer({required double seconds}) {
     _sleepTimer?.cancel();
     _sleepTimerRemaining = seconds;
@@ -166,22 +209,25 @@ class AudioPlayerService {
     });
   }
 
+  @override
   double get positionSeconds =>
       _player.position.inMilliseconds / 1000.0;
 
+  @override
   double get durationSeconds =>
       (_player.duration?.inMilliseconds ?? 0) / 1000.0;
 
+  @override
   void clearSegmentState() {
     _isSegmentMode = false;
     _segmentChapterIndex = -1;
-    _segmentCumulativeBase = 0;
     _segmentSentenceIds.clear();
     _segmentPlayedCount = 0;
     _activeSentenceId = null;
     _sentenceController.add(null);
   }
 
+  @override
   Future<void> dispose() async {
     _sleepTimer?.cancel();
     _indexSub?.cancel();
@@ -190,5 +236,133 @@ class AudioPlayerService {
     await _player.dispose();
   }
 
+  @override
   List<ChapterProgress> get chapters => _chapters;
+}
+
+/// Test double — pure Dart, no native plugins.
+class FakeAudioPlayerService implements AudioPlayerInterface {
+  @override
+  String? activeSentenceId;
+  @override
+  Uint8List? coverArtData;
+
+  double _speed = 1.0;
+  double _sleepTimerRemaining = 0;
+  bool _playing = false;
+  List<ChapterProgress> _chapters = const [];
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+
+  final _positionController = StreamController<Duration>.broadcast();
+  final _playingController = StreamController<bool>.broadcast();
+  final _indexController = StreamController<int?>.broadcast();
+  final _sentenceController = StreamController<String?>.broadcast();
+  final _sleepController = StreamController<double>.broadcast();
+
+  @override
+  Stream<Duration> get position => _positionController.stream;
+  @override
+  Stream<bool> get playing => _playingController.stream;
+  @override
+  Stream<int?> get currentIndex => _indexController.stream;
+  @override
+  Stream<String?> get activeSentenceStream => _sentenceController.stream;
+  @override
+  Stream<double> get sleepTimerStream => _sleepController.stream;
+  @override
+  double get speed => _speed;
+  @override
+  double get sleepTimerRemaining => _sleepTimerRemaining;
+  @override
+  double get positionSeconds => _position.inMilliseconds / 1000.0;
+  @override
+  double get durationSeconds => _duration.inMilliseconds / 1000.0;
+  @override
+  List<ChapterProgress> get chapters => _chapters;
+
+  @override
+  Future<void> setQueue(List<ChapterProgress> chapters) async {
+    _chapters = chapters;
+  }
+
+  @override
+  void enqueueSegment(Uri uri,
+      {String? sentenceId, int chapterIndex = 0}) {
+    if (sentenceId != null) {
+      activeSentenceId = sentenceId;
+      _sentenceController.add(sentenceId);
+    }
+  }
+
+  @override
+  Future<void> play() async {
+    _playing = true;
+    _playingController.add(true);
+  }
+
+  @override
+  Future<void> pause() async {
+    _playing = false;
+    _playingController.add(false);
+  }
+
+  @override
+  Future<void> seek(Duration position, {int? index}) async {
+    _position = position;
+    _positionController.add(position);
+  }
+
+  @override
+  Future<void> setSpeed(double speed) async {
+    _speed = speed;
+  }
+
+  @override
+  void skipForward({int seconds = 15}) {
+    _position += Duration(seconds: seconds);
+    _positionController.add(_position);
+  }
+
+  @override
+  void skipBackward({int seconds = 15}) {
+    final target = _position - Duration(seconds: seconds);
+    _position = target < Duration.zero ? Duration.zero : target;
+    _positionController.add(_position);
+  }
+
+  @override
+  void nextChapter() {}
+  @override
+  void previousChapter() {}
+
+  @override
+  void togglePlayPause() {
+    if (_playing) {
+      pause();
+    } else {
+      play();
+    }
+  }
+
+  @override
+  void setSleepTimer({required double seconds}) {
+    _sleepTimerRemaining = seconds;
+    _sleepController.add(seconds);
+  }
+
+  @override
+  void clearSegmentState() {
+    activeSentenceId = null;
+    _sentenceController.add(null);
+  }
+
+  @override
+  Future<void> dispose() async {
+    await _positionController.close();
+    await _playingController.close();
+    await _indexController.close();
+    await _sentenceController.close();
+    await _sleepController.close();
+  }
 }
