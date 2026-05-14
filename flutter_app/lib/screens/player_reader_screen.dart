@@ -5,7 +5,10 @@ import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../services/api_client.dart';
 import '../state/providers.dart';
-import 'reader_view.dart';
+import '../views/full_player_sheet.dart';
+import '../views/reader_settings_sheet.dart';
+import '../views/reader_theme_colors.dart';
+import 'reader_view.dart' as scroll_reader;
 import 'toc_drawer.dart';
 
 class PlayerReaderScreen extends ConsumerStatefulWidget {
@@ -20,15 +23,61 @@ class PlayerReaderScreen extends ConsumerStatefulWidget {
 class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   int _currentChapterIndex = 0;
 
+  void _showReaderSettings() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const ReaderSettingsSheet(),
+    );
+  }
+
+  void _showFullPlayer() {
+    final player = ref.read(audioPlayerProvider(widget.jobId));
+    final job = ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.92,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (_, controller) {
+          final chapters = job?.playableChapters ?? [];
+          return FullPlayerSheet(
+            player: player,
+            bookTitle: job?.bookTitle,
+            chapterLabel: _currentChapterIndex < chapters.length
+                ? chapters[_currentChapterIndex].name
+                : null,
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
     final job = ref.watch(jobSnapshotProvider(widget.jobId));
     final fulltext = ref.watch(fulltextProvider(widget.jobId));
+    final settings = ref.watch(settingsProvider);
+    final bg = ReaderThemeColors.background(settings.readerTheme,
+        custom: settings.readerCustomColors);
 
     return Scaffold(
+      backgroundColor: bg,
       appBar: AppBar(
         title: Text(job.valueOrNull?.bookTitle ?? widget.jobId),
+        backgroundColor: bg,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.text_format),
+            onPressed: _showReaderSettings,
+            tooltip: 'Reader settings',
+          ),
+        ],
       ),
       drawer: TocDrawer(
         fulltext: fulltext.valueOrNull,
@@ -45,7 +94,10 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
             jobId: widget.jobId,
             t: t,
           );
-          final controls = _PlayerControls(jobId: widget.jobId);
+          final controls = _PlayerControls(
+            jobId: widget.jobId,
+            onExpandPlayer: _showFullPlayer,
+          );
           if (wide) {
             return Row(children: [
               Expanded(child: reader),
@@ -95,70 +147,83 @@ class _Reader extends StatelessWidget {
           return Center(child: Text(t.fulltextEmpty));
         }
         final idx = chapterIndex.clamp(0, data.chapters.length - 1);
-        return ReaderView(jobId: jobId, chapter: data.chapters[idx]);
+        return scroll_reader.ReaderView(
+          jobId: jobId,
+          chapter: data.chapters[idx],
+        );
       },
     );
   }
 }
 
 class _PlayerControls extends ConsumerWidget {
-  const _PlayerControls({required this.jobId});
+  const _PlayerControls({
+    required this.jobId,
+    this.onExpandPlayer,
+  });
   final String jobId;
+  final VoidCallback? onExpandPlayer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final job = ref.watch(jobSnapshotProvider(jobId));
     final player = ref.watch(audioPlayerProvider(jobId));
-    return Padding(
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          job.when(
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('Error: $e'),
-            data: (snap) => Text(
-              '${snap.state} • ${(snap.progressPercent ?? 0).toStringAsFixed(1)}%',
+    return GestureDetector(
+      onTap: onExpandPlayer,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            job.when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => Text('Error: $e'),
+              data: (snap) => Text(
+                '${snap.state} • ${(snap.progressPercent ?? 0).toStringAsFixed(1)}%',
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.skip_previous),
-                onPressed: () => player.raw.seekToPrevious(),
-              ),
-              StreamBuilder<bool>(
-                stream: player.playing,
-                builder: (context, snap) {
-                  final playing = snap.data ?? false;
-                  return IconButton(
-                    iconSize: 48,
-                    icon:
-                        Icon(playing ? Icons.pause_circle : Icons.play_circle),
-                    onPressed: () async {
-                      // Lazy queue init when user first taps play.
-                      final j = job.valueOrNull;
-                      if (j != null && player.chapters.isEmpty) {
-                        await player.setQueue(j.playableChapters);
-                      }
-                      if (playing) {
-                        await player.pause();
-                      } else {
-                        await player.play();
-                      }
-                    },
-                  );
-                },
-              ),
-              IconButton(
-                icon: const Icon(Icons.skip_next),
-                onPressed: () => player.raw.seekToNext(),
-              ),
-            ],
-          ),
-        ],
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.replay_10),
+                  onPressed: () => player.skipBackward(seconds: 15),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.skip_previous),
+                  onPressed: () => player.previousChapter(),
+                ),
+                StreamBuilder<bool>(
+                  stream: player.playing,
+                  builder: (context, snap) {
+                    final playing = snap.data ?? false;
+                    return IconButton(
+                      iconSize: 48,
+                      icon: Icon(
+                          playing ? Icons.pause_circle : Icons.play_circle),
+                      onPressed: () async {
+                        final j = job.valueOrNull;
+                        if (j != null && player.chapters.isEmpty) {
+                          await player.setQueue(j.playableChapters);
+                        }
+                        player.togglePlayPause();
+                      },
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.skip_next),
+                  onPressed: () => player.nextChapter(),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.forward_10),
+                  onPressed: () => player.skipForward(seconds: 15),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -66,6 +66,31 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     _emit();
   }
 
+  Future<void> setReaderFontFamily(ReaderFontFamily v) async {
+    await state.setReaderFontFamily(v);
+    _emit();
+  }
+
+  Future<void> setReaderLayout(ReaderLayout v) async {
+    await state.setReaderLayout(v);
+    _emit();
+  }
+
+  Future<void> setReaderLineSpacing(double v) async {
+    await state.setReaderLineSpacing(v);
+    _emit();
+  }
+
+  Future<void> setReaderMargin(double v) async {
+    await state.setReaderMargin(v);
+    _emit();
+  }
+
+  Future<void> setReaderAutoScroll(bool v) async {
+    await state.setReaderAutoScroll(v);
+    _emit();
+  }
+
   /// Legacy slider hooks for the existing settings_screen UI. They
   /// route to the iOS-mirror step/enum settings underneath.
   Future<void> setFontSize(double v) async {

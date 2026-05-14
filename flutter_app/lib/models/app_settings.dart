@@ -202,7 +202,7 @@ class MirrorAppSettings {
 
   // Reader appearance ---------------------------------------------------
   int get readerFontSize {
-    final v = _prefs.getInt('readerFontSize') ?? 2;
+    final v = _prefs.getInt('readerFontSize') ?? 3;
     return v.clamp(0, 4);
   }
 
@@ -278,6 +278,17 @@ class MirrorAppSettings {
     ].map(f).join(',');
     return _prefs.setString('readerCustomColors', s);
   }
+
+  // Reading position persistence ----------------------------------------
+  int savedChapterIndex(String bookId) =>
+      _prefs.getInt('readPos_ch_$bookId') ?? 0;
+  Future<void> saveChapterIndex(int index, String bookId) =>
+      _prefs.setInt('readPos_ch_$bookId', index);
+
+  int savedPageIndex(String bookId) =>
+      _prefs.getInt('readPos_pg_$bookId') ?? 0;
+  Future<void> savePageIndex(int index, String bookId) =>
+      _prefs.setInt('readPos_pg_$bookId', index);
 
   /// Best-effort base URL; nil if the user typed garbage.
   Uri? get resolvedBaseURL {

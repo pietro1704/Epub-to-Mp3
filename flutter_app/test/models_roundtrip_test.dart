@@ -70,6 +70,23 @@ void main() {
     expect(spans.first.text, 'Hello world.');
   });
 
+  test('collapseHardWraps joins single newlines, preserves double', () {
+    const input = 'Hello\nworld.\n\nNew paragraph.';
+    final result = FulltextChapter.collapseHardWraps(input);
+    expect(result, 'Hello world.\n\nNew paragraph.');
+  });
+
+  test('splitSentences does not break on newline mid-word', () {
+    final c = FulltextChapter(
+      index: 0,
+      text: 'The quick brown\nfox jumps. Over the lazy dog!',
+    );
+    final spans = c.splitSentences();
+    expect(spans.length, 2);
+    expect(spans.first.text, 'The quick brown fox jumps.');
+    expect(spans.last.text, 'Over the lazy dog!');
+  });
+
   test('EbookFulltext decodes', () {
     final ft = EbookFulltext.fromJson({
       'jobId': 'z',

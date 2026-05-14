@@ -47,11 +47,18 @@ class FulltextChapter with _$FulltextChapter {
   String get displayTitle =>
       (name != null && name!.isNotEmpty) ? name! : 'Chapter $index';
 
-  /// Naive sentence splitter — breaks on `.?!\n` followed by whitespace.
-  /// Mirrors iOS `EbookFulltext.Chapter.splitSentences()`.
+  static String collapseHardWraps(String text) {
+    return text
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\n\n', '￾')
+        .replaceAll('\n', ' ')
+        .replaceAll('￾', '\n\n');
+  }
+
   List<SentenceSpan> splitSentences() {
+    final collapsed = collapseHardWraps(text);
     final spans = <SentenceSpan>[];
-    final chars = text.runes.toList();
+    final chars = collapsed.runes.toList();
     var start = 0;
     var i = 0;
     var sentenceIdx = 0;
@@ -60,7 +67,7 @@ class FulltextChapter with _$FulltextChapter {
 
     while (i < chars.length) {
       final c = chars[i];
-      final isTerminator = c == 0x2E || c == 0x3F || c == 0x21 || c == 0x0A;
+      final isTerminator = c == 0x2E || c == 0x3F || c == 0x21;
       final nextIsBoundary =
           (i + 1 >= chars.length) ? true : isWs(chars[i + 1]);
       if (isTerminator && nextIsBoundary) {

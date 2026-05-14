@@ -1,38 +1,21 @@
-// Mirror of ios/EpubToMp3/EpubToMp3/Views/ReaderView.swift @ 1f20d54
-// Source of truth: SwiftUI. Update via the flutter-mirror agent.
-//
-// Paginated reader that delegates past-the-edge navigation to the
-// host view via [onAdvanceChapter] / [onPreviousChapter]. Both
-// callbacks return bool: true if the host swapped chapters, false
-// to keep the user pinned on the current page (last-of-book or
-// first-of-book).
-//
-// Carl Sagan dead-end fix: every navigation entry point (tap, swipe,
-// keyboard) routes through [advancePage] / [retreatPage], which fall
-// through to the callback at the chapter boundary.
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../models/app_settings.dart';
 import '../models/ebook_fulltext.dart';
 import '../services/paginator.dart';
+import '../state/providers.dart';
+import 'reader_theme_colors.dart';
 
 typedef ChapterStepCallback = bool Function();
 
-class ReaderView extends StatefulWidget {
+class ReaderView extends ConsumerStatefulWidget {
   final FulltextChapter chapter;
   final List<SentenceSpan> spans;
   final String? currentSentenceId;
   final void Function(SentenceSpan)? onJumpToSentence;
-
-  /// Called when the user pages past the last page of the current
-  /// chapter. Should return `true` if there *is* a next chapter and
-  /// the host swapped it in; `false` keeps the reader on the last
-  /// page. When the host changes `chapter`, [didUpdateWidget] resets
-  /// `_currentPage` to 0.
   final ChapterStepCallback? onAdvanceChapter;
-
-  /// Same contract as [onAdvanceChapter] in the reverse direction.
   final ChapterStepCallback? onPreviousChapter;
 
   const ReaderView({
@@ -46,13 +29,16 @@ class ReaderView extends StatefulWidget {
   });
 
   @override
-  State<ReaderView> createState() => _ReaderViewState();
+  ConsumerState<ReaderView> createState() => _ReaderViewState();
 }
 
-class _ReaderViewState extends State<ReaderView> {
+class _ReaderViewState extends ConsumerState<ReaderView> {
   int _currentPage = 0;
   late List<ReaderPage> _pages;
   final FocusNode _focusNode = FocusNode();
+  final ScrollController _scrollController = ScrollController();
+  final Map<String, GlobalKey> _spanKeys = {};
+  String? _lastScrolledTo;
 
   @override
   void initState() {
@@ -77,18 +63,15 @@ class _ReaderViewState extends State<ReaderView> {
   @override
   void dispose() {
     _focusNode.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
-  /// Forward navigation in paginated mode. Within the chapter, walks
-  /// `_currentPage` forward; on the last page, delegates to the host
-  /// via [widget.onAdvanceChapter] so the next chapter loads.
   void advancePage() {
     if (_currentPage + 1 < _pages.length) {
       setState(() => _currentPage += 1);
     } else {
       widget.onAdvanceChapter?.call();
-      // Caller swapped chapter; _currentPage resets via didUpdateWidget.
     }
   }
 
@@ -131,80 +114,252 @@ class _ReaderViewState extends State<ReaderView> {
 
   @override
   Widget build(BuildContext context) {
-    final page = _pages.isEmpty
-        ? const ReaderPage(<SentenceSpan>[])
-        : _pages[_currentPage.clamp(0, _pages.length - 1)];
-    return Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _handleKey,
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onHorizontalDragEnd: (details) {
-          final v = details.primaryVelocity ?? 0;
-          if (v < -200) {
-            advancePage();
-          } else if (v > 200) {
-            retreatPage();
-          }
-        },
-        child: Row(
-          children: [
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: retreatPage,
-                child: const SizedBox.expand(),
-              ),
-            ),
-            Expanded(
-              flex: 2,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.chapter.displayTitle,
-                      style: Theme.of(context).textTheme.titleLarge,
+    final settings = ref.watch(settingsProvider);
+    final bg = ReaderThemeColors.background(settings.readerTheme,
+        custom: settings.readerCustomColors);
+    final fg = ReaderThemeColors.foreground(settings.readerTheme,
+        custom: settings.readerCustomColors);
+    final fontSize = settings.readerPointSize;
+    final lineSpacing = settings.readerLineSpacing;
+    final margin = settings.readerMargin.clamp(16.0, 80.0);
+
+    final bodyStyle = TextStyle(
+      fontSize: fontSize,
+      color: fg,
+      height: 1.4 + (lineSpacing / 20.0),
+      fontFamily: _fontFamily(settings.readerFontFamily),
+    );
+
+    final headingStyle = TextStyle(
+      fontSize: fontSize + 6,
+      color: fg,
+      fontWeight: FontWeight.w600,
+      fontFamily: _fontFamily(settings.readerFontFamily),
+    );
+
+    if (settings.readerLayout == ReaderLayout.scrolling) {
+      return _scrollingLayout(
+        context, settings, bg, fg, bodyStyle, headingStyle, margin,
+      );
+    }
+    return _paginatedLayout(
+      context, settings, bg, fg, bodyStyle, headingStyle, margin,
+    );
+  }
+
+  Widget _scrollingLayout(
+    BuildContext context,
+    AppSettings settings,
+    Color bg,
+    Color fg,
+    TextStyle bodyStyle,
+    TextStyle headingStyle,
+    double margin,
+  ) {
+    final activeId = widget.currentSentenceId;
+    if (activeId != null &&
+        activeId != _lastScrolledTo &&
+        settings.readerAutoScroll) {
+      _lastScrolledTo = activeId;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final key = _spanKeys[activeId];
+        final ctx = key?.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(
+            ctx,
+            duration: const Duration(milliseconds: 350),
+            alignment: 0.3,
+          );
+        }
+      });
+    }
+
+    return Container(
+      color: bg,
+      child: Scrollbar(
+        controller: _scrollController,
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          padding: EdgeInsets.symmetric(
+            horizontal: margin,
+            vertical: 16,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _chapterHeader(headingStyle, fg),
+              const SizedBox(height: 12),
+              ...widget.spans.map((s) {
+                final isActive = s.id == activeId;
+                return Padding(
+                  key: _spanKeys.putIfAbsent(s.id, () => GlobalKey()),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  child: GestureDetector(
+                    onTap: () => widget.onJumpToSentence?.call(s),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 4),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(6),
+                        color: isActive
+                            ? Colors.yellow.withOpacity(0.35)
+                            : Colors.transparent,
+                      ),
+                      child: Text(s.text, style: bodyStyle),
                     ),
-                    const SizedBox(height: 12),
-                    ...page.spans.map((s) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2),
-                          child: GestureDetector(
-                            onTap: () => widget.onJumpToSentence?.call(s),
-                            child: Text(
-                              s.text,
-                              style: TextStyle(
-                                fontWeight: s.id == widget.currentSentenceId
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
-                            ),
-                          ),
-                        )),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: advancePage,
-                child: const SizedBox.expand(),
-              ),
-            ),
-          ],
+                  ),
+                );
+              }),
+            ],
+          ),
         ),
       ),
     );
   }
+
+  Widget _paginatedLayout(
+    BuildContext context,
+    AppSettings settings,
+    Color bg,
+    Color fg,
+    TextStyle bodyStyle,
+    TextStyle headingStyle,
+    double margin,
+  ) {
+    final page = _pages.isEmpty
+        ? const ReaderPage(<SentenceSpan>[])
+        : _pages[_currentPage.clamp(0, _pages.length - 1)];
+    final pageIndex = _pages.isEmpty
+        ? 0
+        : _currentPage.clamp(0, _pages.length - 1);
+
+    return Container(
+      color: bg,
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _handleKey,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onHorizontalDragEnd: (details) {
+            final v = details.primaryVelocity ?? 0;
+            if (v < -200) {
+              advancePage();
+            } else if (v > 200) {
+              retreatPage();
+            }
+          },
+          child: Stack(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: retreatPage,
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 2,
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: margin,
+                        vertical: 24,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (pageIndex == 0)
+                            _chapterHeader(headingStyle, fg),
+                          ...page.spans.map((s) => Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 2),
+                                child: GestureDetector(
+                                  onTap: () =>
+                                      widget.onJumpToSentence?.call(s),
+                                  child: Text(s.text, style: bodyStyle),
+                                ),
+                              )),
+                        ],
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: advancePage,
+                      child: const SizedBox.expand(),
+                    ),
+                  ),
+                ],
+              ),
+              // Page footer
+              if (_pages.isNotEmpty)
+                Positioned(
+                  bottom: 8,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(10),
+                        color: fg.withOpacity(0.1),
+                      ),
+                      child: Text(
+                        '${pageIndex + 1} / ${_pages.length}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: fg.withOpacity(0.5),
+                          fontFeatures: const [
+                            FontFeature.tabularFigures()
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _chapterHeader(TextStyle headingStyle, Color fg) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(widget.chapter.displayTitle, style: headingStyle),
+        if (widget.chapter.charCount != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '${widget.chapter.charCount} characters',
+              style: TextStyle(fontSize: 12, color: fg.withOpacity(0.5)),
+            ),
+          ),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  String? _fontFamily(ReaderFontFamily family) {
+    switch (family) {
+      case ReaderFontFamily.serif:
+        return 'serif';
+      case ReaderFontFamily.sans:
+        return null;
+      case ReaderFontFamily.mono:
+        return 'monospace';
+    }
+  }
 }
 
-/// Pure-Dart counterpart to the Swift `AdvanceModel` test helper.
-/// Mirrors `InstantReaderView.advanceToNextChapter` /
-/// `returnToPreviousChapter` so paginated chapter-boundary behaviour
-/// can be regression-tested without mounting a widget tree.
 class ChapterAdvanceModel {
   int currentChapterIndex;
   final int chapterCount;
@@ -214,7 +369,6 @@ class ChapterAdvanceModel {
     required this.chapterCount,
   });
 
-  /// Returns true if there is a next chapter and we advanced.
   bool advance() {
     if (currentChapterIndex + 1 >= chapterCount) return false;
     currentChapterIndex += 1;
