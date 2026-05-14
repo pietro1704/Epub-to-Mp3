@@ -73,6 +73,15 @@ struct SplitViewRoot: View {
     }
 
     var body: some View {
+        splitContent
+            .sheet(isPresented: $playerPresentation.showingFullPlayer) {
+                FullPlayerSheet()
+                    .environmentObject(player)
+                    .environmentObject(library)
+            }
+    }
+
+    private var splitContent: some View {
         NavigationSplitView(columnVisibility: $columnVisibility) {
             navSidebar
                 .navigationSplitViewColumnWidth(min: 200, ideal: 220, max: 280)
@@ -100,12 +109,6 @@ struct SplitViewRoot: View {
         .compatOnChange(of: library.books.count) { _ in applyEmptyLibraryReveal() }
         .compatOnChange(of: navMode) { _ in applyEmptyLibraryReveal() }
         #endif
-        // Full-player sheet — presented from mini-player tap.
-        .sheet(isPresented: $playerPresentation.showingFullPlayer) {
-            FullPlayerSheet()
-                .environmentObject(player)
-                .environmentObject(library)
-        }
     }
 
     // MARK: - Sidebar
