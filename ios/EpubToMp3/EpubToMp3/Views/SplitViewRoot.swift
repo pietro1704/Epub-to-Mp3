@@ -94,9 +94,11 @@ struct SplitViewRoot: View {
                 .accessibilityIdentifier("split.detail")
         }
         .navigationSplitViewStyle(.balanced)
-        // Reset chapter selection when the book changes.
         .compatOnChange(of: selectedBookID) { _ in
             selectedChapterIndex = nil
+            if let bookID = selectedBookID {
+                MainReaderView.setCurrentlyReading(bookID: bookID)
+            }
             #if os(iOS)
             if isCompactHorizontal, selectedBookID != nil {
                 columnVisibility = .doubleColumn
@@ -237,10 +239,23 @@ struct SplitViewRoot: View {
                 )
                 .id("\(book.id)-\(chapterIndex)")
             } else if selectedChapterIndex == nil, let book = selectedBook {
-                ChapterListColumn(
-                    book: book,
-                    selectedChapterIndex: $selectedChapterIndex
-                )
+                VStack(spacing: 24) {
+                    ChapterListColumn(
+                        book: book,
+                        selectedChapterIndex: $selectedChapterIndex
+                    )
+                    Button {
+                        MainReaderView.setCurrentlyReading(bookID: book.id)
+                        navMode = .reader
+                    } label: {
+                        Label("Open in Reader", systemImage: "book.fill")
+                            .frame(minHeight: 44)
+                            .padding(.horizontal, 16)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .padding(.bottom, 16)
+                }
             } else {
                 CompatContentUnavailableView(
                     "Pick a chapter",
