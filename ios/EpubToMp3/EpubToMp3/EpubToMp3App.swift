@@ -1,5 +1,4 @@
 import SwiftUI
-import AVFoundation
 
 @main
 struct EpubToMp3App: App {
@@ -18,7 +17,8 @@ struct EpubToMp3App: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
-        Self.configureAudioSession()
+        // Audio session configured lazily on first playback (AudioPlayer)
+        // to avoid the CoreAudio AddInstanceForFactory log on app launch.
     }
 
     var body: some Scene {
@@ -70,10 +70,12 @@ struct EpubToMp3App: App {
     /// Extension surface immediately when the user comes back to the
     /// app. No-op when the inbox is empty.
     private func drainSharedInbox() {
+        #if targetEnvironment(simulator)
+        return
+        #else
         guard SharedContainerImporter.isAppGroupAvailable else { return }
         let outcomes = SharedContainerImporter.drain(into: library)
         guard !outcomes.isEmpty else { return }
-        #if DEBUG
         for o in outcomes {
             if let err = o.error {
                 print("[ShareInbox] failed \(o.url.lastPathComponent): \(err)")
@@ -152,45 +154,7 @@ struct EpubToMp3App: App {
     }
     #endif
 
-    /// Configure `AVAudioSession` once on launch. Without this, MP3
-    /// playback is silenced when the device is in silent mode and lock-
-    /// screen controls do not surface.
-    /// Required Info.plist key: `UIBackgroundModes` → `audio`.
-    /// macOS doesn't have `AVAudioSession`; the entire body is gated to
-    /// iOS / iPadOS where the type exists.
-    private static func configureAudioSession() {
-        #if os(iOS)
-        let session = AVAudioSession.sharedInstance()
-        // HIG long-form audio (Apple Books / Podcasts): `.playback` with
-        // `.spokenAudio` and the long-form policy ducks other audio +
-        // resumes after interruptions correctly. The previous form passed
-        // both `mode` AND `options` to `setCategory(...)`, which can
-        // return kAudio_ParamError (-50) on devices where the option set
-        // conflicts with the policy. Use the three-argument variant that
-        // takes a `RouteSharingPolicy` instead — that's the supported
-        // long-form-audio API and matches what `MPNowPlayingInfoCenter`
-        // expects.
-        do {
-            try session.setCategory(
-                .playback,
-                mode: .spokenAudio,
-                policy: .longFormAudio,
-                options: []
-            )
-            try session.setActive(true, options: [])
-        } catch {
-            // Fall back to the minimal form. `.playback` alone is enough
-            // for background audio + lock-screen controls; we lose
-            // long-form-audio policy niceties but the player still works.
-            do {
-                try session.setCategory(.playback)
-                try session.setActive(true)
-            } catch {
-                #if DEBUG
-                print("AVAudioSession configuration failed: \(error)")
-                #endif
-            }
-        }
-        #endif
-    }
+    // Audio session configuration moved to AudioPlayer.ensureAudioSession()
+    // to defer CoreAudio init (and its AddInstanceForFactory log) until
+    // first playback.
 }

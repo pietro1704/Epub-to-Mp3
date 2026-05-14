@@ -175,6 +175,7 @@ final class AudioPlayer: ObservableObject {
     /// once per second so the lock-screen scrubber stays fresh without
     /// hitting the system's info center on every 250ms tick.
     private var lastNowPlayingUpdate: Date = .distantPast
+    private var audioSessionConfigured = false
 
     init(resumeStore: ResumeStore = ResumeStore(), backendBaseURL: URL? = nil) {
         self.resumeStore = resumeStore
@@ -196,9 +197,32 @@ final class AudioPlayer: ObservableObject {
         // released here, so AVFoundation cleans up naturally.
     }
 
+    // MARK: Audio session (lazy)
+
+    private func ensureAudioSession() {
+        guard !audioSessionConfigured else { return }
+        audioSessionConfigured = true
+        #if os(iOS)
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.setCategory(
+                .playback, mode: .spokenAudio,
+                policy: .longFormAudio, options: []
+            )
+            try session.setActive(true, options: [])
+        } catch {
+            do {
+                try session.setCategory(.playback)
+                try session.setActive(true)
+            } catch {}
+        }
+        #endif
+    }
+
     // MARK: Public API
 
     func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0) {
+        ensureAudioSession()
         audioLog.debug("[play] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
         teardownPlayer()
         self.snapshot = snapshot
@@ -362,6 +386,7 @@ final class AudioPlayer: ObservableObject {
     /// Thread-safety: must be called on the main actor (same as all other
     /// AudioPlayer methods).
     func enqueueSegment(data: Data, chapterIndex: Int, segmentIndex: Int) {
+        ensureAudioSession()
         audioLog.debug("[enqueueSegment] ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(self.player == nil)")
         guard !data.isEmpty else {
             audioLog.warning("[enqueueSegment] empty data ignored ch=\(chapterIndex) seg=\(segmentIndex)")

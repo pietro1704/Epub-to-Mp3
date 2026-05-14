@@ -150,20 +150,12 @@ final class PythonEmbed: @unchecked Sendable {
         if iosEntrypoints == nil {
             do {
                 iosEntrypoints = try Python.attemptImport("python_app.src.ios_entrypoints")
-            } catch {
-                #if DEBUG
-                print("[PythonEmbed] preload ios_entrypoints skipped: \(error.localizedDescription)")
-                #endif
-            }
+            } catch {}
         }
         if ebookReader == nil {
             do {
                 ebookReader = try Python.attemptImport("python_app.src.ebook_reader")
-            } catch {
-                #if DEBUG
-                print("[PythonEmbed] preload ebook_reader skipped: \(error.localizedDescription)")
-                #endif
-            }
+            } catch {}
         }
     }
 
