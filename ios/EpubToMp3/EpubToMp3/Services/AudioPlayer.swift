@@ -508,8 +508,10 @@ final class AudioPlayer: ObservableObject {
     func clearConversionState() {
         isConverting = false
         conversionProgress = nil
-        firstChapterReady = false
-        firstSegmentReady = false
+        if !isPlaying && player == nil {
+            firstChapterReady = false
+            firstSegmentReady = false
+        }
         conversionStatus.endSession()
     }
 

@@ -579,13 +579,9 @@ struct ReaderView: View {
 
     @ViewBuilder
     private func sentenceText(_ span: SentenceSpan) -> some View {
-        if let attr = renderedAttributed,
-           let slice = slicedSentence(from: attr, span: span) {
-            Text(slice)
-        } else {
-            Text(span.text)
-                .font(bodyFont)
-        }
+        Text(span.text)
+            .font(bodyFont)
+            .foregroundStyle(themeForeground)
     }
 
     private func slicedSentence(

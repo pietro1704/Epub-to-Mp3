@@ -49,6 +49,8 @@ struct InstantReaderView: View {
     @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
     @State private var showingPlayMenu = false
     @State private var showingConversionStatus = false
+    @State private var showingFullPlayer = false
+    @State private var showingReaderSettings = false
 
     private var embeddedAudioReady: Bool {
         settings.useEmbeddedRuntime && globalPlayer.firstSegmentReady
@@ -90,10 +92,23 @@ struct InstantReaderView: View {
         }
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
-                Button {
-                    showingToc = true
-                } label: { Image(systemName: "list.bullet.indent") }
+                HStack(spacing: 16) {
+                    Button {
+                        showingReaderSettings = true
+                    } label: { Image(systemName: "textformat.size") }
+                    Button {
+                        showingToc = true
+                    } label: { Image(systemName: "list.bullet.indent") }
+                }
             }
+        }
+        .sheet(isPresented: $showingFullPlayer) {
+            FullPlayerSheet()
+                .environmentObject(globalPlayer)
+        }
+        .sheet(isPresented: $showingReaderSettings) {
+            ReaderSettingsSheet()
+                .environmentObject(settings)
         }
         .background {
             Color.clear.allowsHitTesting(false)
@@ -333,6 +348,8 @@ struct InstantReaderView: View {
         }
         .compatHorizontalSafeAreaPadding(20)
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { showingFullPlayer = true }
     }
 
     @ViewBuilder

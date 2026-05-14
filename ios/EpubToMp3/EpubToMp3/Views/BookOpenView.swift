@@ -337,6 +337,10 @@ struct BookOpenView: View {
     private func bootstrapEmbedded(chapterIndex startIndex: Int) async {
         playerLog.debug("[AudioBootstrap] bootstrapEmbedded starting at chapter \(startIndex)")
 
+        await MainActor.run {
+            globalPlayer.coverArtData = book.coverPNG
+        }
+
         guard let fulltext else {
             await MainActor.run {
                 self.statusBanner = "No text available for audio generation."
