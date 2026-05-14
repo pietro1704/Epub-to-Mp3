@@ -90,26 +90,24 @@ struct MiniPlayerBar: View {
 
                     Spacer()
 
-                    // Transport: spinner while converting & no audio yet;
-                    // play/pause once the first chapter is ready.
-                    if player.isConverting && !player.firstChapterReady {
+                    ZStack {
                         ProgressView()
-                            .frame(width: 44, height: 44)
+                            .opacity(player.isConverting && !player.firstChapterReady ? 1 : 0)
                             .accessibilityLabel("Generating audio")
                             .accessibilityIdentifier("miniPlayer.loadingSpinner")
-                    } else {
                         Button {
                             player.togglePlayPause()
                         } label: {
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 22))
-                                .frame(width: 44, height: 44)
                                 .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
+                        .opacity(player.isConverting && !player.firstChapterReady ? 0 : 1)
                         .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
                         .accessibilityIdentifier("miniPlayer.playPause")
                     }
+                    .frame(width: 44, height: 44)
 
                     Button {
                         player.skipForward(seconds: 15)

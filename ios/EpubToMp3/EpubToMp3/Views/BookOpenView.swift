@@ -118,12 +118,15 @@ struct BookOpenView: View {
             EpubFontManager.unregisterFonts(registeredFontURLs)
             registeredFontURLs = []
         }
-        .fileImporter(
-            isPresented: $showingPicker,
-            allowedContentTypes: [.epub, .pdf],
-            allowsMultipleSelection: false
-        ) { result in
-            handleRePick(result)
+        .background {
+            Color.clear.allowsHitTesting(false)
+                .fileImporter(
+                    isPresented: $showingPicker,
+                    allowedContentTypes: [.epub, .pdf],
+                    allowsMultipleSelection: false
+                ) { result in
+                    handleRePick(result)
+                }
         }
     }
 
@@ -358,10 +361,16 @@ struct BookOpenView: View {
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts/\(book.id)", isDirectory: true)
 
-        // Default voice: system language mapped to the closest Edge neural
-        // voice.  "auto" lets the Python layer pick based on the book's
-        // detected language — same heuristic as the CLI.
-        let voice = "auto"
+        let voice: String = {
+            let sample = chapters.prefix(3)
+                .map { $0.text.prefix(500) }
+                .joined(separator: " ")
+                .lowercased()
+            let ptMarkers = ["não", "são", "está", "também", "então",
+                             "você", "isso", "mais", "para", "quando"]
+            let hits = ptMarkers.filter { sample.contains($0) }.count
+            return hits >= 3 ? "pt-BR-FranciscaNeural" : "en-US-AriaNeural"
+        }()
 
         // Process from startIndex, then wrap to cover earlier chapters.
         let safeStart = max(0, min(startIndex, chapters.count - 1))
@@ -419,53 +428,58 @@ struct BookOpenView: View {
                     outputDir: cacheRoot,
                     chapterIndex: chapterArrayIndex
                 ) { [weak globalPlayer] segData, chapIdx, segIdx in
-                    // Already dispatched to the main actor by PythonBridge.
                     playerLog.debug("[AudioBootstrap] segment \(segIdx) ch=\(chapIdx) bytes=\(segData.count)")
                     globalPlayer?.enqueueSegment(
                         data: segData,
                         chapterIndex: chapIdx,
                         segmentIndex: segIdx
                     )
-                    // Heartbeat — a segment landing is the strongest
-                    // possible "alive" signal. Reset the watchdog clock
-                    // so a slow next-chunk doesn't trip the stall wire.
                     watchdog?.heartbeat()
                 }
                 chaptersDone += 1
                 consecutiveFailures = 0
                 lastFailureKey = nil
-                // Chapter completed: another explicit heartbeat in case
-                // the chapter produced no segments (e.g. an empty front-
-                // matter chunk handled internally by the Python layer).
                 watchdog?.heartbeat()
                 playerLog.debug("[AudioBootstrap] chapter \(chapterArrayIndex) complete")
             } catch {
-                let message = error.localizedDescription
-                playerLog.error("[AudioBootstrap] chapter \(chapterArrayIndex) failed: \(message)")
-                // De-duplicate by the first line of the error message —
-                // covers `Python bootstrap failed: …` where every chapter
-                // raises the identical traceback.
-                let key = message.split(separator: "\n").first.map(String.init) ?? message
-                if key == lastFailureKey {
-                    consecutiveFailures += 1
-                } else {
-                    consecutiveFailures = 1
-                    lastFailureKey = key
-                }
-                await MainActor.run {
-                    self.globalPlayer.recordConversionError(
-                        "Chapter \(chapterArrayIndex + 1) failed: \(message)"
+                playerLog.error("[AudioBootstrap] Python bridge failed ch \(chapterArrayIndex): \(error.localizedDescription) — trying direct EdgeTTS")
+                do {
+                    try await Self.synthesizeDirectEdge(
+                        text: chapterText,
+                        voice: voice,
+                        cacheRoot: cacheRoot,
+                        chapterIndex: chapterArrayIndex,
+                        globalPlayer: globalPlayer,
+                        watchdog: watchdog
                     )
-                }
-                if consecutiveFailures >= maxConsecutiveFailures {
-                    playerLog.error("[AudioBootstrap] aborting after \(consecutiveFailures) consecutive identical failures: \(key)")
-                    await MainActor.run {
-                        self.statusBanner = "Audio generation failed: \(key)"
+                    chaptersDone += 1
+                    consecutiveFailures = 0
+                    lastFailureKey = nil
+                    watchdog?.heartbeat()
+                    playerLog.debug("[AudioBootstrap] chapter \(chapterArrayIndex) complete (direct)")
+                } catch {
+                    let message = error.localizedDescription
+                    playerLog.error("[AudioBootstrap] chapter \(chapterArrayIndex) failed: \(message)")
+                    let key = message.split(separator: "\n").first.map(String.init) ?? message
+                    if key == lastFailureKey {
+                        consecutiveFailures += 1
+                    } else {
+                        consecutiveFailures = 1
+                        lastFailureKey = key
                     }
-                    break
+                    await MainActor.run {
+                        self.globalPlayer.recordConversionError(
+                            "Chapter \(chapterArrayIndex + 1) failed: \(message)"
+                        )
+                    }
+                    if consecutiveFailures >= maxConsecutiveFailures {
+                        playerLog.error("[AudioBootstrap] aborting after \(consecutiveFailures) consecutive identical failures: \(key)")
+                        await MainActor.run {
+                            self.statusBanner = "Audio generation failed: \(key)"
+                        }
+                        break
+                    }
                 }
-                // Non-fatal — continue with next chapter so the listener
-                // still hears the rest of the book.
             }
         }
 
@@ -480,6 +494,72 @@ struct BookOpenView: View {
             self.watchdog?.stop()
         }
         playerLog.debug("[AudioBootstrap] bootstrapEmbedded finished, \(chaptersDone)/\(chapters.count) chapters done")
+    }
+
+    // MARK: - Direct EdgeTTS fallback (no Python)
+
+    private static func synthesizeDirectEdge(
+        text: String,
+        voice: String,
+        cacheRoot: URL,
+        chapterIndex: Int,
+        globalPlayer: AudioPlayer,
+        watchdog: ConversionWatchdog?
+    ) async throws {
+        let firstChunkSize = 500
+        let normalChunkSize = 10_000
+
+        var chunks: [String] = []
+        if text.count <= firstChunkSize {
+            chunks = [text]
+        } else {
+            var first = String(text.prefix(firstChunkSize))
+            if let lastSpace = first.lastIndex(of: " "),
+               first.distance(from: first.startIndex, to: lastSpace) > firstChunkSize / 2 {
+                first = String(first[..<lastSpace])
+            }
+            chunks.append(first)
+            var remaining = String(text.dropFirst(first.count)).trimmingCharacters(in: .whitespaces)
+            while !remaining.isEmpty {
+                let size = min(normalChunkSize, remaining.count)
+                var chunk = String(remaining.prefix(size))
+                if chunk.count < remaining.count,
+                   let lastSpace = chunk.lastIndex(of: " "),
+                   chunk.distance(from: chunk.startIndex, to: lastSpace) > size / 2 {
+                    chunk = String(chunk[..<lastSpace])
+                }
+                chunks.append(chunk)
+                remaining = String(remaining.dropFirst(chunk.count))
+                    .trimmingCharacters(in: .whitespaces)
+            }
+        }
+
+        var totalAudio = Data()
+        for (segIdx, chunk) in chunks.enumerated() {
+            let bridge = EdgeTTSBridge()
+            let mp3 = try await withTimeout(seconds: 30, label: "Direct Edge chunk \(segIdx)") {
+                try await bridge.synthesize(text: chunk, voice: voice)
+            }
+            totalAudio.append(mp3)
+            let segData = mp3
+            let capturedChapter = chapterIndex
+            let capturedSeg = segIdx
+            await MainActor.run {
+                globalPlayer.enqueueSegment(
+                    data: segData,
+                    chapterIndex: capturedChapter,
+                    segmentIndex: capturedSeg
+                )
+            }
+            watchdog?.heartbeat()
+        }
+
+        if totalAudio.isEmpty {
+            throw PythonBridgeError.emptyResult
+        }
+        let outURL = cacheRoot.appendingPathComponent("direct_ch\(chapterIndex).mp3")
+        try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+        try totalAudio.write(to: outURL)
     }
 
     /// Polls until either a `client` is available (sidecar ready or

@@ -617,3 +617,55 @@ def test_synthesize_chapter_piper_fallback_failure_combines_errors(tmp_path: Pat
             piper_fallback_lang="en-US",
         )
     assert not out_path.exists()
+
+
+# ---------------------------------------------------------------------------
+# _resolve_auto_voice
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_auto_voice_portuguese():
+    text = (
+        "Ele não sabia o que fazer. Ela estava muito preocupada. Também não entendia para onde ir."
+    )
+    assert ios_entrypoints._resolve_auto_voice(text) == "pt-BR-FranciscaNeural"
+
+
+def test_resolve_auto_voice_english():
+    text = "He did not know what to do. She was very worried about it."
+    assert ios_entrypoints._resolve_auto_voice(text) == "en-US-AriaNeural"
+
+
+def test_resolve_auto_voice_empty():
+    assert ios_entrypoints._resolve_auto_voice("") == "en-US-AriaNeural"
+
+
+# ---------------------------------------------------------------------------
+# synthesize_chapter_streaming with voice="auto"
+# ---------------------------------------------------------------------------
+
+
+def test_streaming_auto_voice_resolves_to_real_voice(tmp_path: Path):
+    """``voice='auto'`` must be resolved before reaching the transport."""
+    transport_calls: list[tuple[str, str]] = []
+
+    def spy_transport(text: str, voice: str) -> bytes:
+        transport_calls.append((text, voice))
+        return b"\xff" * 100
+
+    _edge_transport.set_transport(spy_transport)
+    segments: list[tuple[int, int]] = []
+
+    out_path = tmp_path / "chapter.mp3"
+    ios_entrypoints.synthesize_chapter_streaming(
+        "Hello world. A short test chapter for voice resolution.",
+        "auto",
+        str(out_path),
+        on_segment=lambda data, seg_idx, total: segments.append((seg_idx, len(data))),
+    )
+
+    assert out_path.exists()
+    assert segments, "no segments delivered"
+    for _, voice in transport_calls:
+        assert voice != "auto", "voice='auto' leaked to transport"
+        assert "Neural" in voice

@@ -29,6 +29,7 @@ struct InstantReaderView: View {
     var onRequestPlay: ((Int, String?) -> Void)? = nil
 
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var globalPlayer: AudioPlayer
     @Environment(\.horizontalSizeClass) private var hSize
 
     @State private var currentChapterIndex: Int = 0
@@ -49,6 +50,19 @@ struct InstantReaderView: View {
     @State private var showingPlayMenu = false
     @State private var showingConversionStatus = false
 
+    private var embeddedAudioReady: Bool {
+        settings.useEmbeddedRuntime && globalPlayer.firstSegmentReady
+    }
+
+    private var showTransport: Bool {
+        playerMounted || embeddedAudioReady
+    }
+
+    private var activePlayer: AudioPlayer {
+        if embeddedAudioReady { return globalPlayer }
+        return player
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             content
@@ -58,13 +72,19 @@ struct InstantReaderView: View {
             VStack(spacing: 0) {
                 Divider()
                     .background(readerForeground.opacity(0.15))
-                if hasAudio {
-                    playerBar
-                        .padding(.vertical, 8)
-                } else {
-                    idlePlayerBar
-                        .padding(.vertical, 8)
-                }
+                idlePlayerBar
+                    .frame(height: showTransport ? 0 : nil)
+                    .opacity(showTransport ? 0 : 1)
+                    .clipped()
+                    .allowsHitTesting(!showTransport)
+                    .padding(.vertical, showTransport ? 0 : 8)
+                playerBar
+                    .frame(height: showTransport ? nil : 0)
+                    .opacity(showTransport ? 1 : 0)
+                    .clipped()
+                    .allowsHitTesting(showTransport)
+                    .disabled(!showTransport)
+                    .padding(.vertical, showTransport ? 8 : 0)
             }
             .background(readerBackground.opacity(0.96))
         }
@@ -75,25 +95,32 @@ struct InstantReaderView: View {
                 } label: { Image(systemName: "list.bullet.indent") }
             }
         }
-        .sheet(isPresented: $showingToc) {
-            tocSheet
+        .background {
+            Color.clear.allowsHitTesting(false)
+                .sheet(isPresented: $showingToc) { tocSheet }
         }
-        .sheet(isPresented: $showingConversionStatus) {
-            ConversionStatusSheet(
-                status: player.conversionStatus,
-                bookTitle: fulltext.bookTitle ?? "Book",
-                onCancel: {
-                    showingConversionStatus = false
-                    onRequestAudioRetry()   // caller's cancel/retry handler
-                },
-                onRetry: {
-                    showingConversionStatus = false
-                    onRequestAudioRetry()
+        .background {
+            Color.clear.allowsHitTesting(false)
+                .sheet(isPresented: $showingConversionStatus) {
+                    ConversionStatusSheet(
+                        status: globalPlayer.conversionStatus,
+                        bookTitle: fulltext.bookTitle ?? "Book",
+                        onCancel: {
+                            showingConversionStatus = false
+                            onRequestAudioRetry()
+                        },
+                        onRetry: {
+                            showingConversionStatus = false
+                            onRequestAudioRetry()
+                        }
+                    )
                 }
-            )
         }
         .compatOnChange(of: hasAudio) { isAudioReady in
             if isAudioReady, !playerMounted { mountPlayerIfPossible() }
+        }
+        .compatOnChange(of: globalPlayer.firstSegmentReady) { ready in
+            if ready, settings.useEmbeddedRuntime { wireEmbeddedPositionObservers() }
         }
         .compatOnChange(of: currentChapterIndex) { newIndex in
             reloadCurrentChapter(index: newIndex)
@@ -264,48 +291,43 @@ struct InstantReaderView: View {
 
     @ViewBuilder
     private var playerBar: some View {
-        if playerMounted {
-            VStack(spacing: 8) {
-                // Top row: artwork + title/author + transport
-                HStack(spacing: 12) {
-                    coverArtwork
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+        let ap = activePlayer
+        VStack(spacing: 8) {
+            HStack(spacing: 12) {
+                coverArtwork
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(currentChapterTitle)
-                            .font(.callout.weight(.medium))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(currentChapterTitle)
+                        .font(.callout.weight(.medium))
+                        .lineLimit(1)
+                    if let author = fulltext.bookAuthor, !author.isEmpty {
+                        Text(author)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                             .lineLimit(1)
-                        if let author = fulltext.bookAuthor, !author.isEmpty {
-                            Text(author)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-
-                    transportControls(player: player)
-
-                    Menu {
-                        rateMenu(player: player)
-                        sleepTimerMenu(player: player)
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
-                            .font(.title3)
-                    }
-                    .menuStyle(.borderlessButton)
-                    .fixedSize()
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                scrubber(player: player)
+                transportControls(player: ap)
+
+                Menu {
+                    rateMenu(player: ap)
+                    sleepTimerMenu(player: ap)
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
-            // 20pt internal margin on top of safe-area lateral inset
-            // — keeps artwork, transport buttons, and scrubber thumbs
-            // clear of the notch / Dynamic Island in landscape.
-            .compatHorizontalSafeAreaPadding(20)
-            .padding(.vertical, 4)
+
+            scrubber(player: ap)
         }
+        .compatHorizontalSafeAreaPadding(20)
+        .padding(.vertical, 4)
     }
 
     @ViewBuilder
@@ -491,6 +513,26 @@ struct InstantReaderView: View {
     }
 
     // MARK: - Player wiring
+
+    private func wireEmbeddedPositionObservers() {
+        positionTask?.cancel()
+        positionTask = Task { @MainActor in
+            for await pos in globalPlayer.position {
+                if Task.isCancelled { break }
+                _ = sync.update(positionSeconds: pos)
+                if globalPlayer.currentChapterIndex != currentChapterIndex {
+                    currentChapterIndex = globalPlayer.currentChapterIndex
+                }
+            }
+        }
+        sentenceTask?.cancel()
+        sentenceTask = Task { @MainActor in
+            for await id in sync.currentSentence {
+                if Task.isCancelled { break }
+                self.currentSentenceId = id
+            }
+        }
+    }
 
     private func mountPlayerIfPossible() {
         guard let snap = snapshot, !snap.playableChapters.isEmpty else { return }

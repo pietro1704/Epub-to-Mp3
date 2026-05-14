@@ -126,12 +126,15 @@ struct LibraryView: View {
                 } label: { Image(systemName: "plus.circle.fill") }
             }
         }
-        .fileImporter(
-            isPresented: $showingPicker,
-            allowedContentTypes: Self.acceptedTypes,
-            allowsMultipleSelection: true
-        ) { result in
-            handleImport(result)
+        .background {
+            Color.clear.allowsHitTesting(false)
+                .fileImporter(
+                    isPresented: $showingPicker,
+                    allowedContentTypes: Self.acceptedTypes,
+                    allowsMultipleSelection: true
+                ) { result in
+                    handleImport(result)
+                }
         }
         .alert("Import error",
                isPresented: Binding(

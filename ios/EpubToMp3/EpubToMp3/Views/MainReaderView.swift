@@ -71,26 +71,25 @@ struct MainReaderView: View {
                 currentlyReadingBookID = nil
             }
         }
-        // Player overlay sheet — alternative to navigating to Now Playing
-        // tab. Useful on iPad/macOS where the reader fills the whole split
-        // content column and there is no visible tab bar to tap.
-        .sheet(isPresented: $showingPlayerOverlay) {
-            if let book = currentBook,
-               let jobId = book.lastJobId {
-                let stub = makeStub(for: book, jobId: jobId)
-                PlayerReaderView(
-                    snapshot: stub,
-                    backendBaseURL: settings.resolvedBaseURL
-                )
-                .environmentObject(settings)
-            } else {
-                // Book has no audio yet — direct user to library.
-                CompatContentUnavailableView(
-                    "No audio yet",
-                    systemImage: "headphones",
-                    description: Text("Convert this book first to listen along.")
-                )
-            }
+        .background {
+            Color.clear.allowsHitTesting(false)
+                .sheet(isPresented: $showingPlayerOverlay) {
+                    if let book = currentBook,
+                       let jobId = book.lastJobId {
+                        let stub = makeStub(for: book, jobId: jobId)
+                        PlayerReaderView(
+                            snapshot: stub,
+                            backendBaseURL: settings.resolvedBaseURL
+                        )
+                        .environmentObject(settings)
+                    } else {
+                        CompatContentUnavailableView(
+                            "No audio yet",
+                            systemImage: "headphones",
+                            description: Text("Convert this book first to listen along.")
+                        )
+                    }
+                }
         }
     }
 

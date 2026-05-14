@@ -165,23 +165,24 @@ struct ConvertView: View {
         }
         .navigationTitle("Convert")
         .compatConvertDestination()
-        .fileImporter(
-            isPresented: $showingPicker,
-            allowedContentTypes: Self.acceptedTypes,
-            allowsMultipleSelection: false
-        ) { result in
-            switch result {
-            case .success(let urls):
-                guard let url = urls.first else { return }
-                // Persist sandbox bookmark on macOS so the sidecar
-                // (a separate process) can read the file via its path.
-                #if os(macOS)
-                _ = url.startAccessingSecurityScopedResource()
-                #endif
-                viewModel.selectedFile = url
-            case .failure(let err):
-                viewModel.error = err.localizedDescription
-            }
+        .background {
+            Color.clear.allowsHitTesting(false)
+                .fileImporter(
+                    isPresented: $showingPicker,
+                    allowedContentTypes: Self.acceptedTypes,
+                    allowsMultipleSelection: false
+                ) { result in
+                    switch result {
+                    case .success(let urls):
+                        guard let url = urls.first else { return }
+                        #if os(macOS)
+                        _ = url.startAccessingSecurityScopedResource()
+                        #endif
+                        viewModel.selectedFile = url
+                    case .failure(let err):
+                        viewModel.error = err.localizedDescription
+                    }
+                }
         }
     }
 }

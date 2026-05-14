@@ -91,6 +91,42 @@ def _first_chunk_chars() -> int:
     return max(10, min(value, 2_000))
 
 
+def _resolve_auto_voice(text: str) -> str:
+    """Map ``"auto"`` to a concrete Edge-TTS voice name based on the text
+    language. Mirrors the logic in ``convert_epub`` (line ~710) but works
+    per-chunk without access to the EbookReader.
+    """
+    sample = text[:2000].lower()
+    pt_markers = sum(
+        1
+        for w in (
+            "não",
+            "são",
+            "está",
+            "também",
+            "então",
+            "já",
+            "você",
+            "isso",
+            "mais",
+            "como",
+            "para",
+            "quando",
+            "sobre",
+            "ele",
+            "ela",
+            "muito",
+            "onde",
+            "ainda",
+            "depois",
+        )
+        if w in sample
+    )
+    if pt_markers >= 3:
+        return "pt-BR-FranciscaNeural"
+    return "en-US-AriaNeural"
+
+
 def _split_into_chunks(text: str, max_chars: int) -> List[str]:
     """Paragraph-aware char-bounded chunker. Splits on double newlines
     first, then on sentence boundaries, then hard-wraps as a last
@@ -173,6 +209,9 @@ def synthesize_chapter_via_transport(
     need true container-level concat we can swap to ``ffmpeg -f
     concat`` here without touching the Swift side.
     """
+    if (voice or "auto").strip().lower() == "auto":
+        voice = _resolve_auto_voice(text)
+
     chunks = _split_into_chunks(text, _chunk_chars())
     if not chunks:
         raise RuntimeError("ios_entrypoints: empty input text")
@@ -267,6 +306,9 @@ def synthesize_chapter_streaming(
     text = (text or "").strip()
     if not text:
         raise RuntimeError("ios_entrypoints: empty input text")
+
+    if (voice or "auto").strip().lower() == "auto":
+        voice = _resolve_auto_voice(text)
 
     first_size = _first_chunk_chars()
     normal_size = _chunk_chars()

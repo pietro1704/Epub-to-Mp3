@@ -106,12 +106,15 @@ struct LibrarySidebar: View {
                 .accessibilityIdentifier("library.importButton")
             }
         }
-        .fileImporter(
-            isPresented: $showingPicker,
-            allowedContentTypes: Self.acceptedTypes,
-            allowsMultipleSelection: true
-        ) { result in
-            handleImport(result)
+        .background {
+            Color.clear.allowsHitTesting(false)
+                .fileImporter(
+                    isPresented: $showingPicker,
+                    allowedContentTypes: Self.acceptedTypes,
+                    allowsMultipleSelection: true
+                ) { result in
+                    handleImport(result)
+                }
         }
         .alert("Import error",
                isPresented: Binding(

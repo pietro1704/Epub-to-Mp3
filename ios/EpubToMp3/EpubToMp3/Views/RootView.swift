@@ -105,15 +105,12 @@ struct TabRoot: View {
             .tag(RootTab.settings)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showMiniPlayer {
-                MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
-                    .transition(
-                        reduceMotion
-                            ? .opacity
-                            : .move(edge: .bottom).combined(with: .opacity)
-                    )
-                    .accessibilityIdentifier("miniPlayer.tabBar")
-            }
+            MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
+                .frame(height: showMiniPlayer ? nil : 0)
+                .opacity(showMiniPlayer ? 1 : 0)
+                .clipped()
+                .accessibilityIdentifier("miniPlayer.tabBar")
+                .accessibilityHidden(!showMiniPlayer)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showMiniPlayer)
     }
