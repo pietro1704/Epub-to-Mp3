@@ -18,6 +18,20 @@ import zlib
 /// the caller treats missing metadata as best-effort.
 enum ZipReader {
 
+    /// List all file names in the archive (for font / asset discovery).
+    static func listEntries(in archiveURL: URL) -> [String]? {
+        guard let archive = try? Data(contentsOf: archiveURL,
+                                       options: [.alwaysMapped]) else {
+            return nil
+        }
+        guard let cd = locateCentralDirectory(in: archive) else {
+            return nil
+        }
+        return parseCentralDirectory(archive: archive,
+                                      offset: cd.offset,
+                                      count: cd.entryCount).map(\.name)
+    }
+
     /// Extract a single named entry from the archive. Returns nil if
     /// the entry doesn't exist or its compression method is unsupported.
     static func extract(member: String, from archiveURL: URL) -> Data? {

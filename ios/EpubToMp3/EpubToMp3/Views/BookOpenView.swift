@@ -53,6 +53,7 @@ struct BookOpenView: View {
     /// toolbar action like "Listen" without re-opening the file.
     @State private var pdfDocument: PDFDocument?
     @State private var pdfPageIndex: Int = 0
+    @State private var registeredFontURLs: [URL] = []
 
     enum Phase: Equatable {
         case resolving
@@ -113,11 +114,9 @@ struct BookOpenView: View {
             streamTask?.cancel()
             watchdog?.stop()
             watchdog = nil
-            // Guarantee the global player never gets stuck in "isConverting"
-            // when the user backs out of the reader mid-job. The book may
-            // still be processing in the background, but `BookOpenView` no
-            // longer owns the UI signal for it.
             globalPlayer.clearConversionState()
+            EpubFontManager.unregisterFonts(registeredFontURLs)
+            registeredFontURLs = []
         }
         .fileImporter(
             isPresented: $showingPicker,
@@ -153,6 +152,16 @@ struct BookOpenView: View {
         } catch {
             phase = .error(error.localizedDescription)
             return
+        }
+
+        if book.fileType == .epub {
+            let capturedURL = fileURL
+            let fonts = await Task.detached(priority: .userInitiated) {
+                let accessing = capturedURL.startAccessingSecurityScopedResource()
+                defer { if accessing { capturedURL.stopAccessingSecurityScopedResource() } }
+                return EpubFontManager.registerFonts(from: capturedURL)
+            }.value
+            self.registeredFontURLs = fonts
         }
 
         // PDF path: PDFKit is fully on-device; no Python parse needed.
@@ -214,51 +223,18 @@ struct BookOpenView: View {
             self.fulltext = cached
             self.phase = .ready
         } else {
-            // 3. No cache → parse on-device. On iOS this hops into
-            //    the embedded Python interpreter and runs the same
-            //    `ebook_reader.parse_epub_to_dict` the backend uses,
-            //    so the iOS app and the sidecar/HF server always
-            //    agree on chapter boundaries.
-            #if os(iOS) || targetEnvironment(simulator)
-            // On a real device, `fileURL` is a security-scoped URL
-            // resolved from a bookmark. Without `startAccessing…`
-            // the file is visible in the directory listing but
-            // read(2) / open(2) return EPERM — the sandbox denies
-            // access. The simulator runs without the full iOS
-            // sandbox, so reads succeed even without the scope,
-            // masking this failure in every Simulator run.
             let accessing = fileURL.startAccessingSecurityScopedResource()
             defer { if accessing { fileURL.stopAccessingSecurityScopedResource() } }
 
-            // Two-tier parse: prefer the canonical Python pipeline
-            // (TOC-aware, hierarchy-preserving) but fall back to a
-            // pure-Swift spine-walker when the Python embed is not
-            // yet bootstrapped, when an EPUB uses an OPF dialect the
-            // canonical parser rejects, or when PythonKit traps.
-            // Either path produces an EbookFulltext the reader can
-            // render — we only surface "unreadable" if both fail.
             var parsed: EbookFulltext?
             do {
                 parsed = try await PythonBridge.shared.parseEpub(
                     at: fileURL, bookId: book.id
                 )
-            } catch is TimeoutError {
-                // Resilience: a 30-second-stuck Python parse means the
-                // interpreter is wedged (rare, but observed when a giant
-                // OPF spine pegs CPU). Fall through to the pure-Swift
-                // walker so the reader still opens — never leave the
-                // user staring at "Opening…".
-                parsed = nil
             } catch {
                 parsed = nil
             }
             if parsed == nil || (parsed?.chapters.isEmpty ?? true) {
-                // Pure-Swift ZIP + XML walker for the EPUB. Cheap on
-                // small books, but `Data(contentsOf:)` + XMLParser can
-                // burn 100-500 ms on a 600-page tome. Hop off the main
-                // actor so the gesture gate stays responsive — staying
-                // on it produces "Gesture: System gesture gate timed
-                // out" syslog entries and a frozen UI.
                 let capturedURL = fileURL
                 let capturedBookId = book.id
                 let fallback: EbookFulltext = await Task.detached(
@@ -279,51 +255,9 @@ struct BookOpenView: View {
                     LocalFulltextCache.save(parsed, bookId: book.id)
                 }
             } else {
-                // Both parsers came back empty — DRM-locked file or
-                // truly malformed EPUB. NOT a backend issue: parsing
-                // is fully local in this app. Show the soft-failure
-                // surface so the user can see the file path and
-                // re-pick if needed.
                 phase = .unreadable(fileURL)
                 return
             }
-            #else
-            // macOS: try the Python subprocess first, fall back to
-            // the pure-Swift parser when python_app isn't in the bundle
-            // (Debug builds without PyInstaller sidecar).
-            var macParsed: EbookFulltext?
-            do {
-                macParsed = try await MacEpubParser.parse(
-                    at: fileURL, bookId: book.id
-                )
-            } catch {
-                macParsed = nil
-            }
-            if macParsed == nil || (macParsed?.chapters.isEmpty ?? true) {
-                let capturedURL = fileURL
-                let capturedBookId = book.id
-                let fallback: EbookFulltext = await Task.detached(
-                    priority: .userInitiated
-                ) {
-                    EpubFallbackParser.parse(
-                        url: capturedURL, bookId: capturedBookId
-                    )
-                }.value
-                if !fallback.chapters.isEmpty {
-                    macParsed = fallback
-                }
-            }
-            if let macParsed, !macParsed.chapters.isEmpty {
-                self.fulltext = macParsed
-                self.phase = .ready
-                Task.detached(priority: .background) {
-                    LocalFulltextCache.save(macParsed, bookId: book.id)
-                }
-            } else {
-                phase = .unreadable(fileURL)
-                return
-            }
-            #endif
         }
 
         // 4. Reader is on screen. Audio bootstrap is *not* triggered
@@ -378,25 +312,13 @@ struct BookOpenView: View {
         wd.start()
         watchdog = wd
 
-        #if os(iOS) || targetEnvironment(simulator)
-        // On iOS the embedded runtime is authoritative when enabled —
-        // ignore any persisted `backendURL` (e.g. a legacy
-        // `http://localhost:8000` from before the default was emptied)
-        // because there is no loopback server in the iPhone sandbox and
-        // attempting the SSE path floods the syslog with
-        // `Connection refused` while leaving the reader hung.
         if settings.useEmbeddedRuntime {
-            playerLog.debug("[AudioBootstrap] iOS embedded path selected (hasClient=\(self.client != nil))")
-            // Streaming runs at .utility — TTS synthesis is CPU-heavy and
-            // long-running; keeping it off the default-priority pool
-            // prevents it from starving UI-driven Tasks and matches Apple
-            // HIG guidance for "user-initiated but background" work.
+            playerLog.debug("[AudioBootstrap] embedded path selected (hasClient=\(self.client != nil))")
             audioBootstrapTask = Task(priority: .utility) {
                 await self.bootstrapEmbedded(chapterIndex: startChapterIndex)
             }
             return
         }
-        #endif
 
         audioBootstrapTask = Task {
             await self.waitForBackendThenBootstrap()
@@ -414,7 +336,6 @@ struct BookOpenView: View {
     /// main actor — first audio lands within ~500 ms, satisfying HIG
     /// time-to-first-byte. The per-chapter output MP3 is written to the
     /// app's cache directory so subsequent opens reuse it.
-    #if os(iOS) || targetEnvironment(simulator)
     private func bootstrapEmbedded(chapterIndex startIndex: Int) async {
         playerLog.debug("[AudioBootstrap] bootstrapEmbedded starting at chapter \(startIndex)")
 
@@ -565,7 +486,6 @@ struct BookOpenView: View {
         }
         playerLog.debug("[AudioBootstrap] bootstrapEmbedded finished, \(chaptersDone)/\(chapters.count) chapters done")
     }
-    #endif
 
     /// Polls until either a `client` is available (sidecar ready or
     /// remote URL configured) or the user has waited 2 minutes —
@@ -638,12 +558,6 @@ struct BookOpenView: View {
         opts.engine = "edge"
         opts.maxPerformance = true
         do {
-            #if os(macOS)
-            let response = try await client.submitConversion(localPath: fileURL, options: opts)
-            #else
-            // On a real iOS device the file URL is a security-scoped
-            // bookmark URL; we must call startAccessingSecurityScopedResource
-            // before any read syscall and stop immediately after.
             let scopeStarted = fileURL.startAccessingSecurityScopedResource()
             let epubData: Data
             do {
@@ -657,7 +571,6 @@ struct BookOpenView: View {
                 uploadedFile: (epubData, fileURL.lastPathComponent),
                 options: opts
             )
-            #endif
             await MainActor.run {
                 var updated = self.book
                 updated.lastJobId = response.jobId

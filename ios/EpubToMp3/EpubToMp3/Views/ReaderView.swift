@@ -387,7 +387,6 @@ struct ReaderView: View {
                         // Without `.allowsHitTesting(true)` here, the
                         // text body's hit-testing wins on macOS.
                         .overlay(tapZones(totalPages: pages.count))
-                        #if os(iOS)
                         .gesture(
                             DragGesture(minimumDistance: 30)
                                 .onEnded { value in
@@ -398,7 +397,6 @@ struct ReaderView: View {
                                     }
                                 }
                         )
-                        #endif
 
                     pageFooter(index: pageIndex, total: pages.count)
                         .padding(.bottom, 8)
@@ -412,12 +410,6 @@ struct ReaderView: View {
             .compatOnKeyPressArrowsAndPaging { key in
                 handleCompatKey(key, totalPages: pages.count)
             }
-            #if os(macOS)
-            .modifier(ScrollWheelPager(
-                onPrev: { retreatPage() },
-                onNext: { advancePage(totalPages: pages.count) }
-            ))
-            #endif
         }
         .compatHorizontalSafeAreaPadding(0)
     }
@@ -451,7 +443,6 @@ struct ReaderView: View {
         if let attr = renderedAttributed,
            let slice = slicedAttributed(from: attr, pages: pages, pageIndex: pageIndex) {
             Text(slice)
-                .font(bodyFont)
                 .lineSpacing(settings.readerLineSpacing)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -574,8 +565,7 @@ struct ReaderView: View {
     @ViewBuilder
     private func sentenceRow(_ span: SentenceSpan) -> some View {
         let isActive = (span.id == currentSentenceId)
-        Text(span.text)
-            .font(bodyFont)
+        sentenceText(span)
             .lineSpacing(settings.readerLineSpacing)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -587,6 +577,31 @@ struct ReaderView: View {
             )
             .contentShape(Rectangle())
             .onTapGesture { onJumpToSentence?(span) }
+    }
+
+    @ViewBuilder
+    private func sentenceText(_ span: SentenceSpan) -> some View {
+        if let attr = renderedAttributed,
+           let slice = slicedSentence(from: attr, span: span) {
+            Text(slice)
+        } else {
+            Text(span.text)
+                .font(bodyFont)
+        }
+    }
+
+    private func slicedSentence(
+        from attr: AttributedString,
+        span: SentenceSpan
+    ) -> AttributedString? {
+        let chars = attr.characters
+        let total = chars.count
+        guard span.startChar < total else { return nil }
+        let endOffset = min(total, span.endChar)
+        guard span.startChar < endOffset else { return nil }
+        let startIdx = chars.index(chars.startIndex, offsetBy: span.startChar)
+        let endIdx = chars.index(chars.startIndex, offsetBy: endOffset)
+        return AttributedString(attr[startIdx..<endIdx])
     }
 
     // MARK: Typography
@@ -716,63 +731,12 @@ struct ReaderView: View {
     }
 
     private func rgbComponents(of color: Color) -> (Double, Double, Double) {
-        #if canImport(UIKit)
         let ui = UIColor(color)
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         ui.getRed(&r, green: &g, blue: &b, alpha: &a)
         return (Double(r), Double(g), Double(b))
-        #elseif canImport(AppKit)
-        let ns = NSColor(color).usingColorSpace(.sRGB) ?? NSColor.white
-        return (Double(ns.redComponent), Double(ns.greenComponent), Double(ns.blueComponent))
-        #else
-        return (1, 1, 1)
-        #endif
     }
 }
-
-#if os(macOS)
-import AppKit
-
-/// Wraps an NSView that captures scroll-wheel events so vertical
-/// scroll gestures advance/back the paginated reader. Without this
-/// SwiftUI's built-in gestures only respond to drag, not wheel.
-struct ScrollWheelPager: ViewModifier {
-    let onPrev: () -> Void
-    let onNext: () -> Void
-
-    func body(content: Content) -> some View {
-        content.background(ScrollWheelView(onPrev: onPrev, onNext: onNext))
-    }
-
-    private struct ScrollWheelView: NSViewRepresentable {
-        let onPrev: () -> Void
-        let onNext: () -> Void
-
-        func makeNSView(context: Context) -> NSView { ScrollWheelNSView(onPrev: onPrev, onNext: onNext) }
-        func updateNSView(_ nsView: NSView, context: Context) {}
-    }
-
-    private final class ScrollWheelNSView: NSView {
-        let onPrev: () -> Void
-        let onNext: () -> Void
-        private var lastFire: Date = .distantPast
-
-        init(onPrev: @escaping () -> Void, onNext: @escaping () -> Void) {
-            self.onPrev = onPrev
-            self.onNext = onNext
-            super.init(frame: .zero)
-        }
-        required init?(coder: NSCoder) { fatalError() }
-        override func scrollWheel(with event: NSEvent) {
-            // Throttle so a single trackpad swipe doesn't blast through pages.
-            guard Date().timeIntervalSince(lastFire) > 0.18 else { return }
-            let dy = event.scrollingDeltaY
-            if dy < -3 { onNext(); lastFire = Date() }
-            else if dy > 3 { onPrev(); lastFire = Date() }
-        }
-    }
-}
-#endif
 
 #if DEBUG
 #Preview("Reader — light scrolling") {

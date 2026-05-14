@@ -42,7 +42,20 @@ enum EpubFallbackParser {
             }
         }
 
-        // 4. Resolve each spine idref to its href and extract.
+        // 4. Extract all CSS files from the manifest so the HTML
+        //    renderer can honour the EPUB's own typography.
+        let combinedCSS: String? = {
+            let parts: [String] = opfInfo.manifest.compactMap { (idref, href) in
+                guard opfInfo.manifestMediaTypes[idref] == "text/css" else { return nil }
+                let cssPath = opfDir.isEmpty ? href : "\(opfDir)/\(href)"
+                guard let data = ZipReader.extract(member: cssPath, from: url),
+                      let text = String(data: data, encoding: .utf8) else { return nil }
+                return text
+            }
+            return parts.isEmpty ? nil : parts.joined(separator: "\n\n")
+        }()
+
+        // 5. Resolve each spine idref to its href and extract.
         var chapters: [EbookFulltext.Chapter] = []
         var index = 1
         for idref in opfInfo.spineOrder {
@@ -61,7 +74,7 @@ enum EpubFallbackParser {
                 name: name,
                 text: text,
                 html: html,
-                css: nil,
+                css: combinedCSS,
                 charCount: text.count,
                 segments: nil
             ))
