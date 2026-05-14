@@ -517,11 +517,20 @@ struct InstantReaderView: View {
     private func wireEmbeddedPositionObservers() {
         positionTask?.cancel()
         positionTask = Task { @MainActor in
+            var timingRecalibrated = false
             for await pos in globalPlayer.position {
                 if Task.isCancelled { break }
+                if !timingRecalibrated && globalPlayer.durationSeconds > 0 {
+                    if let chapter = resolveChapter(at: currentChapterIndex) {
+                        sync.load(chapter: chapter,
+                                  chapterDurationSeconds: globalPlayer.durationSeconds)
+                    }
+                    timingRecalibrated = true
+                }
                 _ = sync.update(positionSeconds: pos)
                 if globalPlayer.currentChapterIndex != currentChapterIndex {
                     currentChapterIndex = globalPlayer.currentChapterIndex
+                    timingRecalibrated = false
                 }
             }
         }

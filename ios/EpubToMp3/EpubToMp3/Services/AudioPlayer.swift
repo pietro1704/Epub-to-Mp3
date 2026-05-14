@@ -177,6 +177,12 @@ final class AudioPlayer: ObservableObject {
     private var lastNowPlayingUpdate: Date = .distantPast
     private var audioSessionConfigured = false
 
+    // Segment-mode cumulative position tracking: AVQueuePlayer reports
+    // per-item position, but SyncEngine needs chapter-relative time.
+    private var isSegmentMode = false
+    private var segmentChapterIndex: Int = -1
+    private var segmentCumulativeBase: TimeInterval = 0
+
     init(resumeStore: ResumeStore = ResumeStore(), backendBaseURL: URL? = nil) {
         self.resumeStore = resumeStore
         self.backendBaseURL = backendBaseURL
@@ -225,6 +231,8 @@ final class AudioPlayer: ObservableObject {
         ensureAudioSession()
         audioLog.debug("[play] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
         teardownPlayer()
+        isSegmentMode = false
+        segmentCumulativeBase = 0
         self.snapshot = snapshot
 
         let chapters = snapshot.playableChapters
@@ -328,9 +336,11 @@ final class AudioPlayer: ObservableObject {
     }
 
     func nextChapter() {
-        guard let player, let snapshot else { return }
-        let chapters = snapshot.playableChapters
-        guard currentChapterIndex + 1 < chapters.count else { return }
+        guard let player else { return }
+        if let snapshot {
+            let chapters = snapshot.playableChapters
+            guard currentChapterIndex + 1 < chapters.count else { return }
+        }
         player.advanceToNextItem()
         currentChapterIndex += 1
         positionSeconds = 0
@@ -339,18 +349,19 @@ final class AudioPlayer: ObservableObject {
     }
 
     func previousChapter() {
-        // AVQueuePlayer doesn't support backwards traversal natively. If we're
-        // > 3s into the current chapter, treat "previous" as a restart;
-        // otherwise rebuild the queue starting at index-1.
         if positionSeconds > 3 {
             seek(to: 0)
             return
         }
-        guard let snapshot, currentChapterIndex > 0 else {
+        guard currentChapterIndex > 0 else {
             seek(to: 0)
             return
         }
-        play(snapshot: snapshot, startingAt: currentChapterIndex - 1)
+        if let snapshot {
+            play(snapshot: snapshot, startingAt: currentChapterIndex - 1)
+        } else {
+            seek(to: 0)
+        }
     }
 
     func setRate(_ rate: PlaybackRate) {
@@ -414,6 +425,13 @@ final class AudioPlayer: ObservableObject {
         }
 
         let item = AVPlayerItem(url: segFile)
+
+        isSegmentMode = true
+        if chapterIndex != segmentChapterIndex {
+            segmentCumulativeBase = 0
+            segmentChapterIndex = chapterIndex
+            currentChapterIndex = chapterIndex
+        }
 
         if player == nil {
             // No player yet — create one with this first item and start.
@@ -543,7 +561,10 @@ final class AudioPlayer: ObservableObject {
         timeObserverToken = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             Task { @MainActor in
                 guard let self else { return }
-                self.positionSeconds = time.seconds.isFinite ? time.seconds : 0
+                let rawTime = time.seconds.isFinite ? time.seconds : 0
+                self.positionSeconds = self.isSegmentMode
+                    ? self.segmentCumulativeBase + rawTime
+                    : rawTime
                 if let item = player.currentItem {
                     let dur = item.duration.seconds
                     self.durationSeconds = dur.isFinite ? dur : 0
@@ -565,9 +586,17 @@ final class AudioPlayer: ObservableObject {
             forName: .AVPlayerItemDidPlayToEndTime,
             object: nil,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
             Task { @MainActor in
-                guard let self, let snapshot = self.snapshot else { return }
+                guard let self else { return }
+
+                if self.isSegmentMode,
+                   let finished = notification.object as? AVPlayerItem {
+                    let dur = finished.duration.seconds
+                    if dur.isFinite { self.segmentCumulativeBase += dur }
+                }
+
+                guard let snapshot = self.snapshot else { return }
                 let chapters = snapshot.playableChapters
                 if self.currentChapterIndex + 1 < chapters.count {
                     self.currentChapterIndex += 1

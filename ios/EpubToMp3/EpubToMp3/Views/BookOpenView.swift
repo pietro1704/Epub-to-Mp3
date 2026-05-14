@@ -362,14 +362,19 @@ struct BookOpenView: View {
             .appendingPathComponent("epub2mp3-tts/\(book.id)", isDirectory: true)
 
         let voice: String = {
-            let sample = chapters.prefix(3)
-                .map { $0.text.prefix(500) }
+            let sample = chapters
+                .filter { $0.text.count > 50 }
+                .prefix(5)
+                .map { $0.text.prefix(1000) }
                 .joined(separator: " ")
                 .lowercased()
             let ptMarkers = ["não", "são", "está", "também", "então",
-                             "você", "isso", "mais", "para", "quando"]
+                             "você", "isso", "mais", "para", "quando",
+                             "uma", "como", "ele", "ela", "seu", "sua",
+                             "dos", "das", "nos", "nas", "pelo", "pela",
+                             "havia", "muito", "onde", "ainda", "já"]
             let hits = ptMarkers.filter { sample.contains($0) }.count
-            return hits >= 3 ? "pt-BR-FranciscaNeural" : "en-US-AriaNeural"
+            return hits >= 2 ? "pt-BR-FranciscaNeural" : "en-US-AriaNeural"
         }()
 
         // Process from startIndex, then wrap to cover earlier chapters.
@@ -537,7 +542,8 @@ struct BookOpenView: View {
         var totalAudio = Data()
         for (segIdx, chunk) in chunks.enumerated() {
             let bridge = EdgeTTSBridge()
-            let mp3 = try await withTimeout(seconds: 30, label: "Direct Edge chunk \(segIdx)") {
+            let chunkTimeout = max(30.0, Double(chunk.count) / 150.0)
+            let mp3 = try await withTimeout(seconds: chunkTimeout, label: "Direct Edge chunk \(segIdx)") {
                 try await bridge.synthesize(text: chunk, voice: voice)
             }
             totalAudio.append(mp3)
