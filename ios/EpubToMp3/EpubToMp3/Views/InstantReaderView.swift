@@ -166,19 +166,24 @@ struct InstantReaderView: View {
         "dedicatória", "dedicatoria", "epígrafe", "epigrafe",
     ]
 
+    private func isLikelyFrontMatter(_ ch: EbookFulltext.Chapter, arrayIndex: Int) -> Bool {
+        let name = (ch.name ?? "").lowercased()
+        if Self.frontMatterNames.contains(where: { name.contains($0) }) { return true }
+        let text = ch.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if arrayIndex < 8, text.count < 500, name.hasPrefix("Chapter ") { return true }
+        return false
+    }
+
     private var firstReadableChapterIndex: Int {
-        if let first = fulltext.chapters.first(where: { ch in
+        for (i, ch) in fulltext.chapters.enumerated() {
             let text = ch.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard text.count >= 10 else { return false }
-            let name = (ch.name ?? "").lowercased()
-            return !Self.frontMatterNames.contains(where: { name.contains($0) })
-        }) {
-            return max(0, first.index - 1)
+            guard text.count >= 10 else { continue }
+            if !isLikelyFrontMatter(ch, arrayIndex: i) { return i }
         }
-        if let first = fulltext.chapters.first(where: {
+        if let first = fulltext.chapters.firstIndex(where: {
             $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
         }) {
-            return max(0, first.index - 1)
+            return first
         }
         return 0
     }
