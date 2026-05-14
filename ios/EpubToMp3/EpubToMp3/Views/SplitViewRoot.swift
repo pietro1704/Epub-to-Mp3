@@ -214,12 +214,10 @@ struct SplitViewRoot: View {
     @ViewBuilder
     private var detailColumn: some View {
         switch navMode {
-        case .reader, .jobs, .settings:
-            Color.clear
-                .frame(width: 0)
-                .navigationSplitViewColumnWidth(min: 0, ideal: 0, max: 0)
         case .library:
             libraryDetailColumn
+        default:
+            Text("")
         }
     }
 
