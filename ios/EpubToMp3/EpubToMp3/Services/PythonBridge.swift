@@ -48,14 +48,11 @@ enum PythonBridgeError: Error, LocalizedError {
 final class PythonBridge: @unchecked Sendable {
     static let shared = PythonBridge()
 
-    /// Single-threaded executor for every PythonKit call. A plain
-    /// ``DispatchQueue`` — even a serial one — schedules blocks onto
-    /// arbitrary kernel threads from the global pool, and PythonKit
-    /// does not acquire the CPython GIL on entry. The resulting thread
-    /// hop tripped ``_PyObject_Malloc`` / ``PyImport_ImportModule``
-    /// into bad-access crashes. ``PythonRunner`` pins every Python
-    /// call to a dedicated kernel thread for the process lifetime.
-    private let queue = PythonRunner.shared
+    /// Single-threaded executor for every PythonKit call. Pins every
+    /// Python call to a dedicated kernel thread for the process lifetime
+    /// (actors can't do this — they guarantee mutual exclusion, not
+    /// thread affinity, and custom executors need iOS 17+).
+    private let runner = PythonRunner.shared
 
     /// Cached `python_app.src.ios_entrypoints` module handle. Without
     /// this cache every chapter synthesis re-runs `attemptImport`,
@@ -85,29 +82,12 @@ final class PythonBridge: @unchecked Sendable {
     /// - Throws: `PythonBridgeError` if bootstrap, parse, or JSON
     ///   decode fails.
     func parseEpub(at fileURL: URL, bookId: String) async throws -> EbookFulltext {
-        // Resilience: wrap the PythonKit call in a 30 s deadline. The
-        // canonical parser handles a 600-page EPUB in ~2-4 s on an
-        // iPhone 12; 30 s is a generous-but-bounded ceiling that turns a
-        // wedged interpreter into a recoverable error instead of an
-        // infinite spinner. Caller (``BookOpenView``) catches the
-        // ``TimeoutError`` and falls back to ``EpubFallbackParser``.
-        // `bootstrap()` runs Py_Initialize + module imports + transport
-        // installation — multi-hundred-ms on first call. Run it on the
-        // dedicated queue so we never block the main actor during open.
-        return try await withTimeout(seconds: 30, label: "EPUB parse") {
-            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<EbookFulltext, Error>) in
-                self.queue.async {
-                    do {
-                        try PythonEmbed.shared.bootstrap()
-                        let result = try self.parseEpubSync(
-                            path: fileURL.path, bookId: bookId
-                        )
-                        cont.resume(returning: result)
-                    } catch {
-                        cont.resume(throwing: error)
-                    }
-                }
-            }
+        // 30 s deadline via PythonRunner's one-resume gate (not
+        // `withTimeout`, which deadlocks around continuations — see
+        // PythonRunner.callAsync(timeout:) doc).
+        try await runner.callAsync(timeout: 30, label: "EPUB parse") {
+            try PythonEmbed.shared.bootstrap()
+            return try self.parseEpubSync(path: fileURL.path, bookId: bookId)
         }
     }
 
@@ -178,21 +158,11 @@ final class PythonBridge: @unchecked Sendable {
     func convertChapter(
         text: String, voice: String, outputDir: URL
     ) async throws -> URL {
-        // Bootstrap on the worker queue — see notes on `parseEpub` and
-        // `convertChapterStreaming`. Calling on the main actor stalls
-        // the first chapter press.
-        return try await withCheckedThrowingContinuation { cont in
-            queue.async {
-                do {
-                    try PythonEmbed.shared.bootstrap()
-                    let url = try self.convertChapterSync(
-                        text: text, voice: voice, outputDir: outputDir
-                    )
-                    cont.resume(returning: url)
-                } catch {
-                    cont.resume(throwing: error)
-                }
-            }
+        try await runner.callAsync {
+            try PythonEmbed.shared.bootstrap()
+            return try self.convertChapterSync(
+                text: text, voice: voice, outputDir: outputDir
+            )
         }
     }
 
@@ -218,15 +188,15 @@ final class PythonBridge: @unchecked Sendable {
             )
         }
 
-        // `synthesize_chapter_via_transport(text, voice, out_path) -> str`.
-        // PythonKit traps on a raised Python exception; the Swift caller
-        // sees a runtime crash if Edge fails, which matches the existing
-        // PythonBridge.parseEpub contract. We surface a wrapped error
-        // only for missing-file / decode-style issues we can detect
-        // from Swift.
-        _ = entry.synthesize_chapter_via_transport(
-            text, voice, outURL.path
-        )
+        do {
+            _ = try entry.synthesize_chapter_via_transport.throwing.dynamicallyCall(
+                withArguments: [text, voice, outURL.path]
+            )
+        } catch {
+            throw PythonBridgeError.convertFailed(
+                "synthesize_chapter_via_transport: \(error)"
+            )
+        }
 
         guard FileManager.default.fileExists(atPath: outURL.path) else {
             throw PythonBridgeError.parseFailed(
@@ -265,26 +235,17 @@ final class PythonBridge: @unchecked Sendable {
         chapterIndex: Int,
         onSegment: @MainActor @escaping (Data, Int, Int) -> Void
     ) async throws -> URL {
-        // `bootstrap()` is Py_Initialize + module imports + transport
-        // wiring — observably hundreds of ms on first invocation. Run it
-        // on the dedicated queue rather than the calling actor so the
-        // first chapter press never freezes the UI.
-        return try await withCheckedThrowingContinuation { cont in
-            queue.async {
-                do {
-                    try PythonEmbed.shared.bootstrap()
-                    let url = try self.convertChapterStreamingSync(
-                        text: text,
-                        voice: voice,
-                        outputDir: outputDir,
-                        chapterIndex: chapterIndex,
-                        onSegment: onSegment
-                    )
-                    cont.resume(returning: url)
-                } catch {
-                    cont.resume(throwing: error)
-                }
-            }
+        guard PythonEmbed.shared.isBootstrapComplete else {
+            throw PythonBridgeError.bootstrapFailed("interpreter not ready yet")
+        }
+        return try await runner.callAsync {
+            try self.convertChapterStreamingSync(
+                text: text,
+                voice: voice,
+                outputDir: outputDir,
+                chapterIndex: chapterIndex,
+                onSegment: onSegment
+            )
         }
     }
 
@@ -342,9 +303,15 @@ final class PythonBridge: @unchecked Sendable {
             return Python.None
         }
 
-        _ = entry.synthesize_chapter_streaming(
-            text, voice, outURL.path, callback
-        )
+        do {
+            _ = try entry.synthesize_chapter_streaming.throwing.dynamicallyCall(
+                withArguments: [text, voice, outURL.path, callback.pythonObject]
+            )
+        } catch {
+            throw PythonBridgeError.convertFailed(
+                "synthesize_chapter_streaming: \(error)"
+            )
+        }
 
         guard FileManager.default.fileExists(atPath: outURL.path) else {
             throw PythonBridgeError.parseFailed(
@@ -527,23 +494,15 @@ final class PythonBridge: @unchecked Sendable {
         voice: String = "auto",
         options: ConvertOptions = .default
     ) async throws -> ConvertResult {
-        // Bootstrap on the worker queue — see notes on `parseEpub`.
-        return try await withCheckedThrowingContinuation { cont in
-            queue.async {
-                do {
-                    try PythonEmbed.shared.bootstrap()
-                    let result = try self.convertEpubSync(
-                        epubURL: epubURL,
-                        outputDir: outputDir,
-                        cacheDir: cacheDir,
-                        voice: voice,
-                        options: options
-                    )
-                    cont.resume(returning: result)
-                } catch {
-                    cont.resume(throwing: error)
-                }
-            }
+        try await runner.callAsync {
+            try PythonEmbed.shared.bootstrap()
+            return try self.convertEpubSync(
+                epubURL: epubURL,
+                outputDir: outputDir,
+                cacheDir: cacheDir,
+                voice: voice,
+                options: options
+            )
         }
     }
 

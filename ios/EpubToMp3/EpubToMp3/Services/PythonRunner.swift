@@ -75,6 +75,51 @@ final class PythonRunner: @unchecked Sendable {
         return try outcome.get()
     }
 
+    // MARK: - Swift Concurrency bridge
+
+    /// Await `block` on the dedicated Python thread. Replaces the
+    /// manual `withCheckedThrowingContinuation { cont in self.async { … } }`
+    /// boilerplate at every call site.
+    func callAsync<T>(_ block: @escaping () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { cont in
+            self.async {
+                cont.resume(with: Result { try block() })
+            }
+        }
+    }
+
+    /// ``callAsync`` with a wall-clock deadline. When `timeout` elapses
+    /// before the block returns, the continuation resumes with
+    /// ``TimeoutError`` and the block's result is silently discarded.
+    ///
+    /// This solves the ``withTimeout`` + ``withCheckedThrowingContinuation``
+    /// deadlock: ``withThrowingTaskGroup`` can never exit when its
+    /// continuation-based child hasn't resumed yet. Here, the one-resume
+    /// gate guarantees exactly one side wins.
+    func callAsync<T>(timeout seconds: TimeInterval, label: String = "PythonRunner", _ block: @escaping () throws -> T) async throws -> T {
+        try await withCheckedThrowingContinuation { cont in
+            let gate = NSLock()
+            var resumed = false
+
+            self.async {
+                let result = Result { try block() }
+                gate.lock()
+                guard !resumed else { gate.unlock(); return }
+                resumed = true
+                gate.unlock()
+                cont.resume(with: result)
+            }
+
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) {
+                gate.lock()
+                guard !resumed else { gate.unlock(); return }
+                resumed = true
+                gate.unlock()
+                cont.resume(throwing: TimeoutError(seconds: seconds, label: label))
+            }
+        }
+    }
+
     fileprivate func drainNext() -> (() -> Void)? {
         condition.lock()
         defer { condition.unlock() }
