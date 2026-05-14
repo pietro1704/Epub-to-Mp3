@@ -150,7 +150,7 @@ struct MiniPlayerBar: View {
     @ViewBuilder
     private func coverView(for book: BookEntity) -> some View {
         if let data = book.coverPNG, let img = platformImage(from: data) {
-            img.resizable().aspectRatio(contentMode: .fill)
+            img.resizable().aspectRatio(contentMode: .fit)
         } else {
             ZStack {
                 RoundedRectangle(cornerRadius: 6)
