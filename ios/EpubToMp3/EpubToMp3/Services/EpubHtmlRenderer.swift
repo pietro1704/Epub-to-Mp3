@@ -53,14 +53,14 @@ enum EpubHtmlRenderer {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
-        // Wrap the body in a tiny doc so the EPUB's own CSS applies
-        // before the importer tokenises. `meta charset` keeps the
-        // importer from misreading non-ASCII as MacRoman.
+        let bodyContent = stripImageSources(extractBodyContent(trimmed))
+        let cleanedCSS = stripFontFaceURLs(css ?? "")
+
         let doc = """
         <!DOCTYPE html>
         <html><head><meta charset="utf-8">
-        <style>\(css ?? "")</style>
-        </head><body>\(trimmed)</body></html>
+        <style>\(cleanedCSS)</style>
+        </head><body>\(bodyContent)</body></html>
         """
 
         guard let data = doc.data(using: .utf8) else { return nil }
@@ -204,5 +204,41 @@ enum EpubHtmlRenderer {
 
     private static func rgb(_ r: Double, _ g: Double, _ b: Double) -> PlatformColor {
         UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
+    }
+
+    // MARK: - HTML / CSS sanitisation
+
+    private static func extractBodyContent(_ html: String) -> String {
+        guard let bodyStart = html.range(of: #"<body[^>]*>"#, options: .regularExpression),
+              let bodyEnd = html.range(of: "</body>", options: .backwards) else {
+            return html.replacingOccurrences(
+                of: #"<link\b[^>]*>"#, with: "", options: .regularExpression
+            )
+        }
+        return String(html[bodyStart.upperBound..<bodyEnd.lowerBound])
+    }
+
+    private static func stripImageSources(_ html: String) -> String {
+        html.replacingOccurrences(
+            of: #"(<img\b[^>]*)\bsrc\s*=\s*("[^"]*"|'[^']*')"#,
+            with: "$1",
+            options: .regularExpression
+        ).replacingOccurrences(
+            of: #"(<image\b[^>]*)\bxlink:href\s*=\s*("[^"]*"|'[^']*')"#,
+            with: "$1",
+            options: .regularExpression
+        )
+    }
+
+    private static func stripFontFaceURLs(_ css: String) -> String {
+        css.replacingOccurrences(
+            of: #"src:\s*url\([^)]*\)\s*;?"#,
+            with: "",
+            options: .regularExpression
+        ).replacingOccurrences(
+            of: #"@import\s+url\([^)]*\)\s*;?"#,
+            with: "",
+            options: .regularExpression
+        )
     }
 }

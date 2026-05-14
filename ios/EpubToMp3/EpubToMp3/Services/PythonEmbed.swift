@@ -152,7 +152,7 @@ final class PythonEmbed: @unchecked Sendable {
                 iosEntrypoints = try Python.attemptImport("python_app.src.ios_entrypoints")
             } catch {
                 #if DEBUG
-                print("[PythonEmbed] preload ios_entrypoints skipped (expected on simulator): \(error)")
+                print("[PythonEmbed] preload ios_entrypoints skipped: \(error.localizedDescription)")
                 #endif
             }
         }
@@ -161,7 +161,7 @@ final class PythonEmbed: @unchecked Sendable {
                 ebookReader = try Python.attemptImport("python_app.src.ebook_reader")
             } catch {
                 #if DEBUG
-                print("[PythonEmbed] preload ebook_reader skipped (expected on simulator): \(error)")
+                print("[PythonEmbed] preload ebook_reader skipped: \(error.localizedDescription)")
                 #endif
             }
         }
