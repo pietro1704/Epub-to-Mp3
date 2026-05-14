@@ -44,13 +44,18 @@ final class PythonEmbed: @unchecked Sendable {
 
     private let lock = NSLock()
     private var initialized = false
+    var isBootstrapComplete: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return initialized
+    }
     /// Strong reference to the PythonKit closure object we install as
     /// the Edge-TTS transport. PythonKit wraps Swift closures in
     /// `PythonFunction`; if Swift drops its reference the Python side
     /// gets a dangling callback and segfaults the first time it fires.
     /// Holding the closure here for the interpreter's lifetime is
     /// cheap (one slot) and keeps the bridge alive.
-    private var edgeTransport: PythonObject?
+    private(set) var edgeTransport: PythonObject?
     /// Strong reference to the Piper transport closure, same lifetime
     /// rationale as ``edgeTransport`` — see comment above. The
     /// transport always throws ``PiperBridgeError.notImplemented`` in
@@ -228,9 +233,13 @@ final class PythonEmbed: @unchecked Sendable {
             )
             Task.detached(priority: .userInitiated) {
                 do {
-                    let mp3 = try await bridge.synthesize(
-                        text: text, voice: voice
-                    )
+                    let mp3 = try await withTimeout(
+                        seconds: 30, label: "Edge chunk"
+                    ) {
+                        try await bridge.synthesize(
+                            text: text, voice: voice
+                        )
+                    }
                     outcome = .success(mp3)
                 } catch {
                     outcome = .failure(error)
@@ -240,10 +249,6 @@ final class PythonEmbed: @unchecked Sendable {
             sem.wait()
             switch outcome {
             case .success(let data):
-                // PythonKit can convert `[UInt8]` to a Python list; we
-                // wrap it in `bytes(...)` so the Python side gets a
-                // proper bytes object (what edge_tts would have
-                // returned).
                 return Python.bytes(Python.list(Array(data)))
             case .failure(let err):
                 // Throw — PythonKit converts a Swift throw into a Python
