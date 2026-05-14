@@ -170,7 +170,7 @@ struct InstantReaderView: View {
         let name = (ch.name ?? "").lowercased()
         if Self.frontMatterNames.contains(where: { name.contains($0) }) { return true }
         let text = ch.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if arrayIndex < 8, text.count < 500, name.hasPrefix("Chapter ") { return true }
+        if arrayIndex < 10, text.count < 500, name.hasPrefix("chapter ") { return true }
         return false
     }
 
