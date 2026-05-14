@@ -288,21 +288,39 @@ struct BookOpenView: View {
                 return
             }
             #else
-            // macOS: invoke the same python_app pipeline via a
-            // short-lived python3 subprocess. Same `EbookFulltext`
-            // shape as iOS, so TocDrawer / ReaderView / chapter
-            // advancement all work identically. See MacEpubParser.
+            // macOS: try the Python subprocess first, fall back to
+            // the pure-Swift parser when python_app isn't in the bundle
+            // (Debug builds without PyInstaller sidecar).
+            var macParsed: EbookFulltext?
             do {
-                let parsed = try await MacEpubParser.parse(
+                macParsed = try await MacEpubParser.parse(
                     at: fileURL, bookId: book.id
                 )
-                self.fulltext = parsed
+            } catch {
+                macParsed = nil
+            }
+            if macParsed == nil || (macParsed?.chapters.isEmpty ?? true) {
+                let capturedURL = fileURL
+                let capturedBookId = book.id
+                let fallback: EbookFulltext = await Task.detached(
+                    priority: .userInitiated
+                ) {
+                    EpubFallbackParser.parse(
+                        url: capturedURL, bookId: capturedBookId
+                    )
+                }.value
+                if !fallback.chapters.isEmpty {
+                    macParsed = fallback
+                }
+            }
+            if let macParsed, !macParsed.chapters.isEmpty {
+                self.fulltext = macParsed
                 self.phase = .ready
                 Task.detached(priority: .background) {
-                    LocalFulltextCache.save(parsed, bookId: book.id)
+                    LocalFulltextCache.save(macParsed, bookId: book.id)
                 }
-            } catch {
-                phase = .error("EPUB parse failed: \(error.localizedDescription)")
+            } else {
+                phase = .unreadable(fileURL)
                 return
             }
             #endif
