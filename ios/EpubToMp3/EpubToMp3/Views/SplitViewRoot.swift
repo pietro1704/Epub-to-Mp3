@@ -121,14 +121,9 @@ struct SplitViewRoot: View {
     // MARK: - Sidebar
 
     private var navSidebar: some View {
-        List(selection: Binding<SplitNavMode?>(
-            get: { navMode },
-            set: { newValue in if let v = newValue { navMode = v } }
-        )) {
-            ForEach(SplitNavMode.allCases) { mode in
-                Label(mode.label, systemImage: mode.systemImage)
-                    .tag(Optional<SplitNavMode>.some(mode))
-            }
+        List(SplitNavMode.allCases, selection: $navMode) { mode in
+            Label(mode.label, systemImage: mode.systemImage)
+                .tag(mode)
         }
         #if os(macOS)
         .listStyle(.sidebar)
