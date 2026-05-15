@@ -7,21 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-Widget _wrap({Map<String, Object> prefs = const {}}) {
-  SharedPreferences.setMockInitialValues(prefs);
-  return ProviderScope(
-    overrides: [
-      sharedPrefsProvider.overrideWith(
-        (ref) => SharedPreferences.getInstance().then((p) => p) as SharedPreferences,
-      ),
-    ],
-    child: MaterialApp(
-      localizationsDelegates: AppLocalizations.localizationsDelegates,
-      supportedLocales: AppLocalizations.supportedLocales,
-      home: const LibraryScreen(),
-    ),
-  );
-}
+// ignore_for_file: unused_import
 
 /// Build the app with a real SharedPreferences to avoid async issues.
 Future<void> _pumpLibrary(

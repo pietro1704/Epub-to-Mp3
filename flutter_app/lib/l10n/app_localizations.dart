@@ -277,6 +277,45 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Open a book from the library to start reading'**
   String get readerEmptyHint;
+
+  /// No description provided for @browseLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse Library'**
+  String get browseLibrary;
+
+  /// No description provided for @pickBookToRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Pick a book to read'**
+  String get pickBookToRead;
+
+  /// No description provided for @parsingBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Parsing book…'**
+  String get parsingBook;
+
+  /// No description provided for @parsingFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to parse book'**
+  String get parsingFailed;
+
+  /// No description provided for @retry.
+  ///
+  /// In en, this message translates to:
+  /// **'Retry'**
+  String get retry;
+
+  /// Conversion status banner, e.g. "Generating audio · 2/12 chapters ready"
+  String generatingAudio(int ready, int total);
+
+  /// No description provided for @nowPlaying.
+  ///
+  /// In en, this message translates to:
+  /// **'Now playing'**
+  String get nowPlaying;
 }
 
 class _AppLocalizationsDelegate

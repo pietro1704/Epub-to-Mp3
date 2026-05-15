@@ -100,4 +100,27 @@ class AppLocalizationsPt extends AppLocalizations {
   @override
   String get readerEmptyHint =>
       'Abra um livro da biblioteca para começar a ler';
+
+  @override
+  String get browseLibrary => 'Abrir Biblioteca';
+
+  @override
+  String get pickBookToRead => 'Escolha um livro para ler';
+
+  @override
+  String get parsingBook => 'Analisando livro…';
+
+  @override
+  String get parsingFailed => 'Falha ao analisar livro';
+
+  @override
+  String get retry => 'Tentar novamente';
+
+  @override
+  String generatingAudio(int ready, int total) {
+    return 'Gerando áudio · $ready/$total capítulos prontos';
+  }
+
+  @override
+  String get nowPlaying => 'Reproduzindo';
 }

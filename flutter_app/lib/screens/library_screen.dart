@@ -8,7 +8,6 @@ import '../l10n/app_localizations.dart';
 import '../models/book_entity.dart';
 import '../services/library_store.dart';
 import '../state/providers.dart';
-import 'player_reader_screen.dart';
 
 /// Riverpod provider for [LibraryStore]. Uses ChangeNotifierProvider so
 /// the grid rebuilds on every add/remove.
@@ -41,6 +40,12 @@ class LibraryScreen extends ConsumerWidget {
         );
       }
     }
+  }
+
+  /// Set the currently-reading book and switch to the Reader tab (index 0).
+  void _openInReader(WidgetRef ref, BookEntity book) {
+    ref.read(currentlyReadingBookIdProvider.notifier).set(book.id);
+    ref.read(rootTabIndexProvider.notifier).state = 0;
   }
 
   void _confirmRemove(
@@ -89,18 +94,7 @@ class LibraryScreen extends ConsumerWidget {
           ? _EmptyLibrary(onAdd: () => _pickAndImport(context, store))
           : _BookGrid(
               books: books,
-              onTap: (book) {
-                if (book.lastJobId != null) {
-                  Navigator.of(context).push(MaterialPageRoute(
-                    builder: (_) =>
-                        PlayerReaderScreen(jobId: book.lastJobId!),
-                  ));
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(t.noConversionYet)),
-                  );
-                }
-              },
+              onTap: (book) => _openInReader(ref, book),
               onLongPress: (book) => _confirmRemove(context, store, book),
             ),
       floatingActionButton: books.isEmpty

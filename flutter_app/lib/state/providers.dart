@@ -9,6 +9,7 @@ import '../services/api_client.dart';
 import '../services/audio_player_service.dart';
 import '../services/download_manager.dart';
 import '../services/fulltext_store.dart';
+import '../services/local_fulltext_cache.dart';
 import '../services/resume_store.dart';
 import '../services/sync_engine.dart';
 
@@ -167,3 +168,56 @@ final currentSentenceProvider =
   final engine = ref.watch(syncEngineProvider(jobId));
   return engine.currentSentence;
 });
+
+// ---------------------------------------------------------------------------
+// Reader / mini-player state
+// ---------------------------------------------------------------------------
+
+const _currentlyReadingKey = 'currentlyReadingBookId';
+
+/// The book currently open in the Reader tab. Persisted across launches.
+final currentlyReadingBookIdProvider =
+    StateNotifierProvider<_PersistedStringNotifier, String?>((ref) {
+  final prefs = ref.watch(sharedPrefsProvider);
+  return _PersistedStringNotifier(prefs, _currentlyReadingKey);
+});
+
+/// The book whose audio is actively playing/paused. Ephemeral (not persisted).
+final currentlyPlayingBookIdProvider = StateProvider<String?>((ref) => null);
+
+/// Singleton audio player for on-device playback. Not keyed by jobId — this
+/// Flutter app runs everything locally, so one player instance suffices.
+/// Typed as the interface so tests can substitute a [FakeAudioPlayerService].
+final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
+  final p = AudioPlayerService();
+  ref.onDispose(p.dispose);
+  return p;
+});
+
+/// Shared fulltext cache singleton.
+final localFulltextCacheProvider = Provider<LocalFulltextCache>((ref) {
+  return LocalFulltextCache();
+});
+
+/// Tab index controller for the root NavigationBar, so library can switch to
+/// the reader tab programmatically.
+final rootTabIndexProvider = StateProvider<int>((ref) => 0);
+
+/// A trivial persisted String? notifier. Reads a SharedPreferences key on
+/// construction and writes on every `set`.
+class _PersistedStringNotifier extends StateNotifier<String?> {
+  _PersistedStringNotifier(this._prefs, this._key)
+      : super(_prefs.getString(_key));
+
+  final SharedPreferences _prefs;
+  final String _key;
+
+  void set(String? value) {
+    state = value;
+    if (value == null) {
+      _prefs.remove(_key);
+    } else {
+      _prefs.setString(_key, value);
+    }
+  }
+}

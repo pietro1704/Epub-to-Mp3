@@ -99,4 +99,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get readerEmptyHint => 'Open a book from the library to start reading';
+
+  @override
+  String get browseLibrary => 'Browse Library';
+
+  @override
+  String get pickBookToRead => 'Pick a book to read';
+
+  @override
+  String get parsingBook => 'Parsing book…';
+
+  @override
+  String get parsingFailed => 'Failed to parse book';
+
+  @override
+  String get retry => 'Retry';
+
+  @override
+  String generatingAudio(int ready, int total) {
+    return 'Generating audio · $ready/$total chapters ready';
+  }
+
+  @override
+  String get nowPlaying => 'Now playing';
 }

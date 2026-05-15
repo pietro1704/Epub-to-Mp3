@@ -1,45 +1,52 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../state/providers.dart';
+import '../views/mini_player_bar.dart';
 import 'library_screen.dart';
+import 'reader_tab.dart';
 import 'settings_screen.dart';
 
-/// Top-level shell with a BottomNavigationBar.
-/// Mirrors the iOS TabRoot: Library (default), Reader placeholder, Settings.
-class RootScreen extends StatefulWidget {
+/// Top-level shell with a BottomNavigationBar + persistent MiniPlayerBar.
+/// Tab order mirrors iOS TabRoot: Reader (0), Library (1), Settings (2).
+class RootScreen extends ConsumerWidget {
   const RootScreen({super.key});
 
-  @override
-  State<RootScreen> createState() => _RootScreenState();
-}
-
-class _RootScreenState extends State<RootScreen> {
-  int _tabIndex = 0;
-
   static const _screens = <Widget>[
+    ReaderTab(),
     LibraryScreen(),
-    _ReaderPlaceholder(),
     SettingsScreen(),
   ];
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final t = AppLocalizations.of(context)!;
+    final tabIndex = ref.watch(rootTabIndexProvider);
+
     return Scaffold(
-      body: IndexedStack(index: _tabIndex, children: _screens),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tabIndex,
-        onDestinationSelected: (i) => setState(() => _tabIndex = i),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.library_books_outlined),
-            selectedIcon: const Icon(Icons.library_books),
-            label: t.libraryTitle,
+      body: Column(
+        children: [
+          Expanded(
+            child: IndexedStack(index: tabIndex, children: _screens),
           ),
+          const MiniPlayerBar(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: tabIndex,
+        onDestinationSelected: (i) =>
+            ref.read(rootTabIndexProvider.notifier).state = i,
+        destinations: [
           NavigationDestination(
             icon: const Icon(Icons.menu_book_outlined),
             selectedIcon: const Icon(Icons.menu_book),
             label: t.readerTitle,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.library_books_outlined),
+            selectedIcon: const Icon(Icons.library_books),
+            label: t.libraryTitle,
           ),
           NavigationDestination(
             icon: const Icon(Icons.settings_outlined),
@@ -47,25 +54,6 @@ class _RootScreenState extends State<RootScreen> {
             label: t.settingsTitle,
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Placeholder until a book is opened from the library.
-class _ReaderPlaceholder extends StatelessWidget {
-  const _ReaderPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    final t = AppLocalizations.of(context)!;
-    return Scaffold(
-      appBar: AppBar(title: Text(t.readerTitle)),
-      body: Center(
-        child: Text(
-          t.readerEmptyHint,
-          style: Theme.of(context).textTheme.bodyLarge,
-        ),
       ),
     );
   }
