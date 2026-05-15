@@ -10,7 +10,7 @@ python-multipart>=0.0.28
 edge-tts>=7.2.8
 
 # Piper audio deps
-torch>=2.6.0  # PYSEC-2024-259, PYSEC-2025-41
+torch>=2.12.0  # PYSEC-2024-259, PYSEC-2025-41
 torchaudio>=2.11.0
 soundfile>=0.13.1
 pandas>=3.0.3,<4.0.0

@@ -6,7 +6,7 @@ edge-tts>=7.2.8
 piper-tts>=1.4.2
 
 # PyTorch + audio (Piper)
-torch>=2.2.0
+torch>=2.12.0
 torchaudio>=2.11.0
 numpy>=2.4.4,<3.0.0
 soundfile>=0.13.1
