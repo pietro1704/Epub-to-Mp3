@@ -18,6 +18,7 @@ abstract class AudioPlayerInterface {
   double get durationSeconds;
   Uint8List? coverArtData;
   List<ChapterProgress> get chapters;
+  int chapterIndexForPlayerIndex(int playerIndex);
 
   Future<void> setQueue(List<ChapterProgress> chapters);
   void enqueueSegment(Uri uri, {String? sentenceId, int chapterIndex});
@@ -55,7 +56,6 @@ class AudioPlayerService implements AudioPlayerInterface {
   bool _isSegmentMode = false;
   int _segmentChapterIndex = -1;
   final List<String> _segmentSentenceIds = [];
-  int _segmentPlayedCount = 0;
   String? _activeSentenceId;
   StreamSubscription<int?>? _indexSub;
 
@@ -82,17 +82,29 @@ class AudioPlayerService implements AudioPlayerInterface {
   @override
   double get speed => _speed;
 
+  /// Maps player index → _chapters index (skipped chapters have no audio).
+  List<int> _playableMap = const [];
+
+  /// Persistent source for segment-mode appending.
+  ConcatenatingAudioSource? _segmentSource;
+
   @override
   Future<void> setQueue(List<ChapterProgress> chapters) async {
     _chapters = chapters;
     final base = _baseUrl ?? '';
-    final children = <AudioSource>[
-      for (final c in chapters)
-        if (c.downloadUrl != null)
-          AudioSource.uri(_resolve(base, c.downloadUrl!)),
-    ];
+    final children = <AudioSource>[];
+    final map = <int>[];
+    for (var i = 0; i < chapters.length; i++) {
+      final c = chapters[i];
+      if (c.downloadUrl != null) {
+        children.add(AudioSource.uri(_resolve(base, c.downloadUrl!)));
+        map.add(i);
+      }
+    }
+    _playableMap = map;
     if (children.isEmpty) return;
     _isSegmentMode = false;
+    _segmentSource = null;
     await _player.setAudioSource(
       ConcatenatingAudioSource(children: children),
       preload: false,
@@ -105,7 +117,8 @@ class AudioPlayerService implements AudioPlayerInterface {
     if (chapterIndex != _segmentChapterIndex) {
       _segmentChapterIndex = chapterIndex;
       _segmentSentenceIds.clear();
-      _segmentPlayedCount = 0;
+      _segmentSource = ConcatenatingAudioSource(children: []);
+      _player.setAudioSource(_segmentSource!, preload: false);
     }
     if (sentenceId != null) {
       _segmentSentenceIds.add(sentenceId);
@@ -115,26 +128,20 @@ class AudioPlayerService implements AudioPlayerInterface {
       }
     }
 
+    _segmentSource?.add(AudioSource.uri(uri));
+
     if (!_isSegmentMode) {
       _isSegmentMode = true;
       _listenSegmentTransitions();
     }
-
-    final source = ConcatenatingAudioSource(children: [
-      AudioSource.uri(uri),
-    ]);
-    _player.setAudioSource(source, preload: true);
   }
 
   void _listenSegmentTransitions() {
     _indexSub?.cancel();
     _indexSub = _player.currentIndexStream.listen((idx) {
-      if (idx != null && _isSegmentMode) {
-        _segmentPlayedCount++;
-        if (_segmentPlayedCount < _segmentSentenceIds.length) {
-          _activeSentenceId = _segmentSentenceIds[_segmentPlayedCount];
-          _sentenceController.add(_activeSentenceId);
-        }
+      if (idx != null && _isSegmentMode && idx < _segmentSentenceIds.length) {
+        _activeSentenceId = _segmentSentenceIds[idx];
+        _sentenceController.add(_activeSentenceId);
       }
     });
   }
@@ -222,7 +229,7 @@ class AudioPlayerService implements AudioPlayerInterface {
     _isSegmentMode = false;
     _segmentChapterIndex = -1;
     _segmentSentenceIds.clear();
-    _segmentPlayedCount = 0;
+    _segmentSource = null;
     _activeSentenceId = null;
     _sentenceController.add(null);
   }
@@ -238,6 +245,14 @@ class AudioPlayerService implements AudioPlayerInterface {
 
   @override
   List<ChapterProgress> get chapters => _chapters;
+
+  @override
+  int chapterIndexForPlayerIndex(int playerIndex) {
+    if (playerIndex < 0 || playerIndex >= _playableMap.length) {
+      return playerIndex;
+    }
+    return _playableMap[playerIndex];
+  }
 }
 
 /// Test double — pure Dart, no native plugins.
@@ -350,6 +365,9 @@ class FakeAudioPlayerService implements AudioPlayerInterface {
     _sleepTimerRemaining = seconds;
     _sleepController.add(seconds);
   }
+
+  @override
+  int chapterIndexForPlayerIndex(int playerIndex) => playerIndex;
 
   @override
   void clearSegmentState() {

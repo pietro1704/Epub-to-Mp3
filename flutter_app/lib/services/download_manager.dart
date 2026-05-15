@@ -40,6 +40,14 @@ class DownloadManager {
       );
       _events.add(DownloadEvent(path: path, progress: 1.0, completed: true));
       return File(path);
+    } on DioException catch (e) {
+      final partial = File(path);
+      if (await partial.exists()) await partial.delete();
+      final msg = e.type == DioExceptionType.cancel
+          ? 'cancelled'
+          : e.message ?? e.type.name;
+      _events.add(DownloadEvent(path: path, progress: 0, error: msg));
+      rethrow;
     } finally {
       _tokens.remove(path);
     }
@@ -57,8 +65,10 @@ class DownloadEvent {
     required this.path,
     required this.progress,
     this.completed = false,
+    this.error,
   });
   final String path;
   final double progress;
   final bool completed;
+  final String? error;
 }

@@ -16,6 +16,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -176,9 +177,13 @@ class LibraryStore extends ChangeNotifier {
   /// SHA-256 of the file contents, truncated to 32 hex chars (matches
   /// Swift). Streamed so large EPUBs don't blow up memory.
   static Future<String> contentHash(String path) async {
-    final bytes = await File(path).readAsBytes();
-    final digest = sha256.convert(bytes);
-    return digest.toString().substring(0, 32);
+    final sink = AccumulatorSink<Digest>();
+    final output = sha256.startChunkedConversion(sink);
+    await for (final chunk in File(path).openRead()) {
+      output.add(chunk);
+    }
+    output.close();
+    return sink.events.single.toString().substring(0, 32);
   }
 
   static String _titleFromFilename(String name) {
