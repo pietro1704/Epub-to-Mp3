@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'l10n/app_localizations.dart';
-import 'screens/jobs_list_screen.dart';
+import 'screens/root_screen.dart';
 import 'state/providers.dart';
 
 Future<void> main() async {
@@ -37,7 +37,7 @@ class EpubToMp3App extends ConsumerWidget {
       themeMode: settings.darkMode ? ThemeMode.dark : ThemeMode.light,
       localizationsDelegates: AppLocalizations.localizationsDelegates,
       supportedLocales: AppLocalizations.supportedLocales,
-      home: const JobsListScreen(),
+      home: const RootScreen(),
     );
   }
 }

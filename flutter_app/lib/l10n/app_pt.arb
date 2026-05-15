@@ -20,5 +20,19 @@
   "play": "Reproduzir",
   "pause": "Pausar",
   "next": "Próximo",
-  "previous": "Anterior"
+  "previous": "Anterior",
+  "libraryTitle": "Biblioteca",
+  "libraryEmpty": "Nenhum livro ainda",
+  "addBook": "Adicionar livro",
+  "removeBookTitle": "Remover livro",
+  "removeBookMessage": "Remover \"{title}\" da biblioteca? O arquivo não será excluído.",
+  "@removeBookMessage": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "cancel": "Cancelar",
+  "remove": "Remover",
+  "noConversionYet": "Converta este livro antes de reproduzir áudio",
+  "readerEmptyHint": "Abra um livro da biblioteca para começar a ler"
 }

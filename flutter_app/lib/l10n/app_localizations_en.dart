@@ -70,4 +70,33 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get previous => 'Previous';
+
+  @override
+  String get libraryTitle => 'Library';
+
+  @override
+  String get libraryEmpty => 'No books yet';
+
+  @override
+  String get addBook => 'Add a book';
+
+  @override
+  String get removeBookTitle => 'Remove book';
+
+  @override
+  String removeBookMessage(String title) {
+    return 'Remove \"$title\" from your library? The file will not be deleted.';
+  }
+
+  @override
+  String get cancel => 'Cancel';
+
+  @override
+  String get remove => 'Remove';
+
+  @override
+  String get noConversionYet => 'Convert this book first to play audio';
+
+  @override
+  String get readerEmptyHint => 'Open a book from the library to start reading';
 }

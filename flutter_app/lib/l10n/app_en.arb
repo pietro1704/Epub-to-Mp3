@@ -20,5 +20,19 @@
   "play": "Play",
   "pause": "Pause",
   "next": "Next",
-  "previous": "Previous"
+  "previous": "Previous",
+  "libraryTitle": "Library",
+  "libraryEmpty": "No books yet",
+  "addBook": "Add a book",
+  "removeBookTitle": "Remove book",
+  "removeBookMessage": "Remove \"{title}\" from your library? The file will not be deleted.",
+  "@removeBookMessage": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "cancel": "Cancel",
+  "remove": "Remove",
+  "noConversionYet": "Convert this book first to play audio",
+  "readerEmptyHint": "Open a book from the library to start reading"
 }

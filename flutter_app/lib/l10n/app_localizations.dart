@@ -223,6 +223,60 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Previous'**
   String get previous;
+
+  /// No description provided for @libraryTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Library'**
+  String get libraryTitle;
+
+  /// No description provided for @libraryEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No books yet'**
+  String get libraryEmpty;
+
+  /// No description provided for @addBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a book'**
+  String get addBook;
+
+  /// No description provided for @removeBookTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove book'**
+  String get removeBookTitle;
+
+  /// No description provided for @removeBookMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove \"{title}\" from your library? The file will not be deleted.'**
+  String removeBookMessage(String title);
+
+  /// No description provided for @cancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get cancel;
+
+  /// No description provided for @remove.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove'**
+  String get remove;
+
+  /// No description provided for @noConversionYet.
+  ///
+  /// In en, this message translates to:
+  /// **'Convert this book first to play audio'**
+  String get noConversionYet;
+
+  /// No description provided for @readerEmptyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Open a book from the library to start reading'**
+  String get readerEmptyHint;
 }
 
 class _AppLocalizationsDelegate

@@ -33,9 +33,8 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        // Chaquopy ships CPython + the chosen wheels for every ABI we list
-        // here. Keep this in sync with the iOS Python.xcframework version
-        // (3.13) so both clients run the same interpreter family.
+        // arm64-v8a = real devices; x86_64 = emulator only.
+        // armeabi-v7a excluded — saves ~20MB in APK (32-bit ARM is <2% of active devices).
         ndk {
             abiFilters += listOf("arm64-v8a", "x86_64")
         }
@@ -43,9 +42,13 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
 }
