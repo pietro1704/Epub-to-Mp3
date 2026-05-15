@@ -50,6 +50,8 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   int _chaptersTotal = 0;
   final List<ChapterProgress> _playableChapters = [];
   StreamSubscription<JobSnapshot>? _sseSubscription;
+  StreamSubscription<Duration>? _positionSub;
+  Timer? _resumeSaveTimer;
 
   @override
   void initState() {
@@ -69,6 +71,8 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   @override
   void dispose() {
     _sseSubscription?.cancel();
+    _positionSub?.cancel();
+    _resumeSaveTimer?.cancel();
     super.dispose();
   }
 
@@ -224,10 +228,12 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
       final player =
           ref.read(globalAudioPlayerProvider) as AudioPlayerService;
+      _setCoverOnPlayer(player);
       player.setQueue(List.of(_playableChapters));
       if (newChapters.length == _playableChapters.length &&
           !player.raw.playing) {
-        player.play();
+        _restoreResumePosition(player).then((_) => player.play());
+        _startResumeListener(player);
       }
     }
 
@@ -290,6 +296,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
       final player =
           ref.read(globalAudioPlayerProvider) as AudioPlayerService;
+      _setCoverOnPlayer(player);
 
       for (var i = 0; i < ft.chapters.length; i++) {
         if (!mounted || !_isConverting) return;
@@ -323,7 +330,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
           await player.setQueue(List.of(_playableChapters));
           if (_playableChapters.length == 1 && !player.raw.playing) {
+            await _restoreResumePosition(player);
             player.play();
+            _startResumeListener(player);
           }
         }
 
@@ -331,6 +340,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
       }
 
       if (!mounted) return;
+      _markBookOffline();
       setState(() => _isConverting = false);
     } catch (e) {
       if (!mounted) return;
@@ -341,9 +351,65 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     }
   }
 
+  void _setCoverOnPlayer(AudioPlayerService player) {
+    final library = ref.read(libraryStoreProvider);
+    final idx = library.books.indexWhere((b) => b.id == widget.bookId);
+    if (idx < 0) return;
+    final book = library.books[idx];
+    if (book.coverBase64 != null && player.coverArtData == null) {
+      try {
+        player.coverArtData = base64Decode(book.coverBase64!);
+      } catch (_) {}
+    }
+  }
+
+  void _startResumeListener(AudioPlayerService player) {
+    _positionSub?.cancel();
+    _resumeSaveTimer?.cancel();
+    _resumeSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (!mounted) return;
+      final resume = ref.read(resumeStoreProvider);
+      final idx = player.raw.currentIndex ?? 0;
+      final chapterIdx = player.chapterIndexForPlayerIndex(idx);
+      final pos = player.positionSeconds;
+      resume.saveBookPosition(widget.bookId, chapterIdx, pos);
+    });
+  }
+
+  Future<void> _restoreResumePosition(AudioPlayerService player) async {
+    final resume = ref.read(resumeStoreProvider);
+    final saved = resume.loadBookPosition(widget.bookId);
+    if (saved == null) return;
+
+    final targetChapter = saved.chapter;
+    final targetPos = saved.seconds;
+
+    final queueIdx = _playableChapters.indexWhere(
+        (c) => c.index == targetChapter || c.index == targetChapter + 1);
+    if (queueIdx >= 0) {
+      await player.seek(
+        Duration(milliseconds: (targetPos * 1000).round()),
+        index: queueIdx,
+      );
+    }
+  }
+
+  void _markBookOffline() {
+    final library = ref.read(libraryStoreProvider);
+    final idx = library.books.indexWhere((b) => b.id == widget.bookId);
+    if (idx < 0) return;
+    final book = library.books[idx];
+    if (!book.cachedOffline) {
+      book.cachedOffline = true;
+      library.update(book);
+    }
+  }
+
   void _cancelConversion() {
     _sseSubscription?.cancel();
     _sseSubscription = null;
+    _positionSub?.cancel();
+    _resumeSaveTimer?.cancel();
     _isConverting = false;
     _conversionError = null;
     _chaptersConverted = 0;

@@ -37,7 +37,7 @@ class MiniPlayerBar extends ConsumerWidget {
 
     return GestureDetector(
       onTap: () => _showFullPlayer(context, player, book.resolvedTitle,
-          book.author, coverArt),
+          book.author, coverArt, playingBookId),
       child: Container(
         decoration: BoxDecoration(
           color: cs.surfaceContainerHighest,
@@ -160,10 +160,8 @@ class MiniPlayerBar extends ConsumerWidget {
     String? bookTitle,
     String? author,
     Uint8List? coverArt,
+    String? bookId,
   ) {
-    // FullPlayerSheet requires AudioPlayerService. When the provider is
-    // overridden with a fake in tests, the sheet won't open — but in
-    // production the concrete type is always AudioPlayerService.
     if (player is! AudioPlayerService) return;
     showModalBottomSheet(
       context: context,
@@ -178,6 +176,7 @@ class MiniPlayerBar extends ConsumerWidget {
           bookTitle: bookTitle,
           author: author,
           coverArt: coverArt,
+          bookId: bookId,
         ),
       ),
     );

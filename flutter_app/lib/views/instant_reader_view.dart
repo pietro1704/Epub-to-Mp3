@@ -134,6 +134,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
           author: widget.fulltext.bookAuthor,
           chapterLabel: chapter.displayTitle,
           coverArt: widget.coverArt,
+          bookId: widget.bookId,
         ),
       ),
     );

@@ -19,4 +19,19 @@ class ResumeStore {
   Future<void> clear(String jobId, int chapterIndex) async {
     await _prefs.remove(_key(jobId, chapterIndex));
   }
+
+  // Book-level resume (saves last chapter + position within it).
+
+  Future<void> saveBookPosition(
+      String bookId, int chapterIndex, double seconds) async {
+    await _prefs.setInt('resume:book:$bookId:chapter', chapterIndex);
+    await _prefs.setDouble('resume:book:$bookId:position', seconds);
+  }
+
+  ({int chapter, double seconds})? loadBookPosition(String bookId) {
+    final ch = _prefs.getInt('resume:book:$bookId:chapter');
+    if (ch == null) return null;
+    final pos = _prefs.getDouble('resume:book:$bookId:position') ?? 0.0;
+    return (chapter: ch, seconds: pos);
+  }
 }

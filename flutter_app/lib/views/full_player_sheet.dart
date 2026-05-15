@@ -1,15 +1,20 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/audio_player_service.dart';
+import '../state/providers.dart';
+import '../screens/library_screen.dart';
 
-class FullPlayerSheet extends StatelessWidget {
+class FullPlayerSheet extends ConsumerStatefulWidget {
   final AudioPlayerService player;
   final String? bookTitle;
   final String? author;
   final String? chapterLabel;
   final Uint8List? coverArt;
+  final String? bookId;
 
   const FullPlayerSheet({
     super.key,
@@ -18,7 +23,69 @@ class FullPlayerSheet extends StatelessWidget {
     this.author,
     this.chapterLabel,
     this.coverArt,
+    this.bookId,
   });
+
+  @override
+  ConsumerState<FullPlayerSheet> createState() => _FullPlayerSheetState();
+}
+
+class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
+  bool _downloading = false;
+  String? _downloadStatus;
+
+  Future<void> _downloadAll() async {
+    if (_downloading) return;
+    final chapters = widget.player.chapters;
+    if (chapters.isEmpty) return;
+
+    final dm = ref.read(downloadManagerProvider);
+    final settings = ref.read(settingsProvider);
+    final base = settings.backendURL.trim();
+
+    setState(() {
+      _downloading = true;
+      _downloadStatus = '0/${chapters.length}';
+    });
+
+    var completed = 0;
+    for (final ch in chapters) {
+      final url = ch.downloadUrl;
+      if (url == null || url.startsWith('file:')) {
+        completed++;
+        continue;
+      }
+      final fullUrl = url.startsWith('http')
+          ? url
+          : '${base.endsWith('/') ? base.substring(0, base.length - 1) : base}$url';
+      final name = 'chapter_${ch.index}.mp3';
+      final jobId = widget.bookId ?? 'unknown';
+      try {
+        await dm.download(jobId: jobId, url: fullUrl, filename: name);
+      } catch (_) {}
+      completed++;
+      if (!mounted) return;
+      setState(() => _downloadStatus = '$completed/${chapters.length}');
+    }
+
+    if (!mounted) return;
+
+    // Mark book as offline
+    if (widget.bookId != null) {
+      final library = ref.read(libraryStoreProvider);
+      final idx = library.books.indexWhere((b) => b.id == widget.bookId);
+      if (idx >= 0) {
+        final book = library.books[idx];
+        book.cachedOffline = true;
+        library.update(book);
+      }
+    }
+
+    setState(() {
+      _downloading = false;
+      _downloadStatus = null;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,7 +102,6 @@ class FullPlayerSheet extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Drag handle
                 Container(
                   width: 36,
                   height: 4,
@@ -45,15 +111,11 @@ class FullPlayerSheet extends StatelessWidget {
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-
-                // Cover hero
                 _coverHero(context),
                 const SizedBox(height: 24),
-
-                // Title block
-                if (bookTitle != null)
+                if (widget.bookTitle != null)
                   Text(
-                    bookTitle!,
+                    widget.bookTitle!,
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                           fontWeight: FontWeight.bold,
                         ),
@@ -61,20 +123,20 @@ class FullPlayerSheet extends StatelessWidget {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                if (author != null) ...[
+                if (widget.author != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    author!,
+                    widget.author!,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: Theme.of(context).hintColor,
                         ),
                     maxLines: 1,
                   ),
                 ],
-                if (chapterLabel != null) ...[
+                if (widget.chapterLabel != null) ...[
                   const SizedBox(height: 4),
                   Text(
-                    chapterLabel!,
+                    widget.chapterLabel!,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: Theme.of(context)
                               .hintColor
@@ -85,16 +147,10 @@ class FullPlayerSheet extends StatelessWidget {
                   ),
                 ],
                 const SizedBox(height: 28),
-
-                // Scrubber
                 _scrubber(context),
                 const SizedBox(height: 20),
-
-                // Transport row
                 _transportRow(context),
                 const SizedBox(height: 20),
-
-                // Secondary row (speed + sleep)
                 _secondaryRow(context),
                 const SizedBox(height: 32),
               ],
@@ -106,11 +162,11 @@ class FullPlayerSheet extends StatelessWidget {
   }
 
   Widget _coverHero(BuildContext context) {
-    if (coverArt != null) {
+    if (widget.coverArt != null) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Image.memory(
-          coverArt!,
+          widget.coverArt!,
           width: 280,
           height: 280,
           fit: BoxFit.cover,
@@ -134,10 +190,10 @@ class FullPlayerSheet extends StatelessWidget {
 
   Widget _scrubber(BuildContext context) {
     return StreamBuilder<Duration>(
-      stream: player.position,
+      stream: widget.player.position,
       builder: (context, posSnap) {
         final pos = (posSnap.data?.inMilliseconds ?? 0) / 1000.0;
-        final dur = player.durationSeconds;
+        final dur = widget.player.durationSeconds;
         final safeDur = dur > 0 ? dur : 1.0;
         return Column(
           children: [
@@ -159,7 +215,7 @@ class FullPlayerSheet extends StatelessWidget {
                 value: pos.clamp(0, safeDur),
                 max: safeDur,
                 onChanged: (v) =>
-                    player.seek(Duration(milliseconds: (v * 1000).round())),
+                    widget.player.seek(Duration(milliseconds: (v * 1000).round())),
               ),
             ),
             Padding(
@@ -182,7 +238,7 @@ class FullPlayerSheet extends StatelessWidget {
 
   Widget _transportRow(BuildContext context) {
     return StreamBuilder<bool>(
-      stream: player.playing,
+      stream: widget.player.playing,
       builder: (context, snap) {
         final isPlaying = snap.data ?? false;
         return Row(
@@ -191,7 +247,7 @@ class FullPlayerSheet extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.replay_10),
               iconSize: 32,
-              onPressed: () => player.skipBackward(seconds: 15),
+              onPressed: () => widget.player.skipBackward(seconds: 15),
               tooltip: 'Skip back 15s',
             ),
             IconButton(
@@ -199,12 +255,12 @@ class FullPlayerSheet extends StatelessWidget {
                 isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
               ),
               iconSize: 72,
-              onPressed: player.togglePlayPause,
+              onPressed: widget.player.togglePlayPause,
             ),
             IconButton(
               icon: const Icon(Icons.forward_10),
               iconSize: 32,
-              onPressed: () => player.skipForward(seconds: 15),
+              onPressed: () => widget.player.skipForward(seconds: 15),
               tooltip: 'Skip forward 15s',
             ),
           ],
@@ -216,86 +272,93 @@ class FullPlayerSheet extends StatelessWidget {
   Widget _secondaryRow(BuildContext context) {
     final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
     final sleepPresets = [0.0, 15 * 60.0, 30 * 60.0, 45 * 60.0, 60 * 60.0];
+    final hasChapters = widget.player.chapters.isNotEmpty;
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         // Speed picker
         PopupMenuButton<double>(
-          onSelected: (v) => player.setSpeed(v),
+          onSelected: (v) => widget.player.setSpeed(v),
           itemBuilder: (_) => speeds.map((s) {
             return PopupMenuItem(
               value: s,
               child: Text(
                 '${s}x',
                 style: TextStyle(
-                  fontWeight: player.speed == s
+                  fontWeight: widget.player.speed == s
                       ? FontWeight.bold
                       : FontWeight.normal,
                 ),
               ),
             );
           }).toList(),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
-            ),
-            child: Text(
-              '${player.speed}x',
-              style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
+          child: _pill(context, '${widget.player.speed}x'),
+        ),
+
+        // Download button
+        if (hasChapters)
+          GestureDetector(
+            onTap: _downloading ? null : _downloadAll,
+            child: _pill(
+              context,
+              _downloading
+                  ? _downloadStatus ?? '...'
+                  : 'Save',
+              icon: _downloading
+                  ? Icons.downloading
+                  : Icons.download_rounded,
             ),
           ),
-        ),
 
         // Sleep timer
         StreamBuilder<double>(
-          stream: player.sleepTimerStream,
+          stream: widget.player.sleepTimerStream,
           builder: (context, snap) {
-            final remaining = snap.data ?? player.sleepTimerRemaining;
+            final remaining = snap.data ?? widget.player.sleepTimerRemaining;
             return GestureDetector(
               onTap: () {
-                final current = player.sleepTimerRemaining;
+                final current = widget.player.sleepTimerRemaining;
                 final next = sleepPresets
                         .where((p) => p > current)
                         .firstOrNull ??
                     0.0;
-                player.setSleepTimer(seconds: next);
+                widget.player.setSleepTimer(seconds: next);
               },
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(10),
-                  color: Theme.of(context)
-                      .colorScheme
-                      .onSurface
-                      .withValues(alpha: 0.08),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.nightlight_round, size: 16),
-                    const SizedBox(width: 4),
-                    Text(
-                      remaining > 0
-                          ? _formatTime(remaining)
-                          : 'Sleep',
-                      style:
-                          Theme.of(context).textTheme.labelLarge?.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                    ),
-                  ],
-                ),
+              child: _pill(
+                context,
+                remaining > 0 ? _formatTime(remaining) : 'Sleep',
+                icon: Icons.nightlight_round,
               ),
             );
           },
         ),
       ],
+    );
+  }
+
+  Widget _pill(BuildContext context, String label, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.08),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  fontWeight: FontWeight.w600,
+                ),
+          ),
+        ],
+      ),
     );
   }
 
