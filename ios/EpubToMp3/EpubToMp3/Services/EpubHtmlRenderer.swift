@@ -161,10 +161,18 @@ enum EpubHtmlRenderer {
         if forceBold { traits.insert(.bold) }
         if stripItalic { traits.remove(.italic) }
         #endif
+        #if canImport(UIKit)
         if let withTraits = descriptor.withSymbolicTraits(traits) {
             descriptor = withTraits
         }
+        #else
+        descriptor = descriptor.withSymbolicTraits(traits)
+        #endif
+        #if canImport(UIKit)
         return PlatformFont(descriptor: descriptor, size: pointSize)
+        #else
+        return PlatformFont(descriptor: descriptor, size: pointSize) ?? base
+        #endif
     }
 
     private static func familyName(for family: ReaderFontFamily) -> String {

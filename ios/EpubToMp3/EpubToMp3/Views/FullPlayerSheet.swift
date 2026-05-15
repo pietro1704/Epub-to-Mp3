@@ -368,10 +368,6 @@ struct FullPlayerSheet: View {
         return String(format: "%d:%02d", m, s)
     }
 
-    private func platformImage(from data: Data) -> Image? {
-        guard let ui = UIImage(data: data) else { return nil }
-        return Image(uiImage: ui)
-    }
 }
 
 // MARK: - Sleep timer button

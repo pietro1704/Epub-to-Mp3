@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
 
 /// Cross-platform shims so the same view source compiles for iOS, iPadOS,
 /// and macOS. The Mac SDK doesn't expose `navigationBarTitleDisplayMode`,
@@ -256,7 +261,11 @@ extension Color {
     /// the AppKit `windowBackgroundColor`. On iOS it round-trips to the
     /// real UIKit token.
     static var platformSystemBackground: Color {
+        #if canImport(UIKit)
         Color(.systemBackground)
+        #else
+        Color(nsColor: .windowBackgroundColor)
+        #endif
     }
 }
 
@@ -316,6 +325,16 @@ extension View {
             self.padding(.vertical, amount)
         }
     }
+}
+
+func platformImage(from data: Data) -> Image? {
+    #if canImport(UIKit)
+    guard let ui = UIImage(data: data) else { return nil }
+    return Image(uiImage: ui)
+    #else
+    guard let ns = NSImage(data: data) else { return nil }
+    return Image(nsImage: ns)
+    #endif
 }
 
 struct HideFocusRingModifier: ViewModifier {

@@ -316,15 +316,6 @@ struct BookTile: View {
         .foregroundStyle(tint)
     }
 
-    private func platformImage(from data: Data) -> Image? {
-        #if canImport(UIKit)
-        guard let ui = UIImage(data: data) else { return nil }
-        return Image(uiImage: ui)
-        #else
-        guard let ns = NSImage(data: data) else { return nil }
-        return Image(nsImage: ns)
-        #endif
-    }
 }
 
 /// `.navigationDestination(item:)` requires iOS 17 / macOS 14.

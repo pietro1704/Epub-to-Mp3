@@ -373,10 +373,6 @@ struct InstantReaderView: View {
 
     private var currentBookCover: Data? { coverPNG }
 
-    private func platformImage(from data: Data) -> Image? {
-        guard let ui = UIImage(data: data) else { return nil }
-        return Image(uiImage: ui)
-    }
 
     private func transportControls(player: AudioPlayer) -> some View {
         HStack(spacing: 14) {
