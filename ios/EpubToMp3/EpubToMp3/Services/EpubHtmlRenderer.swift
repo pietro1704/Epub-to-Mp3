@@ -1,8 +1,13 @@
 import Foundation
+#if canImport(UIKit)
 import UIKit
-
 typealias PlatformFont = UIFont
 typealias PlatformColor = UIColor
+#else
+import AppKit
+typealias PlatformFont = NSFont
+typealias PlatformColor = NSColor
+#endif
 
 /// Renders a chapter's raw HTML body + per-chapter CSS into an
 /// AttributedString suitable for SwiftUI `Text(_:)`, then layers the
@@ -154,7 +159,7 @@ enum EpubHtmlRenderer {
         if let withTraits = descriptor.withSymbolicTraits(traits) {
             descriptor = withTraits
         }
-        return UIFont(descriptor: descriptor, size: pointSize)
+        return PlatformFont(descriptor: descriptor, size: pointSize)
     }
 
     private static func familyName(for family: ReaderFontFamily) -> String {
@@ -203,7 +208,7 @@ enum EpubHtmlRenderer {
     }
 
     private static func rgb(_ r: Double, _ g: Double, _ b: Double) -> PlatformColor {
-        UIColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
+        PlatformColor(red: CGFloat(r), green: CGFloat(g), blue: CGFloat(b), alpha: 1)
     }
 
     // MARK: - HTML / CSS sanitisation

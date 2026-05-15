@@ -1,7 +1,11 @@
 import Foundation
 import PDFKit
 
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
 
 /// Best-effort PDF metadata reader. PDFKit ships with iOS 11+ / macOS 10.4+,
 /// so we lean on `PDFDocument` for both metadata extraction and the
@@ -135,6 +139,7 @@ enum PdfMetadataReader {
     }
 
     private static func platformRender(page: PDFPage, size: CGSize) -> Data? {
+        #if canImport(UIKit)
         let renderer = UIGraphicsImageRenderer(size: size)
         let image = renderer.image { ctx in
             UIColor.white.setFill()
@@ -150,5 +155,23 @@ enum PdfMetadataReader {
             ctx.cgContext.restoreGState()
         }
         return image.pngData()
+        #else
+        let image = NSImage(size: size, flipped: true) { rect in
+            NSColor.white.setFill()
+            rect.fill()
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            ctx.saveGState()
+            let bounds = page.bounds(for: .mediaBox)
+            let scaleX = size.width / bounds.width
+            let scaleY = size.height / bounds.height
+            ctx.scaleBy(x: scaleX, y: scaleY)
+            page.draw(with: .mediaBox, to: ctx)
+            ctx.restoreGState()
+            return true
+        }
+        guard let tiff = image.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return nil }
+        return rep.representation(using: .png, properties: [:])
+        #endif
     }
 }

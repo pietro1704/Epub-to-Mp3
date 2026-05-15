@@ -358,8 +358,8 @@ enum PdfTextExtractor {
 // MARK: - Platform font alias
 //
 // `PlatformFont` is defined module-wide in `EpubHtmlRenderer.swift`.
-// Keep the import here so this file compiles standalone but don't
-// re-declare the typealias — Swift fails the build with
-// "invalid redeclaration" because both files end up in the same
-// module.
+#if canImport(UIKit)
 import UIKit
+#else
+import AppKit
+#endif
