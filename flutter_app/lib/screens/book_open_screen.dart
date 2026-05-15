@@ -153,18 +153,30 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
     try {
       final api = ref.read(apiClientProvider);
-      final jobId = await api.uploadAndConvert(book.filePath);
+
+      // Reuse an existing active job if one exists for this book.
+      String? jobId = book.lastJobId;
+      if (jobId != null) {
+        try {
+          final existing = await api.fetchJob(jobId);
+          if (existing.isTerminal) jobId = null;
+        } catch (_) {
+          jobId = null;
+        }
+      }
+      jobId ??= await api.uploadAndConvert(book.filePath);
       if (!mounted) return;
+
+      // Persist the job ID so a restart can reattach.
+      book.lastJobId = jobId;
+      library.update(book);
 
       setState(() {
         _jobId = jobId;
       });
 
-      // Mark this book as currently playing.
       ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
-
-      // Start listening to SSE for live progress.
-      _listenToJobStream(jobId);
+      _listenToJobStream(jobId!);
     } catch (e) {
       if (!mounted) return;
       setState(() {

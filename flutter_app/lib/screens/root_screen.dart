@@ -30,7 +30,7 @@ class RootScreen extends ConsumerWidget {
           Expanded(
             child: IndexedStack(index: tabIndex, children: _screens),
           ),
-          const MiniPlayerBar(),
+          if (tabIndex != 0) const MiniPlayerBar(),
         ],
       ),
       bottomNavigationBar: NavigationBar(

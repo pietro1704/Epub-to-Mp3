@@ -28,11 +28,13 @@ class FulltextSegment with _$FulltextSegment {
       _$FulltextSegmentFromJson(json);
 }
 
+int _flexInt(dynamic v) => v is num ? v.toInt() : int.tryParse('$v') ?? 0;
+
 @freezed
 class FulltextChapter with _$FulltextChapter {
   const FulltextChapter._();
   const factory FulltextChapter({
-    required int index,
+    @JsonKey(fromJson: _flexInt) required int index,
     String? name,
     required String text,
     String? html,

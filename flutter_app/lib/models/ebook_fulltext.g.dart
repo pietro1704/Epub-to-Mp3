@@ -27,7 +27,7 @@ Map<String, dynamic> _$$FulltextSegmentImplToJson(
 _$FulltextChapterImpl _$$FulltextChapterImplFromJson(
   Map<String, dynamic> json,
 ) => _$FulltextChapterImpl(
-  index: (json['index'] as num).toInt(),
+  index: _flexInt(json['index']),
   name: json['name'] as String?,
   text: json['text'] as String,
   html: json['html'] as String?,

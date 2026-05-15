@@ -432,6 +432,7 @@ FulltextChapter _$FulltextChapterFromJson(Map<String, dynamic> json) {
 
 /// @nodoc
 mixin _$FulltextChapter {
+  @JsonKey(fromJson: _flexInt)
   int get index => throw _privateConstructorUsedError;
   String? get name => throw _privateConstructorUsedError;
   String get text => throw _privateConstructorUsedError;
@@ -458,7 +459,7 @@ abstract class $FulltextChapterCopyWith<$Res> {
   ) = _$FulltextChapterCopyWithImpl<$Res, FulltextChapter>;
   @useResult
   $Res call({
-    int index,
+    @JsonKey(fromJson: _flexInt) int index,
     String? name,
     String text,
     String? html,
@@ -537,7 +538,7 @@ abstract class _$$FulltextChapterImplCopyWith<$Res>
   @override
   @useResult
   $Res call({
-    int index,
+    @JsonKey(fromJson: _flexInt) int index,
     String? name,
     String text,
     String? html,
@@ -608,7 +609,7 @@ class __$$FulltextChapterImplCopyWithImpl<$Res>
 @JsonSerializable()
 class _$FulltextChapterImpl extends _FulltextChapter {
   const _$FulltextChapterImpl({
-    required this.index,
+    @JsonKey(fromJson: _flexInt) required this.index,
     this.name,
     required this.text,
     this.html,
@@ -622,6 +623,7 @@ class _$FulltextChapterImpl extends _FulltextChapter {
       _$$FulltextChapterImplFromJson(json);
 
   @override
+  @JsonKey(fromJson: _flexInt)
   final int index;
   @override
   final String? name;
@@ -695,7 +697,7 @@ class _$FulltextChapterImpl extends _FulltextChapter {
 
 abstract class _FulltextChapter extends FulltextChapter {
   const factory _FulltextChapter({
-    required final int index,
+    @JsonKey(fromJson: _flexInt) required final int index,
     final String? name,
     required final String text,
     final String? html,
@@ -709,6 +711,7 @@ abstract class _FulltextChapter extends FulltextChapter {
       _$FulltextChapterImpl.fromJson;
 
   @override
+  @JsonKey(fromJson: _flexInt)
   int get index;
   @override
   String? get name;
