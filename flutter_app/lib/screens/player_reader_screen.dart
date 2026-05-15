@@ -56,6 +56,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
             chapterLabel: _currentChapterIndex < chapters.length
                 ? chapters[_currentChapterIndex].name
                 : null,
+            bookId: widget.jobId,
           );
         },
       ),

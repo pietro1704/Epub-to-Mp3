@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_localizations.dart';
 import '../services/audio_player_service.dart';
 import '../state/providers.dart';
 import '../screens/library_screen.dart';
@@ -270,6 +271,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
   }
 
   Widget _secondaryRow(BuildContext context) {
+    final t = AppLocalizations.of(context);
     final speeds = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
     final sleepPresets = [0.0, 15 * 60.0, 30 * 60.0, 45 * 60.0, 60 * 60.0];
     final hasChapters = widget.player.chapters.isNotEmpty;
@@ -304,7 +306,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
               context,
               _downloading
                   ? _downloadStatus ?? '...'
-                  : 'Save',
+                  : t?.saveForOffline ?? 'Save',
               icon: _downloading
                   ? Icons.downloading
                   : Icons.download_rounded,
