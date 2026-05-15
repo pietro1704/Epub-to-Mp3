@@ -49,6 +49,9 @@ jobs:
           .venv/bin/python -m pip install -r requirements.txt -r python_app/requirements.txt ruff
           bash scripts/install_piper_binary.sh
 
+      - name: Bootstrap iOS vendor (for drift tests)
+        run: bash ios/EpubToMp3/scripts/bootstrap-ios-python.sh
+
       - name: Run Python tests
         run: mise exec -- python -m pytest -v --tb=short
 
