@@ -82,6 +82,7 @@ struct MainReaderView: View {
                             backendBaseURL: settings.resolvedBaseURL
                         )
                         .environmentObject(settings)
+                        .environmentObject(library)
                     } else {
                         CompatContentUnavailableView(
                             "No audio yet",

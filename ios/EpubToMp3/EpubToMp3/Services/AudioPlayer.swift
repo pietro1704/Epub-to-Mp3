@@ -797,6 +797,10 @@ final class AudioPlayer: ObservableObject {
             position: positionSeconds,
             now: now
         )
+        UserDefaults.standard.set(
+            currentChapterIndex,
+            forKey: Self.currentChapterIndexDefaultsKey
+        )
     }
 
     /// Resolve a backend-relative download path (e.g. `/api/outputs/<jobId>/<file>.mp3`)

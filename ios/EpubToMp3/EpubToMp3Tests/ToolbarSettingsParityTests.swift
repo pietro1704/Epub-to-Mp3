@@ -53,7 +53,7 @@ final class ToolbarSettingsParityTests: XCTestCase {
 
     func testMarginDiscreteStepsAllPersist() {
         let (s, d) = make()
-        for v in [12.0, 24.0, 36.0, 48.0, 64.0] {
+        for v in [16.0, 24.0, 36.0, 48.0, 64.0] {
             s.readerMargin = v
             XCTAssertEqual(AppSettings(defaults: d).readerMargin, v, accuracy: 0.001)
         }

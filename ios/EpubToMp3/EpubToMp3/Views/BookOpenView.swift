@@ -312,6 +312,8 @@ struct BookOpenView: View {
         wd.start()
         watchdog = wd
 
+        NowPlayingView.setCurrentlyPlaying(bookID: book.id, chapterIndex: startChapterIndex)
+
         if settings.useEmbeddedRuntime {
             playerLog.debug("[AudioBootstrap] embedded path selected (hasClient=\(self.client != nil))")
             audioBootstrapTask = Task(priority: .utility) {

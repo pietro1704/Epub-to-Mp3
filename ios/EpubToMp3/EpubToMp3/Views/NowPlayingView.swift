@@ -74,10 +74,9 @@ struct NowPlayingView: View {
         if let snapshot = makeSnapshot(for: book) {
             PlayerReaderView(
                 snapshot: snapshot,
-                backendBaseURL: settings.resolvedBaseURL
+                backendBaseURL: settings.resolvedBaseURL,
+                initialChapterIndex: currentChapterIndex
             )
-            // Re-mount when the user switches books so PlayerReaderView's
-            // @StateObject `player` reloads cleanly with the new queue.
             .id("nowplaying-\(book.id)-\(currentChapterIndex)")
         } else {
             // Book exists in the library but has never been converted —

@@ -78,6 +78,7 @@ final class JobDetailViewModel: ObservableObject {
 struct JobDetailView: View {
     let jobId: String
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var library: LibraryStore
     @StateObject private var viewModel = JobDetailViewModel()
     @State private var showingPlayer = false
 
@@ -184,6 +185,7 @@ struct JobDetailView: View {
                 // crash with "missing Environment Object".
                 PlayerReaderView(snapshot: snap, backendBaseURL: settings.resolvedBaseURL)
                     .environmentObject(settings)
+                    .environmentObject(library)
             }
         }
     }
@@ -194,4 +196,5 @@ struct JobDetailView: View {
         JobDetailView(jobId: "preview-job-id")
     }
     .environmentObject(AppSettings())
+    .environmentObject(LibraryStore.previewEmpty)
 }

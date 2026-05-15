@@ -15,9 +15,11 @@ import AVKit
 struct PlayerReaderView: View {
     let snapshot: JobSnapshot
     let backendBaseURL: URL?
+    var initialChapterIndex: Int = 0
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var player: AudioPlayer
+    @EnvironmentObject private var library: LibraryStore
     @Environment(\.horizontalSizeClass) private var hSize
     @Environment(\.dismiss) private var dismiss
     @State private var fulltextStore = FulltextStore()
@@ -306,6 +308,10 @@ struct PlayerReaderView: View {
                 switch progress.state {
                 case .completed:
                     downloadState = .done
+                    if var book = library.books.first(where: { $0.lastJobId == snapshot.jobId }) {
+                        book.cachedOffline = true
+                        library.update(book)
+                    }
                     return
                 case .failed:
                     downloadState = .failed
@@ -350,11 +356,8 @@ struct PlayerReaderView: View {
 
     private func bootstrap() {
         if player.snapshot?.jobId != snapshot.jobId {
-            // Reuse the @StateObject `player` instance — assigning to it
-            // is not allowed under Combine ownership. Reconfigure
-            // backendBaseURL on the existing object then call play().
             player.backendBaseURL = backendBaseURL
-            player.play(snapshot: snapshot, startingAt: 0)
+            player.play(snapshot: snapshot, startingAt: initialChapterIndex)
         }
         triggerFulltextLoad()
         subscribeToJobStream()
@@ -407,12 +410,28 @@ struct PlayerReaderView: View {
                     if Task.isCancelled { break }
                     if let updated = APIClient.decodeSnapshot(from: event.rawPayload) {
                         player.updateSnapshot(updated)
+                        fetchCoverIfNeeded(snapshot: updated, baseURL: baseURL)
                     }
                 }
-            } catch {
-                // Network drop / job ended — playback continues with
-                // whatever's in the queue already.
-            }
+            } catch {}
+        }
+    }
+
+    private func fetchCoverIfNeeded(snapshot: JobSnapshot, baseURL: URL) {
+        guard player.coverArtData == nil,
+              let coverPath = snapshot.coverUrl,
+              !coverPath.isEmpty else { return }
+        let url: URL?
+        if coverPath.lowercased().hasPrefix("http") {
+            url = URL(string: coverPath)
+        } else {
+            url = URL(string: coverPath, relativeTo: baseURL)?.absoluteURL
+        }
+        guard let resolvedURL = url else { return }
+        Task.detached(priority: .utility) {
+            guard let (data, _) = try? await URLSession.shared.data(from: resolvedURL),
+                  !data.isEmpty else { return }
+            await MainActor.run { player.coverArtData = data }
         }
     }
 
@@ -518,5 +537,6 @@ struct PlayerReaderView: View {
     )
     .environmentObject(AppSettings())
     .environmentObject(AudioPlayer())
+    .environmentObject(LibraryStore.previewPopulated)
 }
 #endif
