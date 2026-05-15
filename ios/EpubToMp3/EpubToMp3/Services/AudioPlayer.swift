@@ -3,7 +3,9 @@ import AVFoundation
 import MediaPlayer
 import Combine
 import os.log
+#if canImport(UIKit)
 import UIKit
+#endif
 
 private let audioLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
 

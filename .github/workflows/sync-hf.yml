@@ -57,7 +57,8 @@ jobs:
             --exclude ".ruff_cache" \
             --exclude ".cache" \
             --exclude "desktop" \
-            --exclude "flutter_app"
+            --exclude "flutter_app" \
+            --exclude "ios"
           cd "$HF_SYNC_DIR"
           git init
           git config user.name "hf-sync-bot"
