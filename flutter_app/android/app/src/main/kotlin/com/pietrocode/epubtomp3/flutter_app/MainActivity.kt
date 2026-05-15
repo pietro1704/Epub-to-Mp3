@@ -1,5 +1,7 @@
 package com.pietrocode.epubtomp3.flutter_app
 
+import android.os.Handler
+import android.os.Looper
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
 import io.flutter.embedding.android.FlutterActivity
@@ -20,6 +22,8 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL = "epub_to_mp3/python"
         private const val PY_MODULE = "python_app.src.android_entrypoints"
     }
+
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -55,6 +59,39 @@ class MainActivity : FlutterActivity() {
                             .callAttr("parse_epub_to_json", path)
                             .toString()
                         result.success(json)
+                    }
+                    "convertChapter" -> {
+                        val text = call.argument<String>("text") ?: ""
+                        val voice = call.argument<String>("voice") ?: "pt-BR-AntonioNeural"
+                        val outputPath = call.argument<String>("outputPath") ?: ""
+                        if (text.isBlank() || outputPath.isBlank()) {
+                            result.error("BAD_ARGS", "text and outputPath required", null)
+                            return@setMethodCallHandler
+                        }
+                        Thread {
+                            try {
+                                val res = entrypoints
+                                    .callAttr("convert_chapter", text, voice, outputPath)
+                                val jsonStr = py.getBuiltins()
+                                    .callAttr("str", res)
+                                    .toString()
+                                    .replace("'", "\"")
+                                    .replace("True", "true")
+                                    .replace("False", "false")
+                                mainHandler.post { result.success(jsonStr) }
+                            } catch (e: Throwable) {
+                                mainHandler.post {
+                                    result.error("PYTHON_ERROR", e.message, null)
+                                }
+                            }
+                        }.start()
+                    }
+                    "detectLanguage" -> {
+                        val text = call.argument<String>("text") ?: ""
+                        val lang = entrypoints
+                            .callAttr("detect_language", text)
+                            .toString()
+                        result.success(lang)
                     }
                     else -> result.notImplemented()
                 }

@@ -54,6 +54,44 @@ def parse_epub_to_json(file_path: str) -> str:
     return json.dumps(parse_epub_to_dict(file_path), ensure_ascii=False)
 
 
+def convert_chapter(text: str, voice: str, output_path: str) -> Dict[str, Any]:
+    """Synthesize a single chapter's text to MP3 via edge-tts.
+
+    Runs the async edge-tts Communicate API in a fresh event loop so
+    Chaquopy's synchronous MethodChannel call can block on it safely.
+
+    Returns ``{"ok": True, "path": output_path, "chars": len(text)}``
+    on success or ``{"ok": False, "error": "..."}`` on failure.
+    """
+    import asyncio
+
+    async def _synth() -> None:
+        import edge_tts  # type: ignore[import-untyped]
+
+        comm = edge_tts.Communicate(text, voice)
+        await comm.save(output_path)
+
+    try:
+        loop = asyncio.new_event_loop()
+        try:
+            loop.run_until_complete(_synth())
+        finally:
+            loop.close()
+        return {"ok": True, "path": output_path, "chars": len(text)}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def detect_language(text: str) -> str:
+    """Best-effort language detection for voice selection."""
+    try:
+        from .ebook_reader import detect_language as _detect
+
+        return _detect(text) or "pt"
+    except Exception:
+        return "pt"
+
+
 def bootstrap() -> str:
     """Smoke-test the Python runtime is alive and importable.
 
@@ -65,4 +103,10 @@ def bootstrap() -> str:
     return sys.version
 
 
-__all__ = ["bootstrap", "parse_epub_to_dict", "parse_epub_to_json"]
+__all__ = [
+    "bootstrap",
+    "convert_chapter",
+    "detect_language",
+    "parse_epub_to_dict",
+    "parse_epub_to_json",
+]

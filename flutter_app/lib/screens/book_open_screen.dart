@@ -12,10 +12,12 @@
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show Directory;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
@@ -41,12 +43,12 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   EbookFulltext? _fulltext;
   String? _errorMessage;
 
-  // Conversion state
-  String? _jobId;
+  // Local conversion state
   bool _isConverting = false;
   String? _conversionError;
-  JobSnapshot? _latestSnapshot;
-  StreamSubscription<JobSnapshot>? _sseSub;
+  int _chaptersConverted = 0;
+  int _chaptersTotal = 0;
+  final List<ChapterProgress> _playableChapters = [];
 
   @override
   void initState() {
@@ -65,7 +67,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
   @override
   void dispose() {
-    _sseSub?.cancel();
     super.dispose();
   }
 
@@ -134,49 +135,96 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     }
   }
 
-  /// Upload the EPUB to the backend, start conversion, and begin
-  /// listening to the SSE stream for progress updates.
-  Future<void> _startConversion() async {
-    if (_isConverting || _jobId != null) return;
+  static const _defaultVoices = <String, String>{
+    'pt': 'pt-BR-AntonioNeural',
+    'en': 'en-US-GuyNeural',
+    'es': 'es-MX-JorgeNeural',
+    'fr': 'fr-FR-HenriNeural',
+    'de': 'de-DE-ConradNeural',
+    'it': 'it-IT-DiegoNeural',
+    'ja': 'ja-JP-KeitaNeural',
+    'zh': 'zh-CN-YunxiNeural',
+  };
 
-    final library = ref.read(libraryStoreProvider);
-    final book = library.books.cast().firstWhere(
-          (b) => b.id == widget.bookId,
-          orElse: () => null,
-        );
-    if (book == null) return;
+  Future<void> _startConversion() async {
+    if (_isConverting) return;
+    final ft = _fulltext;
+    if (ft == null || ft.chapters.isEmpty) return;
+
+    final bridge = PythonBridge();
+    if (!bridge.isSupported) {
+      setState(() => _conversionError = 'Python not available on this platform');
+      return;
+    }
 
     setState(() {
       _isConverting = true;
       _conversionError = null;
+      _chaptersConverted = 0;
+      _chaptersTotal = ft.chapters.length;
+      _playableChapters.clear();
     });
 
+    ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
+
     try {
-      final api = ref.read(apiClientProvider);
-
-      // Reuse an existing active job if one exists for this book.
-      String? jobId = book.lastJobId;
-      if (jobId != null) {
-        try {
-          final existing = await api.fetchJob(jobId);
-          if (existing.isTerminal) jobId = null;
-        } catch (_) {
-          jobId = null;
-        }
+      final docsDir = await getApplicationDocumentsDirectory();
+      final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}');
+      if (!await outDir.exists()) {
+        await outDir.create(recursive: true);
       }
-      jobId ??= await api.uploadAndConvert(book.filePath);
+
+      final sample = ft.chapters.first.text.substring(
+        0,
+        ft.chapters.first.text.length.clamp(0, 500),
+      );
+      final lang = await bridge.detectLanguage(sample);
+      final voice = _defaultVoices[lang] ?? _defaultVoices['pt']!;
+
+      final player =
+          ref.read(globalAudioPlayerProvider) as AudioPlayerService;
+
+      for (var i = 0; i < ft.chapters.length; i++) {
+        if (!mounted || !_isConverting) return;
+
+        final ch = ft.chapters[i];
+        if (ch.text.trim().isEmpty) {
+          if (!mounted) return;
+          setState(() => _chaptersConverted = i + 1);
+          continue;
+        }
+
+        final mp3Path = '${outDir.path}/chapter_${ch.index}.mp3';
+        final result = await bridge.convertChapter(
+          text: ch.text,
+          outputPath: mp3Path,
+          voice: voice,
+        );
+
+        if (!mounted) return;
+
+        if (result['ok'] == true) {
+          final cp = ChapterProgress(
+            index: ch.index,
+            name: ch.name,
+            status: 'completed',
+            downloadUrl: 'file://$mp3Path',
+            chars: ch.text.length,
+            progressRatio: 1.0,
+          );
+          _playableChapters.add(cp);
+
+          await player.setQueue(List.of(_playableChapters));
+          if (_playableChapters.length == 1 && !player.raw.playing) {
+            player.play();
+          }
+        }
+
+        setState(() => _chaptersConverted = i + 1);
+      }
+
       if (!mounted) return;
-
-      // Persist the job ID so a restart can reattach.
-      book.lastJobId = jobId;
-      library.update(book);
-
-      setState(() {
-        _jobId = jobId;
-      });
-
-      ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
-      _listenToJobStream(jobId!);
+      setState(() => _isConverting = false);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -186,122 +234,26 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     }
   }
 
-  void _listenToJobStream(String jobId) {
-    final api = ref.read(apiClientProvider);
-    _sseSub?.cancel();
-    _sseSub = api.jobStream(jobId).listen(
-      (snapshot) {
-        if (!mounted) return;
-        setState(() {
-          _latestSnapshot = snapshot;
-        });
-
-        // Auto-enqueue playable chapters as they arrive.
-        _enqueueNewChapters(snapshot);
-
-        // Stop listening when job reaches terminal state.
-        if (snapshot.isTerminal) {
-          _sseSub?.cancel();
-          _sseSub = null;
-          setState(() => _isConverting = false);
-        }
-      },
-      onError: (_) {
-        // SSE connection lost — fall back to polling.
-        if (!mounted) return;
-        _pollUntilTerminal(jobId);
-      },
-      onDone: () {
-        // Stream ended normally (server closed).
-        if (!mounted) return;
-        if (_latestSnapshot != null && !_latestSnapshot!.isTerminal) {
-          _pollUntilTerminal(jobId);
-        } else {
-          setState(() => _isConverting = false);
-        }
-      },
-    );
-  }
-
-  /// Simple poll fallback when SSE drops.
-  Future<void> _pollUntilTerminal(String jobId) async {
-    final api = ref.read(apiClientProvider);
-    while (mounted) {
-      await Future<void>.delayed(const Duration(seconds: 3));
-      if (!mounted) return;
-      try {
-        final snap = await api.fetchJob(jobId);
-        if (!mounted) return;
-        setState(() => _latestSnapshot = snap);
-        _enqueueNewChapters(snap);
-        if (snap.isTerminal) {
-          setState(() => _isConverting = false);
-          return;
-        }
-      } catch (_) {
-        // Network error — keep polling.
-      }
-    }
-  }
-
-  int _lastEnqueuedIndex = -1;
-
-  void _enqueueNewChapters(JobSnapshot snapshot) {
-    final player =
-        ref.read(globalAudioPlayerProvider) as AudioPlayerService;
-    final playable = snapshot.playableChapters;
-
-    if (playable.isEmpty) return;
-
-    // On first playable chapter, set the full queue so chapter navigation
-    // works. Subsequent chapters are enqueued incrementally.
-    if (_lastEnqueuedIndex < 0 && playable.isNotEmpty) {
-      player.setQueue(playable).then((_) {
-        if (mounted && !player.raw.playing) {
-          player.play();
-        }
-      });
-      _lastEnqueuedIndex = playable.length - 1;
-      return;
-    }
-
-    // Enqueue any newly completed chapters beyond what we already queued.
-    if (playable.length > _lastEnqueuedIndex + 1) {
-      // Re-set full queue so all chapters are available.
-      player.setQueue(playable);
-      _lastEnqueuedIndex = playable.length - 1;
-    }
-  }
-
   void _cancelConversion() {
-    _sseSub?.cancel();
-    _sseSub = null;
-    _jobId = null;
     _isConverting = false;
     _conversionError = null;
-    _latestSnapshot = null;
-    _lastEnqueuedIndex = -1;
+    _chaptersConverted = 0;
+    _chaptersTotal = 0;
+    _playableChapters.clear();
   }
 
   String? _buildStatusBanner(AppLocalizations t) {
     if (_conversionError != null) {
       return t.conversionFailed;
     }
-    if (_isConverting && _latestSnapshot == null) {
-      return t.startingConversion;
-    }
-    final snap = _latestSnapshot;
-    if (snap == null) return null;
-    if (snap.state.toLowerCase() == 'failed') {
-      return snap.error ?? t.conversionFailed;
-    }
-    final total = snap.chaptersTotal ?? 0;
-    final done = snap.chaptersCompleted ?? 0;
-    if (total > 0) {
-      return t.chaptersConverted(done, total);
+    if (_isConverting && _chaptersTotal > 0) {
+      return t.chaptersConverted(_chaptersConverted, _chaptersTotal);
     }
     if (_isConverting) {
-      return t.generatingAudio;
+      return t.startingConversion;
+    }
+    if (!_isConverting && _playableChapters.isNotEmpty) {
+      return null;
     }
     return null;
   }
@@ -371,7 +323,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
         final coverArt = book?.coverBase64 != null
             ? _decodeCover(book!.coverBase64!)
             : null;
-        final player = _jobId != null
+        final player = _playableChapters.isNotEmpty
             ? ref.read(globalAudioPlayerProvider) as AudioPlayerService
             : null;
         return Scaffold(

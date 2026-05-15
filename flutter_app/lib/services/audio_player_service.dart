@@ -147,7 +147,9 @@ class AudioPlayerService implements AudioPlayerInterface {
   }
 
   Uri _resolve(String base, String urlOrPath) {
-    if (urlOrPath.startsWith('http')) return Uri.parse(urlOrPath);
+    if (urlOrPath.startsWith('http') || urlOrPath.startsWith('file:')) {
+      return Uri.parse(urlOrPath);
+    }
     final cleanBase =
         base.endsWith('/') ? base.substring(0, base.length - 1) : base;
     final cleanPath = urlOrPath.startsWith('/') ? urlOrPath : '/$urlOrPath';

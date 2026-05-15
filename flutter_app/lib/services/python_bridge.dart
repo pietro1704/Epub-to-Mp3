@@ -113,6 +113,59 @@ class PythonBridge {
     return _decodeFulltext(raw, jobId);
   }
 
+  /// Synthesize [text] to an MP3 at [outputPath] using edge-tts.
+  /// Returns `{"ok": true, "path": "...", "chars": N}` on success.
+  Future<Map<String, dynamic>> convertChapter({
+    required String text,
+    required String outputPath,
+    String voice = 'pt-BR-AntonioNeural',
+  }) async {
+    if (_isDesktop) {
+      await _ensureDesktopPython();
+      final raw = await _runDesktopScript(
+        'import sys, os, json; '
+        'sys.path.insert(0, os.environ["PYTHONPATH"]); '
+        'from python_app.src.android_entrypoints import convert_chapter; '
+        'r = convert_chapter(sys.stdin.read(), "$voice", "$outputPath"); '
+        'sys.stdout.write(json.dumps(r))',
+        stdinPayload: text,
+      );
+      return jsonDecode(raw) as Map<String, dynamic>;
+    }
+    final raw = await _channel.invokeMethod<String>(
+      'convertChapter',
+      <String, dynamic>{
+        'text': text,
+        'voice': voice,
+        'outputPath': outputPath,
+      },
+    );
+    if (raw == null || raw.isEmpty) {
+      return {'ok': false, 'error': 'Empty response from convertChapter'};
+    }
+    return jsonDecode(raw) as Map<String, dynamic>;
+  }
+
+  /// Detect the language of a text snippet.
+  Future<String> detectLanguage(String text) async {
+    if (_isDesktop) {
+      await _ensureDesktopPython();
+      final raw = await _runDesktopScript(
+        'import sys, os; '
+        'sys.path.insert(0, os.environ["PYTHONPATH"]); '
+        'from python_app.src.android_entrypoints import detect_language; '
+        'sys.stdout.write(detect_language(sys.stdin.read()))',
+        stdinPayload: text,
+      );
+      return raw.trim();
+    }
+    final raw = await _channel.invokeMethod<String>(
+      'detectLanguage',
+      <String, dynamic>{'text': text},
+    );
+    return raw ?? 'pt';
+  }
+
   // ---------------------------------------------------------------- decode
 
   EbookFulltext _decodeFulltext(String? raw, String jobId) {
