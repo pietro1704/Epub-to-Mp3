@@ -83,6 +83,19 @@ class ApiClient {
     return convertResp.data?['jobId'] as String;
   }
 
+  /// Fetch raw bytes from a relative or absolute URL.
+  Future<List<int>?> fetchBytes(String url) async {
+    try {
+      final response = await _dio.get<List<int>>(
+        url,
+        options: Options(responseType: ResponseType.bytes),
+      );
+      return response.data;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// SSE stream parser. Each backend `data:` line is JSON-decodable.
   /// Uses a dedicated Dio instance with no receive timeout since SSE
   /// connections are long-lived.

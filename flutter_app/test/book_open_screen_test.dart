@@ -2,12 +2,32 @@ import 'package:flutter/material.dart';
 import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/book_entity.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
+import 'package:flutter_app/models/job_snapshot.dart';
 import 'package:flutter_app/screens/book_open_screen.dart';
+import 'package:flutter_app/services/api_client.dart';
+import 'package:flutter_app/services/audio_player_service.dart';
 import 'package:flutter_app/services/local_fulltext_cache.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+/// Fake API client that always throws on upload — simulates unreachable
+/// backend so the conversion flow falls through to PythonBridge.
+class _FakeApiClient extends ApiClient {
+  _FakeApiClient() : super('http://fake');
+
+  @override
+  Future<String> uploadAndConvert(String filePath) async {
+    throw Exception('Backend unreachable');
+  }
+
+  @override
+  Stream<JobSnapshot> jobStream(String jobId) => const Stream.empty();
+
+  @override
+  Future<List<int>?> fetchBytes(String url) async => null;
+}
 
 /// In-memory cache that avoids real file I/O in tests.
 class _FakeFulltextCache extends LocalFulltextCache {
@@ -37,12 +57,21 @@ Future<SharedPreferences> _mockPrefs([Map<String, Object>? seed]) async {
   return SharedPreferences.getInstance();
 }
 
-Widget _wrap(SharedPreferences prefs, String bookId,
-    {required LocalFulltextCache cache}) {
+Widget _wrap(
+  SharedPreferences prefs,
+  String bookId, {
+  required LocalFulltextCache cache,
+  ApiClient? apiClient,
+  AudioPlayerInterface? player,
+}) {
   return ProviderScope(
     overrides: [
       sharedPrefsProvider.overrideWithValue(prefs),
       localFulltextCacheProvider.overrideWithValue(cache),
+      if (apiClient != null)
+        apiClientProvider.overrideWithValue(apiClient),
+      if (player != null)
+        globalAudioPlayerProvider.overrideWithValue(player),
     ],
     child: MaterialApp(
       localizationsDelegates: AppLocalizations.localizationsDelegates,
@@ -104,6 +133,98 @@ void main() {
       // error state should render.
       expect(find.text('Could not open this book'), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
+    });
+
+    testWidgets('play button visible in bottom bar when ready', (t) async {
+      final book = BookEntity(
+        id: 'play-book',
+        title: 'Play Book',
+        author: 'Author',
+        filePath: '/tmp/play.epub',
+        displayFilename: 'play.epub',
+        addedAt: DateTime(2025, 1, 1),
+      );
+      final booksJson = '[${book.encode()}]';
+      final prefs = await _mockPrefs({'library.books.v1': booksJson});
+
+      final cache = _FakeFulltextCache();
+      cache._store['play-book'] = EbookFulltext.fromJson({
+        'jobId': 'play-book',
+        'bookTitle': 'Play Book',
+        'bookAuthor': 'Author',
+        'chapters': [
+          {
+            'index': 0,
+            'name': 'Chapter 1',
+            'text': 'Enough text to be displayed properly in the reader view.',
+          },
+        ],
+      });
+
+      final fakeApi = _FakeApiClient();
+      final fakePlayer = FakeAudioPlayerService();
+
+      await t.pumpWidget(_wrap(
+        prefs,
+        'play-book',
+        cache: cache,
+        apiClient: fakeApi,
+        player: fakePlayer,
+      ));
+      await t.pump();
+      await t.pump();
+
+      // The play button should be visible in the bottom bar.
+      expect(find.byIcon(Icons.play_circle_filled), findsOneWidget);
+    });
+
+    testWidgets('conversion falls back to local when backend fails',
+        (t) async {
+      final book = BookEntity(
+        id: 'fallback-book',
+        title: 'Fallback Book',
+        filePath: '/tmp/fallback.epub',
+        displayFilename: 'fallback.epub',
+        addedAt: DateTime(2025, 1, 1),
+      );
+      final booksJson = '[${book.encode()}]';
+      final prefs = await _mockPrefs({'library.books.v1': booksJson});
+
+      final cache = _FakeFulltextCache();
+      cache._store['fallback-book'] = EbookFulltext.fromJson({
+        'jobId': 'fallback-book',
+        'bookTitle': 'Fallback Book',
+        'chapters': [
+          {
+            'index': 0,
+            'name': 'Ch 1',
+            'text': 'Some text content for conversion testing.',
+          },
+        ],
+      });
+
+      final fakeApi = _FakeApiClient();
+      final fakePlayer = FakeAudioPlayerService();
+
+      await t.pumpWidget(_wrap(
+        prefs,
+        'fallback-book',
+        cache: cache,
+        apiClient: fakeApi,
+        player: fakePlayer,
+      ));
+      await t.pump();
+      await t.pump();
+
+      // Tap play button to trigger conversion
+      await t.tap(find.byIcon(Icons.play_circle_filled));
+      await t.pump();
+      await t.pump();
+      await t.pump();
+
+      // Backend throws → PythonBridge not supported on macOS test host →
+      // error banner appears in the bottom bar with a warning icon.
+      expect(find.byIcon(Icons.warning_amber_rounded), findsOneWidget);
     });
   });
 }

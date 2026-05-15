@@ -49,6 +49,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   int _chaptersConverted = 0;
   int _chaptersTotal = 0;
   final List<ChapterProgress> _playableChapters = [];
+  StreamSubscription<JobSnapshot>? _sseSubscription;
 
   @override
   void initState() {
@@ -67,6 +68,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
   @override
   void dispose() {
+    _sseSubscription?.cancel();
     super.dispose();
   }
 
@@ -151,12 +153,6 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     final ft = _fulltext;
     if (ft == null || ft.chapters.isEmpty) return;
 
-    final bridge = PythonBridge();
-    if (!bridge.isSupported) {
-      setState(() => _conversionError = 'Python not available on this platform');
-      return;
-    }
-
     setState(() {
       _isConverting = true;
       _conversionError = null;
@@ -167,6 +163,117 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
 
     ref.read(currentlyPlayingBookIdProvider.notifier).state = widget.bookId;
 
+    // Try backend streaming first
+    try {
+      await _startBackendConversion();
+      return;
+    } catch (_) {
+      if (!mounted) return;
+    }
+
+    // Fall back to on-device PythonBridge
+    final bridge = PythonBridge();
+    if (!bridge.isSupported) {
+      setState(() {
+        _isConverting = false;
+        _conversionError = 'Backend unreachable and local Python not available';
+      });
+      return;
+    }
+    await _startLocalConversion(bridge);
+  }
+
+  Future<void> _startBackendConversion() async {
+    final api = ref.read(apiClientProvider);
+    final library = ref.read(libraryStoreProvider);
+    final book = library.books.firstWhere((b) => b.id == widget.bookId);
+
+    final jobId = await api.uploadAndConvert(book.filePath);
+
+    book.lastJobId = jobId;
+    library.update(book);
+
+    _sseSubscription?.cancel();
+    _sseSubscription = api.jobStream(jobId).listen(
+      _handleSnapshot,
+      onError: (Object e) {
+        if (!mounted) return;
+        setState(() {
+          _isConverting = false;
+          _conversionError = e.toString();
+        });
+      },
+      onDone: () {
+        if (!mounted) return;
+        setState(() => _isConverting = false);
+      },
+    );
+  }
+
+  void _handleSnapshot(JobSnapshot snapshot) {
+    if (!mounted) return;
+
+    final playable = snapshot.playableChapters;
+    final newChapters = playable
+        .where((c) => !_playableChapters.any((e) => e.index == c.index))
+        .toList();
+
+    if (newChapters.isNotEmpty) {
+      _playableChapters.addAll(newChapters);
+      _playableChapters.sort((a, b) => a.index.compareTo(b.index));
+
+      final player =
+          ref.read(globalAudioPlayerProvider) as AudioPlayerService;
+      player.setQueue(List.of(_playableChapters));
+      if (newChapters.length == _playableChapters.length &&
+          !player.raw.playing) {
+        player.play();
+      }
+    }
+
+    setState(() {
+      _chaptersConverted = snapshot.chaptersCompleted ?? playable.length;
+      _chaptersTotal =
+          snapshot.chaptersTotal ?? _fulltext?.chapters.length ?? 0;
+    });
+
+    if (snapshot.coverUrl != null) {
+      _fetchBackendCover(snapshot.coverUrl!);
+    }
+
+    if (snapshot.isTerminal) {
+      _sseSubscription?.cancel();
+      _sseSubscription = null;
+      if (snapshot.state.toLowerCase() == 'failed') {
+        setState(() {
+          _isConverting = false;
+          _conversionError = snapshot.error ?? 'Conversion failed';
+        });
+      } else {
+        setState(() => _isConverting = false);
+      }
+    }
+  }
+
+  Future<void> _fetchBackendCover(String coverUrl) async {
+    final library = ref.read(libraryStoreProvider);
+    final idx = library.books.indexWhere((b) => b.id == widget.bookId);
+    if (idx < 0) return;
+    final book = library.books[idx];
+    if (book.coverBase64 != null) return;
+
+    try {
+      final api = ref.read(apiClientProvider);
+      final bytes = await api.fetchBytes(coverUrl);
+      if (bytes != null && bytes.isNotEmpty && mounted) {
+        book.coverBase64 = base64Encode(bytes);
+        library.update(book);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _startLocalConversion(PythonBridge bridge) async {
+    final ft = _fulltext!;
     try {
       final docsDir = await getApplicationDocumentsDirectory();
       final outDir = Directory('${docsDir.path}/audiobooks/${widget.bookId}');
@@ -235,6 +342,8 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
   }
 
   void _cancelConversion() {
+    _sseSubscription?.cancel();
+    _sseSubscription = null;
     _isConverting = false;
     _conversionError = null;
     _chaptersConverted = 0;
@@ -323,7 +432,7 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
         final coverArt = book?.coverBase64 != null
             ? _decodeCover(book!.coverBase64!)
             : null;
-        final player = _playableChapters.isNotEmpty
+        final player = (_isConverting || _playableChapters.isNotEmpty)
             ? ref.read(globalAudioPlayerProvider) as AudioPlayerService
             : null;
         return Scaffold(
