@@ -212,4 +212,27 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get removeFromLibrary => 'Remover da biblioteca';
+
+  @override
+  String get startingConversion => 'Iniciando conversão…';
+
+  @override
+  String get conversionFailed => 'Falha na conversão';
+
+  @override
+  String get uploadFailed => 'Falha no upload';
+
+  @override
+  String get downloading => 'Baixando…';
+
+  @override
+  String get downloadComplete => 'Download concluído';
+
+  @override
+  String get downloadFailed => 'Falha no download';
+
+  @override
+  String chaptersConverted(int n, int total) {
+    return '$n de $total capítulos';
+  }
 }

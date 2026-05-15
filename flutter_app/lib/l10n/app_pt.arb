@@ -77,5 +77,19 @@
   "libraryEmptyDesc": "Toque em + para importar um EPUB ou PDF, ou compartilhe de outro app.",
   "offlineReady": "Offline",
   "cachingLabel": "Cacheando",
-  "removeFromLibrary": "Remover da biblioteca"
+  "removeFromLibrary": "Remover da biblioteca",
+
+  "startingConversion": "Iniciando conversão…",
+  "conversionFailed": "Falha na conversão",
+  "uploadFailed": "Falha no upload",
+  "downloading": "Baixando…",
+  "downloadComplete": "Download concluído",
+  "downloadFailed": "Falha no download",
+  "chaptersConverted": "{n} de {total} capítulos",
+  "@chaptersConverted": {
+    "placeholders": {
+      "n": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  }
 }

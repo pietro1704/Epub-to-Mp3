@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
+import '../models/job_snapshot.dart';
 import '../services/api_client.dart';
 import '../state/providers.dart';
 import '../views/full_player_sheet.dart';
@@ -22,6 +23,7 @@ class PlayerReaderScreen extends ConsumerStatefulWidget {
 
 class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   int _currentChapterIndex = 0;
+  bool _downloading = false;
 
   void _showReaderSettings() {
     showModalBottomSheet(
@@ -34,7 +36,10 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
 
   void _showFullPlayer() {
     final player = ref.read(audioPlayerProvider(widget.jobId));
-    final job = ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
+    // Prefer the live SSE snapshot; fall back to the one-shot fetch.
+    final streamSnap = ref.read(jobStreamProvider(widget.jobId));
+    final job = streamSnap.valueOrNull ??
+        ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -57,21 +62,75 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     );
   }
 
+  Future<void> _downloadZip(JobSnapshot snapshot) async {
+    final t = AppLocalizations.of(context)!;
+    final zip = snapshot.outputs?.where((o) => o.isZip).firstOrNull;
+    if (zip == null) return;
+
+    setState(() => _downloading = true);
+    try {
+      final settings = ref.read(settingsProvider);
+      final dm = ref.read(downloadManagerProvider);
+      await dm.download(
+        jobId: widget.jobId,
+        url: '${settings.backendURL}${zip.url}',
+        filename: zip.name,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.downloadComplete)),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.downloadFailed)),
+      );
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
-    final job = ref.watch(jobSnapshotProvider(widget.jobId));
+
+    // Merge SSE stream with the initial one-shot fetch. The stream
+    // provides live updates; the FutureProvider gives us the first load.
+    final initialJob = ref.watch(jobSnapshotProvider(widget.jobId));
+    final streamJob = ref.watch(jobStreamProvider(widget.jobId));
+    final job = streamJob.valueOrNull != null ? streamJob : initialJob;
+
     final fulltext = ref.watch(fulltextProvider(widget.jobId));
     final settings = ref.watch(settingsProvider);
     final bg = ReaderThemeColors.background(settings.readerTheme,
         custom: settings.readerCustomColors);
 
+    final snapshot = job.valueOrNull;
+    final hasZip = snapshot?.outputs?.any((o) => o.isZip) ?? false;
+
     return Scaffold(
       backgroundColor: bg,
       appBar: AppBar(
-        title: Text(job.valueOrNull?.bookTitle ?? widget.jobId),
+        title: Text(snapshot?.bookTitle ?? widget.jobId),
         backgroundColor: bg,
         actions: [
+          if (hasZip)
+            _downloading
+                ? const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: 24,
+                      height: 24,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.download),
+                    onPressed: snapshot != null
+                        ? () => _downloadZip(snapshot)
+                        : null,
+                    tooltip: t.downloadAll,
+                  ),
           IconButton(
             icon: const Icon(Icons.text_format),
             onPressed: _showReaderSettings,
@@ -81,7 +140,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
       ),
       drawer: TocDrawer(
         fulltext: fulltext.valueOrNull,
-        snapshot: job.valueOrNull,
+        snapshot: snapshot,
         currentIndex: _currentChapterIndex,
         onJump: (idx) => setState(() => _currentChapterIndex = idx),
       ),
@@ -96,6 +155,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
           );
           final controls = _PlayerControls(
             jobId: widget.jobId,
+            snapshot: snapshot,
             onExpandPlayer: _showFullPlayer,
           );
           if (wide) {
@@ -159,15 +219,35 @@ class _Reader extends StatelessWidget {
 class _PlayerControls extends ConsumerWidget {
   const _PlayerControls({
     required this.jobId,
+    this.snapshot,
     this.onExpandPlayer,
   });
   final String jobId;
+  final JobSnapshot? snapshot;
   final VoidCallback? onExpandPlayer;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final job = ref.watch(jobSnapshotProvider(jobId));
+    final t = AppLocalizations.of(context)!;
     final player = ref.watch(audioPlayerProvider(jobId));
+    final snap = snapshot;
+
+    // Build progress string from live snapshot.
+    String statusText;
+    if (snap == null) {
+      statusText = t.startingConversion;
+    } else {
+      final total = snap.chaptersTotal ?? 0;
+      final done = snap.chaptersCompleted ?? 0;
+      if (total > 0) {
+        statusText =
+            '${snap.state} • ${t.chaptersConverted(done, total)}';
+      } else {
+        statusText =
+            '${snap.state} • ${(snap.progressPercent ?? 0).toStringAsFixed(1)}%';
+      }
+    }
+
     return GestureDetector(
       onTap: onExpandPlayer,
       child: Padding(
@@ -175,13 +255,7 @@ class _PlayerControls extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            job.when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => Text('Error: $e'),
-              data: (snap) => Text(
-                '${snap.state} • ${(snap.progressPercent ?? 0).toStringAsFixed(1)}%',
-              ),
-            ),
+            Text(statusText),
             const SizedBox(height: 12),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -203,7 +277,7 @@ class _PlayerControls extends ConsumerWidget {
                       icon: Icon(
                           playing ? Icons.pause_circle : Icons.play_circle),
                       onPressed: () async {
-                        final j = job.valueOrNull;
+                        final j = snapshot;
                         if (j != null && player.chapters.isEmpty) {
                           await player.setQueue(j.playableChapters);
                         }

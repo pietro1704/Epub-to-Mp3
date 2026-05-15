@@ -77,5 +77,19 @@
   "libraryEmptyDesc": "Tap + to import an EPUB or PDF, or share one from another app.",
   "offlineReady": "Offline",
   "cachingLabel": "Caching",
-  "removeFromLibrary": "Remove from library"
+  "removeFromLibrary": "Remove from library",
+
+  "startingConversion": "Starting conversion…",
+  "conversionFailed": "Conversion failed",
+  "uploadFailed": "Upload failed",
+  "downloading": "Downloading…",
+  "downloadComplete": "Download complete",
+  "downloadFailed": "Download failed",
+  "chaptersConverted": "{n} of {total} chapters",
+  "@chaptersConverted": {
+    "placeholders": {
+      "n": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  }
 }

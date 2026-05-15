@@ -487,6 +487,48 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Remove from library'**
   String get removeFromLibrary;
+
+  /// No description provided for @startingConversion.
+  ///
+  /// In en, this message translates to:
+  /// **'Starting conversion…'**
+  String get startingConversion;
+
+  /// No description provided for @conversionFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Conversion failed'**
+  String get conversionFailed;
+
+  /// No description provided for @uploadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Upload failed'**
+  String get uploadFailed;
+
+  /// No description provided for @downloading.
+  ///
+  /// In en, this message translates to:
+  /// **'Downloading…'**
+  String get downloading;
+
+  /// No description provided for @downloadComplete.
+  ///
+  /// In en, this message translates to:
+  /// **'Download complete'**
+  String get downloadComplete;
+
+  /// No description provided for @downloadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Download failed'**
+  String get downloadFailed;
+
+  /// No description provided for @chaptersConverted.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} of {total} chapters'**
+  String chaptersConverted(int n, int total);
 }
 
 class _AppLocalizationsDelegate

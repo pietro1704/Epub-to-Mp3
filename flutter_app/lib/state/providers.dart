@@ -157,6 +157,14 @@ final fulltextProvider =
   return store.fetch(jobId);
 });
 
+/// Live SSE stream for a running job. Emits [JobSnapshot] on every backend
+/// event. The stream auto-disposes when the last listener goes away.
+final jobStreamProvider =
+    StreamProvider.family<JobSnapshot, String>((ref, jobId) {
+  final api = ref.watch(apiClientProvider);
+  return api.jobStream(jobId);
+});
+
 final audioPlayerProvider =
     Provider.family<AudioPlayerService, String>((ref, jobId) {
   final settings = ref.watch(settingsProvider);
@@ -199,7 +207,8 @@ final currentlyPlayingBookIdProvider = StateProvider<String?>((ref) => null);
 /// Flutter app runs everything locally, so one player instance suffices.
 /// Typed as the interface so tests can substitute a [FakeAudioPlayerService].
 final globalAudioPlayerProvider = Provider<AudioPlayerInterface>((ref) {
-  final p = AudioPlayerService();
+  final settings = ref.watch(settingsProvider);
+  final p = AudioPlayerService(backendBase: settings.backendURL);
   ref.onDispose(p.dispose);
   return p;
 });

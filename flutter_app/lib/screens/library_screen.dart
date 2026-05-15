@@ -212,21 +212,26 @@ class _BookGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent: 180,
-        mainAxisSpacing: 16,
-        crossAxisSpacing: 16,
-        childAspectRatio: 0.6,
-      ),
-      itemCount: books.length,
-      itemBuilder: (context, i) {
-        final book = books[i];
-        return _BookCard(
-          book: book,
-          onTap: () => onTap(book),
-          onLongPress: () => onLongPress(book),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth <= 0) return const SizedBox.shrink();
+        return GridView.builder(
+          padding: const EdgeInsets.all(16),
+          gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+            maxCrossAxisExtent: 180,
+            mainAxisSpacing: 16,
+            crossAxisSpacing: 16,
+            childAspectRatio: 0.6,
+          ),
+          itemCount: books.length,
+          itemBuilder: (context, i) {
+            final book = books[i];
+            return _BookCard(
+              book: book,
+              onTap: () => onTap(book),
+              onLongPress: () => onLongPress(book),
+            );
+          },
         );
       },
     );

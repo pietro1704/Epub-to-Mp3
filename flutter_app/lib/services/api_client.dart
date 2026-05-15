@@ -14,10 +14,16 @@ class ApiClient {
           baseUrl: baseUrl,
           connectTimeout: const Duration(seconds: 10),
           receiveTimeout: const Duration(seconds: 30),
+        )),
+        _streamDio = Dio(BaseOptions(
+          baseUrl: baseUrl,
+          connectTimeout: const Duration(seconds: 10),
+          // SSE streams are long-lived — no receive timeout.
         ));
 
   final String baseUrl;
   final Dio _dio;
+  final Dio _streamDio;
 
   Future<List<SessionRecord>> fetchSessions({int last = 50}) async {
     final r = await _dio.get<Map<String, dynamic>>(
@@ -52,9 +58,36 @@ class ApiClient {
     return EbookFulltext.fromJson(r.data ?? const {});
   }
 
+  /// Upload an EPUB file and start conversion. Returns the job ID.
+  ///
+  /// Two-step: POST multipart `/api/uploads` then POST form `/api/convert`.
+  Future<String> uploadAndConvert(String filePath) async {
+    final fileName = filePath.split('/').last;
+    final uploadForm = FormData.fromMap({
+      'file': await MultipartFile.fromFile(filePath, filename: fileName),
+    });
+    final uploadResp = await _dio.post<Map<String, dynamic>>(
+      '/api/uploads',
+      data: uploadForm,
+    );
+    final uploadId = uploadResp.data?['uploadId'] as String;
+
+    final convertForm = FormData.fromMap({
+      'upload_id': uploadId,
+      'engine': 'edge',
+    });
+    final convertResp = await _dio.post<Map<String, dynamic>>(
+      '/api/convert',
+      data: convertForm,
+    );
+    return convertResp.data?['jobId'] as String;
+  }
+
   /// SSE stream parser. Each backend `data:` line is JSON-decodable.
+  /// Uses a dedicated Dio instance with no receive timeout since SSE
+  /// connections are long-lived.
   Stream<JobSnapshot> jobStream(String jobId) async* {
-    final response = await _dio.get<ResponseBody>(
+    final response = await _streamDio.get<ResponseBody>(
       '/api/jobs/$jobId/stream',
       options: Options(
         responseType: ResponseType.stream,

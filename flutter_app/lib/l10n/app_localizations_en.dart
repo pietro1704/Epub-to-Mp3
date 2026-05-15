@@ -211,4 +211,27 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get removeFromLibrary => 'Remove from library';
+
+  @override
+  String get startingConversion => 'Starting conversion…';
+
+  @override
+  String get conversionFailed => 'Conversion failed';
+
+  @override
+  String get uploadFailed => 'Upload failed';
+
+  @override
+  String get downloading => 'Downloading…';
+
+  @override
+  String get downloadComplete => 'Download complete';
+
+  @override
+  String get downloadFailed => 'Download failed';
+
+  @override
+  String chaptersConverted(int n, int total) {
+    return '$n of $total chapters';
+  }
 }
