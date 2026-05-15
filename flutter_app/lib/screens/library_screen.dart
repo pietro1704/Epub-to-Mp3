@@ -6,12 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
 import '../models/book_entity.dart';
+import '../services/epub_metadata_reader.dart';
 import '../services/library_store.dart';
 import '../state/providers.dart';
 
 final libraryStoreProvider = ChangeNotifierProvider<LibraryStore>((ref) {
   final prefs = ref.watch(sharedPrefsProvider);
-  return LibraryStore(prefs: prefs);
+  return LibraryStore(prefs: prefs, metadataReader: readEpubMetadata);
 });
 
 enum _SortMode { lastOpened, title, dateAdded }
