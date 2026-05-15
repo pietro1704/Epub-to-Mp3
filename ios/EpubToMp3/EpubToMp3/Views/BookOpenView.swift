@@ -218,6 +218,7 @@ struct BookOpenView: View {
             let accessing = fileURL.startAccessingSecurityScopedResource()
 
             var parsed: EbookFulltext?
+            #if os(iOS)
             if PythonEmbed.shared.isParserAvailable {
                 do {
                     parsed = try await PythonBridge.shared.parseEpub(
@@ -227,6 +228,7 @@ struct BookOpenView: View {
                     parsed = nil
                 }
             }
+            #endif
             if parsed == nil || (parsed?.chapters.isEmpty ?? true) {
                 let capturedURL = fileURL
                 let capturedBookId = book.id
@@ -431,6 +433,7 @@ struct BookOpenView: View {
             playerLog.debug("[AudioBootstrap] synthesising chapter \(chapterArrayIndex) (\(chapterText.count) chars)")
 
             do {
+                #if os(iOS)
                 _ = try await PythonBridge.shared.convertChapterStreaming(
                     text: chapterText,
                     voice: voice,
@@ -450,8 +453,22 @@ struct BookOpenView: View {
                 lastFailureKey = nil
                 watchdog?.heartbeat()
                 playerLog.debug("[AudioBootstrap] chapter \(chapterArrayIndex) complete")
+                #else
+                try await Self.synthesizeDirectEdge(
+                    text: chapterText,
+                    voice: voice,
+                    cacheRoot: cacheRoot,
+                    chapterIndex: chapterArrayIndex,
+                    globalPlayer: globalPlayer,
+                    watchdog: watchdog
+                )
+                chaptersDone += 1
+                consecutiveFailures = 0
+                lastFailureKey = nil
+                watchdog?.heartbeat()
+                #endif
             } catch {
-                playerLog.error("[AudioBootstrap] Python bridge failed ch \(chapterArrayIndex): \(error.localizedDescription) — trying direct EdgeTTS")
+                playerLog.error("[AudioBootstrap] TTS failed ch \(chapterArrayIndex): \(error.localizedDescription) — trying direct EdgeTTS")
                 do {
                     try await Self.synthesizeDirectEdge(
                         text: chapterText,

@@ -154,8 +154,13 @@ enum EpubHtmlRenderer {
             descriptor = descriptor.withFamily(family)
         }
         var traits = descriptor.symbolicTraits
+        #if canImport(UIKit)
         if forceBold { traits.insert(.traitBold) }
         if stripItalic { traits.remove(.traitItalic) }
+        #else
+        if forceBold { traits.insert(.bold) }
+        if stripItalic { traits.remove(.italic) }
+        #endif
         if let withTraits = descriptor.withSymbolicTraits(traits) {
             descriptor = withTraits
         }

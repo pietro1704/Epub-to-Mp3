@@ -18,10 +18,7 @@
 // macOS still uses the sidecar path (`SidecarManager.swift`). This
 // file only compiles on iOS / simulator.
 
-#if os(iOS) || targetEnvironment(simulator)
-
 import Foundation
-import PythonKit
 
 enum PythonBridgeError: Error, LocalizedError {
     case bootstrapFailed(String)
@@ -40,6 +37,10 @@ enum PythonBridgeError: Error, LocalizedError {
         }
     }
 }
+
+#if os(iOS) || targetEnvironment(simulator)
+
+import PythonKit
 
 /// Synchronisation gate around in-process Python calls. PythonKit
 /// surfaces CPython through a single interpreter, which is not
