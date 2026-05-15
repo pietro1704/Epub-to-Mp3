@@ -114,6 +114,11 @@ void main() {
       expect(values.last, Duration.zero);
       sub.cancel();
     });
+
+    test('chapterIndexForPlayerIndex identity map on Fake', () {
+      expect(player.chapterIndexForPlayerIndex(0), 0);
+      expect(player.chapterIndexForPlayerIndex(5), 5);
+    });
   });
 
   group('AudioPlayerInterface contract', () {
