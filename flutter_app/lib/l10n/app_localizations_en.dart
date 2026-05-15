@@ -234,4 +234,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String chaptersConverted(int n, int total) {
     return '$n of $total chapters';
   }
+
+  @override
+  String get saveForOffline => 'Save';
+
+  @override
+  String charsCount(int n) {
+    return '$n chars';
+  }
 }

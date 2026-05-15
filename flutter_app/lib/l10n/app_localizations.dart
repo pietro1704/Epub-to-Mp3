@@ -529,6 +529,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{n} of {total} chapters'**
   String chaptersConverted(int n, int total);
+
+  /// No description provided for @saveForOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get saveForOffline;
+
+  /// No description provided for @charsCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} chars'**
+  String charsCount(int n);
 }
 
 class _AppLocalizationsDelegate

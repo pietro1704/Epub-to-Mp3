@@ -235,4 +235,12 @@ class AppLocalizationsPt extends AppLocalizations {
   String chaptersConverted(int n, int total) {
     return '$n de $total capítulos';
   }
+
+  @override
+  String get saveForOffline => 'Salvar';
+
+  @override
+  String charsCount(int n) {
+    return '$n caracteres';
+  }
 }

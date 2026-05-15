@@ -91,5 +91,12 @@
       "n": { "type": "int" },
       "total": { "type": "int" }
     }
+  },
+  "saveForOffline": "Salvar",
+  "charsCount": "{n} caracteres",
+  "@charsCount": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
   }
 }
