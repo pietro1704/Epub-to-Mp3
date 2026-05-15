@@ -36,22 +36,22 @@ def test_bootstrap_is_called_inside_queue_async() -> None:
     )
 
     for offset in bootstrap_calls:
-        # Find the nearest preceding `queue.async {` and the nearest
-        # preceding `func` declaration. If `queue.async {` is closer,
-        # the call is inside the worker block — good. If `func` is
-        # closer (and there's no `queue.async {` between them), the
-        # call runs on the caller — regression.
+        # Find the nearest preceding worker-dispatch indicator and the
+        # nearest `func` declaration. The original code used `queue.async`;
+        # the refactored PythonRunner uses `runner.callAsync` — both
+        # offload from the calling actor. If neither appears between the
+        # enclosing `func` and the `bootstrap()` call, the call runs on
+        # the caller — regression.
         prefix = body[:offset]
-        last_queue = prefix.rfind("queue.async")
+        last_queue = max(prefix.rfind("queue.async"), prefix.rfind("runner.callAsync"))
         last_func = prefix.rfind("func ")
-        # Both negative means we're somewhere weird (top-of-file
-        # comment). Treat as failure so the test points at it.
         assert last_func >= 0, (
             f"bootstrap() at offset {offset} not inside any function — " "unexpected file layout."
         )
         assert last_queue > last_func, (
             f"bootstrap() at offset {offset} runs on the caller "
             "(main actor when invoked from SwiftUI). Move it inside "
-            "the `queue.async {{ … }}` block — calling Py_Initialize "
-            "on the main actor freezes the UI for hundreds of ms."
+            "a `queue.async` / `runner.callAsync` block — calling "
+            "Py_Initialize on the main actor freezes the UI for "
+            "hundreds of ms."
         )
