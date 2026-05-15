@@ -102,25 +102,114 @@ class AppLocalizationsPt extends AppLocalizations {
       'Abra um livro da biblioteca para começar a ler';
 
   @override
-  String get browseLibrary => 'Abrir Biblioteca';
-
-  @override
   String get pickBookToRead => 'Escolha um livro para ler';
 
   @override
-  String get parsingBook => 'Analisando livro…';
+  String get browseLibrary => 'Ver Biblioteca';
 
   @override
-  String get parsingFailed => 'Falha ao analisar livro';
+  String get parsingBook => 'Abrindo livro…';
+
+  @override
+  String get parsingFailed => 'Não foi possível abrir este livro';
 
   @override
   String get retry => 'Tentar novamente';
 
   @override
-  String generatingAudio(int ready, int total) {
-    return 'Gerando áudio · $ready/$total capítulos prontos';
-  }
+  String get generatingAudio => 'Gerando áudio';
 
   @override
   String get nowPlaying => 'Reproduzindo';
+
+  @override
+  String get audioEngineSection => 'Motor de áudio';
+
+  @override
+  String get useBuiltInEngine => 'Usar motor de áudio integrado';
+
+  @override
+  String get useBuiltInEngineDesc =>
+      'Sintetiza capítulos neste dispositivo. Sem servidor necessário.';
+
+  @override
+  String get audioEngineFooter =>
+      'A leitura funciona offline de qualquer forma — isso afeta apenas a geração de áudio.';
+
+  @override
+  String get remoteBackendSection => 'Servidor remoto';
+
+  @override
+  String get backendUrlHint => 'http://localhost:8000';
+
+  @override
+  String get backendUrlFooter =>
+      'Aponte para um servidor local ou URL do Hugging Face Space.';
+
+  @override
+  String get fontLabel => 'Fonte';
+
+  @override
+  String get layoutLabel => 'Layout';
+
+  @override
+  String get lineSpacingLabel => 'Espaçamento';
+
+  @override
+  String get marginLabel => 'Margem';
+
+  @override
+  String get autoScrollLabel => 'Rolagem automática';
+
+  @override
+  String get autoScrollDesc => 'Rolar texto para acompanhar a reprodução';
+
+  @override
+  String get playbackSection => 'Reprodução';
+
+  @override
+  String get aboutSection => 'Sobre';
+
+  @override
+  String get platformLabel => 'Plataforma';
+
+  @override
+  String get projectOnGithub => 'Projeto no GitHub';
+
+  @override
+  String get readerPrefsFooter =>
+      'Estas preferências se aplicam a todos os livros da biblioteca.';
+
+  @override
+  String get invalidUrl => 'URL inválida';
+
+  @override
+  String nOfSteps(int n, int total) {
+    return '$n de $total';
+  }
+
+  @override
+  String get sortBy => 'Ordenar por';
+
+  @override
+  String get sortLastOpened => 'Último aberto';
+
+  @override
+  String get sortTitle => 'Título';
+
+  @override
+  String get sortDateAdded => 'Data de adição';
+
+  @override
+  String get libraryEmptyDesc =>
+      'Toque em + para importar um EPUB ou PDF, ou compartilhe de outro app.';
+
+  @override
+  String get offlineReady => 'Offline';
+
+  @override
+  String get cachingLabel => 'Cacheando';
+
+  @override
+  String get removeFromLibrary => 'Remover da biblioteca';
 }

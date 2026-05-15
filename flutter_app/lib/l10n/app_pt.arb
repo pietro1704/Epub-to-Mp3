@@ -34,5 +34,48 @@
   "cancel": "Cancelar",
   "remove": "Remover",
   "noConversionYet": "Converta este livro antes de reproduzir áudio",
-  "readerEmptyHint": "Abra um livro da biblioteca para começar a ler"
+  "readerEmptyHint": "Abra um livro da biblioteca para começar a ler",
+  "pickBookToRead": "Escolha um livro para ler",
+  "browseLibrary": "Ver Biblioteca",
+  "parsingBook": "Abrindo livro…",
+  "parsingFailed": "Não foi possível abrir este livro",
+  "retry": "Tentar novamente",
+  "generatingAudio": "Gerando áudio",
+  "nowPlaying": "Reproduzindo",
+
+  "audioEngineSection": "Motor de áudio",
+  "useBuiltInEngine": "Usar motor de áudio integrado",
+  "useBuiltInEngineDesc": "Sintetiza capítulos neste dispositivo. Sem servidor necessário.",
+  "audioEngineFooter": "A leitura funciona offline de qualquer forma — isso afeta apenas a geração de áudio.",
+  "remoteBackendSection": "Servidor remoto",
+  "backendUrlHint": "http://localhost:8000",
+  "backendUrlFooter": "Aponte para um servidor local ou URL do Hugging Face Space.",
+  "fontLabel": "Fonte",
+  "layoutLabel": "Layout",
+  "lineSpacingLabel": "Espaçamento",
+  "marginLabel": "Margem",
+  "autoScrollLabel": "Rolagem automática",
+  "autoScrollDesc": "Rolar texto para acompanhar a reprodução",
+  "playbackSection": "Reprodução",
+  "aboutSection": "Sobre",
+  "platformLabel": "Plataforma",
+  "projectOnGithub": "Projeto no GitHub",
+  "readerPrefsFooter": "Estas preferências se aplicam a todos os livros da biblioteca.",
+  "invalidUrl": "URL inválida",
+  "nOfSteps": "{n} de {total}",
+  "@nOfSteps": {
+    "placeholders": {
+      "n": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+
+  "sortBy": "Ordenar por",
+  "sortLastOpened": "Último aberto",
+  "sortTitle": "Título",
+  "sortDateAdded": "Data de adição",
+  "libraryEmptyDesc": "Toque em + para importar um EPUB ou PDF, ou compartilhe de outro app.",
+  "offlineReady": "Offline",
+  "cachingLabel": "Cacheando",
+  "removeFromLibrary": "Remover da biblioteca"
 }

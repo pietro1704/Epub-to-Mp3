@@ -200,6 +200,10 @@ class MirrorAppSettings {
   Future<void> setUseEmbeddedSidecar(bool v) =>
       _prefs.setBool('useEmbeddedSidecar', v);
 
+  bool get useEmbeddedRuntime => _prefs.getBool('useEmbeddedRuntime') ?? true;
+  Future<void> setUseEmbeddedRuntime(bool v) =>
+      _prefs.setBool('useEmbeddedRuntime', v);
+
   // Reader appearance ---------------------------------------------------
   int get readerFontSize {
     final v = _prefs.getInt('readerFontSize') ?? 3;

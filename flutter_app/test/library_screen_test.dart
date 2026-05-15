@@ -55,6 +55,50 @@ void main() {
     expect(find.text('Author A'), findsOneWidget);
   });
 
+  testWidgets('sort button visible in app bar', (tester) async {
+    final book = BookEntity(
+      id: 'abc123',
+      title: 'Test Book',
+      author: 'Author',
+      filePath: '/tmp/test.epub',
+      displayFilename: 'test.epub',
+      addedAt: DateTime(2025, 1, 1),
+    );
+    await _pumpLibrary(tester,
+        prefsData: {'library.books.v1': '[${book.encode()}]'});
+
+    expect(find.byIcon(Icons.sort), findsOneWidget);
+  });
+
+  testWidgets('sort menu shows three options', (tester) async {
+    final book = BookEntity(
+      id: 'abc123',
+      title: 'Test Book',
+      author: 'Author',
+      filePath: '/tmp/test.epub',
+      displayFilename: 'test.epub',
+      addedAt: DateTime(2025, 1, 1),
+    );
+    await _pumpLibrary(tester,
+        prefsData: {'library.books.v1': '[${book.encode()}]'});
+
+    await tester.tap(find.byIcon(Icons.sort));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Last opened'), findsOneWidget);
+    expect(find.text('Title'), findsOneWidget);
+    expect(find.text('Date added'), findsOneWidget);
+  });
+
+  testWidgets('empty library shows description text', (tester) async {
+    await _pumpLibrary(tester);
+
+    expect(
+      find.text('Tap + to import an EPUB or PDF, or share one from another app.'),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('long press on book card shows remove dialog', (tester) async {
     final book = BookEntity(
       id: 'abc123',

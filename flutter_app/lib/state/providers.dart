@@ -103,6 +103,16 @@ class SettingsNotifier extends StateNotifier<AppSettings> {
     await state.setDarkMode(v);
     _emit();
   }
+
+  Future<void> setUseEmbeddedRuntime(bool v) async {
+    await state.setUseEmbeddedRuntime(v);
+    _emit();
+  }
+
+  Future<void> setReaderColumnWidth(double v) async {
+    await state.setReaderColumnWidth(v);
+    _emit();
+  }
 }
 
 final settingsProvider =

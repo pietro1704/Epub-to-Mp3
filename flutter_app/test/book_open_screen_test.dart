@@ -102,7 +102,7 @@ void main() {
 
       // PythonBridge.isSupported is false on macOS test host, so the
       // error state should render.
-      expect(find.text('Failed to parse book'), findsOneWidget);
+      expect(find.text('Could not open this book'), findsOneWidget);
       expect(find.text('Retry'), findsOneWidget);
     });
   });

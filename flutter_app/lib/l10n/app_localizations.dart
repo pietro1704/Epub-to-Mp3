@@ -278,28 +278,28 @@ abstract class AppLocalizations {
   /// **'Open a book from the library to start reading'**
   String get readerEmptyHint;
 
-  /// No description provided for @browseLibrary.
-  ///
-  /// In en, this message translates to:
-  /// **'Browse Library'**
-  String get browseLibrary;
-
   /// No description provided for @pickBookToRead.
   ///
   /// In en, this message translates to:
   /// **'Pick a book to read'**
   String get pickBookToRead;
 
+  /// No description provided for @browseLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Browse Library'**
+  String get browseLibrary;
+
   /// No description provided for @parsingBook.
   ///
   /// In en, this message translates to:
-  /// **'Parsing book…'**
+  /// **'Opening book…'**
   String get parsingBook;
 
   /// No description provided for @parsingFailed.
   ///
   /// In en, this message translates to:
-  /// **'Failed to parse book'**
+  /// **'Could not open this book'**
   String get parsingFailed;
 
   /// No description provided for @retry.
@@ -308,14 +308,185 @@ abstract class AppLocalizations {
   /// **'Retry'**
   String get retry;
 
-  /// Conversion status banner, e.g. "Generating audio · 2/12 chapters ready"
-  String generatingAudio(int ready, int total);
+  /// No description provided for @generatingAudio.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating audio'**
+  String get generatingAudio;
 
   /// No description provided for @nowPlaying.
   ///
   /// In en, this message translates to:
-  /// **'Now playing'**
+  /// **'Now Playing'**
   String get nowPlaying;
+
+  /// No description provided for @audioEngineSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio engine'**
+  String get audioEngineSection;
+
+  /// No description provided for @useBuiltInEngine.
+  ///
+  /// In en, this message translates to:
+  /// **'Use built-in audio engine'**
+  String get useBuiltInEngine;
+
+  /// No description provided for @useBuiltInEngineDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Synthesises chapters on this device. No backend needed.'**
+  String get useBuiltInEngineDesc;
+
+  /// No description provided for @audioEngineFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading works offline either way — this only affects audio generation.'**
+  String get audioEngineFooter;
+
+  /// No description provided for @remoteBackendSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Remote backend'**
+  String get remoteBackendSection;
+
+  /// No description provided for @backendUrlHint.
+  ///
+  /// In en, this message translates to:
+  /// **'http://localhost:8000'**
+  String get backendUrlHint;
+
+  /// No description provided for @backendUrlFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'Point to a local server or Hugging Face Space URL.'**
+  String get backendUrlFooter;
+
+  /// No description provided for @fontLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Font'**
+  String get fontLabel;
+
+  /// No description provided for @layoutLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Layout'**
+  String get layoutLabel;
+
+  /// No description provided for @lineSpacingLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Line spacing'**
+  String get lineSpacingLabel;
+
+  /// No description provided for @marginLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Margin'**
+  String get marginLabel;
+
+  /// No description provided for @autoScrollLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Auto-scroll'**
+  String get autoScrollLabel;
+
+  /// No description provided for @autoScrollDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Scroll text to follow audio playback'**
+  String get autoScrollDesc;
+
+  /// No description provided for @playbackSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback'**
+  String get playbackSection;
+
+  /// No description provided for @aboutSection.
+  ///
+  /// In en, this message translates to:
+  /// **'About'**
+  String get aboutSection;
+
+  /// No description provided for @platformLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Platform'**
+  String get platformLabel;
+
+  /// No description provided for @projectOnGithub.
+  ///
+  /// In en, this message translates to:
+  /// **'Project on GitHub'**
+  String get projectOnGithub;
+
+  /// No description provided for @readerPrefsFooter.
+  ///
+  /// In en, this message translates to:
+  /// **'These preferences apply to every book in your library.'**
+  String get readerPrefsFooter;
+
+  /// No description provided for @invalidUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'URL is not valid'**
+  String get invalidUrl;
+
+  /// No description provided for @nOfSteps.
+  ///
+  /// In en, this message translates to:
+  /// **'{n} of {total}'**
+  String nOfSteps(int n, int total);
+
+  /// No description provided for @sortBy.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort by'**
+  String get sortBy;
+
+  /// No description provided for @sortLastOpened.
+  ///
+  /// In en, this message translates to:
+  /// **'Last opened'**
+  String get sortLastOpened;
+
+  /// No description provided for @sortTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Title'**
+  String get sortTitle;
+
+  /// No description provided for @sortDateAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Date added'**
+  String get sortDateAdded;
+
+  /// No description provided for @libraryEmptyDesc.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap + to import an EPUB or PDF, or share one from another app.'**
+  String get libraryEmptyDesc;
+
+  /// No description provided for @offlineReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Offline'**
+  String get offlineReady;
+
+  /// No description provided for @cachingLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Caching'**
+  String get cachingLabel;
+
+  /// No description provided for @removeFromLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove from library'**
+  String get removeFromLibrary;
 }
 
 class _AppLocalizationsDelegate

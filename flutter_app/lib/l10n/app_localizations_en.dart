@@ -101,25 +101,114 @@ class AppLocalizationsEn extends AppLocalizations {
   String get readerEmptyHint => 'Open a book from the library to start reading';
 
   @override
-  String get browseLibrary => 'Browse Library';
-
-  @override
   String get pickBookToRead => 'Pick a book to read';
 
   @override
-  String get parsingBook => 'Parsing book…';
+  String get browseLibrary => 'Browse Library';
 
   @override
-  String get parsingFailed => 'Failed to parse book';
+  String get parsingBook => 'Opening book…';
+
+  @override
+  String get parsingFailed => 'Could not open this book';
 
   @override
   String get retry => 'Retry';
 
   @override
-  String generatingAudio(int ready, int total) {
-    return 'Generating audio · $ready/$total chapters ready';
+  String get generatingAudio => 'Generating audio';
+
+  @override
+  String get nowPlaying => 'Now Playing';
+
+  @override
+  String get audioEngineSection => 'Audio engine';
+
+  @override
+  String get useBuiltInEngine => 'Use built-in audio engine';
+
+  @override
+  String get useBuiltInEngineDesc =>
+      'Synthesises chapters on this device. No backend needed.';
+
+  @override
+  String get audioEngineFooter =>
+      'Reading works offline either way — this only affects audio generation.';
+
+  @override
+  String get remoteBackendSection => 'Remote backend';
+
+  @override
+  String get backendUrlHint => 'http://localhost:8000';
+
+  @override
+  String get backendUrlFooter =>
+      'Point to a local server or Hugging Face Space URL.';
+
+  @override
+  String get fontLabel => 'Font';
+
+  @override
+  String get layoutLabel => 'Layout';
+
+  @override
+  String get lineSpacingLabel => 'Line spacing';
+
+  @override
+  String get marginLabel => 'Margin';
+
+  @override
+  String get autoScrollLabel => 'Auto-scroll';
+
+  @override
+  String get autoScrollDesc => 'Scroll text to follow audio playback';
+
+  @override
+  String get playbackSection => 'Playback';
+
+  @override
+  String get aboutSection => 'About';
+
+  @override
+  String get platformLabel => 'Platform';
+
+  @override
+  String get projectOnGithub => 'Project on GitHub';
+
+  @override
+  String get readerPrefsFooter =>
+      'These preferences apply to every book in your library.';
+
+  @override
+  String get invalidUrl => 'URL is not valid';
+
+  @override
+  String nOfSteps(int n, int total) {
+    return '$n of $total';
   }
 
   @override
-  String get nowPlaying => 'Now playing';
+  String get sortBy => 'Sort by';
+
+  @override
+  String get sortLastOpened => 'Last opened';
+
+  @override
+  String get sortTitle => 'Title';
+
+  @override
+  String get sortDateAdded => 'Date added';
+
+  @override
+  String get libraryEmptyDesc =>
+      'Tap + to import an EPUB or PDF, or share one from another app.';
+
+  @override
+  String get offlineReady => 'Offline';
+
+  @override
+  String get cachingLabel => 'Caching';
+
+  @override
+  String get removeFromLibrary => 'Remove from library';
 }

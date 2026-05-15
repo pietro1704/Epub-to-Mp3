@@ -9,16 +9,22 @@ import '../models/book_entity.dart';
 import '../services/library_store.dart';
 import '../state/providers.dart';
 
-/// Riverpod provider for [LibraryStore]. Uses ChangeNotifierProvider so
-/// the grid rebuilds on every add/remove.
 final libraryStoreProvider = ChangeNotifierProvider<LibraryStore>((ref) {
   final prefs = ref.watch(sharedPrefsProvider);
   return LibraryStore(prefs: prefs);
 });
 
-/// Library-first home screen. Grid of imported EPUBs/PDFs.
-class LibraryScreen extends ConsumerWidget {
+enum _SortMode { lastOpened, title, dateAdded }
+
+class LibraryScreen extends ConsumerStatefulWidget {
   const LibraryScreen({super.key});
+
+  @override
+  ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
+}
+
+class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+  _SortMode _sortMode = _SortMode.lastOpened;
 
   Future<void> _pickAndImport(BuildContext context, LibraryStore store) async {
     final result = await FilePicker.platform.pickFiles(
@@ -42,7 +48,6 @@ class LibraryScreen extends ConsumerWidget {
     }
   }
 
-  /// Set the currently-reading book and switch to the Reader tab (index 0).
   void _openInReader(WidgetRef ref, BookEntity book) {
     ref.read(currentlyReadingBookIdProvider.notifier).set(book.id);
     ref.read(rootTabIndexProvider.notifier).state = 0;
@@ -54,6 +59,7 @@ class LibraryScreen extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
+        icon: const Icon(Icons.delete_outline),
         title: Text(t.removeBookTitle),
         content: Text(t.removeBookMessage(book.resolvedTitle)),
         actions: [
@@ -61,7 +67,7 @@ class LibraryScreen extends ConsumerWidget {
             onPressed: () => Navigator.pop(context),
             child: Text(t.cancel),
           ),
-          TextButton(
+          FilledButton(
             onPressed: () {
               store.remove(book.id);
               Navigator.pop(context);
@@ -73,16 +79,44 @@ class LibraryScreen extends ConsumerWidget {
     );
   }
 
+  List<BookEntity> _sorted(List<BookEntity> books) {
+    final list = List<BookEntity>.from(books);
+    switch (_sortMode) {
+      case _SortMode.lastOpened:
+        list.sort((a, b) {
+          final aDate = a.lastOpenedAt ?? a.addedAt;
+          final bDate = b.lastOpenedAt ?? b.addedAt;
+          return bDate.compareTo(aDate);
+        });
+      case _SortMode.title:
+        list.sort((a, b) =>
+            a.resolvedTitle.toLowerCase().compareTo(b.resolvedTitle.toLowerCase()));
+      case _SortMode.dateAdded:
+        list.sort((a, b) => b.addedAt.compareTo(a.addedAt));
+    }
+    return list;
+  }
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context, [WidgetRef? _]) {
     final t = AppLocalizations.of(context)!;
     final store = ref.watch(libraryStoreProvider);
-    final books = store.books;
+    final books = _sorted(store.books);
 
     return Scaffold(
       appBar: AppBar(
         title: Text(t.libraryTitle),
         actions: [
+          PopupMenuButton<_SortMode>(
+            icon: const Icon(Icons.sort),
+            tooltip: t.sortBy,
+            onSelected: (mode) => setState(() => _sortMode = mode),
+            itemBuilder: (_) => [
+              _sortItem(t.sortLastOpened, _SortMode.lastOpened),
+              _sortItem(t.sortTitle, _SortMode.title),
+              _sortItem(t.sortDateAdded, _SortMode.dateAdded),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: t.addBook,
@@ -105,6 +139,23 @@ class LibraryScreen extends ConsumerWidget {
             ),
     );
   }
+
+  PopupMenuItem<_SortMode> _sortItem(String label, _SortMode mode) {
+    return PopupMenuItem(
+      value: mode,
+      child: Row(
+        children: [
+          if (_sortMode == mode)
+            Icon(Icons.check,
+                size: 18, color: Theme.of(context).colorScheme.primary)
+          else
+            const SizedBox(width: 18),
+          const SizedBox(width: 8),
+          Text(label),
+        ],
+      ),
+    );
+  }
 }
 
 class _EmptyLibrary extends StatelessWidget {
@@ -114,22 +165,35 @@ class _EmptyLibrary extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final t = AppLocalizations.of(context)!;
+    final cs = Theme.of(context).colorScheme;
     return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.library_books_outlined,
-              size: 64, color: Theme.of(context).colorScheme.outline),
-          const SizedBox(height: 16),
-          Text(t.libraryEmpty,
-              style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          FilledButton.icon(
-            onPressed: onAdd,
-            icon: const Icon(Icons.add),
-            label: Text(t.addBook),
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.library_books_outlined,
+                size: 64, color: cs.outline),
+            const SizedBox(height: 16),
+            Text(t.libraryEmpty,
+                style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              t.libraryEmptyDesc,
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: cs.onSurfaceVariant),
+            ),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: onAdd,
+              icon: const Icon(Icons.add),
+              label: Text(t.addBook),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -148,12 +212,12 @@ class _BookGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 180,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.65,
+        mainAxisSpacing: 16,
+        crossAxisSpacing: 16,
+        childAspectRatio: 0.6,
       ),
       itemCount: books.length,
       itemBuilder: (context, i) {
@@ -189,7 +253,20 @@ class _BookCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Expanded(child: _cover(cs)),
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _cover(cs),
+                  if (book.status != LibraryStatus.textOnly)
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: _StatusBadge(status: book.status),
+                    ),
+                ],
+              ),
+            ),
             Padding(
               padding: const EdgeInsets.all(8),
               child: Column(
@@ -228,10 +305,65 @@ class _BookCard extends StatelessWidget {
         // Fall through to placeholder
       }
     }
+    final isPdf = book.filePath.toLowerCase().endsWith('.pdf');
     return Container(
       color: cs.primaryContainer,
       child: Center(
-        child: Icon(Icons.book, size: 48, color: cs.onPrimaryContainer),
+        child: Icon(
+          isPdf ? Icons.picture_as_pdf : Icons.book,
+          size: 48,
+          color: cs.onPrimaryContainer,
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  const _StatusBadge({required this.status});
+  final LibraryStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
+    final (icon, label, color) = switch (status) {
+      LibraryStatus.offlineReady => (
+          Icons.check_circle,
+          t.offlineReady,
+          Colors.green,
+        ),
+      LibraryStatus.caching => (
+          Icons.cloud_download,
+          t.cachingLabel,
+          Colors.orange,
+        ),
+      LibraryStatus.textOnly => (
+          Icons.book,
+          '',
+          Colors.transparent,
+        ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.85),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 10,
+                ),
+          ),
+        ],
       ),
     );
   }

@@ -34,5 +34,48 @@
   "cancel": "Cancel",
   "remove": "Remove",
   "noConversionYet": "Convert this book first to play audio",
-  "readerEmptyHint": "Open a book from the library to start reading"
+  "readerEmptyHint": "Open a book from the library to start reading",
+  "pickBookToRead": "Pick a book to read",
+  "browseLibrary": "Browse Library",
+  "parsingBook": "Opening book…",
+  "parsingFailed": "Could not open this book",
+  "retry": "Retry",
+  "generatingAudio": "Generating audio",
+  "nowPlaying": "Now Playing",
+
+  "audioEngineSection": "Audio engine",
+  "useBuiltInEngine": "Use built-in audio engine",
+  "useBuiltInEngineDesc": "Synthesises chapters on this device. No backend needed.",
+  "audioEngineFooter": "Reading works offline either way — this only affects audio generation.",
+  "remoteBackendSection": "Remote backend",
+  "backendUrlHint": "http://localhost:8000",
+  "backendUrlFooter": "Point to a local server or Hugging Face Space URL.",
+  "fontLabel": "Font",
+  "layoutLabel": "Layout",
+  "lineSpacingLabel": "Line spacing",
+  "marginLabel": "Margin",
+  "autoScrollLabel": "Auto-scroll",
+  "autoScrollDesc": "Scroll text to follow audio playback",
+  "playbackSection": "Playback",
+  "aboutSection": "About",
+  "platformLabel": "Platform",
+  "projectOnGithub": "Project on GitHub",
+  "readerPrefsFooter": "These preferences apply to every book in your library.",
+  "invalidUrl": "URL is not valid",
+  "nOfSteps": "{n} of {total}",
+  "@nOfSteps": {
+    "placeholders": {
+      "n": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+
+  "sortBy": "Sort by",
+  "sortLastOpened": "Last opened",
+  "sortTitle": "Title",
+  "sortDateAdded": "Date added",
+  "libraryEmptyDesc": "Tap + to import an EPUB or PDF, or share one from another app.",
+  "offlineReady": "Offline",
+  "cachingLabel": "Caching",
+  "removeFromLibrary": "Remove from library"
 }
