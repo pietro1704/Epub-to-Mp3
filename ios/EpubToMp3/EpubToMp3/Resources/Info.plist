@@ -45,6 +45,10 @@
 	     Apple Books purchased content stays inaccessible — Apple
 	     enforces FairPlay DRM and never exposes the underlying
 	     file to third-party apps. -->
+	<!-- App Store: no encryption beyond Apple's standard HTTPS. Avoids
+	     the export-compliance review questionnaire on every upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
