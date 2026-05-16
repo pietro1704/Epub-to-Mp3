@@ -14,6 +14,7 @@ struct EpubToMp3App: App {
     /// surface (MiniPlayerBar, deep link, keyboard shortcut) can open the
     /// full-screen player without passing callbacks through the view tree.
     @StateObject private var playerPresentation = PlayerPresentation()
+    @StateObject private var bookmarkStore = BookmarkStore()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -29,6 +30,7 @@ struct EpubToMp3App: App {
                 .environmentObject(library)
                 .environmentObject(player)
                 .environmentObject(playerPresentation)
+                .environmentObject(bookmarkStore)
                 .task {
                     #if os(macOS)
                     await startSidecarIfNeeded()

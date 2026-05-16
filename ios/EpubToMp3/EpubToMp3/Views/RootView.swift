@@ -122,6 +122,7 @@ struct TabRoot: View {
         .environmentObject(LibraryStore())
         .environmentObject(AudioPlayer())
         .environmentObject(PlayerPresentation())
+        .environmentObject(BookmarkStore())
         #if os(macOS)
         .environmentObject(SidecarManager())
         #endif
@@ -133,6 +134,7 @@ struct TabRoot: View {
         .environmentObject(LibraryStore())
         .environmentObject(AudioPlayer())
         .environmentObject(PlayerPresentation())
+        .environmentObject(BookmarkStore())
         #if os(macOS)
         .environmentObject(SidecarManager())
         #endif

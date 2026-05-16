@@ -40,6 +40,8 @@ struct PlayerReaderView: View {
     @State private var downloadTask: Task<Void, Never>?
     @State private var downloadState: DownloadButtonState = .idle
     @State private var downloadProgressText: String?
+    @State private var showingBookmarks = false
+    @EnvironmentObject private var bookmarkStore: BookmarkStore
 
     /// Tri-state for the toolbar Download button. `idle` is the default
     /// CTA; `downloading` shows a determinate progress label; `done`
@@ -83,16 +85,36 @@ struct PlayerReaderView: View {
                 ToolbarItem(placement: .primaryAction) {
                     HStack(spacing: 12) {
                         downloadButton
+                        bookmarkButton
                         #if os(iOS)
                         AirPlayPickerView()
                             .frame(width: 32, height: 32)
                         #endif
                         sleepTimerMenu
+                        Button { showingBookmarks = true } label: {
+                            Image(systemName: "bookmark")
+                        }
                         Button { showingToc = true } label: {
                             Image(systemName: "list.bullet.indent")
                         }
                     }
                 }
+            }
+            .background {
+                Color.clear.allowsHitTesting(false)
+                    .sheet(isPresented: $showingBookmarks) {
+                        CompatNavigationStack {
+                            BookmarksListView(
+                                bookId: bookId,
+                                onJumpToChapter: { idx in
+                                    showingBookmarks = false
+                                    jumpTo(chapterIndex: idx)
+                                }
+                            )
+                            .environmentObject(bookmarkStore)
+                        }
+                        .compatPresentationDetents()
+                    }
             }
             .background {
                 Color.clear.allowsHitTesting(false)
@@ -290,6 +312,33 @@ struct PlayerReaderView: View {
             .accessibilityIdentifier("player.downloadAll")
             .disabled(downloadState == .downloading)
         }
+    }
+
+    private var bookId: String {
+        library.books.first(where: { $0.lastJobId == snapshot.jobId })?.id ?? snapshot.jobId
+    }
+
+    @ViewBuilder
+    private var bookmarkButton: some View {
+        let isBookmarked = bookmarkStore.hasBookmark(bookId: bookId, chapterIndex: player.currentChapterIndex)
+        Button {
+            if isBookmarked {
+                if let bm = bookmarkStore.bookmarks(for: bookId, chapterIndex: player.currentChapterIndex)
+                    .first(where: { !$0.isHighlight }) {
+                    bookmarkStore.remove(id: bm.id)
+                }
+            } else {
+                bookmarkStore.addBookmark(
+                    bookId: bookId,
+                    chapterIndex: player.currentChapterIndex,
+                    chapterTitle: currentChapterTitle
+                )
+            }
+        } label: {
+            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
+                .foregroundStyle(isBookmarked ? .orange : .primary)
+        }
+        .accessibilityLabel(isBookmarked ? "Remove bookmark" : "Add bookmark")
     }
 
     /// Kick off the download fan-out and stream the progress states back
@@ -538,5 +587,6 @@ struct PlayerReaderView: View {
     .environmentObject(AppSettings())
     .environmentObject(AudioPlayer())
     .environmentObject(LibraryStore.previewPopulated)
+    .environmentObject(BookmarkStore.previewPopulated)
 }
 #endif
