@@ -90,6 +90,18 @@ struct MiniPlayerBar: View {
 
                     Spacer()
 
+                    Button {
+                        player.skipBackward(seconds: 15)
+                    } label: {
+                        Image(systemName: "gobackward.15")
+                            .font(.system(size: 18))
+                            .frame(width: 36, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(player.isConverting && !player.firstChapterReady)
+                    .accessibilityLabel("Skip back 15 seconds")
+
                     ZStack {
                         ProgressView()
                             .opacity(player.isConverting && !player.firstChapterReady ? 1 : 0)
@@ -113,8 +125,8 @@ struct MiniPlayerBar: View {
                         player.skipForward(seconds: 15)
                     } label: {
                         Image(systemName: "goforward.15")
-                            .font(.system(size: 20))
-                            .frame(width: 44, height: 44)
+                            .font(.system(size: 18))
+                            .frame(width: 36, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)

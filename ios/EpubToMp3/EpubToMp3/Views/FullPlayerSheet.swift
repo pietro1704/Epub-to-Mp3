@@ -215,43 +215,62 @@ struct FullPlayerSheet: View {
     // MARK: - Transport row
 
     private var transportRow: some View {
-        HStack(spacing: 40) {
-            // Play / Pause
-            Button {
-                player.togglePlayPause()
-            } label: {
+        HStack(spacing: 0) {
+            Spacer()
+            Button { player.previousChapter() } label: {
+                Image(systemName: "backward.end.fill")
+                    .font(.system(size: 22))
+                    .frame(width: 48, height: 48)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Previous chapter")
+            Spacer()
+            Button { player.skipBackward(seconds: 15) } label: {
+                Image(systemName: "gobackward.15")
+                    .font(.system(size: 28))
+                    .frame(width: 48, height: 48)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Skip back 15 seconds")
+            Spacer()
+            Button { player.togglePlayPause() } label: {
                 ZStack {
                     if player.isLoading {
                         ProgressView()
                             .progressViewStyle(.circular)
                             .tint(.primary)
-                            .frame(width: 64, height: 64)
+                            .frame(width: 56, height: 56)
                     } else {
-                        Image(
-                            systemName: player.isPlaying
-                                ? "pause.circle.fill"
-                                : "play.circle.fill"
-                        )
-                        .font(.system(size: 64))
-                        .frame(width: 64, height: 64)
+                        Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                            .font(.system(size: 56))
+                            .frame(width: 56, height: 56)
                     }
                 }
             }
             .buttonStyle(.plain)
             .tint(.primary)
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-
-            // Skip forward 30 s
-            Button {
-                player.skipForward(seconds: 30)
-            } label: {
-                Image(systemName: "goforward.30")
-                    .font(.system(size: 32))
-                    .frame(width: 56, height: 56)
+            Spacer()
+            Button { player.skipForward(seconds: 15) } label: {
+                Image(systemName: "goforward.15")
+                    .font(.system(size: 28))
+                    .frame(width: 48, height: 48)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Skip forward 30 seconds")
+            .accessibilityLabel("Skip forward 15 seconds")
+            Spacer()
+            Button { player.nextChapter() } label: {
+                Image(systemName: "forward.end.fill")
+                    .font(.system(size: 22))
+                    .frame(width: 48, height: 48)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Next chapter")
+            Spacer()
         }
     }
 
