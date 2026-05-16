@@ -14,37 +14,59 @@ enum Paginator {
     ) -> [String] {
         guard !spans.isEmpty else { return [] }
         let usableWidth = max(200, min(columnWidth, pageSize.width - 2 * CGFloat(margin)))
-        // Vertical: subtract padding (48), footer (30), nav chrome (20)
         let usableHeight = max(120, pageSize.height - 98)
         let charWidth = max(6, fontSize * 0.55)
         let charsPerLine = max(15, Int(usableWidth / charWidth))
         let lineHeight = fontSize + CGFloat(lineSpacing) + 2
         let linesPerPage = max(5, Int(usableHeight / lineHeight))
-        // 85% safety factor — SwiftUI wraps slightly earlier than monospace math
-        let charsPerPage = max(200, Int(Double(charsPerLine * linesPerPage) * 0.85))
+        let charsPerPage = charsPerLine * linesPerPage
 
         let headerLines = headerHeight > 0
             ? max(0, Int(ceil(headerHeight / lineHeight))) + 1 : 0
-        let charsFirstPage = max(150, Int(Double(charsPerLine * max(3, linesPerPage - headerLines)) * 0.85))
+        let charsFirstPage = charsPerLine * max(3, linesPerPage - headerLines)
 
         let all = spans.map(\.text).joined(separator: "\n\n")
-        return splitText(all, normalBudget: charsPerPage, firstBudget: charsFirstPage)
+        return splitText(all, normalBudget: charsPerPage, firstBudget: charsFirstPage,
+                         charsPerLine: charsPerLine)
     }
 
-    private static func splitText(_ text: String, normalBudget: Int, firstBudget: Int) -> [String] {
+    /// Count chars with paragraph gaps weighted as full lines.
+    private static func weightedCount(_ text: some StringProtocol, charsPerLine: Int) -> Int {
+        var count = 0
+        var i = text.startIndex
+        while i < text.endIndex {
+            if text[i] == "\n" {
+                let next = text.index(after: i)
+                if next < text.endIndex && text[next] == "\n" {
+                    count += charsPerLine
+                    i = text.index(after: next)
+                    continue
+                }
+                count += charsPerLine
+            } else {
+                count += 1
+            }
+            i = text.index(after: i)
+        }
+        return count
+    }
+
+    private static func splitText(_ text: String, normalBudget: Int, firstBudget: Int,
+                                    charsPerLine: Int) -> [String] {
         guard !text.isEmpty else { return [] }
         var pages: [String] = []
         var remaining = text[text.startIndex...]
 
         while !remaining.isEmpty {
             let budget = pages.isEmpty ? firstBudget : normalBudget
-            if remaining.count <= budget {
+            if weightedCount(remaining, charsPerLine: charsPerLine) <= budget {
                 pages.append(String(remaining).trimmingCharacters(in: .whitespacesAndNewlines))
                 break
             }
-            let cutEnd = remaining.index(remaining.startIndex, offsetBy: budget)
-            let candidate = remaining[remaining.startIndex..<cutEnd]
-            // Find last paragraph break, sentence end, or word break
+            // Walk forward counting weighted chars until we exceed budget
+            let cutIndex = findCutPoint(in: remaining, budget: budget, charsPerLine: charsPerLine)
+            let candidate = remaining[remaining.startIndex..<cutIndex]
+
             if let paraBreak = candidate.range(of: "\n\n", options: .backwards) {
                 pages.append(String(remaining[remaining.startIndex..<paraBreak.lowerBound])
                     .trimmingCharacters(in: .whitespacesAndNewlines))
@@ -60,10 +82,32 @@ enum Paginator {
                 remaining = remaining[space.upperBound...]
             } else {
                 pages.append(String(candidate).trimmingCharacters(in: .whitespacesAndNewlines))
-                remaining = remaining[cutEnd...]
+                remaining = remaining[cutIndex...]
             }
         }
         return pages.filter { !$0.isEmpty }
+    }
+
+    private static func findCutPoint(in text: Substring, budget: Int, charsPerLine: Int) -> String.Index {
+        var weight = 0
+        var i = text.startIndex
+        while i < text.endIndex {
+            if text[i] == "\n" {
+                let next = text.index(after: i)
+                if next < text.endIndex && text[next] == "\n" {
+                    weight += charsPerLine
+                    if weight >= budget { return i }
+                    i = text.index(after: next)
+                    continue
+                }
+                weight += charsPerLine
+            } else {
+                weight += 1
+            }
+            if weight >= budget { return text.index(after: i) }
+            i = text.index(after: i)
+        }
+        return text.endIndex
     }
 
     private static func findLastSentenceBreak(in text: Substring) -> String.Index? {
