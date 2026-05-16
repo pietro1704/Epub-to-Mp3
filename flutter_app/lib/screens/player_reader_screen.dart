@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -27,6 +29,44 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   int _currentChapterIndex = 0;
   bool _downloading = false;
   bool _searchVisible = false;
+  StreamSubscription<int?>? _chapterIndexSub;
+  bool _isPlaying = false;
+  StreamSubscription<bool>? _playingSub;
+
+  @override
+  void initState() {
+    super.initState();
+    // Defer subscription setup to after the first frame so that
+    // ref.read is available (ConsumerState is fully mounted).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _subscribeToPlayer();
+    });
+  }
+
+  void _subscribeToPlayer() {
+    final player = ref.read(audioPlayerProvider(widget.jobId));
+
+    // Track playing state so we only sync during playback.
+    _playingSub = player.playing.listen((playing) {
+      _isPlaying = playing;
+    });
+
+    // When the player advances to a new item, update the reader chapter.
+    _chapterIndexSub = player.currentIndex.listen((playerIndex) {
+      if (playerIndex == null || !_isPlaying || !mounted) return;
+      final chapterIdx = player.chapterIndexForPlayerIndex(playerIndex);
+      if (chapterIdx != _currentChapterIndex) {
+        setState(() => _currentChapterIndex = chapterIdx);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _chapterIndexSub?.cancel();
+    _playingSub?.cancel();
+    super.dispose();
+  }
 
   void _showReaderSettings() {
     showModalBottomSheet(

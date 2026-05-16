@@ -611,6 +611,7 @@ struct InstantReaderView: View {
             spans = []
             return
         }
+        currentSentenceId = nil
         let computed = chapter.splitSentences()
         spans = computed
         sync.load(chapter: chapter,
