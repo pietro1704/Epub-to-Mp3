@@ -19,6 +19,7 @@ enum ReaderFontFamily: String, CaseIterable, Identifiable {
 }
 
 enum ReaderTheme: String, CaseIterable, Identifiable {
+    case auto
     case light
     case sepia
     case parchment
@@ -31,6 +32,7 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .auto:      return "Default"
         case .light:     return "Light"
         case .sepia:     return "Sepia"
         case .parchment: return "Parchment"
@@ -41,22 +43,9 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Preferred color scheme to inject via `.preferredColorScheme`.
-    ///
-    /// Dark and Black themes force `.dark` so all SwiftUI-native controls
-    /// (pickers, menus, sheets presented from within the reader) also
-    /// render in dark mode — matching the reader background. Warm themes
-    /// (Sepia, Parchment, Paper) and Light explicitly force `.light` so
-    /// they never accidentally inherit OS dark mode. Custom returns `nil`
-    /// (follows system) because we don't know whether the user's custom
-    /// colours are a dark or light palette.
-    ///
-    /// HIG note: this only affects views *below* the modifier in the
-    /// hierarchy — the navigation bar, tab bar, and any UI outside the
-    /// reader are not affected. This is the exact same scoping Apple
-    /// Books uses.
     var preferredColorScheme: ColorScheme? {
         switch self {
+        case .auto:                    return nil
         case .dark, .black:            return .dark
         case .light, .sepia, .parchment, .paper: return .light
         case .custom:                  return nil
@@ -120,7 +109,7 @@ final class AppSettings: ObservableObject {
         ) ?? .serif
         self.readerTheme = ReaderTheme(
             rawValue: defaults.string(forKey: "readerTheme") ?? ""
-        ) ?? .light
+        ) ?? .auto
         self.readerAutoScroll = defaults.object(forKey: "readerAutoScroll") as? Bool ?? true
         self.readerLayout = ReaderLayout(
             rawValue: defaults.string(forKey: "readerLayout") ?? ""

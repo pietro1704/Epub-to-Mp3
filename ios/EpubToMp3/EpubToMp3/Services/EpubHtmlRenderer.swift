@@ -99,7 +99,8 @@ enum EpubHtmlRenderer {
 
         let overrideFamily = settings.readerOverrideFontFamily
         let overrideSize = settings.readerOverrideFontSize
-        let overrideColours = settings.readerOverrideColours || settings.readerTheme != .light
+        let overrideColours = settings.readerOverrideColours
+            || (settings.readerTheme != .light && settings.readerTheme != .auto)
         let boldAll = settings.readerBoldOverride
         let suppressItalic = settings.readerSuppressItalic
         let letterSpacing = settings.readerLetterSpacing
@@ -191,6 +192,11 @@ enum EpubHtmlRenderer {
 
     private static func resolvedForeground(for settings: AppSettings) -> PlatformColor {
         switch settings.readerTheme {
+        #if canImport(UIKit)
+        case .auto:      return .label
+        #else
+        case .auto:      return .labelColor
+        #endif
         case .light:     return .black
         case .sepia:     return rgb(0.20, 0.15, 0.10)
         case .parchment: return rgb(0.18, 0.13, 0.06)
@@ -208,6 +214,7 @@ enum EpubHtmlRenderer {
     /// over inline highlights with white.
     private static func resolvedBackground(for settings: AppSettings) -> PlatformColor? {
         switch settings.readerTheme {
+        case .auto:      return nil
         case .light:     return nil
         case .sepia:     return rgb(0.96, 0.93, 0.85)
         case .parchment: return rgb(0.94, 0.89, 0.78)

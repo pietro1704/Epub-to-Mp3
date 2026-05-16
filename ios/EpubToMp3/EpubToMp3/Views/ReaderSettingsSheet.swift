@@ -118,6 +118,7 @@ struct ReaderSettingsSheet: View {
 
     private func themePreviewColor(_ theme: ReaderTheme) -> Color {
         switch theme {
+        case .auto:      return .platformSystemBackground
         case .light:     return .white
         case .sepia:     return Color(red: 0.97, green: 0.94, blue: 0.88)
         case .parchment: return Color(red: 0.96, green: 0.93, blue: 0.85)

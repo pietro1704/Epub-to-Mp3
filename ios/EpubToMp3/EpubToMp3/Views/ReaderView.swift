@@ -465,9 +465,9 @@ struct ReaderView: View {
 
     private var themeBackground: Color {
         switch settings.readerTheme {
+        case .auto:
+            return .platformSystemBackground
         case .light:
-            // Use system background so the view is transparent on
-            // macOS sidebar / sheet chrome. Explicit white on iOS.
             return .platformSystemBackground
         case .sepia:
             // Apple Books sepia: #F8F0E0
@@ -492,6 +492,8 @@ struct ReaderView: View {
 
     private var themeForeground: Color {
         switch settings.readerTheme {
+        case .auto:
+            return .primary
         case .light:
             return .primary
         case .sepia:
@@ -520,7 +522,7 @@ struct ReaderView: View {
     /// (#5AC8FA — iOS system blue accessible on dark bg, ≥ 3:1 WCAG large text).
     var themeAccent: Color {
         switch settings.readerTheme {
-        case .light, .sepia, .parchment, .paper:
+        case .auto, .light, .sepia, .parchment, .paper:
             return .accentColor
         case .dark, .black:
             // #5AC8FA: iOS system light-blue, 3.4:1 on #1C1C1E, 4.1:1 on #000000

@@ -656,6 +656,7 @@ struct InstantReaderView: View {
     /// continuations of the reading surface rather than system chrome.
     private var readerBackground: Color {
         switch settings.readerTheme {
+        case .auto:      return .platformSystemBackground
         case .light:     return .platformSystemBackground
         case .sepia:     return Color(red: 0xF8/255.0, green: 0xF0/255.0, blue: 0xE0/255.0)
         case .parchment: return Color(red: 0xF4/255.0, green: 0xEC/255.0, blue: 0xD8/255.0)
@@ -668,9 +669,9 @@ struct InstantReaderView: View {
         }
     }
 
-    /// Reader foreground colour derived from `settings.readerTheme`.
     private var readerForeground: Color {
         switch settings.readerTheme {
+        case .auto:      return .primary
         case .light:     return .primary
         case .sepia:     return Color(red: 0x5B/255.0, green: 0x46/255.0, blue: 0x36/255.0)
         case .parchment: return Color(red: 0x3D/255.0, green: 0x2F/255.0, blue: 0x1F/255.0)
