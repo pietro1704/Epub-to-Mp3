@@ -82,36 +82,37 @@ struct TabRoot: View {
     }
 
     private var tabContent: some View {
-        TabView(selection: $selectedTab) {
-            CompatNavigationStack {
-                MainReaderView(
-                    onOpenPlayer: { playerPresentation.showFullPlayer() },
-                    onBrowseLibrary: { selectedTab = .library }
-                )
-            }
-            .tabItem { Label("Read", systemImage: "text.book.closed") }
-            .tag(RootTab.reader)
+        VStack(spacing: 0) {
+            TabView(selection: $selectedTab) {
+                CompatNavigationStack {
+                    MainReaderView(
+                        onOpenPlayer: { playerPresentation.showFullPlayer() },
+                        onBrowseLibrary: { selectedTab = .library }
+                    )
+                }
+                .tabItem { Label("Read", systemImage: "text.book.closed") }
+                .tag(RootTab.reader)
 
-            CompatNavigationStack {
-                LibraryView(onOpenBook: { selectedTab = .reader })
-            }
-            .tabItem { Label("Library", systemImage: "books.vertical") }
-            .tag(RootTab.library)
+                CompatNavigationStack {
+                    LibraryView(onOpenBook: { selectedTab = .reader })
+                }
+                .tabItem { Label("Library", systemImage: "books.vertical") }
+                .tag(RootTab.library)
 
-            CompatNavigationStack {
-                SettingsView()
+                CompatNavigationStack {
+                    SettingsView()
+                }
+                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tag(RootTab.settings)
             }
-            .tabItem { Label("Settings", systemImage: "gearshape") }
-            .tag(RootTab.settings)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             let visible = showMiniPlayer && selectedTab != .reader
-            MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
-                .frame(height: visible ? nil : 0)
-                .opacity(visible ? 1 : 0)
-                .clipped()
-                .accessibilityIdentifier("miniPlayer.tabBar")
-                .accessibilityHidden(!visible)
+            if visible {
+                MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityIdentifier("miniPlayer.tabBar")
+            }
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showMiniPlayer)
     }
