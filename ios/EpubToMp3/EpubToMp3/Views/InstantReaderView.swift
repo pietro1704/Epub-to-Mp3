@@ -448,7 +448,7 @@ struct InstantReaderView: View {
             Text(format(seconds: player.positionSeconds))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .trailing)
+                .frame(minWidth: 44, alignment: .trailing)
                 .accessibilityHidden(true)
             Slider(
                 value: Binding(
@@ -461,7 +461,7 @@ struct InstantReaderView: View {
             Text(format(seconds: player.durationSeconds))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
-                .frame(width: 44, alignment: .leading)
+                .frame(minWidth: 44, alignment: .leading)
                 .accessibilityHidden(true)
         }
     }

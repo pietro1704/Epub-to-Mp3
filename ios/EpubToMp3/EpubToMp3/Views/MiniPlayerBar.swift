@@ -125,9 +125,9 @@ struct MiniPlayerBar: View {
                 // inset so the cover and transport controls never sit
                 // under the notch / Dynamic Island in landscape.
                 .compatHorizontalSafeAreaPadding(12)
-                .frame(height: 62)
+                .frame(minHeight: 62)
             }
-            .frame(height: 64)
+            .frame(minHeight: 64)
             .background(.thinMaterial)
             .contentShape(Rectangle())
             .onTapGesture { onTap() }
