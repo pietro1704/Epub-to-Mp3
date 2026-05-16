@@ -22,7 +22,7 @@
   "next": "Next",
   "previous": "Previous",
   "libraryTitle": "Library",
-  "libraryEmpty": "No books yet",
+  "libraryEmpty": "Your library is empty",
   "addBook": "Add a book",
   "removeBookTitle": "Remove book",
   "removeBookMessage": "Remove \"{title}\" from your library? The file will not be deleted.",
@@ -92,11 +92,55 @@
       "total": { "type": "int" }
     }
   },
+  "drmFootnote": "DRM-protected books (e.g. from Google Play or Kindle) cannot be opened.",
   "saveForOffline": "Save",
   "charsCount": "{n} chars",
   "@charsCount": {
     "placeholders": {
       "n": { "type": "int" }
     }
-  }
+  },
+
+  "searchInBook": "Search in book",
+  "noResults": "No results",
+  "done": "Done",
+  "searchResultsCapped": "Showing first 100 results",
+
+  "sortLibrary": "Sort library",
+  "skipBack15": "Skip back 15 seconds",
+  "skipForward15": "Skip forward 15 seconds",
+  "playbackPosition": "Playback position",
+  "playbackSpeed": "Playback speed",
+  "sleepTimer": "Sleep timer",
+  "albumArt": "Album art",
+  "closePlayer": "Close player",
+  "tableOfContents": "Table of contents",
+  "readerSettings": "Reader settings",
+  "audioReady": "Audio ready",
+  "currentlyPlaying": "Currently playing",
+
+  "editTags": "Edit Tags",
+  "tagsSection": "Tags",
+  "newTagHint": "New tag",
+  "add": "Add",
+  "existingTags": "Existing tags",
+  "allFilter": "All",
+  "searchLibrary": "Search library",
+
+  "bookmarksTitle": "Bookmarks",
+  "filterAll": "All",
+  "filterBookmarks": "Bookmarks",
+  "filterHighlights": "Highlights",
+  "noBookmarksYet": "No bookmarks yet",
+  "noBookmarksHint": "Long-press a paragraph in the reader to add a bookmark or highlight.",
+  "editNote": "Edit Note",
+  "addNoteHint": "Add a note…",
+  "highlightedText": "Highlighted text",
+  "colorLabel": "Color",
+  "save": "Save",
+  "removeBookmarkTitle": "Remove bookmark",
+  "removeBookmarkMessage": "Remove this bookmark?",
+  "addBookmark": "Add bookmark",
+  "bookmarkAdded": "Bookmark added",
+  "bookmarkRemoved": "Bookmark removed"
 }

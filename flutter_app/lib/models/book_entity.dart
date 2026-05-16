@@ -53,6 +53,9 @@ class BookEntity {
   /// User opted in to caching audio offline.
   bool cachedOffline;
 
+  /// User-assigned tags for organisation / filtering.
+  List<String> tags;
+
   BookEntity({
     required this.id,
     required this.title,
@@ -66,7 +69,8 @@ class BookEntity {
     this.coverBase64,
     this.lastJobId,
     this.cachedOffline = false,
-  });
+    List<String>? tags,
+  }) : tags = tags ?? [];
 
   LibraryStatus get status {
     if (cachedOffline) return LibraryStatus.offlineReady;
@@ -94,6 +98,7 @@ class BookEntity {
         if (coverBase64 != null) 'coverBase64': coverBase64,
         if (lastJobId != null) 'lastJobId': lastJobId,
         'cachedOffline': cachedOffline,
+        'tags': tags,
       };
 
   factory BookEntity.fromJson(Map<String, dynamic> json) => BookEntity(
@@ -113,6 +118,10 @@ class BookEntity {
         coverBase64: json['coverBase64'] as String?,
         lastJobId: json['lastJobId'] as String?,
         cachedOffline: json['cachedOffline'] as bool? ?? false,
+        tags: (json['tags'] as List<dynamic>?)
+                ?.map((e) => e as String)
+                .toList() ??
+            [],
       );
 
   String encode() => jsonEncode(toJson());

@@ -7,8 +7,10 @@ import '../models/job_snapshot.dart';
 import '../services/api_client.dart';
 import '../state/providers.dart';
 import '../views/full_player_sheet.dart';
+import '../views/reader_search_overlay.dart';
 import '../views/reader_settings_sheet.dart';
 import '../views/reader_theme_colors.dart';
+import 'bookmarks_list_screen.dart';
 import 'reader_view.dart' as scroll_reader;
 import 'toc_drawer.dart';
 
@@ -24,6 +26,7 @@ class PlayerReaderScreen extends ConsumerStatefulWidget {
 class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   int _currentChapterIndex = 0;
   bool _downloading = false;
+  bool _searchVisible = false;
 
   void _showReaderSettings() {
     showModalBottomSheet(
@@ -59,6 +62,59 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
             bookId: widget.jobId,
           );
         },
+      ),
+    );
+  }
+
+  void _toggleBookmark() {
+    final t = AppLocalizations.of(context)!;
+    final store = ref.read(bookmarkStoreProvider);
+    final snapshot = ref.read(jobStreamProvider(widget.jobId)).valueOrNull ??
+        ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
+    final chapters = snapshot?.playableChapters ?? [];
+    final chTitle = _currentChapterIndex < chapters.length
+        ? chapters[_currentChapterIndex].displayTitle
+        : 'Chapter ${_currentChapterIndex + 1}';
+
+    if (store.hasBookmark(widget.jobId, _currentChapterIndex)) {
+      final existing = store
+          .bookmarksForChapter(widget.jobId, _currentChapterIndex)
+          .where((b) => !b.isHighlight)
+          .firstOrNull;
+      if (existing != null) {
+        store.remove(existing.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(t.bookmarkRemoved)),
+        );
+      }
+    } else {
+      store.addBookmark(
+        bookId: widget.jobId,
+        chapterIndex: _currentChapterIndex,
+        chapterTitle: chTitle,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.bookmarkAdded)),
+      );
+    }
+  }
+
+  void _showBookmarksList() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.3,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, controller) => BookmarksListScreen(
+          bookId: widget.jobId,
+          onJumpToChapter: (idx) {
+            setState(() => _currentChapterIndex = idx);
+            Navigator.pop(context);
+          },
+        ),
       ),
     );
   }
@@ -133,9 +189,31 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                     tooltip: t.downloadAll,
                   ),
           IconButton(
+            icon: const Icon(Icons.search),
+            onPressed: () => setState(() => _searchVisible = !_searchVisible),
+            tooltip: t.searchInBook,
+          ),
+          Consumer(
+            builder: (context, ref, _) {
+              final store = ref.watch(bookmarkStoreProvider);
+              final hasIt = store.hasBookmark(
+                  widget.jobId, _currentChapterIndex);
+              return IconButton(
+                icon: Icon(hasIt ? Icons.bookmark : Icons.bookmark_border),
+                onPressed: _toggleBookmark,
+                tooltip: t.addBookmark,
+              );
+            },
+          ),
+          IconButton(
+            icon: const Icon(Icons.bookmarks_outlined),
+            onPressed: _showBookmarksList,
+            tooltip: t.bookmarksTitle,
+          ),
+          IconButton(
             icon: const Icon(Icons.text_format),
             onPressed: _showReaderSettings,
-            tooltip: 'Reader settings',
+            tooltip: t.readerSettings,
           ),
         ],
       ),
@@ -145,33 +223,48 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         currentIndex: _currentChapterIndex,
         onJump: (idx) => setState(() => _currentChapterIndex = idx),
       ),
-      body: LayoutBuilder(
-        builder: (context, constraints) {
-          final wide = constraints.maxWidth > 700;
-          final reader = _Reader(
-            fulltext: fulltext,
-            chapterIndex: _currentChapterIndex,
-            jobId: widget.jobId,
-            t: t,
-          );
-          final controls = _PlayerControls(
-            jobId: widget.jobId,
-            snapshot: snapshot,
-            onExpandPlayer: _showFullPlayer,
-          );
-          if (wide) {
-            return Row(children: [
-              Expanded(child: reader),
-              const VerticalDivider(width: 1),
-              SizedBox(width: 320, child: controls),
-            ]);
-          }
-          return Column(children: [
-            Expanded(child: reader),
-            const Divider(height: 1),
-            controls,
-          ]);
-        },
+      body: Stack(
+        children: [
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth > 700;
+              final reader = _Reader(
+                fulltext: fulltext,
+                chapterIndex: _currentChapterIndex,
+                jobId: widget.jobId,
+                t: t,
+              );
+              final controls = _PlayerControls(
+                jobId: widget.jobId,
+                snapshot: snapshot,
+                onExpandPlayer: _showFullPlayer,
+              );
+              if (wide) {
+                return Row(children: [
+                  Expanded(child: reader),
+                  const VerticalDivider(width: 1),
+                  SizedBox(width: 320, child: controls),
+                ]);
+              }
+              return Column(children: [
+                Expanded(child: reader),
+                const Divider(height: 1),
+                controls,
+              ]);
+            },
+          ),
+          if (_searchVisible)
+            ReaderSearchOverlay(
+              chapters: fulltext.valueOrNull?.chapters ?? const [],
+              onJumpToChapter: (idx) {
+                setState(() {
+                  _currentChapterIndex = idx;
+                  _searchVisible = false;
+                });
+              },
+              onClose: () => setState(() => _searchVisible = false),
+            ),
+        ],
       ),
     );
   }

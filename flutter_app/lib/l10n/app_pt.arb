@@ -22,7 +22,7 @@
   "next": "Próximo",
   "previous": "Anterior",
   "libraryTitle": "Biblioteca",
-  "libraryEmpty": "Nenhum livro ainda",
+  "libraryEmpty": "Sua biblioteca esta vazia",
   "addBook": "Adicionar livro",
   "removeBookTitle": "Remover livro",
   "removeBookMessage": "Remover \"{title}\" da biblioteca? O arquivo não será excluído.",
@@ -92,11 +92,55 @@
       "total": { "type": "int" }
     }
   },
+  "drmFootnote": "Livros com DRM (ex: Google Play ou Kindle) nao podem ser abertos.",
   "saveForOffline": "Salvar",
   "charsCount": "{n} caracteres",
   "@charsCount": {
     "placeholders": {
       "n": { "type": "int" }
     }
-  }
+  },
+
+  "searchInBook": "Buscar no livro",
+  "noResults": "Nenhum resultado",
+  "done": "Feito",
+  "searchResultsCapped": "Mostrando os primeiros 100 resultados",
+
+  "sortLibrary": "Ordenar biblioteca",
+  "skipBack15": "Voltar 15 segundos",
+  "skipForward15": "Avançar 15 segundos",
+  "playbackPosition": "Posição de reprodução",
+  "playbackSpeed": "Velocidade de reprodução",
+  "sleepTimer": "Timer de sono",
+  "albumArt": "Capa do álbum",
+  "closePlayer": "Fechar reprodutor",
+  "tableOfContents": "Índice",
+  "readerSettings": "Configurações do leitor",
+  "audioReady": "Áudio pronto",
+  "currentlyPlaying": "Reproduzindo agora",
+
+  "editTags": "Editar Tags",
+  "tagsSection": "Tags",
+  "newTagHint": "Nova tag",
+  "add": "Adicionar",
+  "existingTags": "Tags existentes",
+  "allFilter": "Todas",
+  "searchLibrary": "Buscar na biblioteca",
+
+  "bookmarksTitle": "Marcadores",
+  "filterAll": "Todos",
+  "filterBookmarks": "Marcadores",
+  "filterHighlights": "Destaques",
+  "noBookmarksYet": "Nenhum marcador ainda",
+  "noBookmarksHint": "Pressione e segure um parágrafo no leitor para adicionar um marcador ou destaque.",
+  "editNote": "Editar Nota",
+  "addNoteHint": "Adicionar nota…",
+  "highlightedText": "Texto destacado",
+  "colorLabel": "Cor",
+  "save": "Salvar",
+  "removeBookmarkTitle": "Remover marcador",
+  "removeBookmarkMessage": "Remover este marcador?",
+  "addBookmark": "Adicionar marcador",
+  "bookmarkAdded": "Marcador adicionado",
+  "bookmarkRemoved": "Marcador removido"
 }

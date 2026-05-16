@@ -7,6 +7,7 @@ import '../models/job_snapshot.dart';
 import '../models/session_record.dart';
 import '../services/api_client.dart';
 import '../services/audio_player_service.dart';
+import '../services/bookmark_store.dart';
 import '../services/download_manager.dart';
 import '../services/fulltext_store.dart';
 import '../services/local_fulltext_cache.dart';
@@ -134,6 +135,11 @@ final downloadManagerProvider = Provider<DownloadManager>((ref) {
 
 final resumeStoreProvider = Provider<ResumeStore>((ref) {
   return ResumeStore(ref.watch(sharedPrefsProvider));
+});
+
+final bookmarkStoreProvider =
+    ChangeNotifierProvider<BookmarkStore>((ref) {
+  return BookmarkStore(prefs: ref.watch(sharedPrefsProvider));
 });
 
 final fulltextStoreProvider = Provider<FulltextStore>((ref) {

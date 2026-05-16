@@ -70,56 +70,60 @@ class MiniPlayerBar extends ConsumerWidget {
                   horizontal: 12, vertical: 6),
               child: Row(
                 children: [
-                  // Cover art 44x44
-                  if (coverArt != null)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Image.memory(
-                        coverArt,
-                        width: 44,
-                        height: 44,
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  else
-                    Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        color: cs.primaryContainer,
-                      ),
-                      child: Icon(Icons.headphones,
-                          color: cs.onPrimaryContainer, size: 22),
-                    ),
+                  // Cover art 44x44 — decorative, excluded from semantics
+                  ExcludeSemantics(
+                    child: coverArt != null
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(6),
+                            child: Image.memory(
+                              coverArt,
+                              width: 44,
+                              height: 44,
+                              fit: BoxFit.cover,
+                            ),
+                          )
+                        : Container(
+                            width: 44,
+                            height: 44,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(6),
+                              color: cs.primaryContainer,
+                            ),
+                            child: Icon(Icons.headphones,
+                                color: cs.onPrimaryContainer, size: 22),
+                          ),
+                  ),
                   const SizedBox(width: 10),
 
-                  // Title / chapter info
+                  // Title / chapter info — announced by TalkBack
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          book.resolvedTitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
-                        ),
-                        if (book.author != null)
+                    child: Semantics(
+                      label: book.resolvedTitle,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                           Text(
-                            book.author!,
+                            book.resolvedTitle,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: Theme.of(context)
                                 .textTheme
-                                .bodySmall
-                                ?.copyWith(color: cs.onSurfaceVariant),
+                                .bodyMedium
+                                ?.copyWith(fontWeight: FontWeight.w600),
                           ),
-                      ],
+                          if (book.author != null)
+                            Text(
+                              book.author!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(color: cs.onSurfaceVariant),
+                            ),
+                        ],
+                      ),
                     ),
                   ),
 
@@ -128,14 +132,18 @@ class MiniPlayerBar extends ConsumerWidget {
                     stream: player.playing,
                     builder: (context, snap) {
                       final isPlaying = snap.data ?? false;
-                      return IconButton(
-                        icon: Icon(
-                          isPlaying
-                              ? Icons.pause_rounded
-                              : Icons.play_arrow_rounded,
-                          size: 28,
+                      return Semantics(
+                        label: isPlaying ? 'Pause' : 'Play',
+                        button: true,
+                        child: IconButton(
+                          icon: Icon(
+                            isPlaying
+                                ? Icons.pause_rounded
+                                : Icons.play_arrow_rounded,
+                            size: 28,
+                          ),
+                          onPressed: player.togglePlayPause,
                         ),
-                        onPressed: player.togglePlayPause,
                       );
                     },
                   ),
@@ -144,6 +152,7 @@ class MiniPlayerBar extends ConsumerWidget {
                   IconButton(
                     icon: const Icon(Icons.forward_10, size: 24),
                     onPressed: () => player.skipForward(seconds: 15),
+                    tooltip: 'Skip forward 15 seconds',
                   ),
                 ],
               ),

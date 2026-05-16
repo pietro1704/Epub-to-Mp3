@@ -148,6 +148,37 @@ class LibraryStore extends ChangeNotifier {
     return book.filePath;
   }
 
+  // ---- Tags ----------------------------------------------------------
+
+  /// All distinct tags across the library, sorted alphabetically.
+  List<String> get allTags =>
+      _books.expand((b) => b.tags).toSet().toList()..sort();
+
+  /// Add [tag] to the book with [bookId]. Normalises whitespace and
+  /// skips duplicates.
+  void addTag(String tag, {required String bookId}) {
+    final i = _books.indexWhere((b) => b.id == bookId);
+    if (i < 0) return;
+    final normalized = tag.trim();
+    if (normalized.isEmpty || _books[i].tags.contains(normalized)) return;
+    _books[i].tags.add(normalized);
+    _persist();
+    notifyListeners();
+  }
+
+  /// Remove [tag] from the book with [bookId].
+  void removeTag(String tag, {required String bookId}) {
+    final i = _books.indexWhere((b) => b.id == bookId);
+    if (i < 0) return;
+    _books[i].tags.remove(tag);
+    _persist();
+    notifyListeners();
+  }
+
+  /// All books that carry [tag].
+  List<BookEntity> booksWithTag(String tag) =>
+      _books.where((b) => b.tags.contains(tag)).toList();
+
   // ---- Persistence --------------------------------------------------
 
   void _load() {

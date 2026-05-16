@@ -233,7 +233,7 @@ abstract class AppLocalizations {
   /// No description provided for @libraryEmpty.
   ///
   /// In en, this message translates to:
-  /// **'No books yet'**
+  /// **'Your library is empty'**
   String get libraryEmpty;
 
   /// No description provided for @addBook.
@@ -530,6 +530,12 @@ abstract class AppLocalizations {
   /// **'{n} of {total} chapters'**
   String chaptersConverted(int n, int total);
 
+  /// No description provided for @drmFootnote.
+  ///
+  /// In en, this message translates to:
+  /// **'DRM-protected books (e.g. from Google Play or Kindle) cannot be opened.'**
+  String get drmFootnote;
+
   /// No description provided for @saveForOffline.
   ///
   /// In en, this message translates to:
@@ -541,6 +547,240 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{n} chars'**
   String charsCount(int n);
+
+  /// No description provided for @searchInBook.
+  ///
+  /// In en, this message translates to:
+  /// **'Search in book'**
+  String get searchInBook;
+
+  /// No description provided for @noResults.
+  ///
+  /// In en, this message translates to:
+  /// **'No results'**
+  String get noResults;
+
+  /// No description provided for @done.
+  ///
+  /// In en, this message translates to:
+  /// **'Done'**
+  String get done;
+
+  /// No description provided for @searchResultsCapped.
+  ///
+  /// In en, this message translates to:
+  /// **'Showing first 100 results'**
+  String get searchResultsCapped;
+
+  /// No description provided for @sortLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Sort library'**
+  String get sortLibrary;
+
+  /// No description provided for @skipBack15.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip back 15 seconds'**
+  String get skipBack15;
+
+  /// No description provided for @skipForward15.
+  ///
+  /// In en, this message translates to:
+  /// **'Skip forward 15 seconds'**
+  String get skipForward15;
+
+  /// No description provided for @playbackPosition.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback position'**
+  String get playbackPosition;
+
+  /// No description provided for @playbackSpeed.
+  ///
+  /// In en, this message translates to:
+  /// **'Playback speed'**
+  String get playbackSpeed;
+
+  /// No description provided for @sleepTimer.
+  ///
+  /// In en, this message translates to:
+  /// **'Sleep timer'**
+  String get sleepTimer;
+
+  /// No description provided for @albumArt.
+  ///
+  /// In en, this message translates to:
+  /// **'Album art'**
+  String get albumArt;
+
+  /// No description provided for @closePlayer.
+  ///
+  /// In en, this message translates to:
+  /// **'Close player'**
+  String get closePlayer;
+
+  /// No description provided for @tableOfContents.
+  ///
+  /// In en, this message translates to:
+  /// **'Table of contents'**
+  String get tableOfContents;
+
+  /// No description provided for @readerSettings.
+  ///
+  /// In en, this message translates to:
+  /// **'Reader settings'**
+  String get readerSettings;
+
+  /// No description provided for @audioReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Audio ready'**
+  String get audioReady;
+
+  /// No description provided for @currentlyPlaying.
+  ///
+  /// In en, this message translates to:
+  /// **'Currently playing'**
+  String get currentlyPlaying;
+
+  /// No description provided for @editTags.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Tags'**
+  String get editTags;
+
+  /// No description provided for @tagsSection.
+  ///
+  /// In en, this message translates to:
+  /// **'Tags'**
+  String get tagsSection;
+
+  /// No description provided for @newTagHint.
+  ///
+  /// In en, this message translates to:
+  /// **'New tag'**
+  String get newTagHint;
+
+  /// No description provided for @add.
+  ///
+  /// In en, this message translates to:
+  /// **'Add'**
+  String get add;
+
+  /// No description provided for @existingTags.
+  ///
+  /// In en, this message translates to:
+  /// **'Existing tags'**
+  String get existingTags;
+
+  /// No description provided for @allFilter.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get allFilter;
+
+  /// No description provided for @searchLibrary.
+  ///
+  /// In en, this message translates to:
+  /// **'Search library'**
+  String get searchLibrary;
+
+  /// No description provided for @bookmarksTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmarks'**
+  String get bookmarksTitle;
+
+  /// No description provided for @filterAll.
+  ///
+  /// In en, this message translates to:
+  /// **'All'**
+  String get filterAll;
+
+  /// No description provided for @filterBookmarks.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmarks'**
+  String get filterBookmarks;
+
+  /// No description provided for @filterHighlights.
+  ///
+  /// In en, this message translates to:
+  /// **'Highlights'**
+  String get filterHighlights;
+
+  /// No description provided for @noBookmarksYet.
+  ///
+  /// In en, this message translates to:
+  /// **'No bookmarks yet'**
+  String get noBookmarksYet;
+
+  /// No description provided for @noBookmarksHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Long-press a paragraph in the reader to add a bookmark or highlight.'**
+  String get noBookmarksHint;
+
+  /// No description provided for @editNote.
+  ///
+  /// In en, this message translates to:
+  /// **'Edit Note'**
+  String get editNote;
+
+  /// No description provided for @addNoteHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Add a note…'**
+  String get addNoteHint;
+
+  /// No description provided for @highlightedText.
+  ///
+  /// In en, this message translates to:
+  /// **'Highlighted text'**
+  String get highlightedText;
+
+  /// No description provided for @colorLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Color'**
+  String get colorLabel;
+
+  /// No description provided for @save.
+  ///
+  /// In en, this message translates to:
+  /// **'Save'**
+  String get save;
+
+  /// No description provided for @removeBookmarkTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove bookmark'**
+  String get removeBookmarkTitle;
+
+  /// No description provided for @removeBookmarkMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Remove this bookmark?'**
+  String get removeBookmarkMessage;
+
+  /// No description provided for @addBookmark.
+  ///
+  /// In en, this message translates to:
+  /// **'Add bookmark'**
+  String get addBookmark;
+
+  /// No description provided for @bookmarkAdded.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmark added'**
+  String get bookmarkAdded;
+
+  /// No description provided for @bookmarkRemoved.
+  ///
+  /// In en, this message translates to:
+  /// **'Bookmark removed'**
+  String get bookmarkRemoved;
 }
 
 class _AppLocalizationsDelegate

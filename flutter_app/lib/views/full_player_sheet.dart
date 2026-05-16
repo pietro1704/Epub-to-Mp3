@@ -163,33 +163,42 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
   }
 
   Widget _coverHero(BuildContext context) {
+    final t = AppLocalizations.of(context);
     if (widget.coverArt != null) {
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Image.memory(
-          widget.coverArt!,
-          width: 280,
-          height: 280,
-          fit: BoxFit.cover,
+      return Semantics(
+        label: t?.albumArt ?? 'Album art',
+        image: true,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Image.memory(
+            widget.coverArt!,
+            width: 280,
+            height: 280,
+            fit: BoxFit.cover,
+          ),
         ),
       );
     }
-    return Container(
-      width: 280,
-      height: 280,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-      ),
-      child: Icon(
-        Icons.headphones,
-        size: 80,
-        color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+    // Decorative placeholder — hide from screen readers.
+    return ExcludeSemantics(
+      child: Container(
+        width: 280,
+        height: 280,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+        ),
+        child: Icon(
+          Icons.headphones,
+          size: 80,
+          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+        ),
       ),
     );
   }
 
   Widget _scrubber(BuildContext context) {
+    final t = AppLocalizations.of(context);
     return StreamBuilder<Duration>(
       stream: widget.player.position,
       builder: (context, posSnap) {
@@ -198,25 +207,28 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         final safeDur = dur > 0 ? dur : 1.0;
         return Column(
           children: [
-            SliderTheme(
-              data: SliderThemeData(
-                trackHeight: 4,
-                thumbShape:
-                    const RoundSliderThumbShape(enabledThumbRadius: 6),
-                overlayShape:
-                    const RoundSliderOverlayShape(overlayRadius: 14),
-                activeTrackColor:
-                    Theme.of(context).colorScheme.onSurface,
-                inactiveTrackColor:
-                    Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
-                thumbColor:
-                    Theme.of(context).colorScheme.onSurface,
-              ),
-              child: Slider(
-                value: pos.clamp(0, safeDur),
-                max: safeDur,
-                onChanged: (v) =>
-                    widget.player.seek(Duration(milliseconds: (v * 1000).round())),
+            Semantics(
+              label: t?.playbackPosition ?? 'Playback position',
+              child: SliderTheme(
+                data: SliderThemeData(
+                  trackHeight: 4,
+                  thumbShape:
+                      const RoundSliderThumbShape(enabledThumbRadius: 6),
+                  overlayShape:
+                      const RoundSliderOverlayShape(overlayRadius: 14),
+                  activeTrackColor:
+                      Theme.of(context).colorScheme.onSurface,
+                  inactiveTrackColor:
+                      Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
+                  thumbColor:
+                      Theme.of(context).colorScheme.onSurface,
+                ),
+                child: Slider(
+                  value: pos.clamp(0, safeDur),
+                  max: safeDur,
+                  onChanged: (v) =>
+                      widget.player.seek(Duration(milliseconds: (v * 1000).round())),
+                ),
               ),
             ),
             Padding(
@@ -224,10 +236,14 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(_formatTime(pos),
-                      style: Theme.of(context).textTheme.bodySmall),
-                  Text(_formatTime(dur),
-                      style: Theme.of(context).textTheme.bodySmall),
+                  ExcludeSemantics(
+                    child: Text(_formatTime(pos),
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ),
+                  ExcludeSemantics(
+                    child: Text(_formatTime(dur),
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ),
                 ],
               ),
             ),
@@ -238,6 +254,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
   }
 
   Widget _transportRow(BuildContext context) {
+    final t = AppLocalizations.of(context);
     return StreamBuilder<bool>(
       stream: widget.player.playing,
       builder: (context, snap) {
@@ -245,24 +262,38 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         return Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            IconButton(
-              icon: const Icon(Icons.replay_10),
-              iconSize: 32,
-              onPressed: () => widget.player.skipBackward(seconds: 15),
-              tooltip: 'Skip back 15s',
-            ),
-            IconButton(
-              icon: Icon(
-                isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+            Semantics(
+              label: t?.skipBack15 ?? 'Skip back 15 seconds',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.replay_10),
+                iconSize: 32,
+                onPressed: () => widget.player.skipBackward(seconds: 15),
+                tooltip: t?.skipBack15 ?? 'Skip back 15s',
               ),
-              iconSize: 72,
-              onPressed: widget.player.togglePlayPause,
             ),
-            IconButton(
-              icon: const Icon(Icons.forward_10),
-              iconSize: 32,
-              onPressed: () => widget.player.skipForward(seconds: 15),
-              tooltip: 'Skip forward 15s',
+            Semantics(
+              label: isPlaying
+                  ? (t?.pause ?? 'Pause')
+                  : (t?.play ?? 'Play'),
+              button: true,
+              child: IconButton(
+                icon: Icon(
+                  isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                ),
+                iconSize: 72,
+                onPressed: widget.player.togglePlayPause,
+              ),
+            ),
+            Semantics(
+              label: t?.skipForward15 ?? 'Skip forward 15 seconds',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.forward_10),
+                iconSize: 32,
+                onPressed: () => widget.player.skipForward(seconds: 15),
+                tooltip: t?.skipForward15 ?? 'Skip forward 15s',
+              ),
             ),
           ],
         );
@@ -280,22 +311,26 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         // Speed picker
-        PopupMenuButton<double>(
-          onSelected: (v) => widget.player.setSpeed(v),
-          itemBuilder: (_) => speeds.map((s) {
-            return PopupMenuItem(
-              value: s,
-              child: Text(
-                '${s}x',
-                style: TextStyle(
-                  fontWeight: widget.player.speed == s
-                      ? FontWeight.bold
-                      : FontWeight.normal,
+        Semantics(
+          label: '${t?.playbackSpeed ?? 'Playback speed'}: ${widget.player.speed}x',
+          button: true,
+          child: PopupMenuButton<double>(
+            onSelected: (v) => widget.player.setSpeed(v),
+            itemBuilder: (_) => speeds.map((s) {
+              return PopupMenuItem(
+                value: s,
+                child: Text(
+                  '${s}x',
+                  style: TextStyle(
+                    fontWeight: widget.player.speed == s
+                        ? FontWeight.bold
+                        : FontWeight.normal,
+                  ),
                 ),
-              ),
-            );
-          }).toList(),
-          child: _pill(context, '${widget.player.speed}x'),
+              );
+            }).toList(),
+            child: _pill(context, '${widget.player.speed}x'),
+          ),
         ),
 
         // Download button
@@ -318,19 +353,23 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
           stream: widget.player.sleepTimerStream,
           builder: (context, snap) {
             final remaining = snap.data ?? widget.player.sleepTimerRemaining;
-            return GestureDetector(
-              onTap: () {
-                final current = widget.player.sleepTimerRemaining;
-                final next = sleepPresets
-                        .where((p) => p > current)
-                        .firstOrNull ??
-                    0.0;
-                widget.player.setSleepTimer(seconds: next);
-              },
-              child: _pill(
-                context,
-                remaining > 0 ? _formatTime(remaining) : 'Sleep',
-                icon: Icons.nightlight_round,
+            return Semantics(
+              label: t?.sleepTimer ?? 'Sleep timer',
+              button: true,
+              child: GestureDetector(
+                onTap: () {
+                  final current = widget.player.sleepTimerRemaining;
+                  final next = sleepPresets
+                          .where((p) => p > current)
+                          .firstOrNull ??
+                      0.0;
+                  widget.player.setSleepTimer(seconds: next);
+                },
+                child: _pill(
+                  context,
+                  remaining > 0 ? _formatTime(remaining) : 'Sleep',
+                  icon: Icons.nightlight_round,
+                ),
               ),
             );
           },

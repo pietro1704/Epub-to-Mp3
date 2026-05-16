@@ -55,7 +55,7 @@ void main() {
       await t.pumpAndSettle();
 
       // Library screen empty state
-      expect(find.text('No books yet'), findsOneWidget);
+      expect(find.text('Your library is empty'), findsOneWidget);
     });
 
     testWidgets('tapping Settings navigates to settings tab', (t) async {

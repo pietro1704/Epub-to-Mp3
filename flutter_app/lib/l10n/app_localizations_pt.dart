@@ -75,7 +75,7 @@ class AppLocalizationsPt extends AppLocalizations {
   String get libraryTitle => 'Biblioteca';
 
   @override
-  String get libraryEmpty => 'Nenhum livro ainda';
+  String get libraryEmpty => 'Sua biblioteca esta vazia';
 
   @override
   String get addBook => 'Adicionar livro';
@@ -237,10 +237,132 @@ class AppLocalizationsPt extends AppLocalizations {
   }
 
   @override
+  String get drmFootnote =>
+      'Livros com DRM (ex: Google Play ou Kindle) nao podem ser abertos.';
+
+  @override
   String get saveForOffline => 'Salvar';
 
   @override
   String charsCount(int n) {
     return '$n caracteres';
   }
+
+  @override
+  String get searchInBook => 'Buscar no livro';
+
+  @override
+  String get noResults => 'Nenhum resultado';
+
+  @override
+  String get done => 'Feito';
+
+  @override
+  String get searchResultsCapped => 'Mostrando os primeiros 100 resultados';
+
+  @override
+  String get sortLibrary => 'Ordenar biblioteca';
+
+  @override
+  String get skipBack15 => 'Voltar 15 segundos';
+
+  @override
+  String get skipForward15 => 'Avançar 15 segundos';
+
+  @override
+  String get playbackPosition => 'Posição de reprodução';
+
+  @override
+  String get playbackSpeed => 'Velocidade de reprodução';
+
+  @override
+  String get sleepTimer => 'Timer de sono';
+
+  @override
+  String get albumArt => 'Capa do álbum';
+
+  @override
+  String get closePlayer => 'Fechar reprodutor';
+
+  @override
+  String get tableOfContents => 'Índice';
+
+  @override
+  String get readerSettings => 'Configurações do leitor';
+
+  @override
+  String get audioReady => 'Áudio pronto';
+
+  @override
+  String get currentlyPlaying => 'Reproduzindo agora';
+
+  @override
+  String get editTags => 'Editar Tags';
+
+  @override
+  String get tagsSection => 'Tags';
+
+  @override
+  String get newTagHint => 'Nova tag';
+
+  @override
+  String get add => 'Adicionar';
+
+  @override
+  String get existingTags => 'Tags existentes';
+
+  @override
+  String get allFilter => 'Todas';
+
+  @override
+  String get searchLibrary => 'Buscar na biblioteca';
+
+  @override
+  String get bookmarksTitle => 'Marcadores';
+
+  @override
+  String get filterAll => 'Todos';
+
+  @override
+  String get filterBookmarks => 'Marcadores';
+
+  @override
+  String get filterHighlights => 'Destaques';
+
+  @override
+  String get noBookmarksYet => 'Nenhum marcador ainda';
+
+  @override
+  String get noBookmarksHint =>
+      'Pressione e segure um parágrafo no leitor para adicionar um marcador ou destaque.';
+
+  @override
+  String get editNote => 'Editar Nota';
+
+  @override
+  String get addNoteHint => 'Adicionar nota…';
+
+  @override
+  String get highlightedText => 'Texto destacado';
+
+  @override
+  String get colorLabel => 'Cor';
+
+  @override
+  String get save => 'Salvar';
+
+  @override
+  String get removeBookmarkTitle => 'Remover marcador';
+
+  @override
+  String get removeBookmarkMessage => 'Remover este marcador?';
+
+  @override
+  String get addBookmark => 'Adicionar marcador';
+
+  @override
+  String get bookmarkAdded => 'Marcador adicionado';
+
+  @override
+  String get bookmarkRemoved => 'Marcador removido';
 }

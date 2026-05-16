@@ -33,7 +33,7 @@ void main() {
   testWidgets('empty library shows add-book prompt', (tester) async {
     await _pumpLibrary(tester);
 
-    expect(find.text('No books yet'), findsOneWidget);
+    expect(find.text('Your library is empty'), findsOneWidget);
     expect(find.text('Add a book'), findsOneWidget);
   });
 
@@ -99,7 +99,7 @@ void main() {
     );
   });
 
-  testWidgets('long press on book card shows remove dialog', (tester) async {
+  testWidgets('long press on book card shows actions sheet', (tester) async {
     final book = BookEntity(
       id: 'abc123',
       title: 'My EPUB',
@@ -115,9 +115,8 @@ void main() {
     await tester.longPress(find.text('My EPUB'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Remove book'), findsOneWidget);
-    expect(find.textContaining('My EPUB'), findsWidgets);
-    expect(find.text('Cancel'), findsOneWidget);
-    expect(find.text('Remove'), findsOneWidget);
+    // Bottom sheet with Edit Tags + Remove from library
+    expect(find.text('Edit Tags'), findsOneWidget);
+    expect(find.text('Remove from library'), findsOneWidget);
   });
 }

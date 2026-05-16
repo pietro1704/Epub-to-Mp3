@@ -66,38 +66,42 @@ class TocDrawer extends StatelessWidget {
                   final isConverting = progress?.status == 'converting';
                   final charCount = c.text.trim().length;
 
-                  return ListTile(
-                    selected: isCurrent,
-                    selectedTileColor: cs.primaryContainer.withValues(alpha: 0.3),
-                    leading: _buildLeading(
-                      context,
-                      isCurrent: isCurrent,
-                      hasAudio: hasAudio,
-                      isConverting: isConverting,
-                    ),
-                    title: Text(
-                      c.displayTitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
+                  return Semantics(
+                    label: c.displayTitle,
+                    liveRegion: isCurrent,
+                    child: ListTile(
+                      selected: isCurrent,
+                      selectedTileColor: cs.primaryContainer.withValues(alpha: 0.3),
+                      leading: _buildLeading(
+                        context,
+                        isCurrent: isCurrent,
+                        hasAudio: hasAudio,
+                        isConverting: isConverting,
                       ),
+                      title: Text(
+                        c.displayTitle,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: isCurrent ? FontWeight.w600 : FontWeight.normal,
+                        ),
+                      ),
+                      subtitle: charCount > 0
+                          ? Text(
+                              _formatCharCount(charCount),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                            )
+                          : null,
+                      trailing: hasAudio
+                          ? Icon(Icons.check_circle, size: 18, color: cs.primary)
+                          : null,
+                      onTap: () {
+                        Navigator.of(context).pop();
+                        onJump(i);
+                      },
                     ),
-                    subtitle: charCount > 0
-                        ? Text(
-                            _formatCharCount(charCount),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: cs.onSurfaceVariant,
-                                ),
-                          )
-                        : null,
-                    trailing: hasAudio
-                        ? Icon(Icons.check_circle, size: 18, color: cs.primary)
-                        : null,
-                    onTap: () {
-                      Navigator.of(context).pop();
-                      onJump(i);
-                    },
                   );
                 },
               ),
