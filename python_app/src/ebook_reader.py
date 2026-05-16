@@ -191,7 +191,7 @@ class TextProcessor:
                 self.parts: list[str] = []
 
             def handle_starttag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
-                if tag in {"style", "script", "head"}:
+                if tag in {"style", "script", "head", "title"}:
                     self._ignored_stack.append(tag)
                     return
                 if self._ignored_stack:
@@ -205,7 +205,7 @@ class TextProcessor:
                 self.parts.append(f"<{tag}{attrs_text}>")
 
             def handle_startendtag(self, tag: str, attrs: list[tuple[str, Optional[str]]]) -> None:
-                if tag in {"style", "script", "head"} or self._ignored_stack:
+                if tag in {"style", "script", "head", "title"} or self._ignored_stack:
                     return
                 attrs_text = "".join(
                     f' {name}="{html.escape(value, quote=True)}"'
