@@ -51,6 +51,7 @@ struct InstantReaderView: View {
     @State private var showingConversionStatus = false
     @State private var showingFullPlayer = false
     @State private var showingReaderSettings = false
+    @State private var chromeVisible = true
 
     private var embeddedAudioReady: Bool {
         settings.useEmbeddedRuntime && globalPlayer.firstSegmentReady
@@ -69,27 +70,33 @@ struct InstantReaderView: View {
         VStack(spacing: 0) {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                Divider()
-                    .background(readerForeground.opacity(0.15))
-                idlePlayerBar
-                    .frame(height: showTransport ? 0 : nil)
-                    .opacity(showTransport ? 0 : 1)
-                    .clipped()
-                    .allowsHitTesting(!showTransport)
-                    .padding(.vertical, showTransport ? 0 : 8)
-                playerBar
-                    .frame(height: showTransport ? nil : 0)
-                    .opacity(showTransport ? 1 : 0)
-                    .clipped()
-                    .allowsHitTesting(showTransport)
-                    .disabled(!showTransport)
-                    .padding(.vertical, showTransport ? 8 : 0)
+            if chromeVisible {
+                VStack(spacing: 0) {
+                    Divider()
+                        .background(readerForeground.opacity(0.15))
+                    idlePlayerBar
+                        .frame(height: showTransport ? 0 : nil)
+                        .opacity(showTransport ? 0 : 1)
+                        .clipped()
+                        .allowsHitTesting(!showTransport)
+                        .padding(.vertical, showTransport ? 0 : 8)
+                    playerBar
+                        .frame(height: showTransport ? nil : 0)
+                        .opacity(showTransport ? 1 : 0)
+                        .clipped()
+                        .allowsHitTesting(showTransport)
+                        .disabled(!showTransport)
+                        .padding(.vertical, showTransport ? 8 : 0)
+                }
+                .background(readerBackground.opacity(0.96))
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
-            .background(readerBackground.opacity(0.96))
         }
+        .modifier(ChromeVisibilityModifier(visible: chromeVisible))
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 HStack(spacing: 16) {
@@ -311,6 +318,8 @@ struct InstantReaderView: View {
         }
         .compatHorizontalSafeAreaPadding(20)
         .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onTapGesture { showingFullPlayer = true }
     }
 
     // MARK: - Player bar
@@ -694,6 +703,22 @@ struct InstantReaderView: View {
         let s = total % 60
         if h > 0 { return String(format: "%d:%02d:%02d", h, m, s) }
         return String(format: "%d:%02d", m, s)
+    }
+}
+
+// MARK: - Chrome hide/show (Safari-like immersive reading)
+
+private struct ChromeVisibilityModifier: ViewModifier {
+    let visible: Bool
+
+    func body(content: Content) -> some View {
+        #if os(iOS)
+        content
+            .navigationBarHidden(!visible)
+            .statusBarHidden(!visible)
+        #else
+        content
+        #endif
     }
 }
 

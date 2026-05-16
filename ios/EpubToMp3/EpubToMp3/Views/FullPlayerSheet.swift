@@ -69,56 +69,21 @@ struct FullPlayerSheet: View {
 
     @available(iOS 16, macOS 13, *)
     private var modernBody: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 28) {
-                    // Top breathing room. The NavigationStack toolbar
-                    // already covers the notch, so we only need a
-                    // small visual gap below it — but bump from 8pt to
-                    // 16pt so the cover hero doesn't kiss the close
-                    // chevron on devices with a Dynamic Island where
-                    // the inline title sits lower.
-                    Spacer(minLength: 16)
-                    coverHero
-                    titleBlock
-                    scrubberBlock
-                    transportRow
-                    secondaryRow
-                    // Bottom breathing room. The sheet draws over the
-                    // home indicator, so the system bottom safe-area
-                    // inset already lifts content above it; this
-                    // 32pt is in addition to that — gives the
-                    // secondaryRow buttons a comfortable gap.
-                    Spacer(minLength: 32)
-                }
-                // 32pt margin sits on top of the system horizontal safe
-                // area so cover art / scrubber / transport buttons stay
-                // clear of the notch when the sheet is presented over a
-                // landscape iPhone.
-                .compatHorizontalSafeAreaPadding(32)
-            }
-            .scrollBounceBehaviorIfAvailable()
-            .background(backgroundLayer.ignoresSafeArea())
-#if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button {
-                        dismiss()
-                    } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 18, weight: .semibold))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Close player")
-                }
-            }
+        VStack(spacing: 0) {
+            Spacer(minLength: 16)
+            coverHero
+            Spacer(minLength: 20)
+            titleBlock
+            Spacer(minLength: 24)
+            scrubberBlock
+            Spacer(minLength: 28)
+            transportRow
+            Spacer(minLength: 20)
+            secondaryRow
+            Spacer(minLength: 16)
         }
-        // iOS 16+: lock the sheet to large detent.
-        // iOS 15: .sheet is implicitly full-screen — no-op.
+        .compatHorizontalSafeAreaPadding(32)
+        .background(backgroundLayer.ignoresSafeArea())
         .sheetLargeDetentIfAvailable()
     }
 
@@ -173,20 +138,20 @@ struct FullPlayerSheet: View {
                 img
                     .resizable()
                     .aspectRatio(2.0/3.0, contentMode: .fit)
-                    .frame(maxWidth: 280)
-                    .clipShape(RoundedRectangle(cornerRadius: 20))
-                    .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
+                    .frame(maxWidth: 220)
+                    .clipShape(RoundedRectangle(cornerRadius: 16))
+                    .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
                     .accessibilityLabel("\(book.resolvedTitle) cover art")
             } else {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 20)
+                    RoundedRectangle(cornerRadius: 16)
                         .fill(Color.accentColor.opacity(0.15))
                     Image(systemName: "headphones")
-                        .font(.system(size: 80, weight: .ultraLight))
+                        .font(.system(size: 60, weight: .ultraLight))
                         .foregroundStyle(.tint)
                 }
                 .aspectRatio(2.0/3.0, contentMode: .fit)
-                .frame(maxWidth: 280)
+                .frame(maxWidth: 220)
                 .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
                 .accessibilityHidden(true)
             }
@@ -250,24 +215,8 @@ struct FullPlayerSheet: View {
     // MARK: - Transport row
 
     private var transportRow: some View {
-        HStack(spacing: 0) {
-            Spacer()
-
-            // Skip back 15 s
-            Button {
-                player.skipBackward(seconds: 15)
-            } label: {
-                Image(systemName: "gobackward.15")
-                    .font(.system(size: 28))
-                    .frame(width: 56, height: 56)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Skip back 15 seconds")
-
-            Spacer()
-
-            // Play / Pause — 64pt circle (Apple Music standard)
+        HStack(spacing: 40) {
+            // Play / Pause
             Button {
                 player.togglePlayPause()
             } label: {
@@ -276,15 +225,15 @@ struct FullPlayerSheet: View {
                         ProgressView()
                             .progressViewStyle(.circular)
                             .tint(.primary)
-                            .frame(width: 72, height: 72)
+                            .frame(width: 64, height: 64)
                     } else {
                         Image(
                             systemName: player.isPlaying
                                 ? "pause.circle.fill"
                                 : "play.circle.fill"
                         )
-                        .font(.system(size: 72))
-                        .frame(width: 72, height: 72)
+                        .font(.system(size: 64))
+                        .frame(width: 64, height: 64)
                     }
                 }
             }
@@ -292,21 +241,17 @@ struct FullPlayerSheet: View {
             .tint(.primary)
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
 
-            Spacer()
-
-            // Skip forward 15 s
+            // Skip forward 30 s
             Button {
-                player.skipForward(seconds: 15)
+                player.skipForward(seconds: 30)
             } label: {
-                Image(systemName: "goforward.15")
-                    .font(.system(size: 28))
+                Image(systemName: "goforward.30")
+                    .font(.system(size: 32))
                     .frame(width: 56, height: 56)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Skip forward 15 seconds")
-
-            Spacer()
+            .accessibilityLabel("Skip forward 30 seconds")
         }
     }
 

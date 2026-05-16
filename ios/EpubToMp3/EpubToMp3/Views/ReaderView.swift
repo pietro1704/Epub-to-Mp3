@@ -126,7 +126,7 @@ struct ReaderView: View {
         // dropdown text are legible. Warm themes → .light. Custom → nil
         // (follows OS). This does NOT affect the navigation bar, tab bar,
         // or any UI outside this view.
-        .preferredColorScheme(settings.readerTheme.preferredColorScheme)
+        .modifier(ReaderColorSchemeModifier(theme: settings.readerTheme))
         .compatOnChange(of: chapter.id) { _ in currentPage = 0 }
         .task(id: renderedAttributedKey) {
             renderedAttributed = renderHtmlForChapter()
@@ -209,13 +209,15 @@ struct ReaderView: View {
         // measures the *full* available width, which on iPhone
         // landscape includes the curved cutout region.
         GeometryReader { geo in
+            let headerH: CGFloat = settings.readerPointSize * 1.8 + 30
             let pages = Paginator.paginate(
                 spans: spans,
                 pageSize: geo.size,
                 fontSize: settings.readerPointSize,
                 lineSpacing: settings.readerLineSpacing,
                 columnWidth: settings.readerColumnWidth,
-                margin: Double(effectiveReaderMargin)
+                margin: Double(effectiveReaderMargin),
+                headerHeight: headerH
             )
             ZStack(alignment: .bottom) {
                 if pages.isEmpty {
@@ -590,6 +592,17 @@ struct ReaderView: View {
         onJumpToSentence: { _ in }
     )
     .environmentObject(settings)
+}
+
+private struct ReaderColorSchemeModifier: ViewModifier {
+    let theme: ReaderTheme
+    func body(content: Content) -> some View {
+        if let scheme = theme.preferredColorScheme {
+            content.environment(\.colorScheme, scheme)
+        } else {
+            content
+        }
+    }
 }
 
 #Preview("Reader — Black (OLED)") {

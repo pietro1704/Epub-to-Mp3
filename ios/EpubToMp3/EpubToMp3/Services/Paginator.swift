@@ -13,31 +13,40 @@ import CoreGraphics
 enum Paginator {
 
     /// Splits `spans` into pages. Empty input → empty result.
+    ///
+    /// - Parameter headerHeight: estimated height of the chapter-title
+    ///   header shown only on page 0. The first page's line budget is
+    ///   reduced accordingly so text never overflows the visible area.
     static func paginate(
         spans: [SentenceSpan],
         pageSize: CGSize,
         fontSize: CGFloat,
         lineSpacing: Double,
         columnWidth: CGFloat,
-        margin: Double
+        margin: Double,
+        headerHeight: CGFloat = 0
     ) -> [String] {
         guard !spans.isEmpty else { return [] }
         let usableWidth = max(200, min(columnWidth, pageSize.width - 2 * CGFloat(margin)))
         let usableHeight = max(120, pageSize.height - 80)
-        // Approx 1 char per 0.55 × fontSize pt of width;
-        // approx 1 line per (fontSize + lineSpacing) pt of height.
         let charsPerLine = max(20, Int(usableWidth / max(6, fontSize * 0.55)))
         let lineHeight = fontSize + CGFloat(lineSpacing)
         let linesPerPage = max(8, Int(usableHeight / lineHeight))
         let charsPerPage = max(400, charsPerLine * linesPerPage)
 
+        let firstPageHeaderLines = headerHeight > 0 ? max(0, Int(ceil(headerHeight / lineHeight))) : 0
+        let charsFirstPage = max(200, (linesPerPage - firstPageHeaderLines) * charsPerLine)
+
         var pages: [String] = []
         var current = ""
+        var isFirstPage = true
+        let budget = { isFirstPage ? charsFirstPage : charsPerPage }
         for span in spans {
             let next = current.isEmpty ? span.text : current + "\n\n" + span.text
-            if next.count > charsPerPage, !current.isEmpty {
+            if next.count > budget(), !current.isEmpty {
                 pages.append(current)
                 current = span.text
+                isFirstPage = false
             } else {
                 current = next
             }

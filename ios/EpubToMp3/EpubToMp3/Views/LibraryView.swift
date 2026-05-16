@@ -12,6 +12,8 @@ import AppKit
 /// book is a small + button in the toolbar that triggers the system
 /// file picker.
 struct LibraryView: View {
+    var onOpenBook: (() -> Void)?
+
     @EnvironmentObject private var library: LibraryStore
     @EnvironmentObject private var settings: AppSettings
     @State private var showingPicker = false
@@ -105,18 +107,12 @@ struct LibraryView: View {
                     LazyVGrid(columns: grid, spacing: 24) {
                         ForEach(sorted) { book in
                             BookTile(book: book) {
-                                // Mark this book as the user's current
-                                // reading target so the Read tab lands
-                                // on it next time they switch back.
-                                // Without this write the Read tab keeps
-                                // showing whatever was last set by the
-                                // MainReaderView itself, which never
-                                // observed taps in the Library grid.
-                                UserDefaults.standard.set(
-                                    book.id,
-                                    forKey: MainReaderView.currentlyReadingBookIDKey
-                                )
-                                openingBook = book
+                                MainReaderView.setCurrentlyReading(bookID: book.id)
+                                if let onOpenBook {
+                                    onOpenBook()
+                                } else {
+                                    openingBook = book
+                                }
                             }
                             .simultaneousGesture(
                                 LongPressGesture(minimumDuration: 0.45)

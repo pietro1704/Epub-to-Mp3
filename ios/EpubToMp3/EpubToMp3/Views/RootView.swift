@@ -93,7 +93,7 @@ struct TabRoot: View {
             .tag(RootTab.reader)
 
             CompatNavigationStack {
-                LibraryView()
+                LibraryView(onOpenBook: { selectedTab = .reader })
             }
             .tabItem { Label("Library", systemImage: "books.vertical") }
             .tag(RootTab.library)
