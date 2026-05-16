@@ -51,6 +51,7 @@ struct EpubToMp3App: App {
                     if phase == .active {
                         drainSharedInbox()
                         drainPendingIntent()
+                        drainWidgetIntents()
                     }
                 }
                 .onOpenURL { url in
@@ -119,6 +120,23 @@ struct EpubToMp3App: App {
     private func openBookById(_ bookId: String) {
         guard library.books.contains(where: { $0.id == bookId }) else { return }
         MainReaderView.setCurrentlyReading(bookID: bookId)
+    }
+
+    /// Read and clear playback-control flags written by widget intents
+    /// (App Group suite). The widget cannot call AudioPlayer directly,
+    /// so it writes boolean flags that we drain here on every foreground.
+    private func drainWidgetIntents() {
+        guard let group = UserDefaults(suiteName: LibraryStore.appGroupID) else { return }
+
+        if group.bool(forKey: "widget.intent.togglePlayPause") {
+            group.removeObject(forKey: "widget.intent.togglePlayPause")
+            player.togglePlayPause()
+        }
+
+        if group.bool(forKey: "widget.intent.skipForward30") {
+            group.removeObject(forKey: "widget.intent.skipForward30")
+            player.skipForward(seconds: 30)
+        }
     }
 
     #if os(macOS)

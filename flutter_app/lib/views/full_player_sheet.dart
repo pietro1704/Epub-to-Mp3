@@ -99,63 +99,66 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         top: false,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 36,
-                  height: 4,
-                  margin: const EdgeInsets.only(top: 8, bottom: 24),
-                  decoration: BoxDecoration(
-                    color: Colors.grey[400],
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+          child: Column(
+            children: [
+              Container(
+                width: 36,
+                height: 4,
+                margin: const EdgeInsets.only(top: 8, bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey[400],
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                _coverHero(context),
-                const SizedBox(height: 24),
-                if (widget.bookTitle != null)
-                  Text(
-                    widget.bookTitle!,
-                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                if (widget.author != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.author!,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: Theme.of(context).hintColor,
-                        ),
-                    maxLines: 1,
-                  ),
-                ],
-                if (widget.chapterLabel != null) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    widget.chapterLabel!,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context)
-                              .hintColor
-                              .withValues(alpha: 0.7),
-                        ),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                  ),
-                ],
-                const SizedBox(height: 28),
-                _scrubber(context),
-                const SizedBox(height: 20),
-                _transportRow(context),
-                const SizedBox(height: 20),
-                _secondaryRow(context),
-                const SizedBox(height: 32),
-              ],
-            ),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Flexible(child: _coverHero(context)),
+                    const SizedBox(height: 20),
+                    if (widget.bookTitle != null)
+                      Text(
+                        widget.bookTitle!,
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    if (widget.author != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.author!,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Theme.of(context).hintColor,
+                            ),
+                        maxLines: 1,
+                      ),
+                    ],
+                    if (widget.chapterLabel != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        widget.chapterLabel!,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context)
+                                  .hintColor
+                                  .withValues(alpha: 0.7),
+                            ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              _scrubber(context),
+              const SizedBox(height: 20),
+              _transportRow(context),
+              const SizedBox(height: 20),
+              _secondaryRow(context),
+              const SizedBox(height: 16),
+            ],
           ),
         ),
       ),
@@ -169,7 +172,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         label: t?.albumArt ?? 'Album art',
         image: true,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 280),
+          constraints: const BoxConstraints(maxWidth: 220),
           child: AspectRatio(
             aspectRatio: 2.0 / 3.0,
             child: ClipRRect(
@@ -186,7 +189,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     // Decorative placeholder — hide from screen readers.
     return ExcludeSemantics(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 280),
+        constraints: const BoxConstraints(maxWidth: 220),
         child: AspectRatio(
           aspectRatio: 2.0 / 3.0,
           child: Container(
@@ -269,18 +272,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
       builder: (context, snap) {
         final isPlaying = snap.data ?? false;
         return Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Semantics(
-              label: t?.skipBack15 ?? 'Skip back 15 seconds',
-              button: true,
-              child: IconButton(
-                icon: const Icon(Icons.replay_10),
-                iconSize: 32,
-                onPressed: () => widget.player.skipBackward(seconds: 15),
-                tooltip: t?.skipBack15 ?? 'Skip back 15s',
-              ),
-            ),
             Semantics(
               label: isPlaying
                   ? (t?.pause ?? 'Pause')
@@ -294,14 +287,15 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                 onPressed: widget.player.togglePlayPause,
               ),
             ),
+            const SizedBox(width: 24),
             Semantics(
-              label: t?.skipForward15 ?? 'Skip forward 15 seconds',
+              label: 'Skip forward 30 seconds',
               button: true,
               child: IconButton(
-                icon: const Icon(Icons.forward_10),
+                icon: const Icon(Icons.forward_30),
                 iconSize: 32,
-                onPressed: () => widget.player.skipForward(seconds: 15),
-                tooltip: t?.skipForward15 ?? 'Skip forward 15s',
+                onPressed: () => widget.player.skipForward(seconds: 30),
+                tooltip: 'Skip forward 30s',
               ),
             ),
           ],

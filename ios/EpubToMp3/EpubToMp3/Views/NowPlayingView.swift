@@ -1,4 +1,5 @@
 import SwiftUI
+import WidgetKit
 
 /// Landing screen for the iOS, iPadOS and macOS apps. Mirrors the
 /// Apple Books / Apple Podcasts "Now Playing" affordance: when the user
@@ -189,6 +190,17 @@ extension NowPlayingView {
             defaults.removeObject(forKey: AudioPlayer.currentBookIDDefaultsKey)
             defaults.removeObject(forKey: AudioPlayer.currentChapterIndexDefaultsKey)
         }
+        // Mirror to App Group so the WidgetKit extension can read the
+        // currently playing book without IPC.
+        if let group = UserDefaults(suiteName: LibraryStore.appGroupID) {
+            if let bookID, !bookID.isEmpty {
+                group.set(bookID, forKey: "currentlyPlayingBookId")
+            } else {
+                group.removeObject(forKey: "currentlyPlayingBookId")
+            }
+        }
+        // Tell WidgetKit to refresh so the widget reflects the new state.
+        WidgetCenter.shared.reloadTimelines(ofKind: "EpubToMp3Widget")
     }
 }
 

@@ -1,12 +1,14 @@
 import WidgetKit
 import SwiftUI
+import AppIntents
+
+// MARK: - Shared constants
+
+private let appGroupID = "group.com.pietrocode.epubtomp3"
+private let libraryKey = "library.books.v1"
+private let nowPlayingKey = "currentlyPlayingBookId"
 
 // MARK: - Minimal BookEntity copy (widget runs in a separate process)
-
-private enum BookFileType: String, Codable {
-    case epub
-    case pdf
-}
 
 private struct WidgetBook: Codable {
     let id: String
@@ -40,6 +42,8 @@ struct BookWidgetEntry: TimelineEntry {
     let chapterIndex: Int?
     let coverData: Data?
     let bookId: String?
+    /// True when this book is the one currently playing audio.
+    let isNowPlaying: Bool
 
     static var placeholder: BookWidgetEntry {
         BookWidgetEntry(
@@ -48,7 +52,8 @@ struct BookWidgetEntry: TimelineEntry {
             author: "Isaac Asimov",
             chapterIndex: 2,
             coverData: nil,
-            bookId: nil
+            bookId: nil,
+            isNowPlaying: false
         )
     }
 
@@ -59,7 +64,8 @@ struct BookWidgetEntry: TimelineEntry {
             author: nil,
             chapterIndex: nil,
             coverData: nil,
-            bookId: nil
+            bookId: nil,
+            isNowPlaying: false
         )
     }
 }
@@ -67,9 +73,6 @@ struct BookWidgetEntry: TimelineEntry {
 // MARK: - Provider
 
 struct BookWidgetProvider: TimelineProvider {
-    private let appGroupID = "group.com.pietrocode.epubtomp3"
-    private let defaultsKey = "library.books.v1"
-
     func placeholder(in context: Context) -> BookWidgetEntry {
         .placeholder
     }
@@ -88,20 +91,24 @@ struct BookWidgetProvider: TimelineProvider {
     private func loadEntry() -> BookWidgetEntry {
         guard
             let defaults = UserDefaults(suiteName: appGroupID),
-            let data = defaults.data(forKey: defaultsKey),
+            let data = defaults.data(forKey: libraryKey),
             let books = try? JSONDecoder().decode([WidgetBook].self, from: data)
         else {
             return .empty
         }
 
-        // Most recently opened book that has a lastOpenedAt; fall back
-        // to the most recently added if none has been opened yet.
-        let recent = books
-            .filter { $0.lastOpenedAt != nil }
-            .max(by: { ($0.lastOpenedAt ?? .distantPast) < ($1.lastOpenedAt ?? .distantPast) })
+        let nowPlayingId = defaults.string(forKey: nowPlayingKey)
+
+        // Prefer the currently playing book; fall back to most recently
+        // opened, then most recently added.
+        let target: WidgetBook? =
+            (nowPlayingId.flatMap { id in books.first(where: { $0.id == id }) })
+            ?? books
+                .filter { $0.lastOpenedAt != nil }
+                .max(by: { ($0.lastOpenedAt ?? .distantPast) < ($1.lastOpenedAt ?? .distantPast) })
             ?? books.last
 
-        guard let book = recent else { return .empty }
+        guard let book = target else { return .empty }
 
         return BookWidgetEntry(
             date: Date(),
@@ -109,8 +116,35 @@ struct BookWidgetProvider: TimelineProvider {
             author: book.author,
             chapterIndex: book.lastChapterIndex,
             coverData: book.coverPNG,
-            bookId: book.id
+            bookId: book.id,
+            isNowPlaying: nowPlayingId != nil && nowPlayingId == book.id
         )
+    }
+}
+
+// MARK: - Widget Intents (trampoline via App Group UserDefaults)
+
+/// Play/Pause: writes a flag the main app reads on foreground.
+struct TogglePlayPauseIntent: AppIntent {
+    static let title: LocalizedStringResource = "Play / Pause"
+    static let description = IntentDescription("Toggles audio playback.")
+
+    func perform() async throws -> some IntentResult {
+        UserDefaults(suiteName: appGroupID)?
+            .set(true, forKey: "widget.intent.togglePlayPause")
+        return .result()
+    }
+}
+
+/// Skip forward 30 seconds.
+struct SkipForward30Intent: AppIntent {
+    static let title: LocalizedStringResource = "Skip Forward 30s"
+    static let description = IntentDescription("Skips forward 30 seconds in the audiobook.")
+
+    func perform() async throws -> some IntentResult {
+        UserDefaults(suiteName: appGroupID)?
+            .set(true, forKey: "widget.intent.skipForward30")
+        return .result()
     }
 }
 
@@ -217,13 +251,16 @@ private struct MediumWidgetView: View {
             }
             .frame(maxWidth: .infinity)
 
-            // Text panel
-            VStack(alignment: .leading, spacing: 6) {
-                // "Continue Reading" eyebrow
-                Label("Continue Reading", systemImage: "headphones")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            // Text + controls panel
+            VStack(alignment: .leading, spacing: 4) {
+                // Eyebrow
+                Label(
+                    entry.isNowPlaying ? "Now Playing" : "Continue Reading",
+                    systemImage: entry.isNowPlaying ? "waveform" : "headphones"
+                )
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
 
                 Spacer(minLength: 0)
 
@@ -250,11 +287,29 @@ private struct MediumWidgetView: View {
                         Text("Chapter \(idx + 1)")
                             .font(.caption2)
                             .foregroundStyle(.tertiary)
-                            .padding(.top, 2)
+                            .padding(.top, 1)
                     }
                 }
 
                 Spacer(minLength: 0)
+
+                // Playback controls — interactive buttons (iOS 17+)
+                if !entry.title.isEmpty {
+                    HStack(spacing: 16) {
+                        Button(intent: TogglePlayPauseIntent()) {
+                            Image(systemName: entry.isNowPlaying ? "pause.fill" : "play.fill")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(intent: SkipForward30Intent()) {
+                            Image(systemName: "goforward.30")
+                                .font(.title3)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .foregroundStyle(.primary)
+                }
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -274,8 +329,8 @@ struct EpubToMp3Widget: Widget {
                 .containerBackground(.fill.tertiary, for: .widget)
                 .widgetURL(deepLinkURL(bookId: entry.bookId))
         }
-        .configurationDisplayName("Continue Reading")
-        .description("Tap to jump back into your most recently opened book.")
+        .configurationDisplayName("Now Playing")
+        .description("Control playback or jump back into your audiobook.")
         .supportedFamilies([.systemSmall, .systemMedium])
         .contentMarginsDisabled()
     }
@@ -310,6 +365,20 @@ private struct EpubToMp3WidgetEntryView: View {
     EpubToMp3Widget()
 } timeline: {
     BookWidgetEntry.placeholder
+}
+
+#Preview("Medium — now playing", as: .systemMedium) {
+    EpubToMp3Widget()
+} timeline: {
+    BookWidgetEntry(
+        date: Date(),
+        title: "Foundation",
+        author: "Isaac Asimov",
+        chapterIndex: 2,
+        coverData: nil,
+        bookId: "abc",
+        isNowPlaying: true
+    )
 }
 
 #Preview("Small — empty", as: .systemSmall) {

@@ -392,16 +392,8 @@ class _PlayerControls extends ConsumerWidget {
             Text(statusText),
             const SizedBox(height: 12),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                IconButton(
-                  icon: const Icon(Icons.replay_10),
-                  onPressed: () => player.skipBackward(seconds: 15),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.skip_previous),
-                  onPressed: () => player.previousChapter(),
-                ),
                 StreamBuilder<bool>(
                   stream: player.playing,
                   builder: (context, snap) {
@@ -420,13 +412,10 @@ class _PlayerControls extends ConsumerWidget {
                     );
                   },
                 ),
+                const SizedBox(width: 16),
                 IconButton(
-                  icon: const Icon(Icons.skip_next),
-                  onPressed: () => player.nextChapter(),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.forward_10),
-                  onPressed: () => player.skipForward(seconds: 15),
+                  icon: const Icon(Icons.forward_30),
+                  onPressed: () => player.skipForward(seconds: 30),
                 ),
               ],
             ),
