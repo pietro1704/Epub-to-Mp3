@@ -18,6 +18,11 @@ final class ReaderThemeIntegrationTests: XCTestCase {
                        "Dark theme must force .dark so reader controls match the background.")
     }
 
+    func testAutoThemeReturnsNilColorScheme() {
+        XCTAssertNil(ReaderTheme.auto.preferredColorScheme,
+                     "Auto/Default theme defers to the OS — follows device setting.")
+    }
+
     func testBlackThemePrefersDarkColorScheme() {
         XCTAssertEqual(ReaderTheme.black.preferredColorScheme, .dark,
                        "Black theme must force .dark — OLED black with light controls looks broken.")
@@ -105,7 +110,7 @@ final class ReaderThemeIntegrationTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
 
         let settings = AppSettings(defaults: defaults)
-        XCTAssertEqual(settings.readerTheme, .light,
-                       "Fresh install must default to Light theme.")
+        XCTAssertEqual(settings.readerTheme, .auto,
+                       "Fresh install must default to Auto/Default theme.")
     }
 }
