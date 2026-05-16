@@ -49,6 +49,19 @@
 	     the export-compliance review questionnaire on every upload. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- Custom URL scheme for deep-links from widgets, App Intents, and
+	     external apps. Handled by `EpubToMp3App.handleIncomingURL(_:)`. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>epubtomp3</string>
+			</array>
+			<key>CFBundleURLName</key>
+			<string>com.pietrocode.epubtomp3</string>
+		</dict>
+	</array>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

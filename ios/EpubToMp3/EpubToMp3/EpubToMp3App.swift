@@ -48,7 +48,10 @@ struct EpubToMp3App: App {
                     #endif
                 }
                 .compatOnChange(of: scenePhase) { phase in
-                    if phase == .active { drainSharedInbox() }
+                    if phase == .active {
+                        drainSharedInbox()
+                        drainPendingIntent()
+                    }
                 }
                 .onOpenURL { url in
                     handleIncomingURL(url)
@@ -80,11 +83,13 @@ struct EpubToMp3App: App {
     /// `.onOpenURL` is invoked when:
     ///   * The user taps a `.epub` / `.pdf` file in Files / Mail and
     ///     picks EpubToMp3 in "Open With".
-    ///   * The custom scheme `epubtomp3://` is triggered (deeplink).
-    /// We import the file URL directly into the library; opaque
-    /// scheme URLs are ignored for now (the scheme reservation is
-    /// kept for future Universal Links).
+    ///   * The custom scheme `epubtomp3://` is triggered (widget,
+    ///     App Intent, or external deep-link).
     private func handleIncomingURL(_ url: URL) {
+        if url.scheme == "epubtomp3" {
+            handleDeepLink(url)
+            return
+        }
         guard url.isFileURL else { return }
         do {
             let book = try library.importBook(from: url)
@@ -94,6 +99,26 @@ struct EpubToMp3App: App {
             print("[onOpenURL] import failed for \(url.lastPathComponent): \(error.localizedDescription)")
             #endif
         }
+    }
+
+    private func handleDeepLink(_ url: URL) {
+        guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
+        if components.host == "open",
+           let bookId = components.queryItems?.first(where: { $0.name == "bookId" })?.value {
+            openBookById(bookId)
+        }
+    }
+
+    /// Read and clear the trampoline key written by App Intents.
+    private func drainPendingIntent() {
+        guard let bookId = UserDefaults.standard.string(forKey: "intent.pendingBookId") else { return }
+        UserDefaults.standard.removeObject(forKey: "intent.pendingBookId")
+        openBookById(bookId)
+    }
+
+    private func openBookById(_ bookId: String) {
+        guard library.books.contains(where: { $0.id == bookId }) else { return }
+        MainReaderView.setCurrentlyReading(bookID: bookId)
     }
 
     #if os(macOS)
