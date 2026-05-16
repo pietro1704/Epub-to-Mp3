@@ -30,6 +30,7 @@ struct LibraryView: View {
     @State private var bookPendingRemoval: BookEntity?
     @State private var selectedTag: String?
     @State private var bookForTagEditor: BookEntity?
+    @State private var searchQuery = ""
 
     enum SortMode: String, CaseIterable, Identifiable {
         case lastOpened
@@ -46,11 +47,19 @@ struct LibraryView: View {
     }
 
     private var sorted: [BookEntity] {
-        let base: [BookEntity]
+        var base: [BookEntity]
         if let tag = selectedTag {
             base = library.books(withTag: tag)
         } else {
             base = library.books
+        }
+        let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !q.isEmpty {
+            base = base.filter {
+                $0.resolvedTitle.lowercased().contains(q)
+                || ($0.author?.lowercased().contains(q) ?? false)
+                || $0.tags.contains { $0.lowercased().contains(q) }
+            }
         }
         switch sortMode {
         case .lastOpened:
@@ -90,6 +99,8 @@ struct LibraryView: View {
                 emptyState
             } else {
                 ScrollView {
+                    LibrarySearchBar(query: $searchQuery)
+                        .padding(.top, 8)
                     tagFilterBar
                     LazyVGrid(columns: grid, spacing: 24) {
                         ForEach(sorted) { book in

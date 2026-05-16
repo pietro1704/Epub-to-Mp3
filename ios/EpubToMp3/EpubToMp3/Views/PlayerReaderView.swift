@@ -41,6 +41,7 @@ struct PlayerReaderView: View {
     @State private var downloadState: DownloadButtonState = .idle
     @State private var downloadProgressText: String?
     @State private var showingBookmarks = false
+    @State private var showingSearch = false
     @EnvironmentObject private var bookmarkStore: BookmarkStore
 
     /// Tri-state for the toolbar Download button. `idle` is the default
@@ -91,6 +92,9 @@ struct PlayerReaderView: View {
                             .frame(width: 32, height: 32)
                         #endif
                         sleepTimerMenu
+                        Button { showingSearch = true } label: {
+                            Image(systemName: "magnifyingglass")
+                        }
                         Button { showingBookmarks = true } label: {
                             Image(systemName: "bookmark")
                         }
@@ -129,6 +133,17 @@ struct PlayerReaderView: View {
                     }
             }
         }
+        .overlay {
+            if showingSearch, let ft = fulltext {
+                ReaderSearchOverlay(
+                    chapters: ft.chapters,
+                    onJumpToChapter: { idx in jumpTo(chapterIndex: idx - 1) },
+                    isPresented: $showingSearch
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: showingSearch)
         .onAppear {
             guard !isSwiftUIPreview else { return }
             bootstrap()
