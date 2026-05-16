@@ -172,8 +172,8 @@ struct FullPlayerSheet: View {
                let img = platformImage(from: data) {
                 img
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: 300, height: 300)
+                    .aspectRatio(2.0/3.0, contentMode: .fit)
+                    .frame(maxWidth: 280)
                     .clipShape(RoundedRectangle(cornerRadius: 20))
                     .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
                     .accessibilityLabel("\(book.resolvedTitle) cover art")
@@ -185,7 +185,8 @@ struct FullPlayerSheet: View {
                         .font(.system(size: 80, weight: .ultraLight))
                         .foregroundStyle(.tint)
                 }
-                .frame(width: 300, height: 300)
+                .aspectRatio(2.0/3.0, contentMode: .fit)
+                .frame(maxWidth: 280)
                 .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
                 .accessibilityHidden(true)
             }
@@ -236,7 +237,9 @@ struct FullPlayerSheet: View {
             HStack {
                 Text(formatTime(player.positionSeconds))
                 Spacer()
-                Text(formatTime(player.durationSeconds))
+                let remaining = player.durationSeconds - player.positionSeconds
+                let remainingAtCurrentSpeed = remaining / Double(player.rate.rawValue)
+                Text("-" + formatTime(remainingAtCurrentSpeed))
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)

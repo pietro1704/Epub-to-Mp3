@@ -168,30 +168,38 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
       return Semantics(
         label: t?.albumArt ?? 'Album art',
         image: true,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Image.memory(
-            widget.coverArt!,
-            width: 280,
-            height: 280,
-            fit: BoxFit.cover,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 280),
+          child: AspectRatio(
+            aspectRatio: 2.0 / 3.0,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(20),
+              child: Image.memory(
+                widget.coverArt!,
+                fit: BoxFit.cover,
+              ),
+            ),
           ),
         ),
       );
     }
     // Decorative placeholder — hide from screen readers.
     return ExcludeSemantics(
-      child: Container(
-        width: 280,
-        height: 280,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
-        ),
-        child: Icon(
-          Icons.headphones,
-          size: 80,
-          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 280),
+        child: AspectRatio(
+          aspectRatio: 2.0 / 3.0,
+          child: Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(20),
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+            ),
+            child: Icon(
+              Icons.headphones,
+              size: 80,
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+            ),
+          ),
         ),
       ),
     );
@@ -241,7 +249,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                         style: Theme.of(context).textTheme.bodySmall),
                   ),
                   ExcludeSemantics(
-                    child: Text(_formatTime(dur),
+                    child: Text(
+                        '-${_formatTime((dur - pos) / widget.player.speed)}',
                         style: Theme.of(context).textTheme.bodySmall),
                   ),
                 ],

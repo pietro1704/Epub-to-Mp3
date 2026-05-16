@@ -105,12 +105,13 @@ struct TabRoot: View {
             .tag(RootTab.settings)
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
+            let visible = showMiniPlayer && selectedTab != .reader
             MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
-                .frame(height: showMiniPlayer ? nil : 0)
-                .opacity(showMiniPlayer ? 1 : 0)
+                .frame(height: visible ? nil : 0)
+                .opacity(visible ? 1 : 0)
                 .clipped()
                 .accessibilityIdentifier("miniPlayer.tabBar")
-                .accessibilityHidden(!showMiniPlayer)
+                .accessibilityHidden(!visible)
         }
         .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showMiniPlayer)
     }
