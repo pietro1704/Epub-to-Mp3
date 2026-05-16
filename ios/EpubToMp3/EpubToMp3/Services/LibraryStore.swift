@@ -12,6 +12,11 @@ import Combine
 /// can keep reading the user's `.epub` after the app restarts. The
 /// caller is responsible for invoking `startAccessingSecurityScopedResource()`
 /// once before each I/O burst — `LibraryStore.openBookFile` does that.
+///
+/// Persistence target: the App Group suite (`group.com.pietrocode.epubtomp3`)
+/// is used when available — this lets the WidgetKit extension (`EpubToMp3Widget`)
+/// read the same `"library.books.v1"` key without IPC. Falls back to
+/// `.standard` on simulators without a provisioned group and in unit tests.
 final class LibraryStore: ObservableObject {
     @Published private(set) var books: [BookEntity] = []
     @Published private(set) var loadError: String?
@@ -20,12 +25,28 @@ final class LibraryStore: ObservableObject {
     private let defaults: UserDefaults
     private let fileManager: FileManager
 
+    /// App Group suite identifier — must match the entitlement and the
+    /// widget provider's `appGroupID` constant.
+    static let appGroupID = "group.com.pietrocode.epubtomp3"
+
     init(
-        defaults: UserDefaults = .standard,
+        defaults: UserDefaults? = nil,
         defaultsKey: String = "library.books.v1",
         fileManager: FileManager = .default
     ) {
-        self.defaults = defaults
+        // Prefer the App Group suite so the WidgetKit extension can
+        // share the same UserDefaults store. Falls back to `.standard`
+        // when the group container is not provisioned (simulator without
+        // entitlements, unit tests).
+        let resolvedDefaults: UserDefaults
+        if let explicit = defaults {
+            resolvedDefaults = explicit
+        } else if let group = UserDefaults(suiteName: Self.appGroupID) {
+            resolvedDefaults = group
+        } else {
+            resolvedDefaults = .standard
+        }
+        self.defaults = resolvedDefaults
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
         load()
