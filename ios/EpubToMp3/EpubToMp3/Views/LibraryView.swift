@@ -28,6 +28,8 @@ struct LibraryView: View {
     /// destructive action (remove from library) without entering the
     /// UIKit context-menu morph code path.
     @State private var bookPendingRemoval: BookEntity?
+    @State private var selectedTag: String?
+    @State private var bookForTagEditor: BookEntity?
 
     enum SortMode: String, CaseIterable, Identifiable {
         case lastOpened
@@ -44,15 +46,21 @@ struct LibraryView: View {
     }
 
     private var sorted: [BookEntity] {
+        let base: [BookEntity]
+        if let tag = selectedTag {
+            base = library.books(withTag: tag)
+        } else {
+            base = library.books
+        }
         switch sortMode {
         case .lastOpened:
-            return library.books.sorted {
+            return base.sorted {
                 ($0.lastOpenedAt ?? $0.addedAt) > ($1.lastOpenedAt ?? $1.addedAt)
             }
         case .title:
-            return library.books.sorted { $0.resolvedTitle.localizedCompare($1.resolvedTitle) == .orderedAscending }
+            return base.sorted { $0.resolvedTitle.localizedCompare($1.resolvedTitle) == .orderedAscending }
         case .addedDate:
-            return library.books.sorted { $0.addedAt > $1.addedAt }
+            return base.sorted { $0.addedAt > $1.addedAt }
         }
     }
 
@@ -82,6 +90,7 @@ struct LibraryView: View {
                 emptyState
             } else {
                 ScrollView {
+                    tagFilterBar
                     LazyVGrid(columns: grid, spacing: 24) {
                         ForEach(sorted) { book in
                             BookTile(book: book) {
@@ -159,11 +168,68 @@ struct LibraryView: View {
             titleVisibility: .visible,
             presenting: bookPendingRemoval
         ) { book in
+            Button("Edit Tags") {
+                bookPendingRemoval = nil
+                bookForTagEditor = book
+            }
             Button("Remove from library", role: .destructive) {
                 library.remove(id: book.id)
                 bookPendingRemoval = nil
             }
             Button("Cancel", role: .cancel) { bookPendingRemoval = nil }
+        }
+        .sheet(item: $bookForTagEditor) { book in
+            TagEditorSheet(book: book)
+                .environmentObject(library)
+        }
+    }
+
+    @ViewBuilder
+    private var tagFilterBar: some View {
+        let tags = library.allTags
+        if !tags.isEmpty {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Button {
+                        selectedTag = nil
+                    } label: {
+                        Text("All")
+                            .font(.callout.weight(selectedTag == nil ? .semibold : .regular))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                selectedTag == nil
+                                    ? AnyShapeStyle(.tint.opacity(0.2))
+                                    : AnyShapeStyle(.quaternary),
+                                in: Capsule()
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    ForEach(tags, id: \.self) { tag in
+                        Button {
+                            selectedTag = (selectedTag == tag) ? nil : tag
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "tag.fill")
+                                    .font(.caption2)
+                                Text(tag)
+                            }
+                            .font(.callout.weight(selectedTag == tag ? .semibold : .regular))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(
+                                selectedTag == tag
+                                    ? AnyShapeStyle(.tint.opacity(0.2))
+                                    : AnyShapeStyle(.quaternary),
+                                in: Capsule()
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.top, 8)
         }
     }
 

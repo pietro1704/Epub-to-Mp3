@@ -81,6 +81,8 @@ struct BookEntity: Codable, Identifiable, Hashable {
     /// default value.
     var fileType: BookFileType = .epub
 
+    var tags: [String] = []
+
     enum LibraryStatus: String, Hashable, Codable {
         /// EPUB on disk, no audio yet — opening it streams TTS.
         case textOnly
@@ -111,7 +113,7 @@ struct BookEntity: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, title, author, bookmark, displayFilename, addedAt,
              lastOpenedAt, lastChapterIndex, lastPositionSeconds,
-             coverPNG, lastJobId, cachedOffline, fileType
+             coverPNG, lastJobId, cachedOffline, fileType, tags
     }
 
     init(
@@ -127,7 +129,8 @@ struct BookEntity: Codable, Identifiable, Hashable {
         coverPNG: Data? = nil,
         lastJobId: String? = nil,
         cachedOffline: Bool = false,
-        fileType: BookFileType = .epub
+        fileType: BookFileType = .epub,
+        tags: [String] = []
     ) {
         self.id = id
         self.title = title
@@ -142,6 +145,7 @@ struct BookEntity: Codable, Identifiable, Hashable {
         self.lastJobId = lastJobId
         self.cachedOffline = cachedOffline
         self.fileType = fileType
+        self.tags = tags
     }
 
     init(from decoder: Decoder) throws {
@@ -165,5 +169,6 @@ struct BookEntity: Codable, Identifiable, Hashable {
             // re-imported `.pdf` doesn't get stuck reading as EPUB.
             self.fileType = displayFilename.lowercased().hasSuffix(".pdf") ? .pdf : .epub
         }
+        self.tags = (try c.decodeIfPresent([String].self, forKey: .tags)) ?? []
     }
 }
