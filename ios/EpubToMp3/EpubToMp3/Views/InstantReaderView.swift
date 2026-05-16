@@ -96,9 +96,11 @@ struct InstantReaderView: View {
                     Button {
                         showingReaderSettings = true
                     } label: { Image(systemName: "textformat.size") }
+                    .accessibilityLabel("Reader settings")
                     Button {
                         showingToc = true
                     } label: { Image(systemName: "list.bullet.indent") }
+                    .accessibilityLabel("Table of contents")
                 }
             }
         }
@@ -244,6 +246,8 @@ struct InstantReaderView: View {
                 coverArtwork
                     .frame(width: 44, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .accessibilityLabel("Book cover")
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(currentChapterTitle)
@@ -282,6 +286,7 @@ struct InstantReaderView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("Conversion status")
                 } else {
                     Menu {
                         Button {
@@ -300,6 +305,7 @@ struct InstantReaderView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
+                    .accessibilityLabel("Play audio")
                 }
             }
         }
@@ -317,6 +323,7 @@ struct InstantReaderView: View {
                 coverArtwork
                     .frame(width: 44, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
                     Text(currentChapterTitle)
@@ -342,6 +349,7 @@ struct InstantReaderView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .fixedSize()
+                .accessibilityLabel("More options")
             }
 
             scrubber(player: ap)
@@ -350,6 +358,7 @@ struct InstantReaderView: View {
         .padding(.vertical, 4)
         .contentShape(Rectangle())
         .onTapGesture { showingFullPlayer = true }
+        .accessibilityIdentifier("instantReader.playerBar")
     }
 
     @ViewBuilder
@@ -384,6 +393,7 @@ struct InstantReaderView: View {
             }
             .buttonStyle(.plain)
             .disabled(currentChapterIndex == 0)
+            .accessibilityLabel("Previous chapter")
 
             Button {
                 player.skip(by: -15)
@@ -391,6 +401,7 @@ struct InstantReaderView: View {
                 Image(systemName: "gobackward.15").font(.title3)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Skip back 15 seconds")
 
             Button {
                 player.togglePlayPause()
@@ -399,6 +410,7 @@ struct InstantReaderView: View {
                     .font(.system(size: 36))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
 
             Button {
                 player.skip(by: 30)
@@ -406,6 +418,7 @@ struct InstantReaderView: View {
                 Image(systemName: "goforward.30").font(.title3)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Skip forward 30 seconds")
 
             Button {
                 if currentChapterIndex + 1 < fulltext.chapters.count {
@@ -417,6 +430,7 @@ struct InstantReaderView: View {
             }
             .buttonStyle(.plain)
             .disabled(currentChapterIndex + 1 >= fulltext.chapters.count)
+            .accessibilityLabel("Next chapter")
         }
     }
 
@@ -426,6 +440,7 @@ struct InstantReaderView: View {
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 44, alignment: .trailing)
+                .accessibilityHidden(true)
             Slider(
                 value: Binding(
                     get: { player.positionSeconds },
@@ -433,10 +448,12 @@ struct InstantReaderView: View {
                 ),
                 in: 0...max(player.durationSeconds, 1)
             )
+            .accessibilityLabel("Playback position")
             Text(format(seconds: player.durationSeconds))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .frame(width: 44, alignment: .leading)
+                .accessibilityHidden(true)
         }
     }
 
@@ -513,6 +530,7 @@ struct InstantReaderView: View {
                                snapshot.playableChapters.contains(where: { $0.index == chapter.index - 1 }) {
                                 Image(systemName: "speaker.wave.2.fill")
                                     .foregroundStyle(.tint)
+                                    .accessibilityLabel("Audio ready")
                             }
                         }
                     }

@@ -143,11 +143,13 @@ struct LibraryView: View {
                         ForEach(SortMode.allCases) { Text($0.label).tag($0) }
                     }
                 } label: { Image(systemName: "arrow.up.arrow.down.circle") }
+                .accessibilityLabel("Sort library")
             }
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Button {
                     showingPicker = true
                 } label: { Image(systemName: "plus.circle.fill") }
+                .accessibilityLabel("Add book")
             }
         }
         .background {
@@ -329,6 +331,7 @@ struct BookTile: View {
                                 .stroke(.tint.opacity(0.18), lineWidth: 0.5)
                         )
                         .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .accessibilityHidden(true)
                     statusBadge
                         .padding(8)
                 }
@@ -348,6 +351,7 @@ struct BookTile: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("library.bookTile.\(book.id)")
     }
 
     @ViewBuilder
@@ -384,6 +388,7 @@ struct BookTile: View {
     private func badgeLabel(_ text: String, systemImage: String, tint: Color) -> some View {
         HStack(spacing: 4) {
             Image(systemName: systemImage)
+                .accessibilityHidden(true)
             Text(text)
         }
         .font(.caption2.weight(.medium))

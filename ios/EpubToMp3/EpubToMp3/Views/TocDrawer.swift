@@ -69,6 +69,7 @@ struct TocDrawer: View {
                     Text("\(index + 1)")
                         .font(.caption.monospacedDigit())
                 }
+                .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(.body)
@@ -78,6 +79,7 @@ struct TocDrawer: View {
                             Text("\(charCount) chars")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
+                                .accessibilityHidden(true)
                         }
                         if !audioReady {
                             Label("text only", systemImage: "doc.text")
@@ -90,11 +92,13 @@ struct TocDrawer: View {
                 if isCurrent {
                     Image(systemName: "speaker.wave.2.fill")
                         .foregroundStyle(.tint)
+                        .accessibilityLabel("Currently playing")
                 }
             }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("toc.chapter.\(index)")
     }
 
     private func audioReady(forZeroBasedIndex idx: Int) -> Bool {

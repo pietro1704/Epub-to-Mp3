@@ -176,6 +176,7 @@ struct FullPlayerSheet: View {
                     .frame(width: 300, height: 300)
                     .clipShape(RoundedRectangle(cornerRadius: 20))
                     .shadow(color: .black.opacity(0.3), radius: 20, y: 8)
+                    .accessibilityLabel("\(book.resolvedTitle) cover art")
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: 20)
@@ -186,6 +187,7 @@ struct FullPlayerSheet: View {
                 }
                 .frame(width: 300, height: 300)
                 .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
+                .accessibilityHidden(true)
             }
         }
         // Subtle scale-up on appear — matches Apple Music entry animation.
@@ -229,6 +231,7 @@ struct FullPlayerSheet: View {
                 in: 0...max(player.durationSeconds, 1)
             )
             .tint(.primary)
+            .accessibilityLabel("Playback position")
 
             HStack {
                 Text(formatTime(player.positionSeconds))
@@ -237,6 +240,7 @@ struct FullPlayerSheet: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
         }
     }
 

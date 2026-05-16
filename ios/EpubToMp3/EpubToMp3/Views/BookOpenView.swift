@@ -790,6 +790,7 @@ struct BookOpenView: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 40))
                 .foregroundStyle(.orange)
+                .accessibilityLabel("Error")
             Text(message)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)

@@ -70,6 +70,7 @@ struct ConversionStatusSheet: View {
                     Image(systemName: "waveform")
                         .font(.caption)
                         .foregroundColor(.accentColor)
+                        .accessibilityHidden(true)
                     Text(chapter)
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
@@ -87,6 +88,7 @@ struct ConversionStatusSheet: View {
                     Image(systemName: "clock")
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
+                        .accessibilityHidden(true)
                     Text(elapsed)
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.tertiary)
@@ -145,6 +147,7 @@ struct ConversionStatusSheet: View {
                 .font(.caption)
                 .foregroundStyle(iconColor(for: event.kind))
                 .frame(width: 16)
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(event.message)

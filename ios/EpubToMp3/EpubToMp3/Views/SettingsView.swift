@@ -107,6 +107,8 @@ struct SettingsView: View {
         return Circle()
             .fill(color)
             .frame(width: 8, height: 8)
+            .accessibilityLabel(sidecarStatusLabel)
+            .accessibilityIdentifier("settings.sidecarStatusDot")
     }
 
     private var sidecarStatusLabel: String {
