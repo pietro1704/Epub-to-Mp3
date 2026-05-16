@@ -31,6 +31,7 @@ struct EpubToMp3App: App {
                 .environmentObject(player)
                 .environmentObject(playerPresentation)
                 .environmentObject(bookmarkStore)
+                .preferredColorScheme(settings.readerTheme.preferredColorScheme)
                 .task {
                     #if os(macOS)
                     await startSidecarIfNeeded()
