@@ -226,9 +226,10 @@ targets:
         codeSign: true
       - package: PythonKit
       # Widget extension — embedded in the main app bundle so iOS can
-      # offer it in the widget gallery.
+      # offer it in the widget gallery. iOS-only.
       - target: EpubToMp3Widget
         embed: true
+        platforms: [iOS]
     settings:
       base:
         ENABLE_HARDENED_RUNTIME: YES
@@ -391,7 +392,6 @@ schemes:
     build:
       targets:
         EpubToMp3: all
-        EpubToMp3Widget: all
         EpubToMp3Tests: [test]
     run:
       config: Debug

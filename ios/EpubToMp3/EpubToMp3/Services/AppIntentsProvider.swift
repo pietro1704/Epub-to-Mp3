@@ -140,8 +140,8 @@ struct EpubToMp3Shortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: OpenBookIntent(),
             phrases: [
-                "Open \(\.$bookTitle) in \(.applicationName)",
-                "Open book \(\.$bookTitle) in \(.applicationName)"
+                "Open a book in \(.applicationName)",
+                "Open book in \(.applicationName)"
             ],
             shortTitle: "Open Book",
             systemImageName: "book"

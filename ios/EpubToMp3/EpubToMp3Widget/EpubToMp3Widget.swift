@@ -299,6 +299,7 @@ private struct EpubToMp3WidgetEntryView: View {
 
 // MARK: - Previews
 
+#if os(iOS)
 #Preview("Small — book", as: .systemSmall) {
     EpubToMp3Widget()
 } timeline: {
@@ -316,3 +317,4 @@ private struct EpubToMp3WidgetEntryView: View {
 } timeline: {
     BookWidgetEntry.empty
 }
+#endif

@@ -32,20 +32,7 @@ struct TagEditorSheet: View {
                 }
                 if !suggestedTags.isEmpty {
                     Section("Existing tags") {
-                        FlowLayout(spacing: 8) {
-                            ForEach(suggestedTags, id: \.self) { tag in
-                                Button {
-                                    library.addTag(tag, to: book.id)
-                                } label: {
-                                    Text(tag)
-                                        .font(.callout)
-                                        .padding(.horizontal, 10)
-                                        .padding(.vertical, 4)
-                                        .background(.tint.opacity(0.12), in: Capsule())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
+                        suggestedTagsContent
                     }
                 }
             }
@@ -57,6 +44,35 @@ struct TagEditorSheet: View {
                 }
             }
         }
+    }
+
+    @ViewBuilder
+    private var suggestedTagsContent: some View {
+        let tags = suggestedTags
+        if #available(iOS 16, macOS 13, *) {
+            FlowLayout(spacing: 8) {
+                ForEach(tags, id: \.self) { tag in
+                    suggestedTagButton(tag)
+                }
+            }
+        } else {
+            ForEach(tags, id: \.self) { tag in
+                suggestedTagButton(tag)
+            }
+        }
+    }
+
+    private func suggestedTagButton(_ tag: String) -> some View {
+        Button {
+            library.addTag(tag, to: book.id)
+        } label: {
+            Text(tag)
+                .font(.callout)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(.tint.opacity(0.12), in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private var suggestedTags: [String] {
@@ -71,6 +87,7 @@ struct TagEditorSheet: View {
     }
 }
 
+@available(iOS 16, macOS 13, *)
 struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
