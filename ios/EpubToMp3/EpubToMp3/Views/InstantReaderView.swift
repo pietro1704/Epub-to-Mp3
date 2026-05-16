@@ -70,8 +70,6 @@ struct InstantReaderView: View {
         VStack(spacing: 0) {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if chromeVisible {
@@ -179,7 +177,8 @@ struct InstantReaderView: View {
                 currentSentenceId: currentSentenceId,
                 onJumpToSentence: jumpToSentence,
                 onAdvanceChapter: advanceToNextChapter,
-                onPreviousChapter: returnToPreviousChapter
+                onPreviousChapter: returnToPreviousChapter,
+                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } }
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -188,7 +187,8 @@ struct InstantReaderView: View {
                 currentSentenceId: currentSentenceId,
                 onJumpToSentence: jumpToSentence,
                 onAdvanceChapter: advanceToNextChapter,
-                onPreviousChapter: returnToPreviousChapter
+                onPreviousChapter: returnToPreviousChapter,
+                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } }
             )
         } else {
             VStack(spacing: 12) {

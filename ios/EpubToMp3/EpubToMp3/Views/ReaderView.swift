@@ -32,6 +32,7 @@ struct ReaderView: View {
     /// track previous-chapter page count from here, so the caller is
     /// responsible for any page positioning after the chapter swap.
     let onPreviousChapter: (() -> Bool)?
+    var onCenterTap: (() -> Void)?
 
     @EnvironmentObject private var settings: AppSettings
     @State private var userIsScrolling: Bool = false
@@ -73,7 +74,8 @@ struct ReaderView: View {
         currentSentenceId: String?,
         onJumpToSentence: ((SentenceSpan) -> Void)? = nil,
         onAdvanceChapter: (() -> Bool)? = nil,
-        onPreviousChapter: (() -> Bool)? = nil
+        onPreviousChapter: (() -> Bool)? = nil,
+        onCenterTap: (() -> Void)? = nil
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -81,6 +83,7 @@ struct ReaderView: View {
         self.onJumpToSentence = onJumpToSentence
         self.onAdvanceChapter = onAdvanceChapter
         self.onPreviousChapter = onPreviousChapter
+        self.onCenterTap = onCenterTap
     }
 
     var body: some View {
@@ -209,7 +212,7 @@ struct ReaderView: View {
         // measures the *full* available width, which on iPhone
         // landscape includes the curved cutout region.
         GeometryReader { geo in
-            let headerH: CGFloat = settings.readerPointSize * 1.8 + 30
+            let headerH: CGFloat = settings.readerPointSize * 2.5 + 50
             let pages = Paginator.paginate(
                 spans: spans,
                 pageSize: geo.size,
@@ -334,9 +337,15 @@ struct ReaderView: View {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { retreatPage() }
+                .frame(maxWidth: .infinity)
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { onCenterTap?() }
+                .frame(maxWidth: .infinity)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { advancePage(totalPages: totalPages) }
+                .frame(maxWidth: .infinity)
         }
     }
 
