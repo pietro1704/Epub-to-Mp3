@@ -99,7 +99,7 @@ enum EpubHtmlRenderer {
 
         let overrideFamily = settings.readerOverrideFontFamily
         let overrideSize = settings.readerOverrideFontSize
-        let overrideColours = settings.readerOverrideColours
+        let overrideColours = settings.readerOverrideColours || settings.readerTheme != .light
         let boldAll = settings.readerBoldOverride
         let suppressItalic = settings.readerSuppressItalic
         let letterSpacing = settings.readerLetterSpacing

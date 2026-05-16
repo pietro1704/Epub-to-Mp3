@@ -28,7 +28,7 @@ enum Paginator {
     ) -> [String] {
         guard !spans.isEmpty else { return [] }
         let usableWidth = max(200, min(columnWidth, pageSize.width - 2 * CGFloat(margin)))
-        let usableHeight = max(120, pageSize.height - 80)
+        let usableHeight = max(120, pageSize.height - 120)
         let charsPerLine = max(20, Int(usableWidth / max(6, fontSize * 0.55)))
         let lineHeight = fontSize + CGFloat(lineSpacing)
         let linesPerPage = max(8, Int(usableHeight / lineHeight))

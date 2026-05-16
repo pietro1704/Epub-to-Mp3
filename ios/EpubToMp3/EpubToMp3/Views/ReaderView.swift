@@ -273,6 +273,7 @@ struct ReaderView: View {
         .padding(.vertical, 24)
         .frame(maxWidth: max(200, effectiveColumnWidth + 2 * effectiveReaderMargin), alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .clipped()
     }
 
     /// Pick HTML-rendered AttributedString slice when available, fall
@@ -284,19 +285,11 @@ struct ReaderView: View {
     /// page shows slightly less than the plain version would.
     @ViewBuilder
     private func pageTextBody(plain: String, pageIndex: Int, pages: [String]) -> some View {
-        if let attr = renderedAttributed,
-           let slice = slicedAttributed(from: attr, pages: pages, pageIndex: pageIndex) {
-            Text(slice)
-                .lineSpacing(settings.readerLineSpacing)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            Text(plain)
-                .font(bodyFont)
-                .lineSpacing(settings.readerLineSpacing)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        Text(plain)
+            .font(bodyFont)
+            .lineSpacing(settings.readerLineSpacing)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Map page index → AttributedString sub-range by counting Plain
