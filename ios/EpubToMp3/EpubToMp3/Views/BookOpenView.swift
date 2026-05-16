@@ -1,6 +1,7 @@
 import SwiftUI
 import UniformTypeIdentifiers
 import PDFKit
+import NaturalLanguage
 import os.log
 
 private let playerLog = Logger(subsystem: "epub2mp3", category: "AudioPlayer")
@@ -373,16 +374,23 @@ struct BookOpenView: View {
             let sample = chapters
                 .filter { $0.text.count > 50 }
                 .prefix(5)
-                .map { $0.text.prefix(1000) }
+                .map { String($0.text.prefix(2000)) }
                 .joined(separator: " ")
-                .lowercased()
-            let ptMarkers = ["não", "são", "está", "também", "então",
-                             "você", "isso", "mais", "para", "quando",
-                             "uma", "como", "ele", "ela", "seu", "sua",
-                             "dos", "das", "nos", "nas", "pelo", "pela",
-                             "havia", "muito", "onde", "ainda", "já"]
-            let hits = ptMarkers.filter { sample.contains($0) }.count
-            return hits >= 2 ? "pt-BR-FranciscaNeural" : "en-US-AriaNeural"
+            let recognizer = NLLanguageRecognizer()
+            recognizer.processString(sample)
+            let lang = recognizer.dominantLanguage
+            switch lang {
+            case .portuguese:            return "pt-BR-FranciscaNeural"
+            case .spanish:               return "es-MX-DaliaNeural"
+            case .french:                return "fr-FR-DeniseNeural"
+            case .german:                return "de-DE-KatjaNeural"
+            case .italian:               return "it-IT-ElsaNeural"
+            case .japanese:              return "ja-JP-NanamiNeural"
+            case .korean:                return "ko-KR-SunHiNeural"
+            case .simplifiedChinese:     return "zh-CN-XiaoxiaoNeural"
+            case .traditionalChinese:    return "zh-TW-HsiaoChenNeural"
+            default:                     return "en-US-AriaNeural"
+            }
         }()
 
         // Process from startIndex, then wrap to cover earlier chapters.
