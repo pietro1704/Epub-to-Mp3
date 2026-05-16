@@ -25,6 +25,7 @@ struct SettingsView: View {
                     backendSection
                     readerSection
                     advancedSection
+                    cloudSection
                     aboutSection
                 }
                 .formStyle(.grouped)
@@ -37,6 +38,7 @@ struct SettingsView: View {
                     backendSection
                     readerSection
                     advancedSection
+                    cloudSection
                     aboutSection
                 }
             }
@@ -318,6 +320,23 @@ struct SettingsView: View {
             }
         } header: {
             Text("Advanced")
+        }
+    }
+
+    @ViewBuilder
+    private var cloudSection: some View {
+        Section {
+            HStack {
+                Label("iCloud Sync", systemImage: "icloud")
+                Spacer()
+                Text("Coming soon")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+            }
+        } header: {
+            Text("Sync")
+        } footer: {
+            Text("Library metadata, reading progress, bookmarks, and tags will sync across your devices via iCloud.")
         }
     }
 
