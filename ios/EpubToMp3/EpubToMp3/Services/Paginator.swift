@@ -32,21 +32,32 @@ enum Paginator {
                          charsPerLine: charsPerLine)
     }
 
-    /// Count chars with paragraph gaps weighted as full lines.
+    /// Count chars with paragraph gaps (`\n\n`) weighted as a full line
+    /// break. A bare `\n` costs only the remainder of the current line
+    /// (simulating a soft line break rather than a full paragraph gap).
     private static func weightedCount(_ text: some StringProtocol, charsPerLine: Int) -> Int {
         var count = 0
+        var posInLine = 0
         var i = text.startIndex
         while i < text.endIndex {
             if text[i] == "\n" {
                 let next = text.index(after: i)
                 if next < text.endIndex && text[next] == "\n" {
-                    count += charsPerLine
+                    // Paragraph break: finish current line + one blank line
+                    let remainder = charsPerLine - posInLine
+                    count += remainder + charsPerLine
+                    posInLine = 0
                     i = text.index(after: next)
                     continue
                 }
-                count += charsPerLine
+                // Bare newline: just finish the current line
+                let remainder = max(1, charsPerLine - posInLine)
+                count += remainder
+                posInLine = 0
             } else {
                 count += 1
+                posInLine += 1
+                if posInLine >= charsPerLine { posInLine = 0 }
             }
             i = text.index(after: i)
         }
@@ -92,19 +103,26 @@ enum Paginator {
 
     private static func findCutPoint(in text: Substring, budget: Int, charsPerLine: Int) -> String.Index {
         var weight = 0
+        var posInLine = 0
         var i = text.startIndex
         while i < text.endIndex {
             if text[i] == "\n" {
                 let next = text.index(after: i)
                 if next < text.endIndex && text[next] == "\n" {
-                    weight += charsPerLine
+                    let remainder = charsPerLine - posInLine
+                    weight += remainder + charsPerLine
+                    posInLine = 0
                     if weight >= budget { return i }
                     i = text.index(after: next)
                     continue
                 }
-                weight += charsPerLine
+                let remainder = max(1, charsPerLine - posInLine)
+                weight += remainder
+                posInLine = 0
             } else {
                 weight += 1
+                posInLine += 1
+                if posInLine >= charsPerLine { posInLine = 0 }
             }
             if weight >= budget { return text.index(after: i) }
             i = text.index(after: i)
