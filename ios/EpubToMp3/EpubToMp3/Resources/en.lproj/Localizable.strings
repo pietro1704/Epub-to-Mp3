@@ -140,6 +140,9 @@
 /* NowPlayingView */
 "nowPlaying.noAudioYet" = "No audio yet";
 "nowPlaying.noAudioDescription" = "'%@' hasn't been converted yet. Open it from the library to start a conversion.";
+"nowPlaying.openInLibrary" = "Open in library";
+"nowPlaying.startNew" = "Start a new audiobook";
+"nowPlaying.startNewDescription" = "Import an EPUB from your library to convert and play it here.";
 
 /* BookOpenView */
 "bookOpen.opening" = "Opening %@…";

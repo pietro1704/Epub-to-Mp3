@@ -20,6 +20,17 @@ final class InstantReaderSnapshotTests: XCTestCase {
         let hasAudio: Bool
         let settings: AppSettings
         @State private var snap: JobSnapshot? = nil
+        @StateObject private var cacheManager: ChapterCacheManager
+
+        init(fulltext: EbookFulltext, banner: String?, hasAudio: Bool, settings: AppSettings) {
+            self.fulltext = fulltext
+            self.banner = banner
+            self.hasAudio = hasAudio
+            self.settings = settings
+            _cacheManager = StateObject(wrappedValue: ChapterCacheManager(
+                bookId: "test", chapters: fulltext.chapters, voice: "en-US-AriaNeural"
+            ))
+        }
 
         var body: some View {
             InstantReaderView(
@@ -29,7 +40,8 @@ final class InstantReaderSnapshotTests: XCTestCase {
                 hasAudio: hasAudio,
                 backendBaseURL: nil,
                 coverPNG: nil,
-                onRequestAudioRetry: {}
+                onRequestAudioRetry: {},
+                cacheManager: cacheManager
             )
             .environmentObject(settings)
         }

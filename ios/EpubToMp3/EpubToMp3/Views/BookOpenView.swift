@@ -73,7 +73,7 @@ struct BookOpenView: View {
         Group {
             switch phase {
             case .resolving:
-                ProgressView("Opening \(book.resolvedTitle)…")
+                ProgressView(L10n.string("bookOpen.opening", book.resolvedTitle))
                     .controlSize(.large)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 

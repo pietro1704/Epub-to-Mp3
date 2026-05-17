@@ -121,18 +121,16 @@ struct NowPlayingView: View {
     @ViewBuilder
     private func noJobBody(for book: BookEntity) -> some View {
         CompatContentUnavailableView(
-            "No audio yet",
+            L10n.string("nowPlaying.noAudioYet"),
             systemImage: "books.vertical",
-            description: Text(
-                "‘\(book.resolvedTitle)’ hasn’t been converted yet. Open it from the library to start a conversion."
-            )
+            description: Text(L10n.string("nowPlaying.noAudioDescription", book.resolvedTitle))
         )
         .overlay(alignment: .bottom) {
             if let onBrowseLibrary {
                 Button {
                     onBrowseLibrary()
                 } label: {
-                    Label("Open in library", systemImage: "books.vertical")
+                    Label(L10n.string("nowPlaying.openInLibrary"), systemImage: "books.vertical")
                         .frame(minHeight: 44)
                         .padding(.horizontal, 16)
                 }
@@ -149,15 +147,15 @@ struct NowPlayingView: View {
     private var emptyBody: some View {
         VStack(spacing: 16) {
             CompatContentUnavailableView(
-                "Start a new audiobook",
+                L10n.string("nowPlaying.startNew"),
                 systemImage: "headphones.circle",
-                description: Text("Import an EPUB from your library to convert and play it here.")
+                description: Text(L10n.string("nowPlaying.startNewDescription"))
             )
             if let onBrowseLibrary {
                 Button {
                     onBrowseLibrary()
                 } label: {
-                    Label("Browse Library", systemImage: "books.vertical")
+                    Label(L10n.string("mainReader.browseLibrary"), systemImage: "books.vertical")
                         .frame(minHeight: 44)
                         .padding(.horizontal, 16)
                 }
