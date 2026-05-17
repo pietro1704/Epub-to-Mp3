@@ -90,7 +90,6 @@ struct TabRoot: View {
                     onBrowseLibrary: { selectedTab = .library }
                 )
             }
-            .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
             .tabItem { Label("Read", systemImage: "text.book.closed") }
             .tag(RootTab.reader)
 
