@@ -367,6 +367,37 @@ struct BookOpenView: View {
             return
         }
 
+        await MainActor.run {
+            let chapterProgress = chapters.map { ch in
+                JobSnapshot.Chapter(
+                    index: ch.index,
+                    name: ch.displayTitle,
+                    status: nil,
+                    downloadUrl: nil,
+                    chars: ch.charCount,
+                    charsProcessed: nil,
+                    progressRatio: nil,
+                    durationSeconds: nil,
+                    startedAt: nil,
+                    completedAt: nil
+                )
+            }
+            let snap = JobSnapshot(
+                jobId: book.id,
+                state: "converting",
+                bookTitle: fulltext.bookTitle ?? book.resolvedTitle,
+                bookAuthor: fulltext.bookAuthor ?? book.author,
+                coverUrl: nil, coverMimeType: nil,
+                engine: "edge", voice: nil, language: nil,
+                progressPercent: nil,
+                chaptersTotal: chapters.count,
+                chaptersCompleted: 0,
+                chapterProgress: chapterProgress,
+                outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
+            )
+            globalPlayer.setSnapshot(snap)
+        }
+
         // Per-book output directory inside the app's Caches folder so
         // the OS can evict it under storage pressure without data loss.
         let cacheRoot = FileManager.default

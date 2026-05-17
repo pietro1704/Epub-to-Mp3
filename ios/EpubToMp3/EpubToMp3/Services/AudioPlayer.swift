@@ -240,6 +240,11 @@ final class AudioPlayer: ObservableObject {
 
     // MARK: Public API
 
+    func setSnapshot(_ snapshot: JobSnapshot) {
+        self.snapshot = snapshot
+        updateNowPlayingInfo()
+    }
+
     func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0) {
         ensureAudioSession()
         audioLog.debug("[play] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
