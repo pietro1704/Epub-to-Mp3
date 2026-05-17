@@ -462,6 +462,22 @@ struct BookOpenView: View {
                 continue
             }
 
+            // -- Audio segment cache: reuse previously-synthesised MP3 --
+            let cachedFile = cacheRoot.appendingPathComponent("chapter_\(chapterArrayIndex).mp3")
+            if let cachedData = try? Data(contentsOf: cachedFile), cachedData.count > 100 {
+                playerLog.debug("[AudioBootstrap] cache hit ch \(chapterArrayIndex) (\(cachedData.count) bytes)")
+                await MainActor.run { [weak globalPlayer] in
+                    globalPlayer?.enqueueSegment(
+                        data: cachedData,
+                        chapterIndex: chapterArrayIndex,
+                        segmentIndex: 0
+                    )
+                }
+                chaptersDone += 1
+                watchdog?.heartbeat()
+                continue
+            }
+
             let totalChapters = chapters.count
             await MainActor.run {
                 self.statusBanner = "Generating audio · \(chaptersDone)/\(totalChapters) ready"
@@ -478,7 +494,7 @@ struct BookOpenView: View {
 
             do {
                 #if os(iOS)
-                _ = try await PythonBridge.shared.convertChapterStreaming(
+                let resultURL = try await PythonBridge.shared.convertChapterStreaming(
                     text: chapterText,
                     voice: voice,
                     outputDir: cacheRoot,
@@ -492,6 +508,9 @@ struct BookOpenView: View {
                     )
                     watchdog?.heartbeat()
                 }
+                // Persist under deterministic name for future cache hits.
+                try? FileManager.default.removeItem(at: cachedFile)
+                try? FileManager.default.copyItem(at: resultURL, to: cachedFile)
                 chaptersDone += 1
                 consecutiveFailures = 0
                 lastFailureKey = nil
@@ -506,6 +525,12 @@ struct BookOpenView: View {
                     globalPlayer: globalPlayer,
                     watchdog: watchdog
                 )
+                // Persist under deterministic name for future cache hits.
+                let directFile = cacheRoot.appendingPathComponent("direct_ch\(chapterArrayIndex).mp3")
+                if FileManager.default.fileExists(atPath: directFile.path) {
+                    try? FileManager.default.removeItem(at: cachedFile)
+                    try? FileManager.default.copyItem(at: directFile, to: cachedFile)
+                }
                 chaptersDone += 1
                 consecutiveFailures = 0
                 lastFailureKey = nil
@@ -522,6 +547,12 @@ struct BookOpenView: View {
                         globalPlayer: globalPlayer,
                         watchdog: watchdog
                     )
+                    // Persist under deterministic name for future cache hits.
+                    let directFile = cacheRoot.appendingPathComponent("direct_ch\(chapterArrayIndex).mp3")
+                    if FileManager.default.fileExists(atPath: directFile.path) {
+                        try? FileManager.default.removeItem(at: cachedFile)
+                        try? FileManager.default.copyItem(at: directFile, to: cachedFile)
+                    }
                     chaptersDone += 1
                     consecutiveFailures = 0
                     lastFailureKey = nil

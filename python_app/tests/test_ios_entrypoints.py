@@ -669,3 +669,50 @@ def test_streaming_auto_voice_resolves_to_real_voice(tmp_path: Path):
     for _, voice in transport_calls:
         assert voice != "auto", "voice='auto' leaked to transport"
         assert "Neural" in voice
+
+
+# ---------------------------------------------------------------------------
+# prepare_chunks
+# ---------------------------------------------------------------------------
+
+
+class TestPrepareChunks:
+    """Unit tests for ``prepare_chunks`` — the pre-split entrypoint that
+    enables Swift-side parallel chunk synthesis."""
+
+    def test_empty_text_returns_empty_list(self):
+        result = ios_entrypoints.prepare_chunks("", voice="en-US-AriaNeural")
+        assert result["chunks"] == []
+
+    def test_short_text_single_chunk(self):
+        result = ios_entrypoints.prepare_chunks("Hello world.", voice="en-US-AriaNeural")
+        assert len(result["chunks"]) == 1
+        assert result["chunks"][0] == "Hello world."
+        assert result["voice"] == "en-US-AriaNeural"
+
+    def test_long_text_splits_into_multiple_chunks(self):
+        # 25K chars should produce multiple chunks at 12K default
+        text = "A" * 25_000
+        result = ios_entrypoints.prepare_chunks(text, voice="en-US-AriaNeural")
+        assert len(result["chunks"]) >= 2
+
+    def test_auto_voice_resolved(self):
+        pt_text = "Não sei como ele está. Também é isso mesmo. Já falei."
+        result = ios_entrypoints.prepare_chunks(pt_text, voice="auto")
+        assert "pt-BR" in result["voice"]
+        assert result["voice"] != "auto"
+
+    def test_streaming_mode_has_small_first_chunk(self):
+        # 5K chars: in streaming mode, first chunk should be ~500 chars,
+        # rest in a second chunk.
+        text = "A sentence. " * 400  # ~5200 chars
+        result = ios_entrypoints.prepare_chunks(text, voice="en-US-AriaNeural", streaming=True)
+        assert len(result["chunks"]) >= 2
+        # First chunk should be ≤ first_chunk_chars default (500) + slack
+        assert len(result["chunks"][0]) <= 600
+
+    def test_non_streaming_mode_uses_full_chunk_size(self):
+        text = "A sentence. " * 400  # ~5200 chars
+        result = ios_entrypoints.prepare_chunks(text, voice="en-US-AriaNeural", streaming=False)
+        # At 12K chunk size, 5200 chars fits in one chunk
+        assert len(result["chunks"]) == 1

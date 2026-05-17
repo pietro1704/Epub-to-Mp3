@@ -196,24 +196,28 @@ final class AudioPlayer: ObservableObject {
     private var segmentSentenceIds: [String] = []
     private var segmentPlayedCount: Int = 0
 
+    private var remoteCommandsConfigured = false
+
     init(resumeStore: ResumeStore = ResumeStore(), backendBaseURL: URL? = nil) {
         self.resumeStore = resumeStore
         self.backendBaseURL = backendBaseURL
-        configureRemoteCommands()
-        #if os(iOS)
-        // Required on iOS so the system delivers hardware button events
-        // (headphone controls, Bluetooth AVRCP) to MPRemoteCommandCenter.
-        // UIKit no longer mandates this call for apps built with scene
-        // lifecycle, but it is still the documented prerequisite and
-        // costs nothing.
-        UIApplication.shared.beginReceivingRemoteControlEvents()
-        #endif
     }
 
     deinit {
         // We can't touch @MainActor isolated state from deinit on Swift 6;
         // the observer tokens are local to the player instance which is
         // released here, so AVFoundation cleans up naturally.
+    }
+
+    // MARK: Remote commands (lazy — deferred to first playback)
+
+    private func ensureRemoteCommands() {
+        guard !remoteCommandsConfigured else { return }
+        remoteCommandsConfigured = true
+        configureRemoteCommands()
+        #if os(iOS)
+        UIApplication.shared.beginReceivingRemoteControlEvents()
+        #endif
     }
 
     // MARK: Audio session (lazy)
@@ -246,6 +250,7 @@ final class AudioPlayer: ObservableObject {
     }
 
     func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0) {
+        ensureRemoteCommands()
         ensureAudioSession()
         audioLog.debug("[play] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
         teardownPlayer()
@@ -418,6 +423,7 @@ final class AudioPlayer: ObservableObject {
     /// Thread-safety: must be called on the main actor (same as all other
     /// AudioPlayer methods).
     func enqueueSegment(data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil) {
+        ensureRemoteCommands()
         ensureAudioSession()
         audioLog.debug("[enqueueSegment] ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(self.player == nil)")
         guard !data.isEmpty else {

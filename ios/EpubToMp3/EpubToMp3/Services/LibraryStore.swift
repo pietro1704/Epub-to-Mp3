@@ -49,7 +49,25 @@ final class LibraryStore: ObservableObject {
         self.defaults = resolvedDefaults
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
-        load()
+        // Decode on a background queue to avoid blocking the main thread
+        // with large JSON payloads (cover PNG blobs inflate decode time).
+        Task.detached(priority: .userInitiated) { [defaults = resolvedDefaults, key = defaultsKey] in
+            guard let data = defaults.data(forKey: key) else { return }
+            do {
+                let decoded = try JSONDecoder().decode([BookEntity].self, from: data)
+                let pruned = decoded.filter { !$0.bookmark.isEmpty }
+                await MainActor.run {
+                    self.books = pruned
+                    if pruned.count != decoded.count {
+                        self.persist()
+                    }
+                }
+            } catch {
+                await MainActor.run {
+                    self.loadError = error.localizedDescription
+                }
+            }
+        }
     }
 
     // MARK: - CRUD
@@ -292,25 +310,6 @@ final class LibraryStore: ObservableObject {
     }
 
     // MARK: - Persistence
-
-    private func load() {
-        guard let data = defaults.data(forKey: defaultsKey) else { return }
-        do {
-            let decoded = try JSONDecoder().decode([BookEntity].self, from: data)
-            // One-shot migration: drop entries persisted by an older
-            // build that swallowed bookmark-creation failures and
-            // ended up with `bookmark = Data()`. Those rows are
-            // un-openable; pruning them turns a hard error into a
-            // re-import next time the user picks the file.
-            let pruned = decoded.filter { !$0.bookmark.isEmpty }
-            self.books = pruned
-            if pruned.count != decoded.count {
-                persist()
-            }
-        } catch {
-            self.loadError = error.localizedDescription
-        }
-    }
 
     private func persist() {
         do {

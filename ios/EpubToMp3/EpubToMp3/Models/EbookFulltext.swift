@@ -64,8 +64,29 @@ struct EbookFulltext: Codable, Equatable {
         var id: String { String(index) }
 
         var displayTitle: String {
-            if let name, !name.isEmpty { return name }
-            return "Chapter \(index)"
+            guard let name, !name.isEmpty else { return "Chapter \(index)" }
+            return Self.cleanTitle(name)
+        }
+
+        private static func cleanTitle(_ raw: String) -> String {
+            var result = raw
+            // Insert space before uppercase run glued to lowercase: "parteI" → "parte I"
+            result = result.replacingOccurrences(
+                of: "([a-záàâãéèêíïóôõúüç])([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÚÜÇ])",
+                with: "$1 $2",
+                options: .regularExpression
+            )
+            // Insert space before digit run glued to letters: "Chapter3" → "Chapter 3"
+            result = result.replacingOccurrences(
+                of: "([a-zA-Z])([0-9])",
+                with: "$1 $2",
+                options: .regularExpression
+            )
+            // Capitalize first letter of each word if all-lowercase
+            if result == result.lowercased() {
+                result = result.capitalized
+            }
+            return result.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         /// Naive sentence splitter — breaks on `.`, `?`, `!` followed by

@@ -48,11 +48,10 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 # ``No module named '_struct'``.
 from .tts import _edge_transport, _piper_transport
 
-# Mirror ``EdgeTTS._DEFAULT_CHUNK_SIZE`` (12_000) but cap a touch lower
-# so paragraph-boundary chunking has slack to land on whitespace
-# instead of mid-word. Configurable via env for parity with the rest
-# of the Edge tuning surface.
-_DEFAULT_IOS_CHUNK_CHARS = 10_000
+# Match ``EdgeTTS._DEFAULT_CHUNK_SIZE`` (12_000). The paragraph-boundary
+# chunker backs up to whitespace so mid-word splits are already avoided.
+# Configurable via env for parity with the rest of the Edge tuning surface.
+_DEFAULT_IOS_CHUNK_CHARS = 12_000
 
 # First-chunk burst size for segment streaming. A small first chunk
 # lets the Swift player queue audio in ~500 ms instead of waiting
@@ -178,6 +177,54 @@ def _split_into_chunks(text: str, max_chars: int) -> List[str]:
     if buffer:
         chunks.append(buffer)
     return chunks
+
+
+def prepare_chunks(
+    text: str,
+    voice: str = "auto",
+    streaming: bool = False,
+) -> Dict[str, Any]:
+    """Return pre-split text chunks WITHOUT synthesizing.
+
+    Swift calls this to get the chunk list, then fires parallel
+    ``EdgeTTSBridge`` WebSocket connections — one per chunk — achieving
+    the same chunk-level concurrency the desktop path gets via
+    ``EDGE_MAX_CONCURRENCY=12``.
+
+    Args:
+        text: Full chapter text.
+        voice: Edge voice id or ``"auto"``.
+        streaming: If ``True``, uses the first-chunk-burst strategy
+            (small first chunk for fast time-to-first-byte).
+
+    Returns:
+        ``{"chunks": [str, ...], "voice": str}`` — resolved voice +
+        ordered chunk list ready for parallel TTS.
+    """
+    text = (text or "").strip()
+    if not text:
+        return {"chunks": [], "voice": voice}
+
+    if (voice or "auto").strip().lower() == "auto":
+        voice = _resolve_auto_voice(text)
+
+    if streaming:
+        first_size = _first_chunk_chars()
+        normal_size = _chunk_chars()
+        if len(text) <= first_size:
+            chunks: List[str] = [text]
+        else:
+            first_chunk = text[:first_size]
+            last_space = first_chunk.rfind(" ")
+            if last_space > first_size // 2:
+                first_chunk = first_chunk[:last_space]
+            remainder = text[len(first_chunk) :].lstrip()
+            rest_chunks = _split_into_chunks(remainder, normal_size) if remainder else []
+            chunks = [first_chunk] + rest_chunks
+    else:
+        chunks = _split_into_chunks(text, _chunk_chars())
+
+    return {"chunks": chunks, "voice": voice}
 
 
 def synthesize_chapter_via_transport(
@@ -950,6 +997,7 @@ def _collected_options(scope: Dict[str, Any]) -> Dict[str, Any]:
 
 
 __all__ = [
+    "prepare_chunks",
     "synthesize_chapter_via_transport",
     "synthesize_chapter_streaming",
     "convert_epub",

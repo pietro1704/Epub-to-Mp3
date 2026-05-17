@@ -207,6 +207,156 @@ final class PythonBridge: @unchecked Sendable {
         return outURL
     }
 
+    // MARK: - Parallel chunk synthesis
+
+    /// Maximum concurrent Edge WebSocket connections per chapter.
+    /// Matches desktop ``EDGE_MAX_CONCURRENCY`` default. On iOS the
+    /// system URLSession pool naturally limits to ~6 concurrent TCP
+    /// connections per host, so 6 is the practical ceiling.
+    private static let maxChunkConcurrency = 6
+
+    /// Synthesises one chapter with chunk-level parallelism.
+    ///
+    /// Instead of the serial Python loop (one chunk at a time via the
+    /// transport semaphore), this path:
+    /// 1. Calls ``prepare_chunks`` on the Python thread to get the
+    ///    pre-split text array (fast, no network).
+    /// 2. Fires up to ``maxChunkConcurrency`` concurrent
+    ///    ``EdgeTTSBridge.synthesize`` calls from Swift's cooperative
+    ///    thread pool (each opens its own WebSocket).
+    /// 3. Reassembles MP3 bytes in chunk order and writes the file.
+    ///
+    /// This mirrors the desktop path's ``EDGE_MAX_CONCURRENCY=12``
+    /// parallelism but at the Swift networking layer.
+    func convertChapterParallel(
+        text: String,
+        voice: String,
+        outputDir: URL,
+        chapterIndex: Int,
+        onSegment: (@MainActor @Sendable (Data, Int, Int) -> Void)? = nil
+    ) async throws -> URL {
+        guard PythonEmbed.shared.isBootstrapComplete else {
+            throw PythonBridgeError.bootstrapFailed("interpreter not ready yet")
+        }
+
+        // Step 1: Get chunks from Python (runs on Python thread, fast).
+        let (chunks, resolvedVoice) = try await runner.callAsync {
+            try self.prepareChunksSync(text: text, voice: voice, streaming: onSegment != nil)
+        }
+
+        guard !chunks.isEmpty else {
+            throw PythonBridgeError.emptyResult
+        }
+
+        let outURL = outputDir.appendingPathComponent(
+            "edge_par_\(UUID().uuidString).mp3"
+        )
+        try FileManager.default.createDirectory(
+            at: outputDir, withIntermediateDirectories: true
+        )
+
+        // Step 2: Synthesize chunks in parallel with bounded concurrency.
+        let results = try await synthesizeChunksParallel(
+            chunks: chunks,
+            voice: resolvedVoice,
+            chapterIndex: chapterIndex,
+            onSegment: onSegment
+        )
+
+        // Step 3: Concatenate in order and write.
+        var audio = Data()
+        for data in results {
+            audio.append(data)
+        }
+        guard !audio.isEmpty else {
+            throw PythonBridgeError.convertFailed("all chunks returned empty audio")
+        }
+        try audio.write(to: outURL)
+        return outURL
+    }
+
+    private func prepareChunksSync(
+        text: String, voice: String, streaming: Bool
+    ) throws -> ([String], String) {
+        let entry: PythonObject
+        do {
+            entry = try PythonEmbed.shared.ensureIosEntrypoints()
+        } catch {
+            throw PythonBridgeError.bootstrapFailed(
+                "import python_app.src.ios_entrypoints: \(error)"
+            )
+        }
+        let result = entry.prepare_chunks(text, voice, streaming)
+        guard let chunkList = Array<String>(result["chunks"]) else {
+            throw PythonBridgeError.decodeFailed("prepare_chunks: can't decode chunks")
+        }
+        let resolved = String(result["voice"]) ?? voice
+        return (chunkList, resolved)
+    }
+
+    private func synthesizeChunksParallel(
+        chunks: [String],
+        voice: String,
+        chapterIndex: Int,
+        onSegment: (@MainActor @Sendable (Data, Int, Int) -> Void)?
+    ) async throws -> [Data] {
+        // Pre-allocate result array to maintain order.
+        var results = [Data?](repeating: nil, count: chunks.count)
+        let totalChunks = chunks.count
+
+        try await withThrowingTaskGroup(of: (Int, Data).self) { group in
+            var launched = 0
+
+            for (index, chunk) in chunks.enumerated() {
+                // Throttle: wait for a slot if we've hit max concurrency.
+                if launched >= Self.maxChunkConcurrency {
+                    if let (idx, data) = try await group.next() {
+                        results[idx] = data
+                        if let cb = onSegment {
+                            let capturedIdx = chapterIndex
+                            let capturedSeg = idx
+                            let capturedData = data
+                            Task { @MainActor in
+                                cb(capturedData, capturedIdx, capturedSeg)
+                            }
+                        }
+                    }
+                }
+
+                let chunkText = chunk
+                group.addTask {
+                    let bridge = EdgeTTSBridge()
+                    let mp3 = try await withTimeout(
+                        seconds: 60, label: "Edge chunk \(index)"
+                    ) {
+                        try await bridge.synthesize(
+                            text: chunkText, voice: voice
+                        )
+                    }
+                    return (index, mp3)
+                }
+                launched += 1
+            }
+
+            // Drain remaining.
+            while let (idx, data) = try await group.next() {
+                results[idx] = data
+                if let cb = onSegment {
+                    let capturedIdx = chapterIndex
+                    let capturedSeg = idx
+                    let capturedData = data
+                    Task { @MainActor in
+                        cb(capturedData, capturedIdx, capturedSeg)
+                    }
+                }
+            }
+        }
+
+        // Convert [Data?] -> [Data], filtering nils (shouldn't happen
+        // since we throw on errors, but be defensive).
+        return results.compactMap { $0 }
+    }
+
     // MARK: - Segment-streaming chapter conversion
 
     /// Segment-streaming variant of ``convertChapter``.
