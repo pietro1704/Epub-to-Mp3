@@ -43,9 +43,9 @@ enum Paginator {
             if text[i] == "\n" {
                 let next = text.index(after: i)
                 if next < text.endIndex && text[next] == "\n" {
-                    // Paragraph break: finish current line + one blank line
+                    // Paragraph break: finish current line + half-line gap
                     let remainder = charsPerLine - posInLine
-                    count += remainder + charsPerLine
+                    count += remainder + charsPerLine / 2
                     posInLine = 0
                     i = text.index(after: next)
                     continue
@@ -130,7 +130,7 @@ enum Paginator {
                 let next = text.index(after: i)
                 if next < text.endIndex && text[next] == "\n" {
                     let remainder = charsPerLine - posInLine
-                    weight += remainder + charsPerLine
+                    weight += remainder + charsPerLine / 2
                     posInLine = 0
                     if weight >= budget { return i }
                     i = text.index(after: next)

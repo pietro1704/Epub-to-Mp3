@@ -110,7 +110,7 @@ struct InstantReaderView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingFullPlayer) {
+        .fullScreenCover(isPresented: $showingFullPlayer) {
             FullPlayerSheet()
                 .environmentObject(globalPlayer)
         }

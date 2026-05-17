@@ -98,7 +98,7 @@ struct EbookFulltext: Codable, Equatable {
         ///
         /// Returns `(id, text, startCharOffset, endCharOffset)` tuples.
         func splitSentences() -> [SentenceSpan] {
-            let normalized = Self.collapseHardWraps(text)
+            let normalized = Self.stripLeadingArtifact(Self.collapseHardWraps(text))
             var spans: [SentenceSpan] = []
             let chars = Array(normalized)
             var start = 0
@@ -150,6 +150,19 @@ struct EbookFulltext: Codable, Equatable {
                 }
             }
             return spans
+        }
+
+        /// Strip EPUB artifact codes from the start of chapter text.
+        /// These are file-level identifiers like "c34", "c4H7", "c60"
+        /// that some EPUB converters embed as visible text.
+        static func stripLeadingArtifact(_ text: String) -> String {
+            let pattern = #"^[a-z][A-Z0-9][A-Za-z0-9]*\s*(\n|$)"#
+            guard let range = text.range(of: pattern, options: .regularExpression) else {
+                return text
+            }
+            var result = String(text[range.upperBound...])
+            while result.hasPrefix("\n") { result.removeFirst() }
+            return result
         }
 
         /// Join hard line-wraps (single `\n` mid-paragraph) into spaces.
