@@ -82,10 +82,16 @@ def test_currently_reading_book_id_written_from_library_tap() -> None:
     reading target so the Read tab lands on the freshly-opened book.
     Without this write, the Read tab keeps showing whatever was last
     set inside MainReaderView itself — and the user complains "books
-    opened recently don't go to the Read tab"."""
+    opened recently don't go to the Read tab".
+
+    Accepts both the direct key write (``currentlyReadingBookIDKey``) and
+    the encapsulated ``MainReaderView.setCurrentlyReading(bookID:)`` call,
+    which is the preferred pattern introduced in the library-tap refactor.
+    """
     library_view = REPO_ROOT / "ios" / "EpubToMp3" / "EpubToMp3" / "Views" / "LibraryView.swift"
     body = library_view.read_text(encoding="utf-8")
-    assert "currentlyReadingBookIDKey" in body, (
-        "LibraryView must write the tapped book id to "
-        "MainReaderView.currentlyReadingBookIDKey on tap."
+    assert "currentlyReadingBookIDKey" in body or "setCurrentlyReading(" in body, (
+        "LibraryView must either write directly to "
+        "MainReaderView.currentlyReadingBookIDKey or call "
+        "MainReaderView.setCurrentlyReading(bookID:) on tile tap."
     )
