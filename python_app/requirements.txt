@@ -6,8 +6,9 @@ edge-tts>=7.2.8
 piper-tts>=1.4.2
 
 # PyTorch + audio (Piper)
-torch>=2.2.0
-torchaudio>=2.11.0
+# torch and torchaudio are optional GPU-acceleration dependencies — install
+# manually when a GPU is available: pip install torch torchaudio
+# They are NOT required for Edge-TTS + Piper (the default workflow).
 numpy>=2.4.4,<3.0.0
 soundfile>=0.13.1
 
