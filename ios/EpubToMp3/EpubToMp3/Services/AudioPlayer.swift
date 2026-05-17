@@ -632,13 +632,15 @@ final class AudioPlayer: ObservableObject {
                 }
 
                 guard let snapshot = self.snapshot else { return }
-                let chapters = snapshot.playableChapters
-                if self.currentChapterIndex + 1 < chapters.count {
+                let totalChapters = self.isSegmentMode
+                    ? (snapshot.chapterProgress?.count ?? 0)
+                    : snapshot.playableChapters.count
+                if !self.isSegmentMode, self.currentChapterIndex + 1 < totalChapters {
                     self.currentChapterIndex += 1
                     self.positionSeconds = 0
                     self.publishCurrentChapter()
                     self.updateNowPlayingInfo()
-                } else {
+                } else if !self.isSegmentMode {
                     self.isPlaying = false
                     self.updateNowPlayingInfo()
                 }
@@ -777,6 +779,10 @@ final class AudioPlayer: ObservableObject {
     // MARK: Helpers
 
     private var currentChapterValue: JobSnapshot.Chapter? {
+        if let all = snapshot?.chapterProgress,
+           let match = all.first(where: { $0.index == currentChapterIndex }) {
+            return match
+        }
         guard let chapters = snapshot?.playableChapters,
               currentChapterIndex < chapters.count else { return nil }
         return chapters[currentChapterIndex]
