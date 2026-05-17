@@ -225,4 +225,58 @@ final class PaginatorTests: XCTestCase {
         XCTAssertLessThanOrEqual(pages.count, 25,
             "20K chapter should not exceed 25 pages with standard settings")
     }
+
+    // MARK: - Maximal page fill (no premature paragraph breaks)
+
+    func testPagesAreMaximallyFull() {
+        // Build text with many paragraphs. The paginator should NOT break
+        // at the first paragraph boundary — it should fill each page as
+        // much as possible (word-boundary splitting), like Apple Books.
+        let paragraph = "The quick brown fox jumped over the lazy dog and ran across the meadow."
+        // 30 short paragraphs separated by \n\n. Each paragraph is ~70 chars.
+        // Total ~2100 chars + separators. With a page budget of ~1500 chars,
+        // the old code would break at the first \n\n within budget (~70 chars),
+        // wasting most of the page. The new code should fill pages fully.
+        let text = Array(repeating: paragraph, count: 30).joined(separator: "\n\n")
+        let s: [SentenceSpan] = [SentenceSpan(id: "s0", text: text,
+                                                startChar: 0, endChar: text.count)]
+        let pages = Paginator.paginate(
+            spans: s,
+            pageSize: CGSize(width: 600, height: 500),
+            fontSize: 16, lineSpacing: 4, columnWidth: 560, margin: 20
+        )
+        XCTAssertGreaterThan(pages.count, 1, "Text should span multiple pages")
+
+        // Each non-last page should contain multiple paragraphs (not just one).
+        // If pages break at paragraph boundaries, page 0 would contain only
+        // ~70 chars. With maximal fill, page 0 should contain many paragraphs.
+        for i in 0..<(pages.count - 1) {
+            let pageText = pages[i]
+            // Count paragraph separators within each page
+            let paraCount = pageText.components(separatedBy: "\n\n").count
+            XCTAssertGreaterThan(paraCount, 2,
+                "Page \(i) should contain multiple paragraphs for maximal fill, got \(paraCount)")
+        }
+    }
+
+    func testPageTurnStyleEnum() {
+        // Verify PageTurnStyle enum has expected cases and raw values
+        XCTAssertEqual(PageTurnStyle.flip.rawValue, "flip")
+        XCTAssertEqual(PageTurnStyle.slide.rawValue, "slide")
+        XCTAssertEqual(PageTurnStyle.none.rawValue, "none")
+        XCTAssertEqual(PageTurnStyle.allCases.count, 3)
+    }
+
+    func testPageTurnStylePersistence() {
+        let defaults = UserDefaults(suiteName: "PaginatorTestSuite")!
+        defaults.removePersistentDomain(forName: "PaginatorTestSuite")
+        let settings = AppSettings(defaults: defaults)
+        // Default should be .flip
+        XCTAssertEqual(settings.pageTurnStyle, .flip)
+        // Change and verify persistence
+        settings.pageTurnStyle = .slide
+        XCTAssertEqual(defaults.string(forKey: "pageTurnStyle"), "slide")
+        settings.pageTurnStyle = .none
+        XCTAssertEqual(defaults.string(forKey: "pageTurnStyle"), "none")
+    }
 }

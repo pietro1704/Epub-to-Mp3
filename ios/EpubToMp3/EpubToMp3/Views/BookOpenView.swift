@@ -282,6 +282,12 @@ struct BookOpenView: View {
         // shows "Generating audio…" while synthesis runs.
         let chapterKey = self.fulltext?.jobId ?? book.id
         let savedChapter = settings.savedChapterIndex(for: chapterKey)
+        // Sync reading position to widgets.
+        WidgetDataSync.updateLastRead(
+            bookId: book.id,
+            chapterIndex: max(0, savedChapter),
+            totalChapters: fulltext?.chapters.count
+        )
         startAudioBootstrap(startChapterIndex: max(0, savedChapter))
     }
 

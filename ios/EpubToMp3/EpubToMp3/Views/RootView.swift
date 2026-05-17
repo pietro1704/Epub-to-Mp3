@@ -7,10 +7,11 @@ import SwiftUI
 /// tab layout regardless — those SDKs don't ship `NavigationSplitView`.
 ///
 /// As of the Music/Spotify-style player slice, the Now Playing tab /
-/// sidebar destination has been replaced by a **full-screen sheet**
+/// sidebar destination has been replaced by a **full-screen cover**
 /// (`FullPlayerSheet`) that is presented by tapping the `MiniPlayerBar`.
-/// The sheet uses `.presentationDetents([.large])` on iOS 16+; on iOS
-/// 15 it fills the screen (the system default). Swipe-down dismisses it.
+/// Uses `.fullScreenCover` so it slides up from the bottom like
+/// Spotify / Apple Music. Swipe-down dismisses it via a custom drag
+/// gesture on the player view.
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
@@ -74,7 +75,7 @@ struct TabRoot: View {
 
     var body: some View {
         tabContent
-            .sheet(isPresented: $playerPresentation.showingFullPlayer) {
+            .fullScreenCover(isPresented: $playerPresentation.showingFullPlayer) {
                 FullPlayerSheet()
                     .environmentObject(player)
                     .environmentObject(library)
@@ -89,6 +90,7 @@ struct TabRoot: View {
                     onBrowseLibrary: { selectedTab = .library }
                 )
             }
+            .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
             .tabItem { Label("Read", systemImage: "text.book.closed") }
             .tag(RootTab.reader)
 

@@ -148,6 +148,11 @@ struct InstantReaderView: View {
         .compatOnChange(of: currentChapterIndex) { newIndex in
             reloadCurrentChapter(index: newIndex)
             settings.saveChapterIndex(newIndex, for: fulltext.jobId)
+            WidgetDataSync.updateLastRead(
+                bookId: fulltext.jobId,
+                chapterIndex: newIndex,
+                totalChapters: fulltext.chapters.count
+            )
             cacheManager.refreshCachedIndices()
             cacheManager.prefetchNext(2, from: newIndex)
         }
@@ -167,6 +172,11 @@ struct InstantReaderView: View {
             positionTask?.cancel()
             sentenceTask?.cancel()
             settings.saveChapterIndex(currentChapterIndex, for: fulltext.jobId)
+            WidgetDataSync.updateLastRead(
+                bookId: fulltext.jobId,
+                chapterIndex: currentChapterIndex,
+                totalChapters: fulltext.chapters.count
+            )
             if playerMounted { player.pause() }
         }
     }

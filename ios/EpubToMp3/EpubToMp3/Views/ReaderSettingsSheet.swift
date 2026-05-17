@@ -63,6 +63,15 @@ struct ReaderSettingsSheet: View {
                     }
                     .pickerStyle(.segmented)
 
+                    if settings.readerLayout == .paginated {
+                        Picker(L10n.string("readerSettings.pageTurnStyle"), selection: $settings.pageTurnStyle) {
+                            ForEach(PageTurnStyle.allCases) { style in
+                                Text(style.displayName).tag(style)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+
                     HStack {
                         Text(L10n.string("readerSettings.lineSpacing"))
                         Spacer()

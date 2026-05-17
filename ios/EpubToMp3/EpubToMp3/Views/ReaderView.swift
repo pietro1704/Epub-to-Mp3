@@ -117,6 +117,7 @@ struct ReaderView: View {
         _ = settings.readerSuppressItalic
         _ = settings.readerLetterSpacing
         _ = settings.readerWordSpacing
+        _ = settings.pageTurnStyle
         return VStack(spacing: 0) {
             toolbar
             Divider()
@@ -234,31 +235,9 @@ struct ReaderView: View {
                         .padding(.horizontal, effectiveReaderMargin)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
-                    let pageIndex = max(0, min(pages.count - 1, currentPage))
-                    pageView(pages: pages, pageIndex: pageIndex, containerWidth: geo.size.width)
-                        .id(pageIndex)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: pageDirection == .forward ? .trailing : .leading)
-                                .combined(with: .opacity),
-                            removal: .move(edge: pageDirection == .forward ? .leading : .trailing)
-                                .combined(with: .opacity)
-                        ))
-                        .animation(.easeInOut(duration: 0.25), value: currentPage)
-                        // Tap zones first (foreground), drag/scroll second.
-                        // Without `.allowsHitTesting(true)` here, the
-                        // text body's hit-testing wins on macOS.
-                        .overlay(tapZones(totalPages: pages.count))
-                        .gesture(
-                            DragGesture(minimumDistance: 30)
-                                .onEnded { value in
-                                    if value.translation.width < -40 {
-                                        advancePage(totalPages: pages.count)
-                                    } else if value.translation.width > 40 {
-                                        retreatPage()
-                                    }
-                                }
-                        )
+                    paginatedPageContent(pages: pages, containerSize: geo.size)
 
+                    let pageIndex = max(0, min(pages.count - 1, currentPage))
                     pageFooter(index: pageIndex, total: pages.count)
                         .padding(.bottom, 8)
                         .allowsHitTesting(false)
@@ -273,6 +252,87 @@ struct ReaderView: View {
             }
         }
         .compatHorizontalSafeAreaPadding(0)
+    }
+
+    /// Dispatch page rendering to the appropriate animation container
+    /// based on `settings.pageTurnStyle`.
+    @ViewBuilder
+    private func paginatedPageContent(pages: [String], containerSize: CGSize) -> some View {
+        let pageIndex = max(0, min(pages.count - 1, currentPage))
+        switch settings.pageTurnStyle {
+        #if os(iOS)
+        case .flip:
+            pageCurlContent(pages: pages, containerSize: containerSize)
+        #endif
+        case .slide:
+            slidePageContent(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
+        case .none:
+            noAnimationPageContent(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
+        #if os(macOS)
+        case .flip:
+            // macOS doesn't have UIPageViewController; fall back to slide
+            slidePageContent(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
+        #endif
+        }
+    }
+
+    #if os(iOS)
+    /// Apple Books-style page curl using UIPageViewController.
+    private func pageCurlContent(pages: [String], containerSize: CGSize) -> some View {
+        let pageViews: [AnyView] = pages.indices.map { i in
+            AnyView(
+                pageView(pages: pages, pageIndex: i, containerWidth: containerSize.width)
+                    .background(themeBackground)
+            )
+        }
+        return PageCurlContainer(
+            pages: pageViews,
+            currentPage: $currentPage,
+            onAdvanceChapter: onAdvanceChapter,
+            onPreviousChapter: onPreviousChapter,
+            onCenterTap: onCenterTap
+        )
+    }
+    #endif
+
+    /// Horizontal slide transition (the old default).
+    private func slidePageContent(pages: [String], pageIndex: Int, containerSize: CGSize) -> some View {
+        pageView(pages: pages, pageIndex: pageIndex, containerWidth: containerSize.width)
+            .id(pageIndex)
+            .transition(.asymmetric(
+                insertion: .move(edge: pageDirection == .forward ? .trailing : .leading)
+                    .combined(with: .opacity),
+                removal: .move(edge: pageDirection == .forward ? .leading : .trailing)
+                    .combined(with: .opacity)
+            ))
+            .animation(.easeInOut(duration: 0.25), value: currentPage)
+            .overlay(tapZones(totalPages: pages.count))
+            .gesture(
+                DragGesture(minimumDistance: 30)
+                    .onEnded { value in
+                        if value.translation.width < -40 {
+                            advancePage(totalPages: pages.count)
+                        } else if value.translation.width > 40 {
+                            retreatPage()
+                        }
+                    }
+            )
+    }
+
+    /// Instant page change — no animation at all.
+    private func noAnimationPageContent(pages: [String], pageIndex: Int, containerSize: CGSize) -> some View {
+        pageView(pages: pages, pageIndex: pageIndex, containerWidth: containerSize.width)
+            .overlay(tapZones(totalPages: pages.count))
+            .gesture(
+                DragGesture(minimumDistance: 30)
+                    .onEnded { value in
+                        if value.translation.width < -40 {
+                            advancePage(totalPages: pages.count)
+                        } else if value.translation.width > 40 {
+                            retreatPage()
+                        }
+                    }
+            )
     }
 
     private func pageView(pages: [String], pageIndex: Int, containerWidth: CGFloat? = nil) -> some View {
@@ -400,7 +460,11 @@ struct ReaderView: View {
     private func advancePage(totalPages: Int) {
         pageDirection = .forward
         if currentPage + 1 < totalPages {
-            withAnimation(.easeInOut(duration: 0.25)) {
+            if settings.pageTurnStyle == .slide {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    currentPage += 1
+                }
+            } else {
                 currentPage += 1
             }
         } else if onAdvanceChapter?() == true {
@@ -411,7 +475,11 @@ struct ReaderView: View {
     private func retreatPage() {
         pageDirection = .backward
         if currentPage > 0 {
-            withAnimation(.easeInOut(duration: 0.25)) {
+            if settings.pageTurnStyle == .slide {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    currentPage -= 1
+                }
+            } else {
                 currentPage -= 1
             }
         } else if onPreviousChapter?() == true {

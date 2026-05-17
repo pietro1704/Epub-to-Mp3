@@ -53,6 +53,7 @@ struct EpubToMp3App: App {
                         drainSharedInbox()
                         drainPendingIntent()
                         drainWidgetIntents()
+                        WidgetDataSync.reloadAll()
                     }
                 }
                 .onOpenURL { url in
@@ -105,9 +106,25 @@ struct EpubToMp3App: App {
 
     private func handleDeepLink(_ url: URL) {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return }
-        if components.host == "open",
-           let bookId = components.queryItems?.first(where: { $0.name == "bookId" })?.value {
-            openBookById(bookId)
+        switch components.host {
+        case "open":
+            if let bookId = components.queryItems?.first(where: { $0.name == "bookId" })?.value {
+                openBookById(bookId)
+            }
+        case "player":
+            if let bookId = components.queryItems?.first(where: { $0.name == "bookId" })?.value {
+                openBookById(bookId)
+                // Also set the player state so the full-player sheet
+                // can pick up this book on foreground.
+                NowPlayingView.setCurrentlyPlaying(bookID: bookId, chapterIndex: 0)
+            }
+        case "library":
+            // No-op: the app opens to the library tab by default when
+            // no book is selected. A future enhancement could push the
+            // tab selection, but the current RootView routing handles it.
+            break
+        default:
+            break
         }
     }
 

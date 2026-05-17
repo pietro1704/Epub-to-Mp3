@@ -17,8 +17,8 @@ struct SettingsView: View {
     #endif
 
     var body: some View {
+        #if os(macOS)
         Group {
-            #if os(macOS)
             if #available(macOS 13, *) {
                 Form {
                     embeddedServerSection
@@ -42,17 +42,11 @@ struct SettingsView: View {
                     aboutSection
                 }
             }
-            #else
-            Form {
-                embeddedRuntimeSection
-                backendSection
-                readerSection
-                advancedSection
-                aboutSection
-            }
-            #endif
         }
         .navigationTitle(L10n.string("settings.title"))
+        #else
+        settingsForm
+        #endif
     }
 
     // MARK: - Sections
@@ -369,6 +363,47 @@ struct SettingsView: View {
             Text(L10n.string("settings.about"))
         }
     }
+
+    #if os(iOS)
+    /// iOS settings form with extra bottom scroll margin.
+    ///
+    /// SwiftUI's Form (UITableView) sometimes clips the last section
+    /// behind the tab bar when nested inside NavigationStack > TabView,
+    /// especially when a `.safeAreaInset` (MiniPlayerBar) is applied
+    /// on an ancestor. We add extra bottom inset via `.contentMargins`
+    /// (iOS 17+) or a transparent spacer section (iOS 15–16).
+    @ViewBuilder
+    private var settingsForm: some View {
+        if #available(iOS 17, *) {
+            Form {
+                embeddedRuntimeSection
+                backendSection
+                readerSection
+                advancedSection
+                aboutSection
+            }
+            .contentMargins(.bottom, 88, for: .scrollContent)
+            .navigationTitle(L10n.string("settings.title"))
+        } else {
+            Form {
+                embeddedRuntimeSection
+                backendSection
+                readerSection
+                advancedSection
+                aboutSection
+
+                // Invisible spacer section — extends the scroll content
+                // so the about section clears the tab bar + mini-player.
+                Section {
+                    Color.clear
+                        .frame(height: 80)
+                        .listRowBackground(Color.clear)
+                }
+            }
+            .navigationTitle(L10n.string("settings.title"))
+        }
+    }
+    #endif
 }
 
 #Preview("Settings") {

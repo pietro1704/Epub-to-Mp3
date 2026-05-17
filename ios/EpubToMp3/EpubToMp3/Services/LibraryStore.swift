@@ -315,6 +315,8 @@ final class LibraryStore: ObservableObject {
         do {
             let data = try JSONEncoder().encode(books)
             defaults.set(data, forKey: defaultsKey)
+            // Notify widgets that the library changed.
+            WidgetDataSync.reloadLibraryWidgets()
         } catch {
             self.loadError = error.localizedDescription
         }

@@ -74,7 +74,7 @@ struct SplitViewRoot: View {
 
     var body: some View {
         splitContent
-            .sheet(isPresented: $playerPresentation.showingFullPlayer) {
+            .fullScreenCover(isPresented: $playerPresentation.showingFullPlayer) {
                 FullPlayerSheet()
                     .environmentObject(player)
                     .environmentObject(library)
@@ -132,16 +132,16 @@ struct SplitViewRoot: View {
         .accessibilityIdentifier("split.navList")
         // HIG sidebar footer: mini-player docked at the bottom of the
         // sidebar (Sonos / Apple TV / Apple Music pattern). Tap opens
-        // the full player sheet.
+        // the full player sheet. Visible on every sidebar destination
+        // so the player bar looks identical regardless of current mode.
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            let visible = showMiniPlayer && navMode != .reader
-            MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
-                .frame(height: visible ? nil : 0)
-                .opacity(visible ? 1 : 0)
-                .clipped()
-                .accessibilityIdentifier("miniPlayer.sidebar")
-                .accessibilityHidden(!visible)
+            if showMiniPlayer {
+                MiniPlayerBar(onTap: { playerPresentation.showFullPlayer() })
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .accessibilityIdentifier("miniPlayer.sidebar")
+            }
         }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: showMiniPlayer)
     }
 
     // MARK: - Detail (single column)

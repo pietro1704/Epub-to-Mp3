@@ -67,6 +67,24 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
     }
 }
 
+/// Page-turn animation style for paginated mode. Persisted via
+/// `AppSettings.pageTurnStyle`. Default is `.flip` (Apple Books curl).
+enum PageTurnStyle: String, CaseIterable, Identifiable {
+    case flip
+    case slide
+    case none
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .flip:  return L10n.string("pageTurn.flip")
+        case .slide: return L10n.string("pageTurn.slide")
+        case .none:  return L10n.string("pageTurn.none")
+        }
+    }
+}
+
 /// Persisted user preferences. The backend URL drives every API call so the
 /// user can flip between localhost (dev), a tunnelled HF Spaces deploy, or
 /// any reachable server hosting the Python backend.
@@ -114,6 +132,9 @@ final class AppSettings: ObservableObject {
         self.readerLayout = ReaderLayout(
             rawValue: defaults.string(forKey: "readerLayout") ?? ""
         ) ?? .scrolling
+        self.pageTurnStyle = PageTurnStyle(
+            rawValue: defaults.string(forKey: "pageTurnStyle") ?? ""
+        ) ?? .flip
         self.readerLineSpacing = (defaults.object(forKey: "readerLineSpacing") as? Double) ?? 6
         // Coerce stale persisted values from older builds (clamp was 8pt
         // pre-2026-05-12, now 16pt to match Apple HIG portrait minimum).
@@ -203,6 +224,11 @@ final class AppSettings: ObservableObject {
 
     @Published var readerLayout: ReaderLayout = .scrolling {
         didSet { defaults.set(readerLayout.rawValue, forKey: "readerLayout") }
+    }
+
+    /// Page-turn animation in paginated mode. Default: `.flip` (curl).
+    @Published var pageTurnStyle: PageTurnStyle = .flip {
+        didSet { defaults.set(pageTurnStyle.rawValue, forKey: "pageTurnStyle") }
     }
 
     /// Line spacing in points. 0 = system default (~1.2 line-height).

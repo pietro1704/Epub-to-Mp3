@@ -2,11 +2,11 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 
-/// Full-screen audiobook player sheet. Mirrors the Apple Music /
-/// Apple Books HIG full-player pattern:
+/// Full-screen audiobook player presented via `.fullScreenCover`.
+/// Mirrors the Apple Music / Spotify full-player pattern:
 ///
 ///   ┌─────────────────────┐
-///   │    ⎯  drag handle   │  (provided by the system sheet)
+///   │  [chevron.compact.down]  │  drag handle — swipe down to dismiss
 ///   │                     │
 ///   │   [cover art 300]   │
 ///   │   Book Title  XL    │
@@ -20,10 +20,9 @@ import MediaPlayer
 ///   │  speed  sleep  AirPlay │
 ///   └─────────────────────┘
 ///
-/// Presentation: `.sheet(isPresented:)` with `.presentationDetents([.large])`.
-/// iOS 16+: native detent. iOS 15 fallback: the sheet fills the screen
-/// by default (`.large` is the only detent that existed before iOS 16).
-/// Swipe-down dismisses (sheet default behaviour).
+/// Presentation: `.fullScreenCover(isPresented:)` — slides up from the
+/// bottom, exactly like Spotify / Apple Music. Dismissed by swiping
+/// down (custom drag gesture) or tapping the chevron handle.
 struct FullPlayerSheet: View {
     @EnvironmentObject private var player: AudioPlayer
     @EnvironmentObject private var library: LibraryStore
@@ -37,6 +36,7 @@ struct FullPlayerSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var showChapterList = false
+    @State private var dragOffset: CGFloat = 0
 
     // MARK: Derived state
 
@@ -72,7 +72,8 @@ struct FullPlayerSheet: View {
     @available(iOS 16, macOS 13, *)
     private var modernBody: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 16)
+            dragHandle
+            Spacer(minLength: 8)
             coverHero
             Spacer(minLength: 20)
             titleBlock
@@ -86,48 +87,80 @@ struct FullPlayerSheet: View {
         }
         .compatHorizontalSafeAreaPadding(32)
         .background(backgroundLayer.ignoresSafeArea())
-        .sheetLargeDetentIfAvailable()
+        .offset(y: max(0, dragOffset))
+        .gesture(dismissDragGesture)
+        .accessibilityAction(.escape) { dismiss() }
     }
 
     /// iOS 15 fallback: plain scroll layout without NavigationStack.
-    /// Because there is no NavigationStack here, nothing covers the
-    /// notch — so the cover hero would otherwise rise into the
-    /// Dynamic Island in portrait. Inject explicit top + bottom
-    /// breathing room above what the system safe-area inset already
-    /// provides on the ScrollView's content. `.ignoresSafeArea()` is
-    /// on the background only (full-bleed gradient is the HIG look),
-    /// so the ScrollView content stays inside the safe area.
+    /// The drag gesture is on the handle only (not the whole view) to
+    /// avoid conflicting with ScrollView's built-in scroll gesture.
     private var legacyBody: some View {
-        ScrollView {
-            VStack(spacing: 28) {
-                // 24pt top margin above the system safe-area inset.
-                // The system inset on iPhone X-later is ~44-59pt
-                // (status bar + Dynamic Island). 24pt extra means the
-                // cover hero starts well clear of the notch in
-                // portrait — no crop on the curved corners either.
-                Spacer(minLength: 24)
-                coverHero
-                titleBlock
-                scrubberBlock
-                transportRow
-                secondaryRow
-                Spacer(minLength: 24)
-                Button(L10n.string("player.close")) { dismiss() }
-                    .buttonStyle(.bordered)
-                // Lift the Close button comfortably above the home
-                // indicator. The system safe-area bottom inset
-                // already accounts for the indicator itself (34pt);
-                // this 24pt is the additional visual breathing room.
-                Spacer(minLength: 24)
+        VStack(spacing: 0) {
+            dragHandle
+                .gesture(dismissDragGesture)
+            ScrollView {
+                VStack(spacing: 28) {
+                    Spacer(minLength: 16)
+                    coverHero
+                    titleBlock
+                    scrubberBlock
+                    transportRow
+                    secondaryRow
+                    Spacer(minLength: 24)
+                    Button(L10n.string("player.close")) { dismiss() }
+                        .buttonStyle(.bordered)
+                    Spacer(minLength: 24)
+                }
+                .compatHorizontalSafeAreaPadding(32)
             }
-            // 32pt margin sits on top of the system horizontal safe
-            // area so cover art / scrubber / transport buttons stay
-            // clear of the notch when the sheet is presented over a
-            // landscape iPhone.
-            .compatHorizontalSafeAreaPadding(32)
+            .scrollBounceBehaviorIfAvailable()
         }
-        .scrollBounceBehaviorIfAvailable()
         .background(backgroundLayer.ignoresSafeArea())
+        .offset(y: max(0, dragOffset))
+        .accessibilityAction(.escape) { dismiss() }
+    }
+
+    // MARK: - Drag handle + swipe-to-dismiss
+
+    /// Visual drag indicator at the top. Tapping dismisses; dragging
+    /// down past 120pt triggers dismiss with a spring animation.
+    private var dragHandle: some View {
+        Button { dismiss() } label: {
+            VStack(spacing: 6) {
+                Capsule()
+                    .fill(Color.secondary.opacity(0.5))
+                    .frame(width: 36, height: 5)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 28)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(L10n.string("player.close"))
+        .accessibilityHint(L10n.string("miniPlayer.expandHint"))
+    }
+
+    /// Drag gesture: pulling down offsets the view; releasing past the
+    /// threshold dismisses. The 120pt threshold prevents accidental
+    /// dismisses while interacting with the scrubber.
+    private var dismissDragGesture: some Gesture {
+        DragGesture(minimumDistance: 20, coordinateSpace: .global)
+            .onChanged { value in
+                // Only track downward drags.
+                if value.translation.height > 0 {
+                    dragOffset = value.translation.height
+                }
+            }
+            .onEnded { value in
+                if value.translation.height > 120 || value.predictedEndTranslation.height > 300 {
+                    dismiss()
+                } else {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        dragOffset = 0
+                    }
+                }
+            }
     }
 
     // MARK: - Cover hero
@@ -411,17 +444,6 @@ private struct SleepTimerButton: View {
 // MARK: - View modifier helpers (availability-gated API)
 
 private extension View {
-    /// Apply `.presentationDetents([.large])` on iOS 16+; no-op on iOS 15.
-    @ViewBuilder
-    func sheetLargeDetentIfAvailable() -> some View {
-        if #available(iOS 16, macOS 13, *) {
-            self.presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-        } else {
-            self
-        }
-    }
-
     /// Bounce behaviour polyfill — only exists on iOS 16.4+.
     @ViewBuilder
     func scrollBounceBehaviorIfAvailable() -> some View {

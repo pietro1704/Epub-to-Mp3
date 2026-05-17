@@ -67,6 +67,19 @@ final class ToolbarSettingsParityTests: XCTestCase {
         }
     }
 
+    func testPageTurnStylePickerAllCasesPersist() {
+        let (s, d) = make()
+        for style in PageTurnStyle.allCases {
+            s.pageTurnStyle = style
+            XCTAssertEqual(AppSettings(defaults: d).pageTurnStyle, style)
+        }
+    }
+
+    func testPageTurnStyleDefaultsToFlip() {
+        let (s, _) = make()
+        XCTAssertEqual(s.pageTurnStyle, .flip)
+    }
+
     func testAutoScrollTogglesBackAndForth() {
         let (s, _) = make()
         s.readerAutoScroll = true

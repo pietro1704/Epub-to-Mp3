@@ -76,29 +76,49 @@ enum Paginator {
                 pages.append(String(remaining).trimmingCharacters(in: .whitespacesAndNewlines))
                 break
             }
-            // Walk forward counting weighted chars until we exceed budget
+            // Walk forward counting weighted chars until we exceed budget.
+            // Break at the nearest word boundary (space, sentence end, or
+            // paragraph break) WITHOUT backtracking to earlier paragraph
+            // breaks — each page should be maximally full, like Apple Books.
             let cutIndex = findCutPoint(in: remaining, budget: budget, charsPerLine: charsPerLine)
             let candidate = remaining[remaining.startIndex..<cutIndex]
 
-            if let paraBreak = candidate.range(of: "\n\n", options: .backwards) {
-                pages.append(String(remaining[remaining.startIndex..<paraBreak.lowerBound])
-                    .trimmingCharacters(in: .whitespacesAndNewlines))
-                remaining = remaining[paraBreak.upperBound...]
-            } else if let sentenceEnd = findLastSentenceBreak(in: candidate) {
+            if let sentenceEnd = findLastSentenceBreak(in: candidate) {
                 pages.append(String(remaining[remaining.startIndex...sentenceEnd])
                     .trimmingCharacters(in: .whitespacesAndNewlines))
                 let next = remaining.index(after: sentenceEnd)
                 remaining = remaining[next...]
-            } else if let space = candidate.range(of: " ", options: .backwards) {
-                pages.append(String(remaining[remaining.startIndex..<space.lowerBound])
+            } else if let breakPt = findLastWordBreak(in: candidate) {
+                pages.append(String(remaining[remaining.startIndex..<breakPt])
                     .trimmingCharacters(in: .whitespacesAndNewlines))
-                remaining = remaining[space.upperBound...]
+                // Skip whitespace / paragraph markers at the break point
+                var resumeIdx = breakPt
+                while resumeIdx < remaining.endIndex,
+                      remaining[resumeIdx] == " " || remaining[resumeIdx] == "\n" {
+                    resumeIdx = remaining.index(after: resumeIdx)
+                }
+                remaining = remaining[resumeIdx...]
             } else {
                 pages.append(String(candidate).trimmingCharacters(in: .whitespacesAndNewlines))
                 remaining = remaining[cutIndex...]
             }
         }
         return pages.filter { !$0.isEmpty }
+    }
+
+    /// Find the last word-boundary position (space or paragraph break)
+    /// in the candidate text. Returns the index OF the space/newline so
+    /// the caller can split before it.
+    private static func findLastWordBreak(in text: Substring) -> String.Index? {
+        var best: String.Index?
+        var i = text.startIndex
+        while i < text.endIndex {
+            if text[i] == " " || text[i] == "\n" {
+                best = i
+            }
+            i = text.index(after: i)
+        }
+        return best
     }
 
     private static func findCutPoint(in text: Substring, budget: Int, charsPerLine: Int) -> String.Index {

@@ -133,6 +133,10 @@
 "theme.custom" = "Personalizado";
 "layout.scrolling" = "Desplazamiento";
 "layout.paginated" = "Paginado";
+"pageTurn.flip" = "Voltear";
+"pageTurn.slide" = "Deslizar";
+"pageTurn.none" = "Ninguna";
+"readerSettings.pageTurnStyle" = "Paso de página";
 "font.serif" = "Serif";
 "font.sans" = "Sans";
 "font.mono" = "Mono";
