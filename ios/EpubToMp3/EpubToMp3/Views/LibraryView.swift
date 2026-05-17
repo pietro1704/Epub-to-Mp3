@@ -41,9 +41,9 @@ struct LibraryView: View {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .lastOpened: return "Last opened"
-            case .title:      return "Title"
-            case .addedDate:  return "Date added"
+            case .lastOpened: return L10n.string("library.lastOpened")
+            case .title:      return L10n.string("library.titleSort")
+            case .addedDate:  return L10n.string("library.dateAdded")
             }
         }
     }
@@ -131,21 +131,21 @@ struct LibraryView: View {
             isTargeted: $isDropTargeted,
             perform: handleDrop
         )
-        .navigationTitle("Library")
+        .navigationTitle(L10n.string("library.title"))
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Menu {
-                    Picker("Sort by", selection: $sortMode) {
+                    Picker(L10n.string("library.sortBy"), selection: $sortMode) {
                         ForEach(SortMode.allCases) { Text($0.label).tag($0) }
                     }
                 } label: { Image(systemName: "arrow.up.arrow.down.circle") }
-                .accessibilityLabel("Sort library")
+                .accessibilityLabel(L10n.string("library.sortLibrary"))
             }
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Button {
                     showingPicker = true
                 } label: { Image(systemName: "plus.circle.fill") }
-                .accessibilityLabel("Add book")
+                .accessibilityLabel(L10n.string("library.addBookAccessibility"))
             }
         }
         .background {
@@ -158,18 +158,18 @@ struct LibraryView: View {
                     handleImport(result)
                 }
         }
-        .alert("Import error",
+        .alert(L10n.string("library.importError"),
                isPresented: Binding(
                 get: { importError != nil },
                 set: { if !$0 { importError = nil } }
                )) {
-            Button("OK") { importError = nil }
+            Button(L10n.string("library.ok")) { importError = nil }
         } message: {
             Text(importError ?? "")
         }
         .compatBookDestination($openingBook)
         .confirmationDialog(
-            bookPendingRemoval?.resolvedTitle ?? "Remove book",
+            bookPendingRemoval?.resolvedTitle ?? L10n.string("library.removeBook"),
             isPresented: Binding(
                 get: { bookPendingRemoval != nil },
                 set: { if !$0 { bookPendingRemoval = nil } }
@@ -177,15 +177,15 @@ struct LibraryView: View {
             titleVisibility: .visible,
             presenting: bookPendingRemoval
         ) { book in
-            Button("Edit Tags") {
+            Button(L10n.string("library.editTags")) {
                 bookPendingRemoval = nil
                 bookForTagEditor = book
             }
-            Button("Remove from library", role: .destructive) {
+            Button(L10n.string("library.removeFromLibrary"), role: .destructive) {
                 library.remove(id: book.id)
                 bookPendingRemoval = nil
             }
-            Button("Cancel", role: .cancel) { bookPendingRemoval = nil }
+            Button(L10n.string("library.cancel"), role: .cancel) { bookPendingRemoval = nil }
         }
         .sheet(item: $bookForTagEditor) { book in
             TagEditorSheet(book: book)
@@ -202,7 +202,7 @@ struct LibraryView: View {
                     Button {
                         selectedTag = nil
                     } label: {
-                        Text("All")
+                        Text(L10n.string("library.all"))
                             .font(.callout.weight(selectedTag == nil ? .semibold : .regular))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -214,7 +214,7 @@ struct LibraryView: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("All books")
+                    .accessibilityLabel(L10n.string("library.allBooks"))
                     .accessibilityAddTraits(selectedTag == nil ? .isSelected : [])
                     ForEach(tags, id: \.self) { tag in
                         Button {
@@ -251,9 +251,9 @@ struct LibraryView: View {
             Image(systemName: "books.vertical")
                 .font(.system(size: 64, weight: .light))
                 .foregroundStyle(.secondary)
-            Text("Your library is empty.")
+            Text(L10n.string("library.emptyTitle"))
                 .font(.title3)
-            Text("Tap + to import an EPUB or PDF, or share one from Apple Books, Files, or Safari.")
+            Text(L10n.string("library.emptyDescription"))
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -261,7 +261,7 @@ struct LibraryView: View {
             Button {
                 showingPicker = true
             } label: {
-                Label("Add Book", systemImage: "plus")
+                Label(L10n.string("library.addBook"), systemImage: "plus")
                     .padding(.horizontal, 12)
             }
             .buttonStyle(.borderedProminent)
@@ -269,7 +269,7 @@ struct LibraryView: View {
             // Subtle hint about the DRM limitation. Books purchased
             // from the iBookstore are FairPlay-protected and Apple
             // does not expose their content to third-party apps.
-            Text("Books purchased from Apple Books are DRM-protected and cannot be opened by third-party apps.")
+            Text(L10n.string("library.drmWarning"))
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -380,9 +380,9 @@ struct BookTile: View {
         case .textOnly:
             EmptyView()
         case .caching:
-            badgeLabel("Caching", systemImage: "icloud.and.arrow.down", tint: .orange)
+            badgeLabel(L10n.string("library.caching"), systemImage: "icloud.and.arrow.down", tint: .orange)
         case .offlineReady:
-            badgeLabel("Offline", systemImage: "checkmark.seal.fill", tint: .green)
+            badgeLabel(L10n.string("library.offline"), systemImage: "checkmark.seal.fill", tint: .green)
         }
     }
 

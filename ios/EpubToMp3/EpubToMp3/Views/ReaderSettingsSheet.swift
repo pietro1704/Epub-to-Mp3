@@ -11,7 +11,7 @@ struct ReaderSettingsSheet: View {
         CompatNavigationStack {
             Form {
                 // MARK: Theme
-                Section("Theme") {
+                Section(L10n.string("readerSettings.theme")) {
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 12) {
                         ForEach(ReaderTheme.allCases.filter { $0 != .custom }) { theme in
                             themeCircle(theme)
@@ -21,8 +21,8 @@ struct ReaderSettingsSheet: View {
                 }
 
                 // MARK: Font
-                Section("Font") {
-                    Picker("Family", selection: $settings.readerFontFamily) {
+                Section(L10n.string("readerSettings.font")) {
+                    Picker(L10n.string("readerSettings.family"), selection: $settings.readerFontFamily) {
                         ForEach(ReaderFontFamily.allCases) { f in
                             Text(f.displayName).tag(f)
                         }
@@ -30,7 +30,7 @@ struct ReaderSettingsSheet: View {
                     .pickerStyle(.segmented)
 
                     HStack {
-                        Text("Size")
+                        Text(L10n.string("readerSettings.size"))
                         Spacer()
                         Button {
                             if settings.readerFontSize > 0 { settings.readerFontSize -= 1 }
@@ -39,7 +39,7 @@ struct ReaderSettingsSheet: View {
                                 .frame(width: 44, height: 44)
                         }
                         .disabled(settings.readerFontSize <= 0)
-                        .accessibilityLabel("Decrease font size")
+                        .accessibilityLabel(L10n.string("readerSettings.decreaseFontSize"))
                         Text("\(Int(settings.readerPointSize))pt")
                             .monospacedDigit()
                             .frame(width: 50)
@@ -50,13 +50,13 @@ struct ReaderSettingsSheet: View {
                                 .frame(width: 44, height: 44)
                         }
                         .disabled(settings.readerFontSize >= 4)
-                        .accessibilityLabel("Increase font size")
+                        .accessibilityLabel(L10n.string("readerSettings.increaseFontSize"))
                     }
                 }
 
                 // MARK: Layout
-                Section("Layout") {
-                    Picker("Mode", selection: $settings.readerLayout) {
+                Section(L10n.string("readerSettings.layout")) {
+                    Picker(L10n.string("readerSettings.mode"), selection: $settings.readerLayout) {
                         ForEach(ReaderLayout.allCases) { l in
                             Text(l.displayName).tag(l)
                         }
@@ -64,7 +64,7 @@ struct ReaderSettingsSheet: View {
                     .pickerStyle(.segmented)
 
                     HStack {
-                        Text("Line spacing")
+                        Text(L10n.string("readerSettings.lineSpacing"))
                         Spacer()
                         Slider(
                             value: $settings.readerLineSpacing,
@@ -75,7 +75,7 @@ struct ReaderSettingsSheet: View {
                     }
 
                     HStack {
-                        Text("Margin")
+                        Text(L10n.string("readerSettings.margin"))
                         Spacer()
                         Slider(
                             value: $settings.readerMargin,
@@ -86,11 +86,11 @@ struct ReaderSettingsSheet: View {
                     }
                 }
             }
-            .navigationTitle("Reader")
+            .navigationTitle(L10n.string("readerSettings.title"))
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(L10n.string("readerSettings.done")) { dismiss() }
                 }
             }
         }

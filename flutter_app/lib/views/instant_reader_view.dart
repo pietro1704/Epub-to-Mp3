@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../services/audio_player_service.dart';
 import '../state/providers.dart';
@@ -145,14 +146,14 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     final settings = ref.watch(settingsProvider);
     final chapter = _resolveChapter(_currentChapterIndex);
     if (chapter == null) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.menu_book, size: 48, color: Colors.grey),
-            SizedBox(height: 12),
-            Text('No content available',
-                style: TextStyle(color: Colors.grey)),
+            const Icon(Icons.menu_book, size: 48, color: Colors.grey),
+            const SizedBox(height: 12),
+            Text(AppLocalizations.of(context)!.noContentAvailable,
+                style: const TextStyle(color: Colors.grey)),
           ],
         ),
       );

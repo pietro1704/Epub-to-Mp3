@@ -27,6 +27,7 @@ struct InstantReaderView: View {
     ///   (from `SentenceSpan.id`). `nil` = start from chapter's
     ///   beginning.
     var onRequestPlay: ((Int, String?) -> Void)? = nil
+    @ObservedObject var cacheManager: ChapterCacheManager
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var globalPlayer: AudioPlayer
@@ -147,6 +148,8 @@ struct InstantReaderView: View {
         .compatOnChange(of: currentChapterIndex) { newIndex in
             reloadCurrentChapter(index: newIndex)
             settings.saveChapterIndex(newIndex, for: fulltext.jobId)
+            cacheManager.refreshCachedIndices()
+            cacheManager.prefetchNext(2, from: newIndex)
         }
         .onAppear {
             let saved = settings.savedChapterIndex(for: fulltext.jobId)
@@ -157,6 +160,8 @@ struct InstantReaderView: View {
             }
             reloadCurrentChapter(index: currentChapterIndex)
             if hasAudio { mountPlayerIfPossible() }
+            cacheManager.refreshCachedIndices()
+            cacheManager.prefetchNext(2, from: currentChapterIndex)
         }
         .onDisappear {
             positionTask?.cancel()
@@ -535,12 +540,7 @@ struct InstantReaderView: View {
                             Text(chapter.displayTitle)
                                 .lineLimit(2)
                             Spacer()
-                            if let snapshot,
-                               snapshot.playableChapters.contains(where: { $0.index == chapter.index - 1 }) {
-                                Image(systemName: "speaker.wave.2.fill")
-                                    .foregroundStyle(.tint)
-                                    .accessibilityLabel("Audio ready")
-                            }
+                            chapterCacheIcon(for: chapter.index - 1)
                         }
                     }
                     .buttonStyle(.plain)
@@ -552,9 +552,39 @@ struct InstantReaderView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { showingToc = false }
                 }
+                ToolbarItem(placement: .compatPrimaryTrailing) {
+                    Button {
+                        cacheManager.downloadAll()
+                    } label: {
+                        Label("Download All", systemImage: "arrow.down.circle")
+                    }
+                    .disabled(cacheManager.cachedIndices.count == fulltext.chapters.filter {
+                        $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
+                    }.count)
+                }
             }
         }
         .compatPresentationDetents()
+    }
+
+    @ViewBuilder
+    private func chapterCacheIcon(for index: Int) -> some View {
+        switch cacheManager.status(for: index) {
+        case .cached:
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+                .font(.caption)
+                .accessibilityLabel("Downloaded")
+        case .generating:
+            ProgressView()
+                .controlSize(.mini)
+                .accessibilityLabel("Generating")
+        case .notStarted:
+            Image(systemName: "arrow.down.circle")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+                .accessibilityLabel("Not downloaded")
+        }
     }
 
     // MARK: - Player wiring

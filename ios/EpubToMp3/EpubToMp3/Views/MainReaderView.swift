@@ -85,9 +85,9 @@ struct MainReaderView: View {
                         .environmentObject(library)
                     } else {
                         CompatContentUnavailableView(
-                            "No audio yet",
+                            L10n.string("mainReader.noAudioYet"),
                             systemImage: "headphones",
-                            description: Text("Convert this book first to listen along.")
+                            description: Text(localized: "mainReader.noAudioDescription")
                         )
                     }
                 }
@@ -133,10 +133,10 @@ struct MainReaderView: View {
                     showingPlayerOverlay = true
                 }
             } label: {
-                Label("Listen", systemImage: "headphones")
+                Label(L10n.string("mainReader.listen"), systemImage: "headphones")
             }
             .accessibilityIdentifier("mainReader.listen")
-            .help("Open audio player for this book")
+            .help(L10n.string("mainReader.listenHelp"))
         }
     }
 
@@ -145,15 +145,15 @@ struct MainReaderView: View {
     private var emptyState: some View {
         VStack(spacing: 20) {
             CompatContentUnavailableView(
-                "Pick a book to read",
+                L10n.string("mainReader.pickBook"),
                 systemImage: "book.closed",
-                description: Text("Import an EPUB or pick a book from your library to start reading.")
+                description: Text(localized: "mainReader.pickBookDescription")
             )
             if let onBrowseLibrary {
                 Button {
                     onBrowseLibrary()
                 } label: {
-                    Label("Browse Library", systemImage: "books.vertical")
+                    Label(L10n.string("mainReader.browseLibrary"), systemImage: "books.vertical")
                         .frame(minHeight: 44)
                         .padding(.horizontal, 16)
                 }

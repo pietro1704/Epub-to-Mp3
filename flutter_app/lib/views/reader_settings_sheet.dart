@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/app_settings.dart';
 import '../state/providers.dart';
 import 'reader_theme_colors.dart';
@@ -10,6 +11,7 @@ class ReaderSettingsSheet extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final t = AppLocalizations.of(context)!;
     final settings = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
 
@@ -38,7 +40,7 @@ class ReaderSettingsSheet extends ConsumerWidget {
             ),
 
             // Theme
-            Text('Theme',
+            Text(t.themeLabel,
                 style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             _ThemeGrid(
@@ -48,7 +50,7 @@ class ReaderSettingsSheet extends ConsumerWidget {
             const SizedBox(height: 16),
 
             // Font family
-            Text('Font',
+            Text(t.fontLabel,
                 style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             SegmentedButton<ReaderFontFamily>(
@@ -68,7 +70,7 @@ class ReaderSettingsSheet extends ConsumerWidget {
             // Font size
             Row(
               children: [
-                const Text('Size'),
+                Text(t.sizeLabel),
                 const Spacer(),
                 IconButton(
                   icon: const Icon(Icons.text_decrease),
@@ -98,7 +100,7 @@ class ReaderSettingsSheet extends ConsumerWidget {
             const SizedBox(height: 16),
 
             // Layout
-            Text('Layout',
+            Text(t.layoutLabel,
                 style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
             SegmentedButton<ReaderLayout>(
@@ -118,7 +120,7 @@ class ReaderSettingsSheet extends ConsumerWidget {
             // Line spacing
             Row(
               children: [
-                const Text('Line spacing'),
+                Text(t.lineSpacingLabel),
                 const Spacer(),
                 SizedBox(
                   width: 160,
@@ -136,7 +138,7 @@ class ReaderSettingsSheet extends ConsumerWidget {
             // Margin
             Row(
               children: [
-                const Text('Margin'),
+                Text(t.marginLabel),
                 const Spacer(),
                 SizedBox(
                   width: 160,

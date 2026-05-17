@@ -781,6 +781,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Bookmark removed'**
   String get bookmarkRemoved;
+
+  /// No description provided for @sizeLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Size'**
+  String get sizeLabel;
+
+  /// No description provided for @noContentAvailable.
+  ///
+  /// In en, this message translates to:
+  /// **'No content available'**
+  String get noContentAvailable;
+
+  /// No description provided for @errorWithMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Error: {message}'**
+  String errorWithMessage(String message);
+
+  /// No description provided for @platformAndroid.
+  ///
+  /// In en, this message translates to:
+  /// **'Android'**
+  String get platformAndroid;
 }
 
 class _AppLocalizationsDelegate

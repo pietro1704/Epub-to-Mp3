@@ -52,7 +52,7 @@ struct SettingsView: View {
             }
             #endif
         }
-        .navigationTitle("Settings")
+        .navigationTitle(L10n.string("settings.title"))
     }
 
     // MARK: - Sections
@@ -64,8 +64,8 @@ struct SettingsView: View {
             Toggle(isOn: $settings.useEmbeddedSidecar) {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Use embedded server")
-                        Text("Runs a private Python instance on a free local port. Recommended.")
+                        Text(L10n.string("settings.useEmbeddedServer"))
+                        Text(L10n.string("settings.useEmbeddedServerDescription"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -89,9 +89,9 @@ struct SettingsView: View {
                 }
             }
         } header: {
-            Text("Embedded server")
+            Text(L10n.string("settings.embeddedServer"))
         } footer: {
-            Text("When the embedded server is on, the app is fully self-contained and works offline. Turn off only if you want to point at a remote backend.")
+            Text(L10n.string("settings.embeddedServerFooter"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -115,11 +115,11 @@ struct SettingsView: View {
 
     private var sidecarStatusLabel: String {
         switch sidecar.state {
-        case .idle:                 return "Idle"
-        case .starting:             return "Starting…"
-        case .running:              return "Running"
-        case .failed(let err):      return "Failed — \(err.prefix(120))"
-        case .unsupported:          return "Unsupported on this platform"
+        case .idle:                 return L10n.string("settings.sidecar.idle")
+        case .starting:             return L10n.string("settings.sidecar.starting")
+        case .running:              return L10n.string("settings.sidecar.running")
+        case .failed(let err):      return L10n.string("settings.sidecar.failed", String(err.prefix(120)))
+        case .unsupported:          return L10n.string("settings.sidecar.unsupported")
         }
     }
     #endif
@@ -134,8 +134,8 @@ struct SettingsView: View {
             Toggle(isOn: $settings.useEmbeddedRuntime) {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Use built-in audio engine")
-                        Text("Synthesises chapters on this device. No backend needed.")
+                        Text(L10n.string("settings.useBuiltInEngine"))
+                        Text(L10n.string("settings.useBuiltInEngineDescription"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -145,9 +145,9 @@ struct SettingsView: View {
                 }
             }
         } header: {
-            Text("Audio engine")
+            Text(L10n.string("settings.audioEngine"))
         } footer: {
-            Text("Reading works offline either way — this only affects how chapters are converted to audio. Turn off only to force the legacy remote-backend mode.")
+            Text(L10n.string("settings.audioEngineFooter"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -172,19 +172,19 @@ struct SettingsView: View {
                 #endif
             }
             if self.settings.resolvedBaseURL == nil {
-                Label("URL is not valid", systemImage: "exclamationmark.triangle.fill")
+                Label(L10n.string("settings.urlNotValid"), systemImage: "exclamationmark.triangle.fill")
                     .foregroundStyle(.red)
                     .font(.footnote)
             }
         } header: {
-            Text("Remote backend")
+            Text(L10n.string("settings.remoteBackend"))
         } footer: {
             #if os(macOS)
-            Text("Used when the embedded server is off. Common targets: a `mise run web` instance on this machine, or a Hugging Face Space URL.")
+            Text(L10n.string("settings.remoteBackendFooterMac"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             #else
-            Text("Examples: a `mise run web` instance on your laptop, or a Hugging Face Space URL.")
+            Text(L10n.string("settings.remoteBackendFooterIOS"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             #endif
@@ -195,7 +195,7 @@ struct SettingsView: View {
     private var readerSection: some View {
         Section {
             HStack {
-                Label("Font size", systemImage: "textformat.size")
+                Label(L10n.string("settings.fontSize"), systemImage: "textformat.size")
                 Spacer()
                 Stepper(value: $settings.readerFontSize, in: 0...4) {
                     Text("\(self.settings.readerFontSize + 1) of 5")
@@ -209,24 +209,24 @@ struct SettingsView: View {
                     Text(f.displayName).tag(f)
                 }
             } label: {
-                Label("Font", systemImage: "textformat")
+                Label(L10n.string("settings.font"), systemImage: "textformat")
             }
             Picker(selection: $settings.readerTheme) {
                 ForEach(ReaderTheme.allCases) { t in
                     Text(t.displayName).tag(t)
                 }
             } label: {
-                Label("Theme", systemImage: "paintpalette")
+                Label(L10n.string("settings.theme"), systemImage: "paintpalette")
             }
             Picker(selection: $settings.readerLayout) {
                 ForEach(ReaderLayout.allCases) { l in
                     Text(l.displayName).tag(l)
                 }
             } label: {
-                Label("Layout", systemImage: "doc.text")
+                Label(L10n.string("settings.layout"), systemImage: "doc.text")
             }
             HStack {
-                Label("Line spacing", systemImage: "arrow.up.and.down.text.horizontal")
+                Label(L10n.string("settings.lineSpacing"), systemImage: "arrow.up.and.down.text.horizontal")
                 Spacer()
                 Stepper(value: $settings.readerLineSpacing,
                         in: 0...16, step: 2) {
@@ -237,7 +237,7 @@ struct SettingsView: View {
                 .labelsHidden()
             }
             HStack {
-                Label("Margin", systemImage: "rectangle.compress.vertical")
+                Label(L10n.string("settings.margin"), systemImage: "rectangle.compress.vertical")
                 Spacer()
                 Stepper(value: $settings.readerMargin,
                         in: 16...80, step: 4) {
@@ -248,7 +248,7 @@ struct SettingsView: View {
                 .labelsHidden()
             }
             HStack {
-                Label("Column width", systemImage: "rectangle.split.3x1")
+                Label(L10n.string("settings.columnWidth"), systemImage: "rectangle.split.3x1")
                 Spacer()
                 Stepper(value: $settings.readerColumnWidth,
                         in: 420...960, step: 40) {
@@ -259,12 +259,12 @@ struct SettingsView: View {
                 .labelsHidden()
             }
             Toggle(isOn: $settings.readerAutoScroll) {
-                Label("Auto-scroll", systemImage: "arrow.down.to.line")
+                Label(L10n.string("settings.autoScroll"), systemImage: "arrow.down.to.line")
             }
         } header: {
-            Text("Reader")
+            Text(L10n.string("settings.reader"))
         } footer: {
-            Text("These preferences apply to every book in your library.")
+            Text(L10n.string("settings.readerFooter"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -278,8 +278,8 @@ struct SettingsView: View {
             } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Manual conversion")
-                        Text("Customise engine, voice, language and chapter range")
+                        Text(L10n.string("settings.manualConversion"))
+                        Text(L10n.string("settings.manualConversionDescription"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -293,8 +293,8 @@ struct SettingsView: View {
             } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Recent jobs")
-                        Text("Conversion history and live progress")
+                        Text(L10n.string("settings.recentJobs"))
+                        Text(L10n.string("settings.recentJobsDescription"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -308,8 +308,8 @@ struct SettingsView: View {
             } label: {
                 Label {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Telemetry")
-                        Text("Per-engine speed and quality metrics")
+                        Text(L10n.string("settings.telemetry"))
+                        Text(L10n.string("settings.telemetryDescription"))
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -319,7 +319,7 @@ struct SettingsView: View {
                 }
             }
         } header: {
-            Text("Advanced")
+            Text(L10n.string("settings.advanced"))
         }
     }
 
@@ -327,16 +327,16 @@ struct SettingsView: View {
     private var cloudSection: some View {
         Section {
             HStack {
-                Label("iCloud Sync", systemImage: "icloud")
+                Label(L10n.string("settings.icloudSync"), systemImage: "icloud")
                 Spacer()
-                Text("Coming soon")
+                Text(L10n.string("settings.comingSoon"))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
         } header: {
-            Text("Sync")
+            Text(L10n.string("settings.sync"))
         } footer: {
-            Text("Library metadata, reading progress, bookmarks, and tags will sync across your devices via iCloud.")
+            Text(L10n.string("settings.syncFooter"))
         }
     }
 
@@ -349,7 +349,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
             } label: {
-                Label("Bundle identifier", systemImage: "shippingbox")
+                Label(L10n.string("settings.bundleIdentifier"), systemImage: "shippingbox")
             }
             CompatLabeledContent {
                 #if os(iOS)
@@ -360,13 +360,13 @@ struct SettingsView: View {
                 Text("—")
                 #endif
             } label: {
-                Label("Platform", systemImage: "macbook.and.iphone")
+                Label(L10n.string("settings.platform"), systemImage: "macbook.and.iphone")
             }
             Link(destination: URL(string: "https://github.com/pietro1704/Epub-to-Mp3")!) {
-                Label("Project on GitHub", systemImage: "arrow.up.right.square")
+                Label(L10n.string("settings.projectOnGithub"), systemImage: "arrow.up.right.square")
             }
         } header: {
-            Text("About")
+            Text(L10n.string("settings.about"))
         }
     }
 }

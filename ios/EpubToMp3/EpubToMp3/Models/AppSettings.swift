@@ -11,9 +11,9 @@ enum ReaderFontFamily: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .serif: return "Serif"
-        case .sans:  return "Sans"
-        case .mono:  return "Mono"
+        case .serif: return L10n.string("font.serif")
+        case .sans:  return L10n.string("font.sans")
+        case .mono:  return L10n.string("font.mono")
         }
     }
 }
@@ -32,14 +32,14 @@ enum ReaderTheme: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .auto:      return "Default"
-        case .light:     return "Light"
-        case .sepia:     return "Sepia"
-        case .parchment: return "Parchment"
-        case .paper:     return "Paper"
-        case .dark:      return "Dark"
-        case .black:     return "Black"
-        case .custom:    return "Custom"
+        case .auto:      return L10n.string("theme.default")
+        case .light:     return L10n.string("theme.light")
+        case .sepia:     return L10n.string("theme.sepia")
+        case .parchment: return L10n.string("theme.parchment")
+        case .paper:     return L10n.string("theme.paper")
+        case .dark:      return L10n.string("theme.dark")
+        case .black:     return L10n.string("theme.black")
+        case .custom:    return L10n.string("theme.custom")
         }
     }
 
@@ -61,8 +61,8 @@ enum ReaderLayout: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
-        case .scrolling: return "Scrolling"
-        case .paginated: return "Paginated"
+        case .scrolling: return L10n.string("layout.scrolling")
+        case .paginated: return L10n.string("layout.paginated")
         }
     }
 }

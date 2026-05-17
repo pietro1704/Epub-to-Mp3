@@ -5,6 +5,8 @@ options:
     iOS: "15.0"
     macOS: "12.0"
   createIntermediateGroups: true
+  developmentLanguage: en
+  knownRegions: [en, pt-BR, es]
   # Xcode 26 reads `attributes.LastUpgradeCheck` to decide whether
   # the project has been audited against the current recommended-
   # settings list. Stale values (e.g. 1430 = Xcode 14.3) trigger the

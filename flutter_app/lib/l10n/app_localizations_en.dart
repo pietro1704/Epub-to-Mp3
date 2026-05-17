@@ -364,4 +364,18 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get bookmarkRemoved => 'Bookmark removed';
+
+  @override
+  String get sizeLabel => 'Size';
+
+  @override
+  String get noContentAvailable => 'No content available';
+
+  @override
+  String errorWithMessage(String message) {
+    return 'Error: $message';
+  }
+
+  @override
+  String get platformAndroid => 'Android';
 }

@@ -31,7 +31,7 @@ class JobsListScreen extends ConsumerWidget {
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (e, _) => ListView(
             children: [
-              ListTile(title: Text('Error: $e')),
+              ListTile(title: Text(t.errorWithMessage('$e'))),
             ],
           ),
           data: (list) {

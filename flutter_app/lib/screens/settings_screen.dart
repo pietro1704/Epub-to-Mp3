@@ -368,7 +368,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   leading: Icon(Icons.info_outline,
                       color: cs.onSurfaceVariant),
                   title: Text(t.platformLabel),
-                  trailing: Text('Android',
+                  trailing: Text(t.platformAndroid,
                       style: tt.bodyMedium
                           ?.copyWith(color: cs.onSurfaceVariant)),
                 ),

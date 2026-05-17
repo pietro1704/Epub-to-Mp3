@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/app_settings.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_app/views/reader_settings_sheet.dart';
@@ -20,8 +21,10 @@ void main() {
   Widget wrap(SharedPreferences prefs) {
     return ProviderScope(
       overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
-      child: const MaterialApp(
-        home: Scaffold(body: ReaderSettingsSheet()),
+      child: MaterialApp(
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const Scaffold(body: ReaderSettingsSheet()),
       ),
     );
   }

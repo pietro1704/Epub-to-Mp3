@@ -55,6 +55,8 @@ struct BookOpenView: View {
     @State private var pdfDocument: PDFDocument?
     @State private var pdfPageIndex: Int = 0
     @State private var registeredFontURLs: [URL] = []
+    /// Manages per-chapter audio cache and prefetch.
+    @State private var chapterCacheManager: ChapterCacheManager?
 
     enum Phase: Equatable {
         case resolving
@@ -86,17 +88,23 @@ struct BookOpenView: View {
                         currentPageIndex: $pdfPageIndex
                     )
                 } else if let fulltext {
-                    InstantReaderView(
-                        fulltext: fulltext,
-                        snapshot: $jobSnapshot,
-                        statusBanner: statusBanner,
-                        hasAudio: hasAudio,
-                        backendBaseURL: settings.useEmbeddedRuntime ? nil : settings.resolvedBaseURL,
-                        coverPNG: book.coverPNG,
-                        onRequestAudioRetry: { startAudioBootstrap() },
-                        onRequestPlay: { chapterIdx, _ in startAudioBootstrap(startChapterIndex: chapterIdx) }
-                    )
-                    .environment(\.epubFontDirectory, registeredFontURLs.first?.deletingLastPathComponent())
+                    if let cacheManager = chapterCacheManager {
+                        InstantReaderView(
+                            fulltext: fulltext,
+                            snapshot: $jobSnapshot,
+                            statusBanner: statusBanner,
+                            hasAudio: hasAudio,
+                            backendBaseURL: settings.useEmbeddedRuntime ? nil : settings.resolvedBaseURL,
+                            coverPNG: book.coverPNG,
+                            onRequestAudioRetry: { startAudioBootstrap() },
+                            onRequestPlay: { chapterIdx, _ in startAudioBootstrap(startChapterIndex: chapterIdx) },
+                            cacheManager: cacheManager
+                        )
+                        .environment(\.epubFontDirectory, registeredFontURLs.first?.deletingLastPathComponent())
+                    } else {
+                        ProgressView("Preparing…")
+                            .onAppear { ensureCacheManager() }
+                    }
                 } else {
                     Text("No content available.")
                 }
@@ -115,6 +123,7 @@ struct BookOpenView: View {
             audioBootstrapTask?.cancel()
             streamTask?.cancel()
             watchdog?.stop()
+            chapterCacheManager?.cancelAll()
             watchdog = nil
             globalPlayer.clearConversionState()
             EpubFontManager.unregisterFonts(registeredFontURLs)
@@ -215,6 +224,7 @@ struct BookOpenView: View {
         ) { LocalFulltextCache.read(bookId: bookId) }.value
         if let cached = cachedEpub {
             self.fulltext = cached
+            ensureCacheManager()
             self.phase = .ready
         } else {
             let accessing = fileURL.startAccessingSecurityScopedResource()
@@ -252,6 +262,7 @@ struct BookOpenView: View {
 
             if let parsed, !parsed.chapters.isEmpty {
                 self.fulltext = parsed
+                ensureCacheManager()
                 self.phase = .ready
                 Task.detached(priority: .background) {
                     LocalFulltextCache.save(parsed, bookId: book.id)
@@ -262,7 +273,10 @@ struct BookOpenView: View {
             }
         }
 
-        // 4. Reader is on screen. Kick off audio generation in the
+        // 4. Create the chapter cache manager for prefetch / download-all.
+        ensureCacheManager()
+
+        // 5. Reader is on screen. Kick off audio generation in the
         // background immediately so audio is buffered by the time the
         // user taps play. The reader is already visible; the banner
         // shows "Generating audio…" while synthesis runs.
@@ -423,21 +437,7 @@ struct BookOpenView: View {
                 .prefix(5)
                 .map { String($0.text.prefix(2000)) }
                 .joined(separator: " ")
-            let recognizer = NLLanguageRecognizer()
-            recognizer.processString(sample)
-            let lang = recognizer.dominantLanguage
-            switch lang {
-            case .portuguese:            return "pt-BR-FranciscaNeural"
-            case .spanish:               return "es-MX-DaliaNeural"
-            case .french:                return "fr-FR-DeniseNeural"
-            case .german:                return "de-DE-KatjaNeural"
-            case .italian:               return "it-IT-ElsaNeural"
-            case .japanese:              return "ja-JP-NanamiNeural"
-            case .korean:                return "ko-KR-SunHiNeural"
-            case .simplifiedChinese:     return "zh-CN-XiaoxiaoNeural"
-            case .traditionalChinese:    return "zh-TW-HsiaoChenNeural"
-            default:                     return "en-US-AriaNeural"
-            }
+            return VoiceSelector.edgeVoice(for: sample)
         }()
 
         // Process from startIndex, then wrap to cover earlier chapters.
@@ -1089,6 +1089,25 @@ struct BookOpenView: View {
         } catch {
             phase = .error("Re-import failed: \(error.localizedDescription)")
         }
+    }
+
+    // MARK: - Chapter Cache Manager
+
+    /// Creates the `ChapterCacheManager` from the current `fulltext`.
+    /// Idempotent — only creates once.
+    private func ensureCacheManager() {
+        guard chapterCacheManager == nil, let fulltext else { return }
+        let sample = fulltext.chapters
+            .filter { $0.text.count > 50 }
+            .prefix(5)
+            .map { String($0.text.prefix(2000)) }
+            .joined(separator: " ")
+        let voice = VoiceSelector.edgeVoice(for: sample)
+        chapterCacheManager = ChapterCacheManager(
+            bookId: book.id,
+            chapters: fulltext.chapters,
+            voice: voice
+        )
     }
 }
 

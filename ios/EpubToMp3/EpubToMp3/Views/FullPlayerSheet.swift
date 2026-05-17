@@ -36,6 +36,8 @@ struct FullPlayerSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    @State private var showChapterList = false
+
     // MARK: Derived state
 
     private var currentBook: BookEntity? {
@@ -47,7 +49,7 @@ struct FullPlayerSheet: View {
         let idx = player.snapshot != nil ? player.currentChapterIndex : currentChapterIndex
         guard let chapters = player.snapshot?.playableChapters,
               idx < chapters.count else {
-            return "Chapter \(idx + 1)"
+            return L10n.string("player.chapter", idx + 1)
         }
         return chapters[idx].displayTitle
     }
@@ -110,7 +112,7 @@ struct FullPlayerSheet: View {
                 transportRow
                 secondaryRow
                 Spacer(minLength: 24)
-                Button("Close") { dismiss() }
+                Button(L10n.string("player.close")) { dismiss() }
                     .buttonStyle(.bordered)
                 // Lift the Close button comfortably above the home
                 // indicator. The system safe-area bottom inset
@@ -141,7 +143,7 @@ struct FullPlayerSheet: View {
                     .frame(maxWidth: 220)
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
-                    .accessibilityLabel("\(book.resolvedTitle) cover art")
+                    .accessibilityLabel(L10n.string("player.coverArt", book.resolvedTitle))
             } else {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16)
@@ -197,7 +199,7 @@ struct FullPlayerSheet: View {
                 in: 0...max(player.durationSeconds, 1)
             )
             .tint(.primary)
-            .accessibilityLabel("Playback position")
+            .accessibilityLabel(L10n.string("player.playbackPosition"))
 
             HStack {
                 Text(formatTime(player.positionSeconds))
@@ -224,7 +226,7 @@ struct FullPlayerSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Previous chapter")
+            .accessibilityLabel(L10n.string("player.previousChapter"))
             Spacer()
             Button { player.skipBackward(seconds: 15) } label: {
                 Image(systemName: "gobackward.15")
@@ -233,7 +235,7 @@ struct FullPlayerSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Skip back 15 seconds")
+            .accessibilityLabel(L10n.string("player.skipBack15"))
             Spacer()
             Button { player.togglePlayPause() } label: {
                 ZStack {
@@ -251,7 +253,7 @@ struct FullPlayerSheet: View {
             }
             .buttonStyle(.plain)
             .tint(.primary)
-            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
             Spacer()
             Button { player.skipForward(seconds: 15) } label: {
                 Image(systemName: "goforward.15")
@@ -260,7 +262,7 @@ struct FullPlayerSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Skip forward 15 seconds")
+            .accessibilityLabel(L10n.string("player.skipForward15"))
             Spacer()
             Button { player.nextChapter() } label: {
                 Image(systemName: "forward.end.fill")
@@ -269,15 +271,15 @@ struct FullPlayerSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Next chapter")
+            .accessibilityLabel(L10n.string("player.nextChapter"))
             Spacer()
         }
     }
 
-    // MARK: - Secondary row (rate + sleep + AirPlay)
+    // MARK: - Secondary row (rate + chapters + sleep + AirPlay)
 
     private var secondaryRow: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 16) {
             // Rate picker — compact menu button matching Apple Music's
             // "1x" pill in the lower-left.
             Menu {
@@ -299,7 +301,23 @@ struct FullPlayerSheet: View {
                     .padding(.horizontal, 10)
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
-            .accessibilityLabel("Playback speed: \(player.rate.shortLabel)")
+            .accessibilityLabel(L10n.string("player.playbackSpeed", player.rate.shortLabel))
+
+            Spacer()
+
+            // Chapter list button
+            Button { showChapterList = true } label: {
+                Label(L10n.string("player.chapters"), systemImage: "list.bullet")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minHeight: 44)
+                    .padding(.horizontal, 10)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.string("player.showChapterList"))
+            .sheet(isPresented: $showChapterList) {
+                ChapterListSheet(player: player)
+            }
 
             Spacer()
 
@@ -312,7 +330,7 @@ struct FullPlayerSheet: View {
             #if os(iOS)
             AirPlayPickerView()
                 .frame(width: 44, height: 44)
-                .accessibilityLabel("AirPlay")
+                .accessibilityLabel(L10n.string("player.airplay"))
             #endif
         }
     }
@@ -359,7 +377,7 @@ private struct SleepTimerButton: View {
                     Text(formatRemaining(player.sleepTimerRemaining))
                         .monospacedDigit()
                 } else {
-                    Text("Sleep")
+                    Text(L10n.string("player.sleep"))
                 }
             } icon: {
                 Image(systemName: "moon.zzz")
@@ -372,8 +390,8 @@ private struct SleepTimerButton: View {
         .buttonStyle(.plain)
         .accessibilityLabel(
             player.sleepTimerRemaining > 0
-                ? "Sleep timer: \(formatRemaining(player.sleepTimerRemaining)) remaining. Tap to cancel."
-                : "Sleep timer: off. Tap to set."
+                ? L10n.string("player.sleepTimerRemaining", formatRemaining(player.sleepTimerRemaining))
+                : L10n.string("player.sleepTimerOff")
         )
     }
 
@@ -412,6 +430,74 @@ private extension View {
         } else {
             self
         }
+    }
+}
+
+// MARK: - Chapter list sheet
+
+/// Sheet presenting chapters from the current snapshot for in-player navigation.
+private struct ChapterListSheet: View {
+    @ObservedObject var player: AudioPlayer
+    @Environment(\.dismiss) private var dismiss
+
+    private var chapters: [JobSnapshot.Chapter] {
+        player.snapshot?.chapterProgress ?? []
+    }
+
+    var body: some View {
+        CompatNavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    ForEach(chapters) { chapter in
+                        chapterRow(chapter)
+                        Divider().padding(.leading, 16)
+                    }
+                }
+            }
+            .navigationTitle(L10n.string("player.chapters"))
+            .compatInlineNavigationTitle()
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(L10n.string("readerSettings.done")) { dismiss() }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func chapterRow(_ chapter: JobSnapshot.Chapter) -> some View {
+        let isCurrent = chapter.index == player.currentChapterIndex
+        Button {
+            if let snapshot = player.snapshot {
+                player.play(snapshot: snapshot, startingAt: chapter.index)
+            }
+            dismiss()
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(chapter.displayTitle)
+                        .font(.body)
+                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                }
+                Spacer()
+                if isCurrent {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.caption)
+                        .foregroundColor(.accentColor)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let total = Int(seconds)
+        let m = total / 60
+        let s = total % 60
+        return String(format: "%d:%02d", m, s)
     }
 }
 

@@ -48,7 +48,7 @@ struct MiniPlayerBar: View {
 
     private var chapterLabel: String {
         let idx = player.snapshot != nil ? player.currentChapterIndex : currentChapterIndex
-        return "Chapter \(idx + 1)"
+        return L10n.string("player.chapter", idx + 1)
     }
 
     // MARK: Body
@@ -100,12 +100,12 @@ struct MiniPlayerBar: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(player.isConverting && !player.firstChapterReady)
-                    .accessibilityLabel("Skip back 15 seconds")
+                    .accessibilityLabel(L10n.string("player.skipBack15"))
 
                     ZStack {
                         ProgressView()
                             .opacity(player.isConverting && !player.firstChapterReady ? 1 : 0)
-                            .accessibilityLabel("Generating audio")
+                            .accessibilityLabel(L10n.string("player.generatingAudio"))
                             .accessibilityIdentifier("miniPlayer.loadingSpinner")
                         Button {
                             player.togglePlayPause()
@@ -116,7 +116,7 @@ struct MiniPlayerBar: View {
                         }
                         .buttonStyle(.plain)
                         .opacity(player.isConverting && !player.firstChapterReady ? 0 : 1)
-                        .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+                        .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
                         .accessibilityIdentifier("miniPlayer.playPause")
                     }
                     .frame(width: 44, height: 44)
@@ -131,7 +131,46 @@ struct MiniPlayerBar: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(player.isConverting && !player.firstChapterReady)
-                    .accessibilityLabel("Skip forward 15 seconds")
+                    .accessibilityLabel(L10n.string("player.skipForward15"))
+
+                    // Speed rate menu — compact label
+                    Menu {
+                        ForEach(PlaybackRate.allCases) { rate in
+                            Button {
+                                player.setRate(rate)
+                            } label: {
+                                if player.rate == rate {
+                                    Label(rate.shortLabel, systemImage: "checkmark")
+                                } else {
+                                    Text(rate.shortLabel)
+                                }
+                            }
+                        }
+                    } label: {
+                        Text(player.rate.shortLabel)
+                            .font(.caption.weight(.semibold))
+                            .frame(minWidth: 28, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityLabel("Speed: \(player.rate.shortLabel)")
+                    .accessibilityIdentifier("miniPlayer.speed")
+
+                    // Sleep timer — tap cycles presets
+                    Button {
+                        cycleSleepTimer()
+                    } label: {
+                        Image(systemName: player.sleepTimerRemaining > 0 ? "moon.zzz.fill" : "moon.zzz")
+                            .font(.system(size: 14))
+                            .frame(width: 32, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(
+                        player.sleepTimerRemaining > 0
+                            ? "Sleep timer active"
+                            : "Sleep timer off"
+                    )
+                    .accessibilityIdentifier("miniPlayer.sleep")
                 }
                 // 12pt internal spacing on top of any safe-area lateral
                 // inset so the cover and transport controls never sit
@@ -144,8 +183,8 @@ struct MiniPlayerBar: View {
             .contentShape(Rectangle())
             .onTapGesture { onTap() }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Now playing: \(book.resolvedTitle), \(chapterLabel). Tap to expand.")
-            .accessibilityHint("Swipe up or tap to open full player.")
+            .accessibilityLabel(L10n.string("miniPlayer.nowPlaying", book.resolvedTitle, chapterLabel))
+            .accessibilityHint(L10n.string("miniPlayer.expandHint"))
             .accessibilityIdentifier("miniPlayer.bar")
             .transition(
                 reduceMotion
@@ -153,6 +192,16 @@ struct MiniPlayerBar: View {
                     : .move(edge: .bottom).combined(with: .opacity)
             )
         }
+    }
+
+    // MARK: Sleep timer cycle
+
+    private static let sleepPresets: [TimeInterval] = [0, 15*60, 30*60, 45*60, 60*60]
+
+    private func cycleSleepTimer() {
+        let current = player.sleepTimerRemaining
+        let next = Self.sleepPresets.first { $0 > current } ?? 0
+        player.setSleepTimer(seconds: next)
     }
 
     // MARK: Cover

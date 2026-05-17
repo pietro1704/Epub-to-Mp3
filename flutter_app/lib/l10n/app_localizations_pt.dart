@@ -365,4 +365,18 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get bookmarkRemoved => 'Marcador removido';
+
+  @override
+  String get sizeLabel => 'Tamanho';
+
+  @override
+  String get noContentAvailable => 'Nenhum conteúdo disponível';
+
+  @override
+  String errorWithMessage(String message) {
+    return 'Erro: $message';
+  }
+
+  @override
+  String get platformAndroid => 'Android';
 }

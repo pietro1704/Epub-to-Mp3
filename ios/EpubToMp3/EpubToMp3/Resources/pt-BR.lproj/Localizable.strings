@@ -1,0 +1,150 @@
+/* Portuguese (Brazil) — EpubToMp3 localisation */
+
+/* MainReaderView */
+"mainReader.pickBook" = "Escolha um livro para ler";
+"mainReader.pickBookDescription" = "Importe um EPUB ou escolha um livro da sua biblioteca para começar a ler.";
+"mainReader.browseLibrary" = "Explorar Biblioteca";
+"mainReader.listen" = "Ouvir";
+"mainReader.listenHelp" = "Abrir player de áudio para este livro";
+"mainReader.noAudioYet" = "Sem áudio ainda";
+"mainReader.noAudioDescription" = "Converta este livro primeiro para acompanhar a leitura.";
+
+/* LibraryView */
+"library.title" = "Biblioteca";
+"library.addBook" = "Adicionar Livro";
+"library.addBookAccessibility" = "Adicionar livro";
+"library.sortLibrary" = "Ordenar biblioteca";
+"library.sortBy" = "Ordenar por";
+"library.lastOpened" = "Último aberto";
+"library.titleSort" = "Título";
+"library.dateAdded" = "Data de adição";
+"library.emptyTitle" = "Sua biblioteca está vazia.";
+"library.emptyDescription" = "Toque em + para importar um EPUB ou PDF, ou compartilhe do Apple Books, Arquivos ou Safari.";
+"library.drmWarning" = "Livros comprados no Apple Books são protegidos por DRM e não podem ser abertos por apps de terceiros.";
+"library.removeFromLibrary" = "Remover da biblioteca";
+"library.editTags" = "Editar Tags";
+"library.cancel" = "Cancelar";
+"library.removeBook" = "Remover livro";
+"library.all" = "Todos";
+"library.allBooks" = "Todos os livros";
+"library.importError" = "Erro de importação";
+"library.ok" = "OK";
+"library.searchPlaceholder" = "Buscar na biblioteca";
+"library.caching" = "Baixando";
+"library.offline" = "Offline";
+
+/* SettingsView */
+"settings.title" = "Configurações";
+"settings.embeddedServer" = "Servidor embutido";
+"settings.useEmbeddedServer" = "Usar servidor embutido";
+"settings.useEmbeddedServerDescription" = "Executa uma instância Python privada em uma porta local livre. Recomendado.";
+"settings.embeddedServerFooter" = "Com o servidor embutido ativo, o app é totalmente independente e funciona offline. Desative apenas se quiser apontar para um backend remoto.";
+"settings.sidecar.idle" = "Inativo";
+"settings.sidecar.starting" = "Iniciando…";
+"settings.sidecar.running" = "Em execução";
+"settings.sidecar.failed" = "Falhou — %@";
+"settings.sidecar.unsupported" = "Não suportado nesta plataforma";
+"settings.audioEngine" = "Motor de áudio";
+"settings.useBuiltInEngine" = "Usar motor de áudio integrado";
+"settings.useBuiltInEngineDescription" = "Sintetiza capítulos neste dispositivo. Sem necessidade de backend.";
+"settings.audioEngineFooter" = "A leitura funciona offline de qualquer forma — isso afeta apenas como os capítulos são convertidos em áudio. Desative apenas para forçar o modo legacy de backend remoto.";
+"settings.remoteBackend" = "Backend remoto";
+"settings.urlNotValid" = "URL inválida";
+"settings.remoteBackendFooterMac" = "Usado quando o servidor embutido está desligado. Alvos comuns: uma instância `mise run web` nesta máquina, ou uma URL do Hugging Face Space.";
+"settings.remoteBackendFooterIOS" = "Exemplos: uma instância `mise run web` no seu computador, ou uma URL do Hugging Face Space.";
+"settings.reader" = "Leitor";
+"settings.fontSize" = "Tamanho da fonte";
+"settings.font" = "Fonte";
+"settings.theme" = "Tema";
+"settings.layout" = "Layout";
+"settings.lineSpacing" = "Espaçamento entre linhas";
+"settings.margin" = "Margem";
+"settings.columnWidth" = "Largura da coluna";
+"settings.autoScroll" = "Rolagem automática";
+"settings.readerFooter" = "Essas preferências se aplicam a todos os livros da sua biblioteca.";
+"settings.advanced" = "Avançado";
+"settings.manualConversion" = "Conversão manual";
+"settings.manualConversionDescription" = "Personalizar motor, voz, idioma e intervalo de capítulos";
+"settings.recentJobs" = "Trabalhos recentes";
+"settings.recentJobsDescription" = "Histórico de conversões e progresso em tempo real";
+"settings.telemetry" = "Telemetria";
+"settings.telemetryDescription" = "Métricas de velocidade e qualidade por motor";
+"settings.sync" = "Sincronização";
+"settings.icloudSync" = "Sincronização iCloud";
+"settings.comingSoon" = "Em breve";
+"settings.syncFooter" = "Metadados da biblioteca, progresso de leitura, marcadores e tags serão sincronizados entre seus dispositivos via iCloud.";
+"settings.about" = "Sobre";
+"settings.bundleIdentifier" = "Identificador do pacote";
+"settings.platform" = "Plataforma";
+"settings.projectOnGithub" = "Projeto no GitHub";
+
+/* FullPlayerSheet */
+"player.close" = "Fechar";
+"player.playbackPosition" = "Posição de reprodução";
+"player.previousChapter" = "Capítulo anterior";
+"player.skipBack15" = "Voltar 15 segundos";
+"player.pause" = "Pausar";
+"player.play" = "Reproduzir";
+"player.skipForward15" = "Avançar 15 segundos";
+"player.nextChapter" = "Próximo capítulo";
+"player.playbackSpeed" = "Velocidade: %@";
+"player.sleep" = "Dormir";
+"player.sleepTimerOff" = "Timer de sono: desligado. Toque para ativar.";
+"player.sleepTimerRemaining" = "Timer de sono: %@ restante. Toque para cancelar.";
+"player.airplay" = "AirPlay";
+"player.chapter" = "Capítulo %d";
+"player.coverArt" = "Capa de %@";
+"player.generatingAudio" = "Gerando áudio";
+"player.chapters" = "Capítulos";
+"player.showChapterList" = "Mostrar lista de capítulos";
+
+/* MiniPlayerBar */
+"miniPlayer.nowPlaying" = "Reproduzindo: %@, %@. Toque para expandir.";
+"miniPlayer.expandHint" = "Deslize para cima ou toque para abrir o player completo.";
+
+/* ReaderSettingsSheet */
+"readerSettings.title" = "Leitor";
+"readerSettings.theme" = "Tema";
+"readerSettings.font" = "Fonte";
+"readerSettings.family" = "Família";
+"readerSettings.size" = "Tamanho";
+"readerSettings.decreaseFontSize" = "Diminuir tamanho da fonte";
+"readerSettings.increaseFontSize" = "Aumentar tamanho da fonte";
+"readerSettings.layout" = "Layout";
+"readerSettings.mode" = "Modo";
+"readerSettings.lineSpacing" = "Espaçamento entre linhas";
+"readerSettings.margin" = "Margem";
+"readerSettings.done" = "OK";
+
+/* ReaderView */
+"reader.characters" = "%d caracteres";
+"reader.previousPage" = "Página anterior";
+"reader.nextPage" = "Próxima página";
+"reader.toggleControls" = "Alternar controles";
+
+/* AppSettings — display names */
+"theme.default" = "Padrão";
+"theme.light" = "Claro";
+"theme.sepia" = "Sépia";
+"theme.parchment" = "Pergaminho";
+"theme.paper" = "Papel";
+"theme.dark" = "Escuro";
+"theme.black" = "Preto";
+"theme.custom" = "Personalizado";
+"layout.scrolling" = "Rolagem";
+"layout.paginated" = "Paginado";
+"font.serif" = "Serifada";
+"font.sans" = "Sem serifa";
+"font.mono" = "Mono";
+
+/* NowPlayingView */
+"nowPlaying.noAudioYet" = "Sem áudio ainda";
+"nowPlaying.noAudioDescription" = "'%@' ainda não foi convertido. Abra-o pela biblioteca para iniciar a conversão.";
+
+/* BookOpenView */
+"bookOpen.opening" = "Abrindo %@…";
+
+/* General */
+"general.cancel" = "Cancelar";
+"general.ok" = "OK";
+"general.done" = "OK";

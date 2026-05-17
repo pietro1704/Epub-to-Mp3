@@ -142,5 +142,15 @@
   "removeBookmarkMessage": "Remove this bookmark?",
   "addBookmark": "Add bookmark",
   "bookmarkAdded": "Bookmark added",
-  "bookmarkRemoved": "Bookmark removed"
+  "bookmarkRemoved": "Bookmark removed",
+
+  "sizeLabel": "Size",
+  "noContentAvailable": "No content available",
+  "errorWithMessage": "Error: {message}",
+  "@errorWithMessage": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+  "platformAndroid": "Android"
 }

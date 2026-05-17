@@ -78,6 +78,78 @@ final class EbookFulltextTests: XCTestCase {
         XCTAssertTrue(chapter.splitSentences().isEmpty)
     }
 
+    // MARK: - cleanTitle / displayTitle
+
+    func testCleanTitleSeparatesGluedRomanNumeral() {
+        // "parteI" → regex inserts space → "parte I"
+        // Not all-lowercase (contains uppercase I) so no .capitalized applied.
+        let chapter = EbookFulltext.Chapter(
+            index: 1, name: "parteI", text: "",
+            html: nil, css: nil, charCount: 0, segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "parte I")
+    }
+
+    func testCleanTitleSeparatesGluedDigit() {
+        let chapter = EbookFulltext.Chapter(
+            index: 3, name: "Chapter3", text: "",
+            html: nil, css: nil, charCount: 0, segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "Chapter 3")
+    }
+
+    func testCleanTitlePreservesAllUppercase() {
+        // All-uppercase like "PROLOGUE" should NOT be lowercased — it stays
+        // as-is because the condition `result == result.lowercased()` is false.
+        let chapter = EbookFulltext.Chapter(
+            index: 0, name: "PROLOGUE", text: "",
+            html: nil, css: nil, charCount: 0, segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "PROLOGUE")
+    }
+
+    func testCleanTitleCapitalizesAllLowercase() {
+        let chapter = EbookFulltext.Chapter(
+            index: 2, name: "os primeiros", text: "",
+            html: nil, css: nil, charCount: 0, segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "Os Primeiros")
+    }
+
+    func testCleanTitleLeavesAlreadyCleanUnchanged() {
+        let chapter = EbookFulltext.Chapter(
+            index: 1, name: "Chapter 1", text: "",
+            html: nil, css: nil, charCount: 0, segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "Chapter 1")
+    }
+
+    func testCleanTitleTrimsWhitespace() {
+        let chapter = EbookFulltext.Chapter(
+            index: 1, name: "  Intro  ", text: "",
+            html: nil, css: nil, charCount: 0, segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "Intro")
+    }
+
+    func testDisplayTitleFallbackWhenNameIsNil() {
+        let chapter = EbookFulltext.Chapter(
+            index: 5, name: nil, text: "",
+            html: nil, css: nil, charCount: 0, segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "Chapter 5")
+    }
+
+    func testDisplayTitleFallbackWhenNameIsEmpty() {
+        let chapter = EbookFulltext.Chapter(
+            index: 7, name: "", text: "",
+            html: nil, css: nil, charCount: 0, segments: nil
+        )
+        XCTAssertEqual(chapter.displayTitle, "Chapter 7")
+    }
+
+    // MARK: - Round-trip encoding
+
     func testRoundTripsThroughEncoder() throws {
         let original = EbookFulltext(
             jobId: "j",

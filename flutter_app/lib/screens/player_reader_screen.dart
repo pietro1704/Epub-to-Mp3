@@ -334,7 +334,7 @@ class _Reader extends StatelessWidget {
         if (e is FulltextEmpty) {
           return Center(child: Text(t.fulltextEmpty));
         }
-        return Center(child: Text('Error: $e'));
+        return Center(child: Text(t.errorWithMessage('$e')));
       },
       data: (data) {
         if (data.chapters.isEmpty) {

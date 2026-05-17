@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_app/l10n/app_localizations.dart';
 import 'package:flutter_app/models/ebook_fulltext.dart';
 import 'package:flutter_app/state/providers.dart';
 import 'package:flutter_app/views/instant_reader_view.dart';
@@ -36,6 +37,8 @@ Widget _wrap(SharedPreferences prefs, Widget child) {
   return ProviderScope(
     overrides: [sharedPrefsProvider.overrideWithValue(prefs)],
     child: MaterialApp(
+      localizationsDelegates: AppLocalizations.localizationsDelegates,
+      supportedLocales: AppLocalizations.supportedLocales,
       home: SizedBox(
         width: 400,
         height: 800,

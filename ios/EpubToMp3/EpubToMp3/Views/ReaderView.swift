@@ -352,19 +352,19 @@ struct ReaderView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { retreatPage() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityLabel("Previous page")
+                .accessibilityLabel(L10n.string("reader.previousPage"))
                 .accessibilityAddTraits(.isButton)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { onCenterTap?() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityLabel("Toggle controls")
+                .accessibilityLabel(L10n.string("reader.toggleControls"))
                 .accessibilityAddTraits(.isButton)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { advancePage(totalPages: totalPages) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .accessibilityLabel("Next page")
+                .accessibilityLabel(L10n.string("reader.nextPage"))
                 .accessibilityAddTraits(.isButton)
         }
         .frame(maxHeight: .infinity)
@@ -427,7 +427,7 @@ struct ReaderView: View {
                 .font(headingFont)
                 .fontWeight(.semibold)
             if let count = chapter.charCount {
-                Text("\(count) characters")
+                Text(L10n.string("reader.characters", count))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
