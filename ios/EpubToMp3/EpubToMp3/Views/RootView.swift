@@ -94,15 +94,15 @@ struct TabRoot: View {
 
             CompatNavigationStack {
                 LibraryView(onOpenBook: { selectedTab = .reader })
-                    .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
             }
+            .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
             .tabItem { Label("Library", systemImage: "books.vertical") }
             .tag(RootTab.library)
 
             CompatNavigationStack {
                 SettingsView()
-                    .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
             }
+            .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
             .tabItem { Label("Settings", systemImage: "gearshape") }
             .tag(RootTab.settings)
         }

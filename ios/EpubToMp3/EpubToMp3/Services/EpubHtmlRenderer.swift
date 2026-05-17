@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 #if canImport(UIKit)
 import UIKit
 typealias PlatformFont = UIFont
@@ -8,6 +9,22 @@ import AppKit
 typealias PlatformFont = NSFont
 typealias PlatformColor = NSColor
 #endif
+
+// MARK: - Environment key for EPUB font directory
+
+/// The temp directory where `EpubFontManager` extracted the EPUB's
+/// embedded font files. Set by `BookOpenView` after registration;
+/// consumed by `ReaderView` when invoking `EpubHtmlRenderer.render`.
+private struct EpubFontDirectoryKey: EnvironmentKey {
+    static let defaultValue: URL? = nil
+}
+
+extension EnvironmentValues {
+    var epubFontDirectory: URL? {
+        get { self[EpubFontDirectoryKey.self] }
+        set { self[EpubFontDirectoryKey.self] = newValue }
+    }
+}
 
 /// Renders a chapter's raw HTML body + per-chapter CSS into an
 /// AttributedString suitable for SwiftUI `Text(_:)`, then layers the
@@ -53,13 +70,14 @@ enum EpubHtmlRenderer {
     static func render(
         html: String,
         css: String?,
-        settings: AppSettings
+        settings: AppSettings,
+        fontDirectoryURL: URL? = nil
     ) -> AttributedString? {
         let trimmed = html.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
 
         let bodyContent = stripImageSources(extractBodyContent(trimmed))
-        let cleanedCSS = stripFontFaceURLs(css ?? "")
+        let cleanedCSS = rewriteFontFaceURLs(css ?? "", fontDirectory: fontDirectoryURL)
 
         let doc = """
         <!DOCTYPE html>
@@ -255,15 +273,70 @@ enum EpubHtmlRenderer {
         )
     }
 
-    private static func stripFontFaceURLs(_ css: String) -> String {
-        css.replacingOccurrences(
-            of: #"src:\s*url\([^)]*\)\s*;?"#,
-            with: "",
-            options: .regularExpression
-        ).replacingOccurrences(
+    /// Rewrite `@font-face src: url(...)` declarations to point at
+    /// the local temp directory where `EpubFontManager` extracted the
+    /// font files. When no font directory is available (fonts not
+    /// registered), falls back to stripping the URLs entirely so the
+    /// importer doesn't attempt to fetch unreachable EPUB-internal paths.
+    private static func rewriteFontFaceURLs(_ css: String, fontDirectory: URL?) -> String {
+        guard let fontDir = fontDirectory else {
+            // No fonts extracted — strip src declarations to avoid
+            // the importer choking on relative EPUB paths.
+            return css.replacingOccurrences(
+                of: #"src:\s*url\([^)]*\)\s*;?"#,
+                with: "",
+                options: .regularExpression
+            ).replacingOccurrences(
+                of: #"@import\s+url\([^)]*\)\s*;?"#,
+                with: "",
+                options: .regularExpression
+            )
+        }
+
+        let dirPath = fontDir.path
+        // Rewrite each `src: url(...)` to a file:// URL pointing at
+        // the extracted font file (filename only — EpubFontManager
+        // flattens the EPUB's nested font paths into one directory).
+        let srcPattern = try! NSRegularExpression(
+            pattern: #"src:\s*url\(\s*['"]?([^'")]+)['"]?\s*\)"#
+        )
+
+        var result = css
+        let matches = srcPattern.matches(
+            in: css, range: NSRange(css.startIndex..., in: css)
+        ).reversed()  // reverse so indices stay valid after mutation
+
+        for match in matches {
+            guard let wholeRange = Range(match.range, in: result),
+                  let pathRange = Range(match.range(at: 1), in: result) else {
+                continue
+            }
+            let originalPath = String(result[pathRange])
+            // Extract just the filename (last path component)
+            let filename = (originalPath as NSString).lastPathComponent
+            // Strip query strings / fragments from the filename
+            let cleanFilename = filename.components(separatedBy: "?").first?
+                .components(separatedBy: "#").first ?? filename
+            let localURL = URL(fileURLWithPath: dirPath)
+                .appendingPathComponent(cleanFilename)
+
+            if FileManager.default.fileExists(atPath: localURL.path) {
+                let replacement = "src: url('\(localURL.absoluteString)')"
+                result.replaceSubrange(wholeRange, with: replacement)
+            } else {
+                // Font file not found in temp dir — strip the declaration
+                // so the importer doesn't error on a missing file.
+                result.replaceSubrange(wholeRange, with: "")
+            }
+        }
+
+        // Still strip @import url(...) — those reference stylesheets,
+        // not fonts, and won't resolve from the EPUB bundle.
+        result = result.replacingOccurrences(
             of: #"@import\s+url\([^)]*\)\s*;?"#,
             with: "",
             options: .regularExpression
         )
+        return result
     }
 }

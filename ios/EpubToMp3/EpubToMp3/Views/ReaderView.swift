@@ -35,10 +35,15 @@ struct ReaderView: View {
     var onCenterTap: (() -> Void)?
 
     @EnvironmentObject private var settings: AppSettings
+    @Environment(\.epubFontDirectory) private var epubFontDirectory
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
+    /// Tracks direction of the last page turn for asymmetric transition.
+    @State private var pageDirection: PageDirection = .forward
     @FocusState private var paginatedFocus: Bool
+
+    private enum PageDirection { case forward, backward }
 
     /// Per-chapter HTML render cache. Re-populated when `chapter.id`
     /// changes or when any settings field consumed by the renderer
@@ -144,7 +149,8 @@ struct ReaderView: View {
     private func renderHtmlForChapter() -> AttributedString? {
         guard let html = chapter.html, !html.isEmpty else { return nil }
         return EpubHtmlRenderer.render(
-            html: html, css: chapter.css, settings: settings
+            html: html, css: chapter.css, settings: settings,
+            fontDirectoryURL: epubFontDirectory
         )
     }
 
@@ -230,6 +236,14 @@ struct ReaderView: View {
                 } else {
                     let pageIndex = max(0, min(pages.count - 1, currentPage))
                     pageView(pages: pages, pageIndex: pageIndex, containerWidth: geo.size.width)
+                        .id(pageIndex)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: pageDirection == .forward ? .trailing : .leading)
+                                .combined(with: .opacity),
+                            removal: .move(edge: pageDirection == .forward ? .leading : .trailing)
+                                .combined(with: .opacity)
+                        ))
+                        .animation(.easeInOut(duration: 0.25), value: currentPage)
                         // Tap zones first (foreground), drag/scroll second.
                         // Without `.allowsHitTesting(true)` here, the
                         // text body's hit-testing wins on macOS.
@@ -330,23 +344,24 @@ struct ReaderView: View {
             )
     }
 
-    /// Two invisible tap zones for "tap left = previous, tap right =
-    /// next" paging. Mac click + iOS tap go through the same gesture.
+    /// Three invisible tap zones for page turning (Apple Books style):
+    /// left 33% = previous page, center 33% = toggle chrome, right 33% = next page.
     private func tapZones(totalPages: Int) -> some View {
         HStack(spacing: 0) {
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { retreatPage() }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { onCenterTap?() }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { advancePage(totalPages: totalPages) }
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(maxHeight: .infinity)
     }
 
     /// Compat-key dispatch — returns true when the key was consumed so
@@ -377,16 +392,22 @@ struct ReaderView: View {
     /// chapter actually changes, the `onChange(of: chapter.id)` modifier
     /// resets `currentPage` to 0.
     private func advancePage(totalPages: Int) {
+        pageDirection = .forward
         if currentPage + 1 < totalPages {
-            currentPage += 1
+            withAnimation(.easeInOut(duration: 0.25)) {
+                currentPage += 1
+            }
         } else if onAdvanceChapter?() == true {
             // Caller swapped chapter; currentPage resets via onChange.
         }
     }
 
     private func retreatPage() {
+        pageDirection = .backward
         if currentPage > 0 {
-            currentPage -= 1
+            withAnimation(.easeInOut(duration: 0.25)) {
+                currentPage -= 1
+            }
         } else if onPreviousChapter?() == true {
             // Caller swapped chapter; currentPage resets via onChange.
         }

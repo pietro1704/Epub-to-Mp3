@@ -96,6 +96,7 @@ struct BookOpenView: View {
                         onRequestAudioRetry: { startAudioBootstrap() },
                         onRequestPlay: { chapterIdx, _ in startAudioBootstrap(startChapterIndex: chapterIdx) }
                     )
+                    .environment(\.epubFontDirectory, registeredFontURLs.first?.deletingLastPathComponent())
                 } else {
                     Text("No content available.")
                 }
