@@ -13,6 +13,20 @@
   into `dist/`) and `mise run mac:build` (sidecar + headless xcodebuild
   producing the SwiftUI `.app`).
 
+## [0.5.1] — 2026-05-17
+
+### Fixed
+- Swift build in Release: `ReaderColorSchemeModifier` moved outside `#if DEBUG`
+- `JobDetailView` preview wrapped in `#if DEBUG` guard
+- Roman numeral capitalization in chapter titles ("parte iii" → "Parte III")
+- Library search bar placeholder localized in pt-BR
+
+### Flutter
+- Full iOS parity: chrome hide, speed/sleep in mini player, chapter list in full player
+- Spanish (es) translations (75 keys)
+- `cleanTitle` ported with roman numeral support
+- 188 tests passing
+
 ## [0.5.0] — 2026-05-17
 
 ### iOS / SwiftUI
