@@ -47,7 +47,38 @@ class FulltextChapter with _$FulltextChapter {
       _$FulltextChapterFromJson(json);
 
   String get displayTitle =>
-      (name != null && name!.isNotEmpty) ? name! : 'Chapter $index';
+      (name != null && name!.isNotEmpty) ? cleanTitle(name!) : 'Chapter $index';
+
+  /// Port of iOS EbookFulltext.Chapter.cleanTitle: insert spaces before
+  /// uppercase runs glued to lowercase and before digits glued to letters,
+  /// capitalize each word, and uppercase roman numeral tokens.
+  static String cleanTitle(String raw) {
+    var result = raw;
+    // Insert space before uppercase run glued to lowercase: "parteI" -> "parte I"
+    result = result.replaceAllMapped(
+      RegExp(r'([a-záàâãéèêíïóôõúüç])([A-ZÁÀÂÃÉÈÊÍÏÓÔÕÚÜÇ])'),
+      (m) => '${m[1]} ${m[2]}',
+    );
+    // Insert space before digit run glued to letters: "Chapter3" -> "Chapter 3"
+    result = result.replaceAllMapped(
+      RegExp(r'([a-zA-Z])([0-9])'),
+      (m) => '${m[1]} ${m[2]}',
+    );
+    // Capitalize each word
+    result = result.split(' ').map((w) {
+      if (w.isEmpty) return w;
+      return w[0].toUpperCase() + w.substring(1).toLowerCase();
+    }).join(' ');
+    // Uppercase roman numeral tokens
+    const romans = {
+      'I', 'Ii', 'Iii', 'Iv', 'V', 'Vi', 'Vii', 'Viii', 'Ix', 'X',
+      'Xi', 'Xii', 'Xiii', 'Xiv', 'Xv', 'Xvi', 'Xvii', 'Xviii', 'Xix', 'Xx',
+    };
+    result = result.split(' ').map((w) {
+      return romans.contains(w) ? w.toUpperCase() : w;
+    }).join(' ');
+    return result.trim();
+  }
 
   static String collapseHardWraps(String text) {
     return text

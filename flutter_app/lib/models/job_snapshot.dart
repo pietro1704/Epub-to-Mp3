@@ -1,5 +1,7 @@
 import 'package:freezed_annotation/freezed_annotation.dart';
 
+import 'ebook_fulltext.dart' show FulltextChapter;
+
 part 'job_snapshot.freezed.dart';
 part 'job_snapshot.g.dart';
 
@@ -24,7 +26,9 @@ class ChapterProgress with _$ChapterProgress {
       _$ChapterProgressFromJson(json);
 
   String get displayTitle =>
-      (name != null && name!.isNotEmpty) ? name! : 'Chapter ${index + 1}';
+      (name != null && name!.isNotEmpty)
+          ? FulltextChapter.cleanTitle(name!)
+          : 'Chapter ${index + 1}';
 
   bool get isCompleted =>
       (status?.toLowerCase() == 'completed') ||

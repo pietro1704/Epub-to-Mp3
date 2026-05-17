@@ -379,4 +379,24 @@ class AppLocalizationsPt extends AppLocalizations {
 
   @override
   String get platformAndroid => 'Android';
+
+  @override
+  String get chapterListTitle => 'Capítulos';
+
+  @override
+  String get sleepTimerActive => 'Timer de sono ativo';
+
+  @override
+  String get sleepTimerOff => 'Timer de sono desligado';
+
+  @override
+  String get speedLabel => 'Velocidade';
+
+  @override
+  String sleepMinutes(int n) {
+    return '$n min';
+  }
+
+  @override
+  String get off => 'Desligado';
 }

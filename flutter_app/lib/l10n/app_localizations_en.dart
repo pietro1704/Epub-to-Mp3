@@ -378,4 +378,24 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get platformAndroid => 'Android';
+
+  @override
+  String get chapterListTitle => 'Chapters';
+
+  @override
+  String get sleepTimerActive => 'Sleep timer active';
+
+  @override
+  String get sleepTimerOff => 'Sleep timer off';
+
+  @override
+  String get speedLabel => 'Speed';
+
+  @override
+  String sleepMinutes(int n) {
+    return '$n min';
+  }
+
+  @override
+  String get off => 'Off';
 }

@@ -43,6 +43,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
 
 class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   late int _currentChapterIndex;
+  bool _chromeVisible = true;
 
   static const _minReadableChars = 10;
 
@@ -166,23 +167,29 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
 
     return Column(
       children: [
-        // Toolbar with settings button
-        Container(
-          color: bg,
-          padding: const EdgeInsets.symmetric(horizontal: 8),
-          child: SafeArea(
-            bottom: false,
-            child: Row(
-              children: [
-                const Spacer(),
-                IconButton(
-                  icon: Icon(Icons.text_format, color: fg.withValues(alpha: 0.7)),
-                  onPressed: _showReaderSettings,
-                  tooltip: 'Reader settings',
-                ),
-              ],
-            ),
-          ),
+        // Toolbar with settings button — hidden when chrome is off
+        AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          child: _chromeVisible
+              ? Container(
+                  color: bg,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Row(
+                      children: [
+                        const Spacer(),
+                        IconButton(
+                          icon: Icon(Icons.text_format,
+                              color: fg.withValues(alpha: 0.7)),
+                          onPressed: _showReaderSettings,
+                          tooltip: 'Reader settings',
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(),
         ),
 
         Expanded(
@@ -192,10 +199,19 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
             currentSentenceId: widget.activeSentenceId,
             onAdvanceChapter: advanceToNextChapter,
             onPreviousChapter: returnToPreviousChapter,
+            onCenterTap: () {
+              setState(() => _chromeVisible = !_chromeVisible);
+            },
           ),
         ),
 
-        _buildBottomBar(context, chapter, bg, fg),
+        // Bottom bar — hidden when chrome is off
+        AnimatedSize(
+          duration: const Duration(milliseconds: 250),
+          child: _chromeVisible
+              ? _buildBottomBar(context, chapter, bg, fg)
+              : const SizedBox.shrink(),
+        ),
       ],
     );
   }

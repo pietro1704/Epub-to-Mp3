@@ -1,0 +1,167 @@
+{
+  "@@locale": "es",
+  "appTitle": "Epub a MP3",
+  "settingsTitle": "Configuración",
+  "backendUrl": "URL del servidor",
+  "wpmLabel": "Palabras por minuto",
+  "audioRateLabel": "Velocidad de reproducción",
+  "fontSizeLabel": "Tamaño de fuente",
+  "themeLabel": "Tema",
+  "jobsTitle": "Conversiones",
+  "noJobs": "Ninguna conversión aún",
+  "refresh": "Actualizar",
+  "playerTitle": "Reproductor",
+  "readerTitle": "Lector",
+  "tocTitle": "Capítulos",
+  "loadingFulltext": "Cargando texto…",
+  "fulltextEmpty": "Texto no disponible",
+  "fulltextGone": "Texto ya no disponible",
+  "downloadAll": "Descargar todo",
+  "play": "Reproducir",
+  "pause": "Pausar",
+  "next": "Siguiente",
+  "previous": "Anterior",
+  "libraryTitle": "Biblioteca",
+  "libraryEmpty": "Tu biblioteca está vacía",
+  "addBook": "Agregar libro",
+  "removeBookTitle": "Eliminar libro",
+  "removeBookMessage": "¿Eliminar \"{title}\" de la biblioteca? El archivo no se borrará.",
+  "@removeBookMessage": {
+    "placeholders": {
+      "title": { "type": "String" }
+    }
+  },
+  "cancel": "Cancelar",
+  "remove": "Eliminar",
+  "noConversionYet": "Convierte este libro primero para reproducir audio",
+  "readerEmptyHint": "Abre un libro de la biblioteca para empezar a leer",
+  "pickBookToRead": "Elige un libro para leer",
+  "browseLibrary": "Ver Biblioteca",
+  "parsingBook": "Abriendo libro…",
+  "parsingFailed": "No se pudo abrir este libro",
+  "retry": "Reintentar",
+  "generatingAudio": "Generando audio",
+  "nowPlaying": "Reproduciendo",
+
+  "audioEngineSection": "Motor de audio",
+  "useBuiltInEngine": "Usar motor de audio integrado",
+  "useBuiltInEngineDesc": "Sintetiza capítulos en este dispositivo. Sin servidor necesario.",
+  "audioEngineFooter": "La lectura funciona sin conexión de cualquier forma — esto solo afecta la generación de audio.",
+  "remoteBackendSection": "Servidor remoto",
+  "backendUrlHint": "http://localhost:8000",
+  "backendUrlFooter": "Apunta a un servidor local o URL de Hugging Face Space.",
+  "fontLabel": "Fuente",
+  "layoutLabel": "Diseño",
+  "lineSpacingLabel": "Interlineado",
+  "marginLabel": "Margen",
+  "autoScrollLabel": "Desplazamiento automático",
+  "autoScrollDesc": "Desplazar texto para seguir la reproducción",
+  "playbackSection": "Reproducción",
+  "aboutSection": "Acerca de",
+  "platformLabel": "Plataforma",
+  "projectOnGithub": "Proyecto en GitHub",
+  "readerPrefsFooter": "Estas preferencias se aplican a todos los libros de tu biblioteca.",
+  "invalidUrl": "URL no válida",
+  "nOfSteps": "{n} de {total}",
+  "@nOfSteps": {
+    "placeholders": {
+      "n": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+
+  "sortBy": "Ordenar por",
+  "sortLastOpened": "Último abierto",
+  "sortTitle": "Título",
+  "sortDateAdded": "Fecha de adición",
+  "libraryEmptyDesc": "Toca + para importar un EPUB o PDF, o comparte uno desde otra app.",
+  "offlineReady": "Sin conexión",
+  "cachingLabel": "Cacheando",
+  "removeFromLibrary": "Eliminar de la biblioteca",
+
+  "startingConversion": "Iniciando conversión…",
+  "conversionFailed": "Falló la conversión",
+  "uploadFailed": "Falló la carga",
+  "downloading": "Descargando…",
+  "downloadComplete": "Descarga completa",
+  "downloadFailed": "Falló la descarga",
+  "chaptersConverted": "{n} de {total} capítulos",
+  "@chaptersConverted": {
+    "placeholders": {
+      "n": { "type": "int" },
+      "total": { "type": "int" }
+    }
+  },
+  "drmFootnote": "Los libros con DRM (ej: Google Play o Kindle) no se pueden abrir.",
+  "saveForOffline": "Guardar",
+  "charsCount": "{n} caracteres",
+  "@charsCount": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+
+  "searchInBook": "Buscar en el libro",
+  "noResults": "Sin resultados",
+  "done": "Listo",
+  "searchResultsCapped": "Mostrando los primeros 100 resultados",
+
+  "sortLibrary": "Ordenar biblioteca",
+  "skipBack15": "Retroceder 15 segundos",
+  "skipForward15": "Adelantar 15 segundos",
+  "playbackPosition": "Posición de reproducción",
+  "playbackSpeed": "Velocidad de reproducción",
+  "sleepTimer": "Temporizador de sueño",
+  "albumArt": "Portada del álbum",
+  "closePlayer": "Cerrar reproductor",
+  "tableOfContents": "Tabla de contenidos",
+  "readerSettings": "Configuración del lector",
+  "audioReady": "Audio listo",
+  "currentlyPlaying": "Reproduciendo ahora",
+
+  "editTags": "Editar Etiquetas",
+  "tagsSection": "Etiquetas",
+  "newTagHint": "Nueva etiqueta",
+  "add": "Agregar",
+  "existingTags": "Etiquetas existentes",
+  "allFilter": "Todas",
+  "searchLibrary": "Buscar en la biblioteca",
+
+  "bookmarksTitle": "Marcadores",
+  "filterAll": "Todos",
+  "filterBookmarks": "Marcadores",
+  "filterHighlights": "Destacados",
+  "noBookmarksYet": "Sin marcadores aún",
+  "noBookmarksHint": "Mantén presionado un párrafo en el lector para agregar un marcador o destacado.",
+  "editNote": "Editar Nota",
+  "addNoteHint": "Agregar nota…",
+  "highlightedText": "Texto destacado",
+  "colorLabel": "Color",
+  "save": "Guardar",
+  "removeBookmarkTitle": "Eliminar marcador",
+  "removeBookmarkMessage": "¿Eliminar este marcador?",
+  "addBookmark": "Agregar marcador",
+  "bookmarkAdded": "Marcador agregado",
+  "bookmarkRemoved": "Marcador eliminado",
+
+  "sizeLabel": "Tamaño",
+  "noContentAvailable": "Sin contenido disponible",
+  "errorWithMessage": "Error: {message}",
+  "@errorWithMessage": {
+    "placeholders": {
+      "message": { "type": "String" }
+    }
+  },
+  "platformAndroid": "Android",
+  "chapterListTitle": "Capítulos",
+  "sleepTimerActive": "Temporizador activo",
+  "sleepTimerOff": "Temporizador apagado",
+  "speedLabel": "Velocidad",
+  "sleepMinutes": "{n} min",
+  "@sleepMinutes": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "off": "Apagado"
+}

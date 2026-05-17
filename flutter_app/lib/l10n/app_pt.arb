@@ -152,5 +152,16 @@
       "message": { "type": "String" }
     }
   },
-  "platformAndroid": "Android"
+  "platformAndroid": "Android",
+  "chapterListTitle": "Capítulos",
+  "sleepTimerActive": "Timer de sono ativo",
+  "sleepTimerOff": "Timer de sono desligado",
+  "speedLabel": "Velocidade",
+  "sleepMinutes": "{n} min",
+  "@sleepMinutes": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "off": "Desligado"
 }

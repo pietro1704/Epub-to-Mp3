@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
+import '../models/job_snapshot.dart';
 import '../services/audio_player_service.dart';
 import '../state/providers.dart';
 import '../screens/library_screen.dart';
@@ -136,19 +137,27 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                         maxLines: 1,
                       ),
                     ],
-                    if (widget.chapterLabel != null) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.chapterLabel!,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: Theme.of(context)
-                                  .hintColor
-                                  .withValues(alpha: 0.7),
-                            ),
-                        textAlign: TextAlign.center,
-                        maxLines: 2,
-                      ),
-                    ],
+                    // Real chapter name from player queue
+                    StreamBuilder<int?>(
+                      stream: widget.player.currentIndex,
+                      builder: (context, snap) {
+                        final label = _currentChapterLabel();
+                        if (label.isEmpty) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            label,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: Theme.of(context)
+                                      .hintColor
+                                      .withValues(alpha: 0.7),
+                                ),
+                            textAlign: TextAlign.center,
+                            maxLines: 2,
+                          ),
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -374,6 +383,17 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
           ),
         ),
 
+        // Chapter list button
+        if (hasChapters)
+          GestureDetector(
+            onTap: () => _showChapterList(context),
+            child: _pill(
+              context,
+              t?.tocTitle ?? 'Chapters',
+              icon: Icons.list,
+            ),
+          ),
+
         // Download button
         if (hasChapters)
           GestureDetector(
@@ -419,6 +439,23 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     );
   }
 
+  void _showChapterList(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.3,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (ctx, controller) => _ChapterListSheet(
+          chapters: widget.player.chapters,
+          player: widget.player,
+        ),
+      ),
+    );
+  }
+
   Widget _pill(BuildContext context, String label, {IconData? icon}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -444,6 +481,23 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     );
   }
 
+  /// Resolve the real chapter name from the player queue.
+  String _currentChapterLabel() {
+    final chapters = widget.player.chapters;
+    if (chapters.isEmpty) {
+      return widget.chapterLabel ?? '';
+    }
+    final rawIdx = widget.player.raw.currentIndex;
+    if (rawIdx == null) {
+      return widget.chapterLabel ?? '';
+    }
+    final chIdx = widget.player.chapterIndexForPlayerIndex(rawIdx);
+    if (chIdx < chapters.length) {
+      return chapters[chIdx].displayTitle;
+    }
+    return widget.chapterLabel ?? '';
+  }
+
   String _formatTime(double seconds) {
     if (!seconds.isFinite || seconds < 0) return '0:00';
     final total = seconds.toInt();
@@ -452,5 +506,109 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     final s = total % 60;
     if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
     return '$m:${s.toString().padLeft(2, '0')}';
+  }
+}
+
+/// Sheet presenting chapters from the player queue for in-player navigation.
+/// Mirrors iOS ChapterListSheet.
+class _ChapterListSheet extends StatelessWidget {
+  const _ChapterListSheet({
+    required this.chapters,
+    required this.player,
+  });
+
+  final List<ChapterProgress> chapters;
+  final AudioPlayerService player;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context);
+    final cs = Theme.of(context).colorScheme;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      child: Column(
+        children: [
+          // Drag handle
+          Container(
+            width: 36,
+            height: 4,
+            margin: const EdgeInsets.only(top: 8, bottom: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey[400],
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  t?.tocTitle ?? 'Chapters',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(t?.done ?? 'Done'),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: StreamBuilder<int?>(
+              stream: player.currentIndex,
+              builder: (context, snap) {
+                final currentPlayerIdx = snap.data;
+                final currentChapterIdx = currentPlayerIdx != null
+                    ? player.chapterIndexForPlayerIndex(currentPlayerIdx)
+                    : -1;
+
+                return ListView.separated(
+                  itemCount: chapters.length,
+                  separatorBuilder: (_, _) => const Divider(
+                    height: 1,
+                    indent: 16,
+                  ),
+                  itemBuilder: (context, i) {
+                    final chapter = chapters[i];
+                    final isCurrent = chapter.index == currentChapterIdx ||
+                        i == currentChapterIdx;
+                    return Semantics(
+                      label: chapter.displayTitle,
+                      button: true,
+                      child: ListTile(
+                        title: Text(
+                          chapter.displayTitle,
+                          style: TextStyle(
+                            color: isCurrent ? cs.primary : null,
+                            fontWeight:
+                                isCurrent ? FontWeight.w600 : FontWeight.normal,
+                          ),
+                        ),
+                        trailing: isCurrent
+                            ? Icon(Icons.volume_up,
+                                size: 16, color: cs.primary)
+                            : null,
+                        onTap: () {
+                          player.seek(Duration.zero, index: i);
+                          Navigator.pop(context);
+                        },
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

@@ -29,6 +29,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   int _currentChapterIndex = 0;
   bool _downloading = false;
   bool _searchVisible = false;
+  bool _chromeVisible = true;
   StreamSubscription<int?>? _chapterIndexSub;
   bool _isPlaying = false;
   StreamSubscription<bool>? _playingSub;
@@ -207,56 +208,61 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
 
     return Scaffold(
       backgroundColor: bg,
-      appBar: AppBar(
-        title: Text(snapshot?.bookTitle ?? widget.jobId),
-        backgroundColor: bg,
-        actions: [
-          if (hasZip)
-            _downloading
-                ? const Padding(
-                    padding: EdgeInsets.all(12),
-                    child: SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                : IconButton(
-                    icon: const Icon(Icons.download),
-                    onPressed: snapshot != null
-                        ? () => _downloadZip(snapshot)
-                        : null,
-                    tooltip: t.downloadAll,
-                  ),
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () => setState(() => _searchVisible = !_searchVisible),
-            tooltip: t.searchInBook,
-          ),
-          Consumer(
-            builder: (context, ref, _) {
-              final store = ref.watch(bookmarkStoreProvider);
-              final hasIt = store.hasBookmark(
-                  widget.jobId, _currentChapterIndex);
-              return IconButton(
-                icon: Icon(hasIt ? Icons.bookmark : Icons.bookmark_border),
-                onPressed: _toggleBookmark,
-                tooltip: t.addBookmark,
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.bookmarks_outlined),
-            onPressed: _showBookmarksList,
-            tooltip: t.bookmarksTitle,
-          ),
-          IconButton(
-            icon: const Icon(Icons.text_format),
-            onPressed: _showReaderSettings,
-            tooltip: t.readerSettings,
-          ),
-        ],
-      ),
+      appBar: _chromeVisible
+          ? AppBar(
+              title: Text(snapshot?.bookTitle ?? widget.jobId),
+              backgroundColor: bg,
+              actions: [
+                if (hasZip)
+                  _downloading
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 24,
+                            height: 24,
+                            child:
+                                CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : IconButton(
+                          icon: const Icon(Icons.download),
+                          onPressed: snapshot != null
+                              ? () => _downloadZip(snapshot)
+                              : null,
+                          tooltip: t.downloadAll,
+                        ),
+                IconButton(
+                  icon: const Icon(Icons.search),
+                  onPressed: () =>
+                      setState(() => _searchVisible = !_searchVisible),
+                  tooltip: t.searchInBook,
+                ),
+                Consumer(
+                  builder: (context, ref, _) {
+                    final store = ref.watch(bookmarkStoreProvider);
+                    final hasIt = store.hasBookmark(
+                        widget.jobId, _currentChapterIndex);
+                    return IconButton(
+                      icon: Icon(
+                          hasIt ? Icons.bookmark : Icons.bookmark_border),
+                      onPressed: _toggleBookmark,
+                      tooltip: t.addBookmark,
+                    );
+                  },
+                ),
+                IconButton(
+                  icon: const Icon(Icons.bookmarks_outlined),
+                  onPressed: _showBookmarksList,
+                  tooltip: t.bookmarksTitle,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.text_format),
+                  onPressed: _showReaderSettings,
+                  tooltip: t.readerSettings,
+                ),
+              ],
+            )
+          : null,
       drawer: TocDrawer(
         fulltext: fulltext.valueOrNull,
         snapshot: snapshot,
@@ -273,6 +279,8 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                 chapterIndex: _currentChapterIndex,
                 jobId: widget.jobId,
                 t: t,
+                onCenterTap: () =>
+                    setState(() => _chromeVisible = !_chromeVisible),
               );
               final controls = _PlayerControls(
                 jobId: widget.jobId,
@@ -283,13 +291,16 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                 return Row(children: [
                   Expanded(child: reader),
                   const VerticalDivider(width: 1),
-                  SizedBox(width: 320, child: controls),
+                  if (_chromeVisible)
+                    SizedBox(width: 320, child: controls),
                 ]);
               }
               return Column(children: [
                 Expanded(child: reader),
-                const Divider(height: 1),
-                controls,
+                if (_chromeVisible) ...[
+                  const Divider(height: 1),
+                  controls,
+                ],
               ]);
             },
           ),
@@ -316,12 +327,14 @@ class _Reader extends StatelessWidget {
     required this.chapterIndex,
     required this.jobId,
     required this.t,
+    this.onCenterTap,
   });
 
   final AsyncValue<EbookFulltext> fulltext;
   final int chapterIndex;
   final String jobId;
   final AppLocalizations t;
+  final VoidCallback? onCenterTap;
 
   @override
   Widget build(BuildContext context) {
@@ -344,6 +357,7 @@ class _Reader extends StatelessWidget {
         return scroll_reader.ReaderView(
           jobId: jobId,
           chapter: data.chapters[idx],
+          onCenterTap: onCenterTap,
         );
       },
     );

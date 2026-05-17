@@ -17,6 +17,9 @@ class ReaderView extends ConsumerStatefulWidget {
   final void Function(SentenceSpan)? onJumpToSentence;
   final ChapterStepCallback? onAdvanceChapter;
   final ChapterStepCallback? onPreviousChapter;
+  /// Called when the user taps the center zone of the reader. Used by
+  /// the hosting screen to toggle chrome visibility (AppBar + player bar).
+  final VoidCallback? onCenterTap;
 
   const ReaderView({
     super.key,
@@ -26,6 +29,7 @@ class ReaderView extends ConsumerStatefulWidget {
     this.onJumpToSentence,
     this.onAdvanceChapter,
     this.onPreviousChapter,
+    this.onCenterTap,
   });
 
   @override
@@ -174,45 +178,49 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       });
     }
 
-    return Container(
-      color: bg,
-      child: Scrollbar(
-        controller: _scrollController,
-        child: SingleChildScrollView(
+    return GestureDetector(
+      onTap: widget.onCenterTap,
+      behavior: HitTestBehavior.translucent,
+      child: Container(
+        color: bg,
+        child: Scrollbar(
           controller: _scrollController,
-          padding: EdgeInsets.symmetric(
-            horizontal: margin,
-            vertical: 16,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _chapterHeader(headingStyle, fg),
-              const SizedBox(height: 12),
-              ...widget.spans.map((s) {
-                final isActive = s.id == activeId;
-                return Padding(
-                  key: _spanKeys.putIfAbsent(s.id, () => GlobalKey()),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  child: GestureDetector(
-                    onTap: () => widget.onJumpToSentence?.call(s),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 4),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(6),
-                        color: isActive
-                            ? Colors.yellow.withValues(alpha: 0.35)
-                            : Colors.transparent,
+          child: SingleChildScrollView(
+            controller: _scrollController,
+            padding: EdgeInsets.symmetric(
+              horizontal: margin,
+              vertical: 16,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _chapterHeader(headingStyle, fg),
+                const SizedBox(height: 12),
+                ...widget.spans.map((s) {
+                  final isActive = s.id == activeId;
+                  return Padding(
+                    key: _spanKeys.putIfAbsent(s.id, () => GlobalKey()),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: GestureDetector(
+                      onTap: () => widget.onJumpToSentence?.call(s),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 4),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(6),
+                          color: isActive
+                              ? Colors.yellow.withValues(alpha: 0.35)
+                              : Colors.transparent,
+                        ),
+                        child: Text(s.text, style: bodyStyle),
                       ),
-                      child: Text(s.text, style: bodyStyle),
                     ),
-                  ),
-                );
-              }),
-            ],
+                  );
+                }),
+              ],
+            ),
           ),
         ),
       ),

@@ -161,6 +161,74 @@ class MiniPlayerBar extends ConsumerWidget {
                     onPressed: () => player.skipForward(seconds: 15),
                     tooltip: 'Skip forward 15 seconds',
                   ),
+
+                  // Speed picker — compact label
+                  PopupMenuButton<double>(
+                    onSelected: (v) => player.setSpeed(v),
+                    tooltip: 'Playback speed',
+                    padding: EdgeInsets.zero,
+                    itemBuilder: (_) => [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0]
+                        .map((s) => PopupMenuItem(
+                              value: s,
+                              child: Text(
+                                '${s}x',
+                                style: TextStyle(
+                                  fontWeight: player.speed == s
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                ),
+                              ),
+                            ))
+                        .toList(),
+                    child: Semantics(
+                      label: 'Speed ${player.speed}x',
+                      button: true,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          '${player.speed}x',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  // Sleep timer — tap cycles presets
+                  StreamBuilder<double>(
+                    stream: player.sleepTimerStream,
+                    builder: (context, snap) {
+                      final remaining = snap.data ?? player.sleepTimerRemaining;
+                      return Semantics(
+                        label: remaining > 0
+                            ? 'Sleep timer active'
+                            : 'Sleep timer off',
+                        button: true,
+                        child: IconButton(
+                          icon: Icon(
+                            remaining > 0
+                                ? Icons.nightlight
+                                : Icons.nightlight_outlined,
+                            size: 20,
+                          ),
+                          onPressed: () {
+                            const presets = [
+                              0.0, 900.0, 1800.0, 2700.0, 3600.0
+                            ];
+                            final current = player.sleepTimerRemaining;
+                            final next = presets
+                                    .where((p) => p > current)
+                                    .firstOrNull ??
+                                0.0;
+                            player.setSleepTimer(seconds: next);
+                          },
+                          tooltip: 'Sleep timer',
+                        ),
+                      );
+                    },
+                  ),
                 ],
               ),
             ),

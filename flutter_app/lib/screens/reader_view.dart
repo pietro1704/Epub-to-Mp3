@@ -10,10 +10,12 @@ class ReaderView extends ConsumerStatefulWidget {
     super.key,
     required this.jobId,
     required this.chapter,
+    this.onCenterTap,
   });
 
   final String jobId;
   final FulltextChapter chapter;
+  final VoidCallback? onCenterTap;
 
   @override
   ConsumerState<ReaderView> createState() => _ReaderViewState();
@@ -43,37 +45,41 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _scrollTo(activeId));
     }
 
-    return Container(
-      color: bg,
-      child: Scrollbar(
-        controller: _controller,
-        child: SingleChildScrollView(
+    return GestureDetector(
+      onTap: widget.onCenterTap,
+      behavior: HitTestBehavior.translucent,
+      child: Container(
+        color: bg,
+        child: Scrollbar(
           controller: _controller,
-          padding: EdgeInsets.symmetric(horizontal: margin, vertical: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (widget.chapter.name != null)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Text(
-                    widget.chapter.name!,
-                    style: TextStyle(
-                      fontSize: fontSize + 6,
-                      fontWeight: FontWeight.w600,
-                      color: fg,
+          child: SingleChildScrollView(
+            controller: _controller,
+            padding: EdgeInsets.symmetric(horizontal: margin, vertical: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (widget.chapter.name != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Text(
+                      widget.chapter.displayTitle,
+                      style: TextStyle(
+                        fontSize: fontSize + 6,
+                        fontWeight: FontWeight.w600,
+                        color: fg,
+                      ),
                     ),
                   ),
-                ),
-              ...spans.map((span) => _Sentence(
-                    key: _spanKeys.putIfAbsent(span.id, () => GlobalKey()),
-                    span: span,
-                    fontSize: fontSize,
-                    lineHeight: 1.4 + (lineSpacing / 20.0),
-                    isActive: span.id == activeId,
-                    textColor: fg,
-                  )),
-            ],
+                ...spans.map((span) => _Sentence(
+                      key: _spanKeys.putIfAbsent(span.id, () => GlobalKey()),
+                      span: span,
+                      fontSize: fontSize,
+                      lineHeight: 1.4 + (lineSpacing / 20.0),
+                      isActive: span.id == activeId,
+                      textColor: fg,
+                    )),
+              ],
+            ),
           ),
         ),
       ),

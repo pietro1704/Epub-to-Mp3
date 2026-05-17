@@ -152,5 +152,16 @@
       "message": { "type": "String" }
     }
   },
-  "platformAndroid": "Android"
+  "platformAndroid": "Android",
+  "chapterListTitle": "Chapters",
+  "sleepTimerActive": "Sleep timer active",
+  "sleepTimerOff": "Sleep timer off",
+  "speedLabel": "Speed",
+  "sleepMinutes": "{n} min",
+  "@sleepMinutes": {
+    "placeholders": {
+      "n": { "type": "int" }
+    }
+  },
+  "off": "Off"
 }
