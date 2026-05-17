@@ -7,7 +7,7 @@ struct LibrarySearchBar: View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(.secondary)
-            TextField("Search library", text: $query)
+            TextField(L10n.string("library.searchPlaceholder"), text: $query)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()
             if !query.isEmpty {
@@ -24,6 +24,6 @@ struct LibrarySearchBar: View {
         .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
         .padding(.horizontal, 20)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Search library")
+        .accessibilityLabel(L10n.string("library.searchPlaceholder"))
     }
 }

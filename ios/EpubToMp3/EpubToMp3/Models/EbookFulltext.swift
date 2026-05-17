@@ -82,10 +82,13 @@ struct EbookFulltext: Codable, Equatable {
                 with: "$1 $2",
                 options: .regularExpression
             )
-            // Capitalize first letter of each word if all-lowercase
-            if result == result.lowercased() {
-                result = result.capitalized
-            }
+            // Capitalize each word, then uppercase roman numeral tokens
+            result = result.capitalized
+            let romans = Set(["I","Ii","Iii","Iv","V","Vi","Vii","Viii","Ix","X",
+                              "Xi","Xii","Xiii","Xiv","Xv","Xvi","Xvii","Xviii","Xix","Xx"])
+            result = result.split(separator: " ").map { word in
+                romans.contains(String(word)) ? String(word).uppercased() : String(word)
+            }.joined(separator: " ")
             return result.trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
