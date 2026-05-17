@@ -229,7 +229,13 @@ struct FullPlayerSheet: View {
                     get: { player.positionSeconds },
                     set: { player.seek(to: $0) }
                 ),
-                in: 0...max(player.durationSeconds, 1)
+                in: 0...max(player.durationSeconds, 1),
+                onEditingChanged: { editing in
+                    #if os(iOS)
+                    let generator = UIImpactFeedbackGenerator(style: editing ? .light : .medium)
+                    generator.impactOccurred()
+                    #endif
+                }
             )
             .tint(.primary)
             .accessibilityLabel(L10n.string("player.playbackPosition"))

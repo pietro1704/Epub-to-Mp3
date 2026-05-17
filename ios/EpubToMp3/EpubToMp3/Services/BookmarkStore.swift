@@ -91,13 +91,33 @@ final class BookmarkStore: ObservableObject {
 
     // MARK: - Persistence
 
+    /// True once `load()` has successfully decoded at least once (or found
+    /// no data on disk). Guards `persist()` so a decode failure can never
+    /// silently overwrite the stored bookmarks with an empty array.
+    private var didLoadSuccessfully = false
+
     private func load() {
-        guard let data = defaults.data(forKey: storageKey),
-              let decoded = try? JSONDecoder().decode([Bookmark].self, from: data) else { return }
-        self.bookmarks = decoded
+        guard let data = defaults.data(forKey: storageKey) else {
+            // No stored data — first launch. Safe to persist later.
+            didLoadSuccessfully = true
+            return
+        }
+        do {
+            self.bookmarks = try JSONDecoder().decode([Bookmark].self, from: data)
+            didLoadSuccessfully = true
+        } catch {
+            // Log but do NOT clear `bookmarks` — leave it empty and block
+            // `persist()` so the on-disk data survives for a future build
+            // that can decode it.
+            NSLog("[BookmarkStore] decode failed — stored bookmarks preserved on disk: %@", "\(error)")
+        }
     }
 
     private func persist() {
+        guard didLoadSuccessfully else {
+            NSLog("[BookmarkStore] persist blocked — initial load failed, refusing to overwrite stored data")
+            return
+        }
         guard let data = try? JSONEncoder().encode(bookmarks) else { return }
         defaults.set(data, forKey: storageKey)
     }

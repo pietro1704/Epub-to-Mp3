@@ -36,12 +36,21 @@ struct ReaderView: View {
 
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.epubFontDirectory) private var epubFontDirectory
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
     /// Tracks direction of the last page turn for asymmetric transition.
     @State private var pageDirection: PageDirection = .forward
     @FocusState private var paginatedFocus: Bool
+    /// Last known container size — used to detect orientation changes
+    /// and recompute the page index so the reader stays on the same
+    /// text passage after rotation.
+    @State private var lastContainerSize: CGSize = .zero
+    /// Cumulative plain-text character offset at the top of the page
+    /// the user was reading before a repagination. Used to find the
+    /// equivalent page in the new pagination.
+    @State private var textOffsetAtCurrentPage: Int = 0
 
     private enum PageDirection { case forward, backward }
 
@@ -127,6 +136,16 @@ struct ReaderView: View {
             case .paginated: paginatedContent
             }
         }
+        .background(
+            GeometryReader { geo in
+                Color.clear.preference(key: ContainerSizeKey.self, value: geo.size)
+            }
+        )
+        .onPreferenceChange(ContainerSizeKey.self) { newSize in
+            if sizeChangedMeaningfully(from: lastContainerSize, to: newSize) {
+                lastContainerSize = newSize
+            }
+        }
         .background(themeBackground)
         .foregroundStyle(themeForeground)
         // Force all SwiftUI controls within the reader (pickers, menus,
@@ -171,7 +190,24 @@ struct ReaderView: View {
     /// in `AppSettings.readerMargin`) so stale persisted values from
     /// older installs get coerced on first render too.
     private var effectiveReaderMargin: CGFloat {
-        max(16, CGFloat(settings.readerMargin))
+        effectiveReaderMargin(for: lastContainerSize)
+    }
+
+    /// Landscape-aware margin. Apple Books widens margins ~40% in
+    /// landscape to keep line lengths comfortable on the wider screen.
+    /// On regular-width devices (iPad) the extra padding is unnecessary
+    /// because `readerColumnWidth` already constrains the text block.
+    private func effectiveReaderMargin(for size: CGSize) -> CGFloat {
+        let base = max(16, CGFloat(settings.readerMargin))
+        let isLandscape = size.width > size.height
+        let isCompactWidth = (horizontalSizeClass == .compact)
+        if isLandscape && isCompactWidth {
+            // iPhone landscape: widen margins by ~40% (Apple Books pattern).
+            // Floor at 24pt so even the minimum setting (16pt) gets a
+            // meaningful landscape bump.
+            return max(24, round(base * 1.4))
+        }
+        return base
     }
 
     // MARK: Scrolling content
@@ -219,6 +255,7 @@ struct ReaderView: View {
         // measures the *full* available width, which on iPhone
         // landscape includes the curved cutout region.
         GeometryReader { geo in
+            let margin = effectiveReaderMargin(for: geo.size)
             let headerH: CGFloat = settings.readerPointSize * 2.5 + 50
             let pages = Paginator.paginate(
                 spans: spans,
@@ -226,13 +263,13 @@ struct ReaderView: View {
                 fontSize: settings.readerPointSize,
                 lineSpacing: settings.readerLineSpacing,
                 columnWidth: settings.readerColumnWidth,
-                margin: Double(effectiveReaderMargin),
+                margin: Double(margin),
                 headerHeight: headerH
             )
             ZStack(alignment: .bottom) {
                 if pages.isEmpty {
                     chapterTitleHeader
-                        .padding(.horizontal, effectiveReaderMargin)
+                        .padding(.horizontal, margin)
                         .frame(maxWidth: .infinity, alignment: .center)
                 } else {
                     paginatedPageContent(pages: pages, containerSize: geo.size)
@@ -246,12 +283,58 @@ struct ReaderView: View {
             .compatFocusable()
             .focused($paginatedFocus)
             .modifier(HideFocusRingModifier())
-            .onAppear { paginatedFocus = true }
+            .onAppear {
+                paginatedFocus = true
+                lastContainerSize = geo.size
+            }
             .compatOnKeyPressArrowsAndPaging { key in
                 handleCompatKey(key, totalPages: pages.count)
             }
+            .compatOnChange(of: geo.size) { newSize in
+                // Orientation changed (or multitasking resize on iPad).
+                // Preserve the reading position by finding the page in
+                // the new pagination that contains the same text offset
+                // the user was looking at before the resize.
+                guard sizeChangedMeaningfully(from: lastContainerSize, to: newSize) else { return }
+                lastContainerSize = newSize
+                if !pages.isEmpty {
+                    let target = findPage(containing: textOffsetAtCurrentPage, in: pages)
+                    if target != currentPage {
+                        currentPage = target
+                    }
+                }
+            }
+            // Keep textOffsetAtCurrentPage in sync whenever the page changes.
+            .compatOnChange(of: currentPage) { newPage in
+                textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: pages)
+            }
         }
         .compatHorizontalSafeAreaPadding(0)
+    }
+
+    /// True when the size delta is large enough to warrant repagination.
+    /// Filters out sub-point jitter from keyboard, status bar, etc.
+    private func sizeChangedMeaningfully(from old: CGSize, to new: CGSize) -> Bool {
+        abs(old.width - new.width) > 2 || abs(old.height - new.height) > 2
+    }
+
+    /// Cumulative plain-text character count up to (but not including) the
+    /// given page index. Used to bookmark the reading position.
+    private func cumulativeOffset(page: Int, in pages: [String]) -> Int {
+        guard !pages.isEmpty else { return 0 }
+        let clamped = max(0, min(pages.count - 1, page))
+        return pages[..<clamped].reduce(0) { $0 + $1.count }
+    }
+
+    /// Find the page that contains the given cumulative character offset.
+    private func findPage(containing offset: Int, in pages: [String]) -> Int {
+        guard !pages.isEmpty else { return 0 }
+        var cumulative = 0
+        for (i, page) in pages.enumerated() {
+            cumulative += page.count
+            if cumulative > offset { return i }
+        }
+        return pages.count - 1
     }
 
     /// Dispatch page rendering to the appropriate animation container
@@ -281,7 +364,7 @@ struct ReaderView: View {
     private func pageCurlContent(pages: [String], containerSize: CGSize) -> some View {
         let pageViews: [AnyView] = pages.indices.map { i in
             AnyView(
-                pageView(pages: pages, pageIndex: i, containerWidth: containerSize.width)
+                pageView(pages: pages, pageIndex: i, containerSize: containerSize)
                     .background(themeBackground)
             )
         }
@@ -297,7 +380,7 @@ struct ReaderView: View {
 
     /// Horizontal slide transition (the old default).
     private func slidePageContent(pages: [String], pageIndex: Int, containerSize: CGSize) -> some View {
-        pageView(pages: pages, pageIndex: pageIndex, containerWidth: containerSize.width)
+        pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
             .id(pageIndex)
             .transition(.asymmetric(
                 insertion: .move(edge: pageDirection == .forward ? .trailing : .leading)
@@ -321,7 +404,7 @@ struct ReaderView: View {
 
     /// Instant page change — no animation at all.
     private func noAnimationPageContent(pages: [String], pageIndex: Int, containerSize: CGSize) -> some View {
-        pageView(pages: pages, pageIndex: pageIndex, containerWidth: containerSize.width)
+        pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
             .overlay(tapZones(totalPages: pages.count))
             .gesture(
                 DragGesture(minimumDistance: 30)
@@ -335,20 +418,21 @@ struct ReaderView: View {
             )
     }
 
-    private func pageView(pages: [String], pageIndex: Int, containerWidth: CGFloat? = nil) -> some View {
+    private func pageView(pages: [String], pageIndex: Int, containerSize: CGSize) -> some View {
+        let margin = effectiveReaderMargin(for: containerSize)
         let pageText = pages[pageIndex]
         let effectiveColumnWidth = min(
             settings.readerColumnWidth,
-            (containerWidth ?? .infinity) - 2 * effectiveReaderMargin
+            containerSize.width - 2 * margin
         )
         return VStack(alignment: .leading, spacing: 0) {
             if pageIndex == 0 { chapterTitleHeader }
             pageTextBody(plain: pageText, pageIndex: pageIndex, pages: pages)
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, effectiveReaderMargin)
+        .padding(.horizontal, margin)
         .padding(.vertical, 24)
-        .frame(maxWidth: max(200, effectiveColumnWidth + 2 * effectiveReaderMargin), alignment: .leading)
+        .frame(maxWidth: max(200, effectiveColumnWidth + 2 * margin), alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         .clipped()
     }
@@ -628,6 +712,16 @@ struct ReaderView: View {
         }
     }
 
+}
+
+/// PreferenceKey used to propagate the reader container's CGSize from a
+/// background GeometryReader to the main body, so `effectiveReaderMargin`
+/// can react to orientation changes in both scrolling and paginated modes.
+private struct ContainerSizeKey: PreferenceKey {
+    static let defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
 }
 
 private struct ReaderColorSchemeModifier: ViewModifier {

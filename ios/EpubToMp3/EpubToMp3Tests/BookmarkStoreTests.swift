@@ -103,4 +103,39 @@ final class BookmarkStoreTests: XCTestCase {
         XCTAssertEqual(store.pageBookmarks(for: "b1").count, 1)
         XCTAssertEqual(store.highlights(for: "b1").count, 1)
     }
+
+    /// Verifies that corrupt data on disk does not get overwritten with an
+    /// empty array — the store must refuse to persist until it has
+    /// successfully decoded the stored bookmarks at least once.
+    func testCorruptDataNotOverwritten() {
+        let suite = "test.bookmarks.corrupt.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let key = "bookmarks.corrupt.test"
+
+        // 1. Write valid bookmarks via a normal store.
+        let good = BookmarkStore(defaults: defaults, storageKey: key)
+        good.addBookmark(bookId: "b1", chapterIndex: 1, chapterTitle: "Ch 1")
+        XCTAssertEqual(good.bookmarks.count, 1)
+
+        // 2. Corrupt the data on disk.
+        defaults.set(Data("{invalid json".utf8), forKey: key)
+
+        // 3. Open a new store — decode should fail, bookmarks empty.
+        let broken = BookmarkStore(defaults: defaults, storageKey: key)
+        XCTAssertTrue(broken.bookmarks.isEmpty, "Decode should fail → empty in-memory list")
+
+        // 4. Attempt a mutation — persist must be blocked so the corrupt
+        //    (but potentially recoverable) data is not overwritten.
+        broken.addBookmark(bookId: "b2", chapterIndex: 1, chapterTitle: "Ch 1")
+        // In-memory list grows, but disk should still hold the corrupt blob.
+        XCTAssertEqual(broken.bookmarks.count, 1) // in-memory has the new one
+
+        // 5. Verify the on-disk data is still the corrupt blob, NOT a
+        //    freshly encoded empty or single-element array.
+        let raw = defaults.data(forKey: key)!
+        let rawString = String(data: raw, encoding: .utf8)!
+        XCTAssertTrue(rawString.contains("{invalid json"),
+                      "Corrupt data must survive — persist should have been blocked")
+    }
 }

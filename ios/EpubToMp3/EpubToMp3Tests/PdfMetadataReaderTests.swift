@@ -18,7 +18,7 @@ final class PdfMetadataReaderTests: XCTestCase {
         XCTAssertEqual(payload.pageCount, 1)
     }
 
-    func testProducesCoverPNGForFirstPage() throws {
+    func testProducesCoverJPEGForFirstPage() throws {
         let url = try PdfFixture.createSinglePage(
             title: "Cover Test",
             author: "Author",
@@ -29,11 +29,11 @@ final class PdfMetadataReaderTests: XCTestCase {
         let payload = try PdfMetadataReader.readMetadata(from: url)
         // The cover should at minimum decode as a valid image. We
         // don't pin exact bytes — the platform renderer is free to
-        // emit slightly different PNGs across iOS releases.
+        // emit slightly different JPEGs across iOS releases.
         let cover = try XCTUnwrap(payload.cover)
-        XCTAssertGreaterThan(cover.count, 100, "cover PNG looks too small to be a real render")
-        // PNG magic header — first 4 bytes are always \x89 P N G.
-        XCTAssertEqual([UInt8](cover.prefix(4)), [0x89, 0x50, 0x4E, 0x47])
+        XCTAssertGreaterThan(cover.count, 100, "cover JPEG looks too small to be a real render")
+        // JPEG magic header — first 2 bytes are always \xFF \xD8.
+        XCTAssertEqual([UInt8](cover.prefix(2)), [0xFF, 0xD8])
     }
 
     func testMultiPagePageCount() throws {

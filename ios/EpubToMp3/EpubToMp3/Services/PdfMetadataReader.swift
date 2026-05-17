@@ -95,12 +95,12 @@ enum PdfMetadataReader {
             }
         }
 
-        // Render page 1 as a small PNG so the library tile has
-        // something to show. We cap the longest edge so a 24 MP book
-        // cover doesn't bloat UserDefaults; the JPEG-ish quality is
-        // good enough for a 200pt thumbnail.
+        // Render page 1 as a small JPEG thumbnail so the library tile
+        // has something to show. We cap the longest edge at 300pt so a
+        // 24 MP book cover doesn't bloat the shared App Group
+        // UserDefaults.
         if let firstPage = document.page(at: 0) {
-            payload.cover = renderCover(page: firstPage, maxEdge: 600)
+            payload.cover = renderCover(page: firstPage, maxEdge: 300)
         }
 
         return payload
@@ -119,7 +119,7 @@ enum PdfMetadataReader {
         return nil
     }
 
-    /// Render `page` into a PNG `Data`. Scales the page bounds down so
+    /// Render `page` into JPEG `Data`. Scales the page bounds down so
     /// the longest edge equals `maxEdge` (points). We keep the math
     /// platform-neutral; the rasterisation differs between UIKit and
     /// AppKit.
@@ -154,7 +154,7 @@ enum PdfMetadataReader {
             page.draw(with: .mediaBox, to: ctx.cgContext)
             ctx.cgContext.restoreGState()
         }
-        return image.pngData()
+        return image.jpegData(compressionQuality: 0.7)
         #else
         let image = NSImage(size: size, flipped: true) { rect in
             NSColor.white.setFill()
@@ -171,7 +171,7 @@ enum PdfMetadataReader {
         }
         guard let tiff = image.tiffRepresentation,
               let rep = NSBitmapImageRep(data: tiff) else { return nil }
-        return rep.representation(using: .png, properties: [:])
+        return rep.representation(using: .jpeg, properties: [.compressionFactor: 0.7])
         #endif
     }
 }
