@@ -13,6 +13,7 @@ permissions:
 jobs:
   ab-regression:
     runs-on: ubuntu-latest
+    if: github.actor != 'dependabot[bot]'
     permissions:
       contents: read
 
