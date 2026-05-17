@@ -333,15 +333,27 @@ struct BookOpenView: View {
 
     // MARK: - Embedded TTS path (iOS, no backend)
 
+    /// Maximum concurrent chapter synthesis tasks for the direct Edge path.
+    /// Each task opens its own WebSocket connections per sentence, so 3 is
+    /// a good balance between throughput and connection pressure.
+    private static let parallelChapterLimit = 3
+
     /// Drives in-process TTS via `PythonBridge.convertChapterStreaming`
     /// when no backend is available.  Synthesises the chapter at
     /// `chapterIndex` first (fast feedback), then continues with
-    /// subsequent chapters in order.
+    /// subsequent chapters in parallel (direct Edge, macOS) or sequentially
+    /// (Python path on iOS, which is GIL-serialized).
     ///
     /// Each MP3 segment is pushed to `globalPlayer.enqueueSegment` on the
     /// main actor — first audio lands within ~500 ms, satisfying HIG
-    /// time-to-first-byte. The per-chapter output MP3 is written to the
-    /// app's cache directory so subsequent opens reuse it.
+    /// time-to-first-byte.
+    ///
+    /// Optimization layers:
+    /// 1. Content-addressed disk cache — reopening a book is instant.
+    /// 2. First chapter processed alone for fast time-to-first-audio.
+    /// 3. macOS: remaining chapters synthesized 3-at-a-time via TaskGroup,
+    ///    with an ordering gate to ensure in-order enqueue.
+    /// 4. iOS: sequential (Python GIL constraint) but cache-first.
     private func bootstrapEmbedded(chapterIndex startIndex: Int) async {
         playerLog.debug("[AudioBootstrap] bootstrapEmbedded starting at chapter \(startIndex)")
 
@@ -403,6 +415,7 @@ struct BookOpenView: View {
         let cacheRoot = FileManager.default
             .urls(for: .cachesDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("epub2mp3-tts/\(book.id)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
 
         let voice: String = {
             let sample = chapters
@@ -430,137 +443,165 @@ struct BookOpenView: View {
         // Process from startIndex, then wrap to cover earlier chapters.
         let safeStart = max(0, min(startIndex, chapters.count - 1))
         let indices: [Int] = Array(safeStart..<chapters.count) + Array(0..<safeStart)
+
+        // Pre-filter work items and compute cache paths upfront.
+        struct ChapterWorkItem {
+            let arrayIndex: Int
+            let text: String
+            let title: String
+            let cacheFile: URL
+        }
+        var workItems: [ChapterWorkItem] = []
+        for idx in indices {
+            let chapter = chapters[idx]
+            let text = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard text.count >= 10 else {
+                playerLog.debug("[AudioBootstrap] skipping trash chapter \(idx) (\(text.count) chars)")
+                continue
+            }
+            let cacheFile = cacheRoot.appendingPathComponent("chapter_\(idx).mp3")
+            workItems.append(ChapterWorkItem(
+                arrayIndex: idx, text: text, title: chapter.displayTitle, cacheFile: cacheFile
+            ))
+        }
+
+        let totalChapters = chapters.count
         var chaptersDone = 0
-        // Bail out fast on systemic failure (e.g. Python module not found
-        // in the bundle): N consecutive identical errors means every
-        // chapter will hit the same wall — better to surface one banner
-        // than to spam the main actor with hundreds of error records,
-        // which froze the UI in the field.
         var consecutiveFailures = 0
         var lastFailureKey: String? = nil
         let maxConsecutiveFailures = 3
 
-        for chapterArrayIndex in indices {
+        // --- Phase 1: First chapter alone for fast time-to-first-audio ---
+        if let first = workItems.first {
+            let result = await self.synthesizeOneChapter(
+                arrayIndex: first.arrayIndex, text: first.text,
+                title: first.title, cacheFile: first.cacheFile,
+                voice: voice, cacheRoot: cacheRoot,
+                totalChapters: totalChapters, chaptersDone: chaptersDone
+            )
+            switch result {
+            case .success:
+                chaptersDone += 1
+                consecutiveFailures = 0
+                lastFailureKey = nil
+            case .failure(let key):
+                consecutiveFailures += 1
+                lastFailureKey = key
+            }
+        }
+
+        guard consecutiveFailures < maxConsecutiveFailures, !Task.isCancelled else {
+            await finishEmbeddedBootstrap(chaptersDone: chaptersDone, totalChapters: totalChapters)
+            return
+        }
+
+        // --- Phase 2: Remaining chapters ---
+        let remaining = Array(workItems.dropFirst())
+
+        #if os(iOS)
+        // Python path: GIL-serialized, process sequentially.
+        // Cache hits are still instant.
+        for work in remaining {
             if Task.isCancelled { break }
+            if consecutiveFailures >= maxConsecutiveFailures { break }
 
-            // Use the EbookFulltext chapter that corresponds to this index.
-            // EbookFulltext.chapters is 0-based in the array but the `index`
-            // property is 1-based (matches backend convention). We address by
-            // position in the array, not by `.index`.
-            let chapter = chapters[chapterArrayIndex]
-            let chapterText = chapter.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            // Skip trash chapters: anything below ~10 chars is residual
-            // navigation markup ("1", "I", a stray bullet) that the
-            // EPUB fallback parser couldn't strip but isn't worth a
-            // round-trip through Python TTS. The previous threshold
-            // of `isEmpty` let through "2-char chapters" which then
-            // bombarded the embedded interpreter with thousands of
-            // imports and crashed in `_PyObject_Malloc`.
-            guard chapterText.count >= 10 else {
-                playerLog.debug("[AudioBootstrap] skipping trash chapter \(chapterArrayIndex) (\(chapterText.count) chars)")
-                chaptersDone += 1
-                continue
-            }
-
-            // -- Audio segment cache: reuse previously-synthesised MP3 --
-            let cachedFile = cacheRoot.appendingPathComponent("chapter_\(chapterArrayIndex).mp3")
-            if let cachedData = try? Data(contentsOf: cachedFile), cachedData.count > 100 {
-                playerLog.debug("[AudioBootstrap] cache hit ch \(chapterArrayIndex) (\(cachedData.count) bytes)")
-                await MainActor.run { [weak globalPlayer] in
-                    globalPlayer?.enqueueSegment(
-                        data: cachedData,
-                        chapterIndex: chapterArrayIndex,
-                        segmentIndex: 0
-                    )
-                }
-                chaptersDone += 1
-                watchdog?.heartbeat()
-                continue
-            }
-
-            let totalChapters = chapters.count
-            await MainActor.run {
-                self.statusBanner = "Generating audio · \(chaptersDone)/\(totalChapters) ready"
-                self.globalPlayer.conversionStatus.setCurrentChapter(
-                    index: chapterArrayIndex,
-                    name: chapter.displayTitle
-                )
-                self.globalPlayer.conversionStatus.record(
-                    .info,
-                    "Starting chapter \(chapterArrayIndex + 1)/\(totalChapters): \(chapter.displayTitle)"
-                )
-            }
-            playerLog.debug("[AudioBootstrap] synthesising chapter \(chapterArrayIndex) (\(chapterText.count) chars)")
-
-            do {
-                #if os(iOS)
-                let resultURL = try await PythonBridge.shared.convertChapterStreaming(
-                    text: chapterText,
-                    voice: voice,
-                    outputDir: cacheRoot,
-                    chapterIndex: chapterArrayIndex
-                ) { [weak globalPlayer] segData, chapIdx, segIdx in
-                    playerLog.debug("[AudioBootstrap] segment \(segIdx) ch=\(chapIdx) bytes=\(segData.count)")
-                    globalPlayer?.enqueueSegment(
-                        data: segData,
-                        chapterIndex: chapIdx,
-                        segmentIndex: segIdx
-                    )
-                    watchdog?.heartbeat()
-                }
-                // Persist under deterministic name for future cache hits.
-                try? FileManager.default.removeItem(at: cachedFile)
-                try? FileManager.default.copyItem(at: resultURL, to: cachedFile)
+            let result = await self.synthesizeOneChapter(
+                arrayIndex: work.arrayIndex, text: work.text,
+                title: work.title, cacheFile: work.cacheFile,
+                voice: voice, cacheRoot: cacheRoot,
+                totalChapters: totalChapters, chaptersDone: chaptersDone
+            )
+            switch result {
+            case .success:
                 chaptersDone += 1
                 consecutiveFailures = 0
                 lastFailureKey = nil
-                watchdog?.heartbeat()
-                playerLog.debug("[AudioBootstrap] chapter \(chapterArrayIndex) complete")
-                #else
-                try await Self.synthesizeDirectEdge(
-                    text: chapterText,
-                    voice: voice,
-                    cacheRoot: cacheRoot,
-                    chapterIndex: chapterArrayIndex,
-                    globalPlayer: globalPlayer,
-                    watchdog: watchdog
-                )
-                // Persist under deterministic name for future cache hits.
-                let directFile = cacheRoot.appendingPathComponent("direct_ch\(chapterArrayIndex).mp3")
-                if FileManager.default.fileExists(atPath: directFile.path) {
-                    try? FileManager.default.removeItem(at: cachedFile)
-                    try? FileManager.default.copyItem(at: directFile, to: cachedFile)
+            case .failure(let key):
+                if key == lastFailureKey {
+                    consecutiveFailures += 1
+                } else {
+                    consecutiveFailures = 1
+                    lastFailureKey = key
                 }
-                chaptersDone += 1
-                consecutiveFailures = 0
-                lastFailureKey = nil
-                watchdog?.heartbeat()
-                #endif
-            } catch {
-                playerLog.error("[AudioBootstrap] TTS failed ch \(chapterArrayIndex): \(error.localizedDescription) — trying direct EdgeTTS")
-                do {
-                    try await Self.synthesizeDirectEdge(
-                        text: chapterText,
-                        voice: voice,
-                        cacheRoot: cacheRoot,
-                        chapterIndex: chapterArrayIndex,
-                        globalPlayer: globalPlayer,
-                        watchdog: watchdog
+                await MainActor.run {
+                    self.globalPlayer.recordConversionError(
+                        "Chapter \(work.arrayIndex + 1) failed: \(key)"
                     )
-                    // Persist under deterministic name for future cache hits.
-                    let directFile = cacheRoot.appendingPathComponent("direct_ch\(chapterArrayIndex).mp3")
-                    if FileManager.default.fileExists(atPath: directFile.path) {
-                        try? FileManager.default.removeItem(at: cachedFile)
-                        try? FileManager.default.copyItem(at: directFile, to: cachedFile)
+                }
+            }
+        }
+        #else
+        // macOS direct Edge path: synthesize up to 3 chapters concurrently.
+        // Results are collected and enqueued in original order so the
+        // AVQueuePlayer receives chapters sequentially.
+        let batchSize = Self.parallelChapterLimit
+        var batchStart = 0
+
+        while batchStart < remaining.count, !Task.isCancelled,
+              consecutiveFailures < maxConsecutiveFailures {
+            let batchEnd = min(batchStart + batchSize, remaining.count)
+            let batch = Array(remaining[batchStart..<batchEnd])
+
+            // Launch parallel synthesis for this batch.
+            let results: [(ChapterWorkItem, Result<Data, Error>)] = await withTaskGroup(
+                of: (ChapterWorkItem, Result<Data, Error>).self,
+                returning: [(ChapterWorkItem, Result<Data, Error>)].self
+            ) { group in
+                for work in batch {
+                    group.addTask {
+                        // Cache hit — instant
+                        if let cached = Self.loadCachedChapterData(at: work.cacheFile) {
+                            return (work, .success(cached))
+                        }
+                        // Synthesize via direct Edge (Swift WebSocket, no Python)
+                        do {
+                            let audio = try await Self.synthesizeDirectEdgeRaw(
+                                text: work.text, voice: voice,
+                                chapterIndex: work.arrayIndex
+                            )
+                            return (work, .success(audio))
+                        } catch {
+                            return (work, .failure(error))
+                        }
                     }
+                }
+                var collected: [(ChapterWorkItem, Result<Data, Error>)] = []
+                for await item in group {
+                    collected.append(item)
+                }
+                return collected
+            }
+
+            // Sort by original chapter order and enqueue sequentially.
+            let sorted = results.sorted { $0.0.arrayIndex < $1.0.arrayIndex }
+            for (work, result) in sorted {
+                if Task.isCancelled { break }
+                switch result {
+                case .success(let audio):
+                    await MainActor.run {
+                        self.statusBanner = "Generating audio · \(chaptersDone)/\(totalChapters) ready"
+                        self.globalPlayer.conversionStatus.setCurrentChapter(
+                            index: work.arrayIndex, name: work.title
+                        )
+                    }
+                    await MainActor.run {
+                        self.globalPlayer.enqueueSegment(
+                            data: audio,
+                            chapterIndex: work.arrayIndex,
+                            segmentIndex: 0
+                        )
+                    }
+                    // Persist to disk cache for next open
+                    try? audio.write(to: work.cacheFile)
                     chaptersDone += 1
                     consecutiveFailures = 0
                     lastFailureKey = nil
                     watchdog?.heartbeat()
-                    playerLog.debug("[AudioBootstrap] chapter \(chapterArrayIndex) complete (direct)")
-                } catch {
+                    playerLog.debug("[AudioBootstrap] chapter \(work.arrayIndex) complete (parallel)")
+
+                case .failure(let error):
                     let message = error.localizedDescription
-                    playerLog.error("[AudioBootstrap] chapter \(chapterArrayIndex) failed: \(message)")
+                    playerLog.error("[AudioBootstrap] chapter \(work.arrayIndex) failed: \(message)")
                     let key = message.split(separator: "\n").first.map(String.init) ?? message
                     if key == lastFailureKey {
                         consecutiveFailures += 1
@@ -570,20 +611,132 @@ struct BookOpenView: View {
                     }
                     await MainActor.run {
                         self.globalPlayer.recordConversionError(
-                            "Chapter \(chapterArrayIndex + 1) failed: \(message)"
+                            "Chapter \(work.arrayIndex + 1) failed: \(message)"
                         )
-                    }
-                    if consecutiveFailures >= maxConsecutiveFailures {
-                        playerLog.error("[AudioBootstrap] aborting after \(consecutiveFailures) consecutive identical failures: \(key)")
-                        await MainActor.run {
-                            self.statusBanner = "Audio generation failed: \(key)"
-                        }
-                        break
                     }
                 }
             }
+
+            if consecutiveFailures >= maxConsecutiveFailures {
+                playerLog.error("[AudioBootstrap] aborting after \(consecutiveFailures) consecutive identical failures")
+                await MainActor.run {
+                    self.statusBanner = "Audio generation failed: \(lastFailureKey ?? "unknown")"
+                }
+                break
+            }
+            batchStart = batchEnd
+        }
+        #endif
+
+        await finishEmbeddedBootstrap(chaptersDone: chaptersDone, totalChapters: totalChapters)
+    }
+
+    // MARK: - Single chapter synthesis (cache-aware)
+
+    private enum ChapterSynthResult {
+        case success
+        case failure(String)
+    }
+
+    /// Synthesize one chapter with cache-hit fast path. Used by both
+    /// Phase 1 (first chapter alone) and the iOS sequential Phase 2.
+    private func synthesizeOneChapter(
+        arrayIndex: Int, text: String, title: String, cacheFile: URL,
+        voice: String,
+        cacheRoot: URL,
+        totalChapters: Int,
+        chaptersDone: Int
+    ) async -> ChapterSynthResult {
+        guard !Task.isCancelled else { return .failure("cancelled") }
+
+        await MainActor.run {
+            self.statusBanner = "Generating audio · \(chaptersDone)/\(totalChapters) ready"
+            self.globalPlayer.conversionStatus.setCurrentChapter(
+                index: arrayIndex, name: title
+            )
+            self.globalPlayer.conversionStatus.record(
+                .info,
+                "Starting chapter \(arrayIndex + 1)/\(totalChapters): \(title)"
+            )
         }
 
+        // --- Cache hit: enqueue from disk instantly ---
+        if let cached = Self.loadCachedChapterData(at: cacheFile) {
+            playerLog.debug("[AudioBootstrap] cache hit ch \(arrayIndex) (\(cached.count) bytes)")
+            await MainActor.run {
+                self.globalPlayer.enqueueSegment(
+                    data: cached,
+                    chapterIndex: arrayIndex,
+                    segmentIndex: 0
+                )
+            }
+            watchdog?.heartbeat()
+            return .success
+        }
+
+        playerLog.debug("[AudioBootstrap] synthesising chapter \(arrayIndex) (\(text.count) chars)")
+
+        do {
+            #if os(iOS)
+            let resultURL = try await PythonBridge.shared.convertChapterStreaming(
+                text: text,
+                voice: voice,
+                outputDir: cacheRoot,
+                chapterIndex: arrayIndex
+            ) { [weak globalPlayer] segData, chapIdx, segIdx in
+                playerLog.debug("[AudioBootstrap] segment \(segIdx) ch=\(chapIdx) bytes=\(segData.count)")
+                globalPlayer?.enqueueSegment(
+                    data: segData,
+                    chapterIndex: chapIdx,
+                    segmentIndex: segIdx
+                )
+                self.watchdog?.heartbeat()
+            }
+            // Persist under deterministic name for future cache hits.
+            try? FileManager.default.removeItem(at: cacheFile)
+            try? FileManager.default.copyItem(at: resultURL, to: cacheFile)
+            watchdog?.heartbeat()
+            playerLog.debug("[AudioBootstrap] chapter \(arrayIndex) complete")
+            return .success
+            #else
+            try await Self.synthesizeDirectEdge(
+                text: text,
+                voice: voice,
+                cacheRoot: cacheRoot,
+                cacheFile: cacheFile,
+                chapterIndex: arrayIndex,
+                globalPlayer: globalPlayer,
+                watchdog: watchdog
+            )
+            watchdog?.heartbeat()
+            playerLog.debug("[AudioBootstrap] chapter \(arrayIndex) complete")
+            return .success
+            #endif
+        } catch {
+            playerLog.error("[AudioBootstrap] TTS failed ch \(arrayIndex): \(error.localizedDescription) — trying direct EdgeTTS")
+            do {
+                try await Self.synthesizeDirectEdge(
+                    text: text,
+                    voice: voice,
+                    cacheRoot: cacheRoot,
+                    cacheFile: cacheFile,
+                    chapterIndex: arrayIndex,
+                    globalPlayer: globalPlayer,
+                    watchdog: watchdog
+                )
+                watchdog?.heartbeat()
+                playerLog.debug("[AudioBootstrap] chapter \(arrayIndex) complete (direct fallback)")
+                return .success
+            } catch {
+                let message = error.localizedDescription
+                playerLog.error("[AudioBootstrap] chapter \(arrayIndex) failed: \(message)")
+                let key = message.split(separator: "\n").first.map(String.init) ?? message
+                return .failure(key)
+            }
+        }
+    }
+
+    private func finishEmbeddedBootstrap(chaptersDone: Int, totalChapters: Int) async {
         await MainActor.run {
             self.globalPlayer.isConverting = false
             self.globalPlayer.conversionStatus.endSession()
@@ -594,15 +747,52 @@ struct BookOpenView: View {
             }
             self.watchdog?.stop()
         }
-        playerLog.debug("[AudioBootstrap] bootstrapEmbedded finished, \(chaptersDone)/\(chapters.count) chapters done")
+        playerLog.debug("[AudioBootstrap] bootstrapEmbedded finished, \(chaptersDone)/\(totalChapters) chapters done")
     }
 
-    // MARK: - Direct EdgeTTS fallback (no Python)
+    // MARK: - Chapter cache utilities
 
+    /// Load a cached chapter MP3 from disk. Returns nil if missing or too small.
+    /// Nonisolated so it can be called from TaskGroup child tasks.
+    private nonisolated static func loadCachedChapterData(at url: URL) -> Data? {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url),
+              data.count > 100 else { return nil }
+        return data
+    }
+
+    // MARK: - Direct EdgeTTS (no Python)
+
+    /// Synthesize a chapter via direct Edge WebSocket, returning raw MP3
+    /// bytes without enqueuing. Used by the parallel batch path on macOS.
+    /// Nonisolated so it can run concurrently in TaskGroup children.
+    private nonisolated static func synthesizeDirectEdgeRaw(
+        text: String, voice: String, chapterIndex: Int
+    ) async throws -> Data {
+        let normalized = EbookFulltext.Chapter.collapseHardWraps(text)
+        let sentences = splitForTTS(normalized, chapterIndex: chapterIndex)
+        guard !sentences.isEmpty else { throw PythonBridgeError.emptyResult }
+
+        var totalAudio = Data()
+        for (segIdx, sentence) in sentences.enumerated() {
+            let bridge = EdgeTTSBridge()
+            let timeout = max(15.0, Double(sentence.text.count) / 100.0)
+            let mp3 = try await withTimeout(seconds: timeout, label: "Edge sentence \(segIdx)") {
+                try await bridge.synthesize(text: sentence.text, voice: voice)
+            }
+            totalAudio.append(mp3)
+        }
+        guard !totalAudio.isEmpty else { throw PythonBridgeError.emptyResult }
+        return totalAudio
+    }
+
+    /// Sequential direct Edge synthesis with per-sentence streaming to the
+    /// player. Used for single-chapter paths and as iOS fallback.
     private static func synthesizeDirectEdge(
         text: String,
         voice: String,
         cacheRoot: URL,
+        cacheFile: URL,
         chapterIndex: Int,
         globalPlayer: AudioPlayer,
         watchdog: ConversionWatchdog?
@@ -637,15 +827,15 @@ struct BookOpenView: View {
         if totalAudio.isEmpty {
             throw PythonBridgeError.emptyResult
         }
-        let outURL = cacheRoot.appendingPathComponent("direct_ch\(chapterIndex).mp3")
+        // Write to content-addressed cache file for instant reuse.
         try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
-        try totalAudio.write(to: outURL)
+        try totalAudio.write(to: cacheFile)
     }
 
     /// Split text into TTS-friendly sentences. Batches tiny fragments
     /// (< 40 chars) with the next sentence to avoid excessive WebSocket
     /// connections while keeping sentence-level highlight granularity.
-    private static func splitForTTS(_ text: String, chapterIndex: Int) -> [SentenceSpan] {
+    private nonisolated static func splitForTTS(_ text: String, chapterIndex: Int) -> [SentenceSpan] {
         let chapter = EbookFulltext.Chapter(
             index: chapterIndex, name: nil, text: text,
             html: nil, css: nil, charCount: text.count, segments: nil
