@@ -191,6 +191,7 @@ struct JobDetailView: View {
     }
 }
 
+#if DEBUG
 #Preview("JobDetail — empty state") {
     CompatNavigationStack {
         JobDetailView(jobId: "preview-job-id")
@@ -198,3 +199,4 @@ struct JobDetailView: View {
     .environmentObject(AppSettings())
     .environmentObject(LibraryStore.previewEmpty)
 }
+#endif

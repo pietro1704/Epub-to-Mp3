@@ -562,6 +562,17 @@ struct ReaderView: View {
 
 }
 
+private struct ReaderColorSchemeModifier: ViewModifier {
+    let theme: ReaderTheme
+    func body(content: Content) -> some View {
+        if let scheme = theme.preferredColorScheme {
+            content.environment(\.colorScheme, scheme)
+        } else {
+            content
+        }
+    }
+}
+
 #if DEBUG
 #Preview("Reader — light scrolling") {
     ReaderView(
@@ -626,16 +637,6 @@ struct ReaderView: View {
     .environmentObject(settings)
 }
 
-private struct ReaderColorSchemeModifier: ViewModifier {
-    let theme: ReaderTheme
-    func body(content: Content) -> some View {
-        if let scheme = theme.preferredColorScheme {
-            content.environment(\.colorScheme, scheme)
-        } else {
-            content
-        }
-    }
-}
 
 #Preview("Reader — Black (OLED)") {
     let settings = AppSettings()
