@@ -262,11 +262,13 @@ struct BookOpenView: View {
             }
         }
 
-        // 4. Reader is on screen. Audio bootstrap is *not* triggered
-        // automatically — the user opts in by tapping a play button,
-        // which calls `startAudioBootstrap()`. This keeps the reading
-        // experience instant and lets users browse the EPUB without
-        // ever burning TTS quota.
+        // 4. Reader is on screen. Kick off audio generation in the
+        // background immediately so audio is buffered by the time the
+        // user taps play. The reader is already visible; the banner
+        // shows "Generating audio…" while synthesis runs.
+        let chapterKey = self.fulltext?.jobId ?? book.id
+        let savedChapter = settings.savedChapterIndex(for: chapterKey)
+        startAudioBootstrap(startChapterIndex: max(0, savedChapter))
     }
 
     /// Owns the audio bootstrap — reattach to an existing job, or
