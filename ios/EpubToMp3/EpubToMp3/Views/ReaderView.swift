@@ -494,7 +494,7 @@ struct ReaderView: View {
             Text(chapter.displayTitle)
                 .font(headingFont)
                 .fontWeight(.semibold)
-            if let count = chapter.charCount {
+            if settings.readerLayout == .scrolling, let count = chapter.charCount {
                 Text(L10n.string("reader.characters", count))
                     .font(.caption)
                     .foregroundStyle(.secondary)

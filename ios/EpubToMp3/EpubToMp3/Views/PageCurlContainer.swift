@@ -194,8 +194,7 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             _ gestureRecognizer: UIGestureRecognizer,
             shouldRequireFailureOf otherGestureRecognizer: UIGestureRecognizer
         ) -> Bool {
-            // Our tap should wait for the page curl pan to fail
-            otherGestureRecognizer is UIPanGestureRecognizer
+            false
         }
     }
 }
