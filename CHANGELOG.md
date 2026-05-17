@@ -13,6 +13,14 @@
   into `dist/`) and `mise run mac:build` (sidecar + headless xcodebuild
   producing the SwiftUI `.app`).
 
+## [0.5.3] — 2026-05-17
+
+### iOS
+
+- Strip EPUB fragment-ID artifacts (c34, cJ, c4H7) from chapter text display
+- Denser pagination: paragraph gap cost halved → ~30% more text per page
+- Reader inline player expands as fullScreenCover (consistent with Library/Settings)
+
 ## [0.5.2] — 2026-05-17
 
 ### iOS
