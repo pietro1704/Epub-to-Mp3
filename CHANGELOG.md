@@ -13,6 +13,69 @@
   into `dist/`) and `mise run mac:build` (sidecar + headless xcodebuild
   producing the SwiftUI `.app`).
 
+## [0.5.0] — 2026-05-17
+
+### iOS / SwiftUI
+
+- **Paginated reader** — rewritten `Paginator` splits by sentence/paragraph boundaries with weighted char-count for gap density; tap zones, page-turn animation, container-width frame; advances seamlessly across chapter boundaries.
+- **EPUB font rewriting** — embedded EPUB fonts registered and active in both scroll and paginated modes; HTML `AttributedString` rendering in scroll mode preserves full markup.
+- **Reader themes** — Default/Auto added (follows system appearance); 7 themes total; app-wide `colorScheme` propagates correctly to toolbar, header, and attributed text.
+- **NLLanguageRecognizer voice selection** — TTS voice now chosen by on-device language inference rather than user-set locale; fixes pt-BR chapters narrated in English.
+- **Parallel Edge TTS** — 6 concurrent `URLSessionWebSocketTask` WebSockets for chapter synthesis; sentence-level streaming to `AVQueuePlayer` without playback restart.
+- **Audio disk cache** — synthesised segments persisted to disk; auto-prebuffer starts when a book opens so audio is ready before the user taps play.
+- **Full player controls restored** — expandable sheet (Music/Spotify pattern), lock-screen / Now Playing / Control Center wired via `MPMediaItemArtwork`; scrubber, sleep timer, rate cycle, skip ±15 s, AirPlay picker.
+- **Mini player bar** — persistent bar above tab bar (HIG Podcasts pattern); shows chapter name from `chapterProgress`; speed and sleep controls inline; no duplicate bars.
+- **Chapter list in player** — chapter navigation accessible from the player sheet.
+- **App Intents / Siri** — "Resume Reading" and "Open Book" intents registered; AppShortcut phrases guarded for macOS phrase availability.
+- **WidgetKit Continue Reading widget** — play/pause and skip-30 s via `AppIntent` trampoline.
+- **Deep-link scheme + intent trampoline** — `epub2mp3://` URLs open books and trigger playback from widgets and Siri.
+- **Share Extension** — receive EPUBs from Files, Mail, and other apps; App Group container shared with main app.
+- **PDF support** — import, parse metadata + text, read with `PDFView`.
+- **Privacy manifest + export compliance** — App Store submission ready.
+- **CloudKit sync scaffold** — engine and Settings section stubbed for future iCloud sync.
+- **Bookmarks & highlights, tags & collections, search** — library and reader search; collections and tags for organisation.
+- **Localization** — full en / pt-BR / es string table; `LocalizedStringKey` throughout; download manager strings included.
+- **Accessibility** — WCAG 7:1 contrast per theme; Dynamic Type via HIG; focus ring removed; audit pass across all views.
+- **macOS build** — FlowLayout and widget platform filter guarded by `@available`; AppShortcut phrases behind macOS availability check; macOS slice grafted into `Python.xcframework`; `EpubFallbackParser` fallback when `MacEpubParser` fails; collapse detail column to zero width in non-library modes; NavigationSplitView reduced from 3 to 2 columns.
+- **Embedded Python** — `PythonKit` pinned to a single kernel thread; C-extension and stdlib imports deferred to avoid iOS embed crashes; circuit breaker + offload to background actor; DOA sidecar detected before first HTTP request; launch speed improved via preload on bootstrap thread.
+- **macOS sidecar** — child-death detection, auto-restart rate-limited to prevent respawn loops.
+- **Tests** — snapshot regression suite; embed / bridge / offloading / vendor-drift / lazy-TTS tests; localization string tests; download manager test harness.
+
+### Flutter
+
+- **Library-first architecture** — no backend dependency for reading; local on-device TTS via Chaquopy (Android).
+- **Full player controls** — mirrored iOS transport: cover art, speed, sleep timer, chapter list, mini bar above nav rail.
+- **Word-boundary paginator** — Dart port of iOS sentence/paragraph paginator; `Paginator` unit tests cover edge cases.
+- **Reader tab + book open** — opens book on tap; reader search; bottom nav parity with iOS.
+- **i18n parity** — full `AppLocalizations` string table matching iOS (en / pt-BR / es); localized Save string; TOC drawer enhanced.
+- **M3 Settings screen** — Material 3 settings with library sort, badges, Android parity.
+- **Backend SSE streaming** — upload → convert → stream → playback flow wired; segment append, download error events, hash streaming.
+- **Bookmarks, tags, search, accessibility, empty states** — feature parity with iOS batch `de7c372`.
+- **Theme auto mode** — follows system theme; deprecated `withOpacity` / `Color.value` APIs replaced.
+- **EPUB metadata reader** — local EPUB import for library.
+- **Resume persistence** — reading position persisted; download button; cover on player screen.
+- **Chaquopy Android embed** — Python 3.13 via mise; `python_app` bootstrap into `flutter_app/assets` on CI.
+- **Tests** — UI/integration tests, SOLID DI for `AudioPlayer`, `Paginator` unit tests, chapter-index mapping, `DownloadEvent` tests.
+
+### Backend / Server
+
+- **`<title>` tag stripped from EPUB XHTML** — prevents filename artifacts from leaking into chapter text.
+- **`torch` / `torchaudio` made optional** — import guarded so the server starts without a GPU stack installed.
+- **SHA-256 in chapter manifest** — `feat(server)`: `sha256` field emitted in chapter manifest and outputs for client-side verification.
+- **`prepare_chunks` endpoint** — new server endpoint for iOS sentence-level synthesis.
+- **Kokoro, Coqui, Spark, Tauri removed** — codebase simplified to Edge-TTS + Piper only; `desktop/` Rust crate dropped.
+- **English-only logs** — remaining Portuguese log strings in `HealthMonitor` translated.
+
+### CI / Tooling
+
+- **CodeQL cleaned** — rust / ruby / java / swift language matrices removed; only python + javascript/typescript now analysed.
+- **AB-regression skips Dependabot PRs** — avoids false failures on dependency bumps.
+- **Auto-merge enabled** — Dependabot minor/patch PRs auto-merged after CI green.
+- **`actions/setup-python` bumped to v6.**
+- **Branch cleanup** — stale feature branches pruned; `flutter_app/macos/` scaffold removed (Apple platforms owned by SwiftUI).
+- **AUR workflow** — skips publish when `AUR_SSH_KEY` secret is missing (safe on forks).
+- **`BATCH_LIMIT` env var** — caps books per batch run in `scripts/`.
+
 ## [0.4.4] — 2026-05-10
 
 ### Scope correction
