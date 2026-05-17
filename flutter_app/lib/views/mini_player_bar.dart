@@ -127,6 +127,13 @@ class MiniPlayerBar extends ConsumerWidget {
                     ),
                   ),
 
+                  // Skip -15s
+                  IconButton(
+                    icon: const Icon(Icons.replay_10, size: 24),
+                    onPressed: () => player.skipBackward(seconds: 15),
+                    tooltip: 'Skip back 15 seconds',
+                  ),
+
                   // Play/pause
                   StreamBuilder<bool>(
                     stream: player.playing,

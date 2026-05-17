@@ -39,6 +39,7 @@ struct ReaderSettingsSheet: View {
                                 .frame(width: 44, height: 44)
                         }
                         .disabled(settings.readerFontSize <= 0)
+                        .accessibilityLabel("Decrease font size")
                         Text("\(Int(settings.readerPointSize))pt")
                             .monospacedDigit()
                             .frame(width: 50)
@@ -49,6 +50,7 @@ struct ReaderSettingsSheet: View {
                                 .frame(width: 44, height: 44)
                         }
                         .disabled(settings.readerFontSize >= 4)
+                        .accessibilityLabel("Increase font size")
                     }
                 }
 
@@ -114,6 +116,8 @@ struct ReaderSettingsSheet: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(theme.displayName)
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func themePreviewColor(_ theme: ReaderTheme) -> Color {

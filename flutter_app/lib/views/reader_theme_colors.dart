@@ -1,10 +1,26 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import '../models/app_settings.dart';
 
 class ReaderThemeColors {
-  static Color background(ReaderTheme theme, {CustomReaderColors? custom}) {
-    switch (theme) {
+  /// Resolve `.auto` to `.light` or `.dark` based on platform brightness.
+  /// Accepts an optional [platformBrightness]; when null, queries the
+  /// scheduler binding (works outside of widget tree).
+  static ReaderTheme resolveAuto(ReaderTheme theme, {Brightness? platformBrightness}) {
+    if (theme != ReaderTheme.auto) return theme;
+    final brightness = platformBrightness ??
+        SchedulerBinding.instance.platformDispatcher.platformBrightness;
+    return brightness == Brightness.dark ? ReaderTheme.dark : ReaderTheme.light;
+  }
+
+  static Color background(ReaderTheme theme,
+      {CustomReaderColors? custom, Brightness? platformBrightness}) {
+    final resolved = resolveAuto(theme, platformBrightness: platformBrightness);
+    switch (resolved) {
+      case ReaderTheme.auto:
+        // Already resolved above; fallback to light.
+        return Colors.white;
       case ReaderTheme.light:
         return Colors.white;
       case ReaderTheme.sepia:
@@ -28,8 +44,12 @@ class ReaderThemeColors {
     }
   }
 
-  static Color foreground(ReaderTheme theme, {CustomReaderColors? custom}) {
-    switch (theme) {
+  static Color foreground(ReaderTheme theme,
+      {CustomReaderColors? custom, Brightness? platformBrightness}) {
+    final resolved = resolveAuto(theme, platformBrightness: platformBrightness);
+    switch (resolved) {
+      case ReaderTheme.auto:
+        return Colors.black;
       case ReaderTheme.light:
         return Colors.black;
       case ReaderTheme.sepia:
@@ -53,8 +73,11 @@ class ReaderThemeColors {
     }
   }
 
-  static Color previewColor(ReaderTheme theme) {
-    switch (theme) {
+  static Color previewColor(ReaderTheme theme, {Brightness? platformBrightness}) {
+    final resolved = resolveAuto(theme, platformBrightness: platformBrightness);
+    switch (resolved) {
+      case ReaderTheme.auto:
+        return Colors.white;
       case ReaderTheme.light:
         return Colors.white;
       case ReaderTheme.sepia:
@@ -72,8 +95,10 @@ class ReaderThemeColors {
     }
   }
 
-  static Brightness brightness(ReaderTheme theme) {
-    switch (theme) {
+  static Brightness brightness(ReaderTheme theme, {Brightness? platformBrightness}) {
+    final resolved = resolveAuto(theme, platformBrightness: platformBrightness);
+    switch (resolved) {
+      case ReaderTheme.auto:
       case ReaderTheme.light:
       case ReaderTheme.sepia:
       case ReaderTheme.parchment:

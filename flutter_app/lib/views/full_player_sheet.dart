@@ -274,6 +274,31 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // Previous chapter
+            Semantics(
+              label: 'Previous chapter',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.skip_previous_rounded),
+                iconSize: 32,
+                onPressed: widget.player.previousChapter,
+                tooltip: 'Previous chapter',
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Skip -15s
+            Semantics(
+              label: 'Skip back 15 seconds',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.replay_10),
+                iconSize: 32,
+                onPressed: () => widget.player.skipBackward(seconds: 15),
+                tooltip: 'Skip back 15s',
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Play/pause
             Semantics(
               label: isPlaying
                   ? (t?.pause ?? 'Pause')
@@ -287,15 +312,28 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                 onPressed: widget.player.togglePlayPause,
               ),
             ),
-            const SizedBox(width: 24),
+            const SizedBox(width: 12),
+            // Skip +15s
             Semantics(
-              label: 'Skip forward 30 seconds',
+              label: 'Skip forward 15 seconds',
               button: true,
               child: IconButton(
-                icon: const Icon(Icons.forward_30),
+                icon: const Icon(Icons.forward_10),
                 iconSize: 32,
-                onPressed: () => widget.player.skipForward(seconds: 30),
-                tooltip: 'Skip forward 30s',
+                onPressed: () => widget.player.skipForward(seconds: 15),
+                tooltip: 'Skip forward 15s',
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Next chapter
+            Semantics(
+              label: 'Next chapter',
+              button: true,
+              child: IconButton(
+                icon: const Icon(Icons.skip_next_rounded),
+                iconSize: 32,
+                onPressed: widget.player.nextChapter,
+                tooltip: 'Next chapter',
               ),
             ),
           ],

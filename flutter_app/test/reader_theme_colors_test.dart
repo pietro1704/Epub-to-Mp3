@@ -5,6 +5,7 @@ import 'package:flutter_app/models/app_settings.dart';
 import 'package:flutter_app/views/reader_theme_colors.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   group('ReaderThemeColors', () {
     test('light theme has white background and black foreground', () {
       final bg = ReaderThemeColors.background(ReaderTheme.light);
@@ -50,6 +51,19 @@ void main() {
       expect(ReaderThemeColors.brightness(ReaderTheme.paper), Brightness.light);
       expect(ReaderThemeColors.brightness(ReaderTheme.dark), Brightness.dark);
       expect(ReaderThemeColors.brightness(ReaderTheme.black), Brightness.dark);
+    });
+
+    test('auto theme resolves to light in light mode', () {
+      final bg = ReaderThemeColors.background(ReaderTheme.auto,
+          platformBrightness: Brightness.light);
+      expect(bg, Colors.white);
+    });
+
+    test('auto theme resolves to dark in dark mode', () {
+      final bg = ReaderThemeColors.background(ReaderTheme.auto,
+          platformBrightness: Brightness.dark);
+      expect(bg.toARGB32(),
+          const Color.fromRGBO(0x1C, 0x1C, 0x1E, 1).toARGB32());
     });
 
     test('all non-custom themes produce valid previewColor', () {

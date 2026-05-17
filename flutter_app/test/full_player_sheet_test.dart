@@ -46,7 +46,7 @@ void main() {
       expect(find.text('Test Author'), findsOneWidget);
       expect(find.text('Chapter 1'), findsOneWidget);
       expect(find.byIcon(Icons.headphones), findsOneWidget);
-      expect(find.byIcon(Icons.forward_30), findsOneWidget);
+      expect(find.byIcon(Icons.forward_10), findsOneWidget);
       expect(find.text('1.0x'), findsOneWidget);
       expect(find.text('Sleep'), findsOneWidget);
       player.dispose();

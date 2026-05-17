@@ -214,6 +214,8 @@ struct LibraryView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("All books")
+                    .accessibilityAddTraits(selectedTag == nil ? .isSelected : [])
                     ForEach(tags, id: \.self) { tag in
                         Button {
                             selectedTag = (selectedTag == tag) ? nil : tag
@@ -234,6 +236,8 @@ struct LibraryView: View {
                             )
                         }
                         .buttonStyle(.plain)
+                        .accessibilityLabel("Tag: \(tag)")
+                        .accessibilityAddTraits(selectedTag == tag ? .isSelected : [])
                     }
                 }
                 .padding(.horizontal, 20)
@@ -347,6 +351,7 @@ struct BookTile: View {
             }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(book.resolvedTitle), \(book.author ?? "")")
         .accessibilityIdentifier("library.bookTile.\(book.id)")
     }
 

@@ -352,14 +352,20 @@ struct ReaderView: View {
                 .contentShape(Rectangle())
                 .onTapGesture { retreatPage() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Previous page")
+                .accessibilityAddTraits(.isButton)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { onCenterTap?() }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Toggle controls")
+                .accessibilityAddTraits(.isButton)
             Color.clear
                 .contentShape(Rectangle())
                 .onTapGesture { advancePage(totalPages: totalPages) }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .accessibilityLabel("Next page")
+                .accessibilityAddTraits(.isButton)
         }
         .frame(maxHeight: .infinity)
     }
@@ -444,6 +450,7 @@ struct ReaderView: View {
             )
             .contentShape(Rectangle())
             .onTapGesture { onJumpToSentence?(span) }
+            .accessibilityHint(onJumpToSentence != nil ? "Double tap to seek audio to this sentence" : "")
     }
 
     @ViewBuilder

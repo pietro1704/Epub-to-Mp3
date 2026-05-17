@@ -41,11 +41,12 @@ extension ReaderFontFamilyX on ReaderFontFamily {
       .firstWhere((e) => e.rawValue == s, orElse: () => ReaderFontFamily.serif);
 }
 
-enum ReaderTheme { light, sepia, parchment, paper, dark, black, custom }
+enum ReaderTheme { auto, light, sepia, parchment, paper, dark, black, custom }
 
 extension ReaderThemeX on ReaderTheme {
   String get rawValue => name;
   String get displayName => switch (this) {
+        ReaderTheme.auto => 'Auto',
         ReaderTheme.light => 'Light',
         ReaderTheme.sepia => 'Sepia',
         ReaderTheme.parchment => 'Parchment',
@@ -55,7 +56,7 @@ extension ReaderThemeX on ReaderTheme {
         ReaderTheme.custom => 'Custom',
       };
   static ReaderTheme fromRaw(String? s) => ReaderTheme.values
-      .firstWhere((e) => e.rawValue == s, orElse: () => ReaderTheme.light);
+      .firstWhere((e) => e.rawValue == s, orElse: () => ReaderTheme.auto);
 }
 
 enum ReaderLayout { scrolling, paginated }
