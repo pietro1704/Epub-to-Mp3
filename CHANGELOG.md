@@ -13,6 +13,20 @@
   into `dist/`) and `mise run mac:build` (sidecar + headless xcodebuild
   producing the SwiftUI `.app`).
 
+## [0.5.2] — 2026-05-17
+
+### iOS
+
+- **Miniplayer unified** across all tabs (was missing on Reader tab)
+- **Full player expands from bottom** (fullScreenCover) with swipe-to-dismiss, Spotify/Apple Music pattern
+- **Paginated reader** breaks at word/sentence boundaries instead of paragraphs — pages maximally filled like Apple Books
+- **Page turn styles**: flip (UIPageViewController curl, default), slide, none — persisted in settings
+- **Settings scroll fix**: bottom content no longer hidden behind tab bar (contentMargins on iOS 17+, spacer fallback on 15-16)
+- **WidgetKit widgets**: Now Playing, Continue Reading, Library grid — shared data via App Group
+- Fix duplicate miniplayer on Reader tab (reader has its own inline controls)
+- Fix page curl tap gesture not firing (removed pan failure dependency)
+- Hide character count subtitle in paginated mode to save first-page space
+
 ## [0.5.1] — 2026-05-17
 
 ### Fixed
