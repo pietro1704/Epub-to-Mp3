@@ -79,6 +79,14 @@ final class AudioPlayer: ObservableObject {
     /// AVQueuePlayer advances to the next item. `nil` in snapshot mode.
     @Published private(set) var activeSentenceId: String?
 
+    /// Set to `true` by `setSleepTimer(seconds:)` / `cancelSleepTimer()` to
+    /// abort an in-progress `performSleepTimerFadeOut` task before it calls
+    /// `pause()`. Reset to `false` when the fade completes or is aborted.
+    private var sleepTimerCancelled = false
+    /// Non-nil while a fade-out task is running; prevents double-fade if
+    /// `tickSleepTimer` fires twice in the same 250 ms window.
+    private var fadeOutTask: Task<Void, Never>?
+
     /// `true` while a TTS conversion job is actively running for the
     /// currently-open book. Set by `BookOpenView` / `InstantReaderView`
     /// when they submit or reattach to a conversion job and cleared
@@ -245,6 +253,11 @@ final class AudioPlayer: ObservableObject {
                 policy: .longFormAudio,
                 options: [.allowBluetoothA2DP, .allowAirPlay]
             )
+            // Pause when headphones are unplugged / route is disconnected
+            // (e.g. AirPods removed) — prevents unexpected speaker bleed.
+            if #available(iOS 17.0, *) {
+                try session.setPrefersInterruptionOnRouteDisconnect(true)
+            }
             try session.setActive(true, options: [])
         } catch {
             do {
@@ -579,10 +592,15 @@ final class AudioPlayer: ObservableObject {
     /// value schedules an auto-pause that many seconds from now.
     func setSleepTimer(seconds: TimeInterval) {
         if seconds <= 0 {
+            // Abort any running fade-out.
+            sleepTimerCancelled = true
+            fadeOutTask?.cancel()
+            fadeOutTask = nil
             sleepTimerRemaining = 0
             sleepTimerExpiresAt = nil
             return
         }
+        sleepTimerCancelled = false
         sleepTimerRemaining = seconds
         sleepTimerExpiresAt = Date().addingTimeInterval(seconds)
     }
@@ -802,17 +820,54 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Decrement the sleep timer once per time observer tick (~250 ms).
-    /// When it reaches zero, pause playback.
+    /// When it reaches zero, start the 10-second fade-out instead of pausing
+    /// immediately.
     private func tickSleepTimer() {
         guard let expiry = sleepTimerExpiresAt else { return }
         let remaining = expiry.timeIntervalSinceNow
         if remaining <= 0 {
             sleepTimerRemaining = 0
             sleepTimerExpiresAt = nil
-            pause()
+            guard fadeOutTask == nil else { return }  // Already fading.
+            sleepTimerCancelled = false
+            fadeOutTask = Task { @MainActor in
+                await performSleepTimerFadeOut()
+                self.fadeOutTask = nil
+            }
         } else {
             sleepTimerRemaining = remaining
         }
+    }
+
+    /// Fade volume from current level to 0 over ~10 seconds (20 steps × 0.5 s),
+    /// then pause. Restores original volume so the next session is unaffected.
+    /// Aborted immediately if `sleepTimerCancelled` becomes `true` mid-fade.
+    ///
+    /// Uses `Task.sleep(nanoseconds:)` for macOS 12 compatibility — avoids the
+    /// `Task.sleep(for:)` API that requires macOS 13+.
+    private func performSleepTimerFadeOut() async {
+        guard let player else {
+            pause()
+            return
+        }
+        let originalVolume = player.volume
+        let steps = 20
+        let stepNs: UInt64 = 500_000_000  // 0.5 s × 20 = 10 s total
+        for i in stride(from: steps, through: 0, by: -1) {
+            guard !sleepTimerCancelled, !Task.isCancelled else {
+                // User cancelled: restore volume and bail out.
+                player.volume = originalVolume
+                return
+            }
+            player.volume = originalVolume * (Float(i) / Float(steps))
+            try? await Task.sleep(nanoseconds: stepNs)
+        }
+        guard !sleepTimerCancelled else {
+            player.volume = originalVolume
+            return
+        }
+        pause()
+        player.volume = originalVolume  // Restore for next session.
     }
 
     // MARK: Helpers
