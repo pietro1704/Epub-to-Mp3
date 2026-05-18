@@ -221,7 +221,15 @@ private struct _AttributedPageRep: UIViewRepresentable {
             tv.showsVerticalScrollIndicator = true
             tv.alwaysBounceVertical = true
         }
-        tv.installReaderGestures()
+        // Only install the internal tap / swipe recognizers when the
+        // caller actually wires `onZoneTap` / `onSwipe`. Otherwise the
+        // SwiftUI overlay (`tapZones`) owns navigation and we'd double-
+        // fire (one tap → chapter advance + page advance) because both
+        // the overlay onTapGesture and our UITapGestureRecognizer would
+        // run for the same touch.
+        if onZoneTap != nil || onSwipe != nil {
+            tv.installReaderGestures()
+        }
         return tv
     }
 
@@ -229,10 +237,10 @@ private struct _AttributedPageRep: UIViewRepresentable {
         context.coordinator.onLinkTap = onLinkTap
         uiView.pinnedWidth = size.width
         uiView.isScrollEnabled = scrollable
-        // Both modes consume every touch now: the view itself does the
-        // link / zone / swipe classification internally. SwiftUI no
-        // longer sits between the user and the text content.
-        uiView.consumeAllTouches = true
+        // When no zone/swipe callback is wired, fall back to the
+        // link-only hit-test so the SwiftUI overlay can keep handling
+        // taps without competing with the view's own gestures.
+        uiView.consumeAllTouches = (onZoneTap != nil || onSwipe != nil)
         uiView.onZoneTap = onZoneTap
         uiView.onSwipe = onSwipe
         uiView.textContainer.size = CGSize(
