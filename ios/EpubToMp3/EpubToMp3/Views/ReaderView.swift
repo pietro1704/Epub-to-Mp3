@@ -568,11 +568,12 @@ struct ReaderView: View {
                     .combined(with: .opacity)
             ))
             .animation(.easeInOut(duration: 0.25), value: currentPage)
-            // Put tap zones BEHIND the page text (was .overlay) so the
-            // UITextView's link-only hit-test claims taps on hyperlinks
-            // first; every non-link tap passes through to the tap zones
-            // (prev / center toggle / next).
-            .background(tapZones(totalPages: pages.count))
+            // Tap zones are an overlay (foreground): SwiftUI hit-tests
+            // them first, which is required for page-turn taps to fire
+            // at all. UITextView link precedence is now handled inside
+            // each tap-zone handler via a coordinator-backed query
+            // (see `linkURL(at:)`), instead of by Z-ordering.
+            .overlay(tapZones(totalPages: pages.count))
             .gesture(
                 DragGesture(minimumDistance: 30)
                     .onEnded { value in
@@ -588,11 +589,12 @@ struct ReaderView: View {
     /// Instant page change — no animation at all.
     private func noAnimationPageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
         pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
-            // Put tap zones BEHIND the page text (was .overlay) so the
-            // UITextView's link-only hit-test claims taps on hyperlinks
-            // first; every non-link tap passes through to the tap zones
-            // (prev / center toggle / next).
-            .background(tapZones(totalPages: pages.count))
+            // Tap zones are an overlay (foreground): SwiftUI hit-tests
+            // them first, which is required for page-turn taps to fire
+            // at all. UITextView link precedence is now handled inside
+            // each tap-zone handler via a coordinator-backed query
+            // (see `linkURL(at:)`), instead of by Z-ordering.
+            .overlay(tapZones(totalPages: pages.count))
             .gesture(
                 DragGesture(minimumDistance: 30)
                     .onEnded { value in
