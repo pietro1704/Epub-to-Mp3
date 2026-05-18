@@ -18,27 +18,20 @@ import AppKit
 /// reader's theme background shows through. Selection is enabled because
 /// readers expect to long-press for copy / look-up.
 #if canImport(UIKit)
-/// Internal UIView wrapper — uses GeometryReader to learn its real size
-/// from SwiftUI, then forces both the textContainer width AND the view
-/// frame to match. Without the frame pin, UITextView quietly extends
-/// past its parent on iPhone SE.
 struct AttributedPageView: View {
     let attributed: NSAttributedString
     let width: CGFloat
+    /// `true` = pinned-height non-scrolling page (used by paginated mode).
+    /// `false` = scrollable native UITextView that grows to its content
+    /// (used by scrolling mode to preserve every EPUB CSS attribute).
+    var scrollable: Bool = false
 
     var body: some View {
-        // Measure the *actual* SwiftUI bounds and pass them to the
-        // UITextView. The previous `width:` argument propagated through
-        // `.frame(width:)`, but UIViewRepresentable's auto-layout pass
-        // sometimes ignores it and lets the inner UITextView take its
-        // intrinsic content width — which on iPhone SE meant lines
-        // extended ~16pt past the right margin. Going through
-        // GeometryReader pins both the textContainer and the view frame
-        // to the same number.
         GeometryReader { geo in
             _AttributedPageRep(
                 attributed: attributed,
-                size: geo.size
+                size: geo.size,
+                scrollable: scrollable
             )
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
@@ -65,11 +58,12 @@ private final class FixedWidthTextView: UITextView {
 private struct _AttributedPageRep: UIViewRepresentable {
     let attributed: NSAttributedString
     let size: CGSize
+    let scrollable: Bool
 
     func makeUIView(context: Context) -> FixedWidthTextView {
         let tv = FixedWidthTextView(frame: CGRect(origin: .zero, size: size))
         tv.isEditable = false
-        tv.isScrollEnabled = false
+        tv.isScrollEnabled = scrollable
         tv.isSelectable = true
         tv.backgroundColor = .clear
         tv.textContainerInset = .zero
@@ -77,22 +71,30 @@ private struct _AttributedPageRep: UIViewRepresentable {
         tv.textContainer.maximumNumberOfLines = 0
         tv.adjustsFontForContentSizeCategory = false
         tv.dataDetectorTypes = []
-        // Resist SwiftUI's attempts to stretch us horizontally.
         tv.setContentHuggingPriority(.required, for: .horizontal)
         tv.setContentCompressionResistancePriority(.required, for: .horizontal)
         tv.setContentHuggingPriority(.defaultLow, for: .vertical)
+        if scrollable {
+            tv.showsVerticalScrollIndicator = true
+            tv.alwaysBounceVertical = true
+        }
         return tv
     }
 
     func updateUIView(_ uiView: FixedWidthTextView, context: Context) {
         uiView.pinnedWidth = size.width
+        uiView.isScrollEnabled = scrollable
         uiView.textContainer.size = CGSize(
             width: size.width,
-            height: .greatestFiniteMagnitude
+            height: scrollable ? .greatestFiniteMagnitude : size.height
         )
-        if uiView.attributedText != attributed {
-            uiView.attributedText = attributed
-        }
+        // Always reassign — the equality check `!=` on NSAttributedString
+        // walks every attribute run pair and is both expensive and
+        // brittle. Page-turn calls were silently no-oping because two
+        // different page slices reported "equal" when run-by-run
+        // attribute compare returned `true` for identically-styled body
+        // paragraphs. Always set, then invalidate.
+        uiView.attributedText = attributed
         uiView.invalidateIntrinsicContentSize()
     }
 }
@@ -100,12 +102,14 @@ private struct _AttributedPageRep: UIViewRepresentable {
 struct AttributedPageView: View {
     let attributed: NSAttributedString
     let width: CGFloat
+    var scrollable: Bool = false
 
     var body: some View {
         GeometryReader { geo in
             _AttributedPageRep(
                 attributed: attributed,
-                size: CGSize(width: max(80, width), height: geo.size.height)
+                size: CGSize(width: max(80, width), height: geo.size.height),
+                scrollable: scrollable
             )
             .frame(width: max(80, width), height: geo.size.height, alignment: .topLeading)
         }
@@ -115,6 +119,7 @@ struct AttributedPageView: View {
 private struct _AttributedPageRep: NSViewRepresentable {
     let attributed: NSAttributedString
     let size: CGSize
+    let scrollable: Bool
 
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSTextView.scrollableTextView()

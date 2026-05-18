@@ -270,37 +270,70 @@ struct ReaderView: View {
     // MARK: Scrolling content
 
     private var scrollingContent: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 8) {
-                    chapterTitleHeader
-                    if let attr = renderedAttributed, currentSentenceId == nil {
-                        Text(attr)
-                            .lineSpacing(settings.readerLineSpacing)
-                            .multilineTextAlignment(.leading)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    } else {
-                        ForEach(spans) { span in
-                            sentenceRow(span)
-                                .id(span.id)
-                        }
-                    }
-                }
-                .padding(.horizontal, effectiveReaderMargin)
-                .padding(.vertical, 16)
-                .frame(maxWidth: settings.readerColumnWidth, alignment: .leading)
-                .frame(maxWidth: .infinity, alignment: .center)
+        // Scroll mode now uses the same TextKit-backed renderer as
+        // paginated mode (`AttributedPageView` with `scrollable: true`).
+        // The previous `LazyVStack` of `sentenceRow`s discarded every
+        // EPUB CSS attribute (font family overrides, italics, bold,
+        // foreground colour, paragraph indent) — `sentenceText` only
+        // read the plain `span.text` and forced `bodyFont`. It also
+        // surfaced a yellow highlight on every sentence whenever the
+        // AudioPlayer set `currentSentenceId`, even before the user
+        // hit play. UITextView with the full attributed string keeps
+        // typography fidelity and drops the highlight entirely.
+        GeometryReader { geo in
+            let margin = effectiveReaderMargin(for: geo.size)
+            let effectiveColumnWidth = min(
+                settings.readerColumnWidth,
+                geo.size.width - 2 * margin
+            )
+            let effectiveFontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
+            let effectiveLineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
+            VStack(alignment: .leading, spacing: 0) {
+                chapterTitleHeader
+                    .padding(.horizontal, margin)
+                    .padding(.top, 16)
+                AttributedPageView(
+                    attributed: scrollingAttributedString(
+                        fontSize: effectiveFontSize,
+                        lineSpacing: effectiveLineSpacing
+                    ),
+                    width: effectiveColumnWidth,
+                    scrollable: true
+                )
+                .padding(.horizontal, margin)
+                .padding(.bottom, 16)
             }
-            .compatHorizontalSafeAreaPadding(0)
-            .compatOnChange(of: currentSentenceId) { newId in
-                guard let newId else { return }
-                guard settings.readerAutoScroll else { return }
-                lastAutoScrollAt = Date()
-                withAnimation(.easeInOut(duration: 0.35)) {
-                    proxy.scrollTo(newId, anchor: .center)
-                }
-            }
+            .frame(maxWidth: .infinity, alignment: .center)
         }
+        .compatHorizontalSafeAreaPadding(0)
+    }
+
+    /// Build the NSAttributedString rendered in scroll mode: the
+    /// pre-rendered EPUB attributed string when available, otherwise a
+    /// plain wrapper around the chapter text with the user's font /
+    /// spacing settings. Same fallback flow as paginated mode so the
+    /// two layouts look identical when scrolling vs paging.
+    private func scrollingAttributedString(
+        fontSize: CGFloat,
+        lineSpacing: Double
+    ) -> NSAttributedString {
+        #if canImport(UIKit) || canImport(AppKit)
+        if let rendered = renderedAttributed {
+            return NSAttributedString(rendered)
+        }
+        let plain = spans.map(\.text).joined(separator: "\n\n")
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = CGFloat(lineSpacing)
+        return NSAttributedString(
+            string: plain,
+            attributes: [
+                .font: bodyPlatformFont(size: fontSize),
+                .paragraphStyle: para,
+            ]
+        )
+        #else
+        return NSAttributedString(string: spans.map(\.text).joined(separator: "\n\n"))
+        #endif
     }
 
     // MARK: Paginated content
