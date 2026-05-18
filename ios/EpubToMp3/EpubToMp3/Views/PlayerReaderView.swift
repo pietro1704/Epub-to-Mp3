@@ -202,6 +202,10 @@ struct PlayerReaderView: View {
                 onAutoHideChrome: {
                     guard chromeVisible else { return }
                     withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = false }
+                },
+                onRestoreChrome: {
+                    guard !chromeVisible else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
                 }
             )
         } else if let err = fulltextError {
@@ -582,6 +586,9 @@ struct PlayerReaderView: View {
     }
 
     private func jumpTo(chapterIndex: Int) {
+        // Restore chrome so the user can see the new chapter in context
+        // (otherwise an immersive jump looks like the action silently failed).
+        withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
         player.play(snapshot: snapshot, startingAt: chapterIndex)
         reloadCurrentChapter()
     }

@@ -63,4 +63,25 @@ final class ReaderChromeAutoHideTests: XCTestCase {
         XCTAssertTrue(view.chromeVisible,
             "ReaderView.chromeVisible must default to true for legacy hosts")
     }
+
+    /// HIG P0: when chrome is hidden, the next edge tap should restore
+    /// chrome instead of turning the page (Apple Books pattern). The
+    /// ReaderView calls `onRestoreChrome` before any page-flip work.
+    func testRestoreChromeCallbackIsWired() {
+        var restored = false
+        let view = ReaderView(
+            chapter: makeChapter(),
+            spans: [],
+            currentSentenceId: nil,
+            onJumpToSentence: nil,
+            onAdvanceChapter: nil,
+            onPreviousChapter: nil,
+            onCenterTap: nil,
+            chromeVisible: false,
+            onAutoHideChrome: nil,
+            onRestoreChrome: { restored = true }
+        )
+        view.onRestoreChrome?()
+        XCTAssertTrue(restored, "onRestoreChrome must be exposed on the public init")
+    }
 }

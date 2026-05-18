@@ -44,6 +44,11 @@ struct ReaderView: View {
     /// every page turn — the host should no-op if chrome is already
     /// hidden.
     var onAutoHideChrome: (() -> Void)? = nil
+    /// Apple Books pattern: when chrome is hidden, a tap on the left/right
+    /// edge zones first restores chrome instead of turning the page.
+    /// Discovery is otherwise too narrow — only the center 33% knows to
+    /// toggle. The host owns this restore (animates `chromeVisible = true`).
+    var onRestoreChrome: (() -> Void)? = nil
 
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.epubFontDirectory) private var epubFontDirectory
@@ -110,7 +115,8 @@ struct ReaderView: View {
         onPreviousChapter: (() -> Bool)? = nil,
         onCenterTap: (() -> Void)? = nil,
         chromeVisible: Bool = true,
-        onAutoHideChrome: (() -> Void)? = nil
+        onAutoHideChrome: (() -> Void)? = nil,
+        onRestoreChrome: (() -> Void)? = nil
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -121,6 +127,7 @@ struct ReaderView: View {
         self.onCenterTap = onCenterTap
         self.chromeVisible = chromeVisible
         self.onAutoHideChrome = onAutoHideChrome
+        self.onRestoreChrome = onRestoreChrome
     }
 
     var body: some View {
@@ -628,6 +635,14 @@ struct ReaderView: View {
     /// chapter actually changes, the `onChange(of: chapter.id)` modifier
     /// resets `currentPage` to 0.
     private func advancePage(totalPages: Int) {
+        // Apple Books pattern: first edge tap while chrome is hidden
+        // restores chrome instead of turning the page. Discoverable
+        // recovery from immersive mode without forcing the user to find
+        // the center 33% zone.
+        if !chromeVisible, let restore = onRestoreChrome {
+            restore()
+            return
+        }
         pageDirection = .forward
         if currentPage + 1 < totalPages {
             if settings.pageTurnStyle == .slide {
@@ -645,6 +660,10 @@ struct ReaderView: View {
     }
 
     private func retreatPage() {
+        if !chromeVisible, let restore = onRestoreChrome {
+            restore()
+            return
+        }
         pageDirection = .backward
         if currentPage > 0 {
             if settings.pageTurnStyle == .slide {

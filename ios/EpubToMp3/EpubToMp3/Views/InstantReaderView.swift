@@ -207,7 +207,8 @@ struct InstantReaderView: View {
                 onPreviousChapter: returnToPreviousChapter,
                 onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
                 chromeVisible: chromeVisible,
-                onAutoHideChrome: { autoHideChromeIfNeeded() }
+                onAutoHideChrome: { autoHideChromeIfNeeded() },
+                onRestoreChrome: { restoreChromeIfNeeded() }
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -219,7 +220,8 @@ struct InstantReaderView: View {
                 onPreviousChapter: returnToPreviousChapter,
                 onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
                 chromeVisible: chromeVisible,
-                onAutoHideChrome: { autoHideChromeIfNeeded() }
+                onAutoHideChrome: { autoHideChromeIfNeeded() },
+                onRestoreChrome: { restoreChromeIfNeeded() }
             )
         } else {
             VStack(spacing: 12) {
@@ -562,6 +564,10 @@ struct InstantReaderView: View {
                             player.play(snapshot: snapshot ?? JobSnapshot.empty,
                                          startingAt: target)
                         }
+                        // Same Apple Books pattern as PlayerReader — jumping
+                        // to a new chapter restores chrome so the user can
+                        // confirm where they landed.
+                        restoreChromeIfNeeded()
                         showingToc = false
                     } label: {
                         HStack {
@@ -694,6 +700,13 @@ struct InstantReaderView: View {
     private func autoHideChromeIfNeeded() {
         guard chromeVisible else { return }
         withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = false }
+    }
+
+    /// Idempotent restore — called on TOC/search/bookmark jump and on
+    /// edge-tap when chrome was hidden (Apple Books pattern).
+    private func restoreChromeIfNeeded() {
+        guard !chromeVisible else { return }
+        withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
     }
 
     private func jumpToSentence(_ span: SentenceSpan) {
