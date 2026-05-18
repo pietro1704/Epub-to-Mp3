@@ -1,6 +1,8 @@
 import Foundation
 import WidgetKit
+#if canImport(ActivityKit)
 import ActivityKit
+#endif
 
 /// Writes enriched metadata to the shared App Group UserDefaults so
 /// WidgetKit extensions can render Now Playing, Continue Reading, and
@@ -135,18 +137,21 @@ enum WidgetDataSync {
         WidgetCenter.shared.reloadAllTimelines()
 
         // Update the running Live Activity if one exists.
-        guard #available(iOS 16.2, *) else { return }
-        let state = ConversionActivityAttributes.ContentState(
-            chaptersDone: chaptersDone,
-            chaptersTotal: chaptersTotal,
-            currentChapterName: currentChapterName
-        )
-        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(300))
-        Task {
-            for activity in Activity<ConversionActivityAttributes>.activities {
-                await activity.update(content)
+        #if canImport(ActivityKit) && os(iOS)
+        if #available(iOS 16.2, *) {
+            let state = ConversionActivityAttributes.ContentState(
+                chaptersDone: chaptersDone,
+                chaptersTotal: chaptersTotal,
+                currentChapterName: currentChapterName
+            )
+            let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(300))
+            Task {
+                for activity in Activity<ConversionActivityAttributes>.activities {
+                    await activity.update(content)
+                }
             }
         }
+        #endif
     }
 
     // MARK: - Live Activity management
@@ -159,6 +164,7 @@ enum WidgetDataSync {
         bookId: String,
         chaptersTotal: Int
     ) -> String? {
+        #if canImport(ActivityKit) && os(iOS)
         guard #available(iOS 16.2, *) else { return nil }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return nil }
 
@@ -186,6 +192,9 @@ enum WidgetDataSync {
         } catch {
             return nil
         }
+        #else
+        return nil
+        #endif
     }
 
     /// End all conversion Live Activities for the given `bookId`.
@@ -193,6 +202,7 @@ enum WidgetDataSync {
     /// Must be called explicitly when a job reaches done/failed/cancelled —
     /// never rely on `staleDate` for cleanup.
     static func endConversionActivity(bookId: String, failed: Bool = false) {
+        #if canImport(ActivityKit) && os(iOS)
         guard #available(iOS 16.2, *) else { return }
         let finalState = ConversionActivityAttributes.ContentState(
             chaptersDone: 0,
@@ -209,6 +219,7 @@ enum WidgetDataSync {
                 await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(4)))
             }
         }
+        #endif
     }
 
     // MARK: - Reload helpers

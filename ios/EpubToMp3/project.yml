@@ -366,6 +366,9 @@ targets:
       - path: EpubToMp3Widget
         excludes:
           - "Resources/EpubToMp3Widget.entitlements"
+      # Shared with the main app target. Same Codable shape on both ends —
+      # ActivityKit serialises by name + Codable, not nominal cross-module.
+      - path: EpubToMp3/Models/ConversionActivityAttributes.swift
     dependencies: []
     settings:
       base:

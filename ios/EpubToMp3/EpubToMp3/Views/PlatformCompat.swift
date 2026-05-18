@@ -46,6 +46,31 @@ extension View {
             self
         }
     }
+}
+
+/// `ViewThatFits` requires iOS 16 / macOS 13. We support iOS 15 / macOS 12,
+/// so legacy OSes get the preferred horizontal layout only — the Dynamic
+/// Type XXXL fallback that motivates the wrapper only matters on newer
+/// systems which already have the API.
+@ViewBuilder
+func CompatViewThatFitsHV<Horizontal: View, Vertical: View>(
+    @ViewBuilder horizontal: () -> Horizontal,
+    @ViewBuilder vertical: () -> Vertical
+) -> some View {
+    if #available(iOS 16.0, macOS 13.0, *) {
+        ViewThatFits(in: .horizontal) {
+            horizontal()
+            vertical()
+        }
+    } else {
+        horizontal()
+    }
+}
+
+extension View {
+}
+
+extension View {
 
     /// `onKeyPress` requires iOS 17 / macOS 14. We expose a generic
     /// shim so callers don't have to gate the call site. On older

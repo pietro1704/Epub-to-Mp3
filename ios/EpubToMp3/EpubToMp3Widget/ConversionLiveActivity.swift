@@ -1,34 +1,11 @@
+#if canImport(ActivityKit) && os(iOS)
 import ActivityKit
 import SwiftUI
 import WidgetKit
 
-// MARK: - Conversion Live Activity (iOS 16.2+)
-// Triggered by WidgetDataSync.startConversionActivity when a job enters running.
-// Explicitly ended by WidgetDataSync.endConversionActivity when job finishes/fails.
-
-// MARK: - Attributes
-
-public struct ConversionActivityAttributes: ActivityAttributes {
-
-    /// Static content set at launch — does not change during the activity.
-    public struct ContentState: Codable, Hashable {
-        public var chaptersDone: Int
-        public var chaptersTotal: Int
-        public var currentChapterName: String?
-
-        public var progressFraction: Double {
-            guard chaptersTotal > 0 else { return 0 }
-            return Double(chaptersDone) / Double(chaptersTotal)
-        }
-
-        public var statusLabel: String {
-            "\(chaptersDone) / \(chaptersTotal)"
-        }
-    }
-
-    public let bookTitle: String
-    public let bookId: String
-}
+// Conversion Live Activity (iOS 16.2+).
+// `ConversionActivityAttributes` lives in `EpubToMp3/Models/` and is a source of
+// both the main app and the widget extension targets.
 
 // MARK: - Widget
 
@@ -146,3 +123,4 @@ private struct LockScreenLiveActivityView: View {
         .padding(.vertical, 12)
     }
 }
+#endif

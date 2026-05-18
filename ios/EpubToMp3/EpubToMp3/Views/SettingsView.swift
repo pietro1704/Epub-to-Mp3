@@ -152,7 +152,7 @@ struct SettingsView: View {
         Section {
             // ViewThatFits: at XXXL Dynamic Type the Label and text field
             // stack vertically so the URL field is not clipped.
-            ViewThatFits(in: .horizontal) {
+            CompatViewThatFitsHV {
                 HStack {
                     Label("URL", systemImage: "network")
                     Spacer()
@@ -168,6 +168,7 @@ struct SettingsView: View {
                     field
                     #endif
                 }
+            } vertical: {
                 VStack(alignment: .leading, spacing: 4) {
                     Label("URL", systemImage: "network")
                     let field = TextField("http://localhost:8000",
@@ -208,7 +209,7 @@ struct SettingsView: View {
             // Each Label+Stepper row uses ViewThatFits so at XXXL Dynamic
             // Type the label stacks above the stepper instead of being
             // squeezed off-screen in the trailing HStack.
-            ViewThatFits(in: .horizontal) {
+            CompatViewThatFitsHV {
                 HStack {
                     Label(L10n.string("settings.fontSize"), systemImage: "textformat.size")
                     Spacer()
@@ -219,6 +220,7 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                 }
+            } vertical: {
                 VStack(alignment: .leading, spacing: 4) {
                     Label(L10n.string("settings.fontSize"), systemImage: "textformat.size")
                     Stepper(value: $settings.readerFontSize, in: 0...4) {
@@ -250,7 +252,7 @@ struct SettingsView: View {
             } label: {
                 Label(L10n.string("settings.layout"), systemImage: "doc.text")
             }
-            ViewThatFits(in: .horizontal) {
+            CompatViewThatFitsHV {
                 HStack {
                     Label(L10n.string("settings.lineSpacing"), systemImage: "arrow.up.and.down.text.horizontal")
                     Spacer()
@@ -262,6 +264,7 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                 }
+            } vertical: {
                 VStack(alignment: .leading, spacing: 4) {
                     Label(L10n.string("settings.lineSpacing"), systemImage: "arrow.up.and.down.text.horizontal")
                     Stepper(value: $settings.readerLineSpacing,
@@ -273,7 +276,7 @@ struct SettingsView: View {
                     .labelsHidden()
                 }
             }
-            ViewThatFits(in: .horizontal) {
+            CompatViewThatFitsHV {
                 HStack {
                     Label(L10n.string("settings.margin"), systemImage: "rectangle.compress.vertical")
                     Spacer()
@@ -285,6 +288,7 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                 }
+            } vertical: {
                 VStack(alignment: .leading, spacing: 4) {
                     Label(L10n.string("settings.margin"), systemImage: "rectangle.compress.vertical")
                     Stepper(value: $settings.readerMargin,
@@ -296,7 +300,7 @@ struct SettingsView: View {
                     .labelsHidden()
                 }
             }
-            ViewThatFits(in: .horizontal) {
+            CompatViewThatFitsHV {
                 HStack {
                     Label(L10n.string("settings.columnWidth"), systemImage: "rectangle.split.3x1")
                     Spacer()
@@ -308,6 +312,7 @@ struct SettingsView: View {
                     }
                     .labelsHidden()
                 }
+            } vertical: {
                 VStack(alignment: .leading, spacing: 4) {
                     Label(L10n.string("settings.columnWidth"), systemImage: "rectangle.split.3x1")
                     Stepper(value: $settings.readerColumnWidth,
@@ -387,7 +392,7 @@ struct SettingsView: View {
     @ViewBuilder
     private var cloudSection: some View {
         Section {
-            ViewThatFits(in: .horizontal) {
+            CompatViewThatFitsHV {
                 HStack {
                     Label(L10n.string("settings.icloudSync"), systemImage: "icloud")
                     Spacer()
@@ -395,6 +400,7 @@ struct SettingsView: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
+            } vertical: {
                 VStack(alignment: .leading, spacing: 4) {
                     Label(L10n.string("settings.icloudSync"), systemImage: "icloud")
                     Text(L10n.string("settings.comingSoon"))
