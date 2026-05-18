@@ -94,41 +94,11 @@ struct MiniPlayerBar: View {
 
                     Spacer()
 
-                    ZStack {
-                        ProgressView()
-                            .opacity(player.isConverting && !player.firstChapterReady ? 1 : 0)
-                            .accessibilityLabel(L10n.string("player.generatingAudio"))
-                            .accessibilityIdentifier("miniPlayer.loadingSpinner")
-                        Button {
-                            player.togglePlayPause()
-                        } label: {
-                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
-                                .font(.system(size: 22))
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .opacity(player.isConverting && !player.firstChapterReady ? 0 : 1)
-                        .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
-                        .accessibilityIdentifier("miniPlayer.playPause")
-                    }
-                    .frame(width: 44, height: 44)
-
-                    Button {
-                        player.nextChapter()
-                    } label: {
-                        Image(systemName: "forward.end.fill")
-                            .font(.system(size: 18))
-                            .frame(width: 36, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(player.isConverting && !player.firstChapterReady)
-                    .accessibilityLabel(L10n.string("player.nextChapter"))
-
-                    // "..." overflow — popover menu for speed + sleep.
-                    // Replaces the per-control buttons that used to live
-                    // here. Keeps the bar HIG-compact (Apple Books /
-                    // Music: max 2 controls + ellipsis).
+                    // Per user spec: the mini player has NO transport
+                    // controls. Tap + pull on the bar are the only way
+                    // to start play (both expand to the full player).
+                    // The "..." popover carries speed + sleep — the
+                    // only secondary actions the spec asked for inline.
                     Menu {
                         Menu {
                             ForEach(PlaybackRate.allCases) { rate in
@@ -212,16 +182,6 @@ struct MiniPlayerBar: View {
                     : .move(edge: .bottom).combined(with: .opacity)
             )
         }
-    }
-
-    // MARK: Sleep timer cycle
-
-    private static let sleepPresets: [TimeInterval] = [0, 15*60, 30*60, 45*60, 60*60]
-
-    private func cycleSleepTimer() {
-        let current = player.sleepTimerRemaining
-        let next = Self.sleepPresets.first { $0 > current } ?? 0
-        player.setSleepTimer(seconds: next)
     }
 
     // MARK: Cover

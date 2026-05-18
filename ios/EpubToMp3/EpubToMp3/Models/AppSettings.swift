@@ -177,8 +177,10 @@ final class AppSettings: ObservableObject {
         self.readerLineSpacing = (defaults.object(forKey: "readerLineSpacing") as? Double) ?? 6
         // Coerce stale persisted values from older builds (clamp was 8pt
         // pre-2026-05-12, now 16pt to match Apple HIG portrait minimum).
-        let persistedMargin = (defaults.object(forKey: "readerMargin") as? Double) ?? 24
-        self.readerMargin = max(16, min(80, persistedMargin))
+        // Default 16pt (was 24pt) — maximises text silhouette per user
+        // request. Floor lowered to 12pt to match `effectiveReaderMargin`.
+        let persistedMargin = (defaults.object(forKey: "readerMargin") as? Double) ?? 16
+        self.readerMargin = max(12, min(80, persistedMargin))
         self.readerColumnWidth = (defaults.object(forKey: "readerColumnWidth") as? Double) ?? 720
         self.storedReaderCustomColors =
             defaults.string(forKey: "readerCustomColors") ?? "1,1,1,0,0,0"

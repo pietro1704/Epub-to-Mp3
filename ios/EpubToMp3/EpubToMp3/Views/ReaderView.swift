@@ -252,14 +252,17 @@ struct ReaderView: View {
     /// On regular-width devices (iPad) the extra padding is unnecessary
     /// because `readerColumnWidth` already constrains the text block.
     private func effectiveReaderMargin(for size: CGSize) -> CGFloat {
-        let base = max(16, CGFloat(settings.readerMargin))
+        // User explicitly asked for maximum text silhouette — push the
+        // margin floor down to 12pt (was 16pt, the Apple Books portrait
+        // minimum). 12pt still keeps glyph descenders/diacritics clear of
+        // the screen edge on iPhone SE.
+        let base = max(12, CGFloat(settings.readerMargin))
         let isLandscape = size.width > size.height
         let isCompactWidth = (horizontalSizeClass == .compact)
         if isLandscape && isCompactWidth {
-            // iPhone landscape: widen margins by ~40% (Apple Books pattern).
-            // Floor at 24pt so even the minimum setting (16pt) gets a
-            // meaningful landscape bump.
-            return max(24, round(base * 1.4))
+            // iPhone landscape: slight widen (~25%) so the column doesn't
+            // stretch to a 90-char line. Floor at 18pt.
+            return max(18, round(base * 1.25))
         }
         return base
     }
