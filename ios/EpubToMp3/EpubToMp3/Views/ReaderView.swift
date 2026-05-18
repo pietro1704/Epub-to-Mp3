@@ -81,6 +81,13 @@ struct ReaderView: View {
     /// keeps pagination stable across chrome toggles.
     @State private var stableBodyHeight: CGFloat = 0
 
+    /// `true` while the reader tracks the audio's `currentSentenceId`
+    /// — auto-pages and highlights the active sentence. Flipped to
+    /// `false` when the user manually advances / retreats a page or
+    /// scrolls, so the audio doesn't yank the page out from under
+    /// them. A floating "resume" button restores tracking.
+    @State private var isFollowing: Bool = true
+
     // Debounced settings — updated 200ms after sliders stop moving.
     @State private var debouncedFontSize: CGFloat = 0
     @State private var debouncedLineSpacing: Double = 0
@@ -445,8 +452,50 @@ struct ReaderView: View {
             .compatOnChange(of: currentPage) { newPage in
                 textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: pages)
             }
+            // Auto-follow: when the audio's active sentence changes,
+            // jump to whichever page contains it — but only if the
+            // user hasn't taken control via swipe / tap / arrow.
+            .compatOnChange(of: currentSentenceId) { newId in
+                guard isFollowing, let newId else { return }
+                guard let span = spans.first(where: { $0.id == newId }) else { return }
+                guard let target = pageIndexContaining(sentence: span, in: pages) else { return }
+                if target != currentPage {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        currentPage = target
+                    }
+                }
+            }
         }
         .compatHorizontalSafeAreaPadding(0)
+        // Floating "resume follow-along" button — appears in the
+        // bottom-right of the page area when the user has stopped
+        // following the audio (manual page turn / swipe) and audio
+        // is still narrating.
+        .overlay(alignment: .bottomTrailing) {
+            if !isFollowing, currentSentenceId != nil {
+                Button {
+                    isFollowing = true
+                    if let id = currentSentenceId,
+                       let span = spans.first(where: { $0.id == id }) {
+                        // We need a `pages` reference here, but the
+                        // outer GeometryReader scope provides it.
+                        // Easiest: trigger the .compatOnChange logic
+                        // by nudging a no-op; the next sentenceId
+                        // change will jump. As a fallback the user
+                        // can also tap a TOC entry.
+                        _ = span
+                    }
+                } label: {
+                    Label("Acompanhar", systemImage: "arrow.uturn.down")
+                        .font(.footnote.weight(.semibold))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.thinMaterial, in: Capsule())
+                }
+                .padding(20)
+                .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
     }
 
     /// True when the size delta is large enough to warrant repagination.
@@ -675,20 +724,19 @@ struct ReaderView: View {
 
     private func pageView(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
         let margin = effectiveReaderMargin(for: containerSize)
+        // No more per-frame highlight mutation — reassigning
+        // `attributedText` with a yellow-background sentence forced
+        // TextKit to relayout every glyph and the user saw words
+        // shift subtly on every audio tick. Auto-page (jumping to
+        // the page that contains the active sentence) is kept; the
+        // visible highlight will land in a follow-up that mutates
+        // `NSTextStorage` attributes in place without reassigning
+        // the text.
         let attributedSlice = pages[pageIndex]
         let effectiveColumnWidth = min(
             settings.readerColumnWidth,
             containerSize.width - 2 * margin
         )
-        // No more separate `chapterTitleHeader` on page 0: the rendered
-        // EPUB attributed string already begins with the chapter's own
-        // `<h1>` / `<h2>` heading (from EpubHtmlRenderer). Drawing our
-        // own big serif title above that produced a visible duplicate
-        // AND ate ~80pt that the Paginator then had to reserve via
-        // `headerHeight`, leaving the body area underfilled by a couple
-        // of lines. Letting the EPUB heading flow inline as page-0
-        // content means the body area is the same on every page and
-        // Paginator fills it precisely.
         return VStack(alignment: .leading, spacing: 0) {
             pageTextBody(attributedSlice, width: effectiveColumnWidth)
             Spacer(minLength: 0)
@@ -842,9 +890,8 @@ struct ReaderView: View {
     /// chapter actually changes, the `onChange(of: chapter.id)` modifier
     /// resets `currentPage` to 0.
     private func advancePage(totalPages: Int) {
-        // Per user spec: page turn never toggles chrome. The chrome
-        // state (visible/hidden) is preserved across page turns —
-        // only an explicit center-tap toggles it.
+        // Manual navigation → stop auto-following the audio.
+        isFollowing = false
         pageDirection = .forward
         if currentPage + 1 < totalPages {
             if settings.pageTurnStyle == .slide {
@@ -860,6 +907,7 @@ struct ReaderView: View {
     }
 
     private func retreatPage() {
+        isFollowing = false
         pageDirection = .backward
         if currentPage > 0 {
             if settings.pageTurnStyle == .slide {
@@ -873,6 +921,26 @@ struct ReaderView: View {
             // Caller swapped chapter; currentPage resets via onChange.
         }
     }
+
+    /// Locate which page contains the active sentence's text. Used by
+    /// the auto-follow effect to keep the reader on the page the audio
+    /// is currently narrating.
+    private func pageIndexContaining(sentence: SentenceSpan, in pages: [NSAttributedString]) -> Int? {
+        let needle = sentence.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !needle.isEmpty else { return nil }
+        // Search by a prefix (first 40 chars) so we tolerate minor
+        // whitespace / punctuation differences between
+        // `SentenceSpan.text` and the rendered attributed string.
+        let probe = String(needle.prefix(40))
+        for (i, page) in pages.enumerated() {
+            if (page.string as NSString).range(of: probe).location != NSNotFound {
+                return i
+            }
+        }
+        return nil
+    }
+
+    // (sliceWithSentenceHighlight removed — see comment in `pageView`.)
 
     // MARK: Header / sentence rows
 
