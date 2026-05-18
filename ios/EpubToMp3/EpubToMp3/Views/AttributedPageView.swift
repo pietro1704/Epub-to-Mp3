@@ -52,6 +52,13 @@ struct AttributedPageView: View {
 /// hiperlinks, com maior precedencia. somente se sem hiperlinks ...".
 private final class FixedWidthTextView: UITextView {
     var pinnedWidth: CGFloat = 320
+    /// When `true` (paginated mode) only tap-on-link consumes touches;
+    /// every other tap falls through to the SwiftUI tap-zone layer
+    /// (page-turn / chrome toggle). When `false` (scrolling mode) the
+    /// text view receives ALL touches so its internal pan gesture can
+    /// scroll the content — without this, the pan was being filtered
+    /// out and scroll mode froze.
+    var linkOnlyHitTest: Bool = false
 
     override var intrinsicContentSize: CGSize {
         let height = sizeThatFits(
@@ -61,20 +68,20 @@ private final class FixedWidthTextView: UITextView {
     }
 
     override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        guard linkOnlyHitTest else {
+            // Scroll mode (and any other "consume everything" mode):
+            // default UITextView hit-test so pan + tap + link all work.
+            return super.point(inside: point, with: event)
+        }
         guard let attributedText = self.attributedText, attributedText.length > 0 else {
             return false
         }
-        // Translate the tap into the textContainer's coordinate space and
-        // ask the layout manager which glyph (if any) sits under it.
         let inset = textContainerInset
         let p = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
         let glyphIndex = layoutManager.glyphIndex(
             for: p, in: textContainer,
             fractionOfDistanceThroughGlyph: nil
         )
-        // `glyphIndex(for:)` returns the closest glyph even when the tap
-        // is in empty space. Confirm the tap really sits on a rendered
-        // glyph by checking the glyph's bounding rect.
         let glyphRange = NSRange(location: glyphIndex, length: 1)
         let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
         guard rect.contains(p) else { return false }
@@ -115,6 +122,10 @@ private struct _AttributedPageRep: UIViewRepresentable {
     func updateUIView(_ uiView: FixedWidthTextView, context: Context) {
         uiView.pinnedWidth = size.width
         uiView.isScrollEnabled = scrollable
+        // Paginated mode wants only link-taps; scroll mode needs every
+        // touch so pan-to-scroll works (link-hit-only mode would
+        // freeze scrolling because non-link pans got filtered out).
+        uiView.linkOnlyHitTest = !scrollable
         uiView.textContainer.size = CGSize(
             width: size.width,
             height: scrollable ? .greatestFiniteMagnitude : size.height
