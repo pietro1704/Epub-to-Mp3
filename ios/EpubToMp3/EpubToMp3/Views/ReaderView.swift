@@ -593,6 +593,14 @@ struct ReaderView: View {
     /// (Apple Books "scroll" style) does instant flips too, so the
     /// trade-off is acceptable.
     private func slidePageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
+        // Navigation lives in the SwiftUI overlay tap zones — they're
+        // the only path that reliably fires on iPhone SE 17.2. The
+        // in-view UITapGestureRecognizer experiment didn't deliver
+        // taps (UITextView's own gesture pipeline appears to absorb
+        // them before our custom recognizer can run). Link precedence
+        // for body hyperlinks therefore remains a TODO until a
+        // working approach lands (likely a Coordinator-shared link
+        // hit-map queried from this overlay handler).
         pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
             .overlay(tapZones(totalPages: pages.count))
             .gesture(
@@ -607,14 +615,8 @@ struct ReaderView: View {
             )
     }
 
-    /// Instant page change — no animation at all.
     private func noAnimationPageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
         pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
-            // Tap zones are an overlay (foreground): SwiftUI hit-tests
-            // them first, which is required for page-turn taps to fire
-            // at all. UITextView link precedence is now handled inside
-            // each tap-zone handler via a coordinator-backed query
-            // (see `linkURL(at:)`), instead of by Z-ordering.
             .overlay(tapZones(totalPages: pages.count))
             .gesture(
                 DragGesture(minimumDistance: 30)
@@ -626,6 +628,24 @@ struct ReaderView: View {
                         }
                     }
             )
+    }
+
+    /// Glue between `FixedWidthTextView`'s zone classification and the
+    /// reader's existing `advancePage` / `retreatPage` / `onCenterTap`
+    /// vocabulary.
+    private func handleZoneTap(_ zone: ReaderTapZone, totalPages: Int) {
+        switch zone {
+        case .left:   retreatPage()
+        case .center: onCenterTap?()
+        case .right:  advancePage(totalPages: totalPages)
+        }
+    }
+
+    private func handleSwipe(_ direction: ReaderSwipeDirection, totalPages: Int) {
+        switch direction {
+        case .left:  advancePage(totalPages: totalPages)
+        case .right: retreatPage()
+        }
     }
 
     private func pageView(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
@@ -656,14 +676,6 @@ struct ReaderView: View {
     /// same engine SwiftUI's `Text` uses to render it.
     @ViewBuilder
     private func pageTextBody(_ slice: NSAttributedString, width: CGFloat) -> some View {
-        // Render via UITextView (read-only, non-scrolling) so the engine
-        // that lays out the page is the same one that draws it. SwiftUI's
-        // `Text(AttributedString:)` silently drops attributes it doesn't
-        // understand — most painfully `paragraphSpacingBefore`, which
-        // pushed `TextKit`-computed page breaks down by ~100pt and left
-        // half the page blank below the visible text. The explicit
-        // `width:` parameter pins the textContainer so lines don't bleed
-        // past the page margin.
         AttributedPageView(
             attributed: slice,
             width: width,

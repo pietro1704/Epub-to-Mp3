@@ -110,23 +110,14 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         }
     }
 
-    @objc private func handleReaderTap(_ tap: UITapGestureRecognizer) {
+    @objc func handleReaderTap(_ tap: UITapGestureRecognizer) {
         let point = tap.location(in: self)
-        // Link precedence: if the tap landed on a `.link` glyph, let
-        // UITextView's own link-interaction recognizers (already
-        // installed by the framework) handle it. We bail out here so
-        // the zone callback doesn't double-fire.
         if linkURL(at: point) != nil { return }
         let zone = classifyZone(x: point.x, in: bounds.width)
         onZoneTap?(zone)
     }
-
-    @objc private func handleReaderSwipeLeft(_ swipe: UISwipeGestureRecognizer) {
-        onSwipe?(.left)
-    }
-    @objc private func handleReaderSwipeRight(_ swipe: UISwipeGestureRecognizer) {
-        onSwipe?(.right)
-    }
+    @objc func handleReaderSwipeLeft(_ swipe: UISwipeGestureRecognizer) { onSwipe?(.left) }
+    @objc func handleReaderSwipeRight(_ swipe: UISwipeGestureRecognizer) { onSwipe?(.right) }
 
     private func classifyZone(x: CGFloat, in width: CGFloat) -> ReaderTapZone {
         guard width > 0 else { return .center }
@@ -221,15 +212,6 @@ private struct _AttributedPageRep: UIViewRepresentable {
             tv.showsVerticalScrollIndicator = true
             tv.alwaysBounceVertical = true
         }
-        // Only install the internal tap / swipe recognizers when the
-        // caller actually wires `onZoneTap` / `onSwipe`. Otherwise the
-        // SwiftUI overlay (`tapZones`) owns navigation and we'd double-
-        // fire (one tap → chapter advance + page advance) because both
-        // the overlay onTapGesture and our UITapGestureRecognizer would
-        // run for the same touch.
-        if onZoneTap != nil || onSwipe != nil {
-            tv.installReaderGestures()
-        }
         return tv
     }
 
@@ -237,12 +219,14 @@ private struct _AttributedPageRep: UIViewRepresentable {
         context.coordinator.onLinkTap = onLinkTap
         uiView.pinnedWidth = size.width
         uiView.isScrollEnabled = scrollable
-        // When no zone/swipe callback is wired, fall back to the
-        // link-only hit-test so the SwiftUI overlay can keep handling
-        // taps without competing with the view's own gestures.
-        uiView.consumeAllTouches = (onZoneTap != nil || onSwipe != nil)
-        uiView.onZoneTap = onZoneTap
-        uiView.onSwipe = onSwipe
+        // Scroll mode needs all touches reach UITextView so the pan
+        // gesture scrolls. Paginated mode keeps the link-only filter
+        // so SwiftUI's overlay tap zones own page navigation. Link
+        // precedence over zone navigation is the next milestone (the
+        // in-view recognizer experiment didn't deliver taps on
+        // iPhone SE 17.2 — UITextView's gesture pipeline absorbed
+        // them silently).
+        uiView.consumeAllTouches = scrollable
         uiView.textContainer.size = CGSize(
             width: size.width,
             height: scrollable ? .greatestFiniteMagnitude : size.height
