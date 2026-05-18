@@ -557,22 +557,23 @@ struct ReaderView: View {
     }
     #endif
 
-    /// Horizontal slide transition (the old default).
+    /// Page renderer for the "slide" turn style — kept as the default
+    /// because page-curl needs `UIPageViewController`. We *no longer*
+    /// apply `.id(pageIndex)` + `.transition` here: that pair made
+    /// SwiftUI tear down the old `pageView` (and the UITextView inside
+    /// it) and stand up a new one on every page turn. The new
+    /// UITextView's TextKit relayout takes a few frames, during which
+    /// the user saw the previous page's text briefly snap back —
+    /// the "flicker that corrects after 100ms" the user reported.
+    ///
+    /// Without `.id`, `AttributedPageView` keeps a single UITextView
+    /// instance across page changes and `updateUIView` just rewrites
+    /// `attributedText` in place — instant, no relayout flicker.
+    /// We lose the slide animation in exchange; reading-mode UX
+    /// (Apple Books "scroll" style) does instant flips too, so the
+    /// trade-off is acceptable.
     private func slidePageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
         pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
-            .id(pageIndex)
-            .transition(.asymmetric(
-                insertion: .move(edge: pageDirection == .forward ? .trailing : .leading)
-                    .combined(with: .opacity),
-                removal: .move(edge: pageDirection == .forward ? .leading : .trailing)
-                    .combined(with: .opacity)
-            ))
-            .animation(.easeInOut(duration: 0.25), value: currentPage)
-            // Tap zones are an overlay (foreground): SwiftUI hit-tests
-            // them first, which is required for page-turn taps to fire
-            // at all. UITextView link precedence is now handled inside
-            // each tap-zone handler via a coordinator-backed query
-            // (see `linkURL(at:)`), instead of by Z-ordering.
             .overlay(tapZones(totalPages: pages.count))
             .gesture(
                 DragGesture(minimumDistance: 30)
