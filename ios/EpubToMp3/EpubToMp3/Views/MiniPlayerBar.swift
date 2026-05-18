@@ -94,11 +94,45 @@ struct MiniPlayerBar: View {
 
                     Spacer()
 
-                    // Per user spec: the mini player has NO transport
-                    // controls. Tap + pull on the bar are the only way
-                    // to start play (both expand to the full player).
-                    // The "..." popover carries speed + sleep — the
-                    // only secondary actions the spec asked for inline.
+                    // Inline transport: play/pause + next chapter. Tap on
+                    // the *bar* (anywhere outside these buttons) expands
+                    // to the full player — SwiftUI's gesture dispatch
+                    // gives the buttons priority over the bar's
+                    // `onTapGesture`, so play/pause never accidentally
+                    // expands the sheet.
+                    ZStack {
+                        ProgressView()
+                            .opacity(player.isConverting && !player.firstChapterReady ? 1 : 0)
+                            .accessibilityLabel(L10n.string("player.generatingAudio"))
+                            .accessibilityIdentifier("miniPlayer.loadingSpinner")
+                        Button {
+                            player.togglePlayPause()
+                        } label: {
+                            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                                .font(.system(size: 22))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .opacity(player.isConverting && !player.firstChapterReady ? 0 : 1)
+                        .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
+                        .accessibilityIdentifier("miniPlayer.playPause")
+                    }
+                    .frame(width: 44, height: 44)
+
+                    Button {
+                        player.nextChapter()
+                    } label: {
+                        Image(systemName: "forward.end.fill")
+                            .font(.system(size: 18))
+                            .frame(width: 36, height: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(player.isConverting && !player.firstChapterReady)
+                    .accessibilityLabel(L10n.string("player.nextChapter"))
+
+                    // "..." popover — speed + sleep, the spec's "floater
+                    // pra velocidade e sleep".
                     Menu {
                         Menu {
                             ForEach(PlaybackRate.allCases) { rate in

@@ -565,10 +565,14 @@ struct ReaderView: View {
     /// same engine SwiftUI's `Text` uses to render it.
     @ViewBuilder
     private func pageTextBody(_ slice: NSAttributedString) -> some View {
-        Text(AttributedString(slice))
-            .lineSpacing(settings.readerLineSpacing)
-            .multilineTextAlignment(.leading)
-            .frame(maxWidth: .infinity, alignment: .leading)
+        // Render via UITextView (read-only, non-scrolling) so the engine
+        // that lays out the page is the same one that draws it. SwiftUI's
+        // `Text(AttributedString:)` silently drops attributes it doesn't
+        // understand — most painfully `paragraphSpacingBefore`, which
+        // pushed `TextKit`-computed page breaks down by ~100pt and left
+        // half the page blank below the visible text.
+        AttributedPageView(attributed: slice)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func pageFooter(index: Int, total: Int) -> some View {

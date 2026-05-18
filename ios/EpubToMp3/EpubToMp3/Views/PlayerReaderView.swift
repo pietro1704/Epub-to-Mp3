@@ -242,11 +242,6 @@ struct PlayerReaderView: View {
             }
             scrubber
             transport
-            HStack {
-                rateButton
-                Spacer()
-                sleepTimerBadge
-            }
         }
         // 20pt vertical + horizontal margin, with the horizontal axis
         // sitting on top of any safe-area inset so the scrubber thumb
@@ -281,28 +276,83 @@ struct PlayerReaderView: View {
     }
 
     private var transport: some View {
-        HStack(spacing: 20) {
-            Button { player.previousChapter() } label: {
-                Image(systemName: "backward.fill").font(.title2)
-            }
-            Button { player.skipBackward(seconds: 15) } label: {
-                Image(systemName: "gobackward.15").font(.title)
-            }
+        HStack(spacing: 36) {
             Button { player.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                    // Decorative transport icon — clamp so the transport
-                    // row does not overflow at XXXL Dynamic Type.
                     .font(.system(size: 56))
                     .dynamicTypeSize(...DynamicTypeSize.accessibility2)
             }
-            Button { player.skipForward(seconds: 15) } label: {
-                Image(systemName: "goforward.15").font(.title)
-            }
+            .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
+
             Button { player.nextChapter() } label: {
-                Image(systemName: "forward.fill").font(.title2)
+                Image(systemName: "forward.end.fill").font(.title2)
             }
+            .accessibilityLabel(L10n.string("player.nextChapter"))
+
+            transportMoreMenu
         }
         .tint(.primary)
+        .frame(maxWidth: .infinity)
+    }
+
+    /// "..." menu mirroring FullPlayerSheet — speed, sleep timer,
+    /// secondary skip controls. Keeps the inline row to three taps.
+    private var transportMoreMenu: some View {
+        Menu {
+            Menu {
+                ForEach(PlaybackRate.allCases) { rate in
+                    Button {
+                        player.setRate(rate)
+                    } label: {
+                        if player.rate == rate {
+                            Label(rate.shortLabel, systemImage: "checkmark")
+                        } else {
+                            Text(rate.shortLabel)
+                        }
+                    }
+                }
+            } label: {
+                Label(
+                    L10n.string("player.playbackSpeed", player.rate.shortLabel),
+                    systemImage: "speedometer"
+                )
+            }
+            Menu {
+                ForEach([0, 5, 15, 30, 45, 60], id: \.self) { minutes in
+                    Button {
+                        if minutes == 0 {
+                            player.setSleepTimer(seconds: 0)
+                        } else {
+                            player.startSleepTimer(minutes: minutes)
+                        }
+                    } label: {
+                        if minutes == 0 {
+                            Label(L10n.string("player.sleepTimerOption.off"), systemImage: "xmark")
+                        } else {
+                            Text(L10n.string("player.sleepTimerOption.\(minutes)"))
+                        }
+                    }
+                }
+            } label: {
+                Label(L10n.string("player.sleepTimer"), systemImage: "moon.zzz")
+            }
+            Divider()
+            Button { player.previousChapter() } label: {
+                Label(L10n.string("player.previousChapter"), systemImage: "backward.end.fill")
+            }
+            Button { player.skipBackward(seconds: 15) } label: {
+                Label(L10n.string("player.skipBack15"), systemImage: "gobackward.15")
+            }
+            Button { player.skipForward(seconds: 15) } label: {
+                Label(L10n.string("player.skipForward15"), systemImage: "goforward.15")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.title2)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(L10n.string("player.more"))
     }
 
     /// Inline rate button: shows current rate; tapping cycles to the next one.
