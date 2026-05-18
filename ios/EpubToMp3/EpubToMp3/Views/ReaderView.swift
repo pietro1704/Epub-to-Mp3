@@ -314,15 +314,13 @@ struct ReaderView: View {
             let effectiveLineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             let effectiveColumnWidth: CGFloat = debouncedColumnWidth > 0 ? CGFloat(debouncedColumnWidth) : settings.readerColumnWidth
             let headerH: CGFloat = effectiveFontSize * 2.5 + 50
-            let pages = Paginator.paginate(
-                spans: spans,
+            let pages = attributedPages(
                 pageSize: geo.size,
-                fontSize: effectiveFontSize,
-                lineSpacing: effectiveLineSpacing,
+                margin: margin,
                 columnWidth: effectiveColumnWidth,
-                margin: Double(margin),
                 headerHeight: headerH,
-                fontFamily: settings.readerFontFamily
+                fontSize: effectiveFontSize,
+                lineSpacing: effectiveLineSpacing
             )
             ZStack(alignment: .bottom) {
                 if pages.isEmpty {
@@ -378,27 +376,87 @@ struct ReaderView: View {
 
     /// Cumulative plain-text character count up to (but not including) the
     /// given page index. Used to bookmark the reading position.
-    private func cumulativeOffset(page: Int, in pages: [String]) -> Int {
+    private func cumulativeOffset(page: Int, in pages: [NSAttributedString]) -> Int {
         guard !pages.isEmpty else { return 0 }
         let clamped = max(0, min(pages.count - 1, page))
-        return pages[..<clamped].reduce(0) { $0 + $1.count }
+        return pages[..<clamped].reduce(0) { $0 + $1.length }
     }
 
     /// Find the page that contains the given cumulative character offset.
-    private func findPage(containing offset: Int, in pages: [String]) -> Int {
+    private func findPage(containing offset: Int, in pages: [NSAttributedString]) -> Int {
         guard !pages.isEmpty else { return 0 }
         var cumulative = 0
         for (i, page) in pages.enumerated() {
-            cumulative += page.count
+            cumulative += page.length
             if cumulative > offset { return i }
         }
         return pages.count - 1
     }
 
+    /// Build the per-page `NSAttributedString` list. Uses the pre-rendered
+    /// EPUB AttributedString (which carries the book's CSS fonts, colours,
+    /// weight, line spacing) when available; falls back to a synthesised
+    /// attributed wrapper around the raw chapter text otherwise.
+    private func attributedPages(
+        pageSize: CGSize,
+        margin: CGFloat,
+        columnWidth: CGFloat,
+        headerHeight: CGFloat,
+        fontSize: CGFloat,
+        lineSpacing: Double
+    ) -> [NSAttributedString] {
+        #if canImport(UIKit) || canImport(AppKit)
+        let base: NSAttributedString
+        if let rendered = renderedAttributed {
+            base = NSAttributedString(rendered)
+        } else {
+            let plain = spans.map(\.text).joined(separator: "\n\n")
+            let font = bodyPlatformFont(size: fontSize)
+            let para = NSMutableParagraphStyle()
+            para.lineSpacing = CGFloat(lineSpacing)
+            base = NSAttributedString(string: plain, attributes: [
+                .font: font,
+                .paragraphStyle: para,
+            ])
+        }
+        return Paginator.paginateAttributed(
+            base,
+            pageSize: pageSize,
+            columnWidth: columnWidth,
+            margin: Double(margin),
+            headerHeight: headerHeight
+        )
+        #else
+        return []
+        #endif
+    }
+
+    #if canImport(UIKit)
+    private func bodyPlatformFont(size: CGFloat) -> UIFont {
+        switch settings.readerFontFamily {
+        case .sans: return .systemFont(ofSize: size)
+        case .serif:
+            let d = UIFont.systemFont(ofSize: size)
+                .fontDescriptor.withDesign(.serif)
+                ?? UIFont.systemFont(ofSize: size).fontDescriptor
+            return UIFont(descriptor: d, size: size)
+        case .mono: return .monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+    }
+    #elseif canImport(AppKit)
+    private func bodyPlatformFont(size: CGFloat) -> NSFont {
+        switch settings.readerFontFamily {
+        case .sans: return .systemFont(ofSize: size)
+        case .serif: return NSFont(name: "Times New Roman", size: size) ?? .systemFont(ofSize: size)
+        case .mono: return .monospacedSystemFont(ofSize: size, weight: .regular)
+        }
+    }
+    #endif
+
     /// Dispatch page rendering to the appropriate animation container
     /// based on `settings.pageTurnStyle`.
     @ViewBuilder
-    private func paginatedPageContent(pages: [String], containerSize: CGSize) -> some View {
+    private func paginatedPageContent(pages: [NSAttributedString], containerSize: CGSize) -> some View {
         let pageIndex = max(0, min(pages.count - 1, currentPage))
         switch settings.pageTurnStyle {
         #if os(iOS)
@@ -419,7 +477,7 @@ struct ReaderView: View {
 
     #if os(iOS)
     /// Apple Books-style page curl using UIPageViewController.
-    private func pageCurlContent(pages: [String], containerSize: CGSize) -> some View {
+    private func pageCurlContent(pages: [NSAttributedString], containerSize: CGSize) -> some View {
         let pageViews: [AnyView] = pages.indices.map { i in
             AnyView(
                 pageView(pages: pages, pageIndex: i, containerSize: containerSize)
@@ -437,7 +495,7 @@ struct ReaderView: View {
     #endif
 
     /// Horizontal slide transition (the old default).
-    private func slidePageContent(pages: [String], pageIndex: Int, containerSize: CGSize) -> some View {
+    private func slidePageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
         pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
             .id(pageIndex)
             .transition(.asymmetric(
@@ -461,7 +519,7 @@ struct ReaderView: View {
     }
 
     /// Instant page change — no animation at all.
-    private func noAnimationPageContent(pages: [String], pageIndex: Int, containerSize: CGSize) -> some View {
+    private func noAnimationPageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
         pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
             .overlay(tapZones(totalPages: pages.count))
             .gesture(
@@ -476,16 +534,16 @@ struct ReaderView: View {
             )
     }
 
-    private func pageView(pages: [String], pageIndex: Int, containerSize: CGSize) -> some View {
+    private func pageView(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
         let margin = effectiveReaderMargin(for: containerSize)
-        let pageText = pages[pageIndex]
+        let attributedSlice = pages[pageIndex]
         let effectiveColumnWidth = min(
             settings.readerColumnWidth,
             containerSize.width - 2 * margin
         )
         return VStack(alignment: .leading, spacing: 0) {
             if pageIndex == 0 { chapterTitleHeader }
-            pageTextBody(plain: pageText, pageIndex: pageIndex, pages: pages)
+            pageTextBody(attributedSlice)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, margin)
@@ -495,47 +553,19 @@ struct ReaderView: View {
         .clipped()
     }
 
-    /// Pick HTML-rendered AttributedString slice when available, fall
-    /// back to plain `Text(pageText)` otherwise. The slicing strategy
-    /// uses cumulative plain-text character offsets from `pages`
-    /// (each page is N chars long). When the rendered AttributedString
-    /// is shorter than the plain text (HTML collapsed whitespace etc.),
-    /// the slice clamps to the available range — worst case the last
-    /// page shows slightly less than the plain version would.
+    /// Render the EPUB-styled slice produced by `Paginator.paginateAttributed`.
+    /// Because the slice IS a real `NSAttributedString` (not a plain-text
+    /// substring), every CSS-driven attribute — font family, weight, italics,
+    /// foreground/background colour, paragraph spacing, headings, monospace
+    /// code blocks — survives intact. No more mid-word cuts, no more lost
+    /// list markers: the TextKit layout pass that built the slice is the
+    /// same engine SwiftUI's `Text` uses to render it.
     @ViewBuilder
-    private func pageTextBody(plain: String, pageIndex: Int, pages: [String]) -> some View {
-        // Paginated mode renders plain text only. We used to slice the
-        // pre-rendered AttributedString by plain-text character offsets,
-        // but HTML <ol>/<ul> render their markers via CSS — so the attr
-        // is shorter than the plain text by the count of dropped bullets
-        // / numbers, and the per-page offsets drift, cutting words mid-
-        // letter (e.g. "3. O período b…"). Scrolling mode keeps the full
-        // AttributedString render (no slicing needed there).
-        Text(plain)
-            .font(bodyFont)
+    private func pageTextBody(_ slice: NSAttributedString) -> some View {
+        Text(AttributedString(slice))
             .lineSpacing(settings.readerLineSpacing)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    /// Map page index → AttributedString sub-range by counting Plain
-    /// text characters per page. Returns `nil` when the math drifts
-    /// off the rendered string (graceful fall back to plain text).
-    private func slicedAttributed(
-        from attr: AttributedString,
-        pages: [String],
-        pageIndex: Int
-    ) -> AttributedString? {
-        let cumulativeStart = pages[..<pageIndex].reduce(0) { $0 + $1.count }
-        let length = pages[pageIndex].count
-        let chars = attr.characters
-        let total = chars.count
-        guard cumulativeStart < total else { return nil }
-        let startOffset = cumulativeStart
-        let endOffset = min(total, cumulativeStart + length)
-        let startIdx = chars.index(chars.startIndex, offsetBy: startOffset)
-        let endIdx = chars.index(chars.startIndex, offsetBy: endOffset)
-        return AttributedString(attr[startIdx..<endIdx])
     }
 
     private func pageFooter(index: Int, total: Int) -> some View {

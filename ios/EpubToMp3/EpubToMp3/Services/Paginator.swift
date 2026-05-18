@@ -61,7 +61,64 @@ enum Paginator {
         #endif
     }
 
-    // MARK: - TextKit-backed (iOS / macOS)
+    // MARK: - Attributed pagination (preserves EPUB CSS)
+
+    /// Page-break a pre-rendered `NSAttributedString` (from
+    /// `EpubHtmlRenderer`) by laying it out with TextKit and slicing the
+    /// resulting glyph ranges. **All attributes survive**: fonts, weight,
+    /// italics, foreground/background colour, paragraph indent, line
+    /// height — i.e. whatever the EPUB's CSS asked for and whatever
+    /// `applyOverrides` left in place.
+    #if canImport(UIKit) || canImport(AppKit)
+    static func paginateAttributed(
+        _ attributed: NSAttributedString,
+        pageSize: CGSize,
+        columnWidth: CGFloat,
+        margin: Double,
+        headerHeight: CGFloat = 0
+    ) -> [NSAttributedString] {
+        guard attributed.length > 0 else { return [] }
+        let usableWidth = max(200, min(columnWidth, pageSize.width - 2 * CGFloat(margin)))
+        let usableHeight = max(120, pageSize.height - 76)
+
+        let storage = NSTextStorage(attributedString: attributed)
+        let layout = NSLayoutManager()
+        layout.allowsNonContiguousLayout = false
+        storage.addLayoutManager(layout)
+
+        var pages: [NSAttributedString] = []
+        var nextLocation = 0
+        let total = storage.length
+
+        while nextLocation < total {
+            let containerHeight = pages.isEmpty
+                ? max(60, usableHeight - headerHeight)
+                : usableHeight
+            let container = NSTextContainer(size: CGSize(width: usableWidth, height: containerHeight))
+            container.lineFragmentPadding = 0
+            container.maximumNumberOfLines = 0
+            layout.addTextContainer(container)
+
+            let glyphRange = layout.glyphRange(for: container)
+            guard glyphRange.length > 0 else {
+                let safeLen = min(1, total - nextLocation)
+                guard safeLen > 0 else { break }
+                let range = NSRange(location: nextLocation, length: safeLen)
+                pages.append(attributed.attributedSubstring(from: range))
+                nextLocation += safeLen
+                continue
+            }
+            let charRange = layout.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
+            let snapped = snapToWordEnd(in: storage.string, range: charRange, fullLength: total)
+            guard snapped.length > 0 else { break }
+            pages.append(attributed.attributedSubstring(from: snapped))
+            nextLocation = snapped.location + snapped.length
+        }
+        return pages
+    }
+    #endif
+
+    // MARK: - TextKit-backed plain (iOS / macOS)
 
     #if canImport(UIKit) || canImport(AppKit)
     private static func textKitPaginate(
