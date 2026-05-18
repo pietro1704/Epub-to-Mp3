@@ -259,6 +259,56 @@ final class PaginatorTests: XCTestCase {
         }
     }
 
+    // MARK: - Font-family charWidth factor
+
+    func testMonoFamilyProducesMorePages() {
+        // mono factor 0.58 > serif 0.52 > sans 0.44
+        // wider charWidth → fewer chars/line → more pages
+        let big = Array(repeating: "Quick brown fox jumps over lazy dog testing pagination", count: 60)
+            .joined(separator: ". ") + "."
+        let s = spans(from: big)
+        let pageSize = CGSize(width: 600, height: 500)
+        let base = (pageSize: pageSize, fontSize: CGFloat(18),
+                    lineSpacing: 4.0, columnWidth: CGFloat(560), margin: 20.0)
+
+        let sans = Paginator.paginate(
+            spans: s, pageSize: base.pageSize, fontSize: base.fontSize,
+            lineSpacing: base.lineSpacing, columnWidth: base.columnWidth,
+            margin: base.margin, fontFamily: .sans)
+        let serif = Paginator.paginate(
+            spans: s, pageSize: base.pageSize, fontSize: base.fontSize,
+            lineSpacing: base.lineSpacing, columnWidth: base.columnWidth,
+            margin: base.margin, fontFamily: .serif)
+        let mono = Paginator.paginate(
+            spans: s, pageSize: base.pageSize, fontSize: base.fontSize,
+            lineSpacing: base.lineSpacing, columnWidth: base.columnWidth,
+            margin: base.margin, fontFamily: .mono)
+
+        // sans (0.44) → fewest pages, mono (0.58) → most pages
+        XCTAssertLessThanOrEqual(sans.count, serif.count,
+            "sans should yield ≤ pages than serif")
+        XCTAssertLessThanOrEqual(serif.count, mono.count,
+            "serif should yield ≤ pages than mono")
+    }
+
+    func testSansFamilyMatchesDefaultBehavior() {
+        // Default omitting fontFamily uses .sans (0.44 factor).
+        let big = Array(repeating: "Testing font family default parity check", count: 50)
+            .joined(separator: ". ") + "."
+        let s = spans(from: big)
+        let pageSize = CGSize(width: 700, height: 600)
+
+        let withDefault = Paginator.paginate(
+            spans: s, pageSize: pageSize, fontSize: 18,
+            lineSpacing: 4, columnWidth: 640, margin: 30)
+        let withSans = Paginator.paginate(
+            spans: s, pageSize: pageSize, fontSize: 18,
+            lineSpacing: 4, columnWidth: 640, margin: 30, fontFamily: .sans)
+
+        XCTAssertEqual(withDefault.count, withSans.count,
+            "default and explicit .sans should produce identical pagination")
+    }
+
     func testPageTurnStyleEnum() {
         // Verify PageTurnStyle enum has expected cases and raw values
         XCTAssertEqual(PageTurnStyle.flip.rawValue, "flip")

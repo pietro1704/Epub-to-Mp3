@@ -10,14 +10,22 @@ enum Paginator {
         lineSpacing: Double,
         columnWidth: CGFloat,
         margin: Double,
-        headerHeight: CGFloat = 0
+        headerHeight: CGFloat = 0,
+        fontFamily: ReaderFontFamily = .sans
     ) -> [String] {
         guard !spans.isEmpty else { return [] }
         let usableWidth = max(200, min(columnWidth, pageSize.width - 2 * CGFloat(margin)))
         // Deduct vertical padding (24pt top + 24pt bottom) + page footer (~28pt)
         let usableHeight = max(120, pageSize.height - 76)
-        // San Francisco average glyph width is ~0.44em for body text
-        let charWidth = max(6, fontSize * 0.44)
+        // Average glyph width varies by family: serif ~0.52em, mono ~0.58em, sans ~0.44em
+        let factor: CGFloat = {
+            switch fontFamily {
+            case .serif: return 0.52
+            case .mono:  return 0.58
+            case .sans:  return 0.44
+            }
+        }()
+        let charWidth = max(6, fontSize * factor)
         let charsPerLine = max(15, Int(usableWidth / charWidth))
         let lineHeight = fontSize + CGFloat(lineSpacing) + 2
         let linesPerPage = max(5, Int(usableHeight / lineHeight))

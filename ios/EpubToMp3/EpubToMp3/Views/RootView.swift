@@ -83,7 +83,7 @@ struct TabRoot: View {
 
     var body: some View {
         tabContent
-            .fullScreenCover(isPresented: $playerPresentation.showingFullPlayer) {
+            .compatFullScreenCover(isPresented: $playerPresentation.showingFullPlayer) {
                 FullPlayerSheet()
                     .environmentObject(player)
                     .environmentObject(library)

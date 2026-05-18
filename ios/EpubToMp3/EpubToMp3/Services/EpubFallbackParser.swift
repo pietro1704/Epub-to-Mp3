@@ -114,6 +114,16 @@ enum EpubFallbackParser {
     /// breaks (block elements → newline). Not a full sanitizer; we
     /// just want readable plain text for TTS / fallback display.
     fileprivate static func stripHTML(_ html: String) -> String {
+        // Pre-clean EPUB artifacts before tag stripping:
+        // 1. BOM / zero-width no-break space (\u{FEFF})
+        // 2. Non-breaking space numeric entities → regular space
+        // 3. JS serialisation artifact from broken renderers
+        var html = html
+            .replacingOccurrences(of: "\u{FEFF}", with: "")
+            .replacingOccurrences(of: "&#160;", with: " ")
+            .replacingOccurrences(of: "&#xA0;", with: " ")
+            .replacingOccurrences(of: "[object Object]", with: "")
+
         var output = ""
         var inTag = false
         var inScript = false

@@ -140,17 +140,21 @@ final class AudioPlayerStreamingTests: XCTestCase {
     /// (continuation dict writes are serialised on MainActor). The test
     /// uses structured concurrency (`async let`) so there are no unstructured
     /// Task escapes that could race against XCTest teardown.
+    @MainActor
     func testPositionStreamMultipleConsumersParallel() async {
         let player = AudioPlayer()
 
         // Collect first value emitted on each consumer.
+        let s1 = player.position
+        let s2 = player.position
+
         async let first: TimeInterval = {
-            var iter = player.position.makeAsyncIterator()
+            var iter = s1.makeAsyncIterator()
             return await iter.next() ?? -1
         }()
 
         async let second: TimeInterval = {
-            var iter = player.position.makeAsyncIterator()
+            var iter = s2.makeAsyncIterator()
             return await iter.next() ?? -1
         }()
 
@@ -165,16 +169,20 @@ final class AudioPlayerStreamingTests: XCTestCase {
 
     /// Subscribes two consumers to `currentChapter` in parallel and verifies
     /// both receive the initial nil value without a data race.
+    @MainActor
     func testCurrentChapterStreamMultipleConsumersParallel() async {
         let player = AudioPlayer()
 
+        let s1 = player.currentChapter
+        let s2 = player.currentChapter
+
         async let first: JobSnapshot.Chapter? = {
-            var iter = player.currentChapter.makeAsyncIterator()
+            var iter = s1.makeAsyncIterator()
             return await iter.next() ?? nil
         }()
 
         async let second: JobSnapshot.Chapter? = {
-            var iter = player.currentChapter.makeAsyncIterator()
+            var iter = s2.makeAsyncIterator()
             return await iter.next() ?? nil
         }()
 

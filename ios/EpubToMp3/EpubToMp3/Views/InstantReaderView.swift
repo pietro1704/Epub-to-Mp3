@@ -47,6 +47,7 @@ struct InstantReaderView: View {
     @State private var positionTask: Task<Void, Never>?
     @State private var sentenceTask: Task<Void, Never>?
     @State private var showingToc = false
+    @State private var showingSearch = false
     @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
     @State private var showingPlayMenu = false
     @State private var showingConversionStatus = false
@@ -100,6 +101,10 @@ struct InstantReaderView: View {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 HStack(spacing: 16) {
                     Button {
+                        showingSearch = true
+                    } label: { Image(systemName: "magnifyingglass") }
+                    .accessibilityLabel("Search in book")
+                    Button {
                         showingReaderSettings = true
                     } label: { Image(systemName: "textformat.size") }
                     .accessibilityLabel("Reader settings")
@@ -110,13 +115,20 @@ struct InstantReaderView: View {
                 }
             }
         }
-        .fullScreenCover(isPresented: $showingFullPlayer) {
+        .compatFullScreenCover(isPresented: $showingFullPlayer) {
             FullPlayerSheet()
                 .environmentObject(globalPlayer)
         }
         .sheet(isPresented: $showingReaderSettings) {
             ReaderSettingsSheet()
                 .environmentObject(settings)
+        }
+        .sheet(isPresented: $showingSearch) {
+            ReaderSearchOverlay(
+                chapters: fulltext.chapters,
+                onJumpToChapter: { idx in currentChapterIndex = idx },
+                isPresented: $showingSearch
+            )
         }
         .background {
             Color.clear.allowsHitTesting(false)
@@ -540,11 +552,11 @@ struct InstantReaderView: View {
                     $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
                 }) { chapter in
                     Button {
-                        let target = chapter.index - 1
-                        currentChapterIndex = max(0, target)
+                        let target = max(0, chapter.index - 1)
+                        currentChapterIndex = target
                         if playerMounted {
                             player.play(snapshot: snapshot ?? JobSnapshot.empty,
-                                         startingAt: max(0, target))
+                                         startingAt: target)
                         }
                         showingToc = false
                     } label: {
@@ -556,7 +568,7 @@ struct InstantReaderView: View {
                             Text(chapter.displayTitle)
                                 .lineLimit(2)
                             Spacer()
-                            chapterCacheIcon(for: chapter.index - 1)
+                            chapterCacheIcon(for: max(0, chapter.index - 1))
                         }
                     }
                     .buttonStyle(.plain)
@@ -695,39 +707,18 @@ struct InstantReaderView: View {
         return true
     }
 
-    // MARK: - Theme colours (mirrors ReaderView)
+    // MARK: - Theme colours (delegated to ReaderTheme)
 
-    /// Reader background colour derived from `settings.readerTheme`.
-    /// Used to tint the status strip and player bar so they feel like
-    /// continuations of the reading surface rather than system chrome.
     private var readerBackground: Color {
-        switch settings.readerTheme {
-        case .auto:      return .platformSystemBackground
-        case .light:     return .platformSystemBackground
-        case .sepia:     return Color(red: 0xF8/255.0, green: 0xF0/255.0, blue: 0xE0/255.0)
-        case .parchment: return Color(red: 0xF4/255.0, green: 0xEC/255.0, blue: 0xD8/255.0)
-        case .paper:     return Color(red: 0xE8/255.0, green: 0xE2/255.0, blue: 0xD5/255.0)
-        case .dark:      return Color(red: 0x1C/255.0, green: 0x1C/255.0, blue: 0x1E/255.0)
-        case .black:     return .black
-        case .custom:
-            let bg = settings.readerCustomColors.background
-            return Color(red: bg.0, green: bg.1, blue: bg.2)
-        }
+        settings.readerTheme.background(
+            customBg: settings.readerTheme == .custom ? settings.readerCustomColors.background : nil
+        )
     }
 
     private var readerForeground: Color {
-        switch settings.readerTheme {
-        case .auto:      return .primary
-        case .light:     return .primary
-        case .sepia:     return Color(red: 0x5B/255.0, green: 0x46/255.0, blue: 0x36/255.0)
-        case .parchment: return Color(red: 0x3D/255.0, green: 0x2F/255.0, blue: 0x1F/255.0)
-        case .paper:     return Color(red: 0x2A/255.0, green: 0x25/255.0, blue: 0x20/255.0)
-        case .dark:      return Color(red: 0xE8/255.0, green: 0xE8/255.0, blue: 0xE8/255.0)
-        case .black:     return Color(red: 0xE0/255.0, green: 0xE0/255.0, blue: 0xE0/255.0)
-        case .custom:
-            let fg = settings.readerCustomColors.foreground
-            return Color(red: fg.0, green: fg.1, blue: fg.2)
-        }
+        settings.readerTheme.foreground(
+            customFg: settings.readerTheme == .custom ? settings.readerCustomColors.foreground : nil
+        )
     }
 
     private var currentChapterTitle: String {

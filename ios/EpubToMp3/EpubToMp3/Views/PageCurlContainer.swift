@@ -111,7 +111,10 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             if prev >= 0 {
                 return hostingController(for: prev)
             }
-            // At page 0: try going to previous chapter
+            // At page 0: signal host to load previous chapter.
+            if parent.onPreviousChapter?() == true {
+                parent.currentPage = 0
+            }
             return nil
         }
 
@@ -124,7 +127,10 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             if next < parent.pages.count {
                 return hostingController(for: next)
             }
-            // At last page: try going to next chapter
+            // At last page: signal host to load next chapter.
+            if parent.onAdvanceChapter?() == true {
+                parent.currentPage = 0
+            }
             return nil
         }
 

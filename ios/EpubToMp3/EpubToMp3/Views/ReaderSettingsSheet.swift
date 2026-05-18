@@ -80,7 +80,10 @@ struct ReaderSettingsSheet: View {
                             in: 0...16,
                             step: 2
                         )
-                        .frame(width: 140)
+                        .frame(width: 120)
+                        Text("\(Int(settings.readerLineSpacing))")
+                            .monospacedDigit()
+                            .frame(width: 28, alignment: .trailing)
                     }
 
                     HStack {
@@ -91,7 +94,10 @@ struct ReaderSettingsSheet: View {
                             in: 16...80,
                             step: 4
                         )
-                        .frame(width: 140)
+                        .frame(width: 120)
+                        Text("\(Int(settings.readerMargin))")
+                            .monospacedDigit()
+                            .frame(width: 28, alignment: .trailing)
                     }
                 }
             }
