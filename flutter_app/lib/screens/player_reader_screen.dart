@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
@@ -66,7 +67,18 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   void dispose() {
     _chapterIndexSub?.cancel();
     _playingSub?.cancel();
+    // Always restore the system chrome when leaving the reader so
+    // other screens are not left in immersive mode.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     super.dispose();
+  }
+
+  void _setChromeVisible(bool visible) {
+    if (_chromeVisible == visible) return;
+    setState(() => _chromeVisible = visible);
+    SystemChrome.setEnabledSystemUIMode(
+      visible ? SystemUiMode.edgeToEdge : SystemUiMode.immersive,
+    );
   }
 
   void _showReaderSettings() {
@@ -279,8 +291,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                 chapterIndex: _currentChapterIndex,
                 jobId: widget.jobId,
                 t: t,
-                onCenterTap: () =>
-                    setState(() => _chromeVisible = !_chromeVisible),
+                onCenterTap: () => _setChromeVisible(!_chromeVisible),
               );
               final controls = _PlayerControls(
                 jobId: widget.jobId,

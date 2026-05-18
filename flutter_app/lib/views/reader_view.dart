@@ -20,6 +20,11 @@ class ReaderView extends ConsumerStatefulWidget {
   /// Called when the user taps the center zone of the reader. Used by
   /// the hosting screen to toggle chrome visibility (AppBar + player bar).
   final VoidCallback? onCenterTap;
+  /// Called whenever the user turns a page (tap zone, keyboard, or
+  /// swipe). The host screen should dim its chrome (AppBar, player
+  /// bar, status bar) for an immersive reading experience. Mirrors
+  /// iOS PlayerReaderView page-turn dim behaviour.
+  final VoidCallback? onAutoHideChrome;
 
   const ReaderView({
     super.key,
@@ -30,6 +35,7 @@ class ReaderView extends ConsumerStatefulWidget {
     this.onAdvanceChapter,
     this.onPreviousChapter,
     this.onCenterTap,
+    this.onAutoHideChrome,
   });
 
   @override
@@ -77,6 +83,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     } else {
       widget.onAdvanceChapter?.call();
     }
+    widget.onAutoHideChrome?.call();
   }
 
   void retreatPage() {
@@ -85,6 +92,7 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     } else {
       widget.onPreviousChapter?.call();
     }
+    widget.onAutoHideChrome?.call();
   }
 
   KeyEventResult _handleKey(FocusNode node, KeyEvent event) {

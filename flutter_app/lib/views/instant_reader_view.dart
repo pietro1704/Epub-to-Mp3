@@ -1,6 +1,5 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../l10n/app_localizations.dart';
@@ -61,6 +60,28 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
           ? _firstReadableIndex
           : widget.initialChapterIndex;
     }
+  }
+
+  @override
+  void dispose() {
+    // Always restore the system chrome when leaving the reader so other
+    // screens are not left in immersive mode.
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    super.dispose();
+  }
+
+  void _applySystemChrome() {
+    SystemChrome.setEnabledSystemUIMode(
+      _chromeVisible
+          ? SystemUiMode.edgeToEdge
+          : SystemUiMode.immersive,
+    );
+  }
+
+  void _setChromeVisible(bool visible) {
+    if (_chromeVisible == visible) return;
+    setState(() => _chromeVisible = visible);
+    _applySystemChrome();
   }
 
   int get _firstReadableIndex {
@@ -199,9 +220,8 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
             currentSentenceId: widget.activeSentenceId,
             onAdvanceChapter: advanceToNextChapter,
             onPreviousChapter: returnToPreviousChapter,
-            onCenterTap: () {
-              setState(() => _chromeVisible = !_chromeVisible);
-            },
+            onCenterTap: () => _setChromeVisible(!_chromeVisible),
+            onAutoHideChrome: () => _setChromeVisible(false),
           ),
         ),
 

@@ -230,9 +230,12 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
           ref.read(globalAudioPlayerProvider) as AudioPlayerService;
       _setCoverOnPlayer(player);
       player.setQueue(List.of(_playableChapters));
+      // No auto-play. Loading the queue is intentional, but playback
+      // only starts when the user taps Play (UI / lock screen /
+      // media notification). Mirrors iOS no-autoplay parity.
       if (newChapters.length == _playableChapters.length &&
           !player.raw.playing) {
-        _restoreResumePosition(player).then((_) => player.play());
+        _restoreResumePosition(player);
         _startResumeListener(player);
       }
     }
@@ -329,9 +332,9 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
           _playableChapters.add(cp);
 
           await player.setQueue(List.of(_playableChapters));
+          // No auto-play on first segment — wait for explicit user gesture.
           if (_playableChapters.length == 1 && !player.raw.playing) {
             await _restoreResumePosition(player);
-            player.play();
             _startResumeListener(player);
           }
         }
