@@ -372,6 +372,13 @@ targets:
     dependencies: []
     settings:
       base:
+        # xcodegen's per-target `deploymentTarget` doesn't always emit
+        # `IPHONEOS_DEPLOYMENT_TARGET` per configuration on Xcode 26 —
+        # the value gets inherited from the project root (iOS 15) and
+        # ActivityKit / Lock-Screen widget APIs (iOS 16.1+ / 17) fail
+        # to compile. Force the target's iOS minimum explicitly via
+        # the build setting so it sticks regardless of generator quirks.
+        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.widget
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
         CODE_SIGN_ENTITLEMENTS: EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements
