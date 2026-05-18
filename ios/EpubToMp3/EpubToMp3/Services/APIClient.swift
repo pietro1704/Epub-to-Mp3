@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 enum APIError: LocalizedError {
     case invalidBaseURL
@@ -29,16 +30,57 @@ enum APIError: LocalizedError {
 /// Note: the TS client also exposes /api/jobs/{id}/events historically; the
 /// canonical streaming endpoint on `server.py` is `/api/jobs/{id}/stream`,
 /// which is what we hit here.
-struct APIClient {
+///
+/// `APIClient` is a `final class` so that `session` and `decoder` are
+/// allocated exactly once per client. Previous versions exposed `session`
+/// as a computed property, which leaked a brand-new `URLSession` (and its
+/// delegate retain) on every call — and tore the session down mid-flight
+/// during SSE iteration.
+final class APIClient {
     let baseURL: URL
 
-    private var session: URLSession {
-        let config = URLSessionConfiguration.default
-        config.waitsForConnectivity = true
-        config.timeoutIntervalForRequest = 30
-        // SSE streams have no natural end — we rely on cancellation, not timeout.
-        config.timeoutIntervalForResource = .infinity
-        return URLSession(configuration: config)
+    /// Shared session for unary requests. Configured once; reused for
+    /// every regular call (sessions, job snapshot, telemetry, log,
+    /// upload, submit).
+    let session: URLSession
+
+    /// Dedicated session for SSE streams. Same `timeoutIntervalForRequest`
+    /// budget (so we detect server death), but `timeoutIntervalForResource`
+    /// is `.infinity` because the stream has no natural end.
+    let streamingSession: URLSession
+
+    /// Single decoder. JobSnapshot et al. already use camelCase coding
+    /// keys, so no `keyDecodingStrategy` is set — the wire format is
+    /// honoured verbatim and we just save the per-call allocation.
+    let decoder: JSONDecoder
+
+    private static let logger = Logger(subsystem: "com.pietrop.epubtomp3", category: "api")
+
+    init(baseURL: URL) {
+        self.baseURL = baseURL
+
+        let unary = URLSessionConfiguration.default
+        unary.waitsForConnectivity = true
+        unary.timeoutIntervalForRequest = 30
+        unary.timeoutIntervalForResource = 600
+        self.session = URLSession(configuration: unary)
+
+        let streaming = URLSessionConfiguration.default
+        streaming.waitsForConnectivity = true
+        streaming.timeoutIntervalForRequest = 60
+        // SSE streams have no natural end — we rely on cancellation,
+        // not resource timeout.
+        streaming.timeoutIntervalForResource = .infinity
+        self.streamingSession = URLSession(configuration: streaming)
+
+        self.decoder = JSONDecoder()
+    }
+
+    deinit {
+        // Invalidate to release the delegate queue + outstanding tasks
+        // promptly when the client goes away.
+        session.invalidateAndCancel()
+        streamingSession.invalidateAndCancel()
     }
 
     // MARK: Sessions
@@ -52,15 +94,16 @@ struct APIClient {
         do {
             let (data, response) = try await session.data(from: url)
             try Self.assertOK(response: response, data: data)
-            let decoder = JSONDecoder()
             let envelope = try decoder.decode(SessionsResponse.self, from: data)
             // Backend returns oldest-first; reverse so the latest run is on top.
             return envelope.sessions.reversed()
         } catch let err as APIError {
             throw err
         } catch let decErr as DecodingError {
+            Self.logger.error("fetchSessions decode failed: \(String(describing: decErr), privacy: .public)")
             throw APIError.decoding(decErr)
         } catch {
+            Self.logger.error("fetchSessions transport failed: \(error.localizedDescription, privacy: .public)")
             throw APIError.transport(error)
         }
     }
@@ -74,12 +117,14 @@ struct APIClient {
         do {
             let (data, response) = try await session.data(from: url)
             try Self.assertOK(response: response, data: data)
-            return try JSONDecoder().decode(JobSnapshot.self, from: data)
+            return try decoder.decode(JobSnapshot.self, from: data)
         } catch let err as APIError {
             throw err
         } catch let decErr as DecodingError {
+            Self.logger.error("fetchJob(\(id, privacy: .public)) decode failed: \(String(describing: decErr), privacy: .public)")
             throw APIError.decoding(decErr)
         } catch {
+            Self.logger.error("fetchJob(\(id, privacy: .public)) transport failed: \(error.localizedDescription, privacy: .public)")
             throw APIError.transport(error)
         }
     }
@@ -87,9 +132,18 @@ struct APIClient {
     /// Decode a single SSE `data:` payload into a `JobSnapshot`. Returns
     /// nil if the payload isn't a snapshot (some events are heartbeats or
     /// progress fragments).
+    ///
+    /// Static helper retained for call-site compatibility — uses a
+    /// throwaway decoder because callers don't carry an `APIClient`
+    /// reference. The hot path uses `client.decoder` via the SSE stream.
     static func decodeSnapshot(from rawPayload: String) -> JobSnapshot? {
         guard let data = rawPayload.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(JobSnapshot.self, from: data)
+        do {
+            return try JSONDecoder().decode(JobSnapshot.self, from: data)
+        } catch {
+            logger.debug("decodeSnapshot ignored payload: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     // MARK: SSE
@@ -99,14 +153,14 @@ struct APIClient {
     /// tears down the underlying URLSession data task automatically.
     func eventStream(jobId: String) -> AsyncThrowingStream<JobEvent, Error> {
         AsyncThrowingStream { continuation in
-            let task = Task {
+            let task = Task { [streamingSession, baseURL] in
                 do {
                     let url = baseURL.appendingPathComponent("api/jobs/\(jobId)/stream")
                     var request = URLRequest(url: url)
                     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
                     request.setValue("no-cache", forHTTPHeaderField: "Cache-Control")
 
-                    let (bytes, response) = try await session.bytes(for: request)
+                    let (bytes, response) = try await streamingSession.bytes(for: request)
                     if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
                         throw APIError.http(status: http.statusCode, body: "")
                     }
@@ -132,6 +186,7 @@ struct APIClient {
                     }
                     continuation.finish()
                 } catch {
+                    Self.logger.error("eventStream(\(jobId, privacy: .public)) failed: \(error.localizedDescription, privacy: .public)")
                     continuation.finish(throwing: error)
                 }
             }
@@ -186,7 +241,7 @@ struct APIClient {
         do {
             let (data, response) = try await session.data(for: req)
             try Self.assertOK(response: response, data: data)
-            let decoded = try JSONDecoder().decode([String: String].self, from: data)
+            let decoded = try decoder.decode([String: String].self, from: data)
             guard let id = decoded["uploadId"] ?? decoded["upload_id"] ?? decoded["id"] else {
                 throw APIError.decoding(NSError(domain: "APIClient", code: 100,
                                                 userInfo: [NSLocalizedDescriptionKey: "uploadId missing"]))
@@ -195,8 +250,10 @@ struct APIClient {
         } catch let err as APIError {
             throw err
         } catch let decErr as DecodingError {
+            Self.logger.error("registerLocalUpload decode failed: \(String(describing: decErr), privacy: .public)")
             throw APIError.decoding(decErr)
         } catch {
+            Self.logger.error("registerLocalUpload transport failed: \(error.localizedDescription, privacy: .public)")
             throw APIError.transport(error)
         }
     }
@@ -261,12 +318,14 @@ struct APIClient {
         do {
             let (data, response) = try await session.data(for: req)
             try Self.assertOK(response: response, data: data)
-            return try JSONDecoder().decode(ConvertResponse.self, from: data)
+            return try decoder.decode(ConvertResponse.self, from: data)
         } catch let err as APIError {
             throw err
         } catch let decErr as DecodingError {
+            Self.logger.error("submitConversion decode failed: \(String(describing: decErr), privacy: .public)")
             throw APIError.decoding(decErr)
         } catch {
+            Self.logger.error("submitConversion transport failed: \(error.localizedDescription, privacy: .public)")
             throw APIError.transport(error)
         }
     }
@@ -296,6 +355,7 @@ struct APIClient {
         } catch let err as APIError {
             throw err
         } catch {
+            Self.logger.error("fetchTelemetry transport failed: \(error.localizedDescription, privacy: .public)")
             throw APIError.transport(error)
         }
     }
@@ -314,6 +374,7 @@ struct APIClient {
         } catch let err as APIError {
             throw err
         } catch {
+            Self.logger.error("fetchJobLog(\(id, privacy: .public)) transport failed: \(error.localizedDescription, privacy: .public)")
             throw APIError.transport(error)
         }
     }
