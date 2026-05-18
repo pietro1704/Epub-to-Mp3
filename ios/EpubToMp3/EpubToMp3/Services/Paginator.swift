@@ -109,10 +109,17 @@ enum Paginator {
                 continue
             }
             let charRange = layout.characterRange(forGlyphRange: glyphRange, actualGlyphRange: nil)
-            let snapped = snapToWordEnd(in: storage.string, range: charRange, fullLength: total)
-            guard snapped.length > 0 else { break }
-            pages.append(attributed.attributedSubstring(from: snapped))
-            nextLocation = snapped.location + snapped.length
+            // Do NOT snap to a word boundary here: each `NSTextContainer`
+            // has already consumed glyphs up to `charRange.length`, so
+            // snapping the *slice* back to whitespace while TextKit keeps
+            // laying out from where the original range ended would drop
+            // every character between the snap point and the end of the
+            // container — chunks of the book would silently disappear at
+            // every page break. Take the raw char range. Mid-word cuts
+            // are cosmetic; missing text is data loss.
+            guard charRange.length > 0 else { break }
+            pages.append(attributed.attributedSubstring(from: charRange))
+            nextLocation = charRange.location + charRange.length
         }
         return pages
     }

@@ -275,7 +275,6 @@ struct InstantReaderView: View {
 
     // MARK: - Idle player bar (no audio yet)
 
-    @ViewBuilder
     // MARK: - Custom top bar (replaces NavigationStack's bar)
 
     private var topBarTitle: String {
@@ -866,11 +865,19 @@ struct InstantReaderView: View {
 struct ChromeVisibilityModifier: ViewModifier {
     let visible: Bool
 
+    @ViewBuilder
     func body(content: Content) -> some View {
         #if os(iOS)
-        content
-            .navigationBarHidden(!visible)
-            .statusBarHidden(!visible)
+        if #available(iOS 16.0, *) {
+            content
+                .navigationBarHidden(true)
+                .statusBarHidden(!visible)
+                .toolbar(visible ? .visible : .hidden, for: .tabBar)
+        } else {
+            content
+                .navigationBarHidden(true)
+                .statusBarHidden(!visible)
+        }
         #else
         content
         #endif
