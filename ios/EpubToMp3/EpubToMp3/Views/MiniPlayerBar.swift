@@ -79,20 +79,32 @@ struct MiniPlayerBar: View {
                 .frame(height: 2)
 
                 HStack(spacing: 12) {
-                    coverView(for: book)
-                        .frame(width: 44, height: 44)
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                    // The cover + title area is the *only* surface that
+                    // expands the player on tap. Buttons below have their
+                    // own gesture targets and stay independent.
+                    Button {
+                        onTap()
+                    } label: {
+                        HStack(spacing: 12) {
+                            coverView(for: book)
+                                .frame(width: 44, height: 44)
+                                .clipShape(RoundedRectangle(cornerRadius: 6))
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(book.resolvedTitle)
-                            .font(.subheadline.weight(.medium))
-                            .lineLimit(1)
-                        Text(chapterLabel)
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(book.resolvedTitle)
+                                    .font(.subheadline.weight(.medium))
+                                    .lineLimit(1)
+                                    .foregroundStyle(.primary)
+                                Text(chapterLabel)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .contentShape(Rectangle())
                     }
-
-                    Spacer()
+                    .buttonStyle(.plain)
+                    .accessibilityHint(L10n.string("miniPlayer.expandHint"))
 
                     // Inline transport: play/pause + next chapter. Tap on
                     // the *bar* (anywhere outside these buttons) expands
@@ -188,15 +200,10 @@ struct MiniPlayerBar: View {
             }
             .frame(minHeight: 64)
             .background(.thinMaterial)
-            .contentShape(Rectangle())
-            // Tap on the bar (anywhere not covered by play/next/more
-            // buttons) expands to the full player. The buttons consume
-            // their own taps first, so tapping play/pause never collapses
-            // to "expand".
-            .onTapGesture { onTap() }
-            // Pull-up: an upward drag of ≥30pt also expands. This is the
-            // Apple Music gesture — users discover it after seeing the
-            // mini bar a few times and try to "grab and pull".
+            // Pull-up: an upward drag of ≥20pt anywhere on the bar
+            // expands. The dedicated cover/title button (above) handles
+            // tap-to-expand without intercepting taps on the buttons
+            // (play/pause, next, "..."), which was the previous bug.
             .gesture(
                 DragGesture(minimumDistance: 12)
                     .onEnded { value in

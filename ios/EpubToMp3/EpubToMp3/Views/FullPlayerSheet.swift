@@ -81,7 +81,9 @@ struct FullPlayerSheet: View {
             scrubberBlock
             Spacer(minLength: 28)
             transportRow
-            Spacer(minLength: 24)
+            Spacer(minLength: 20)
+            secondaryRow
+            Spacer(minLength: 16)
         }
         // 24pt of inner horizontal padding on top of the safe-area
         // insets — keeps the lateral transport buttons clear of the
@@ -107,6 +109,7 @@ struct FullPlayerSheet: View {
                     titleBlock
                     scrubberBlock
                     transportRow
+                    secondaryRow
                     Spacer(minLength: 24)
                     Button(L10n.string("player.close")) { dismiss() }
                         .buttonStyle(.bordered)
@@ -255,12 +258,31 @@ struct FullPlayerSheet: View {
 
     // MARK: - Transport row
 
-    /// Trimmed-down transport: play/pause + next chapter + "..." menu.
-    /// Apple Books' Now Playing UI uses the same three-control row.
-    /// Previous-chapter and ±15s now live in the "..." menu (the lock
-    /// screen + headphone hardware still expose skip-back).
+    /// Full transport row, Apple Books / Music style: prev-chapter,
+    /// skip-back-15, play/pause (large), skip-forward-15, next-chapter.
+    /// The "..." menu sits below in `secondaryRow` for speed / sleep /
+    /// chapter list / AirPlay.
     private var transportRow: some View {
-        HStack(spacing: 48) {
+        HStack(spacing: 0) {
+            Spacer()
+            Button { player.previousChapter() } label: {
+                Image(systemName: "backward.end.fill")
+                    .font(.system(size: 22))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.string("player.previousChapter"))
+            Spacer()
+            Button { player.skipBackward(seconds: 15) } label: {
+                Image(systemName: "gobackward.15")
+                    .font(.system(size: 28))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.string("player.skipBack15"))
+            Spacer()
             Button { player.togglePlayPause() } label: {
                 ZStack {
                     if player.isLoading {
@@ -278,19 +300,105 @@ struct FullPlayerSheet: View {
             .buttonStyle(.plain)
             .tint(.primary)
             .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
-
+            Spacer()
+            Button { player.skipForward(seconds: 15) } label: {
+                Image(systemName: "goforward.15")
+                    .font(.system(size: 28))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.string("player.skipForward15"))
+            Spacer()
             Button { player.nextChapter() } label: {
                 Image(systemName: "forward.end.fill")
-                    .font(.system(size: 26))
-                    .frame(width: 48, height: 48)
+                    .font(.system(size: 22))
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L10n.string("player.nextChapter"))
-
-            playerMoreMenu
+            Spacer()
         }
-        .frame(maxWidth: .infinity)
+    }
+
+    /// Secondary row below the transport: speed pill, chapter list,
+    /// sleep timer, AirPlay. Brings back the full Apple Music-style
+    /// surface the user asked for ("no player expandido devem
+    /// aparecer todos os controles").
+    private var secondaryRow: some View {
+        HStack(spacing: 16) {
+            // Speed
+            Menu {
+                ForEach(PlaybackRate.allCases) { rate in
+                    Button {
+                        player.setRate(rate)
+                    } label: {
+                        if player.rate == rate {
+                            Label(rate.shortLabel, systemImage: "checkmark")
+                        } else {
+                            Text(rate.shortLabel)
+                        }
+                    }
+                }
+            } label: {
+                Text(player.rate.shortLabel)
+                    .font(.subheadline.weight(.semibold))
+                    .frame(minWidth: 56, minHeight: 36)
+                    .padding(.horizontal, 10)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+            }
+            .accessibilityLabel(L10n.string("player.playbackSpeed", player.rate.shortLabel))
+
+            Spacer()
+
+            Button { showChapterList = true } label: {
+                Image(systemName: "list.bullet")
+                    .font(.system(size: 20))
+                    .frame(width: 44, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(L10n.string("player.chapters"))
+            .sheet(isPresented: $showChapterList) {
+                ChapterListSheet(player: player)
+            }
+
+            Spacer()
+
+            // Sleep timer
+            Menu {
+                ForEach([0, 5, 15, 30, 45, 60], id: \.self) { minutes in
+                    Button {
+                        if minutes == 0 {
+                            player.setSleepTimer(seconds: 0)
+                        } else {
+                            player.startSleepTimer(minutes: minutes)
+                        }
+                    } label: {
+                        if minutes == 0 {
+                            Label(L10n.string("player.sleepTimerOption.off"), systemImage: "xmark")
+                        } else {
+                            Text(L10n.string("player.sleepTimerOption.\(minutes)"))
+                        }
+                    }
+                }
+            } label: {
+                Image(systemName: player.sleepTimerRemaining > 0 ? "moon.zzz.fill" : "moon.zzz")
+                    .font(.system(size: 20))
+                    .frame(width: 44, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel(L10n.string("player.sleepTimer"))
+
+            Spacer()
+
+            #if os(iOS)
+            AirPlayPickerView()
+                .frame(width: 44, height: 36)
+                .accessibilityLabel(L10n.string("player.airplay"))
+            #endif
+        }
     }
 
     /// "..." popover menu — single overflow target for speed, sleep,
