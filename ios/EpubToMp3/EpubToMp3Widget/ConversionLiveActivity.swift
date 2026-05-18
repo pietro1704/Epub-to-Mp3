@@ -44,7 +44,7 @@ struct ConversionLiveActivityWidget: Widget {
                                 .lineLimit(1)
                         }
                         ProgressView(value: context.state.progressFraction)
-                            .tint(.tint)
+                            .tint(Color.accentColor)
                     }
                     .padding(.horizontal, 4)
                 }
@@ -65,7 +65,7 @@ struct ConversionLiveActivityWidget: Widget {
                         .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
                     Circle()
                         .trim(from: 0, to: CGFloat(context.state.progressFraction))
-                        .stroke(Color.tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .stroke(Color.accentColor, style: StrokeStyle(lineWidth: 2, lineCap: .round))
                         .rotationEffect(.degrees(-90))
                 }
             }
@@ -83,7 +83,7 @@ private struct LockScreenLiveActivityView: View {
             // Icon
             ZStack {
                 Circle()
-                    .fill(Color.tint.opacity(0.15))
+                    .fill(Color.accentColor.opacity(0.15))
                     .frame(width: 44, height: 44)
                 Image(systemName: "waveform.path")
                     .font(.title3)
@@ -104,7 +104,7 @@ private struct LockScreenLiveActivityView: View {
                 }
 
                 ProgressView(value: context.state.progressFraction)
-                    .tint(.tint)
+                    .tint(Color.accentColor)
             }
 
             Spacer(minLength: 0)
