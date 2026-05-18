@@ -72,6 +72,15 @@ struct ReaderView: View {
     /// equivalent page in the new pagination.
     @State private var textOffsetAtCurrentPage: Int = 0
 
+    /// Body area used for pagination, captured when chrome was visible.
+    /// Toggling chrome shrinks/grows `GeometryReader`'s size because
+    /// `safeAreaInset` / `.toolbar(_:for:)` are layout-altering — using
+    /// that live value to repaginate caused the visible text to
+    /// re-flow every time the tab bar / customTopBar / mini player
+    /// appeared or disappeared. Locking to the chrome-visible size
+    /// keeps pagination stable across chrome toggles.
+    @State private var stableBodyHeight: CGFloat = 0
+
     // Debounced settings — updated 200ms after sliders stop moving.
     @State private var debouncedFontSize: CGFloat = 0
     @State private var debouncedLineSpacing: Double = 0
@@ -368,15 +377,14 @@ struct ReaderView: View {
             let headerH: CGFloat = effectiveFontSize * 2.5 + 50
             // Pre-compute the *body area* the rendering UITextView will
             // actually occupy inside `pageView`:
-            //   geo.size.height
-            //   - 24 top padding
-            //   - 24 bottom padding
-            //   - 28 page-footer overlay (capsule sitting on the bottom)
-            // Passing this exact number to the Paginator means each
-            // page's TextKit slice fills the rendering area precisely
-            // — no big empty gap, no clipped last line.
-            let bodyHeight = max(120, geo.size.height - 76)
-            let pageBodySize = CGSize(width: geo.size.width, height: bodyHeight)
+            //   - 24 top padding + 24 bottom padding + 28 footer overlay
+            // and lock to the chrome-visible value so toggling chrome
+            // never repaginates and reflows the visible text.
+            let liveBodyHeight = max(120, geo.size.height - 76)
+            let usedBodyHeight = chromeVisible || stableBodyHeight == 0
+                ? liveBodyHeight
+                : stableBodyHeight
+            let pageBodySize = CGSize(width: geo.size.width, height: usedBodyHeight)
             let pages = attributedPages(
                 pageSize: pageBodySize,
                 margin: margin,
@@ -405,15 +413,27 @@ struct ReaderView: View {
             .onAppear {
                 paginatedFocus = true
                 lastContainerSize = geo.size
+                // Seed the stable body size on first mount so the very
+                // first pagination uses chrome-visible dimensions.
+                if stableBodyHeight == 0 {
+                    stableBodyHeight = liveBodyHeight
+                }
             }
             .compatOnKeyPressArrowsAndPaging { key in
                 handleCompatKey(key, totalPages: pages.count)
             }
             .compatOnChange(of: geo.size) { newSize in
-                // Orientation changed (or multitasking resize on iPad).
-                // Preserve the reading position by finding the page in
-                // the new pagination that contains the same text offset
-                // the user was looking at before the resize.
+                // Track the chrome-visible body size so pagination stays
+                // pinned to the smaller, "all chrome on" layout. When
+                // chrome is hidden the live size *grows* and we ignore
+                // it; when chrome comes back the live size matches the
+                // stable value and we re-confirm. Real layout changes
+                // (rotation / iPad resize) update stableBodyHeight when
+                // chromeVisible == true so subsequent paginations track
+                // the new orientation.
+                if chromeVisible {
+                    stableBodyHeight = max(120, newSize.height - 76)
+                }
                 guard sizeChangedMeaningfully(from: lastContainerSize, to: newSize) else { return }
                 lastContainerSize = newSize
                 if !pages.isEmpty {

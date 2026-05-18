@@ -22,12 +22,16 @@ struct AttributedPageView: View {
     let attributed: NSAttributedString
     let width: CGFloat
     var scrollable: Bool = false
-    /// Optional handler invoked when the user taps an `.link` attribute
-    /// in the rendered text. Return `true` if the host handled the link
-    /// (e.g. navigated to another chapter); `false` to let iOS open the
-    /// URL externally (the default UITextView behaviour for absolute
-    /// URLs).
     var onLinkTap: ((URL) -> Bool)? = nil
+    /// Non-link tap in one of the three horizontal zones. Paginated
+    /// mode forwards this to `advancePage` / `retreatPage` /
+    /// `onCenterTap`; scroll mode collapses every zone into a
+    /// chrome-toggle.
+    var onZoneTap: ((ReaderTapZone) -> Void)? = nil
+    /// Horizontal swipe. Paginated mode uses this for swipe-to-turn;
+    /// scroll mode ignores it (the scroll view absorbs horizontal
+    /// scrolls into its own pan).
+    var onSwipe: ((ReaderSwipeDirection) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -35,7 +39,9 @@ struct AttributedPageView: View {
                 attributed: attributed,
                 size: geo.size,
                 scrollable: scrollable,
-                onLinkTap: onLinkTap
+                onLinkTap: onLinkTap,
+                onZoneTap: onZoneTap,
+                onSwipe: onSwipe
             )
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
@@ -54,15 +60,26 @@ struct AttributedPageView: View {
 /// through to the SwiftUI layer below (chrome toggle, page-turn zones,
 /// scroll gesture). User spec: "toque em meio da tela deve seguir
 /// hiperlinks, com maior precedencia. somente se sem hiperlinks ...".
-private final class FixedWidthTextView: UITextView {
+/// Zone the user tapped, classified by horizontal position. The reader
+/// uses this for the Apple Books-style tap partition: left = previous
+/// page, center = toggle chrome, right = next page.
+enum ReaderTapZone { case left, center, right }
+/// Swipe direction reported by the in-view pan recognizer.
+enum ReaderSwipeDirection { case left, right }
+
+private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate {
     var pinnedWidth: CGFloat = 320
-    /// When `true` (paginated mode) only tap-on-link consumes touches;
-    /// every other tap falls through to the SwiftUI tap-zone layer
-    /// (page-turn / chrome toggle). When `false` (scrolling mode) the
-    /// text view receives ALL touches so its internal pan gesture can
-    /// scroll the content — without this, the pan was being filtered
-    /// out and scroll mode froze.
-    var linkOnlyHitTest: Bool = false
+    /// `true` = consume every touch (paginated mode owns the gesture
+    /// pipeline end-to-end); `false` = let only tap-on-link consume
+    /// (scroll mode also lets UITextView's internal pan handle scroll).
+    var consumeAllTouches: Bool = false
+    /// Called for a tap that did NOT land on a `.link` glyph. Receives
+    /// the zone the tap landed in (left third, center third, right
+    /// third). Used for page-turn + chrome-toggle without a SwiftUI
+    /// overlay sitting between the user and the link layer.
+    var onZoneTap: ((ReaderTapZone) -> Void)?
+    /// Called for a horizontal swipe — page-turn shortcut.
+    var onSwipe: ((ReaderSwipeDirection) -> Void)?
 
     override var intrinsicContentSize: CGSize {
         let height = sizeThatFits(
@@ -71,29 +88,91 @@ private final class FixedWidthTextView: UITextView {
         return CGSize(width: pinnedWidth, height: ceil(height))
     }
 
-    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
-        guard linkOnlyHitTest else {
-            // Scroll mode (and any other "consume everything" mode):
-            // default UITextView hit-test so pan + tap + link all work.
-            return super.point(inside: point, with: event)
+    /// Add the tap + swipe recognizers exactly once.
+    func installReaderGestures() {
+        guard gestureRecognizers?.contains(where: { $0.name == "reader.tap" }) != true else { return }
+        let tap = UITapGestureRecognizer(target: self, action: #selector(handleReaderTap(_:)))
+        tap.name = "reader.tap"
+        tap.cancelsTouchesInView = false
+        tap.delegate = self
+        addGestureRecognizer(tap)
+
+        for (selector, direction): (Selector, UISwipeGestureRecognizer.Direction) in [
+            (#selector(handleReaderSwipeLeft(_:)), .left),
+            (#selector(handleReaderSwipeRight(_:)), .right),
+        ] {
+            let swipe = UISwipeGestureRecognizer(target: self, action: selector)
+            swipe.direction = direction
+            swipe.name = "reader.swipe.\(direction == .left ? "left" : "right")"
+            swipe.cancelsTouchesInView = false
+            swipe.delegate = self
+            addGestureRecognizer(swipe)
         }
-        guard let attributedText = self.attributedText, attributedText.length > 0 else {
-            return false
-        }
+    }
+
+    @objc private func handleReaderTap(_ tap: UITapGestureRecognizer) {
+        let point = tap.location(in: self)
+        // Link precedence: if the tap landed on a `.link` glyph, let
+        // UITextView's own link-interaction recognizers (already
+        // installed by the framework) handle it. We bail out here so
+        // the zone callback doesn't double-fire.
+        if linkURL(at: point) != nil { return }
+        let zone = classifyZone(x: point.x, in: bounds.width)
+        onZoneTap?(zone)
+    }
+
+    @objc private func handleReaderSwipeLeft(_ swipe: UISwipeGestureRecognizer) {
+        onSwipe?(.left)
+    }
+    @objc private func handleReaderSwipeRight(_ swipe: UISwipeGestureRecognizer) {
+        onSwipe?(.right)
+    }
+
+    private func classifyZone(x: CGFloat, in width: CGFloat) -> ReaderTapZone {
+        guard width > 0 else { return .center }
+        let third = width / 3
+        if x < third { return .left }
+        if x > width - third { return .right }
+        return .center
+    }
+
+    /// Returns the `.link` URL at the given point in this view's
+    /// coordinate space, or `nil` if no link sits there.
+    func linkURL(at point: CGPoint) -> URL? {
+        guard let attributedText, attributedText.length > 0 else { return nil }
         let inset = textContainerInset
         let p = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
         let glyphIndex = layoutManager.glyphIndex(
-            for: p, in: textContainer,
-            fractionOfDistanceThroughGlyph: nil
+            for: p, in: textContainer, fractionOfDistanceThroughGlyph: nil
         )
         let glyphRange = NSRange(location: glyphIndex, length: 1)
         let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
-        guard rect.contains(p) else { return false }
-
+        guard rect.contains(p) else { return nil }
         let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
-        guard charIndex < attributedText.length else { return false }
-        let attrs = attributedText.attributes(at: charIndex, effectiveRange: nil)
-        return attrs[.link] != nil
+        guard charIndex < attributedText.length else { return nil }
+        return attributedText.attributes(at: charIndex, effectiveRange: nil)[.link] as? URL
+    }
+
+    // MARK: - UIGestureRecognizerDelegate
+
+    /// Let our reader tap / swipe run alongside UITextView's built-in
+    /// link + selection recognizers. `cancelsTouchesInView = false`
+    /// already lets the touches reach the framework recognizers; this
+    /// confirms simultaneous recognition.
+    func gestureRecognizer(
+        _ gestureRecognizer: UIGestureRecognizer,
+        shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer
+    ) -> Bool { true }
+
+    // MARK: - Touch filtering for the scroll-mode case
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        guard !consumeAllTouches else { return super.point(inside: point, with: event) }
+        // Legacy link-only filter retained as fallback for future call
+        // sites that want it. Paginated + scroll both flip
+        // `consumeAllTouches` on now, so this branch is currently dead
+        // code in practice.
+        return linkURL(at: point) != nil
     }
 }
 
@@ -102,6 +181,8 @@ private struct _AttributedPageRep: UIViewRepresentable {
     let size: CGSize
     let scrollable: Bool
     let onLinkTap: ((URL) -> Bool)?
+    let onZoneTap: ((ReaderTapZone) -> Void)?
+    let onSwipe: ((ReaderSwipeDirection) -> Void)?
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onLinkTap: onLinkTap)
@@ -116,12 +197,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
             in characterRange: NSRange,
             interaction: UITextItemInteraction
         ) -> Bool {
-            // Host handled the link → tell UITextView not to open it.
             if onLinkTap?(url) == true { return false }
-            // Host didn't handle it → let iOS open externally (Safari /
-            // mail / etc). For relative URIs with no scheme this opens
-            // nothing useful, but it's the safest fallback when the
-            // host hasn't wired a chapter-jump handler.
             return true
         }
     }
@@ -145,6 +221,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
             tv.showsVerticalScrollIndicator = true
             tv.alwaysBounceVertical = true
         }
+        tv.installReaderGestures()
         return tv
     }
 
@@ -152,10 +229,12 @@ private struct _AttributedPageRep: UIViewRepresentable {
         context.coordinator.onLinkTap = onLinkTap
         uiView.pinnedWidth = size.width
         uiView.isScrollEnabled = scrollable
-        // Paginated mode wants only link-taps; scroll mode needs every
-        // touch so pan-to-scroll works (link-hit-only mode would
-        // freeze scrolling because non-link pans got filtered out).
-        uiView.linkOnlyHitTest = !scrollable
+        // Both modes consume every touch now: the view itself does the
+        // link / zone / swipe classification internally. SwiftUI no
+        // longer sits between the user and the text content.
+        uiView.consumeAllTouches = true
+        uiView.onZoneTap = onZoneTap
+        uiView.onSwipe = onSwipe
         uiView.textContainer.size = CGSize(
             width: size.width,
             height: scrollable ? .greatestFiniteMagnitude : size.height
