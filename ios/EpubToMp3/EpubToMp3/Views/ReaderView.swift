@@ -74,8 +74,6 @@ struct ReaderView: View {
     @State private var debouncedMargin: Double = 0
     @State private var debouncedColumnWidth: Double = 0
 
-    @State private var showingSearch = false
-
     private enum PageDirection { case forward, backward }
 
     /// Per-chapter HTML render cache. Re-populated when `chapter.id`
@@ -158,11 +156,10 @@ struct ReaderView: View {
         _ = settings.readerWordSpacing
         _ = settings.pageTurnStyle
         return VStack(spacing: 0) {
-            if chromeVisible {
-                toolbar
-                Divider()
-                    .background(themeForeground.opacity(0.15))
-            }
+            // No inline toolbar: the host (InstantReaderView /
+            // PlayerReaderView) already exposes search in its nav-bar
+            // ToolbarItem, so a second magnifier here was redundant and
+            // ate vertical reading area.
             switch settings.readerLayout {
             case .scrolling: scrollingContent
             case .paginated: paginatedContent
@@ -222,13 +219,6 @@ struct ReaderView: View {
                 debouncedColumnWidth = new
             }
         }
-        .sheet(isPresented: $showingSearch) {
-            ReaderSearchOverlay(
-                chapters: [chapter],
-                onJumpToChapter: { _ in },
-                isPresented: $showingSearch
-            )
-        }
     }
 
     /// Build the chapter's AttributedString lazily off the main hot
@@ -242,23 +232,6 @@ struct ReaderView: View {
             html: html, css: chapter.css, settings: settings,
             fontDirectoryURL: epubFontDirectory
         )
-    }
-
-    // MARK: Toolbar
-
-    private var toolbar: some View {
-        HStack {
-            Spacer()
-            Button { showingSearch = true } label: {
-                Image(systemName: "magnifyingglass")
-                    .frame(width: 44, height: 44)
-            }
-            .accessibilityLabel("Search in chapter")
-        }
-        .padding(.horizontal, 8)
-        // Use minHeight so the toolbar expands with Dynamic Type
-        // rather than clipping the tap target at XXXL sizes.
-        .frame(minHeight: 44)
     }
 
     // MARK: Layout helpers
@@ -531,19 +504,18 @@ struct ReaderView: View {
     /// page shows slightly less than the plain version would.
     @ViewBuilder
     private func pageTextBody(plain: String, pageIndex: Int, pages: [String]) -> some View {
-        if let attr = renderedAttributed, currentSentenceId == nil,
-           let slice = slicedAttributed(from: attr, pages: pages, pageIndex: pageIndex) {
-            Text(slice)
-                .lineSpacing(settings.readerLineSpacing)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            Text(plain)
-                .font(bodyFont)
-                .lineSpacing(settings.readerLineSpacing)
-                .multilineTextAlignment(.leading)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
+        // Paginated mode renders plain text only. We used to slice the
+        // pre-rendered AttributedString by plain-text character offsets,
+        // but HTML <ol>/<ul> render their markers via CSS — so the attr
+        // is shorter than the plain text by the count of dropped bullets
+        // / numbers, and the per-page offsets drift, cutting words mid-
+        // letter (e.g. "3. O período b…"). Scrolling mode keeps the full
+        // AttributedString render (no slicing needed there).
+        Text(plain)
+            .font(bodyFont)
+            .lineSpacing(settings.readerLineSpacing)
+            .multilineTextAlignment(.leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Map page index → AttributedString sub-range by counting Plain
