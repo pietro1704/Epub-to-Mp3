@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import os.log
 
 /// Reader appearance choices surfaced in `ReaderView`'s toolbar.
 enum ReaderFontFamily: String, CaseIterable, Identifiable {
@@ -363,7 +364,17 @@ final class AppSettings: ObservableObject {
         #endif
         let trimmed = backendURL.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        return URL(string: trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed)
+        let raw = trimmed.hasSuffix("/") ? String(trimmed.dropLast()) : trimmed
+        guard let url = URL(string: raw) else { return nil }
+        let scheme = url.scheme?.lowercased()
+        guard scheme == "http" || scheme == "https",
+              let host = url.host, !host.isEmpty else {
+            let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "EpubToMp3",
+                                category: "security")
+            logger.warning("resolvedBaseURL: rejected URL with invalid or missing scheme — \"\(raw, privacy: .public)\"")
+            return nil
+        }
+        return url
     }
 
     // MARK: Override knobs (opt-in)
