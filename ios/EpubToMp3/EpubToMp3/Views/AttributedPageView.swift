@@ -21,17 +21,21 @@ import AppKit
 struct AttributedPageView: View {
     let attributed: NSAttributedString
     let width: CGFloat
-    /// `true` = pinned-height non-scrolling page (used by paginated mode).
-    /// `false` = scrollable native UITextView that grows to its content
-    /// (used by scrolling mode to preserve every EPUB CSS attribute).
     var scrollable: Bool = false
+    /// Optional handler invoked when the user taps an `.link` attribute
+    /// in the rendered text. Return `true` if the host handled the link
+    /// (e.g. navigated to another chapter); `false` to let iOS open the
+    /// URL externally (the default UITextView behaviour for absolute
+    /// URLs).
+    var onLinkTap: ((URL) -> Bool)? = nil
 
     var body: some View {
         GeometryReader { geo in
             _AttributedPageRep(
                 attributed: attributed,
                 size: geo.size,
-                scrollable: scrollable
+                scrollable: scrollable,
+                onLinkTap: onLinkTap
             )
             .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
             .clipped()
@@ -97,6 +101,30 @@ private struct _AttributedPageRep: UIViewRepresentable {
     let attributed: NSAttributedString
     let size: CGSize
     let scrollable: Bool
+    let onLinkTap: ((URL) -> Bool)?
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onLinkTap: onLinkTap)
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var onLinkTap: ((URL) -> Bool)?
+        init(onLinkTap: ((URL) -> Bool)?) { self.onLinkTap = onLinkTap }
+        func textView(
+            _ textView: UITextView,
+            shouldInteractWith url: URL,
+            in characterRange: NSRange,
+            interaction: UITextItemInteraction
+        ) -> Bool {
+            // Host handled the link → tell UITextView not to open it.
+            if onLinkTap?(url) == true { return false }
+            // Host didn't handle it → let iOS open externally (Safari /
+            // mail / etc). For relative URIs with no scheme this opens
+            // nothing useful, but it's the safest fallback when the
+            // host hasn't wired a chapter-jump handler.
+            return true
+        }
+    }
 
     func makeUIView(context: Context) -> FixedWidthTextView {
         let tv = FixedWidthTextView(frame: CGRect(origin: .zero, size: size))
@@ -109,6 +137,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
         tv.textContainer.maximumNumberOfLines = 0
         tv.adjustsFontForContentSizeCategory = false
         tv.dataDetectorTypes = []
+        tv.delegate = context.coordinator
         tv.setContentHuggingPriority(.required, for: .horizontal)
         tv.setContentCompressionResistancePriority(.required, for: .horizontal)
         tv.setContentHuggingPriority(.defaultLow, for: .vertical)
@@ -120,6 +149,7 @@ private struct _AttributedPageRep: UIViewRepresentable {
     }
 
     func updateUIView(_ uiView: FixedWidthTextView, context: Context) {
+        context.coordinator.onLinkTap = onLinkTap
         uiView.pinnedWidth = size.width
         uiView.isScrollEnabled = scrollable
         // Paginated mode wants only link-taps; scroll mode needs every
@@ -130,12 +160,6 @@ private struct _AttributedPageRep: UIViewRepresentable {
             width: size.width,
             height: scrollable ? .greatestFiniteMagnitude : size.height
         )
-        // Always reassign — the equality check `!=` on NSAttributedString
-        // walks every attribute run pair and is both expensive and
-        // brittle. Page-turn calls were silently no-oping because two
-        // different page slices reported "equal" when run-by-run
-        // attribute compare returned `true` for identically-styled body
-        // paragraphs. Always set, then invalidate.
         uiView.attributedText = attributed
         uiView.invalidateIntrinsicContentSize()
     }

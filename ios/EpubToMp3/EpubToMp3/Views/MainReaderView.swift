@@ -63,12 +63,12 @@ struct MainReaderView: View {
                 emptyState
             }
         }
-        // Pin navigation title at the topmost view *inside* the
-        // NavigationStack so iOS guarantees the bar materialises. With
-        // the title only on a grandchild (BookOpenView), iOS 18 was
-        // silently collapsing the bar.
-        .navigationTitle(currentBook?.resolvedTitle ?? "Reader")
-        .compatInlineNavigationTitle()
+        // No `.navigationTitle` here: the in-book reader hides
+        // NavigationStack's bar entirely (`InstantReaderView` renders
+        // its own `customTopBar`). The empty-state has its own visual
+        // title inside the view body, so it doesn't need the nav bar
+        // either. Leaving the modifier off avoids two competing
+        // chrome bars stacking on the empty state.
         // Auto-clear if the reading book was removed from the library so
         // we don't stay in a permanently-blank "populated" state.
         .compatOnChange(of: library.books.map(\.id)) { _ in
@@ -105,20 +105,13 @@ struct MainReaderView: View {
     @ViewBuilder
     private func populatedReader(for book: BookEntity) -> some View {
         BookOpenView(book: book)
-            // Set the nav-bar title at this level (the topmost view that
-            // sits directly inside the NavigationStack). On iOS 18 the
-            // bar refused to materialise when only `BookOpenView` (a
-            // child) set the title — the stack matches modifiers at its
-            // first descendant level, so setting the title here pins it.
-            .navigationTitle(book.resolvedTitle)
-            .compatInlineNavigationTitle()
-            .toolbar {
-                ToolbarItem(placement: .compatPrimaryTrailing) {
-                    listenButton
-                }
-            }
-            // Update reading pointer every time this view mounts with a book,
-            // so tapping a library row always refreshes the landing.
+            // The reader has its own custom top bar (renders book
+            // title + search + AA + TOC), so we don't need
+            // navigation-title plumbing here. The "Listen" affordance
+            // was tied to the nav-bar toolbar; since we no longer use
+            // that bar, drop the listen button from this surface. The
+            // user reaches the player via the mini-player at the
+            // bottom or by tapping the cover in the library.
             .onAppear {
                 var updated = book
                 updated.lastOpenedAt = Date()

@@ -49,6 +49,10 @@ struct ReaderView: View {
     /// Discovery is otherwise too narrow — only the center 33% knows to
     /// toggle. The host owns this restore (animates `chromeVisible = true`).
     var onRestoreChrome: (() -> Void)? = nil
+    /// Tap-on-link handler. Receives the URL from the EPUB's `<a href>`.
+    /// Return `true` if handled (internal chapter jump, anchor scroll);
+    /// `false` to let iOS open the URL externally (Safari / mail).
+    var onLinkTap: ((URL) -> Bool)? = nil
 
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.epubFontDirectory) private var epubFontDirectory
@@ -114,7 +118,8 @@ struct ReaderView: View {
         onCenterTap: (() -> Void)? = nil,
         chromeVisible: Bool = true,
         onAutoHideChrome: (() -> Void)? = nil,
-        onRestoreChrome: (() -> Void)? = nil
+        onRestoreChrome: (() -> Void)? = nil,
+        onLinkTap: ((URL) -> Bool)? = nil
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -126,6 +131,7 @@ struct ReaderView: View {
         self.chromeVisible = chromeVisible
         self.onAutoHideChrome = onAutoHideChrome
         self.onRestoreChrome = onRestoreChrome
+        self.onLinkTap = onLinkTap
     }
 
     var body: some View {
@@ -298,7 +304,8 @@ struct ReaderView: View {
                         lineSpacing: effectiveLineSpacing
                     ),
                     width: effectiveColumnWidth,
-                    scrollable: true
+                    scrollable: true,
+                    onLinkTap: onLinkTap
                 )
                 .padding(.horizontal, margin)
                 .padding(.bottom, 16)
@@ -550,7 +557,11 @@ struct ReaderView: View {
                     .combined(with: .opacity)
             ))
             .animation(.easeInOut(duration: 0.25), value: currentPage)
-            .overlay(tapZones(totalPages: pages.count))
+            // Put tap zones BEHIND the page text (was .overlay) so the
+            // UITextView's link-only hit-test claims taps on hyperlinks
+            // first; every non-link tap passes through to the tap zones
+            // (prev / center toggle / next).
+            .background(tapZones(totalPages: pages.count))
             .gesture(
                 DragGesture(minimumDistance: 30)
                     .onEnded { value in
@@ -566,7 +577,11 @@ struct ReaderView: View {
     /// Instant page change — no animation at all.
     private func noAnimationPageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
         pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
-            .overlay(tapZones(totalPages: pages.count))
+            // Put tap zones BEHIND the page text (was .overlay) so the
+            // UITextView's link-only hit-test claims taps on hyperlinks
+            // first; every non-link tap passes through to the tap zones
+            // (prev / center toggle / next).
+            .background(tapZones(totalPages: pages.count))
             .gesture(
                 DragGesture(minimumDistance: 30)
                     .onEnded { value in
@@ -615,9 +630,13 @@ struct ReaderView: View {
         // half the page blank below the visible text. The explicit
         // `width:` parameter pins the textContainer so lines don't bleed
         // past the page margin.
-        AttributedPageView(attributed: slice, width: width)
-            .frame(width: width, alignment: .topLeading)
-            .frame(maxHeight: .infinity, alignment: .topLeading)
+        AttributedPageView(
+            attributed: slice,
+            width: width,
+            onLinkTap: onLinkTap
+        )
+        .frame(width: width, alignment: .topLeading)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func pageFooter(index: Int, total: Int) -> some View {

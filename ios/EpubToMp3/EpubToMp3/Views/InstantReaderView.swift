@@ -204,7 +204,8 @@ struct InstantReaderView: View {
                 onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
                 chromeVisible: chromeVisible,
                 onAutoHideChrome: { autoHideChromeIfNeeded() },
-                onRestoreChrome: { restoreChromeIfNeeded() }
+                onRestoreChrome: { restoreChromeIfNeeded() },
+                onLinkTap: { url in handleEpubLink(url) }
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -217,7 +218,8 @@ struct InstantReaderView: View {
                 onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
                 chromeVisible: chromeVisible,
                 onAutoHideChrome: { autoHideChromeIfNeeded() },
-                onRestoreChrome: { restoreChromeIfNeeded() }
+                onRestoreChrome: { restoreChromeIfNeeded() },
+                onLinkTap: { url in handleEpubLink(url) }
             )
         } else {
             VStack(spacing: 12) {
@@ -229,6 +231,47 @@ struct InstantReaderView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    /// Best-effort resolver for an EPUB internal link. Returns `true` if
+    /// we navigated to a chapter — the UITextView delegate will then
+    /// suppress its default "open externally" behaviour. Returns `false`
+    /// for absolute http/https URLs so iOS opens Safari, and for any
+    /// internal link we couldn't match (no chapter href map is
+    /// available — `EbookFulltext.Chapter` carries only `index`/`name`,
+    /// so we fall back to a fuzzy name-substring match against the
+    /// link's fragment / last-path-component).
+    private func handleEpubLink(_ url: URL) -> Bool {
+        if let scheme = url.scheme?.lowercased(),
+           scheme == "http" || scheme == "https" || scheme == "mailto" {
+            return false  // iOS opens externally
+        }
+        // Pull the candidate name from the URL — strip extension, treat
+        // anchor fragment as a fallback search term.
+        let base = url.lastPathComponent
+            .replacingOccurrences(of: ".xhtml", with: "")
+            .replacingOccurrences(of: ".html", with: "")
+            .replacingOccurrences(of: "_", with: " ")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let fragment = (url.fragment ?? "").lowercased()
+        let needle = base.isEmpty ? fragment : base
+        guard !needle.isEmpty else { return false }
+
+        if let match = fulltext.chapters.first(where: { chapter in
+            let name = (chapter.name ?? "").lowercased()
+            return !name.isEmpty && (name.contains(needle) || needle.contains(name))
+        }) {
+            let targetIndex = max(0, match.index - 1)
+            if targetIndex != currentChapterIndex {
+                currentChapterIndex = targetIndex
+            }
+            // Bring chrome back so the user can confirm where they
+            // landed — same pattern as TOC jump.
+            restoreChromeIfNeeded()
+            return true
+        }
+        return false  // give up, let iOS try
     }
 
     private func resolveChapter(at index: Int) -> EbookFulltext.Chapter? {
