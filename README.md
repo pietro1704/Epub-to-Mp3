@@ -60,6 +60,17 @@ open EpubToMp3.xcodeproj
 The `mise run sidecar:build` task builds the embedded Python server
 that the macOS build copies inside the `.app`'s Resources.
 
+#### iOS companion features
+
+| Feature | Detail |
+|---|---|
+| **Immersive reader** | Tap the centre of any page to toggle chrome (nav bar + status bar). Auto-hides on page turn. Shared between `InstantReaderView` (local EPUB) and `PlayerReaderView` (server-streamed). |
+| **No-autoplay policy** | Audio never starts without an explicit user gesture — lock-screen controls, widget Play button, or in-app Play only. |
+| **Live Activity** | Conversion progress displayed on Dynamic Island and lock-screen banner via `ConversionLiveActivityWidget`. Attributes model is `ConversionActivityAttributes` in `EpubToMp3/Models/`. |
+| **Widgets** | Home-screen: `NowPlayingWidget` (medium/large). Lock-screen: `NowPlayingLockScreenWidget`. Conversion progress: `ConversionLiveActivityWidget` (Live Activity). |
+| **Shared types** | `ConversionActivityAttributes.swift` is compiled into both the main app target and `EpubToMp3Widget` — ActivityKit serialises by name + Codable, so the type must be identical on both sides. |
+| **App Group** | `group.com.pietrocode.epubtomp3` — shared `UserDefaults` suite for widget ↔ app state sync (`WidgetDataSync`). |
+
 ### Flutter app
 
 ```bash
