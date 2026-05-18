@@ -13,6 +13,15 @@
   into `dist/`) and `mise run mac:build` (sidecar + headless xcodebuild
   producing the SwiftUI `.app`).
 
+## [0.5.4] — 2026-05-17
+
+### iOS
+
+- Haptic feedback on audio scrubber (light on drag start, medium on release)
+- Widget cover art downsampled to 200x300 JPEG before App Group sync (prevents silent write failures)
+- Bookmark persistence guard: corrupt data no longer silently overwritten with empty array
+- Landscape reader: 40% wider margins on iPhone (Apple Books pattern), page position preserved across rotation
+
 ## [0.5.3] — 2026-05-17
 
 ### iOS
