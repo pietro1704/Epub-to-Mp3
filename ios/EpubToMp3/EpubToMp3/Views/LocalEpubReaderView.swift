@@ -20,6 +20,7 @@ struct LocalEpubReaderView: View {
             Image(systemName: "doc.text.magnifyingglass")
                 .font(.system(size: 56, weight: .light))
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text("Couldn't read this book")
                 .font(.title2.weight(.semibold))
             Text("\"\(book.resolvedTitle)\" didn't expose any readable chapters. The file may be DRM-locked or its EPUB container may be malformed.")

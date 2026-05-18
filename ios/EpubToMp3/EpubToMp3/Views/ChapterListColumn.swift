@@ -86,6 +86,7 @@ struct ChapterListColumn: View {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 32))
                 .foregroundStyle(.orange)
+                .accessibilityHidden(true)
             Text(message)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
@@ -150,6 +151,7 @@ private struct ChapterListRow: View {
         HStack(spacing: 12) {
             Image(systemName: chapter.isCompleted ? "checkmark.circle.fill" : "circle.dashed")
                 .foregroundStyle(chapter.isCompleted ? Color.green : Color.secondary)
+                .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(chapter.displayTitle)
                     .font(.subheadline)
@@ -168,6 +170,15 @@ private struct ChapterListRow: View {
             }
         }
         .padding(.vertical, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel({
+            var parts = [chapter.displayTitle]
+            if chapter.isCompleted { parts.append("completed") }
+            if let duration = chapter.durationSeconds, duration > 0 {
+                parts.append(formatDuration(duration))
+            }
+            return parts.joined(separator: ", ")
+        }())
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {

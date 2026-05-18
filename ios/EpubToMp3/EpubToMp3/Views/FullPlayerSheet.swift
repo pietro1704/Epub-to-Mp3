@@ -512,6 +512,7 @@ private struct ChapterListSheet: View {
                     Image(systemName: "speaker.wave.2.fill")
                         .font(.caption)
                         .foregroundColor(.accentColor)
+                        .accessibilityHidden(true)
                 }
             }
             .padding(.horizontal, 16)
@@ -519,6 +520,8 @@ private struct ChapterListSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(isCurrent ? "\(chapter.displayTitle), now playing" : chapter.displayTitle)
+        .accessibilityHint("Double tap to play this chapter")
     }
 
     private func formatDuration(_ seconds: Double) -> String {

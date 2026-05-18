@@ -21,6 +21,7 @@ struct TagEditorSheet: View {
                                     .foregroundStyle(.red)
                             }
                             .buttonStyle(.plain)
+                            .accessibilityLabel("Remove tag \(tag)")
                         }
                     }
                     HStack {

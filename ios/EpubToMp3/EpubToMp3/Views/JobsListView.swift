@@ -70,6 +70,7 @@ struct JobsListView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
+                .accessibilityLabel("Refresh jobs")
                 .disabled(viewModel.isLoading)
             }
         }

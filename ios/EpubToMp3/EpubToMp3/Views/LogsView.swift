@@ -98,6 +98,7 @@ struct LogsView: View {
                     Image(systemName: viewModel.autoRefresh ? "pause.circle" : "play.circle")
                 }
                 .toggleStyle(.button)
+                .accessibilityLabel(viewModel.autoRefresh ? "Pause auto-refresh" : "Resume auto-refresh")
             }
         }
         .onAppear {

@@ -76,6 +76,7 @@ struct BookmarksListView: View {
             Image(systemName: "bookmark")
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text("No bookmarks yet")
                 .font(.title3)
             Text("Long-press a paragraph in the reader to add a bookmark or highlight.")
@@ -160,11 +161,14 @@ struct NoteEditorSheet: View {
                                             Image(systemName: "checkmark")
                                                 .font(.caption.bold())
                                                 .foregroundStyle(.white)
+                                                .accessibilityHidden(true)
                                         }
                                     }
                                     .onTapGesture {
                                         bookmarkStore.updateColor(id: bookmark.id, color: c)
                                     }
+                                    .accessibilityLabel(c == bookmark.color ? "\(c.rawValue) color, selected" : "\(c.rawValue) color")
+                                    .accessibilityAddTraits(c == bookmark.color ? [.isButton, .isSelected] : .isButton)
                             }
                         }
                     }

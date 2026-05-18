@@ -143,6 +143,7 @@ struct TelemetryView: View {
                 Button {
                     Task { await viewModel.reload(client: client) }
                 } label: { Image(systemName: "arrow.clockwise") }
+                .accessibilityLabel("Refresh telemetry")
                 .disabled(viewModel.isLoading)
             }
         }
