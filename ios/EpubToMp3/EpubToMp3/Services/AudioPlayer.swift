@@ -196,6 +196,9 @@ final class AudioPlayer: ObservableObject {
     private var segmentSentenceIds: [String] = []
     private var segmentPlayedCount: Int = 0
 
+    private static let maxQueueAhead = 5
+    private var pendingSegments: [(url: URL, chapterIndex: Int, segmentIndex: Int)] = []
+
     private var remoteCommandsConfigured = false
 
     init(resumeStore: ResumeStore = ResumeStore(), backendBaseURL: URL? = nil) {
@@ -451,8 +454,6 @@ final class AudioPlayer: ObservableObject {
             return
         }
 
-        let item = AVPlayerItem(url: segFile)
-
         isSegmentMode = true
         if chapterIndex != segmentChapterIndex {
             segmentCumulativeBase = 0
@@ -467,7 +468,7 @@ final class AudioPlayer: ObservableObject {
         }
 
         if player == nil {
-            // No player yet — create one with this first item and start.
+            let item = AVPlayerItem(url: segFile)
             let queue = AVQueuePlayer(items: [item])
             queue.actionAtItemEnd = .advance
             self.player = queue
@@ -482,9 +483,18 @@ final class AudioPlayer: ObservableObject {
             audioLog.debug("[enqueueSegment] AVQueuePlayer created and playing. items=\(queue.items().count) rate=\(queue.rate) currentItemNil=\(queue.currentItem == nil)")
             publishCurrentChapter()
             updateNowPlayingInfo()
-        } else if let queue = player, queue.canInsert(item, after: nil) {
-            queue.insert(item, after: nil)
-            audioLog.debug("[enqueueSegment] appended to queue, total=\(queue.items().count)")
+        } else if let queue = player {
+            let queueCount = queue.items().count
+            if queueCount < Self.maxQueueAhead {
+                let item = AVPlayerItem(url: segFile)
+                if queue.canInsert(item, after: nil) {
+                    queue.insert(item, after: nil)
+                    audioLog.debug("[enqueueSegment] appended to queue, total=\(queue.items().count)")
+                }
+            } else {
+                self.pendingSegments.append((url: segFile, chapterIndex: chapterIndex, segmentIndex: segmentIndex))
+                audioLog.debug("[enqueueSegment] deferred ch=\(chapterIndex) seg=\(segmentIndex), pending=\(self.pendingSegments.count)")
+            }
         }
 
         if !firstSegmentReady {
@@ -494,6 +504,18 @@ final class AudioPlayer: ObservableObject {
         }
         conversionStatus.record(.chunkComplete,
             "ch\(chapterIndex) segment \(segmentIndex) ready (\(data.count) bytes)")
+    }
+
+    private func drainPendingSegments() {
+        guard let queue = player, !pendingSegments.isEmpty else { return }
+        while queue.items().count < Self.maxQueueAhead, !pendingSegments.isEmpty {
+            let next = pendingSegments.removeFirst()
+            let item = AVPlayerItem(url: next.url)
+            if queue.canInsert(item, after: nil) {
+                queue.insert(item, after: nil)
+                audioLog.debug("[drainPending] enqueued ch=\(next.chapterIndex) seg=\(next.segmentIndex), queue=\(queue.items().count) pending=\(self.pendingSegments.count)")
+            }
+        }
     }
 
     /// Called by `BookOpenView` / `InstantReaderView` when the first
@@ -637,6 +659,7 @@ final class AudioPlayer: ObservableObject {
                     }
                 }
 
+                self.drainPendingSegments()
                 guard let snapshot = self.snapshot else { return }
                 let totalChapters = self.isSegmentMode
                     ? (snapshot.chapterProgress?.count ?? 0)
