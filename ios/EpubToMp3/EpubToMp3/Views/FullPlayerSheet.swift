@@ -81,11 +81,12 @@ struct FullPlayerSheet: View {
             scrubberBlock
             Spacer(minLength: 28)
             transportRow
-            Spacer(minLength: 20)
-            secondaryRow
-            Spacer(minLength: 16)
+            Spacer(minLength: 24)
         }
-        .compatHorizontalSafeAreaPadding(32)
+        // 24pt of inner horizontal padding on top of the safe-area
+        // insets — keeps the lateral transport buttons clear of the
+        // screen edge on every iPhone (notched, non-notched, SE).
+        .compatHorizontalSafeAreaPadding(24)
         .background(backgroundLayer.ignoresSafeArea())
         .offset(y: max(0, dragOffset))
         .gesture(dismissDragGesture)
@@ -106,13 +107,12 @@ struct FullPlayerSheet: View {
                     titleBlock
                     scrubberBlock
                     transportRow
-                    secondaryRow
                     Spacer(minLength: 24)
                     Button(L10n.string("player.close")) { dismiss() }
                         .buttonStyle(.bordered)
                     Spacer(minLength: 24)
                 }
-                .compatHorizontalSafeAreaPadding(32)
+                .compatHorizontalSafeAreaPadding(24)
             }
             .scrollBounceBehaviorIfAvailable()
         }
@@ -255,72 +255,51 @@ struct FullPlayerSheet: View {
 
     // MARK: - Transport row
 
+    /// Trimmed-down transport: play/pause + next chapter + "..." menu.
+    /// Apple Books' Now Playing UI uses the same three-control row.
+    /// Previous-chapter and ±15s now live in the "..." menu (the lock
+    /// screen + headphone hardware still expose skip-back).
     private var transportRow: some View {
-        HStack(spacing: 0) {
-            Spacer()
-            Button { player.previousChapter() } label: {
-                Image(systemName: "backward.end.fill")
-                    .font(.system(size: 22))
-                    .frame(width: 48, height: 48)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L10n.string("player.previousChapter"))
-            Spacer()
-            Button { player.skipBackward(seconds: 15) } label: {
-                Image(systemName: "gobackward.15")
-                    .font(.system(size: 28))
-                    .frame(width: 48, height: 48)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L10n.string("player.skipBack15"))
-            Spacer()
+        HStack(spacing: 48) {
             Button { player.togglePlayPause() } label: {
                 ZStack {
                     if player.isLoading {
                         ProgressView()
                             .progressViewStyle(.circular)
                             .tint(.primary)
-                            .frame(width: 56, height: 56)
+                            .frame(width: 64, height: 64)
                     } else {
                         Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                            .font(.system(size: 56))
-                            .frame(width: 56, height: 56)
+                            .font(.system(size: 64))
+                            .frame(width: 64, height: 64)
                     }
                 }
             }
             .buttonStyle(.plain)
             .tint(.primary)
             .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
-            Spacer()
-            Button { player.skipForward(seconds: 15) } label: {
-                Image(systemName: "goforward.15")
-                    .font(.system(size: 28))
-                    .frame(width: 48, height: 48)
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L10n.string("player.skipForward15"))
-            Spacer()
+
             Button { player.nextChapter() } label: {
                 Image(systemName: "forward.end.fill")
-                    .font(.system(size: 22))
+                    .font(.system(size: 26))
                     .frame(width: 48, height: 48)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(L10n.string("player.nextChapter"))
-            Spacer()
+
+            playerMoreMenu
         }
+        .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Secondary row (rate + chapters + sleep + AirPlay)
-
-    private var secondaryRow: some View {
-        HStack(spacing: 16) {
-            // Rate picker — compact menu button matching Apple Music's
-            // "1x" pill in the lower-left.
+    /// "..." popover menu — single overflow target for speed, sleep,
+    /// chapter list, previous chapter / skip-back, AirPlay. HIG keeps
+    /// the primary control surface uncluttered; secondary controls go
+    /// in `Menu`.
+    private var playerMoreMenu: some View {
+        Menu {
+            // Playback speed submenu
             Menu {
                 ForEach(PlaybackRate.allCases) { rate in
                     Button {
@@ -334,43 +313,59 @@ struct FullPlayerSheet: View {
                     }
                 }
             } label: {
-                Text(player.rate.shortLabel)
-                    .font(.subheadline.weight(.semibold))
-                    .frame(minWidth: 56, minHeight: 44)
-                    .padding(.horizontal, 10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                Label(
+                    L10n.string("player.playbackSpeed", player.rate.shortLabel),
+                    systemImage: "speedometer"
+                )
             }
-            .accessibilityLabel(L10n.string("player.playbackSpeed", player.rate.shortLabel))
 
-            Spacer()
+            // Sleep timer submenu
+            Menu {
+                ForEach([0, 5, 15, 30, 45, 60], id: \.self) { minutes in
+                    Button {
+                        if minutes == 0 {
+                            player.setSleepTimer(seconds: 0)
+                        } else {
+                            player.startSleepTimer(minutes: minutes)
+                        }
+                    } label: {
+                        if minutes == 0 {
+                            Label(L10n.string("player.sleepTimerOption.off"), systemImage: "xmark")
+                        } else {
+                            Text(L10n.string("player.sleepTimerOption.\(minutes)"))
+                        }
+                    }
+                }
+            } label: {
+                Label(L10n.string("player.sleepTimer"), systemImage: "moon.zzz")
+            }
 
-            // Chapter list button
+            Divider()
+
+            Button { player.previousChapter() } label: {
+                Label(L10n.string("player.previousChapter"), systemImage: "backward.end.fill")
+            }
+            Button { player.skipBackward(seconds: 15) } label: {
+                Label(L10n.string("player.skipBack15"), systemImage: "gobackward.15")
+            }
+            Button { player.skipForward(seconds: 15) } label: {
+                Label(L10n.string("player.skipForward15"), systemImage: "goforward.15")
+            }
+
+            Divider()
+
             Button { showChapterList = true } label: {
                 Label(L10n.string("player.chapters"), systemImage: "list.bullet")
-                    .font(.subheadline.weight(.semibold))
-                    .frame(minHeight: 44)
-                    .padding(.horizontal, 10)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 10))
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(L10n.string("player.showChapterList"))
-            .sheet(isPresented: $showChapterList) {
-                ChapterListSheet(player: player)
-            }
-
-            Spacer()
-
-            // Sleep timer — shows remaining if active
-            SleepTimerButton()
-
-            Spacer()
-
-            // AirPlay route picker (iOS only — macOS uses menu-bar route picker)
-            #if os(iOS)
-            AirPlayPickerView()
-                .frame(width: 44, height: 44)
-                .accessibilityLabel(L10n.string("player.airplay"))
-            #endif
+        } label: {
+            Image(systemName: "ellipsis.circle.fill")
+                .font(.system(size: 32))
+                .frame(width: 48, height: 48)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel(L10n.string("player.more"))
+        .sheet(isPresented: $showChapterList) {
+            ChapterListSheet(player: player)
         }
     }
 

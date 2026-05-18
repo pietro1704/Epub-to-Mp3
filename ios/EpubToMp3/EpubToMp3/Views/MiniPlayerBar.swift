@@ -94,18 +94,6 @@ struct MiniPlayerBar: View {
 
                     Spacer()
 
-                    Button {
-                        player.skipBackward(seconds: 15)
-                    } label: {
-                        Image(systemName: "gobackward.15")
-                            .font(.system(size: 18))
-                            .frame(width: 36, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(player.isConverting && !player.firstChapterReady)
-                    .accessibilityLabel(L10n.string("player.skipBack15"))
-
                     ZStack {
                         ProgressView()
                             .opacity(player.isConverting && !player.firstChapterReady ? 1 : 0)
@@ -126,55 +114,67 @@ struct MiniPlayerBar: View {
                     .frame(width: 44, height: 44)
 
                     Button {
-                        player.skipForward(seconds: 15)
+                        player.nextChapter()
                     } label: {
-                        Image(systemName: "goforward.15")
+                        Image(systemName: "forward.end.fill")
                             .font(.system(size: 18))
                             .frame(width: 36, height: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .disabled(player.isConverting && !player.firstChapterReady)
-                    .accessibilityLabel(L10n.string("player.skipForward15"))
+                    .accessibilityLabel(L10n.string("player.nextChapter"))
 
-                    // Speed rate menu — compact label
+                    // "..." overflow — popover menu for speed + sleep.
+                    // Replaces the per-control buttons that used to live
+                    // here. Keeps the bar HIG-compact (Apple Books /
+                    // Music: max 2 controls + ellipsis).
                     Menu {
-                        ForEach(PlaybackRate.allCases) { rate in
-                            Button {
-                                player.setRate(rate)
-                            } label: {
-                                if player.rate == rate {
-                                    Label(rate.shortLabel, systemImage: "checkmark")
-                                } else {
-                                    Text(rate.shortLabel)
+                        Menu {
+                            ForEach(PlaybackRate.allCases) { rate in
+                                Button {
+                                    player.setRate(rate)
+                                } label: {
+                                    if player.rate == rate {
+                                        Label(rate.shortLabel, systemImage: "checkmark")
+                                    } else {
+                                        Text(rate.shortLabel)
+                                    }
                                 }
                             }
+                        } label: {
+                            Label(
+                                L10n.string("player.playbackSpeed", player.rate.shortLabel),
+                                systemImage: "speedometer"
+                            )
+                        }
+                        Menu {
+                            ForEach([0, 5, 15, 30, 45, 60], id: \.self) { minutes in
+                                Button {
+                                    if minutes == 0 {
+                                        player.setSleepTimer(seconds: 0)
+                                    } else {
+                                        player.startSleepTimer(minutes: minutes)
+                                    }
+                                } label: {
+                                    if minutes == 0 {
+                                        Label(L10n.string("player.sleepTimerOption.off"), systemImage: "xmark")
+                                    } else {
+                                        Text(L10n.string("player.sleepTimerOption.\(minutes)"))
+                                    }
+                                }
+                            }
+                        } label: {
+                            Label(L10n.string("player.sleepTimer"), systemImage: "moon.zzz")
                         }
                     } label: {
-                        Text(player.rate.shortLabel)
-                            .font(.caption.weight(.semibold))
-                            .frame(minWidth: 28, minHeight: 44)
+                        Image(systemName: "ellipsis")
+                            .font(.system(size: 18))
+                            .frame(width: 36, height: 44)
                             .contentShape(Rectangle())
                     }
-                    .accessibilityLabel("Speed: \(player.rate.shortLabel)")
-                    .accessibilityIdentifier("miniPlayer.speed")
-
-                    // Sleep timer — tap cycles presets
-                    Button {
-                        cycleSleepTimer()
-                    } label: {
-                        Image(systemName: player.sleepTimerRemaining > 0 ? "moon.zzz.fill" : "moon.zzz")
-                            .font(.system(size: 14))
-                            .frame(width: 32, height: 44)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(
-                        player.sleepTimerRemaining > 0
-                            ? "Sleep timer active"
-                            : "Sleep timer off"
-                    )
-                    .accessibilityIdentifier("miniPlayer.sleep")
+                    .accessibilityLabel(L10n.string("player.more"))
+                    .accessibilityIdentifier("miniPlayer.more")
                 }
                 // 12pt internal spacing on top of any safe-area lateral
                 // inset so the cover and transport controls never sit
@@ -185,7 +185,23 @@ struct MiniPlayerBar: View {
             .frame(minHeight: 64)
             .background(.thinMaterial)
             .contentShape(Rectangle())
+            // Tap on the bar (anywhere not covered by play/next/more
+            // buttons) expands to the full player. The buttons consume
+            // their own taps first, so tapping play/pause never collapses
+            // to "expand".
             .onTapGesture { onTap() }
+            // Pull-up: an upward drag of ≥30pt also expands. This is the
+            // Apple Music gesture — users discover it after seeing the
+            // mini bar a few times and try to "grab and pull".
+            .gesture(
+                DragGesture(minimumDistance: 12)
+                    .onEnded { value in
+                        if value.translation.height < -20
+                            || value.predictedEndTranslation.height < -60 {
+                            onTap()
+                        }
+                    }
+            )
             .accessibilityElement(children: .combine)
             .accessibilityLabel(L10n.string("miniPlayer.nowPlaying", book.resolvedTitle, chapterLabel))
             .accessibilityHint(L10n.string("miniPlayer.expandHint"))
