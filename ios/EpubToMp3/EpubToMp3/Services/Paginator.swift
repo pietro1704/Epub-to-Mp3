@@ -61,6 +61,56 @@ enum Paginator {
         #endif
     }
 
+    // MARK: - Link hit map (paginated tap-zone link precedence)
+
+    #if canImport(UIKit) || canImport(AppKit)
+    /// Compute the bounding rect (in text-content coordinate space)
+    /// of every `.link` attribute in `attributed`, when laid out in a
+    /// container of `width`. Used by the SwiftUI tap zones to give a
+    /// link tap precedence over the zone's default action: if a tap
+    /// lands inside a link rect we follow it, otherwise we fall
+    /// through to chrome toggle / page turn.
+    static func linkHits(
+        in attributed: NSAttributedString,
+        width: CGFloat
+    ) -> [(url: URL, rect: CGRect)] {
+        guard attributed.length > 0 else { return [] }
+        let storage = NSTextStorage(attributedString: attributed)
+        let manager = NSLayoutManager()
+        manager.allowsNonContiguousLayout = false
+        storage.addLayoutManager(manager)
+        let container = NSTextContainer(
+            size: CGSize(width: max(80, width), height: .greatestFiniteMagnitude)
+        )
+        container.lineFragmentPadding = 0
+        container.maximumNumberOfLines = 0
+        manager.addTextContainer(container)
+        manager.ensureLayout(for: container)
+
+        var hits: [(url: URL, rect: CGRect)] = []
+        let fullRange = NSRange(location: 0, length: attributed.length)
+        attributed.enumerateAttribute(.link, in: fullRange, options: []) { value, range, _ in
+            guard range.length > 0 else { return }
+            let url: URL?
+            if let u = value as? URL { url = u }
+            else if let s = value as? String { url = URL(string: s) }
+            else { url = nil }
+            guard let url else { return }
+            let glyphRange = manager.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
+            // Walk one line fragment at a time so wrapped links get
+            // one rect per visual line (a single union rect would
+            // produce L-shaped false-positive hits).
+            manager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, lineGlyphRange, _ in
+                let inter = NSIntersectionRange(glyphRange, lineGlyphRange)
+                guard inter.length > 0 else { return }
+                let rect = manager.boundingRect(forGlyphRange: inter, in: container)
+                hits.append((url, rect))
+            }
+        }
+        return hits
+    }
+    #endif
+
     // MARK: - Attributed pagination (preserves EPUB CSS)
 
     /// Page-break a pre-rendered `NSAttributedString` (from

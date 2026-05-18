@@ -374,12 +374,10 @@ struct ReaderView: View {
             let effectiveFontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
             let effectiveLineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             let effectiveColumnWidth: CGFloat = debouncedColumnWidth > 0 ? CGFloat(debouncedColumnWidth) : settings.readerColumnWidth
-            let headerH: CGFloat = effectiveFontSize * 2.5 + 50
-            // Pre-compute the *body area* the rendering UITextView will
-            // actually occupy inside `pageView`:
-            //   - 24 top padding + 24 bottom padding + 28 footer overlay
-            // and lock to the chrome-visible value so toggling chrome
-            // never repaginates and reflows the visible text.
+            // No `headerHeight` now — chapterTitleHeader was dropped
+            // (the EPUB's own heading flows as the first paragraph of
+            // page 0). All pages share the same body budget:
+            //   geo.size.height - 24 top - 24 bottom - 28 footer.
             let liveBodyHeight = max(120, geo.size.height - 76)
             let usedBodyHeight = chromeVisible || stableBodyHeight == 0
                 ? liveBodyHeight
@@ -389,7 +387,7 @@ struct ReaderView: View {
                 pageSize: pageBodySize,
                 margin: margin,
                 columnWidth: effectiveColumnWidth,
-                headerHeight: headerH,
+                headerHeight: 0,
                 fontSize: effectiveFontSize,
                 lineSpacing: effectiveLineSpacing
             )
@@ -593,16 +591,20 @@ struct ReaderView: View {
     /// (Apple Books "scroll" style) does instant flips too, so the
     /// trade-off is acceptable.
     private func slidePageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
-        // Navigation lives in the SwiftUI overlay tap zones — they're
-        // the only path that reliably fires on iPhone SE 17.2. The
-        // in-view UITapGestureRecognizer experiment didn't deliver
-        // taps (UITextView's own gesture pipeline appears to absorb
-        // them before our custom recognizer can run). Link precedence
-        // for body hyperlinks therefore remains a TODO until a
-        // working approach lands (likely a Coordinator-shared link
-        // hit-map queried from this overlay handler).
-        pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
-            .overlay(tapZones(totalPages: pages.count))
+        let totalPages = pages.count
+        let margin = effectiveReaderMargin(for: containerSize)
+        let columnW = min(settings.readerColumnWidth, containerSize.width - 2 * margin)
+        // textOriginY = top padding only — chapterTitleHeader was dropped
+        // (EPUB's own heading is the first content of page 0 now).
+        let textOriginY: CGFloat = 24
+        let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
+        return pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
+            .overlay(tapZones(
+                totalPages: totalPages,
+                linkHits: linkHits,
+                textOriginX: margin,
+                textOriginY: textOriginY
+            ))
             .gesture(
                 DragGesture(minimumDistance: 30)
                     .onEnded { value in
@@ -616,8 +618,18 @@ struct ReaderView: View {
     }
 
     private func noAnimationPageContent(pages: [NSAttributedString], pageIndex: Int, containerSize: CGSize) -> some View {
-        pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
-            .overlay(tapZones(totalPages: pages.count))
+        let totalPages = pages.count
+        let margin = effectiveReaderMargin(for: containerSize)
+        let columnW = min(settings.readerColumnWidth, containerSize.width - 2 * margin)
+        let textOriginY: CGFloat = 24
+        let linkHits = pageLinkHits(pages: pages, pageIndex: pageIndex, columnWidth: columnW)
+        return pageView(pages: pages, pageIndex: pageIndex, containerSize: containerSize)
+            .overlay(tapZones(
+                totalPages: totalPages,
+                linkHits: linkHits,
+                textOriginX: margin,
+                textOriginY: textOriginY
+            ))
             .gesture(
                 DragGesture(minimumDistance: 30)
                     .onEnded { value in
@@ -628,6 +640,19 @@ struct ReaderView: View {
                         }
                     }
             )
+    }
+
+    private func pageLinkHits(
+        pages: [NSAttributedString],
+        pageIndex: Int,
+        columnWidth: CGFloat
+    ) -> [(url: URL, rect: CGRect)] {
+        #if canImport(UIKit) || canImport(AppKit)
+        guard pageIndex >= 0 && pageIndex < pages.count else { return [] }
+        return Paginator.linkHits(in: pages[pageIndex], width: columnWidth)
+        #else
+        return []
+        #endif
     }
 
     /// Glue between `FixedWidthTextView`'s zone classification and the
@@ -655,8 +680,16 @@ struct ReaderView: View {
             settings.readerColumnWidth,
             containerSize.width - 2 * margin
         )
+        // No more separate `chapterTitleHeader` on page 0: the rendered
+        // EPUB attributed string already begins with the chapter's own
+        // `<h1>` / `<h2>` heading (from EpubHtmlRenderer). Drawing our
+        // own big serif title above that produced a visible duplicate
+        // AND ate ~80pt that the Paginator then had to reserve via
+        // `headerHeight`, leaving the body area underfilled by a couple
+        // of lines. Letting the EPUB heading flow inline as page-0
+        // content means the body area is the same on every page and
+        // Paginator fills it precisely.
         return VStack(alignment: .leading, spacing: 0) {
-            if pageIndex == 0 { chapterTitleHeader }
             pageTextBody(attributedSlice, width: effectiveColumnWidth)
             Spacer(minLength: 0)
         }
@@ -664,6 +697,7 @@ struct ReaderView: View {
         .padding(.vertical, 24)
         .frame(maxWidth: max(200, effectiveColumnWidth + 2 * margin), alignment: .leading)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+        .coordinateSpace(name: "readerPage")
         .clipped()
     }
 
@@ -702,28 +736,82 @@ struct ReaderView: View {
 
     /// Three invisible tap zones for page turning (Apple Books style):
     /// left 33% = previous page, center 33% = toggle chrome, right 33% = next page.
-    private func tapZones(totalPages: Int) -> some View {
-        HStack(spacing: 0) {
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { retreatPage() }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+    /// Each handler first checks whether the tap landed on a `.link`
+    /// glyph (using the precomputed `linkHits` from TextKit); if it
+    /// did, the link takes precedence and the zone's default action is
+    /// skipped. iOS 16+ uses `SpatialTapGesture` for the tap location;
+    /// iOS 15 falls back to the zone-only behaviour.
+    @ViewBuilder
+    private func tapZones(
+        totalPages: Int,
+        linkHits: [(url: URL, rect: CGRect)],
+        textOriginX: CGFloat,
+        textOriginY: CGFloat
+    ) -> some View {
+        if #available(iOS 16, macOS 13, *) {
+            HStack(spacing: 0) {
+                tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
+                    retreatPage()
+                }
                 .accessibilityLabel(L10n.string("reader.previousPage"))
-                .accessibilityAddTraits(.isButton)
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { onCenterTap?() }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
+                    onCenterTap?()
+                }
                 .accessibilityLabel(L10n.string("reader.toggleControls"))
-                .accessibilityAddTraits(.isButton)
-            Color.clear
-                .contentShape(Rectangle())
-                .onTapGesture { advancePage(totalPages: totalPages) }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                tapZone(linkHits: linkHits, originX: textOriginX, originY: textOriginY) {
+                    advancePage(totalPages: totalPages)
+                }
                 .accessibilityLabel(L10n.string("reader.nextPage"))
-                .accessibilityAddTraits(.isButton)
+            }
+            .frame(maxHeight: .infinity)
+        } else {
+            HStack(spacing: 0) {
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture { retreatPage() }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture { onCenterTap?() }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                Color.clear.contentShape(Rectangle())
+                    .onTapGesture { advancePage(totalPages: totalPages) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxHeight: .infinity)
         }
-        .frame(maxHeight: .infinity)
+    }
+
+    /// One third of the page-area tap surface. iOS 16+
+    /// `SpatialTapGesture` reports the tap location (relative to the
+    /// `.named("readerPage")` coordinate space that wraps the page),
+    /// which the handler offsets into text-content space and queries
+    /// against `linkHits`. Link tap wins; otherwise the fallback
+    /// zone action fires.
+    @available(iOS 16, macOS 13, *)
+    @ViewBuilder
+    private func tapZone(
+        linkHits: [(url: URL, rect: CGRect)],
+        originX: CGFloat,
+        originY: CGFloat,
+        fallback: @escaping () -> Void
+    ) -> some View {
+        Color.clear
+            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .gesture(
+                SpatialTapGesture(coordinateSpace: .named("readerPage"))
+                    .onEnded { value in
+                        let pagePoint = value.location
+                        let textPoint = CGPoint(
+                            x: pagePoint.x - originX,
+                            y: pagePoint.y - originY
+                        )
+                        if let url = linkHits.first(where: { $0.rect.contains(textPoint) })?.url {
+                            if onLinkTap?(url) == true { return }
+                        }
+                        fallback()
+                    }
+            )
+            .accessibilityAddTraits(.isButton)
     }
 
     /// Compat-key dispatch — returns true when the key was consumed so
