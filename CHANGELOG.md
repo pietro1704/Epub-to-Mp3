@@ -13,6 +13,42 @@
   into `dist/`) and `mise run mac:build` (sidecar + headless xcodebuild
   producing the SwiftUI `.app`).
 
+## [0.5.5] — 2026-05-18
+
+### Added (iOS)
+
+- **Immersive reader** — chrome (navigation bar, tab bar) auto-hides on page turn; restores on edge-tap (HIG compliant)
+- **Live Activity** — `ConversionLiveActivity` wired to job state machine; shows conversion progress on Dynamic Island and lock screen
+- **Lock-screen widgets** — conversion status and continue-reading widget via WidgetKit
+- **Sleep timer fade-out** — 10-second audio fade before session ends; `AVAudioSession` category set to `playback` with `longFormAudio` routing policy
+- **Dynamic Type** — full support across Library, Reader, Player, and Settings screens
+- **VoiceOver** — labels and grouped reading for all list rows
+- **pt-BR i18n parity** — new keys from immersive-reader sprint covered with regression test
+
+### Added (Flutter)
+
+- **No-autoplay + immersive reader parity** with iOS — audio does not start without explicit user intent; chrome auto-hides on page turn
+
+### Changed
+
+- `AudioPlayer.play()` loads track without auto-starting playback — explicit user action required to begin audio
+- `APIClient` caches `URLSession` and `JSONDecoder` instances to prevent per-request allocation
+- Live Activity uses cross-platform conditional compilation (`#if canImport(ActivityKit)`) with `ViewThatFits` fallback for Dynamic Type layout
+
+### Fixed (iOS)
+
+- **SidecarManager**: replaced busy-wait polling in `stop()` with async `AsyncStream`-based observer — eliminates CPU spin on shutdown
+- **AVQueuePlayer overload**: segments enqueued lazily (one ahead) instead of all at once — prevents memory pressure on long books
+- **Audio concurrency**: `AVAudioSession` options and environment injection race fixed; `MainActor` isolation enforced on player state mutations
+- **URLSession leak**: `APIClient` shared session reused across requests
+- **Reader**: paginator debounce, font-aware width calculation, search overlay positioning, theme deduplication
+- **macOS build**: reader landing screen unblocked after paginator refactor
+
+### Security
+
+- `resolvedBaseURL` now validates scheme against an explicit allowlist (`http`, `https`) before any network request — prevents URL-scheme injection via malformed server config
+- Removed `network.server` entitlement (was overly broad; not required for client-only network access)
+
 ## [0.5.4] — 2026-05-17
 
 ### iOS
