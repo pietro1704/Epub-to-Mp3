@@ -63,6 +63,12 @@ struct MainReaderView: View {
                 emptyState
             }
         }
+        // Pin navigation title at the topmost view *inside* the
+        // NavigationStack so iOS guarantees the bar materialises. With
+        // the title only on a grandchild (BookOpenView), iOS 18 was
+        // silently collapsing the bar.
+        .navigationTitle(currentBook?.resolvedTitle ?? "Reader")
+        .compatInlineNavigationTitle()
         // Auto-clear if the reading book was removed from the library so
         // we don't stay in a permanently-blank "populated" state.
         .compatOnChange(of: library.books.map(\.id)) { _ in

@@ -73,6 +73,20 @@ struct InstantReaderView: View {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            // Custom in-view top bar. Replacing NavigationStack's nav bar
+            // entirely because every attempt to drive that bar with
+            // `.navigationTitle` + `.toolbar` + `.navigationBarHidden`
+            // either failed to render or stuck hidden on iOS 16-18 under
+            // our exact view hierarchy. A view-local HStack is
+            // deterministic, animates with chromeVisible, and exposes the
+            // three reader controls (search / settings / TOC) per the
+            // user's brief.
+            if chromeVisible {
+                customTopBar
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             if chromeVisible {
                 VStack(spacing: 0) {
@@ -97,24 +111,6 @@ struct InstantReaderView: View {
             }
         }
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
-        .toolbar {
-            ToolbarItem(placement: .compatPrimaryTrailing) {
-                HStack(spacing: 16) {
-                    Button {
-                        showingSearch = true
-                    } label: { Image(systemName: "magnifyingglass") }
-                    .accessibilityLabel("Search in book")
-                    Button {
-                        showingReaderSettings = true
-                    } label: { Image(systemName: "textformat.size") }
-                    .accessibilityLabel("Reader settings")
-                    Button {
-                        showingToc = true
-                    } label: { Image(systemName: "list.bullet.indent") }
-                    .accessibilityLabel("Table of contents")
-                }
-            }
-        }
         .compatFullScreenCover(isPresented: $showingFullPlayer) {
             FullPlayerSheet()
                 .environmentObject(globalPlayer)
@@ -280,6 +276,72 @@ struct InstantReaderView: View {
     // MARK: - Idle player bar (no audio yet)
 
     @ViewBuilder
+    // MARK: - Custom top bar (replaces NavigationStack's bar)
+
+    private var topBarTitle: String {
+        if let t = snapshot?.bookTitle, !t.isEmpty { return t }
+        let idx = currentChapterIndex
+        if idx >= 0, idx < fulltext.chapters.count {
+            return fulltext.chapters[idx].displayTitle
+        }
+        return "Reader"
+    }
+
+    private var customTopBar: some View {
+        HStack(spacing: 16) {
+            // Prefer the live job snapshot's book title (set by the
+            // FastAPI SSE) — falls back to the chapter's display title
+            // and finally to a generic "Reader" so the bar always has
+            // something to anchor on.
+            Text(topBarTitle)
+                .font(.headline)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button {
+                showingSearch = true
+            } label: {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 17, weight: .regular))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tint)
+            .accessibilityLabel("Search in book")
+
+            Button {
+                showingReaderSettings = true
+            } label: {
+                Image(systemName: "textformat.size")
+                    .font(.system(size: 17, weight: .regular))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tint)
+            .accessibilityLabel("Reader settings")
+
+            Button {
+                showingToc = true
+            } label: {
+                Image(systemName: "list.bullet.indent")
+                    .font(.system(size: 17, weight: .regular))
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.tint)
+            .accessibilityLabel("Table of contents")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(readerBackground.opacity(0.96))
+        .overlay(alignment: .bottom) {
+            Divider().background(readerForeground.opacity(0.15))
+        }
+    }
+
     private var idlePlayerBar: some View {
         VStack(spacing: 8) {
             HStack(spacing: 12) {
