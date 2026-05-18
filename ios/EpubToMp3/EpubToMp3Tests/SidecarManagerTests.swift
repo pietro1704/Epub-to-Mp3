@@ -132,6 +132,45 @@ final class SidecarManagerTests: XCTestCase {
     /// manager uses internally, then call a stop-equivalent that
     /// also sets a local suppress flag, and confirm the handler
     /// runs but the "spontaneous death" branch is skipped.
+    /// Regression: calling `stop()` repeatedly on a manager with no
+    /// running child must not deadlock or block the caller. The
+    /// previous implementation busy-waited via `Thread.sleep` even
+    /// when there was no process to reap; if it ever ran on the main
+    /// thread (e.g. from `NSApplication.willTerminateNotification`)
+    /// the UI would freeze for up to 2 s per call. The async variant
+    /// must return immediately when `process == nil`.
+    @MainActor
+    func testStopAsyncIsIdempotentAndFastWhenIdle() async {
+        let manager = SidecarManager()
+        let start = Date()
+        // Looping a handful of times — if any iteration busy-waits we
+        // blow past the 0.5 s budget below.
+        for _ in 0..<20 {
+            await manager.stop()
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertLessThan(elapsed, 0.5,
+            "stop() must short-circuit when there is no child process; took \(elapsed)s for 20 calls")
+    }
+
+    /// Regression: `stopSynchronously()` is what
+    /// `NSApplication.willTerminateNotification` invokes on the main
+    /// thread during app quit. With no child process to reap, it must
+    /// return effectively instantly — never block the main thread on
+    /// a semaphore. (The 2 s budget only applies when there's a live
+    /// child that didn't honour SIGTERM.)
+    @MainActor
+    func testStopSynchronouslyIsFastWhenIdle() {
+        let manager = SidecarManager()
+        let start = Date()
+        for _ in 0..<20 {
+            manager.stopSynchronously()
+        }
+        let elapsed = Date().timeIntervalSince(start)
+        XCTAssertLessThan(elapsed, 0.5,
+            "stopSynchronously() must short-circuit when there is no child; took \(elapsed)s for 20 calls")
+    }
+
     func testIntentionalStopSuppressesSpontaneousDeathCallback() throws {
         // Same closure shape as the production terminationHandler:
         // signal a flag when the spontaneous-death branch would have

@@ -203,7 +203,7 @@ final class SidecarManager: ObservableObject {
         if !healthOk {
             let tail = readPipeTail(errPipe) ?? readPipeTail(outPipe) ?? ""
             suppressDeathCallback = true
-            stop()
+            await stop()
             state = .failed("Sidecar did not become healthy within \(Int(healthcheckTimeout))s. \(tail)")
             return state
         }
@@ -219,20 +219,76 @@ final class SidecarManager: ObservableObject {
     /// Terminate the child process if any. Safe to call multiple times.
     /// User-initiated teardown — sets `suppressDeathCallback = true`
     /// so the spontaneous-death restart path doesn't fire.
-    func stop() {
+    ///
+    /// Async variant uses cooperative `Task.sleep` polling, so calling
+    /// this from a SwiftUI lifecycle hook (or any main-actor context)
+    /// no longer blocks the UI while we wait for the child to die.
+    @MainActor
+    func stop() async {
         #if canImport(AppKit)
         suppressDeathCallback = true
         if let proc = process, proc.isRunning {
             proc.terminate()
-            // Give it 2s to exit cleanly, then SIGKILL.
-            let deadline = Date().addingTimeInterval(2)
-            while proc.isRunning && Date() < deadline {
-                Thread.sleep(forTimeInterval: 0.05)
+            // Give it ~2s to exit cleanly, polling cooperatively, then
+            // SIGKILL. 40 × 50 ms = 2 s, matching the previous busy-wait
+            // budget without ever blocking the main thread.
+            for _ in 0..<40 {
+                if !proc.isRunning { break }
+                try? await Task.sleep(nanoseconds: 50_000_000)
             }
             if proc.isRunning {
                 kill(proc.processIdentifier, SIGKILL)
             }
         }
+        finishStopTeardown()
+        #endif
+    }
+
+    /// Synchronous teardown for `NSApplication.willTerminateNotification`
+    /// — the notification fires on the main thread and we have no
+    /// async context there. We MUST NOT busy-wait on the main thread or
+    /// the GUI freezes during app quit. Instead, hop the wait onto a
+    /// dedicated dispatch queue and block the main thread on a
+    /// semaphore, but only for the same 2 s budget. AppKit already
+    /// gives terminationHandler enough time before reaping us, so this
+    /// is bounded.
+    func stopSynchronously() {
+        #if canImport(AppKit)
+        // `willTerminate` fires on the main thread (the MainActor's
+        // executor), so this is effectively MainActor-isolated. Make
+        // that contract explicit so we can mutate actor-isolated state.
+        MainActor.assumeIsolated {
+            suppressDeathCallback = true
+            if let proc = process, proc.isRunning {
+                proc.terminate()
+                if proc.isRunning {
+                    let sem = DispatchSemaphore(value: 0)
+                    // Off-main queue so the main thread blocks on the
+                    // semaphore, not on the polling loop itself.
+                    DispatchQueue.global(qos: .userInitiated).async {
+                        let deadline = Date().addingTimeInterval(2)
+                        while proc.isRunning && Date() < deadline {
+                            Thread.sleep(forTimeInterval: 0.05)
+                        }
+                        sem.signal()
+                    }
+                    _ = sem.wait(timeout: .now() + 2.5)
+                }
+                if proc.isRunning {
+                    kill(proc.processIdentifier, SIGKILL)
+                }
+            }
+            finishStopTeardown()
+        }
+        #endif
+    }
+
+    #if canImport(AppKit)
+    /// Shared cleanup tail for `stop()` and `stopSynchronously()`.
+    /// Drops pipe references, removes the willTerminate observer, and
+    /// snaps state back to `.idle` if we were previously running.
+    @MainActor
+    private func finishStopTeardown() {
         process = nil
         stdoutPipe = nil
         stderrPipe = nil
@@ -241,8 +297,8 @@ final class SidecarManager: ObservableObject {
             terminationObserver = nil
         }
         if case .running = state { state = .idle }
-        #endif
     }
+    #endif
 
     // MARK: - Helpers
 
@@ -254,7 +310,10 @@ final class SidecarManager: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            self?.stop()
+            // willTerminate runs on the main thread and we have no
+            // async context here. The sync variant hops the polling
+            // loop onto a background queue so we don't freeze the UI.
+            self?.stopSynchronously()
         }
     }
 
