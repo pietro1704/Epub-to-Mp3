@@ -155,6 +155,36 @@ enum EpubHtmlRenderer {
             if letterSpacing != 0 {
                 attr.addAttribute(.kern, value: NSNumber(value: letterSpacing), range: range)
             }
+
+            // ---- Paragraph spacing normalisation ------------------
+            // EPUB CSS frequently sets paragraph-spacing-before /
+            // margin-top on body paragraphs to 1em-3em, plus huge
+            // h1/h2 bottom margins. The importer translates those to
+            // `paragraphSpacing` / `paragraphSpacingBefore` on the
+            // `NSParagraphStyle` for the range. TextKit honours them
+            // exactly, which is why page 1 of a chapter often shows
+            // a giant title and only one or two body lines — the
+            // h1's `paragraphSpacing` pushes the next paragraph past
+            // half the page. Cap both values so the paginator can
+            // fill the page like Apple Books does (it strips most
+            // EPUB whitespace and runs its own typography).
+            if let original = attrs[.paragraphStyle] as? NSParagraphStyle,
+               let mutable = original.mutableCopy() as? NSMutableParagraphStyle {
+                let maxSpacing: CGFloat = targetSize * 0.8       // ~80% of a line
+                if mutable.paragraphSpacing > maxSpacing {
+                    mutable.paragraphSpacing = maxSpacing
+                }
+                if mutable.paragraphSpacingBefore > maxSpacing {
+                    mutable.paragraphSpacingBefore = maxSpacing
+                }
+                // Some EPUBs set firstLineHeadIndent for drop-cap
+                // styling; that interacts badly with paginated
+                // layout. Clamp to 0..targetSize (one em).
+                if mutable.firstLineHeadIndent > targetSize {
+                    mutable.firstLineHeadIndent = targetSize
+                }
+                attr.addAttribute(.paragraphStyle, value: mutable, range: range)
+            }
         }
     }
 

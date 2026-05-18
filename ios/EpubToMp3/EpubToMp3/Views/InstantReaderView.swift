@@ -381,17 +381,10 @@ struct InstantReaderView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
 
                 transportControls(player: ap)
-
-                Menu {
-                    rateMenu(player: ap)
-                    sleepTimerMenu(player: ap)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.title3)
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .accessibilityLabel("More options")
+                // The transport row already exposes the unified "..." menu
+                // (speed + sleep + secondary skips). Dropping the legacy
+                // outer Menu so the bar stops rendering two ellipsis
+                // buttons next to each other.
             }
 
             scrubber(player: ap)
@@ -426,25 +419,7 @@ struct InstantReaderView: View {
 
 
     private func transportControls(player: AudioPlayer) -> some View {
-        HStack(spacing: 14) {
-            Button {
-                if currentChapterIndex > 0 { currentChapterIndex -= 1 }
-                player.previousChapter()
-            } label: {
-                Image(systemName: "backward.fill").font(.body)
-            }
-            .buttonStyle(.plain)
-            .disabled(currentChapterIndex == 0)
-            .accessibilityLabel("Previous chapter")
-
-            Button {
-                player.skip(by: -15)
-            } label: {
-                Image(systemName: "gobackward.15").font(.title3)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Skip back 15 seconds")
-
+        HStack(spacing: 24) {
             Button {
                 player.togglePlayPause()
             } label: {
@@ -455,24 +430,76 @@ struct InstantReaderView: View {
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
 
             Button {
-                player.skip(by: 30)
-            } label: {
-                Image(systemName: "goforward.30").font(.title3)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Skip forward 30 seconds")
-
-            Button {
                 if currentChapterIndex + 1 < fulltext.chapters.count {
                     currentChapterIndex += 1
                 }
                 player.nextChapter()
             } label: {
-                Image(systemName: "forward.fill").font(.body)
+                Image(systemName: "forward.end.fill").font(.title3)
             }
             .buttonStyle(.plain)
             .disabled(currentChapterIndex + 1 >= fulltext.chapters.count)
             .accessibilityLabel("Next chapter")
+
+            // "..." popover — speed + sleep + secondary skips. Same
+            // contract as the other player surfaces.
+            Menu {
+                Menu {
+                    ForEach(PlaybackRate.allCases) { rate in
+                        Button {
+                            player.setRate(rate)
+                        } label: {
+                            if player.rate == rate {
+                                Label(rate.shortLabel, systemImage: "checkmark")
+                            } else {
+                                Text(rate.shortLabel)
+                            }
+                        }
+                    }
+                } label: {
+                    Label(
+                        L10n.string("player.playbackSpeed", player.rate.shortLabel),
+                        systemImage: "speedometer"
+                    )
+                }
+                Menu {
+                    ForEach([0, 5, 15, 30, 45, 60], id: \.self) { minutes in
+                        Button {
+                            if minutes == 0 {
+                                player.setSleepTimer(seconds: 0)
+                            } else {
+                                player.startSleepTimer(minutes: minutes)
+                            }
+                        } label: {
+                            if minutes == 0 {
+                                Label(L10n.string("player.sleepTimerOption.off"), systemImage: "xmark")
+                            } else {
+                                Text(L10n.string("player.sleepTimerOption.\(minutes)"))
+                            }
+                        }
+                    }
+                } label: {
+                    Label(L10n.string("player.sleepTimer"), systemImage: "moon.zzz")
+                }
+                Divider()
+                Button {
+                    if currentChapterIndex > 0 { currentChapterIndex -= 1 }
+                    player.previousChapter()
+                } label: {
+                    Label(L10n.string("player.previousChapter"), systemImage: "backward.end.fill")
+                }
+                .disabled(currentChapterIndex == 0)
+                Button { player.skip(by: -15) } label: {
+                    Label(L10n.string("player.skipBack15"), systemImage: "gobackward.15")
+                }
+                Button { player.skip(by: 30) } label: {
+                    Label(L10n.string("player.skipForward15"), systemImage: "goforward.30")
+                }
+            } label: {
+                Image(systemName: "ellipsis.circle.fill")
+                    .font(.title3)
+            }
+            .accessibilityLabel(L10n.string("player.more"))
         }
     }
 

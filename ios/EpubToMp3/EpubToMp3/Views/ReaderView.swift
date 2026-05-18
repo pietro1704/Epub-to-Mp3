@@ -546,7 +546,7 @@ struct ReaderView: View {
         )
         return VStack(alignment: .leading, spacing: 0) {
             if pageIndex == 0 { chapterTitleHeader }
-            pageTextBody(attributedSlice)
+            pageTextBody(attributedSlice, width: effectiveColumnWidth)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, margin)
@@ -564,15 +564,18 @@ struct ReaderView: View {
     /// list markers: the TextKit layout pass that built the slice is the
     /// same engine SwiftUI's `Text` uses to render it.
     @ViewBuilder
-    private func pageTextBody(_ slice: NSAttributedString) -> some View {
+    private func pageTextBody(_ slice: NSAttributedString, width: CGFloat) -> some View {
         // Render via UITextView (read-only, non-scrolling) so the engine
         // that lays out the page is the same one that draws it. SwiftUI's
         // `Text(AttributedString:)` silently drops attributes it doesn't
         // understand — most painfully `paragraphSpacingBefore`, which
         // pushed `TextKit`-computed page breaks down by ~100pt and left
-        // half the page blank below the visible text.
-        AttributedPageView(attributed: slice)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // half the page blank below the visible text. The explicit
+        // `width:` parameter pins the textContainer so lines don't bleed
+        // past the page margin.
+        AttributedPageView(attributed: slice, width: width)
+            .frame(width: width, alignment: .topLeading)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func pageFooter(index: Int, total: Int) -> some View {
