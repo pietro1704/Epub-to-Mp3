@@ -1,5 +1,6 @@
 import Foundation
 import WidgetKit
+import ActivityKit
 
 /// Writes enriched metadata to the shared App Group UserDefaults so
 /// WidgetKit extensions can render Now Playing, Continue Reading, and
@@ -107,11 +108,115 @@ enum WidgetDataSync {
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetKind.library)
     }
 
+    // MARK: - Conversion progress (every 5 chapters)
+
+    /// Update conversion progress in the App Group and reload ContinueReading
+    /// timelines. Must be called every 5 completed chapters from the conversion
+    /// job observer.
+    ///
+    /// - Parameters:
+    ///   - bookTitle: display title of the book being converted
+    ///   - chaptersDone: number of chapters successfully converted so far
+    ///   - chaptersTotal: total chapters in the job
+    ///   - currentChapterName: name of the chapter currently being synthesised
+    static func updateConversionProgress(
+        bookTitle: String,
+        chaptersDone: Int,
+        chaptersTotal: Int,
+        currentChapterName: String? = nil
+    ) {
+        guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
+        defaults.set(bookTitle, forKey: "widget.conversion.bookTitle")
+        defaults.set(chaptersDone, forKey: "widget.conversion.chaptersDone")
+        defaults.set(chaptersTotal, forKey: "widget.conversion.chaptersTotal")
+        defaults.set(currentChapterName, forKey: "widget.conversion.currentChapterName")
+
+        // Reload home-screen widgets so the conversion state is visible.
+        WidgetCenter.shared.reloadAllTimelines()
+
+        // Update the running Live Activity if one exists.
+        guard #available(iOS 16.2, *) else { return }
+        let state = ConversionActivityAttributes.ContentState(
+            chaptersDone: chaptersDone,
+            chaptersTotal: chaptersTotal,
+            currentChapterName: currentChapterName
+        )
+        let content = ActivityContent(state: state, staleDate: Date().addingTimeInterval(300))
+        Task {
+            for activity in Activity<ConversionActivityAttributes>.activities {
+                await activity.update(content)
+            }
+        }
+    }
+
+    // MARK: - Live Activity management
+
+    /// Start a Live Activity for a new conversion job. Safe to call on iOS < 16.2 —
+    /// the guard exits silently.
+    @discardableResult
+    static func startConversionActivity(
+        bookTitle: String,
+        bookId: String,
+        chaptersTotal: Int
+    ) -> String? {
+        guard #available(iOS 16.2, *) else { return nil }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return nil }
+
+        let attributes = ConversionActivityAttributes(
+            bookTitle: bookTitle,
+            bookId: bookId
+        )
+        let initialState = ConversionActivityAttributes.ContentState(
+            chaptersDone: 0,
+            chaptersTotal: chaptersTotal,
+            currentChapterName: nil
+        )
+        let content = ActivityContent(
+            state: initialState,
+            staleDate: Date().addingTimeInterval(3600) // 1h — jobs rarely exceed this
+        )
+
+        do {
+            let activity = try Activity.request(
+                attributes: attributes,
+                content: content,
+                pushType: nil
+            )
+            return activity.id
+        } catch {
+            return nil
+        }
+    }
+
+    /// End all conversion Live Activities for the given `bookId`.
+    /// Pass `failed: true` to show a failure state before dismissal.
+    /// Must be called explicitly when a job reaches done/failed/cancelled —
+    /// never rely on `staleDate` for cleanup.
+    static func endConversionActivity(bookId: String, failed: Bool = false) {
+        guard #available(iOS 16.2, *) else { return }
+        let finalState = ConversionActivityAttributes.ContentState(
+            chaptersDone: 0,
+            chaptersTotal: 0,
+            currentChapterName: failed ? "Conversion failed" : "Done"
+        )
+        let content = ActivityContent(
+            state: finalState,
+            staleDate: Date().addingTimeInterval(5)
+        )
+        Task {
+            for activity in Activity<ConversionActivityAttributes>.activities
+            where activity.attributes.bookId == bookId {
+                await activity.end(content, dismissalPolicy: .after(Date().addingTimeInterval(4)))
+            }
+        }
+    }
+
     // MARK: - Reload helpers
 
     static func reloadNowPlayingWidgets() {
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetKind.nowPlaying)
         WidgetCenter.shared.reloadTimelines(ofKind: WidgetKind.legacy)
+        WidgetCenter.shared.reloadTimelines(ofKind: "NowPlayingLockScreenWidget")
     }
 
     static func reloadContinueReadingWidgets() {

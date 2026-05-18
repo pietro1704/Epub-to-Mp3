@@ -1,0 +1,148 @@
+import ActivityKit
+import SwiftUI
+import WidgetKit
+
+// MARK: - Conversion Live Activity (iOS 16.2+)
+// Triggered by WidgetDataSync.startConversionActivity when a job enters running.
+// Explicitly ended by WidgetDataSync.endConversionActivity when job finishes/fails.
+
+// MARK: - Attributes
+
+public struct ConversionActivityAttributes: ActivityAttributes {
+
+    /// Static content set at launch — does not change during the activity.
+    public struct ContentState: Codable, Hashable {
+        public var chaptersDone: Int
+        public var chaptersTotal: Int
+        public var currentChapterName: String?
+
+        public var progressFraction: Double {
+            guard chaptersTotal > 0 else { return 0 }
+            return Double(chaptersDone) / Double(chaptersTotal)
+        }
+
+        public var statusLabel: String {
+            "\(chaptersDone) / \(chaptersTotal)"
+        }
+    }
+
+    public let bookTitle: String
+    public let bookId: String
+}
+
+// MARK: - Widget
+
+struct ConversionLiveActivityWidget: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: ConversionActivityAttributes.self) { context in
+            // Lock screen / banner expanded view
+            LockScreenLiveActivityView(context: context)
+                .activityBackgroundTint(Color(.systemBackground))
+        } dynamicIsland: { context in
+            DynamicIsland {
+                // Expanded regions
+                DynamicIslandExpandedRegion(.leading) {
+                    Image(systemName: "waveform.path")
+                        .foregroundStyle(.tint)
+                        .font(.title2)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    Text(context.state.statusLabel)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    Text(context.attributes.bookTitle)
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                }
+                DynamicIslandExpandedRegion(.bottom) {
+                    VStack(spacing: 4) {
+                        if let chapterName = context.state.currentChapterName, !chapterName.isEmpty {
+                            Text(chapterName)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
+                        ProgressView(value: context.state.progressFraction)
+                            .tint(.tint)
+                    }
+                    .padding(.horizontal, 4)
+                }
+            } compactLeading: {
+                // Book cover placeholder (no artwork decode in widget)
+                Image(systemName: "waveform.path")
+                    .foregroundStyle(.tint)
+                    .font(.caption)
+            } compactTrailing: {
+                Text(context.state.statusLabel)
+                    .font(.caption2)
+                    .foregroundStyle(.primary)
+                    .monospacedDigit()
+            } minimal: {
+                // Progress ring
+                ZStack {
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 2)
+                    Circle()
+                        .trim(from: 0, to: CGFloat(context.state.progressFraction))
+                        .stroke(Color.tint, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Lock Screen / Banner Layout
+
+private struct LockScreenLiveActivityView: View {
+    let context: ActivityViewContext<ConversionActivityAttributes>
+
+    var body: some View {
+        HStack(spacing: 14) {
+            // Icon
+            ZStack {
+                Circle()
+                    .fill(Color.tint.opacity(0.15))
+                    .frame(width: 44, height: 44)
+                Image(systemName: "waveform.path")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(context.attributes.bookTitle)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .lineLimit(1)
+
+                if let chapterName = context.state.currentChapterName, !chapterName.isEmpty {
+                    Text(chapterName)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+
+                ProgressView(value: context.state.progressFraction)
+                    .tint(.tint)
+            }
+
+            Spacer(minLength: 0)
+
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(context.state.statusLabel)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .monospacedDigit()
+                Text("Converting")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+    }
+}
