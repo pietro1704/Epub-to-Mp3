@@ -186,4 +186,48 @@ final class ConversionWatchdogTests: XCTestCase {
         XCTAssertEqual(stallCount, 0,
             "tick must be a no-op when the watchdog is stopped")
     }
+
+    // MARK: - Live Activity wiring contract
+    //
+    // WidgetDataSync.startConversionActivity / endConversionActivity are
+    // called from BookOpenView (a SwiftUI view), not from ConversionWatchdog
+    // itself. Direct unit-testing of those call sites requires a UITest or
+    // a refactor that introduces a WidgetDataSync protocol — neither is in
+    // scope here. The tests below instead verify the state-machine invariants
+    // that the call sites rely on, so any regression in the watchdog
+    // lifecycle contract is caught before it can silently break the wiring.
+
+    /// The watchdog stops itself after onGaveUp, which is exactly the
+    /// "conversion failed" signal the BookOpenView uses to call
+    /// endConversionActivity(failed: true). Verify the stopped state is
+    /// stable so the view can safely call end once.
+    func testIsRunningFalseAfterGaveUp() {
+        let clock = Clock()
+        let wd = ConversionWatchdog(
+            stallSeconds: 5, pollSeconds: 1, maxAutoRetries: 1,
+            now: { clock.read() }
+        )
+        wd.start()
+        clock.advance(by: 10); wd.tick()  // onStall
+        clock.advance(by: 10); wd.tick()  // onGaveUp → auto-stop
+        XCTAssertFalse(wd.isRunning,
+            "watchdog must be stopped when onGaveUp fires so BookOpenView can end the Live Activity exactly once")
+    }
+
+    /// After stop(), consecutiveStalls is zero — the view should not carry
+    /// over a stale "failed" signal into the next startConversionActivity.
+    func testStopClearsRetryCounter() {
+        let clock = Clock()
+        let wd = ConversionWatchdog(
+            stallSeconds: 5, pollSeconds: 1, maxAutoRetries: 3,
+            now: { clock.read() }
+        )
+        wd.start()
+        clock.advance(by: 10); wd.tick()  // stall #1
+        clock.advance(by: 10); wd.tick()  // stall #2
+        wd.stop()
+        XCTAssertEqual(wd.consecutiveStalls, 0,
+            "stop() must reset consecutiveStalls so a fresh activity start is clean")
+        XCTAssertFalse(wd.isRunning)
+    }
 }

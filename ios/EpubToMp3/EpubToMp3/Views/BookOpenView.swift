@@ -120,6 +120,11 @@ struct BookOpenView: View {
         .compatInlineNavigationTitle()
         .task { await openFlow() }
         .onDisappear {
+            // If a conversion was running when the user left, end the Live
+            // Activity so it doesn't linger indefinitely on the lock screen.
+            if globalPlayer.isConverting {
+                WidgetDataSync.endConversionActivity(bookId: book.id, failed: true)
+            }
             audioBootstrapTask?.cancel()
             streamTask?.cancel()
             watchdog?.stop()
@@ -314,6 +319,16 @@ struct BookOpenView: View {
         globalPlayer.conversionStatus.beginSession()
         playerLog.debug("[AudioBootstrap] startAudioBootstrap ch=\(startChapterIndex) — useEmbeddedRuntime=\(settings.useEmbeddedRuntime) hasClient=\(self.client != nil)")
 
+        // Start Live Activity for this conversion. startConversionActivity is
+        // guarded internally by #if canImport(ActivityKit) && os(iOS) so the
+        // call is safe on macOS too — it compiles but is a no-op at runtime.
+        let totalChapters = fulltext?.chapters.count ?? 0
+        WidgetDataSync.startConversionActivity(
+            bookTitle: fulltext?.bookTitle ?? book.resolvedTitle,
+            bookId: book.id,
+            chaptersTotal: totalChapters
+        )
+
         // Resilience: spin up a watchdog so a silent pipeline (network
         // wedge, hung Edge socket, Python deadlock) is caught instead
         // of leaving the user staring at a forever spinner. 90 s of
@@ -490,6 +505,17 @@ struct BookOpenView: View {
                 chaptersDone += 1
                 consecutiveFailures = 0
                 lastFailureKey = nil
+                let done1 = chaptersDone
+                let capturedTitle1 = fulltext.bookTitle ?? book.resolvedTitle
+                let capturedChName1 = first.title
+                await MainActor.run {
+                    WidgetDataSync.updateConversionProgress(
+                        bookTitle: capturedTitle1,
+                        chaptersDone: done1,
+                        chaptersTotal: totalChapters,
+                        currentChapterName: capturedChName1
+                    )
+                }
             case .failure(let key):
                 consecutiveFailures += 1
                 lastFailureKey = key
@@ -522,6 +548,17 @@ struct BookOpenView: View {
                 chaptersDone += 1
                 consecutiveFailures = 0
                 lastFailureKey = nil
+                let doneSeq = chaptersDone
+                let capturedTitleSeq = fulltext.bookTitle ?? book.resolvedTitle
+                let capturedChNameSeq = work.title
+                await MainActor.run {
+                    WidgetDataSync.updateConversionProgress(
+                        bookTitle: capturedTitleSeq,
+                        chaptersDone: doneSeq,
+                        chaptersTotal: totalChapters,
+                        currentChapterName: capturedChNameSeq
+                    )
+                }
             case .failure(let key):
                 if key == lastFailureKey {
                     consecutiveFailures += 1
@@ -604,6 +641,17 @@ struct BookOpenView: View {
                     lastFailureKey = nil
                     watchdog?.heartbeat()
                     playerLog.debug("[AudioBootstrap] chapter \(work.arrayIndex) complete (parallel)")
+                    let donePar = chaptersDone
+                    let capturedTitlePar = fulltext.bookTitle ?? book.resolvedTitle
+                    let capturedChNamePar = work.title
+                    await MainActor.run {
+                        WidgetDataSync.updateConversionProgress(
+                            bookTitle: capturedTitlePar,
+                            chaptersDone: donePar,
+                            chaptersTotal: totalChapters,
+                            currentChapterName: capturedChNamePar
+                        )
+                    }
 
                 case .failure(let error):
                     let message = error.localizedDescription
@@ -743,15 +791,19 @@ struct BookOpenView: View {
     }
 
     private func finishEmbeddedBootstrap(chaptersDone: Int, totalChapters: Int) async {
+        let failed = chaptersDone == 0
+        let capturedBookId = book.id
         await MainActor.run {
             self.globalPlayer.isConverting = false
             self.globalPlayer.conversionStatus.endSession()
-            if chaptersDone == 0 {
+            if failed {
                 self.statusBanner = self.statusBanner ?? "Audio generation failed"
             } else {
                 self.statusBanner = nil
             }
             self.watchdog?.stop()
+            // End the Live Activity — safe on macOS (no-op at compile time).
+            WidgetDataSync.endConversionActivity(bookId: capturedBookId, failed: failed)
         }
         playerLog.debug("[AudioBootstrap] bootstrapEmbedded finished, \(chaptersDone)/\(totalChapters) chapters done")
     }
@@ -933,6 +985,7 @@ struct BookOpenView: View {
         do {
             fileURL = try await MainActor.run { try library.openBookFile(id: book.id) }
         } catch {
+            let capturedBookIdOpen = book.id
             await MainActor.run {
                 self.statusBanner = "Audio unavailable: \(error.localizedDescription)"
                 // Reset state so the global mini-player doesn't keep
@@ -940,6 +993,7 @@ struct BookOpenView: View {
                 self.globalPlayer.isConverting = false
                 self.watchdog?.stop()
                 self.conversionStalled = true
+                WidgetDataSync.endConversionActivity(bookId: capturedBookIdOpen, failed: true)
             }
             return
         }
@@ -983,11 +1037,13 @@ struct BookOpenView: View {
             }
             subscribeToStream(client: client, jobId: response.jobId)
         } catch {
+            let capturedBookIdBoot = book.id
             await MainActor.run {
                 self.statusBanner = "Audio failed: \(error.localizedDescription)"
                 self.globalPlayer.isConverting = false
                 self.watchdog?.stop()
                 self.conversionStalled = true
+                WidgetDataSync.endConversionActivity(bookId: capturedBookIdBoot, failed: true)
             }
         }
     }
@@ -1016,6 +1072,19 @@ struct BookOpenView: View {
                         if let total = updated.chaptersTotal, total > 0 {
                             let done = updated.chaptersCompleted ?? playable.count
                             self.globalPlayer.conversionProgress = Double(done) / Double(total)
+                            // Push progress to the Live Activity every event so the
+                            // Dynamic Island progress bar stays current.
+                            if !updated.isTerminal {
+                                let currentChName = updated.chapterProgress?
+                                    .first(where: { $0.status == "converting" })?
+                                    .displayTitle
+                                WidgetDataSync.updateConversionProgress(
+                                    bookTitle: updated.bookTitle ?? self.book.resolvedTitle,
+                                    chaptersDone: done,
+                                    chaptersTotal: total,
+                                    currentChapterName: currentChName
+                                )
+                            }
                         }
                         self.statusBanner = self.bannerFor(updated)
 
@@ -1023,6 +1092,12 @@ struct BookOpenView: View {
                             self.globalPlayer.isConverting = false
                             self.statusBanner = nil
                             self.watchdog?.stop()
+                            let termFailed = updated.state.lowercased() == "failed"
+                                || updated.state.lowercased() == "cancelled"
+                            WidgetDataSync.endConversionActivity(
+                                bookId: self.book.id,
+                                failed: termFailed
+                            )
                             break
                         }
                     }
@@ -1038,6 +1113,7 @@ struct BookOpenView: View {
                 self.statusBanner = "Stream interrupted. Tap retry."
                 self.conversionStalled = true
                 self.watchdog?.stop()
+                WidgetDataSync.endConversionActivity(bookId: self.book.id, failed: true)
             }
         }
     }
