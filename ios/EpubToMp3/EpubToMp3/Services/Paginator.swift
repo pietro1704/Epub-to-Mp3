@@ -79,12 +79,13 @@ enum Paginator {
     ) -> [NSAttributedString] {
         guard attributed.length > 0 else { return [] }
         let usableWidth = max(200, min(columnWidth, pageSize.width - 2 * CGFloat(margin)))
-        // 120pt of vertical headroom (was 76): vertical padding 24+24,
-        // footer ~28, plus an extra 44pt safety so the last line never
-        // crosses the home-indicator / page-footer overlay. Underfilling
-        // by ~one line is preferable to the previous bug where the last
-        // entry got clipped at the bottom.
-        let usableHeight = max(120, pageSize.height - 120)
+        // `pageSize.height` is the body area the caller already
+        // computed (`paginatedContent` subtracts the pageView's own
+        // padding + the footer overlay reservation). Paginator no
+        // longer carves a buffer here — that double-subtraction was
+        // either over-filling (text clipped at the bottom) or
+        // under-filling (huge empty area below the last line).
+        let usableHeight = max(120, pageSize.height)
 
         let storage = NSTextStorage(attributedString: attributed)
         let layout = NSLayoutManager()

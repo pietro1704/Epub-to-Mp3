@@ -366,8 +366,19 @@ struct ReaderView: View {
             let effectiveLineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             let effectiveColumnWidth: CGFloat = debouncedColumnWidth > 0 ? CGFloat(debouncedColumnWidth) : settings.readerColumnWidth
             let headerH: CGFloat = effectiveFontSize * 2.5 + 50
+            // Pre-compute the *body area* the rendering UITextView will
+            // actually occupy inside `pageView`:
+            //   geo.size.height
+            //   - 24 top padding
+            //   - 24 bottom padding
+            //   - 28 page-footer overlay (capsule sitting on the bottom)
+            // Passing this exact number to the Paginator means each
+            // page's TextKit slice fills the rendering area precisely
+            // — no big empty gap, no clipped last line.
+            let bodyHeight = max(120, geo.size.height - 76)
+            let pageBodySize = CGSize(width: geo.size.width, height: bodyHeight)
             let pages = attributedPages(
-                pageSize: geo.size,
+                pageSize: pageBodySize,
                 margin: margin,
                 columnWidth: effectiveColumnWidth,
                 headerHeight: headerH,
