@@ -804,25 +804,11 @@ struct InstantReaderView: View {
 struct ChromeVisibilityModifier: ViewModifier {
     let visible: Bool
 
-    @ViewBuilder
     func body(content: Content) -> some View {
         #if os(iOS)
-        if #available(iOS 16.0, *) {
-            // Modern API: drive both bars through `.toolbar(_:for:)`.
-            // Mixing the deprecated `.navigationBarHidden(true)` with the
-            // new `.toolbar(.hidden, for: .tabBar)` made the nav bar
-            // stick hidden even after `visible` flipped back to `true`
-            // (the two modifiers fight on the same toolbar registry).
-            content
-                .toolbar(visible ? .visible : .hidden, for: .navigationBar)
-                .toolbar(visible ? .visible : .hidden, for: .tabBar)
-                .statusBarHidden(!visible)
-        } else {
-            // iOS 15 fallback — no `toolbar(_:for:)`.
-            content
-                .navigationBarHidden(!visible)
-                .statusBarHidden(!visible)
-        }
+        content
+            .navigationBarHidden(!visible)
+            .statusBarHidden(!visible)
         #else
         content
         #endif

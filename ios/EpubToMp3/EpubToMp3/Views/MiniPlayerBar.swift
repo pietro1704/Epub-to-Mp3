@@ -213,9 +213,13 @@ struct MiniPlayerBar: View {
                         }
                     }
             )
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(L10n.string("miniPlayer.nowPlaying", book.resolvedTitle, chapterLabel))
-            .accessibilityHint(L10n.string("miniPlayer.expandHint"))
+            // Keep child accessibility behaviour intact — `.combine` was
+            // making SwiftUI route every tap inside the bar to the
+            // bar-level accessibility element (which triggered the
+            // `expand` action), so play/pause / next / "..." were all
+            // expanding the sheet. `.contain` keeps each button focusable
+            // separately.
+            .accessibilityElement(children: .contain)
             .accessibilityIdentifier("miniPlayer.bar")
             .transition(
                 reduceMotion

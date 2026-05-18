@@ -99,6 +99,13 @@ struct MainReaderView: View {
     @ViewBuilder
     private func populatedReader(for book: BookEntity) -> some View {
         BookOpenView(book: book)
+            // Set the nav-bar title at this level (the topmost view that
+            // sits directly inside the NavigationStack). On iOS 18 the
+            // bar refused to materialise when only `BookOpenView` (a
+            // child) set the title — the stack matches modifiers at its
+            // first descendant level, so setting the title here pins it.
+            .navigationTitle(book.resolvedTitle)
+            .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .compatPrimaryTrailing) {
                     listenButton
