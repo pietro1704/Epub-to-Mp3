@@ -54,6 +54,11 @@ struct EpubToMp3App: App {
                         drainPendingIntent()
                         drainWidgetIntents()
                         WidgetDataSync.reloadAll()
+                    } else if phase == .background {
+                        // Flush the playback position to UserDefaults before
+                        // the process is suspended so resume works correctly
+                        // on a cold relaunch.
+                        player.persistResumePoint(force: true)
                     }
                 }
                 .onOpenURL { url in

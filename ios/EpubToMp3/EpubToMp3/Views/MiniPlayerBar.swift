@@ -48,7 +48,11 @@ struct MiniPlayerBar: View {
 
     private var chapterLabel: String {
         let idx = player.snapshot != nil ? player.currentChapterIndex : currentChapterIndex
-        return L10n.string("player.chapter", idx + 1)
+        // Prefer the displayTitle from the live snapshot (matches FullPlayerSheet behaviour).
+        if let chapters = player.snapshot?.playableChapters, idx < chapters.count {
+            return chapters[idx].displayTitle
+        }
+        return "Chapter \(idx + 1)"
     }
 
     // MARK: Body

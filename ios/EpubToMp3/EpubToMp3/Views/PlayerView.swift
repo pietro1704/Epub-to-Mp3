@@ -5,7 +5,7 @@ import SwiftUI
 struct PlayerView: View {
     let snapshot: JobSnapshot
     let backendBaseURL: URL?
-    @State private var player = AudioPlayer()
+    @EnvironmentObject var player: AudioPlayer
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -32,7 +32,7 @@ struct PlayerView: View {
             }
             .onAppear {
                 if player.snapshot?.jobId != snapshot.jobId {
-                    player = AudioPlayer(backendBaseURL: backendBaseURL)
+                    player.backendBaseURL = backendBaseURL
                     player.play(snapshot: snapshot, startingAt: 0)
                 }
             }

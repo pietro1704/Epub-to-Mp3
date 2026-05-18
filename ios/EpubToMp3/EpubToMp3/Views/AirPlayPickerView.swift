@@ -15,6 +15,9 @@ struct AirPlayPickerView: UIViewRepresentable {
         view.activeTintColor = .systemBlue
         // Matches .label so the icon is legible in both light and dark mode.
         view.tintColor = .label
+        // Long-form audio policy so the picker shows full AirPlay speaker
+        // list (e.g. HomePod, Apple TV) rather than just BT headphones.
+        view.preferredRouteSharingPolicy = .longFormAudio
         return view
     }
 

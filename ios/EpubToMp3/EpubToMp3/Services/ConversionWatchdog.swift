@@ -92,11 +92,13 @@ final class ConversionWatchdog {
         lastBeat = now()
         pollTask = Task { [weak self] in
             guard let self else { return }
+            // Read pollSeconds and call tick() on the MainActor so the
+            // non-isolated Task body never races against @MainActor state.
             let interval = await MainActor.run { self.pollSeconds }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
                 if Task.isCancelled { break }
-                self.tick()
+                await MainActor.run { [weak self] in self?.tick() }
             }
         }
     }

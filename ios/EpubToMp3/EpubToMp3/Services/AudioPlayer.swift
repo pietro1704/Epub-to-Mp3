@@ -134,8 +134,14 @@ final class AudioPlayer: ObservableObject {
     var currentChapter: AsyncStream<JobSnapshot.Chapter?> {
         AsyncStream { continuation in
             let id = UUID()
-            self.chapterContinuations[id] = continuation
-            continuation.yield(self.currentChapterValue)
+            // Capture the initial value before the Task hop so we yield
+            // the correct snapshot even if the caller subscribes during
+            // a mid-update window.
+            let initial = self.currentChapterValue
+            Task { @MainActor in
+                self.chapterContinuations[id] = continuation
+                continuation.yield(initial)
+            }
             continuation.onTermination = { @Sendable _ in
                 Task { @MainActor in self.chapterContinuations.removeValue(forKey: id) }
             }
@@ -147,8 +153,11 @@ final class AudioPlayer: ObservableObject {
     var position: AsyncStream<TimeInterval> {
         AsyncStream { continuation in
             let id = UUID()
-            self.positionContinuations[id] = continuation
-            continuation.yield(self.positionSeconds)
+            let initial = self.positionSeconds
+            Task { @MainActor in
+                self.positionContinuations[id] = continuation
+                continuation.yield(initial)
+            }
             continuation.onTermination = { @Sendable _ in
                 Task { @MainActor in self.positionContinuations.removeValue(forKey: id) }
             }
@@ -233,7 +242,8 @@ final class AudioPlayer: ObservableObject {
         do {
             try session.setCategory(
                 .playback, mode: .spokenAudio,
-                policy: .longFormAudio, options: []
+                policy: .longFormAudio,
+                options: [.allowBluetoothA2DP, .allowAirPlay]
             )
             try session.setActive(true, options: [])
         } catch {
@@ -826,7 +836,7 @@ final class AudioPlayer: ObservableObject {
         for cont in positionContinuations.values { cont.yield(positionSeconds) }
     }
 
-    private func persistResumePoint(force: Bool) {
+    func persistResumePoint(force: Bool) {
         guard let snapshot else { return }
         let now = Date()
         if !force, now.timeIntervalSince(lastResumePersist) < 5 { return }
