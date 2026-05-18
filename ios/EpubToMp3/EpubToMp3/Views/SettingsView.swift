@@ -150,20 +150,37 @@ struct SettingsView: View {
     @ViewBuilder
     private var backendSection: some View {
         Section {
-            HStack {
-                Label("URL", systemImage: "network")
-                Spacer()
-                let field = TextField("http://localhost:8000",
-                                      text: $settings.backendURL)
-                    .multilineTextAlignment(.trailing)
-                    .autocorrectionDisabled()
-                #if os(iOS)
-                field
-                    .keyboardType(.URL)
-                    .textInputAutocapitalization(.never)
-                #else
-                field
-                #endif
+            // ViewThatFits: at XXXL Dynamic Type the Label and text field
+            // stack vertically so the URL field is not clipped.
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Label("URL", systemImage: "network")
+                    Spacer()
+                    let field = TextField("http://localhost:8000",
+                                          text: $settings.backendURL)
+                        .multilineTextAlignment(.trailing)
+                        .autocorrectionDisabled()
+                    #if os(iOS)
+                    field
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                    #else
+                    field
+                    #endif
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("URL", systemImage: "network")
+                    let field = TextField("http://localhost:8000",
+                                          text: $settings.backendURL)
+                        .autocorrectionDisabled()
+                    #if os(iOS)
+                    field
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                    #else
+                    field
+                    #endif
+                }
             }
             if self.settings.resolvedBaseURL == nil {
                 Label(L10n.string("settings.urlNotValid"), systemImage: "exclamationmark.triangle.fill")
@@ -188,15 +205,29 @@ struct SettingsView: View {
     @ViewBuilder
     private var readerSection: some View {
         Section {
-            HStack {
-                Label(L10n.string("settings.fontSize"), systemImage: "textformat.size")
-                Spacer()
-                Stepper(value: $settings.readerFontSize, in: 0...4) {
-                    Text("\(self.settings.readerFontSize + 1) of 5")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            // Each Label+Stepper row uses ViewThatFits so at XXXL Dynamic
+            // Type the label stacks above the stepper instead of being
+            // squeezed off-screen in the trailing HStack.
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Label(L10n.string("settings.fontSize"), systemImage: "textformat.size")
+                    Spacer()
+                    Stepper(value: $settings.readerFontSize, in: 0...4) {
+                        Text("\(self.settings.readerFontSize + 1) of 5")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .labelsHidden()
                 }
-                .labelsHidden()
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(L10n.string("settings.fontSize"), systemImage: "textformat.size")
+                    Stepper(value: $settings.readerFontSize, in: 0...4) {
+                        Text("\(self.settings.readerFontSize + 1) of 5")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .labelsHidden()
+                }
             }
             Picker(selection: $settings.readerFontFamily) {
                 ForEach(ReaderFontFamily.allCases) { f in
@@ -219,38 +250,74 @@ struct SettingsView: View {
             } label: {
                 Label(L10n.string("settings.layout"), systemImage: "doc.text")
             }
-            HStack {
-                Label(L10n.string("settings.lineSpacing"), systemImage: "arrow.up.and.down.text.horizontal")
-                Spacer()
-                Stepper(value: $settings.readerLineSpacing,
-                        in: 0...16, step: 2) {
-                    Text("\(Int(self.settings.readerLineSpacing)) pt")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Label(L10n.string("settings.lineSpacing"), systemImage: "arrow.up.and.down.text.horizontal")
+                    Spacer()
+                    Stepper(value: $settings.readerLineSpacing,
+                            in: 0...16, step: 2) {
+                        Text("\(Int(self.settings.readerLineSpacing)) pt")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .labelsHidden()
                 }
-                .labelsHidden()
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(L10n.string("settings.lineSpacing"), systemImage: "arrow.up.and.down.text.horizontal")
+                    Stepper(value: $settings.readerLineSpacing,
+                            in: 0...16, step: 2) {
+                        Text("\(Int(self.settings.readerLineSpacing)) pt")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .labelsHidden()
+                }
             }
-            HStack {
-                Label(L10n.string("settings.margin"), systemImage: "rectangle.compress.vertical")
-                Spacer()
-                Stepper(value: $settings.readerMargin,
-                        in: 16...80, step: 4) {
-                    Text("\(Int(self.settings.readerMargin)) pt")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Label(L10n.string("settings.margin"), systemImage: "rectangle.compress.vertical")
+                    Spacer()
+                    Stepper(value: $settings.readerMargin,
+                            in: 16...80, step: 4) {
+                        Text("\(Int(self.settings.readerMargin)) pt")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .labelsHidden()
                 }
-                .labelsHidden()
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(L10n.string("settings.margin"), systemImage: "rectangle.compress.vertical")
+                    Stepper(value: $settings.readerMargin,
+                            in: 16...80, step: 4) {
+                        Text("\(Int(self.settings.readerMargin)) pt")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .labelsHidden()
+                }
             }
-            HStack {
-                Label(L10n.string("settings.columnWidth"), systemImage: "rectangle.split.3x1")
-                Spacer()
-                Stepper(value: $settings.readerColumnWidth,
-                        in: 420...960, step: 40) {
-                    Text("\(Int(self.settings.readerColumnWidth)) pt")
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Label(L10n.string("settings.columnWidth"), systemImage: "rectangle.split.3x1")
+                    Spacer()
+                    Stepper(value: $settings.readerColumnWidth,
+                            in: 420...960, step: 40) {
+                        Text("\(Int(self.settings.readerColumnWidth)) pt")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .labelsHidden()
                 }
-                .labelsHidden()
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(L10n.string("settings.columnWidth"), systemImage: "rectangle.split.3x1")
+                    Stepper(value: $settings.readerColumnWidth,
+                            in: 420...960, step: 40) {
+                        Text("\(Int(self.settings.readerColumnWidth)) pt")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    .labelsHidden()
+                }
             }
             Toggle(isOn: $settings.readerAutoScroll) {
                 Label(L10n.string("settings.autoScroll"), systemImage: "arrow.down.to.line")
@@ -320,12 +387,20 @@ struct SettingsView: View {
     @ViewBuilder
     private var cloudSection: some View {
         Section {
-            HStack {
-                Label(L10n.string("settings.icloudSync"), systemImage: "icloud")
-                Spacer()
-                Text(L10n.string("settings.comingSoon"))
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Label(L10n.string("settings.icloudSync"), systemImage: "icloud")
+                    Spacer()
+                    Text(L10n.string("settings.comingSoon"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Label(L10n.string("settings.icloudSync"), systemImage: "icloud")
+                    Text(L10n.string("settings.comingSoon"))
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
             }
         } header: {
             Text(L10n.string("settings.sync"))

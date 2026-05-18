@@ -74,7 +74,10 @@ struct PlayerReaderView: View {
                         readerPane
                         Divider()
                         transportPane
-                            .frame(maxHeight: 240)
+                            // minHeight prevents the pane from
+                            // collapsing; no fixed ceiling so XXXL
+                            // Dynamic Type can expand the title/scrubber.
+                            .frame(minHeight: 180)
                     }
                 }
             }
@@ -265,7 +268,10 @@ struct PlayerReaderView: View {
             }
             Button { player.togglePlayPause() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                    // Decorative transport icon — clamp so the transport
+                    // row does not overflow at XXXL Dynamic Type.
                     .font(.system(size: 56))
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
             }
             Button { player.skipForward(seconds: 15) } label: {
                 Image(systemName: "goforward.15").font(.title)

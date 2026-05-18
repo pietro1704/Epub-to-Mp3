@@ -243,7 +243,10 @@ struct LibraryView: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             Image(systemName: "books.vertical")
+                // Large decorative glyph — clamped so it doesn't
+                // grow past the viewport on XXXL Dynamic Type.
                 .font(.system(size: 64, weight: .light))
+                .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 .foregroundStyle(.secondary)
             Text(L10n.string("library.emptyTitle"))
                 .font(.title3)
@@ -362,7 +365,9 @@ struct BookTile: View {
                         Text(author)
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                            // Allow 2 lines at large Dynamic Type sizes
+                            // so author name is not silently truncated.
+                            .lineLimit(2)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -386,7 +391,10 @@ struct BookTile: View {
                 Image(systemName: book.fileType == .pdf
                       ? "doc.richtext"
                       : "book.closed")
+                    // Cover placeholder glyph — clamped so tiles
+                    // don't collapse under the enlarged icon at XXXL.
                     .font(.system(size: 48, weight: .light))
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                     .foregroundStyle(.tint)
             }
         }

@@ -232,7 +232,9 @@ struct ReaderView: View {
             .accessibilityLabel("Search in chapter")
         }
         .padding(.horizontal, 8)
-        .frame(height: 44)
+        // Use minHeight so the toolbar expands with Dynamic Type
+        // rather than clipping the tap target at XXXL sizes.
+        .frame(minHeight: 44)
     }
 
     // MARK: Layout helpers
