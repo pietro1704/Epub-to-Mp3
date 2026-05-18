@@ -4,7 +4,7 @@
 # FastAPI Server
 fastapi>=0.136.1
 uvicorn[standard]>=0.47.0
-python-multipart>=0.0.28
+python-multipart>=0.0.29
 
 # TTS Engine (Edge-TTS - Microsoft online)
 edge-tts>=7.2.8

@@ -28,7 +28,7 @@ mutagen>=1.47.0
 # Web server
 fastapi>=0.136.1
 uvicorn[standard]>=0.47.0
-python-multipart>=0.0.28
+python-multipart>=0.0.29
 
 # Data
 pydantic>=2.13.4,<3.0.0
