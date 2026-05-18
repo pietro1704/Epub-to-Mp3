@@ -15,12 +15,20 @@ import SwiftUI
 struct RootView: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
+    /// iPhone Plus models report `.regular` horizontal in landscape but
+    /// still ship a phone-class navigation surface — forcing a split
+    /// view there breaks the toolbar. Combine size class with idiom on
+    /// iOS so only true iPads (or macOS/Catalyst) get the split layout.
+    #if os(iOS)
+    private var useSplit: Bool {
+        hSize == .regular && UIDevice.current.userInterfaceIdiom == .pad
+    }
+    #else
+    private var useSplit: Bool { hSize == .regular }
+    #endif
+
     var body: some View {
-        // macOS always reports regular; iPad portrait/landscape regular
-        // for the master pane; iPhone is .compact except on a few Plus
-        // models in landscape. Treating `.regular` as the split-view
-        // signal mirrors what every Apple first-party reader does.
-        if hSize == .regular {
+        if useSplit {
             if #available(iOS 16, macOS 13, *) {
                 SplitViewRoot()
             } else {

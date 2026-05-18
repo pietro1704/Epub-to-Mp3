@@ -193,11 +193,15 @@ private struct LibrarySidebarRow: View {
     let book: BookEntity
 
     var body: some View {
-        HStack(spacing: 10) {
+        // Sidebar row uses the 8/12/16/20 spacing grid:
+        // - 12pt between thumb and text column
+        // - 4pt between text rows (HIG tight-stack rhythm)
+        // - 4pt vertical row padding so consecutive rows breathe
+        HStack(spacing: 12) {
             thumb
-                .frame(width: 36, height: 52)
+                .frame(width: 40, height: 60) // on-grid 2:3 ratio
                 .clipShape(RoundedRectangle(cornerRadius: 4))
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(book.resolvedTitle)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(2)
@@ -211,7 +215,7 @@ private struct LibrarySidebarRow: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     @ViewBuilder

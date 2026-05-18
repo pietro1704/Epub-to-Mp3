@@ -165,51 +165,58 @@ struct SplitViewRoot: View {
 
     @ViewBuilder
     private var libraryContent: some View {
-        if let book = selectedBook {
-            VStack(spacing: 0) {
-                HStack {
-                    Button {
-                        selectedBookID = nil
-                        selectedChapterIndex = nil
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "chevron.backward")
-                            Text("Library")
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                    Button {
-                        MainReaderView.setCurrentlyReading(bookID: book.id)
-                        navMode = .reader
-                    } label: {
-                        Label("Open in Reader", systemImage: "book.fill")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.regular)
+        // System-rendered back button via NavigationStack. The stack
+        // observes `selectedBookID` — pushing/popping a book detail
+        // updates the path and SwiftUI draws the standard chevron+title
+        // back chrome that matches Apple Books / Music.
+        NavigationStack(
+            path: Binding<[String]>(
+                get: { selectedBookID.map { [$0] } ?? [] },
+                set: { stack in
+                    selectedBookID = stack.last
+                    if stack.isEmpty { selectedChapterIndex = nil }
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
-                Divider()
+            )
+        ) {
+            LibrarySidebar(selectedBookID: $selectedBookID)
+                .navigationDestination(for: String.self) { bookID in
+                    if let book = library.books.first(where: { $0.id == bookID }) {
+                        libraryBookDetail(book: book)
+                    }
+                }
+        }
+    }
 
-                if let snapshot = jobSnapshot(for: book), let chapterIndex = selectedChapterIndex {
-                    PlayerReaderDetail(
-                        snapshot: snapshot,
-                        startingChapterIndex: chapterIndex,
-                        backendBaseURL: settings.resolvedBaseURL,
-                        onPreviousChapter: { advanceChapter(by: -1, in: snapshot) },
-                        onNextChapter: { advanceChapter(by: +1, in: snapshot) }
-                    )
-                    .id("\(book.id)-\(chapterIndex)")
-                } else {
-                    ChapterListColumn(
-                        book: book,
-                        selectedChapterIndex: $selectedChapterIndex
-                    )
+    @ViewBuilder
+    private func libraryBookDetail(book: BookEntity) -> some View {
+        Group {
+            if let snapshot = jobSnapshot(for: book), let chapterIndex = selectedChapterIndex {
+                PlayerReaderDetail(
+                    snapshot: snapshot,
+                    startingChapterIndex: chapterIndex,
+                    backendBaseURL: settings.resolvedBaseURL,
+                    onPreviousChapter: { advanceChapter(by: -1, in: snapshot) },
+                    onNextChapter: { advanceChapter(by: +1, in: snapshot) }
+                )
+                .id("\(book.id)-\(chapterIndex)")
+            } else {
+                ChapterListColumn(
+                    book: book,
+                    selectedChapterIndex: $selectedChapterIndex
+                )
+            }
+        }
+        .navigationTitle(book.title)
+        .compatInlineNavigationTitle()
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    MainReaderView.setCurrentlyReading(bookID: book.id)
+                    navMode = .reader
+                } label: {
+                    Label(L10n.string("library.openInReader"), systemImage: "book.fill")
                 }
             }
-        } else {
-            LibrarySidebar(selectedBookID: $selectedBookID)
         }
     }
 

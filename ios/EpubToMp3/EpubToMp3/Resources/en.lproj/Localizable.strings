@@ -98,6 +98,27 @@
 "player.chapters" = "Chapters";
 "player.showChapterList" = "Show chapter list";
 
+/* PlayerReaderView toolbar */
+"player.toc" = "Table of contents";
+"player.more" = "More";
+"player.search" = "Search";
+"player.bookmarks" = "Bookmarks";
+"player.addBookmark" = "Add bookmark";
+"player.removeBookmark" = "Remove bookmark";
+"player.downloadAll" = "Download for offline";
+"player.downloading" = "Downloading…";
+"player.downloaded" = "Downloaded";
+"player.downloadFailed" = "Download failed";
+"player.sleepTimer" = "Sleep timer";
+"player.sleepTimerOption.off" = "Off";
+"player.sleepTimerOption.5" = "5 minutes";
+"player.sleepTimerOption.15" = "15 minutes";
+"player.sleepTimerOption.30" = "30 minutes";
+"player.sleepTimerOption.60" = "1 hour";
+
+/* SplitViewRoot library detail */
+"library.openInReader" = "Open in Reader";
+
 /* MiniPlayerBar */
 "miniPlayer.nowPlaying" = "Now playing: %@, %@. Tap to expand.";
 "miniPlayer.expandHint" = "Swipe up or tap to open full player.";

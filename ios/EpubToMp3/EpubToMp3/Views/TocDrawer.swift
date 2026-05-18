@@ -6,8 +6,30 @@ import SwiftUI
 struct TocDrawer: View {
     let fulltext: EbookFulltext?
     let snapshot: JobSnapshot
+    /// Currently-playing audio chapter index (0-based). Pass a negative
+    /// value when no audio is mounted on the player.
     let currentChapterIndex: Int
+    /// Currently-visible reader chapter index (0-based). Optional —
+    /// callers that don't track a separate scroll cursor can omit it.
+    /// When provided, a chapter is marked "current" if EITHER cursor
+    /// (audio OR reading) lands on it. When no audio is mounted, the
+    /// reading cursor wins so the marker still tracks the user.
+    let readingChapterIndex: Int?
     let onJump: (Int) -> Void
+
+    init(
+        fulltext: EbookFulltext?,
+        snapshot: JobSnapshot,
+        currentChapterIndex: Int,
+        readingChapterIndex: Int? = nil,
+        onJump: @escaping (Int) -> Void
+    ) {
+        self.fulltext = fulltext
+        self.snapshot = snapshot
+        self.currentChapterIndex = currentChapterIndex
+        self.readingChapterIndex = readingChapterIndex
+        self.onJump = onJump
+    }
 
     @Environment(\.dismiss) private var dismiss
 
@@ -16,12 +38,13 @@ struct TocDrawer: View {
             List {
                 if let fulltext, !fulltext.chapters.isEmpty {
                     ForEach(fulltext.chapters) { chapter in
+                        let zeroBased = chapter.index - 1 // backend is 1-based
                         chapterRow(
                             title: chapter.displayTitle,
-                            index: chapter.index - 1, // backend is 1-based
+                            index: zeroBased,
                             charCount: chapter.charCount,
-                            isCurrent: (chapter.index - 1) == currentChapterIndex,
-                            audioReady: audioReady(forZeroBasedIndex: chapter.index - 1)
+                            isCurrent: isCurrent(zeroBasedIndex: zeroBased),
+                            audioReady: audioReady(forZeroBasedIndex: zeroBased)
                         )
                     }
                 } else {
@@ -33,7 +56,7 @@ struct TocDrawer: View {
                             title: chapter.displayTitle,
                             index: chapter.index,
                             charCount: chapter.chars,
-                            isCurrent: chapter.index == currentChapterIndex,
+                            isCurrent: isCurrent(zeroBasedIndex: chapter.index),
                             audioReady: chapter.downloadUrl != nil
                         )
                     }
@@ -90,9 +113,19 @@ struct TocDrawer: View {
                 }
                 Spacer()
                 if isCurrent {
-                    Image(systemName: "speaker.wave.2.fill")
+                    // Speaker icon when audio is mounted and matches
+                    // this row; reading-cursor icon when no audio is
+                    // mounted yet — same accent so visual weight is
+                    // identical.
+                    let audioActive = currentChapterIndex >= 0
+                    let onAudio = audioActive && currentChapterIndex == index
+                    Image(systemName: onAudio
+                          ? "speaker.wave.2.fill"
+                          : "book.fill")
                         .foregroundStyle(.tint)
-                        .accessibilityLabel("Currently playing")
+                        .accessibilityLabel(onAudio
+                                            ? "Currently playing"
+                                            : "Currently reading")
                 }
             }
             .contentShape(Rectangle())
@@ -103,6 +136,22 @@ struct TocDrawer: View {
 
     private func audioReady(forZeroBasedIndex idx: Int) -> Bool {
         snapshot.playableChapters.contains { $0.index == idx && $0.downloadUrl != nil }
+    }
+
+    /// A chapter is "current" when:
+    ///  - audio is mounted and the audio cursor matches it, OR
+    ///  - the reader cursor matches it (when supplied by the caller).
+    /// When no audio is mounted (`currentChapterIndex < 0`), the
+    /// reading cursor is the sole signal — otherwise the speaker icon
+    /// would never appear before playback begins.
+    private func isCurrent(zeroBasedIndex idx: Int) -> Bool {
+        let audioActive = currentChapterIndex >= 0
+        let audioMatch = audioActive && currentChapterIndex == idx
+        let readingMatch = readingChapterIndex.map { $0 == idx } ?? false
+        if audioActive {
+            return audioMatch || readingMatch
+        }
+        return readingMatch
     }
 }
 

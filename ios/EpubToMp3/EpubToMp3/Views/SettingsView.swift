@@ -346,13 +346,8 @@ struct SettingsView: View {
                 Label(L10n.string("settings.bundleIdentifier"), systemImage: "shippingbox")
             }
             CompatLabeledContent {
-                #if os(iOS)
-                Text("iOS 15.0+")
-                #elseif os(macOS)
-                Text("macOS 12.0+")
-                #else
-                Text("—")
-                #endif
+                Text(Self.platformMinimumLabel)
+                    .textSelection(.enabled)
             } label: {
                 Label(L10n.string("settings.platform"), systemImage: "macbook.and.iphone")
             }
@@ -404,6 +399,26 @@ struct SettingsView: View {
         }
     }
     #endif
+
+    /// Dynamic "iOS 15.0+" / "macOS 12.0+" label, sourced from the
+    /// bundle's deployment-target Info.plist keys. Falls back to a
+    /// static label when the keys are missing (e.g. SPM preview builds).
+    static var platformMinimumLabel: String {
+        let info = Bundle.main.infoDictionary
+        #if os(iOS)
+        if let version = info?["MinimumOSVersion"] as? String, !version.isEmpty {
+            return "iOS \(version)+"
+        }
+        return "iOS 15.0+"
+        #elseif os(macOS)
+        if let version = info?["LSMinimumSystemVersion"] as? String, !version.isEmpty {
+            return "macOS \(version)+"
+        }
+        return "macOS 12.0+"
+        #else
+        return "—"
+        #endif
+    }
 }
 
 #Preview("Settings") {

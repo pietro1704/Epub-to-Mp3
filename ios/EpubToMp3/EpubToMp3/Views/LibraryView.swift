@@ -78,7 +78,9 @@ struct LibraryView: View {
     private static let acceptedTypes: [UTType] = {
         // EPUB + PDF — same picker / drop surface. The Library tile
         // shows a per-book glyph so the user can tell them apart at
-        // a glance once imported.
+        // a glance once imported. Note: PDFs have no DRM equivalent to
+        // the Apple Books FairPlay scheme, so the DRM warning in the
+        // empty state is scoped to the EPUB half of this list.
         var types: [UTType] = [.epub, .pdf]
         if let zip = UTType("org.idpf.epub-container") { types.append(zip) }
         return types
@@ -92,6 +94,9 @@ struct LibraryView: View {
     }
 
     private var grid: [GridItem] {
+        // 8/12/16/20 spacing grid: tiles use 20pt between columns/rows.
+        // Apple Books mirrors this — 16pt horizontal scroll padding
+        // with a 20pt inter-tile rhythm.
         [GridItem(.adaptive(minimum: 160, maximum: 220), spacing: 20)]
     }
 
@@ -101,26 +106,31 @@ struct LibraryView: View {
                 emptyState
             } else {
                 ScrollView {
-                    LibrarySearchBar(query: $searchQuery)
-                        .padding(.top, 8)
-                    tagFilterBar
-                    LazyVGrid(columns: grid, spacing: 24) {
-                        ForEach(sorted) { book in
-                            BookTile(book: book) {
-                                MainReaderView.setCurrentlyReading(bookID: book.id)
-                                if let onOpenBook {
-                                    onOpenBook()
-                                } else {
-                                    openingBook = book
+                    // Section rhythm: 24pt between hero sections
+                    // (search → tags → grid).
+                    VStack(spacing: 24) {
+                        LibrarySearchBar(query: $searchQuery)
+                        tagFilterBar
+                        LazyVGrid(columns: grid, spacing: 20) {
+                            ForEach(sorted) { book in
+                                BookTile(book: book) {
+                                    MainReaderView.setCurrentlyReading(bookID: book.id)
+                                    if let onOpenBook {
+                                        onOpenBook()
+                                    } else {
+                                        openingBook = book
+                                    }
                                 }
+                                .simultaneousGesture(
+                                    LongPressGesture(minimumDuration: 0.45)
+                                        .onEnded { _ in bookPendingRemoval = book }
+                                )
                             }
-                            .simultaneousGesture(
-                                LongPressGesture(minimumDuration: 0.45)
-                                    .onEnded { _ in bookPendingRemoval = book }
-                            )
                         }
                     }
-                    .padding(20)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 8)
+                    .padding(.bottom, 20)
                 }
             }
         }
@@ -197,21 +207,15 @@ struct LibraryView: View {
     private var tagFilterBar: some View {
         let tags = library.allTags
         if !tags.isEmpty {
+            // Horizontal-rail chips. Matches App Store / Music pattern.
+            // Outer VStack already supplies the 16pt content padding.
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     Button {
                         selectedTag = nil
                     } label: {
                         Text(L10n.string("library.all"))
-                            .font(.callout.weight(selectedTag == nil ? .semibold : .regular))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                selectedTag == nil
-                                    ? AnyShapeStyle(.tint.opacity(0.2))
-                                    : AnyShapeStyle(.quaternary),
-                                in: Capsule()
-                            )
+                            .modifier(LibraryChipStyle(isSelected: selectedTag == nil))
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(L10n.string("library.allBooks"))
@@ -225,24 +229,14 @@ struct LibraryView: View {
                                     .font(.caption2)
                                 Text(tag)
                             }
-                            .font(.callout.weight(selectedTag == tag ? .semibold : .regular))
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(
-                                selectedTag == tag
-                                    ? AnyShapeStyle(.tint.opacity(0.2))
-                                    : AnyShapeStyle(.quaternary),
-                                in: Capsule()
-                            )
+                            .modifier(LibraryChipStyle(isSelected: selectedTag == tag))
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel("Tag: \(tag)")
                         .accessibilityAddTraits(selectedTag == tag ? .isSelected : [])
                     }
                 }
-                .padding(.horizontal, 20)
             }
-            .padding(.top, 8)
         }
     }
 
@@ -266,10 +260,12 @@ struct LibraryView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            // Subtle hint about the DRM limitation. Books purchased
-            // from the iBookstore are FairPlay-protected and Apple
-            // does not expose their content to third-party apps.
-            Text(L10n.string("library.drmWarning"))
+            // Subtle hint about the DRM limitation. PDFs have no
+            // platform DRM equivalent, so the warning is scoped to
+            // EPUB (Apple Books FairPlay). The localized string names
+            // "Apple Books" — we prefix "EPUB:" so the line reads as
+            // format-specific rather than a blanket import warning.
+            Text(verbatim: "EPUB: \(L10n.string("library.drmWarning"))")
                 .font(.footnote)
                 .foregroundStyle(.tertiary)
                 .multilineTextAlignment(.center)
@@ -309,6 +305,28 @@ struct LibraryView: View {
                 if let err = firstError { importError = err }
             }
         )
+    }
+}
+
+/// Pill / chip styling shared by the tag filter bar and any future
+/// chip-shaped controls in the library. Foreground + background both
+/// derive from the environment tint so the rest of the view stays in
+/// charge of accent colour. Matches the HIG "rounded, 8/12pt padding,
+/// tinted at 15% opacity" pattern used across Music and Podcasts.
+private struct LibraryChipStyle: ViewModifier {
+    let isSelected: Bool
+    func body(content: Content) -> some View {
+        content
+            .font(.callout.weight(isSelected ? .semibold : .regular))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.primary))
+            .background(
+                isSelected
+                    ? AnyShapeStyle(.tint.opacity(0.15))
+                    : AnyShapeStyle(.quaternary),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
     }
 }
 

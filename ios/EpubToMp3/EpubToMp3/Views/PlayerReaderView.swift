@@ -1,4 +1,5 @@
 import SwiftUI
+import os.log
 #if os(iOS)
 import AVKit
 #endif
@@ -81,56 +82,68 @@ struct PlayerReaderView: View {
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { player.pause(); dismiss() }
-                }
-                ToolbarItem(placement: .primaryAction) {
-                    HStack(spacing: 12) {
-                        downloadButton
-                        bookmarkButton
-                        #if os(iOS)
-                        AirPlayPickerView()
-                            .frame(width: 32, height: 32)
-                        #endif
-                        sleepTimerMenu
-                        Button { showingSearch = true } label: {
-                            Image(systemName: "magnifyingglass")
-                        }
-                        Button { showingBookmarks = true } label: {
-                            Image(systemName: "bookmark")
-                        }
-                        Button { showingToc = true } label: {
-                            Image(systemName: "list.bullet.indent")
-                        }
+                    Button {
+                        player.pause()
+                        dismiss()
+                    } label: {
+                        Image(systemName: "chevron.down")
                     }
+                    .accessibilityLabel(L10n.string("player.close"))
+                }
+                ToolbarItemGroup(placement: .primaryAction) {
+                    // Primary: TOC stays as the single most-used action.
+                    Button { showingToc = true } label: {
+                        Image(systemName: "list.bullet.indent")
+                    }
+                    .accessibilityLabel(L10n.string("player.toc"))
+
+                    // Overflow menu — mirrors Apple Books / Music's
+                    // `ellipsis.circle` pattern: keeps the hit-target
+                    // count within HIG limits (≤3 toolbar buttons)
+                    // without hiding functionality.
+                    Menu {
+                        Button {
+                            showingSearch = true
+                        } label: {
+                            Label(L10n.string("player.search"), systemImage: "magnifyingglass")
+                        }
+                        Button {
+                            showingBookmarks = true
+                        } label: {
+                            Label(L10n.string("player.bookmarks"), systemImage: "bookmark")
+                        }
+                        Divider()
+                        sleepTimerMenuItems
+                        Divider()
+                        bookmarkToggleMenuItem
+                        downloadMenuItem
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .accessibilityLabel(L10n.string("player.more"))
                 }
             }
-            .background {
-                Color.clear.allowsHitTesting(false)
-                    .sheet(isPresented: $showingBookmarks) {
-                        CompatNavigationStack {
-                            BookmarksListView(
-                                bookId: bookId,
-                                onJumpToChapter: { idx in
-                                    showingBookmarks = false
-                                    jumpTo(chapterIndex: idx)
-                                }
-                            )
-                            .environmentObject(bookmarkStore)
+            .sheet(isPresented: $showingBookmarks) {
+                CompatNavigationStack {
+                    BookmarksListView(
+                        bookId: bookId,
+                        onJumpToChapter: { idx in
+                            showingBookmarks = false
+                            jumpTo(chapterIndex: idx)
                         }
-                        .compatPresentationDetents()
-                    }
+                    )
+                    .environmentObject(bookmarkStore)
+                }
+                .compatPresentationDetents()
             }
-            .background {
-                Color.clear.allowsHitTesting(false)
-                    .sheet(isPresented: $showingToc) {
-                        TocDrawer(
-                            fulltext: fulltext,
-                            snapshot: snapshot,
-                            currentChapterIndex: player.currentChapterIndex,
-                            onJump: jumpTo(chapterIndex:)
-                        )
-                        .compatPresentationDetents()
-                    }
+            .sheet(isPresented: $showingToc) {
+                TocDrawer(
+                    fulltext: fulltext,
+                    snapshot: snapshot,
+                    currentChapterIndex: player.currentChapterIndex,
+                    onJump: jumpTo(chapterIndex:)
+                )
+                .compatPresentationDetents()
             }
         }
         .overlay {
@@ -296,40 +309,31 @@ struct PlayerReaderView: View {
         }
     }
 
-    /// Toolbar Download CTA — fans out the snapshot's chapter MP3s to
-    /// `DownloadManager` so the audiobook survives offline. Hidden when
-    /// there's no resolvable backend URL or the snapshot carries no
-    /// playable chapters.
+    /// Overflow-menu Download row — fans out the snapshot's chapter MP3s
+    /// to `DownloadManager` so the audiobook survives offline. Hidden
+    /// when there's no resolvable backend URL or the snapshot carries
+    /// no playable chapters.
     @ViewBuilder
-    private var downloadButton: some View {
+    private var downloadMenuItem: some View {
         if backendBaseURL != nil, !snapshot.playableChapters.isEmpty {
             Button {
                 startDownload()
             } label: {
                 switch downloadState {
                 case .idle:
-                    Image(systemName: "arrow.down.circle")
+                    Label(L10n.string("player.downloadAll"), systemImage: "arrow.down.circle")
                 case .downloading:
-                    HStack(spacing: 4) {
-                        ProgressView()
-                            #if os(iOS)
-                            .controlSize(.small)
-                            #endif
-                        if let text = downloadProgressText {
-                            Text(text)
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.secondary)
-                        }
-                    }
+                    Label(
+                        downloadProgressText.map { "\(L10n.string("player.downloading")) \($0)" }
+                            ?? L10n.string("player.downloading"),
+                        systemImage: "arrow.down.circle"
+                    )
                 case .done:
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(.green)
+                    Label(L10n.string("player.downloaded"), systemImage: "checkmark.circle.fill")
                 case .failed:
-                    Image(systemName: "exclamationmark.circle")
-                        .foregroundStyle(.red)
+                    Label(L10n.string("player.downloadFailed"), systemImage: "exclamationmark.circle")
                 }
             }
-            .accessibilityLabel("Download all chapters for offline playback")
             .accessibilityIdentifier("player.downloadAll")
             .disabled(downloadState == .downloading)
         }
@@ -339,8 +343,9 @@ struct PlayerReaderView: View {
         library.books.first(where: { $0.lastJobId == snapshot.jobId })?.id ?? snapshot.jobId
     }
 
+    /// Overflow-menu Bookmark toggle row.
     @ViewBuilder
-    private var bookmarkButton: some View {
+    private var bookmarkToggleMenuItem: some View {
         let isBookmarked = bookmarkStore.hasBookmark(bookId: bookId, chapterIndex: player.currentChapterIndex)
         Button {
             if isBookmarked {
@@ -356,10 +361,11 @@ struct PlayerReaderView: View {
                 )
             }
         } label: {
-            Image(systemName: isBookmarked ? "bookmark.fill" : "bookmark")
-                .foregroundStyle(isBookmarked ? .orange : .primary)
+            Label(
+                isBookmarked ? L10n.string("player.removeBookmark") : L10n.string("player.addBookmark"),
+                systemImage: isBookmarked ? "bookmark.fill" : "bookmark"
+            )
         }
-        .accessibilityLabel(isBookmarked ? "Remove bookmark" : "Add bookmark")
     }
 
     /// Kick off the download fan-out and stream the progress states back
@@ -393,32 +399,31 @@ struct PlayerReaderView: View {
         }
     }
 
-    /// Sleep timer menu for the toolbar.
-    private var sleepTimerMenu: some View {
-        Menu {
+    /// Sleep timer rows rendered as direct children of the overflow Menu.
+    /// Apple HIG nests Menus only when required for grouping — flattening
+    /// these into the parent keeps the gesture count to one tap.
+    @ViewBuilder
+    private var sleepTimerMenuItems: some View {
+        Section {
             Button {
                 player.cancelSleepTimer()
             } label: {
-                Label("Off", systemImage: "moon.slash")
+                Label(L10n.string("player.sleepTimerOption.off"), systemImage: "moon.slash")
             }
             Button { player.startSleepTimer(minutes: 5) } label: {
-                Label("5 minutes", systemImage: "moon")
+                Label(L10n.string("player.sleepTimerOption.5"), systemImage: "moon")
             }
             Button { player.startSleepTimer(minutes: 15) } label: {
-                Label("15 minutes", systemImage: "moon")
+                Label(L10n.string("player.sleepTimerOption.15"), systemImage: "moon")
             }
             Button { player.startSleepTimer(minutes: 30) } label: {
-                Label("30 minutes", systemImage: "moon")
+                Label(L10n.string("player.sleepTimerOption.30"), systemImage: "moon")
             }
             Button { player.startSleepTimer(minutes: 60) } label: {
-                Label("1 hour", systemImage: "moon.fill")
+                Label(L10n.string("player.sleepTimerOption.60"), systemImage: "moon.fill")
             }
-            // "End of chapter": deferred to v2 — requires knowing the
-            // remaining chapter duration at schedule time, which is only
-            // reliable after AVPlayerItem.duration loads asynchronously.
-        } label: {
-            Image(systemName: player.sleepTimerRemaining > 0 ? "moon.zzz.fill" : "moon.zzz")
-                .symbolRenderingMode(.monochrome)
+        } header: {
+            Text(L10n.string("player.sleepTimer"))
         }
     }
 
@@ -483,7 +488,12 @@ struct PlayerReaderView: View {
                         fetchCoverIfNeeded(snapshot: updated, baseURL: baseURL)
                     }
                 }
-            } catch {}
+            } catch {
+                let message = error.localizedDescription
+                Logger(subsystem: "com.pietrop.epubtomp3", category: "sse")
+                    .error("SSE stream failed: \(message, privacy: .public)")
+                player.recordConversionError(message)
+            }
         }
     }
 
