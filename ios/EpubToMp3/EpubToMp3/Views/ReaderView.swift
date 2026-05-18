@@ -304,6 +304,15 @@ struct ReaderView: View {
                 .padding(.bottom, 16)
             }
             .frame(maxWidth: .infinity, alignment: .center)
+            // Scroll mode: tap anywhere on the reading surface toggles
+            // chrome (Apple Books pattern — there's no left/right/center
+            // tap-zone partition like paginated mode, so the whole
+            // surface is the toggle). Uses `simultaneousGesture` so it
+            // doesn't swallow the UITextView's own scroll gesture.
+            .contentShape(Rectangle())
+            .simultaneousGesture(
+                TapGesture().onEnded { onCenterTap?() }
+            )
         }
         .compatHorizontalSafeAreaPadding(0)
     }
@@ -680,14 +689,9 @@ struct ReaderView: View {
     /// chapter actually changes, the `onChange(of: chapter.id)` modifier
     /// resets `currentPage` to 0.
     private func advancePage(totalPages: Int) {
-        // Apple Books pattern: first edge tap while chrome is hidden
-        // restores chrome instead of turning the page. Discoverable
-        // recovery from immersive mode without forcing the user to find
-        // the center 33% zone.
-        if !chromeVisible, let restore = onRestoreChrome {
-            restore()
-            return
-        }
+        // Per user spec: page turn never toggles chrome. The chrome
+        // state (visible/hidden) is preserved across page turns —
+        // only an explicit center-tap toggles it.
         pageDirection = .forward
         if currentPage + 1 < totalPages {
             if settings.pageTurnStyle == .slide {
@@ -700,15 +704,9 @@ struct ReaderView: View {
         } else if onAdvanceChapter?() == true {
             // Caller swapped chapter; currentPage resets via onChange.
         }
-        // Reading-flow gesture — let the host dim its chrome.
-        onAutoHideChrome?()
     }
 
     private func retreatPage() {
-        if !chromeVisible, let restore = onRestoreChrome {
-            restore()
-            return
-        }
         pageDirection = .backward
         if currentPage > 0 {
             if settings.pageTurnStyle == .slide {
@@ -721,7 +719,6 @@ struct ReaderView: View {
         } else if onPreviousChapter?() == true {
             // Caller swapped chapter; currentPage resets via onChange.
         }
-        onAutoHideChrome?()
     }
 
     // MARK: Header / sentence rows

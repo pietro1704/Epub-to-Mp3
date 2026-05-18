@@ -44,6 +44,12 @@ struct AttributedPageView: View {
 /// pass treats the view as if it has the exact `(width, computed-height)`
 /// it should occupy. Without this, the standard UITextView reports an
 /// intrinsic size that lets SwiftUI extend it past the parent column.
+///
+/// Also overrides `point(inside:with:)` so taps only land on this view
+/// when they hit an actual `.link` attribute — every other tap passes
+/// through to the SwiftUI layer below (chrome toggle, page-turn zones,
+/// scroll gesture). User spec: "toque em meio da tela deve seguir
+/// hiperlinks, com maior precedencia. somente se sem hiperlinks ...".
 private final class FixedWidthTextView: UITextView {
     var pinnedWidth: CGFloat = 320
 
@@ -52,6 +58,31 @@ private final class FixedWidthTextView: UITextView {
             CGSize(width: pinnedWidth, height: .greatestFiniteMagnitude)
         ).height
         return CGSize(width: pinnedWidth, height: ceil(height))
+    }
+
+    override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
+        guard let attributedText = self.attributedText, attributedText.length > 0 else {
+            return false
+        }
+        // Translate the tap into the textContainer's coordinate space and
+        // ask the layout manager which glyph (if any) sits under it.
+        let inset = textContainerInset
+        let p = CGPoint(x: point.x - inset.left, y: point.y - inset.top)
+        let glyphIndex = layoutManager.glyphIndex(
+            for: p, in: textContainer,
+            fractionOfDistanceThroughGlyph: nil
+        )
+        // `glyphIndex(for:)` returns the closest glyph even when the tap
+        // is in empty space. Confirm the tap really sits on a rendered
+        // glyph by checking the glyph's bounding rect.
+        let glyphRange = NSRange(location: glyphIndex, length: 1)
+        let rect = layoutManager.boundingRect(forGlyphRange: glyphRange, in: textContainer)
+        guard rect.contains(p) else { return false }
+
+        let charIndex = layoutManager.characterIndexForGlyph(at: glyphIndex)
+        guard charIndex < attributedText.length else { return false }
+        let attrs = attributedText.attributes(at: charIndex, effectiveRange: nil)
+        return attrs[.link] != nil
     }
 }
 
