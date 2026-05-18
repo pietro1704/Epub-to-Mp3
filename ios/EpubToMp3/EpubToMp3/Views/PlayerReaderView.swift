@@ -43,6 +43,9 @@ struct PlayerReaderView: View {
     @State private var downloadProgressText: String?
     @State private var showingBookmarks = false
     @State private var showingSearch = false
+    /// Immersive-reading toggle. Dimmed by page-turns; restored by a
+    /// center-tap inside the reader pane.
+    @State private var chromeVisible = true
     @EnvironmentObject private var bookmarkStore: BookmarkStore
 
     /// Tri-state for the toolbar Download button. `idle` is the default
@@ -65,22 +68,29 @@ struct PlayerReaderView: View {
                 if hSize == .regular {
                     HStack(spacing: 0) {
                         readerPane
-                        Divider()
-                        transportPane
-                            .frame(maxWidth: 360)
+                        if chromeVisible {
+                            Divider()
+                            transportPane
+                                .frame(maxWidth: 360)
+                                .transition(.move(edge: .trailing).combined(with: .opacity))
+                        }
                     }
                 } else {
                     VStack(spacing: 0) {
                         readerPane
-                        Divider()
-                        transportPane
-                            // minHeight prevents the pane from
-                            // collapsing; no fixed ceiling so XXXL
-                            // Dynamic Type can expand the title/scrubber.
-                            .frame(minHeight: 180)
+                        if chromeVisible {
+                            Divider()
+                            transportPane
+                                // minHeight prevents the pane from
+                                // collapsing; no fixed ceiling so XXXL
+                                // Dynamic Type can expand the title/scrubber.
+                                .frame(minHeight: 180)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
                     }
                 }
             }
+            .modifier(ChromeVisibilityModifier(visible: chromeVisible))
             .navigationTitle(snapshot.bookTitle ?? "Audiobook")
             .compatInlineNavigationTitle()
             .toolbar {
@@ -184,7 +194,15 @@ struct PlayerReaderView: View {
                 chapter: chapter,
                 spans: spans,
                 currentSentenceId: currentSentenceId,
-                onJumpToSentence: jumpToSentence
+                onJumpToSentence: jumpToSentence,
+                onCenterTap: {
+                    withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() }
+                },
+                chromeVisible: chromeVisible,
+                onAutoHideChrome: {
+                    guard chromeVisible else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = false }
+                }
             )
         } else if let err = fulltextError {
             VStack(spacing: 12) {

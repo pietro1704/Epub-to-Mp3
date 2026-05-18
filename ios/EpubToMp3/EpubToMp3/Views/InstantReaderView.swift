@@ -205,7 +205,9 @@ struct InstantReaderView: View {
                 onJumpToSentence: jumpToSentence,
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter,
-                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } }
+                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
+                chromeVisible: chromeVisible,
+                onAutoHideChrome: { autoHideChromeIfNeeded() }
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -215,7 +217,9 @@ struct InstantReaderView: View {
                 onJumpToSentence: jumpToSentence,
                 onAdvanceChapter: advanceToNextChapter,
                 onPreviousChapter: returnToPreviousChapter,
-                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } }
+                onCenterTap: { withAnimation(.easeInOut(duration: 0.25)) { chromeVisible.toggle() } },
+                chromeVisible: chromeVisible,
+                onAutoHideChrome: { autoHideChromeIfNeeded() }
             )
         } else {
             VStack(spacing: 12) {
@@ -685,6 +689,13 @@ struct InstantReaderView: View {
                   chapterDurationSeconds: playerMounted ? player.durationSeconds : 0)
     }
 
+    /// Idempotent dim — every page turn fires the callback, but we only
+    /// animate the chrome out when it was actually showing.
+    private func autoHideChromeIfNeeded() {
+        guard chromeVisible else { return }
+        withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = false }
+    }
+
     private func jumpToSentence(_ span: SentenceSpan) {
         guard let entry = sync.timing.first(where: { $0.id == span.id }) else { return }
         let seconds = TimeInterval(entry.startMs) / 1000.0
@@ -746,7 +757,10 @@ struct InstantReaderView: View {
 
 // MARK: - Chrome hide/show (Safari-like immersive reading)
 
-private struct ChromeVisibilityModifier: ViewModifier {
+/// Hides the nav bar + status bar for immersive reading. Shared between
+/// `InstantReaderView` (local EPUB) and `PlayerReaderView` (server-streamed)
+/// so both readers behave identically when the user taps to dim chrome.
+struct ChromeVisibilityModifier: ViewModifier {
     let visible: Bool
 
     func body(content: Content) -> some View {

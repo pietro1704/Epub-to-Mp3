@@ -33,6 +33,17 @@ struct ReaderView: View {
     /// responsible for any page positioning after the chapter swap.
     let onPreviousChapter: (() -> Bool)?
     var onCenterTap: (() -> Void)?
+    /// Drives the visibility of the reader's own inline toolbar (the
+    /// magnifying-glass row sitting just below the nav bar). Default is
+    /// `true` so legacy call sites that don't manage immersive chrome keep
+    /// the toolbar showing.
+    var chromeVisible: Bool = true
+    /// Fired the first time the user advances/retreats a page so the
+    /// host can dim its own chrome (nav bar, mini player). The host is
+    /// responsible for the actual `withAnimation`. The callback fires on
+    /// every page turn — the host should no-op if chrome is already
+    /// hidden.
+    var onAutoHideChrome: (() -> Void)? = nil
 
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.epubFontDirectory) private var epubFontDirectory
@@ -97,7 +108,9 @@ struct ReaderView: View {
         onJumpToSentence: ((SentenceSpan) -> Void)? = nil,
         onAdvanceChapter: (() -> Bool)? = nil,
         onPreviousChapter: (() -> Bool)? = nil,
-        onCenterTap: (() -> Void)? = nil
+        onCenterTap: (() -> Void)? = nil,
+        chromeVisible: Bool = true,
+        onAutoHideChrome: (() -> Void)? = nil
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -106,6 +119,8 @@ struct ReaderView: View {
         self.onAdvanceChapter = onAdvanceChapter
         self.onPreviousChapter = onPreviousChapter
         self.onCenterTap = onCenterTap
+        self.chromeVisible = chromeVisible
+        self.onAutoHideChrome = onAutoHideChrome
     }
 
     var body: some View {
@@ -136,9 +151,11 @@ struct ReaderView: View {
         _ = settings.readerWordSpacing
         _ = settings.pageTurnStyle
         return VStack(spacing: 0) {
-            toolbar
-            Divider()
-                .background(themeForeground.opacity(0.15))
+            if chromeVisible {
+                toolbar
+                Divider()
+                    .background(themeForeground.opacity(0.15))
+            }
             switch settings.readerLayout {
             case .scrolling: scrollingContent
             case .paginated: paginatedContent
@@ -623,6 +640,8 @@ struct ReaderView: View {
         } else if onAdvanceChapter?() == true {
             // Caller swapped chapter; currentPage resets via onChange.
         }
+        // Reading-flow gesture — let the host dim its chrome.
+        onAutoHideChrome?()
     }
 
     private func retreatPage() {
@@ -638,6 +657,7 @@ struct ReaderView: View {
         } else if onPreviousChapter?() == true {
             // Caller swapped chapter; currentPage resets via onChange.
         }
+        onAutoHideChrome?()
     }
 
     // MARK: Header / sentence rows
