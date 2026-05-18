@@ -797,17 +797,28 @@ struct InstantReaderView: View {
 
 // MARK: - Chrome hide/show (Safari-like immersive reading)
 
-/// Hides the nav bar + status bar for immersive reading. Shared between
-/// `InstantReaderView` (local EPUB) and `PlayerReaderView` (server-streamed)
-/// so both readers behave identically when the user taps to dim chrome.
+/// Hides the nav bar, status bar AND root TabView's tab bar for
+/// immersive reading. Shared between `InstantReaderView` (local EPUB)
+/// and `PlayerReaderView` (server-streamed) so both readers behave
+/// identically when the user taps to dim chrome.
 struct ChromeVisibilityModifier: ViewModifier {
     let visible: Bool
 
+    @ViewBuilder
     func body(content: Content) -> some View {
         #if os(iOS)
-        content
-            .navigationBarHidden(!visible)
-            .statusBarHidden(!visible)
+        if #available(iOS 16.0, *) {
+            content
+                .navigationBarHidden(!visible)
+                .statusBarHidden(!visible)
+                // iOS 16+: hide the bottom tab bar of the enclosing
+                // TabView. Reader becomes fully immersive on tap.
+                .toolbar(visible ? .visible : .hidden, for: .tabBar)
+        } else {
+            content
+                .navigationBarHidden(!visible)
+                .statusBarHidden(!visible)
+        }
         #else
         content
         #endif
