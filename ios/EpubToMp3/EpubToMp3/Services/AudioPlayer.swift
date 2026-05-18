@@ -275,10 +275,21 @@ final class AudioPlayer: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    /// Build the AVQueuePlayer for `snapshot` starting at `chapterIndex`, but
+    /// **do not** start playback. Audio only begins after an explicit user
+    /// action: tapping the Play button, the lock-screen play control, or the
+    /// widget toggle (all of which route through `resume()` /
+    /// `togglePlayPause()`).
+    ///
+    /// Historical note: this method used to call `queue.play()` and set
+    /// `isPlaying = true`, which meant every view-appear path (reader open,
+    /// player sheet, instant reader) silently kicked off audio. That violated
+    /// the principle that media should never auto-start without user intent.
     func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0) {
         ensureRemoteCommands()
         ensureAudioSession()
-        audioLog.debug("[play] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
+        audioLog.debug("[load] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
+        let wasPlaying = isPlaying
         teardownPlayer()
         isSegmentMode = false
         segmentCumulativeBase = 0
@@ -290,7 +301,7 @@ final class AudioPlayer: ObservableObject {
         let chapters = snapshot.playableChapters
         let safeIndex = max(0, min(chapterIndex, chapters.count - 1))
         guard !chapters.isEmpty else {
-            audioLog.warning("[play] no playable chapters — player not started")
+            audioLog.warning("[load] no playable chapters — player not started")
             return
         }
 
@@ -315,13 +326,18 @@ final class AudioPlayer: ObservableObject {
             queue.seek(to: CMTime(seconds: marker.positionSeconds, preferredTimescale: 600))
         }
 
-        queue.rate = rate.rawValue
-        queue.play()
-        isPlaying = true
-        // Re-register for remote-control events every time playback starts.
-        // `beginReceivingRemoteControlEvents()` is idempotent; calling it
-        // again after a prior `stop()` restores delivery of headphone / BT
-        // hardware events that `endReceivingRemoteControlEvents()` removed.
+        // Queue is paused at rate 0 (default). Lock-screen / widget / in-app
+        // play controls call `resume()` to start playback.
+        queue.rate = 0
+        isPlaying = false
+        // If the previous snapshot was already playing (e.g. user jumped to a
+        // new chapter while listening), preserve that intent.
+        if wasPlaying {
+            queue.rate = rate.rawValue
+            isPlaying = true
+        }
+        // Re-register for remote-control events so the lock-screen play
+        // button works even when we never auto-started. Idempotent.
         #if os(iOS)
         UIApplication.shared.beginReceivingRemoteControlEvents()
         #endif
@@ -497,13 +513,20 @@ final class AudioPlayer: ObservableObject {
             self.player = queue
             self.currentChapterIndex = chapterIndex
             attachObservers()
-            queue.rate = rate.rawValue
-            queue.play()
-            isPlaying = true
+            // Only auto-start the first segment if the user had already
+            // expressed intent to play (e.g. tapped Play while waiting for
+            // the conversion to produce the first chunk). Otherwise we set
+            // everything up but stay paused — the next user tap on Play /
+            // lock-screen / widget will call `resume()`.
+            if isPlaying {
+                queue.rate = rate.rawValue
+            } else {
+                queue.rate = 0
+            }
             #if os(iOS)
             UIApplication.shared.beginReceivingRemoteControlEvents()
             #endif
-            audioLog.debug("[enqueueSegment] AVQueuePlayer created and playing. items=\(queue.items().count) rate=\(queue.rate) currentItemNil=\(queue.currentItem == nil)")
+            audioLog.debug("[enqueueSegment] AVQueuePlayer created (isPlaying=\(self.isPlaying)). items=\(queue.items().count) rate=\(queue.rate) currentItemNil=\(queue.currentItem == nil)")
             publishCurrentChapter()
             updateNowPlayingInfo()
         } else if let queue = player {

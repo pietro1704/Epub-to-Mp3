@@ -49,6 +49,33 @@ final class AudioPlayerStreamingTests: XCTestCase {
             "firstSegmentReady must remain true after multiple segments")
     }
 
+    // MARK: - No-autoplay guarantee
+
+    /// Regression: `enqueueSegment` used to call `queue.play()` + flip
+    /// `isPlaying = true` the moment the first chunk arrived from SSE,
+    /// even though the user had never tapped Play. Media must never
+    /// auto-start without explicit user intent (in-app Play button,
+    /// lock-screen, or widget remote command).
+    func testEnqueueSegmentDoesNotAutoStartPlayback() {
+        let player = AudioPlayer()
+        XCTAssertFalse(player.isPlaying, "fresh AudioPlayer must be paused")
+        player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
+        XCTAssertFalse(player.isPlaying,
+            "enqueueSegment must NOT auto-start playback — only resume()/togglePlayPause() may")
+    }
+
+    /// Regression: `play(snapshot:startingAt:)` used to call `queue.play()`
+    /// unconditionally. Now it only sets up the queue; playback only starts
+    /// on explicit user intent.
+    func testPlaySnapshotPreparesWithoutAutoStart() {
+        let player = AudioPlayer()
+        XCTAssertFalse(player.isPlaying)
+        let snap = JobSnapshot.previewSample
+        player.play(snapshot: snap, startingAt: 0)
+        XCTAssertFalse(player.isPlaying,
+            "play(snapshot:startingAt:) must load without auto-starting playback")
+    }
+
     // MARK: - firstChapterReady co-advancement
 
     func testFirstChapterReadyAlsoSetAfterFirstSegment() {
@@ -88,8 +115,11 @@ final class AudioPlayerStreamingTests: XCTestCase {
             player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: i)
         }
         XCTAssertTrue(player.firstSegmentReady)
-        XCTAssertTrue(player.isPlaying,
-            "Player should be playing after segments are enqueued")
+        // Updated contract: enqueueSegment never auto-starts playback.
+        // The player stays paused until the user taps Play / lock-screen /
+        // widget, regardless of how many segments are queued.
+        XCTAssertFalse(player.isPlaying,
+            "Streaming segments must never auto-start playback")
     }
 
     // MARK: - clearConversionState resets firstSegmentReady
@@ -99,10 +129,15 @@ final class AudioPlayerStreamingTests: XCTestCase {
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
         XCTAssertTrue(player.firstSegmentReady)
 
+        // `clearConversionState` deliberately preserves readiness flags
+        // while a player is mounted (so we don't clobber an active session).
+        // A real "new book" flow calls `stop()` first, which tears down
+        // the player; then clearConversionState resets the flags.
+        player.stop()
         player.clearConversionState()
 
         XCTAssertFalse(player.firstSegmentReady,
-            "clearConversionState must reset firstSegmentReady for new book sessions")
+            "clearConversionState must reset firstSegmentReady once the player is torn down")
         XCTAssertFalse(player.firstChapterReady,
             "clearConversionState must also reset firstChapterReady")
     }
