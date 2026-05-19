@@ -622,7 +622,11 @@ final class AudioPlayer: ObservableObject {
                 seek(to: max(0, min(1, ratio)) * durationSeconds)
                 pendingProportionalSeek = nil
             } else {
-                pendingProportionalSeek = ratio
+                // Bind the pending seek to the chapter we just loaded.
+                // The time observer will only apply it when the player
+                // is still on that exact chapter — protecting against
+                // an auto-advance racing the duration publish.
+                pendingProportionalSeek = .init(ratio: ratio, forChapterIndex: target)
             }
             resume()
             return
@@ -633,18 +637,30 @@ final class AudioPlayer: ObservableObject {
         resume()
     }
 
-    /// Pending fractional-position seek (0…1) waiting for
-    /// `durationSeconds` to be published by the asset prepare. Applied
-    /// by the time observer the first time `durationSeconds > 0` is
-    /// observed after a `startFromReaderPage` ratio path.
-    private var pendingProportionalSeek: Double?
+    /// Pending fractional-position seek waiting for `durationSeconds`
+    /// to be published by the asset prepare. Tagged with the chapter
+    /// index it was queued for so the time observer doesn't apply it
+    /// against an unrelated chapter on auto-advance.
+    private struct PendingProportionalSeek {
+        let ratio: Double
+        let forChapterIndex: Int
+    }
+    private var pendingProportionalSeek: PendingProportionalSeek?
 
     /// Called from the periodic time observer when `durationSeconds`
-    /// transitions to a positive value. No-op when no ratio seek is
-    /// pending.
+    /// transitions to a positive value. Applies only when the player
+    /// is still on the chapter the seek was queued for; otherwise the
+    /// pending seek is dropped (the queue advanced past it).
     func applyPendingProportionalSeek() {
-        guard let ratio = pendingProportionalSeek, durationSeconds > 0 else { return }
-        seek(to: max(0, min(1, ratio)) * durationSeconds)
+        guard let pending = pendingProportionalSeek, durationSeconds > 0 else { return }
+        guard pending.forChapterIndex == currentChapterIndex else {
+            // Auto-advance happened between queuing and the duration
+            // landing — drop the stale seek rather than applying it
+            // to the wrong chapter.
+            pendingProportionalSeek = nil
+            return
+        }
+        seek(to: max(0, min(1, pending.ratio)) * durationSeconds)
         pendingProportionalSeek = nil
     }
 
@@ -1023,7 +1039,10 @@ final class AudioPlayer: ObservableObject {
                 if !self.isSegmentMode, self.currentChapterIndex + 1 < totalChapters {
                     self.currentChapterIndex += 1
                     self.positionSeconds = 0
-                    self.publishCurrentChapter()
+                    // `auto: true` — this is the natural end-of-item
+                    // auto-advance, so VoiceOver should announce the
+                    // new chapter title.
+                    self.publishCurrentChapter(auto: true)
                     self.updateNowPlayingInfo()
                 } else if !self.isSegmentMode {
                     self.isPlaying = false
@@ -1050,8 +1069,11 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor in
                 guard let self else { return }
                 self.pendingProportionalSeek = nil
-                self.reconcileChapterIndexFromCurrentItem()
-                self.publishCurrentChapter()
+                let didReconcile = self.reconcileChapterIndexFromCurrentItem()
+                // Only announce when the queue actually moved us to
+                // a new chapter — KVO fires on buffer-ahead promotion
+                // too, where the chapter index doesn't change.
+                self.publishCurrentChapter(auto: didReconcile)
                 self.updateNowPlayingInfo()
             }
         }
@@ -1132,21 +1154,27 @@ final class AudioPlayer: ObservableObject {
     /// `downloadUrl` produced it. KVO fires before the end-of-item
     /// notification, so this is what keeps the lock-screen title in sync
     /// during auto-advance.
-    private func reconcileChapterIndexFromCurrentItem() {
+    ///
+    /// Returns `true` when the chapter index actually changed —
+    /// callers gate VoiceOver announcement on this so a KVO fire on
+    /// buffer-ahead promotion (same chapter) doesn't double-speak.
+    @discardableResult
+    private func reconcileChapterIndexFromCurrentItem() -> Bool {
         guard
             let player,
             let item = player.currentItem,
             let urlAsset = item.asset as? AVURLAsset,
             let snapshot
-        else { return }
+        else { return false }
         let chapters = snapshot.playableChapters
         guard let idx = chapters.firstIndex(where: { chapter in
             guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { return false }
             return absolute == urlAsset.url
-        }) else { return }
-        guard idx != currentChapterIndex else { return }
+        }) else { return false }
+        guard idx != currentChapterIndex else { return false }
         currentChapterIndex = idx
         positionSeconds = 0
+        return true
     }
 
     private func updateNowPlayingInfo() {
@@ -1244,16 +1272,19 @@ final class AudioPlayer: ObservableObject {
         return chapters[currentChapterIndex]
     }
 
-    private func publishCurrentChapter() {
+    /// Push the current-chapter value to all open AsyncStream
+    /// subscribers. The `auto` flag controls whether VoiceOver gets a
+    /// spoken announcement of the new chapter title — only true for
+    /// auto-advance from the AVQueuePlayer's own auto-advance signal
+    /// (KVO + end-of-item notification). User-initiated chapter
+    /// changes (play, next, previous, TOC tap) already have the
+    /// VoiceOver focus on a control that announces its own state, so
+    /// announcing here would cause a double-speak.
+    private func publishCurrentChapter(auto: Bool = false) {
         let value = currentChapterValue
         for cont in chapterContinuations.values { cont.yield(value) }
-        // VoiceOver users need feedback when the player auto-advances
-        // to a new chapter (lock-screen UI is invisible to them). HIG
-        // & WWDC21 "Support Full Keyboard Access" call this out as
-        // mandatory for media apps. iOS only — AppKit / Catalyst have
-        // their own announcement APIs we'd wire later if needed.
         #if os(iOS)
-        if let title = value?.displayTitle, !title.isEmpty {
+        if auto, let title = value?.displayTitle, !title.isEmpty {
             UIAccessibility.post(notification: .announcement, argument: title)
         }
         #endif
@@ -1302,9 +1333,18 @@ final class AudioPlayer: ObservableObject {
     func testHook_setCurrentChapterIndex(_ idx: Int) { self.currentChapterIndex = idx }
     func testHook_setDurationSeconds(_ value: Double) { self.durationSeconds = value }
     func testHook_setPendingProportionalSeek(_ ratio: Double?) {
-        self.pendingProportionalSeek = ratio
+        if let ratio {
+            self.pendingProportionalSeek = .init(
+                ratio: ratio,
+                forChapterIndex: currentChapterIndex
+            )
+        } else {
+            self.pendingProportionalSeek = nil
+        }
     }
-    func testHook_pendingProportionalSeek() -> Double? { pendingProportionalSeek }
+    func testHook_pendingProportionalSeek() -> Double? {
+        pendingProportionalSeek?.ratio
+    }
     func testHook_sentenceTimingMap(forChapterIndex idx: Int) -> [String: Int]? {
         sentenceTimingByChapter[idx]
     }
