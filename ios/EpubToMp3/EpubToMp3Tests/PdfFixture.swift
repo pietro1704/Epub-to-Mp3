@@ -102,11 +102,23 @@ enum PdfFixture {
         }
         return page
         #elseif canImport(AppKit)
-        let pdfDoc = PDFDocument()
-        let pdfView = NSView(frame: NSRect(origin: .zero, size: pageSize))
-        let bitmap = NSImage(size: pageSize)
-        bitmap.lockFocus()
-        defer { bitmap.unlockFocus() }
+        // Draw into a real PDF `CGContext` — NOT an NSImage bitmap.
+        // `PDFPage(image:)` produces a raster page with no extractable
+        // text, so `PdfTextExtractor` would throw `noTextRecovered`.
+        // A CG PDF context keeps the glyphs as selectable text, which
+        // is what the extractor (and PDFKit `page.string`) needs.
+        let data = NSMutableData()
+        guard let consumer = CGDataConsumer(data: data as CFMutableData) else {
+            return PDFPage()
+        }
+        var mediaBox = CGRect(origin: .zero, size: pageSize)
+        guard let ctx = CGContext(consumer: consumer, mediaBox: &mediaBox, nil) else {
+            return PDFPage()
+        }
+        ctx.beginPDFPage(nil)
+        let nsCtx = NSGraphicsContext(cgContext: ctx, flipped: false)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = nsCtx
         NSColor.white.setFill()
         NSRect(origin: .zero, size: pageSize).fill()
         let headingAttrs: [NSAttributedString.Key: Any] = [
@@ -125,14 +137,14 @@ enum PdfFixture {
             in: NSRect(x: 72, y: 100, width: pageSize.width - 144, height: 500),
             withAttributes: bodyAttrs
         )
-        _ = pdfView  // silence unused warning on macOS-only path
-        let pageData = bitmap.tiffRepresentation ?? Data()
-        if let image = NSImage(data: pageData),
-           let page = PDFPage(image: image) {
-            pdfDoc.insert(page, at: 0)
-            return page
+        NSGraphicsContext.restoreGraphicsState()
+        ctx.endPDFPage()
+        ctx.closePDF()
+        guard let doc = PDFDocument(data: data as Data),
+              let page = doc.page(at: 0) else {
+            return PDFPage()
         }
-        return PDFPage()
+        return page
         #else
         return PDFPage()
         #endif
