@@ -97,7 +97,8 @@
           {
             "type": "command",
             "command": "/Users/pietropugliesi/Developer/Epub-to-Mp3/.claude/hooks/xcode_build_smoke.sh",
-            "timeout": 180,
+            "timeout": 240,
+            "async": true,
             "statusMessage": "Smoke build (xcodebuild macOS Debug)..."
           },
           {

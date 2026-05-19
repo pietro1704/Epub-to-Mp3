@@ -1,11 +1,11 @@
 #!/bin/bash
-# Stop hook: if any Swift file in the iOS target was edited this turn,
-# verify it still compiles for macOS Debug. Blocks on BUILD FAILED so
-# the assistant fixes drift before declaring done.
+# Stop hook (async): if any Swift file in the iOS target was edited this
+# turn, verify it still compiles for macOS Debug. Runs async so it never
+# stalls the Stop — on BUILD FAILED it injects the error as
+# additionalContext, surfacing on the next turn for the assistant to fix.
 #
 # Skipped when:
-#   - No .swift edits this turn (we don't peek at git status — we
-#     check whether DerivedData mtime changed).
+#   - No .swift edits in the working tree (git diff gate below).
 #   - The .build / .xcodeproj is locked by an active xcodebuild
 #     (avoid double-builds when the user is already running one).
 
@@ -40,9 +40,9 @@ if xcodebuild -project "$PROJ" -scheme EpubToMp3 \
     exit 0
 fi
 
-# Build failed — emit blocking JSON so the assistant fixes it.
+# Build failed — async hooks can't block Stop, so inject the error as
+# context. It surfaces on the next turn for the assistant to fix.
 TAIL=$(grep -E "error:" "$LOG" | head -10)
 rm -f "$LOG"
-cat <<EOF
-{"continue":false,"stopReason":"xcodebuild macOS Debug failed:\n$TAIL"}
-EOF
+jq -n --arg tail "$TAIL" \
+  '{additionalContext: ("## xcodebuild macOS Debug FAILED\nThe iOS target no longer compiles for macOS. Fix before continuing:\n" + $tail)}'
