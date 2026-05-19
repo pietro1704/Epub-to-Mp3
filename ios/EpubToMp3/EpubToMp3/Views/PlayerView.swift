@@ -88,6 +88,7 @@ struct PlayerView: View {
                     #endif
                 }
             )
+            .accessibilityLabel(L10n.string("player.playbackPosition"))
             HStack {
                 Text(format(seconds: player.positionSeconds))
                 Spacer()
@@ -95,21 +96,36 @@ struct PlayerView: View {
             }
             .font(.caption.monospacedDigit())
             .foregroundStyle(.secondary)
+            // VoiceOver double-announces position via the Slider value
+            // and again via these labels. Hide from the a11y tree so
+            // each tick of the scrubber doesn't trigger two reads.
+            .accessibilityHidden(true)
         }
     }
 
     private var transport: some View {
         HStack(spacing: 36) {
             Button { player.previousChapter() } label: {
-                Image(systemName: "backward.fill").font(.title)
+                Image(systemName: "backward.fill")
+                    .font(.title)
+                    .frame(minWidth: 44, minHeight: 44)
             }
+            .accessibilityLabel(L10n.string("player.previousChapter"))
             Button { handlePlayTap() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 64))
             }
+            .accessibilityLabel(
+                player.isPlaying
+                    ? L10n.string("player.pause")
+                    : L10n.string("player.play")
+            )
             Button { player.nextChapter() } label: {
-                Image(systemName: "forward.fill").font(.title)
+                Image(systemName: "forward.fill")
+                    .font(.title)
+                    .frame(minWidth: 44, minHeight: 44)
             }
+            .accessibilityLabel(L10n.string("player.nextChapter"))
         }
         .tint(.primary)
         .playDivergenceDialog(player: player, anchor: $pendingAnchor)

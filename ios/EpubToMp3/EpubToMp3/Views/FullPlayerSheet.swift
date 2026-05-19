@@ -669,12 +669,16 @@ private struct ChapterListSheet: View {
         .disabled(!isPlayable)
         .accessibilityLabel(
             isCurrent
-                ? "\(chapter.displayTitle), now playing"
+                ? L10n.string("chapterList.nowPlaying", chapter.displayTitle)
                 : (isPlayable
                     ? chapter.displayTitle
-                    : "\(chapter.displayTitle), no audio available")
+                    : L10n.string("chapterList.noAudio", chapter.displayTitle))
         )
-        .accessibilityHint(isPlayable ? "Double tap to play this chapter" : "")
+        .accessibilityHint(isPlayable ? L10n.string("chapterList.doubleTapToPlay") : "")
+        // VoiceOver should not call disabled rows a "button". The
+        // `.disabled` modifier dims visually but keeps the .isButton
+        // trait, which misleads VoiceOver users into trying to tap.
+        .modifier(RemoveButtonTraitIfDisabledModifier(disabled: !isPlayable))
     }
 
     private func formatDuration(_ seconds: Double) -> String {
@@ -682,6 +686,23 @@ private struct ChapterListSheet: View {
         let m = total / 60
         let s = total % 60
         return String(format: "%d:%02d", m, s)
+    }
+}
+
+// MARK: - Accessibility helpers
+
+/// VoiceOver workaround: `.disabled(true)` leaves the `.isButton`
+/// trait in place, so VoiceOver still announces the row as a button
+/// even though tapping does nothing. Strip the trait when disabled
+/// so a11y users perceive these rows as informational only.
+private struct RemoveButtonTraitIfDisabledModifier: ViewModifier {
+    let disabled: Bool
+    func body(content: Content) -> some View {
+        if disabled {
+            content.accessibilityRemoveTraits(.isButton)
+        } else {
+            content
+        }
     }
 }
 

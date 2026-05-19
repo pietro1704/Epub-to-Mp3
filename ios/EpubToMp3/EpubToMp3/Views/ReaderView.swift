@@ -70,6 +70,7 @@ struct ReaderView: View {
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.epubFontDirectory) private var epubFontDirectory
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
@@ -567,13 +568,22 @@ struct ReaderView: View {
                     .background(.thinMaterial, in: Capsule())
                 }
                 .padding(20)
+                .frame(minWidth: 44, minHeight: 44, alignment: .center)
                 .accessibilityIdentifier("reader.followAudio")
                 .accessibilityLabel(
                     playerChapterLabel.map {
                         "\(L10n.string("reader.nowPlaying")): \($0). \(L10n.string("reader.followAudio"))"
                     } ?? L10n.string("reader.followAudio")
                 )
-                .transition(.move(edge: .trailing).combined(with: .opacity))
+                .accessibilityHint(L10n.string("reader.followAudioHint"))
+                // Positional transitions are not safe under Reduce
+                // Motion (HIG: prefer fade). Drop the slide on users
+                // who opted into reduced motion.
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .move(edge: .trailing).combined(with: .opacity)
+                )
             }
         }
     }

@@ -1149,6 +1149,16 @@ final class AudioPlayer: ObservableObject {
     private func publishCurrentChapter() {
         let value = currentChapterValue
         for cont in chapterContinuations.values { cont.yield(value) }
+        // VoiceOver users need feedback when the player auto-advances
+        // to a new chapter (lock-screen UI is invisible to them). HIG
+        // & WWDC21 "Support Full Keyboard Access" call this out as
+        // mandatory for media apps. iOS only — AppKit / Catalyst have
+        // their own announcement APIs we'd wire later if needed.
+        #if os(iOS)
+        if let title = value?.displayTitle, !title.isEmpty {
+            UIAccessibility.post(notification: .announcement, argument: title)
+        }
+        #endif
     }
 
     private func broadcastPosition() {

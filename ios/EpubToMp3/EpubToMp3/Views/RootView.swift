@@ -154,16 +154,26 @@ struct TabRoot: View {
 private struct MiniPlayerInsetModifier: ViewModifier {
     let visible: Bool
     let onTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func body(content: Content) -> some View {
         content.safeAreaInset(edge: .bottom, spacing: 0) {
             if visible {
                 MiniPlayerBar(onTap: onTap)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .move(edge: .bottom).combined(with: .opacity)
+                    )
                     .accessibilityIdentifier("miniPlayer.tabBar")
             }
         }
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: visible)
+        .animation(
+            reduceMotion
+                ? .easeInOut(duration: 0.2)
+                : .spring(response: 0.3, dampingFraction: 0.8),
+            value: visible
+        )
     }
 }
 
