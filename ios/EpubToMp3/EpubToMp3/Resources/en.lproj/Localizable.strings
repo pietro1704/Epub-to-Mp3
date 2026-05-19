@@ -114,6 +114,12 @@
 "bookOpen.locateFile" = "Locate file…";
 "bookOpen.retry" = "Retry";
 
+/* AudioPlayer surfaced errors */
+"player.error.noPlayableChapters" = "This book has no playable chapters yet. Wait for conversion to produce the first chapter, or try a different book.";
+"player.error.emptySegmentData" = "A streaming audio segment arrived empty. Playback will continue with the next segment.";
+"player.error.segmentWriteFailed" = "Couldn't save a streaming audio segment to disk. Free up some space and try again.";
+"player.error.missingSnapshot" = "The player has no book loaded. Open a book first.";
+
 /* ChapterListSheet accessibility */
 "chapterList.nowPlaying" = "%@, now playing";
 "chapterList.noAudio" = "%@, no audio available";

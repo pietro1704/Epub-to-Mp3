@@ -100,6 +100,37 @@ final class AudioPlayer: ObservableObject {
     /// AVQueuePlayer advances to the next item. `nil` in snapshot mode.
     @Published private(set) var activeSentenceId: String?
 
+    /// Surfaces user-actionable problems from the player without
+    /// requiring the caller to wrap every method in `throws`. Set
+    /// when a load / playback request fails in a way the user would
+    /// notice silence about (e.g. `play(snapshot:)` invoked on an
+    /// empty snapshot). Set back to `nil` by the consumer after it
+    /// displays the toast / banner. Views observe via @Published.
+    @Published var lastError: PlayerError?
+
+    /// Errors the player can surface back to a SwiftUI view. Kept
+    /// minimal — anything more granular belongs in a category-specific
+    /// error type owned by the calling site.
+    enum PlayerError: LocalizedError, Equatable {
+        case noPlayableChapters
+        case emptySegmentData
+        case segmentWriteFailed
+        case missingSnapshot
+
+        var errorDescription: String? {
+            switch self {
+            case .noPlayableChapters:
+                return L10n.string("player.error.noPlayableChapters")
+            case .emptySegmentData:
+                return L10n.string("player.error.emptySegmentData")
+            case .segmentWriteFailed:
+                return L10n.string("player.error.segmentWriteFailed")
+            case .missingSnapshot:
+                return L10n.string("player.error.missingSnapshot")
+            }
+        }
+    }
+
     /// Set to `true` by `setSleepTimer(seconds:)` / `cancelSleepTimer()` to
     /// abort an in-progress `performSleepTimerFadeOut` task before it calls
     /// `pause()`. Reset to `false` when the fade completes or is aborted.
@@ -344,6 +375,7 @@ final class AudioPlayer: ObservableObject {
         let safeIndex = max(0, min(chapterIndex, chapters.count - 1))
         guard !chapters.isEmpty else {
             audioLog.warning("[load] no playable chapters — player not started")
+            lastError = .noPlayableChapters
             return
         }
 
@@ -662,6 +694,10 @@ final class AudioPlayer: ObservableObject {
         audioLog.debug("[enqueueSegment] ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(self.player == nil)")
         guard !data.isEmpty else {
             audioLog.warning("[enqueueSegment] empty data ignored ch=\(chapterIndex) seg=\(segmentIndex)")
+            // Soft surface: subsequent segments may still arrive
+            // successfully, so we don't pause playback — but the
+            // host can opt to show a transient toast.
+            lastError = .emptySegmentData
             return
         }
 
@@ -681,7 +717,12 @@ final class AudioPlayer: ObservableObject {
         do {
             try data.write(to: segFile)
         } catch {
-            // Non-fatal: segment is lost but subsequent ones still arrive.
+            // Non-fatal: segment is lost but subsequent ones still
+            // arrive. Surface so the host can warn the user if disk
+            // is full — repeated emptySegmentData / segmentWriteFailed
+            // toasts mean conversion will degrade further.
+            audioLog.error("[enqueueSegment] write failed: \(error.localizedDescription)")
+            lastError = .segmentWriteFailed
             return
         }
 

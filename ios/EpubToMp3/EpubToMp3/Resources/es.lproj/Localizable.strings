@@ -114,6 +114,12 @@
 "bookOpen.locateFile" = "Localizar archivo…";
 "bookOpen.retry" = "Reintentar";
 
+/* AudioPlayer errores expuestos */
+"player.error.noPlayableChapters" = "Este libro aún no tiene capítulos disponibles. Espera a que la conversión genere el primer capítulo o elige otro libro.";
+"player.error.emptySegmentData" = "Un fragmento de audio llegó vacío. La reproducción continuará en el siguiente fragmento.";
+"player.error.segmentWriteFailed" = "No se pudo guardar un fragmento de audio en disco. Libera espacio e inténtalo de nuevo.";
+"player.error.missingSnapshot" = "Ningún libro cargado en el reproductor. Abre un libro primero.";
+
 /* ChapterListSheet accesibilidad */
 "chapterList.nowPlaying" = "%@, reproduciendo ahora";
 "chapterList.noAudio" = "%@, sin audio disponible";
