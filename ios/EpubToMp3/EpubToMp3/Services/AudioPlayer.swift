@@ -62,9 +62,12 @@ final class AudioPlayer: ObservableObject {
     /// when the user begins playback so the landing screen rehydrates
     /// after a cold launch. Centralised here so the rest of the app
     /// shares a single source of truth.
-    static let currentBookIDDefaultsKey = "currentlyPlayingBookID"
+    /// `nonisolated` — a plain string constant carries no actor state,
+    /// so it must be referenceable from any context (tests, nonisolated
+    /// call sites) without a Swift-6 main-actor-isolation warning.
+    nonisolated static let currentBookIDDefaultsKey = "currentlyPlayingBookID"
     /// Companion key — zero-based chapter index of the resumed book.
-    static let currentChapterIndexDefaultsKey = "currentlyPlayingChapterIndex"
+    nonisolated static let currentChapterIndexDefaultsKey = "currentlyPlayingChapterIndex"
     /// Channel where the reader publishes the chapter the USER is
     /// currently reading (vs the chapter the audio is narrating). The
     /// mini-player / full-player compare these two indices on a play

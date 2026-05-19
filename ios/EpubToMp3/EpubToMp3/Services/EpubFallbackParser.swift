@@ -118,7 +118,7 @@ enum EpubFallbackParser {
         // 1. BOM / zero-width no-break space (\u{FEFF})
         // 2. Non-breaking space numeric entities → regular space
         // 3. JS serialisation artifact from broken renderers
-        var html = html
+        let html = html
             .replacingOccurrences(of: "\u{FEFF}", with: "")
             .replacingOccurrences(of: "&#160;", with: " ")
             .replacingOccurrences(of: "&#xA0;", with: " ")

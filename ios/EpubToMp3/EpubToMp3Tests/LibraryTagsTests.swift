@@ -26,10 +26,7 @@ final class LibraryTagsTests: XCTestCase {
     }
 
     func testAddAndRemoveTag() {
-        let store = makeStore()
-        // Manually populate since we can't call importBook without a real file
-        let defaults = store as AnyObject
-        // Test the tag logic on BookEntity directly
+        // Test the tag logic on BookEntity directly — no store needed.
         var book = BookEntity(
             id: "b1", title: "Test", bookmark: Data([1]),
             displayFilename: "test.epub", addedAt: Date(), tags: []
@@ -77,7 +74,6 @@ final class LibraryTagsTests: XCTestCase {
         let suite = "test.tags.store.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
-        let store = LibraryStore(defaults: defaults, defaultsKey: "library.tags.store.test")
 
         // Pre-populate with a book entity via encoding
         let book = BookEntity(

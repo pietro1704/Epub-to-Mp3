@@ -346,9 +346,15 @@ targets:
   EpubToMp3Tests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]
+    # Test bundle only — it loads into the host app on the dev/CI
+    # machine, so it can target a newer OS than the shipping app
+    # (which stays macOS 12). macOS 14 matches the toolchain's
+    # XCTest / Testing dylibs and silences the "building for
+    # macOS-12.0, but linking with dylib ... built for newer
+    # version 14.0" linker warnings.
     deploymentTarget:
       iOS: "15.0"
-      macOS: "12.0"
+      macOS: "14.0"
     sources:
       - path: EpubToMp3Tests
     dependencies:
@@ -359,6 +365,19 @@ targets:
       base:
         BUNDLE_LOADER: "$(TEST_HOST)"
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EpubToMp3"
+        # xcodegen's per-target `deploymentTarget` does not reliably
+        # emit MACOSX_DEPLOYMENT_TARGET on Xcode 26 — it inherits the
+        # project root (macOS 12). Set it explicitly so the test bundle
+        # is genuinely macOS 14 and the XCTest/Testing dylib linker
+        # warnings disappear.
+        MACOSX_DEPLOYMENT_TARGET: "14.0"
+        # Use a generated Info.plist, NOT the app's hand-written one
+        # (which the base settings point every target at). The app's
+        # plist hardcodes LSMinimumSystemVersion 12.0, which clashes
+        # with the test bundle's MACOSX_DEPLOYMENT_TARGET 14.0 and
+        # warns. GENERATE_INFOPLIST_FILE then derives the key from the
+        # deployment target — no mismatch.
+        INFOPLIST_FILE: ""
 
   EpubToMp3Widget:
     type: app-extension
