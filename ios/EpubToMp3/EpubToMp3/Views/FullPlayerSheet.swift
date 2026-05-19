@@ -80,17 +80,21 @@ struct FullPlayerSheet: View {
 
     @available(iOS 16, macOS 13, *)
     private var modernBody: some View {
+        // All spacers normalised to the 8/16/24/32-pt rhythm Apple's
+        // own player surfaces use. Previously these were 8/20/24/28/20/16
+        // — three values off-grid which made the vertical rhythm feel
+        // arbitrary on a careful look.
         VStack(spacing: 0) {
             dragHandle
             Spacer(minLength: 8)
             coverHero
-            Spacer(minLength: 20)
+            Spacer(minLength: 16)
             titleBlock
             Spacer(minLength: 24)
             scrubberBlock
-            Spacer(minLength: 28)
+            Spacer(minLength: 24)
             transportRow
-            Spacer(minLength: 20)
+            Spacer(minLength: 16)
             secondaryRow
             Spacer(minLength: 16)
         }
@@ -112,7 +116,9 @@ struct FullPlayerSheet: View {
             dragHandle
                 .gesture(dismissDragGesture)
             ScrollView {
-                VStack(spacing: 28) {
+                // VStack spacing on 8pt grid (24 between section
+                // groups). 28 was the previous value — off-grid.
+                VStack(spacing: 24) {
                     Spacer(minLength: 16)
                     coverHero
                     titleBlock
