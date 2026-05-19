@@ -71,6 +71,7 @@ struct ReaderView: View {
     @Environment(\.epubFontDirectory) private var epubFontDirectory
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
     @State private var userIsScrolling: Bool = false
     @State private var lastAutoScrollAt: Date = .distantPast
     @State private var currentPage: Int = 0
@@ -1145,7 +1146,14 @@ struct ReaderView: View {
     @ViewBuilder
     private func sentenceRow(_ span: SentenceSpan) -> some View {
         let isActive = (span.id == currentSentenceId)
-        sentenceText(span)
+        // Active-sentence cue: yellow background is the primary
+        // signal. Under Differentiate Without Color we ADD a leading
+        // accent border + bold weight so users with tritanopia /
+        // settings that desaturate the UI still see which sentence
+        // is being read. The accessibility label inside `sentenceText`
+        // already names the text, but a sighted low-vision user
+        // needs the visual cue too.
+        sentenceText(span, isActive: isActive)
             .lineSpacing(settings.readerLineSpacing)
             .multilineTextAlignment(.leading)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -1155,16 +1163,33 @@ struct ReaderView: View {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(isActive ? Color.yellow.opacity(0.35) : Color.clear)
             )
+            .overlay(alignment: .leading) {
+                if isActive && differentiateWithoutColor {
+                    Rectangle()
+                        .fill(Color.accentColor)
+                        .frame(width: 3)
+                }
+            }
             .contentShape(Rectangle())
             .onTapGesture { onJumpToSentence?(span) }
             .accessibilityHint(onJumpToSentence != nil ? "Double tap to seek audio to this sentence" : "")
     }
 
     @ViewBuilder
-    private func sentenceText(_ span: SentenceSpan) -> some View {
+    private func sentenceText(_ span: SentenceSpan, isActive: Bool = false) -> some View {
         Text(span.text)
-            .font(bodyFont)
+            .font(activeWeightedFont(isActive: isActive))
             .foregroundStyle(themeForeground)
+    }
+
+    /// Bold weight on the active sentence when Differentiate Without
+    /// Color is on — adds a non-colour signal. Wrapped here because
+    /// SwiftUI's `Text.fontWeight(_:)` is iOS 16+/macOS 13+; pre-13
+    /// macOS rebuilds the Font with `.weight(_:)` instead.
+    private func activeWeightedFont(isActive: Bool) -> Font {
+        let base = bodyFont
+        guard isActive && differentiateWithoutColor else { return base }
+        return base.weight(.semibold)
     }
 
     // MARK: Typography

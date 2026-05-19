@@ -38,6 +38,7 @@ struct MiniPlayerBar: View {
     @State private var pendingAnchor: PlayDivergenceAnchor?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
 
     // MARK: Derived state
 
@@ -80,6 +81,30 @@ struct MiniPlayerBar: View {
                         .fill(barColor)
                         .frame(width: max(0, geo.size.width * barProgress), height: 2)
                         .animation(.linear(duration: 0.3), value: barProgress)
+                        // Add a striped overlay during conversion when
+                        // Differentiate Without Color is on, so users
+                        // with desaturated UI can still tell the
+                        // orange-converting state apart from the
+                        // accent-playback state.
+                        .overlay(alignment: .leading) {
+                            if player.isConverting && differentiateWithoutColor {
+                                Rectangle()
+                                    .fill(.foreground)
+                                    .frame(width: max(0, geo.size.width * barProgress), height: 2)
+                                    .mask {
+                                        LinearGradient(
+                                            stops: [
+                                                .init(color: .clear, location: 0.0),
+                                                .init(color: .black, location: 0.5),
+                                                .init(color: .clear, location: 1.0),
+                                            ],
+                                            startPoint: .leading,
+                                            endPoint: .trailing
+                                        )
+                                    }
+                                    .opacity(0.4)
+                            }
+                        }
                 }
                 .frame(height: 2)
 
