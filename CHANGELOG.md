@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+## [0.5.8] — 2026-05-19
+
+### Added (iOS)
+
+- **`ReaderCoordinator` (`Services/ReaderCoordinator.swift`).** Single
+  `@MainActor` `ObservableObject` injected via @EnvironmentObject; in-
+  process source of truth for the reader's current position. Replaces
+  the three-UserDefaults-keys IPC pattern that was the #2 main-thread
+  hog after TextKit pagination. Public surface: `anchor:
+  ReadingAnchor` (chapter, ratio, sentenceId), `setChapter(_:)`,
+  `setPagePosition(ratio:sentenceId:)`, `flush()`. UserDefaults mirror
+  stays for App Group widget visibility but is now debounced (single
+  trailing-edge write 150 ms after the last update).
+- **`SegmentBacklog` (`Services/SegmentBacklog.swift`).** Pure
+  value-type extracted from AudioPlayer. Owns the pending-segments
+  eviction policy + the empty-streak detector. Surface: `append(...)
+  -> URL?` (returns evicted URL when cap hit), `drainNext()`,
+  `recordEmpty() -> Bool` (escalates after N consecutive empties),
+  `resetEmptyStreak()`, `clear() -> [URL]`. Five-case unit test suite
+  exercises the policy without an AVPlayer mock.
+
+### Changed (iOS)
+
+- All five play surfaces (mini player, full player, PlayerView,
+  PlayerReaderView, InstantReader transport) consume
+  `readerCoordinator.anchor.chapterIndex` via `@EnvironmentObject`
+  instead of `@AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)`.
+- `PlayDivergenceAnchor.capture(from: ReaderCoordinator)` is the new
+  primary capture path; the legacy `capture(readerChapterIndex:)`
+  UserDefaults reader stays as a fallback.
+- `ReaderView.publishReadingRatio` and `InstantReaderView` chapter-
+  change handler route writes through the coordinator — the previous
+  three-key UserDefaults block collapses to a single line.
+- AudioPlayer's pending-segments + empty-streak fields delegate to
+  `SegmentBacklog`. ~30 lines of state and policy moved out.
+
+### Fixed (iOS)
+
+- **InstantReaderView idle vs. transport bar.** Used to materialise
+  both with `frame(height: 0)` + `opacity(0)` for the inactive one —
+  SwiftUI still ran a layout pass on the hidden bar and exposed its
+  controls to VoiceOver (focus landed on hit-testing-disabled
+  buttons). Materialise only the active bar.
+- **FullPlayerSheet chapter-label contrast under Increase Contrast.**
+  Was `.tertiary` foreground on `.thinMaterial` over album art —
+  drops below WCAG AA in dark mode. Now observes
+  `\.colorSchemeContrast == .increased` and bumps to `.secondary`.
+
 ## [0.5.7] — 2026-05-19
 
 ### Added (iOS)
