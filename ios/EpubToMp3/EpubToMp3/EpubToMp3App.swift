@@ -15,6 +15,11 @@ struct EpubToMp3App: App {
     /// full-screen player without passing callbacks through the view tree.
     @StateObject private var playerPresentation = PlayerPresentation()
     @StateObject private var bookmarkStore = BookmarkStore()
+    /// Single source of truth for the reader's current position.
+    /// Replaces the three-UserDefaults-keys IPC pattern that wrote
+    /// once per page turn into the prefs daemon — see
+    /// `Services/ReaderCoordinator.swift`.
+    @StateObject private var readerCoordinator = ReaderCoordinator()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -31,6 +36,7 @@ struct EpubToMp3App: App {
                 .environmentObject(player)
                 .environmentObject(playerPresentation)
                 .environmentObject(bookmarkStore)
+                .environmentObject(readerCoordinator)
                 .preferredColorScheme(settings.readerTheme.preferredColorScheme)
                 .task {
                     #if os(macOS)

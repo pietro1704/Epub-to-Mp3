@@ -68,6 +68,7 @@ struct ReaderView: View {
     var playerChapterLabel: String? = nil
 
     @EnvironmentObject private var settings: AppSettings
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     @Environment(\.epubFontDirectory) private var epubFontDirectory
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -654,13 +655,12 @@ struct ReaderView: View {
         publishRatioTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 150_000_000)
             guard !Task.isCancelled else { return }
-            let defaults = UserDefaults.standard
-            defaults.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
-            if let id = anchorSentenceId {
-                defaults.set(id, forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
-            } else {
-                defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
-            }
+            // Route through the coordinator instead of writing
+            // UserDefaults directly — the coordinator owns the
+            // single debounced mirror to the App Group container,
+            // and every play surface observes its `anchor` via
+            // @EnvironmentObject.
+            readerCoordinator.setPagePosition(ratio: ratio, sentenceId: anchorSentenceId)
         }
     }
 

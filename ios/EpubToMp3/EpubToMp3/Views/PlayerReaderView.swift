@@ -64,8 +64,8 @@ struct PlayerReaderView: View {
     @State private var chromeVisible = true
     @EnvironmentObject private var bookmarkStore: BookmarkStore
 
-    @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-    private var readerChapterIndex: Int = 0
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
+    private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
     @State private var pendingAnchor: PlayDivergenceAnchor?
     /// See `FullPlayerSheet.scrubberDragValue` — decouples the slider
     /// thumb from `player.positionSeconds` while a drag is in flight
@@ -343,7 +343,7 @@ struct PlayerReaderView: View {
         case .pause, .resume:
             player.togglePlayPause()
         case .offerStartChoice:
-            pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
+            pendingAnchor = .capture(from: readerCoordinator)
         }
     }
 

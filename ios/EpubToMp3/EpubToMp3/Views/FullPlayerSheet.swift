@@ -33,8 +33,8 @@ struct FullPlayerSheet: View {
     @AppStorage(AudioPlayer.currentChapterIndexDefaultsKey)
     private var currentChapterIndex: Int = 0
 
-    @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-    private var readerChapterIndex: Int = 0
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
+    private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
 
     @Environment(\.dismiss) private var dismiss
 
@@ -547,7 +547,7 @@ struct FullPlayerSheet: View {
         case .pause, .resume:
             player.togglePlayPause()
         case .offerStartChoice:
-            pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
+            pendingAnchor = .capture(from: readerCoordinator)
         }
     }
 }

@@ -7,8 +7,8 @@ struct PlayerView: View {
     let backendBaseURL: URL?
     @EnvironmentObject var player: AudioPlayer
 
-    @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-    private var readerChapterIndex: Int = 0
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
+    private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
     @State private var pendingAnchor: PlayDivergenceAnchor?
     @State private var scrubberDragValue: TimeInterval?
     @Environment(\.dismiss) private var dismiss
@@ -141,7 +141,7 @@ struct PlayerView: View {
         case .pause, .resume:
             player.togglePlayPause()
         case .offerStartChoice:
-            pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
+            pendingAnchor = .capture(from: readerCoordinator)
         }
     }
 

@@ -11,9 +11,23 @@ struct PlayDivergenceAnchor: Equatable {
     let pageRatio: Double?
     let sentenceId: String?
 
-    /// Reads the three reader-position channels from `UserDefaults` in
-    /// one shot. Call this at the moment the divergence is detected,
-    /// not at the moment a button is tapped.
+    /// Snapshot the reader's current position from the
+    /// `ReaderCoordinator` — preferred over the legacy UserDefaults
+    /// reads because the coordinator is the in-process source of
+    /// truth and its `anchor` is updated synchronously by the reader.
+    @MainActor
+    static func capture(from coordinator: ReaderCoordinator) -> PlayDivergenceAnchor {
+        let anchor = coordinator.anchor
+        return PlayDivergenceAnchor(
+            readerChapterIndex: anchor.chapterIndex,
+            pageRatio: anchor.pageRatio,
+            sentenceId: anchor.sentenceId
+        )
+    }
+
+    /// Legacy capture path kept for callers that don't have the
+    /// coordinator in scope yet. Reads UserDefaults (same keys as
+    /// before). New call sites should take the coordinator overload.
     @MainActor
     static func capture(readerChapterIndex: Int) -> PlayDivergenceAnchor {
         let defaults = UserDefaults.standard

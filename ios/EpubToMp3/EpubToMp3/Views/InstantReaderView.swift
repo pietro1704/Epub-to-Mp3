@@ -31,6 +31,7 @@ struct InstantReaderView: View {
 
     @EnvironmentObject private var settings: AppSettings
     @EnvironmentObject private var globalPlayer: AudioPlayer
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     @Environment(\.horizontalSizeClass) private var hSize
 
     @State private var currentChapterIndex: Int = 0
@@ -163,27 +164,15 @@ struct InstantReaderView: View {
         .compatOnChange(of: currentChapterIndex) { newIndex in
             reloadCurrentChapter(index: newIndex)
             settings.saveChapterIndex(newIndex, for: fulltext.jobId)
-            // Mini player / full player read this to detect when the
-            // reader has drifted off the audio position and surface
-            // the "where to start" divergence dialog on the next play
-            // tap. UserDefaults is the only cross-view channel that
-            // works whether the reader is foreground or backgrounded.
-            UserDefaults.standard.set(
-                newIndex,
-                forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey
-            )
-            // The reading-ratio + sentenceId published by ReaderView
-            // refer to the previous chapter; reset both so a play tap
-            // fired before the new chapter's first page-change won't
-            // seek using the old chapter's offset / anchor. ReaderView
-            // re-publishes on appear.
-            UserDefaults.standard.set(
-                0.0,
-                forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey
-            )
-            UserDefaults.standard.removeObject(
-                forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey
-            )
+            // ReaderCoordinator is the source of truth — this single
+            // call (a) updates every play surface that derives
+            // `readerChapterIndex` from it, (b) resets the
+            // page-cursor (ratio + sentenceId) so a play tap fired
+            // before the new chapter's first ReaderView re-render
+            // doesn't seek with stale data, and (c) debounces a
+            // single mirror write to the App Group container for
+            // widget visibility.
+            readerCoordinator.setChapter(newIndex)
             WidgetDataSync.updateLastRead(
                 bookId: fulltext.jobId,
                 chapterIndex: newIndex,
@@ -199,13 +188,10 @@ struct InstantReaderView: View {
             } else if currentChapterIndex == 0 {
                 currentChapterIndex = firstReadableChapterIndex
             }
-            // Seed the reader-position channel so a play tap right
-            // after launch can already detect divergence without
-            // waiting for the first compatOnChange to fire.
-            UserDefaults.standard.set(
-                currentChapterIndex,
-                forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey
-            )
+            // Seed the coordinator so a play tap right after launch
+            // already knows where the reader is, without waiting
+            // for the first compatOnChange to fire.
+            readerCoordinator.setChapter(currentChapterIndex)
             reloadCurrentChapter(index: currentChapterIndex)
             if hasAudio { mountPlayerIfPossible() }
             cacheManager.refreshCachedIndices()
@@ -223,8 +209,10 @@ struct InstantReaderView: View {
             )
             // Flush the debounced widget write immediately so the
             // home-screen "Continue Reading" tile reflects the final
-            // chapter the moment the user leaves the book.
+            // chapter the moment the user leaves the book. Same for
+            // the reader-position UserDefaults mirror.
             WidgetDataSync.flushLastRead()
+            readerCoordinator.flush()
             if playerMounted { player.pause() }
         }
     }
@@ -573,7 +561,7 @@ struct InstantReaderView: View {
                 case .pause, .resume:
                     player.togglePlayPause()
                 case .offerStartChoice:
-                    pendingAnchor = .capture(readerChapterIndex: currentChapterIndex)
+                    pendingAnchor = .capture(from: readerCoordinator)
                 }
             } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")

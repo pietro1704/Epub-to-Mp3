@@ -32,8 +32,8 @@ struct MiniPlayerBar: View {
     @AppStorage(AudioPlayer.currentChapterIndexDefaultsKey)
     private var currentChapterIndex: Int = 0
 
-    @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
-    private var readerChapterIndex: Int = 0
+    @EnvironmentObject private var readerCoordinator: ReaderCoordinator
+    private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
 
     @State private var pendingAnchor: PlayDivergenceAnchor?
 
@@ -282,7 +282,7 @@ struct MiniPlayerBar: View {
             // Snapshot the reader's anchor RIGHT NOW so the dialog
             // animation (and any further user swipes during it)
             // can't drift the captured position.
-            pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
+            pendingAnchor = .capture(from: readerCoordinator)
         }
     }
 

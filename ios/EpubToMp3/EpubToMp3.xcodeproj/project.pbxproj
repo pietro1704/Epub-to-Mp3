@@ -21,6 +21,7 @@
 		09A93661C4F92184551023AF /* IntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B4CFBEFD8E3526526EE7B3A /* IntegrationTests.swift */; };
 		09FDC8C19F0AAC35D1444488 /* ConversionLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 566775A486E59740C198EF92 /* ConversionLiveActivity.swift */; };
 		0B949A1927DE1760AA186D79 /* testLibraryEmptyStateIPhones.Library-Empty-iPhone15Pro-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 06C5B3D080DD87A8ED76E240 /* testLibraryEmptyStateIPhones.Library-Empty-iPhone15Pro-portrait.png */; };
+		0D751DA2998D91484FB2C337 /* ReaderCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561F5BE276310EADA9D87514 /* ReaderCoordinator.swift */; };
 		0DA2F54C81A0E3AACD4FE57B /* testInstantReaderErrorBarPortrait.InstantReader-Error-iPhone8.png in Resources */ = {isa = PBXBuildFile; fileRef = EEDA1717325384F08F6434A5 /* testInstantReaderErrorBarPortrait.InstantReader-Error-iPhone8.png */; };
 		0DEF76CB8E86B2D5767BADE8 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15ProMax-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = BC3B7B1644073A5D168F1BFE /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15ProMax-portrait.png */; };
 		0EEA3B1E1EE7E03F5509E4FB /* testLibraryPopulatedXXXL.Library-Populated-accessibility3-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 5A1EA3B48BB942BEC3938576 /* testLibraryPopulatedXXXL.Library-Populated-accessibility3-iPhoneSE-portrait.png */; };
@@ -152,6 +153,7 @@
 		A341FC5BE29B4C25ECF5017E /* PlayerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98904941D86D95EC53EEFFE4 /* PlayerView.swift */; };
 		A8C3E56E106FB6163599EF62 /* PdfFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0AD6EC79DC2BCDA5A7AFDE7 /* PdfFixture.swift */; };
 		AD807A740645D0F18B48E5A7 /* PlayerReaderToolbarSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1C4741198A5C634ABDE32F3 /* PlayerReaderToolbarSnapshotTests.swift */; };
+		AEF593A978D44DB5A4318D96 /* testLibraryEmptyStateIPhones.Library-Empty-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = E2CE7E29B2C20A62B932B541 /* testLibraryEmptyStateIPhones.Library-Empty-iPhoneSE-portrait.png */; };
 		B20DBBC4A6A87ED570CC5974 /* AudioPlayerEnqueueSegmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B51546147B1E82C4B14E333 /* AudioPlayerEnqueueSegmentTests.swift */; };
 		B30A3326B59DD9208DF037FC /* python-stdlib in Resources */ = {isa = PBXBuildFile; fileRef = ACB55C964DCB08E1DDDE2E24 /* python-stdlib */; };
 		B43DF4A14033007A9C2EE6E3 /* testLibraryEmptyStateIPad.Library-Empty-iPadPro-iPadPro12_9-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 217C087D09E0F32191D1664C /* testLibraryEmptyStateIPad.Library-Empty-iPadPro-iPadPro12_9-portrait.png */; };
@@ -177,6 +179,7 @@
 		D50AFB5F5525EB194BBF9741 /* DynamicTypeSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDD3532551E02103A5A73B59 /* DynamicTypeSnapshotTests.swift */; };
 		D5841434DF8B203E029D5525 /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhone8-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 8D9D9A2955AB938BF3ED26AA /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhone8-portrait.png */; };
 		D771B22A86E5393D2E44A481 /* ReaderChapterAdvanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62DB1DD51DD6F8807845F6F /* ReaderChapterAdvanceTests.swift */; };
+		D7B8B21D7CABE9FA6E8AD0B7 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 502C409E4BD6B6D7376B635A /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhoneSE-portrait.png */; };
 		D815F4991EC71B3145418D24 /* EpubFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FCBA7BF5BB22C295BC4364C /* EpubFixture.swift */; };
 		D8BCD5D13C9ECAEAAFDA00A5 /* AudioPlayerUXTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A1733C0B01DD0D3941D64D7 /* AudioPlayerUXTests.swift */; };
 		DB3406428F652DEC3B699F41 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = C912410A7604040E02EFF317 /* Localizable.strings */; };
@@ -302,10 +305,12 @@
 		4BCAB38A88B47D5D07623B66 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone8-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone8-portrait.png"; sourceTree = "<group>"; };
 		4C6C96D23068CFCDBD63B4D1 /* VoiceSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceSelector.swift; sourceTree = "<group>"; };
 		4D97EA9C53AD12B09D17ECDC /* LibraryDropHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDropHandler.swift; sourceTree = "<group>"; };
+		502C409E4BD6B6D7376B635A /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhoneSE-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhoneSE-portrait.png"; sourceTree = "<group>"; };
 		51D70B987F94572D815EF2EC /* SharedContainerImporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedContainerImporterTests.swift; sourceTree = "<group>"; };
 		520D74161D8E8F2D3C413C30 /* EbookFulltextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EbookFulltextTests.swift; sourceTree = "<group>"; };
 		55B2AD962D59A85E8F36B2F7 /* EpubHtmlRendererTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpubHtmlRendererTests.swift; sourceTree = "<group>"; };
 		55E16950452CCB6480BA7914 /* LockScreenWidgets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LockScreenWidgets.swift; sourceTree = "<group>"; };
+		561F5BE276310EADA9D87514 /* ReaderCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderCoordinator.swift; sourceTree = "<group>"; };
 		566775A486E59740C198EF92 /* ConversionLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionLiveActivity.swift; sourceTree = "<group>"; };
 		58966D2438D9FB41290C3DBB /* PlayDivergenceDialog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayDivergenceDialog.swift; sourceTree = "<group>"; };
 		5A1EA3B48BB942BEC3938576 /* testLibraryPopulatedXXXL.Library-Populated-accessibility3-iPhoneSE-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testLibraryPopulatedXXXL.Library-Populated-accessibility3-iPhoneSE-portrait.png"; sourceTree = "<group>"; };
@@ -410,6 +415,7 @@
 		E1C4741198A5C634ABDE32F3 /* PlayerReaderToolbarSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlayerReaderToolbarSnapshotTests.swift; sourceTree = "<group>"; };
 		E2210B0724AD9FD92A6EDD70 /* AppSettingsSecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsSecurityTests.swift; sourceTree = "<group>"; };
 		E22367F07F14A8EE3073DE57 /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPhone15ProMax-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderLightThemeAcrossFullMatrix.Reader-Light-iPhone15ProMax-portrait.png"; sourceTree = "<group>"; };
+		E2CE7E29B2C20A62B932B541 /* testLibraryEmptyStateIPhones.Library-Empty-iPhoneSE-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testLibraryEmptyStateIPhones.Library-Empty-iPhoneSE-portrait.png"; sourceTree = "<group>"; };
 		E4056B68B1ABA6DAC4AFF06A /* Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmark.swift; sourceTree = "<group>"; };
 		E4ABEABB66DDA30544EC4C81 /* AudioPlayerStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerStreamingTests.swift; sourceTree = "<group>"; };
 		E56E13BBDF7A1DECEAE3CD3C /* BookmarkStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStoreTests.swift; sourceTree = "<group>"; };
@@ -468,6 +474,7 @@
 				A23AB49A2E77D82016ADA9DC /* testLibraryEmptyStateIPhones.Library-Empty-iPhone8-portrait.png */,
 				06C5B3D080DD87A8ED76E240 /* testLibraryEmptyStateIPhones.Library-Empty-iPhone15Pro-portrait.png */,
 				FAAEB3D704637ECAD46188F3 /* testLibraryEmptyStateIPhones.Library-Empty-iPhone15ProMax-portrait.png */,
+				E2CE7E29B2C20A62B932B541 /* testLibraryEmptyStateIPhones.Library-Empty-iPhoneSE-portrait.png */,
 			);
 			path = LibrarySnapshotTests;
 			sourceTree = "<group>";
@@ -668,6 +675,7 @@
 				97E4E8A2DBF1F053870D7665 /* PythonBridge.swift */,
 				F2487CBD22E3F68E9B4D7A4C /* PythonEmbed.swift */,
 				C1EDD727D388C49543036EE2 /* PythonRunner.swift */,
+				561F5BE276310EADA9D87514 /* ReaderCoordinator.swift */,
 				1B5E3B7FA3888C2B67F9C64A /* ResumeStore.swift */,
 				A17AB5C5EEFE75248ED1A5D2 /* SharedContainerImporter.swift */,
 				C3DE45D4E0B68AE37CCAA692 /* SidecarManager.swift */,
@@ -712,6 +720,7 @@
 				4BCAB38A88B47D5D07623B66 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone8-portrait.png */,
 				49CCC1C5C5B69EBA33D9C240 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15Pro-portrait.png */,
 				BC3B7B1644073A5D168F1BFE /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15ProMax-portrait.png */,
+				502C409E4BD6B6D7376B635A /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhoneSE-portrait.png */,
 				8D9D9A2955AB938BF3ED26AA /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhone8-portrait.png */,
 				DCE0295108B442EEDE662350 /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhone15Pro-portrait.png */,
 				B555FB12755158B471B05FD4 /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhone15ProMax-portrait.png */,
@@ -944,6 +953,7 @@
 				642554FF72596942BFB9F4EE /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15Pro-portrait.png in Resources */,
 				0DEF76CB8E86B2D5767BADE8 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15ProMax-portrait.png in Resources */,
 				A1397FA934C61D9273BDF0F5 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone8-portrait.png in Resources */,
+				D7B8B21D7CABE9FA6E8AD0B7 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhoneSE-portrait.png in Resources */,
 				FE12EE38B8602F637DE1182C /* testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png in Resources */,
 				0DA2F54C81A0E3AACD4FE57B /* testInstantReaderErrorBarPortrait.InstantReader-Error-iPhone8.png in Resources */,
 				285BF4103AF88A0EAE1DC567 /* testInstantReaderIdleBarPortrait.InstantReader-Idle-iPhone8.png in Resources */,
@@ -951,6 +961,7 @@
 				0B949A1927DE1760AA186D79 /* testLibraryEmptyStateIPhones.Library-Empty-iPhone15Pro-portrait.png in Resources */,
 				3ABB45FCE68AE9E2BF2006A9 /* testLibraryEmptyStateIPhones.Library-Empty-iPhone15ProMax-portrait.png in Resources */,
 				657E8C7661AC032B14023A2A /* testLibraryEmptyStateIPhones.Library-Empty-iPhone8-portrait.png in Resources */,
+				AEF593A978D44DB5A4318D96 /* testLibraryEmptyStateIPhones.Library-Empty-iPhoneSE-portrait.png in Resources */,
 				F3F640F121AA1E08C2C17B64 /* testLibraryEmptyStateXXXL.Library-Empty-accessibility3-iPhoneSE-portrait.png in Resources */,
 				1EAFB1E03538E62F357DC69A /* testLibraryPopulatedXXXL.Library-Populated-accessibility3-iPhone15Pro-portrait.png in Resources */,
 				0EEA3B1E1EE7E03F5509E4FB /* testLibraryPopulatedXXXL.Library-Populated-accessibility3-iPhoneSE-portrait.png in Resources */,
@@ -1112,6 +1123,7 @@
 				997077BCBBC2EC948720735E /* PythonBridge.swift in Sources */,
 				81E17CFED4C9CE8A5999E392 /* PythonEmbed.swift in Sources */,
 				91E61EDF65E261A4607A5F7E /* PythonRunner.swift in Sources */,
+				0D751DA2998D91484FB2C337 /* ReaderCoordinator.swift in Sources */,
 				89FEF78541E9B702D85DBF6D /* ReaderSearchOverlay.swift in Sources */,
 				19DE91CBC7DA25C9AE6EFC10 /* ReaderSettingsSheet.swift in Sources */,
 				8990A48203DDB06433355C6A /* ReaderView.swift in Sources */,
