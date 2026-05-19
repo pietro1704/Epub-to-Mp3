@@ -39,6 +39,12 @@ struct BookOpenView: View {
     @State private var hasAudio: Bool = false
     @State private var audioBootstrapTask: Task<Void, Never>?
     @State private var streamTask: Task<Void, Never>?
+    /// JobId currently being SSE-streamed. Short-circuits re-subscription
+    /// when `subscribeToStream` is called again for the same job
+    /// (state restoration, deep link, watchdog retry after a transient
+    /// disconnect) — re-opening the same connection tears down a
+    /// working backend pipe for no behavioural benefit.
+    @State private var streamingJobId: String?
     @State private var showingPicker = false
     /// Live watchdog over the active audio bootstrap. Started by
     /// ``startAudioBootstrap``; stopped in ``onDisappear`` and on any
@@ -137,6 +143,7 @@ struct BookOpenView: View {
             }
             audioBootstrapTask?.cancel()
             streamTask?.cancel()
+            streamingJobId = nil
             watchdog?.stop()
             chapterCacheManager?.cancelAll()
             watchdog = nil
@@ -1064,7 +1071,13 @@ struct BookOpenView: View {
     }
 
     private func subscribeToStream(client: APIClient, jobId: String) {
+        // Already streaming this jobId? Don't tear down a healthy
+        // connection just to rebuild the identical one.
+        if streamingJobId == jobId, let existing = streamTask, !existing.isCancelled {
+            return
+        }
         streamTask?.cancel()
+        streamingJobId = jobId
         streamTask = Task { @MainActor in
             do {
                 for try await event in client.eventStream(jobId: jobId) {
