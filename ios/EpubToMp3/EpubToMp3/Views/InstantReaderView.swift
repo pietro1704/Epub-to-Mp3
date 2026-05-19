@@ -96,9 +96,22 @@ struct InstantReaderView: View {
         // stays constant; chrome appears/disappears without touching
         // the reader's geometry. Apple Books uses the same trick.
         ZStack(alignment: .center) {
+            // Content layer: ignores the safe area so the inner
+            // `GeometryReader` (inside `paginatedContent`) always
+            // sees the FULL screen height regardless of whether the
+            // status bar / tab bar are visible. Pagination becomes
+            // invariant to chrome toggle → no text reflow.
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .ignoresSafeArea(.container, edges: .all)
 
+            // Chrome layer: respects the safe area natively so the
+            // mini player + custom top bar sit inside the inset
+            // (above the system tab bar, below the status bar).
+            // Previous `.ignoresSafeArea(.all)` on the WHOLE ZStack
+            // pushed the mini player INTO the tab bar's reserved
+            // strip — the progress slider visually merged with
+            // "Read / Library / Settings" and looked broken.
             VStack(spacing: 0) {
                 if chromeVisible {
                     customTopBar
@@ -121,17 +134,8 @@ struct InstantReaderView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        // Ignore the full safe area at the ZStack level so:
-        // 1. The inner `GeometryReader` (inside `paginatedContent`)
-        //    always sees the screen height regardless of whether the
-        //    status bar / tab bar are visible. Pagination becomes
-        //    invariant to chrome toggle → no text reflow.
-        // 2. The chrome VStack still respects safe area internally
-        //    because each chrome bar inside it sits at its natural
-        //    inset (`safeAreaInset`-like behaviour without using the
-        //    modifier that re-shrinks the parent).
-        .ignoresSafeArea(.container, edges: .all)
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
         .compatFullScreenCover(isPresented: $showingFullPlayer) {
             FullPlayerSheet()
