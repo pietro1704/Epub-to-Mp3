@@ -221,6 +221,10 @@ struct InstantReaderView: View {
                 chapterIndex: currentChapterIndex,
                 totalChapters: fulltext.chapters.count
             )
+            // Flush the debounced widget write immediately so the
+            // home-screen "Continue Reading" tile reflects the final
+            // chapter the moment the user leaves the book.
+            WidgetDataSync.flushLastRead()
             if playerMounted { player.pause() }
         }
     }

@@ -88,15 +88,67 @@ enum WidgetDataSync {
 
     /// Update the last-read book metadata. Call this when the user opens
     /// or navigates within a book in the reader.
+    ///
+    /// Debounced 800 ms: chapter swaps during fast pagination would
+    /// otherwise fire `reloadContinueReadingWidgets()` (cross-process
+    /// `WidgetCenter` IPC, 10-30 ms on cold widgetkitd) on every
+    /// page-boundary cross. The 3 UserDefaults writes also batch into
+    /// one trailing-edge flush.
     static func updateLastRead(
         bookId: String,
         chapterIndex: Int,
         totalChapters: Int? = nil
     ) {
+        // Capture latest values; the trailing-edge flush reads them.
+        let snapshot = LastReadSnapshot(
+            bookId: bookId,
+            chapterIndex: chapterIndex,
+            totalChapters: totalChapters
+        )
+        lastReadLock.lock()
+        pendingLastRead = snapshot
+        lastReadLock.unlock()
+        scheduleLastReadFlush()
+    }
+
+    /// Flush any pending last-read write immediately. Call from
+    /// `onDisappear` (reader teardown) so the widget reflects the
+    /// final position the moment the user leaves the book.
+    static func flushLastRead() {
+        lastReadFlushTask?.cancel()
+        lastReadFlushTask = nil
+        lastReadLock.lock()
+        let snapshot = pendingLastRead
+        pendingLastRead = nil
+        lastReadLock.unlock()
+        guard let snapshot else { return }
+        commitLastRead(snapshot)
+    }
+
+    private struct LastReadSnapshot: Sendable, Equatable {
+        let bookId: String
+        let chapterIndex: Int
+        let totalChapters: Int?
+    }
+
+    private static let lastReadLock = NSLock()
+    nonisolated(unsafe) private static var pendingLastRead: LastReadSnapshot?
+    nonisolated(unsafe) private static var lastReadFlushTask: Task<Void, Never>?
+
+    private static func scheduleLastReadFlush() {
+        lastReadFlushTask?.cancel()
+        lastReadFlushTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            guard !Task.isCancelled else { return }
+            flushLastRead()
+        }
+    }
+
+    private static func commitLastRead(_ snapshot: LastReadSnapshot) {
         guard let defaults = UserDefaults(suiteName: appGroupID) else { return }
-        defaults.set(bookId, forKey: Keys.lastReadBookId)
-        defaults.set(chapterIndex, forKey: Keys.lastReadChapterIndex)
-        if let total = totalChapters {
+        defaults.set(snapshot.bookId, forKey: Keys.lastReadBookId)
+        defaults.set(snapshot.chapterIndex, forKey: Keys.lastReadChapterIndex)
+        if let total = snapshot.totalChapters {
             defaults.set(total, forKey: Keys.lastReadTotalChapters)
         }
         reloadContinueReadingWidgets()
