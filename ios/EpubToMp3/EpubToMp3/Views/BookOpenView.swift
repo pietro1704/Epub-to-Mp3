@@ -747,14 +747,19 @@ struct BookOpenView: View {
                 voice: voice,
                 outputDir: cacheRoot,
                 chapterIndex: arrayIndex
-            ) { [weak globalPlayer] segData, chapIdx, segIdx in
+            ) { [weak globalPlayer, weak watchdog] segData, chapIdx, segIdx in
                 playerLog.debug("[AudioBootstrap] segment \(segIdx) ch=\(chapIdx) bytes=\(segData.count)")
                 globalPlayer?.enqueueSegment(
                     data: segData,
                     chapterIndex: chapIdx,
                     segmentIndex: segIdx
                 )
-                self.watchdog?.heartbeat()
+                // Capture `watchdog` weakly too — the segment callback
+                // can keep firing well past the user closing the
+                // reader, and capturing `self` strongly here defeats
+                // the existing weak `globalPlayer` capture (the audit
+                // flagged this as a retain-cycle smell).
+                watchdog?.heartbeat()
             }
             // Persist under deterministic name for future cache hits.
             try? FileManager.default.removeItem(at: cacheFile)

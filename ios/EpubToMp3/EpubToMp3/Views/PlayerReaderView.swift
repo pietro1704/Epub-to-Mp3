@@ -602,6 +602,14 @@ struct PlayerReaderView: View {
                         fetchCoverIfNeeded(snapshot: updated, baseURL: baseURL)
                     }
                 }
+            } catch is CancellationError {
+                // User dismissed the reader (streamTask?.cancel() in
+                // bootstrap) — not a real error. The status sheet
+                // would otherwise show a stale "conversion error"
+                // banner the next time the user reopens.
+                return
+            } catch let urlErr as URLError where urlErr.code == .cancelled {
+                return
             } catch {
                 let message = error.localizedDescription
                 Logger(subsystem: "com.pietrop.epubtomp3", category: "sse")

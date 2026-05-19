@@ -777,13 +777,23 @@ final class AudioPlayer: ObservableObject {
         }
         emptySegmentStreak = 0
 
-        // Ensure a temp directory exists for this session.
+        // Ensure a temp directory exists for this session. Bail
+        // explicitly when createDirectory fails — without this, every
+        // subsequent `data.write` would fail and we'd publish
+        // `lastError = .segmentWriteFailed` on every chunk.
         if segmentTempDir == nil {
-            segmentTempDir = URL(fileURLWithPath: NSTemporaryDirectory())
+            let candidate = URL(fileURLWithPath: NSTemporaryDirectory())
                 .appendingPathComponent("epub2mp3-segments-\(UUID().uuidString)")
-            try? FileManager.default.createDirectory(
-                at: segmentTempDir!, withIntermediateDirectories: true
-            )
+            do {
+                try FileManager.default.createDirectory(
+                    at: candidate, withIntermediateDirectories: true
+                )
+                segmentTempDir = candidate
+            } catch {
+                audioLog.error("[enqueueSegment] failed to create temp dir: \(error.localizedDescription)")
+                lastError = .segmentWriteFailed
+                return
+            }
         }
         guard let tmpDir = segmentTempDir else { return }
 
