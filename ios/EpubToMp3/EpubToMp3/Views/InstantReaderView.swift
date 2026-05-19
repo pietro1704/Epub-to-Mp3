@@ -77,47 +77,61 @@ struct InstantReaderView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
+        // Chrome is rendered as OVERLAY (not safeAreaInset) AND the
+        // content ignores the container safe area so the reader's
+        // body always sees the FULL screen height regardless of
+        // chrome visibility.
+        //
+        // The original problem: chrome toggle flipped `statusBarHidden`
+        // and `.toolbar(_:for:.tabBar)`, both of which change the
+        // SwiftUI safe area inset → `GeometryReader` inside ReaderView
+        // saw a different `geo.size.height` → pagination recalculated
+        // with a new height → DIFFERENT PAGE COUNT and visible text
+        // reflow on every tap-to-toggle.
+        //
+        // Fix: the content layer uses `.ignoresSafeArea(.container)`
+        // so `geo.size.height` is the screen height always; chrome
+        // is overlayed on top in its OWN VStack that respects the
+        // safe area (it sits inside the visible insets). Page count
+        // stays constant; chrome appears/disappears without touching
+        // the reader's geometry. Apple Books uses the same trick.
+        ZStack(alignment: .center) {
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            // Custom in-view top bar. Replacing NavigationStack's nav bar
-            // entirely because every attempt to drive that bar with
-            // `.navigationTitle` + `.toolbar` + `.navigationBarHidden`
-            // either failed to render or stuck hidden on iOS 16-18 under
-            // our exact view hierarchy. A view-local HStack is
-            // deterministic, animates with chromeVisible, and exposes the
-            // three reader controls (search / settings / TOC) per the
-            // user's brief.
-            if chromeVisible {
-                customTopBar
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if chromeVisible {
-                VStack(spacing: 0) {
-                    Divider()
-                        .background(readerForeground.opacity(0.15))
-                    // Materialise only the bar that's actually
-                    // visible — the previous pattern kept BOTH in the
-                    // hierarchy with `frame(height: 0)` + opacity 0,
-                    // which still cost a SwiftUI layout pass and
-                    // polluted the accessibility tree (VoiceOver was
-                    // landing on hit-testing-disabled controls).
-                    if showTransport {
-                        playerBar
-                            .padding(.vertical, 8)
-                    } else {
-                        idlePlayerBar
-                            .padding(.vertical, 8)
-                    }
+
+            VStack(spacing: 0) {
+                if chromeVisible {
+                    customTopBar
+                        .transition(.move(edge: .top).combined(with: .opacity))
                 }
-                .background(readerBackground.opacity(0.96))
-                .transition(.move(edge: .bottom).combined(with: .opacity))
+                Spacer(minLength: 0)
+                if chromeVisible {
+                    VStack(spacing: 0) {
+                        Divider()
+                            .background(readerForeground.opacity(0.15))
+                        if showTransport {
+                            playerBar
+                                .padding(.vertical, 8)
+                        } else {
+                            idlePlayerBar
+                                .padding(.vertical, 8)
+                        }
+                    }
+                    .background(readerBackground.opacity(0.96))
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
         }
+        // Ignore the full safe area at the ZStack level so:
+        // 1. The inner `GeometryReader` (inside `paginatedContent`)
+        //    always sees the screen height regardless of whether the
+        //    status bar / tab bar are visible. Pagination becomes
+        //    invariant to chrome toggle → no text reflow.
+        // 2. The chrome VStack still respects safe area internally
+        //    because each chrome bar inside it sits at its natural
+        //    inset (`safeAreaInset`-like behaviour without using the
+        //    modifier that re-shrinks the parent).
+        .ignoresSafeArea(.container, edges: .all)
         .modifier(ChromeVisibilityModifier(visible: chromeVisible))
         .compatFullScreenCover(isPresented: $showingFullPlayer) {
             FullPlayerSheet()

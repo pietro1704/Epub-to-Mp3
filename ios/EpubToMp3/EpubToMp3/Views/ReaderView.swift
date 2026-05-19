@@ -128,8 +128,31 @@ struct ReaderView: View {
     /// otherwise re-paginate from scratch each time. Cache keyed on
     /// the inputs that actually change the layout; cleared on chapter
     /// change.
-    @State private var paginatedPages: [NSAttributedString] = []
-    @State private var paginatedCacheKey: String?
+    /// Class-based pagination cache. The previous `@State` pair
+    /// (`paginatedPages: [NSAttributedString]` + `paginatedCacheKey:
+    /// String?`) had to be written from a `Task { @MainActor in ...
+    /// paginatedPages = pages }` because mutating @State from inside
+    /// a body-evaluated function is a SwiftUI red flag. Result:
+    /// every cache miss enqueued a Task; until that Task ran the
+    /// stored key was stale, so subsequent body re-evals also
+    /// missed → another Paginator call → another Task. The pile of
+    /// Tasks each invalidated body when they finally fired, causing
+    /// visible flicker on swipe + occasional landing on the wrong
+    /// page (the freshly-computed pages were correct, but the body
+    /// re-eval that came AFTER several pending Tasks saw the
+    /// last-written value of `currentPage` against an out-of-date
+    /// `pages.count`).
+    ///
+    /// A reference-type cache (`@State` of a `final class`) is the
+    /// idiomatic SwiftUI escape hatch: SwiftUI watches the *identity*
+    /// of the reference, so field mutations don't trigger view
+    /// invalidation — we can update the cache synchronously from
+    /// inside `body` without re-firing.
+    private final class PaginationCache {
+        var pages: [NSAttributedString] = []
+        var key: String?
+    }
+    @State private var paginationCache = PaginationCache()
     /// Bumped each time `renderedAttributed` is repopulated by the
     /// `.task(id: renderedAttributedKey)`. Used as a cheap identity
     /// for the pagination memo cache — `AttributedString.description`
@@ -263,8 +286,8 @@ struct ReaderView: View {
             renderedAttributed = nil
             // Pagination cache is keyed on the chapter id; clear so
             // the next render of the new chapter rebuilds from scratch.
-            paginatedPages = []
-            paginatedCacheKey = nil
+            paginationCache.pages = []
+            paginationCache.key = nil
         }
         .task(id: renderedAttributedKey) {
             // `NSAttributedString.html` importer is main-thread-only
@@ -705,8 +728,8 @@ struct ReaderView: View {
             String(format: "%.2f", lineSpacing),
             String(renderVersion),
         ].joined(separator: "|")
-        if let cached = paginatedCacheKey, cached == key {
-            return paginatedPages
+        if paginationCache.key == key {
+            return paginationCache.pages
         }
 
         let base: NSAttributedString
@@ -729,17 +752,12 @@ struct ReaderView: View {
             margin: Double(margin),
             headerHeight: headerHeight
         )
-        // Mutating @State from within a body-evaluated function is
-        // technically a SwiftUI smell, but the assignment short-
-        // circuits if the value is identical, and the key string is
-        // cheap to compare. The alternative — driving this from
-        // `.task(id:)` — would forbid the call from a body-only
-        // computed expression and require restructuring the
-        // GeometryReader's data flow.
-        Task { @MainActor in
-            paginatedPages = pages
-            paginatedCacheKey = key
-        }
+        // Synchronous write into the class-based cache (no @State
+        // invalidation triggered — see `PaginationCache` doc). The
+        // next body eval with the same key short-circuits at the
+        // `key == ` check above.
+        paginationCache.pages = pages
+        paginationCache.key = key
         return pages
         #else
         return []
