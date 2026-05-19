@@ -1838,6 +1838,34 @@ async def _periodic_job_cleanup():
             if telemetry_deleted > 0:
                 logger.info("Telemetry cleanup removed %s stale file(s)", telemetry_deleted)
 
+            # Combined .cache/ + output/ budget eviction (LRU + TTL).
+            # Skip dirs that belong to currently active jobs.
+            try:
+                from src.storage_budget import (
+                    CACHE_OUTPUT_MAX_BYTES,
+                    CACHE_OUTPUT_TTL_HOURS,
+                    evict_storage_budget,
+                )
+
+                active_dirs: list[Path] = []
+                for _jid, _jdata in list(jobs.items()):
+                    if _jdata.get("state") in {"queued", "running", "cancelling"}:
+                        active_dirs.append(_job_output_dir(_jid, _jdata))
+                        # Also protect the corresponding .cache/ book dir
+                        _slug = _jdata.get("bookSlug") or _jdata.get("bookTitle") or ""
+                        if _slug:
+                            active_dirs.append(persistent_cache_dir / _slug)
+
+                evict_storage_budget(
+                    persistent_cache_dir,
+                    output_dir,
+                    max_bytes=CACHE_OUTPUT_MAX_BYTES,
+                    ttl_hours=CACHE_OUTPUT_TTL_HOURS,
+                    active_book_dirs=active_dirs,
+                )
+            except Exception as _budget_exc:
+                logger.warning("storage_budget eviction failed: %s", _budget_exc)
+
         except Exception as e:
             logger.error(f"Error in periodic job cleanup: {e}", exc_info=True)
 

@@ -316,6 +316,15 @@ MAX_CHAPTER_CHARS=0      # Skip chapters larger than N chars (0=disabled).
                          # Companhia das Letras: Sumário chapter = entire book).
 EXPECTED_WPM=200         # TTS speed for audio validation (Edge neural = ~200 WPM)
 COMPLETED_JOB_TTL_HOURS  # Default: 48h on HF, 4h local. Files persist this long.
+CACHE_OUTPUT_MAX_BYTES=2147483648  # Combined .cache/ + output/ size budget in bytes.
+                         # Default 2 GiB. LRU eviction (oldest-first) runs when
+                         # total size exceeds this. Active-job directories are
+                         # never evicted. Enforced by server's periodic cleanup
+                         # worker AND at CLI start + after each conversion.
+CACHE_OUTPUT_TTL_HOURS=24  # Entries (book dirs in .cache/ or output/) whose newest
+                         # file mtime is older than this many hours are always
+                         # evicted, regardless of budget. Default 24 h.
+                         # Set to a large value (e.g. 99999) to disable TTL.
 ```
 
 ### Edge-TTS Tuning

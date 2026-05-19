@@ -511,6 +511,16 @@ class ConverterApplication:
             except Exception:
                 pass
 
+            # Combined .cache/ + output/ budget enforcement (LRU + TTL).
+            # Runs once at CLI start so disk usage stays bounded even
+            # during heavy development use.
+            try:
+                from src.storage_budget import evict_storage_budget
+
+                evict_storage_budget(self.cache_root, OUTPUT_DIR)
+            except Exception:
+                pass
+
             if getattr(args, "clear_cache", False):
                 input_path = (
                     Path(getattr(args, "input_file", ""))
@@ -925,6 +935,25 @@ class ConverterApplication:
                         )
                         if not ok:
                             print(f"⚠️  iPhone export skipped: {error}")
+
+            # Post-conversion budget sweep: newly written MP3s may push
+            # combined size over the limit; evict oldest entries now so the
+            # next CLI session starts clean.
+            try:
+                from src.storage_budget import evict_storage_budget
+
+                _active_book_dir = (
+                    Path(getattr(config, "output_dir", None) or OUTPUT_DIR)
+                    if config is not None
+                    else None
+                )
+                evict_storage_budget(
+                    self.cache_root,
+                    OUTPUT_DIR,
+                    active_book_dirs=[_active_book_dir] if _active_book_dir else [],
+                )
+            except Exception:
+                pass
 
             if isinstance(result, ConversionResult):
                 return 0 if result.success else 1
