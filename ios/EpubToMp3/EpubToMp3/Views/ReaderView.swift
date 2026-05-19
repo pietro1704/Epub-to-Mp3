@@ -102,6 +102,21 @@ struct ReaderView: View {
     @State private var debouncedLineSpacing: Double = 0
     @State private var debouncedMargin: Double = 0
     @State private var debouncedColumnWidth: Double = 0
+    // Single in-flight task per slider — cancelled before reassignment
+    // so the last-value-wins guarantee is by cancellation, not by luck
+    // of scheduling. Without this, dragging a slider piles up dozens of
+    // sleeping tasks that all eventually fire in unpredictable order
+    // and can leave the reader stuck on an intermediate value.
+    @State private var fontDebounceTask: Task<Void, Never>?
+    @State private var lineSpacingDebounceTask: Task<Void, Never>?
+    @State private var marginDebounceTask: Task<Void, Never>?
+    @State private var columnWidthDebounceTask: Task<Void, Never>?
+    /// Debounce for `publishReadingRatio`: burst-swipes used to write
+    /// `UserDefaults` twice on every page turn (one for ratio, one for
+    /// sentenceId). Coalesced into a single delayed write so a
+    /// 5-pages-in-2-seconds swipe sequence triggers one write at the
+    /// end of the burst, not 10 prefs-daemon round-trips on main.
+    @State private var publishRatioTask: Task<Void, Never>?
 
     private enum PageDirection { case forward, backward }
 
@@ -245,28 +260,47 @@ struct ReaderView: View {
         }
         .compatOnChange(of: settings.readerFontSize) { _ in
             let v = settings.readerPointSize
-            Task { @MainActor in
+            fontDebounceTask?.cancel()
+            fontDebounceTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 200_000_000)
+                guard !Task.isCancelled else { return }
                 debouncedFontSize = v
             }
         }
         .compatOnChange(of: settings.readerLineSpacing) { new in
-            Task { @MainActor in
+            lineSpacingDebounceTask?.cancel()
+            lineSpacingDebounceTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 200_000_000)
+                guard !Task.isCancelled else { return }
                 debouncedLineSpacing = new
             }
         }
         .compatOnChange(of: settings.readerMargin) { new in
-            Task { @MainActor in
+            marginDebounceTask?.cancel()
+            marginDebounceTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 200_000_000)
+                guard !Task.isCancelled else { return }
                 debouncedMargin = new
             }
         }
         .compatOnChange(of: settings.readerColumnWidth) { new in
-            Task { @MainActor in
+            columnWidthDebounceTask?.cancel()
+            columnWidthDebounceTask = Task { @MainActor in
                 try? await Task.sleep(nanoseconds: 200_000_000)
+                guard !Task.isCancelled else { return }
                 debouncedColumnWidth = new
             }
+        }
+        .onDisappear {
+            // Free any in-flight debounce tasks when the reader is torn
+            // down so they don't write to a freed @State (no crash —
+            // SwiftUI handles that — but wasteful and shows up in
+            // Instruments as zombie tasks).
+            fontDebounceTask?.cancel()
+            lineSpacingDebounceTask?.cancel()
+            marginDebounceTask?.cancel()
+            columnWidthDebounceTask?.cancel()
+            publishRatioTask?.cancel()
         }
     }
 
@@ -566,20 +600,33 @@ struct ReaderView: View {
     ///    `AudioPlayer` has timing for this chapter (injected via
     ///    `setSentenceTiming`), the divergence dialog prefers this
     ///    precise anchor over the ratio.
+    ///
+    /// Coalesced via `publishRatioTask`: a burst of page turns only
+    /// triggers one UserDefaults round-trip 150 ms after the last
+    /// swipe. The previous "write on every turn" pattern was a
+    /// prefs-daemon hot path on the main thread — visible in
+    /// Instruments as `CFPreferencesAppValueIsForced`.
     private func publishReadingRatio(pages: [NSAttributedString]) {
         let total = pages.reduce(0) { $0 + $1.length }
         guard total > 0 else { return }
         let offset = cumulativeOffset(page: currentPage, in: pages)
         let ratio = max(0, min(1, Double(offset) / Double(total)))
-        let defaults = UserDefaults.standard
-        defaults.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
-        // First sentence whose `startChar` is AT or AFTER the current
-        // page's first char — the closest narratable anchor the audio
-        // can seek to.
-        if let span = spans.first(where: { $0.startChar >= offset }) {
-            defaults.set(span.id, forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
-        } else {
-            defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        // Anchor sentence id captured *now* so the eventual write
+        // reflects the page we're settling on, not whatever happens
+        // to be visible 150 ms later (the user may keep swiping).
+        let anchorSentenceId = spans.first(where: { $0.startChar >= offset })?.id
+
+        publishRatioTask?.cancel()
+        publishRatioTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 150_000_000)
+            guard !Task.isCancelled else { return }
+            let defaults = UserDefaults.standard
+            defaults.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+            if let id = anchorSentenceId {
+                defaults.set(id, forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+            } else {
+                defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+            }
         }
     }
 
