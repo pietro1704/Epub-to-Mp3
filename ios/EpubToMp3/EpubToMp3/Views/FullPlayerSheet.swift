@@ -184,6 +184,14 @@ struct FullPlayerSheet: View {
     // MARK: - Cover hero
 
     private var coverHero: some View {
+        // Cover scales to ~70% of the screen width on every device:
+        // 220pt cap was dwarfed on iPhone 15 Pro Max (430pt → cover
+        // was 51% wide and the title block sat at 100% — visual
+        // hierarchy inverted). Apple Music caps at the same ratio.
+        // `containerRelativeFrame` (iOS 17+) reads the parent's
+        // width; pre-iOS-17 falls back to a GeometryReader on
+        // `.frame(maxWidth:)`. The 320pt hard cap protects iPad
+        // landscape and macOS where the parent expands wide.
         Group {
             if let book = currentBook,
                let data = book.coverPNG,
@@ -191,7 +199,7 @@ struct FullPlayerSheet: View {
                 img
                     .resizable()
                     .aspectRatio(2.0/3.0, contentMode: .fit)
-                    .frame(maxWidth: 220)
+                    .modifier(CoverHeroSizing())
                     .clipShape(RoundedRectangle(cornerRadius: 16))
                     .shadow(color: .black.opacity(0.3), radius: 16, y: 6)
                     .accessibilityLabel(L10n.string("player.coverArt", book.resolvedTitle))
@@ -204,7 +212,7 @@ struct FullPlayerSheet: View {
                         .foregroundStyle(.tint)
                 }
                 .aspectRatio(2.0/3.0, contentMode: .fit)
-                .frame(maxWidth: 220)
+                .modifier(CoverHeroSizing())
                 .shadow(color: .black.opacity(0.2), radius: 16, y: 6)
                 .accessibilityHidden(true)
             }
@@ -713,6 +721,30 @@ private struct ChapterListSheet: View {
         let m = total / 60
         let s = total % 60
         return String(format: "%d:%02d", m, s)
+    }
+}
+
+// MARK: - Cover hero sizing
+
+/// Cap the cover hero at 70% of the parent container width with a
+/// 320pt floor (iPad landscape / macOS where the parent is wide).
+/// On iOS 17+ we use `containerRelativeFrame` for a native ratio
+/// binding; the fallback uses GeometryReader.
+private struct CoverHeroSizing: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 17, macOS 14, *) {
+            content.containerRelativeFrame(.horizontal) { width, _ in
+                min(320, max(180, width * 0.7))
+            }
+        } else {
+            GeometryReader { proxy in
+                let target = min(320, max(180, proxy.size.width * 0.7))
+                content
+                    .frame(maxWidth: target)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .aspectRatio(2.0 / 3.0, contentMode: .fit)
+        }
     }
 }
 
