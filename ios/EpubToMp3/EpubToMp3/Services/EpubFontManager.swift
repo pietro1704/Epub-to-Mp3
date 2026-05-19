@@ -3,7 +3,23 @@ import CoreText
 
 enum EpubFontManager {
 
-    private static var registeredDirs: Set<String> = []
+    // Guarded by an internal NSLock so the static dedup set is safe to
+    // access from any actor. CTFontManager APIs are also thread-safe;
+    // the only piece that needed protection was this bookkeeping set.
+    // Swift 6 strict concurrency would otherwise flag the mutable
+    // `nonisolated` global.
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var _registeredDirs: Set<String> = []
+
+    private static func hasRegistered(_ key: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return _registeredDirs.contains(key)
+    }
+
+    private static func markRegistered(_ key: String) {
+        lock.lock(); defer { lock.unlock() }
+        _registeredDirs.insert(key)
+    }
 
     static func registerFonts(from epubURL: URL) -> [URL] {
         guard let entries = ZipReader.listEntries(in: epubURL) else { return [] }
@@ -16,7 +32,7 @@ enum EpubFontManager {
         guard !fontEntries.isEmpty else { return [] }
 
         let bookKey = epubURL.lastPathComponent
-        guard !registeredDirs.contains(bookKey) else { return [] }
+        guard !hasRegistered(bookKey) else { return [] }
 
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("epub-fonts-\(UUID().uuidString)")
@@ -46,7 +62,7 @@ enum EpubFontManager {
                 registered.append(fontURL)
             }
         }
-        if !registered.isEmpty { registeredDirs.insert(bookKey) }
+        if !registered.isEmpty { markRegistered(bookKey) }
         return registered
     }
 

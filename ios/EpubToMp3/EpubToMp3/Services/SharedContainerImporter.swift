@@ -24,14 +24,26 @@ enum SharedContainerImporter {
     /// on both the main app and the Share Extension targets.
     static let appGroupID = "group.com.pietrocode.epubtomp3"
 
-    private static var groupAvailabilityCache: [String: Bool] = [:]
+    // Guarded by an internal NSLock so the global dedup cache is
+    // concurrency-safe under Swift 6. The cache key is fixed
+    // (`appGroupID`) and `FileManager.containerURL` is documented as
+    // thread-safe; this lock only protects the cache assignment.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var groupAvailabilityCache: [String: Bool] = [:]
 
     static var isAppGroupAvailable: Bool {
-        if let cached = groupAvailabilityCache[appGroupID] { return cached }
+        cacheLock.lock()
+        if let cached = groupAvailabilityCache[appGroupID] {
+            cacheLock.unlock()
+            return cached
+        }
+        cacheLock.unlock()
         let available = FileManager.default.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupID
         ) != nil
+        cacheLock.lock()
         groupAvailabilityCache[appGroupID] = available
+        cacheLock.unlock()
         return available
     }
 
