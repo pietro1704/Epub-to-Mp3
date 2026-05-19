@@ -197,10 +197,14 @@ final class AudioPlayer: ObservableObject {
             // Capture the initial value before the Task hop so we yield
             // the correct snapshot even if the caller subscribes during
             // a mid-update window.
-            let initial = self.currentChapterValue
+            // Initial-value capture moved INTO the @MainActor Task —
+            // accessing `self.currentChapterValue` from outside main
+            // is a latent data race the compiler permits only because
+            // the AsyncStream factory is implicitly inherited-isolated.
+            // Under Swift 6 strict-concurrency this would warn.
             Task { @MainActor in
                 self.chapterContinuations[id] = continuation
-                continuation.yield(initial)
+                continuation.yield(self.currentChapterValue)
             }
             continuation.onTermination = { @Sendable _ in
                 Task { @MainActor in self.chapterContinuations.removeValue(forKey: id) }
@@ -213,10 +217,10 @@ final class AudioPlayer: ObservableObject {
     var position: AsyncStream<TimeInterval> {
         AsyncStream { continuation in
             let id = UUID()
-            let initial = self.positionSeconds
+            // See `currentChapter` above — capture inside the Task.
             Task { @MainActor in
                 self.positionContinuations[id] = continuation
-                continuation.yield(initial)
+                continuation.yield(self.positionSeconds)
             }
             continuation.onTermination = { @Sendable _ in
                 Task { @MainActor in self.positionContinuations.removeValue(forKey: id) }
