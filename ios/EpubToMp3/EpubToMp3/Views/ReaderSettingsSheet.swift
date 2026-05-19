@@ -22,12 +22,22 @@ struct ReaderSettingsSheet: View {
 
                 // MARK: Font
                 Section(L10n.string("readerSettings.font")) {
-                    Picker(L10n.string("readerSettings.family"), selection: $settings.readerFontFamily) {
-                        ForEach(ReaderFontFamily.allCases) { f in
-                            Text(f.displayName).tag(f)
+                    // A segmented `Picker` with its label as the first
+                    // argument lets macOS `Form` shove the label into the
+                    // leading label column, which clips off the sheet's
+                    // left edge. Stack the label above the control and
+                    // hide the picker's own label so it renders inside
+                    // the section content on every platform.
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L10n.string("readerSettings.family"))
+                        Picker(L10n.string("readerSettings.family"), selection: $settings.readerFontFamily) {
+                            ForEach(ReaderFontFamily.allCases) { f in
+                                Text(f.displayName).tag(f)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
-                    .pickerStyle(.segmented)
 
                     HStack {
                         Text(L10n.string("readerSettings.size"))
@@ -56,20 +66,28 @@ struct ReaderSettingsSheet: View {
 
                 // MARK: Layout
                 Section(L10n.string("readerSettings.layout")) {
-                    Picker(L10n.string("readerSettings.mode"), selection: $settings.readerLayout) {
-                        ForEach(ReaderLayout.allCases) { l in
-                            Text(l.displayName).tag(l)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-
-                    if settings.readerLayout == .paginated {
-                        Picker(L10n.string("readerSettings.pageTurnStyle"), selection: $settings.pageTurnStyle) {
-                            ForEach(PageTurnStyle.allCases) { style in
-                                Text(style.displayName).tag(style)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L10n.string("readerSettings.mode"))
+                        Picker(L10n.string("readerSettings.mode"), selection: $settings.readerLayout) {
+                            ForEach(ReaderLayout.allCases) { l in
+                                Text(l.displayName).tag(l)
                             }
                         }
                         .pickerStyle(.segmented)
+                        .labelsHidden()
+                    }
+
+                    if settings.readerLayout == .paginated {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(L10n.string("readerSettings.pageTurnStyle"))
+                            Picker(L10n.string("readerSettings.pageTurnStyle"), selection: $settings.pageTurnStyle) {
+                                ForEach(PageTurnStyle.allCases) { style in
+                                    Text(style.displayName).tag(style)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                        }
                     }
 
                     // HIG: a Slider in a Form should fill the row and
