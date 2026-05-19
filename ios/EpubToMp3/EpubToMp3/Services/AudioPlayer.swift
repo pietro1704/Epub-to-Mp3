@@ -204,8 +204,14 @@ final class AudioPlayer: ObservableObject {
 
     // MARK: AsyncStreams (positions + chapter changes)
 
-    private var chapterContinuations: [UUID: AsyncStream<JobSnapshot.Chapter?>.Continuation] = [:]
-    private var positionContinuations: [UUID: AsyncStream<TimeInterval>.Continuation] = [:]
+    // `nonisolated(unsafe)` so `deinit` (non-isolated under Swift 6
+    // on a `@MainActor` class) can drain them. The dictionaries are
+    // only mutated from the @MainActor body of `currentChapter` /
+    // `position` and from the `onTermination` continuation
+    // (already-dispatched to MainActor). At deinit time all weak-self
+    // tasks have returned early so no concurrent mutator races.
+    nonisolated(unsafe) private var chapterContinuations: [UUID: AsyncStream<JobSnapshot.Chapter?>.Continuation] = [:]
+    nonisolated(unsafe) private var positionContinuations: [UUID: AsyncStream<TimeInterval>.Continuation] = [:]
 
     var currentChapter: AsyncStream<JobSnapshot.Chapter?> {
         AsyncStream { continuation in
@@ -336,6 +342,15 @@ final class AudioPlayer: ObservableObject {
         if let token = timeObserverToken { player?.removeTimeObserver(token) }
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         currentItemObserver?.invalidate()
+        // Drain AsyncStream continuations so any subscriber that holds
+        // an unbroken `for await pos in player.position` loop exits
+        // cleanly. Without this, a subscriber Task could hang forever
+        // waiting on a stream that will never yield again — leaking
+        // the Task itself and anything it captured.
+        for cont in chapterContinuations.values { cont.finish() }
+        for cont in positionContinuations.values { cont.finish() }
+        chapterContinuations.removeAll()
+        positionContinuations.removeAll()
         // The AVQueuePlayer is released immediately after this deinit
         // returns — no need to pause it. AVFoundation tears down its
         // own state when refcount hits zero.
