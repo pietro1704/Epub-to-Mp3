@@ -47,6 +47,12 @@ struct InstantReaderView: View {
     @State private var currentSentenceId: String?
     @State private var positionTask: Task<Void, Never>?
     @State private var sentenceTask: Task<Void, Never>?
+    /// Identity of the `AudioPlayer` instance the position / sentence
+    /// loops are currently subscribed to. Prevents the embedded and
+    /// snapshot paths from each spawning a parallel subscription when
+    /// they happen to fire in the same runloop tick — see
+    /// `installPositionLoop(on:isEmbedded:)`.
+    @State private var activeSubscriptionPlayer: ObjectIdentifier?
     @State private var showingToc = false
     @State private var showingSearch = false
     @State private var pendingPlayAnchor: SentenceSpan?  // sentence the user tapped → "Play from here"
@@ -208,6 +214,7 @@ struct InstantReaderView: View {
         .onDisappear {
             positionTask?.cancel()
             sentenceTask?.cancel()
+            activeSubscriptionPlayer = nil
             settings.saveChapterIndex(currentChapterIndex, for: fulltext.jobId)
             WidgetDataSync.updateLastRead(
                 bookId: fulltext.jobId,
@@ -798,29 +805,7 @@ struct InstantReaderView: View {
     // MARK: - Player wiring
 
     private func wireEmbeddedPositionObservers() {
-        positionTask?.cancel()
-        positionTask = Task { @MainActor in
-            for await pos in globalPlayer.position {
-                if Task.isCancelled { break }
-                if globalPlayer.activeSentenceId != nil {
-                    self.currentSentenceId = globalPlayer.activeSentenceId
-                } else {
-                    _ = sync.update(positionSeconds: pos)
-                }
-                if globalPlayer.currentChapterIndex != currentChapterIndex {
-                    currentChapterIndex = globalPlayer.currentChapterIndex
-                }
-            }
-        }
-        sentenceTask?.cancel()
-        sentenceTask = Task { @MainActor in
-            for await id in sync.currentSentence {
-                if Task.isCancelled { break }
-                if globalPlayer.activeSentenceId == nil {
-                    self.currentSentenceId = id
-                }
-            }
-        }
+        installPositionLoop(on: globalPlayer, isEmbedded: true)
     }
 
     private func mountPlayerIfPossible() {
@@ -832,22 +817,53 @@ struct InstantReaderView: View {
         player.coverArtData = coverPNG     // surface to MPNowPlayingInfoCenter
         player.play(snapshot: snap, startingAt: currentChapterIndex)
         playerMounted = true
+        installPositionLoop(on: player, isEmbedded: false)
+    }
+
+    /// Wire the position/sentence subscriptions to ONE AudioPlayer
+    /// instance — either the global embedded one or the local mounted
+    /// one. Previously these were wired from two separate functions
+    /// (`wireEmbeddedPositionObservers` and `mountPlayerIfPossible`),
+    /// and when both fired in the same runloop tick SwiftUI's
+    /// state-batching could leave one stream's `for await` loop alive
+    /// while the other claimed `positionTask`. Consolidating to a
+    /// single installer with an identity guard (`activeSubscriptionPlayer`)
+    /// keeps exactly ONE subscription live at any time.
+    private func installPositionLoop(on activePlayer: AudioPlayer, isEmbedded: Bool) {
+        let identity = ObjectIdentifier(activePlayer)
+        if activeSubscriptionPlayer == identity { return }
+        activeSubscriptionPlayer = identity
 
         positionTask?.cancel()
-        positionTask = Task { @MainActor in
-            for await pos in player.position {
+        positionTask = Task { @MainActor [weak activePlayer] in
+            guard let activePlayer else { return }
+            for await pos in activePlayer.position {
                 if Task.isCancelled { break }
-                _ = sync.update(positionSeconds: pos)
-                if player.currentChapterIndex != currentChapterIndex {
-                    currentChapterIndex = player.currentChapterIndex
+                if isEmbedded, activePlayer.activeSentenceId != nil {
+                    self.currentSentenceId = activePlayer.activeSentenceId
+                } else {
+                    _ = sync.update(positionSeconds: pos)
+                }
+                if activePlayer.currentChapterIndex != currentChapterIndex {
+                    currentChapterIndex = activePlayer.currentChapterIndex
                 }
             }
         }
+
         sentenceTask?.cancel()
-        sentenceTask = Task { @MainActor in
+        sentenceTask = Task { @MainActor [weak activePlayer] in
             for await id in sync.currentSentence {
                 if Task.isCancelled { break }
-                self.currentSentenceId = id
+                // Embedded path defers to `activePlayer.activeSentenceId`
+                // (per-segment SSE) when present; otherwise the
+                // sync-engine's WPM-estimated cursor wins.
+                if isEmbedded {
+                    if activePlayer?.activeSentenceId == nil {
+                        self.currentSentenceId = id
+                    }
+                } else {
+                    self.currentSentenceId = id
+                }
             }
         }
     }
