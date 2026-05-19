@@ -41,7 +41,7 @@ struct InstantReaderView: View {
     /// instance for `objectWillChange` subscriptions to fire — so we
     /// gate the UI on this flag instead.
     @State private var playerMounted: Bool = false
-    @State private var showingStartChoice: Bool = false
+    @State private var pendingAnchor: PlayDivergenceAnchor?
     @State private var sync = SyncEngine()
     @State private var spans: [SentenceSpan] = []
     @State private var currentSentenceId: String?
@@ -559,20 +559,18 @@ struct InstantReaderView: View {
         HStack(spacing: 24) {
             Button {
                 switch player.playTapDecision(readerChapterIndex: currentChapterIndex) {
-                case .pause, .resume: player.togglePlayPause()
-                case .offerStartChoice: showingStartChoice = true
+                case .pause, .resume:
+                    player.togglePlayPause()
+                case .offerStartChoice:
+                    pendingAnchor = .capture(readerChapterIndex: currentChapterIndex)
                 }
             } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 36))
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
-            .playDivergenceDialog(
-                player: player,
-                readerChapterIndex: currentChapterIndex,
-                isPresented: $showingStartChoice
-            )
+            .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
+            .playDivergenceDialog(player: player, anchor: $pendingAnchor)
 
             Button {
                 if currentChapterIndex + 1 < fulltext.chapters.count {

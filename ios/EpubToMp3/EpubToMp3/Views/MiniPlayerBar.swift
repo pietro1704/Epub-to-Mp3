@@ -35,7 +35,7 @@ struct MiniPlayerBar: View {
     @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     private var readerChapterIndex: Int = 0
 
-    @State private var showingStartChoice: Bool = false
+    @State private var pendingAnchor: PlayDivergenceAnchor?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -231,11 +231,7 @@ struct MiniPlayerBar: View {
                     ? .opacity
                     : .move(edge: .bottom).combined(with: .opacity)
             )
-            .playDivergenceDialog(
-                player: player,
-                readerChapterIndex: readerChapterIndex,
-                isPresented: $showingStartChoice
-            )
+            .playDivergenceDialog(player: player, anchor: $pendingAnchor)
         }
     }
 
@@ -247,8 +243,13 @@ struct MiniPlayerBar: View {
 
     private func handlePlayTap() {
         switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
-        case .pause, .resume: player.togglePlayPause()
-        case .offerStartChoice: showingStartChoice = true
+        case .pause, .resume:
+            player.togglePlayPause()
+        case .offerStartChoice:
+            // Snapshot the reader's anchor RIGHT NOW so the dialog
+            // animation (and any further user swipes during it)
+            // can't drift the captured position.
+            pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
         }
     }
 

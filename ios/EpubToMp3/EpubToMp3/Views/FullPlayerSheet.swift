@@ -40,7 +40,7 @@ struct FullPlayerSheet: View {
 
     @State private var showChapterList = false
     @State private var dragOffset: CGFloat = 0
-    @State private var showingStartChoice: Bool = false
+    @State private var pendingAnchor: PlayDivergenceAnchor?
 
     // MARK: Derived state
 
@@ -304,11 +304,7 @@ struct FullPlayerSheet: View {
             .buttonStyle(.plain)
             .tint(.primary)
             .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
-            .playDivergenceDialog(
-                player: player,
-                readerChapterIndex: readerChapterIndex,
-                isPresented: $showingStartChoice
-            )
+            .playDivergenceDialog(player: player, anchor: $pendingAnchor)
             Spacer()
             Button { player.skipForward(seconds: 15) } label: {
                 Image(systemName: "goforward.15")
@@ -513,8 +509,10 @@ struct FullPlayerSheet: View {
 
     private func handlePlayTap() {
         switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
-        case .pause, .resume: player.togglePlayPause()
-        case .offerStartChoice: showingStartChoice = true
+        case .pause, .resume:
+            player.togglePlayPause()
+        case .offerStartChoice:
+            pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
         }
     }
 }

@@ -50,7 +50,7 @@ struct PlayerReaderView: View {
 
     @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     private var readerChapterIndex: Int = 0
-    @State private var showingStartChoice: Bool = false
+    @State private var pendingAnchor: PlayDivergenceAnchor?
 
     /// Tri-state for the toolbar Download button. `idle` is the default
     /// CTA; `downloading` shows a determinate progress label; `done`
@@ -310,17 +310,15 @@ struct PlayerReaderView: View {
         }
         .tint(.primary)
         .frame(maxWidth: .infinity)
-        .playDivergenceDialog(
-            player: player,
-            readerChapterIndex: readerChapterIndex,
-            isPresented: $showingStartChoice
-        )
+        .playDivergenceDialog(player: player, anchor: $pendingAnchor)
     }
 
     private func handlePlayTap() {
         switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
-        case .pause, .resume: player.togglePlayPause()
-        case .offerStartChoice: showingStartChoice = true
+        case .pause, .resume:
+            player.togglePlayPause()
+        case .offerStartChoice:
+            pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
         }
     }
 

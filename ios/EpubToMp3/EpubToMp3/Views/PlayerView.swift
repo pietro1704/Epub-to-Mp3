@@ -9,7 +9,7 @@ struct PlayerView: View {
 
     @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     private var readerChapterIndex: Int = 0
-    @State private var showingStartChoice: Bool = false
+    @State private var pendingAnchor: PlayDivergenceAnchor?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -112,17 +112,15 @@ struct PlayerView: View {
             }
         }
         .tint(.primary)
-        .playDivergenceDialog(
-            player: player,
-            readerChapterIndex: readerChapterIndex,
-            isPresented: $showingStartChoice
-        )
+        .playDivergenceDialog(player: player, anchor: $pendingAnchor)
     }
 
     private func handlePlayTap() {
         switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
-        case .pause, .resume: player.togglePlayPause()
-        case .offerStartChoice: showingStartChoice = true
+        case .pause, .resume:
+            player.togglePlayPause()
+        case .offerStartChoice:
+            pendingAnchor = .capture(readerChapterIndex: readerChapterIndex)
         }
     }
 
