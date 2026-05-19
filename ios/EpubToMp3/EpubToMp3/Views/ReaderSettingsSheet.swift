@@ -72,32 +72,42 @@ struct ReaderSettingsSheet: View {
                         .pickerStyle(.segmented)
                     }
 
-                    HStack {
-                        Text(L10n.string("readerSettings.lineSpacing"))
-                        Spacer()
+                    // HIG: a Slider in a Form should fill the row and
+                    // surround it with min/max value labels rather than
+                    // being squeezed into a fixed-width column with an
+                    // adjacent monospace numeric — the latter is the
+                    // pattern Apple's apps use only when the value
+                    // *is* the label (volume sliders without endpoints).
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(L10n.string("readerSettings.lineSpacing"))
+                            Spacer()
+                            Text("\(Int(settings.readerLineSpacing))")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
                         Slider(
                             value: $settings.readerLineSpacing,
                             in: 0...16,
                             step: 2
                         )
-                        .frame(width: 120)
-                        Text("\(Int(settings.readerLineSpacing))")
-                            .monospacedDigit()
-                            .frame(width: 28, alignment: .trailing)
+                        .accessibilityValue("\(Int(settings.readerLineSpacing))")
                     }
 
-                    HStack {
-                        Text(L10n.string("readerSettings.margin"))
-                        Spacer()
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(L10n.string("readerSettings.margin"))
+                            Spacer()
+                            Text("\(Int(settings.readerMargin))")
+                                .monospacedDigit()
+                                .foregroundStyle(.secondary)
+                        }
                         Slider(
                             value: $settings.readerMargin,
                             in: 16...80,
                             step: 4
                         )
-                        .frame(width: 120)
-                        Text("\(Int(settings.readerMargin))")
-                            .monospacedDigit()
-                            .frame(width: 28, alignment: .trailing)
+                        .accessibilityValue("\(Int(settings.readerMargin))")
                     }
                 }
             }
