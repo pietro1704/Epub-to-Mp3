@@ -207,15 +207,21 @@ final class AudioPlayer: ObservableObject {
     /// across reconfigurations so `@StateObject` subscriptions stay
     /// live).
     var backendBaseURL: URL?
-    private var player: AVQueuePlayer?
-    private var timeObserverToken: Any?
-    private var endObserver: NSObjectProtocol?
+    // `nonisolated(unsafe)` so `deinit` (which is non-isolated on a
+    // `@MainActor` class under Swift 6) can read these to detach
+    // observers before the wrapper is freed. The tokens themselves
+    // are opaque `Any` / `NSObjectProtocol` references safe to release
+    // off-main; the AVQueuePlayer is also fine to teardown from any
+    // thread (AVFoundation handles its own internal serialisation).
+    nonisolated(unsafe) private var player: AVQueuePlayer?
+    nonisolated(unsafe) private var timeObserverToken: Any?
+    nonisolated(unsafe) private var endObserver: NSObjectProtocol?
     /// KVO token for `AVQueuePlayer.currentItem`. Fires whenever the queue
     /// advances to the next item (including auto-advance at natural end) so
     /// `MPNowPlayingInfoCenter` is always refreshed with the correct chapter
     /// title and duration — even when the OS advances the item before our
     /// `AVPlayerItemDidPlayToEndTime` handler runs.
-    private var currentItemObserver: NSKeyValueObservation?
+    nonisolated(unsafe) private var currentItemObserver: NSKeyValueObservation?
     private var lastResumePersist: Date = .distantPast
     /// Throttle for `MPNowPlayingInfoCenter` updates — we update at most
     /// once per second so the lock-screen scrubber stays fresh without
@@ -245,9 +251,20 @@ final class AudioPlayer: ObservableObject {
     }
 
     deinit {
-        // We can't touch @MainActor isolated state from deinit on Swift 6;
-        // the observer tokens are local to the player instance which is
-        // released here, so AVFoundation cleans up naturally.
+        // `deinit` on a `@MainActor` class is implicitly non-isolated
+        // under Swift 6 — but the observer tokens declared
+        // `nonisolated(unsafe)` are safe to detach from any thread.
+        // Apple's docs are emphatic: `addPeriodicTimeObserver` MUST be
+        // matched by `removeTimeObserver` before the player is freed
+        // or the periodic block can fire against a dangling pointer
+        // (FB7359919). NotificationCenter observer must also be
+        // removed manually — the framework retains it strongly.
+        if let token = timeObserverToken { player?.removeTimeObserver(token) }
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        currentItemObserver?.invalidate()
+        // The AVQueuePlayer is released immediately after this deinit
+        // returns — no need to pause it. AVFoundation tears down its
+        // own state when refcount hits zero.
     }
 
     // MARK: Remote commands (lazy — deferred to first playback)
@@ -330,7 +347,14 @@ final class AudioPlayer: ObservableObject {
             return
         }
 
-        let items = chapters.compactMap { chapter -> AVPlayerItem? in
+        // Build the queue starting AT `safeIndex` rather than building
+        // the full list and walking `advanceToNextItem()` to skip
+        // forward. For a 200-chapter book jumping to chapter 150 the
+        // old approach allocated 150 AVPlayerItems and fired 150 KVO
+        // ticks on `currentItem` before any audio played; the slice
+        // approach allocates the 50 items we actually need and is O(1).
+        let remaining = chapters[safeIndex...]
+        let items = remaining.compactMap { chapter -> AVPlayerItem? in
             guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { return nil }
             return AVPlayerItem(url: absolute)
         }
@@ -338,8 +362,6 @@ final class AudioPlayer: ObservableObject {
 
         let queue = AVQueuePlayer(items: items)
         queue.actionAtItemEnd = .advance
-        // Skip to the requested chapter by advancing the queue head.
-        for _ in 0..<safeIndex { queue.advanceToNextItem() }
         self.player = queue
         self.currentChapterIndex = safeIndex
 
@@ -873,9 +895,18 @@ final class AudioPlayer: ObservableObject {
         ) { [weak self] notification in
             Task { @MainActor in
                 guard let self else { return }
+                // `object: nil` above subscribes us to *every* AVPlayerItem
+                // ending in the process — share extensions / preview
+                // players / other AVPlayers in the same app would
+                // trigger this handler with their own items. Filter to
+                // items currently owned by OUR queue so we never advance
+                // chapters on an unrelated item-end.
+                guard
+                    let finished = notification.object as? AVPlayerItem,
+                    self.player?.items().contains(finished) == true
+                else { return }
 
-                if self.isSegmentMode,
-                   let finished = notification.object as? AVPlayerItem {
+                if self.isSegmentMode {
                     let dur = finished.duration.seconds
                     if dur.isFinite { self.segmentCumulativeBase += dur }
                     self.segmentPlayedCount += 1
@@ -909,9 +940,18 @@ final class AudioPlayer: ObservableObject {
         // current item before refreshing Now Playing — otherwise the lock
         // screen / control center / widget show the previous chapter's
         // title until the end-of-item notification finally fires.
+        //
+        // RACE GUARD: drop any queued `pendingProportionalSeek` for the
+        // *previous* chapter the instant the queue advances. Without
+        // this, the periodic time observer (running every 250 ms) could
+        // apply that seek against the NEW chapter's duration → landing
+        // at the wrong fractional position. The seek must always belong
+        // to the chapter the caller intended at `startFromReaderPage`
+        // time, never carry over a chapter boundary.
         currentItemObserver = player.observe(\.currentItem, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in
                 guard let self else { return }
+                self.pendingProportionalSeek = nil
                 self.reconcileChapterIndexFromCurrentItem()
                 self.publishCurrentChapter()
                 self.updateNowPlayingInfo()
