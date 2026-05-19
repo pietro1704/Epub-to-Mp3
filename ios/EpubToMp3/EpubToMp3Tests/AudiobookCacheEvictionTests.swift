@@ -53,7 +53,8 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         let mp3 = folder.appendingPathComponent("chapter_0.mp3")
         try Data(repeating: 0xFF, count: 512).write(to: mp3)
 
-        // Write manifest.
+        // Write manifest. Use ISO-8601 encoding so the decoder (also ISO-8601)
+        // can round-trip the Date values without returning nil.
         let manifest = AudiobookManifest(
             jobId: jobId,
             bookTitle: "Book \(jobId)",
@@ -69,7 +70,9 @@ final class AudiobookCacheEvictionTests: XCTestCase {
             totalBytes: totalBytes,
             completedAt: downloadedAt
         )
-        let data = try JSONEncoder().encode(manifest)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        let data = try encoder.encode(manifest)
         let manifestURL = tempRoot
             .appendingPathComponent(jobId, isDirectory: true)
             .appendingPathComponent("manifest.json")
@@ -297,7 +300,9 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder) }
 
-        let before = Date()
+        // ISO8601DateFormatter truncates to whole seconds, so `parsed` may be
+        // up to 1 second before `before`. Allow a 1-second window on the lower bound.
+        let before = Date().addingTimeInterval(-1)
         AudiobookCacheEviction.touchLastAccess(jobId: jobId)
         let after = Date()
 
@@ -307,7 +312,7 @@ final class AudiobookCacheEvictionTests: XCTestCase {
         let raw = try String(contentsOf: sidecar, encoding: .utf8)
         let parsed = ISO8601DateFormatter().date(from: raw.trimmingCharacters(in: .whitespacesAndNewlines))
         XCTAssertNotNil(parsed)
-        XCTAssertGreaterThanOrEqual(parsed!, before)
+        XCTAssertGreaterThanOrEqual(parsed!, before, "timestamp must be within 1s of call time")
         XCTAssertLessThanOrEqual(parsed!, after.addingTimeInterval(1))
     }
 
