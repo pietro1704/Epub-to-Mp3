@@ -55,42 +55,81 @@ final class LibraryStore: ObservableObject {
         self.defaults = resolvedDefaults
         self.defaultsKey = defaultsKey
         self.fileManager = fileManager
-        // Decode on a background queue to avoid blocking the main thread
-        // with large JSON payloads (cover PNG blobs inflate decode time).
-        Task.detached(priority: .userInitiated) { [defaults = resolvedDefaults, key = defaultsKey] in
-            guard let data = defaults.data(forKey: key) else { return }
-            do {
-                let decoded = try JSONDecoder().decode([BookEntity].self, from: data)
-                let pruned = decoded.filter { !$0.bookmark.isEmpty }
-                // Migrate: downsample any oversized covers persisted
-                // before the import-time downsampling was added.
-                var migrated = false
-                var result = pruned
-                for i in result.indices {
-                    if let cover = result[i].coverPNG,
-                       cover.count > LibraryStore.coverMaxBytes {
-                        result[i].coverPNG = LibraryStore.downsampleCover(cover)
-                        migrated = true
-                    }
-                }
-                let needsPersist = pruned.count != decoded.count || migrated
-                // Rebind to a `let` before crossing the actor boundary
-                // so Swift 6's strict concurrency checker doesn't flag
-                // the captured-var-mutation pattern (`result` is a
-                // `var` we mutated above). The closure now captures
-                // the immutable snapshot by value.
-                let finalBooks = result
-                await MainActor.run {
-                    self.books = finalBooks
-                    if needsPersist {
-                        self.persist()
-                    }
-                }
-            } catch {
-                await MainActor.run {
-                    self.loadError = error.localizedDescription
+        // When the caller injected a UserDefaults instance directly,
+        // we're almost certainly in a test or preview context — load
+        // synchronously so assertions made right after `init` see the
+        // persisted state. Production app-group defaults still take
+        // the detached path so the main thread isn't blocked by a
+        // large persisted JSON (book covers inflate decode time).
+        if defaults != nil {
+            loadSync()
+        } else {
+            Task.detached(priority: .userInitiated) { [weak self] in
+                await self?.loadAsync()
+            }
+        }
+    }
+
+    /// Synchronous on-actor load. Used by test/preview inits where the
+    /// caller passed a specific `UserDefaults` and expects the books
+    /// array to be hydrated before control returns.
+    private func loadSync() {
+        switch Self.decode(defaults: defaults, key: defaultsKey) {
+        case .success(let (books, needsPersist)):
+            self.books = books
+            if needsPersist { persist() }
+        case .failure(let error):
+            self.loadError = error.localizedDescription
+        case .empty:
+            break
+        }
+    }
+
+    /// Async load on a background actor — production path. Same
+    /// decode logic as `loadSync`, just dispatched off main.
+    private func loadAsync() async {
+        let outcome = Self.decode(defaults: defaults, key: defaultsKey)
+        await MainActor.run {
+            switch outcome {
+            case .success(let (books, needsPersist)):
+                self.books = books
+                if needsPersist { self.persist() }
+            case .failure(let error):
+                self.loadError = error.localizedDescription
+            case .empty:
+                break
+            }
+        }
+    }
+
+    /// Outcome of the persisted-library decode.
+    private enum DecodeOutcome {
+        case success((books: [BookEntity], needsPersist: Bool))
+        case failure(Error)
+        case empty
+    }
+
+    /// Single decode + migrate pipeline shared by both load paths.
+    private static func decode(
+        defaults: UserDefaults,
+        key: String
+    ) -> DecodeOutcome {
+        guard let data = defaults.data(forKey: key) else { return .empty }
+        do {
+            let decoded = try JSONDecoder().decode([BookEntity].self, from: data)
+            let pruned = decoded.filter { !$0.bookmark.isEmpty }
+            var migrated = false
+            var result = pruned
+            for i in result.indices {
+                if let cover = result[i].coverPNG,
+                   cover.count > LibraryStore.coverMaxBytes {
+                    result[i].coverPNG = LibraryStore.downsampleCover(cover)
+                    migrated = true
                 }
             }
+            return .success((result, pruned.count != decoded.count || migrated))
+        } catch {
+            return .failure(error)
         }
     }
 
