@@ -412,6 +412,8 @@ final class AudioPlayer: ObservableObject {
         // We defer activation to `resume()` so silence on the user's side
         // never costs them their currently-playing audio.
         audioLog.debug("[load] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
+        // Touch last-access so LRU eviction knows this audiobook was opened.
+        AudiobookCacheEviction.touchLastAccess(jobId: snapshot.jobId)
         let wasPlaying = isPlaying
         teardownPlayer()
         isSegmentMode = false

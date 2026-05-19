@@ -198,6 +198,12 @@ final class AppSettings: ObservableObject {
             (defaults.object(forKey: "readerLetterSpacing") as? Double) ?? 0
         self.readerWordSpacing =
             (defaults.object(forKey: "readerWordSpacing") as? Double) ?? 0
+        self.offlineCacheBudgetBytes =
+            (defaults.object(forKey: "offlineCacheBudgetBytes") as? Int64)
+            ?? defaultOfflineCacheBudgetBytes
+        self.offlineCacheTTLSeconds =
+            (defaults.object(forKey: "offlineCacheTTLSeconds") as? Double)
+            ?? defaultOfflineCacheTTLSeconds
     }
 
     /// Filled in by `SidecarManager` once the bundled Python server is
@@ -479,6 +485,20 @@ final class AppSettings: ObservableObject {
         readerSuppressItalic = false
         readerLetterSpacing = 0
         readerWordSpacing = 0
+    }
+
+    // MARK: Offline cache budget
+
+    /// Maximum on-device audiobook cache size in bytes.
+    /// Default: 2 GB. UI should present this in human-readable units.
+    @Published var offlineCacheBudgetBytes: Int64 = defaultOfflineCacheBudgetBytes {
+        didSet { defaults.set(offlineCacheBudgetBytes, forKey: "offlineCacheBudgetBytes") }
+    }
+
+    /// Maximum age (seconds) before a cached audiobook is evicted.
+    /// Default: 86 400 s (24 h).
+    @Published var offlineCacheTTLSeconds: Double = defaultOfflineCacheTTLSeconds {
+        didSet { defaults.set(offlineCacheTTLSeconds, forKey: "offlineCacheTTLSeconds") }
     }
 
     // MARK: Reading position persistence

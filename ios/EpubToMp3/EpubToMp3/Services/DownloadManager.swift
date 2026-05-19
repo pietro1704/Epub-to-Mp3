@@ -204,6 +204,13 @@ actor DownloadManager {
         )
         try? Self.saveManifest(manifest)
 
+        // After each completed download, run LRU+TTL eviction in the background.
+        // Exclude the job we just downloaded so it is never immediately evicted.
+        let newJobId = snapshot.jobId
+        Task.detached(priority: .background) {
+            AudiobookCacheEviction.runEviction(activeJobIds: [newJobId])
+        }
+
         emit(DownloadProgress(
             jobId: snapshot.jobId,
             chapterIndex: chapters.last?.index ?? 0,

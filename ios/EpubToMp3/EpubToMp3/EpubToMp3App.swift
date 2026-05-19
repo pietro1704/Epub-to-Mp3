@@ -42,6 +42,8 @@ struct EpubToMp3App: App {
                     #if os(macOS)
                     await startSidecarIfNeeded()
                     #endif
+                    // Run LRU+TTL eviction on every app launch (background priority).
+                    runCacheEviction()
                 }
                 .task(priority: .utility) {
                     #if os(iOS) || targetEnvironment(simulator)
@@ -165,6 +167,25 @@ struct EpubToMp3App: App {
         if group.bool(forKey: "widget.intent.skipForward30") {
             group.removeObject(forKey: "widget.intent.skipForward30")
             player.skipForward(seconds: 30)
+        }
+    }
+
+    // MARK: Cache eviction
+
+    /// Kick off the LRU+TTL eviction policy in the background.
+    /// Active playback job is excluded so music is never interrupted.
+    private func runCacheEviction() {
+        let budgetBytes = settings.offlineCacheBudgetBytes
+        let ttlSeconds  = settings.offlineCacheTTLSeconds
+        // Collect active IDs: whatever the player is currently playing.
+        var activeIds: Set<String> = []
+        if let jobId = player.snapshot?.jobId { activeIds.insert(jobId) }
+        Task.detached(priority: .background) {
+            AudiobookCacheEviction.runEviction(
+                budgetBytes: budgetBytes,
+                ttlSeconds: ttlSeconds,
+                activeJobIds: activeIds
+            )
         }
     }
 
