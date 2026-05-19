@@ -114,10 +114,18 @@ final class EpubMetadataReaderTests: XCTestCase {
         let sig: UInt32 = archiveData.withUnsafeBytes {
             $0.load(fromByteOffset: eocdOffset, as: UInt32.self)
         }
-        // Little-endian 0x06054b50 as stored in memory on any platform.
-        let expectedLE = UInt32(0x50).bigEndian == 0x50
-            ? UInt32(0x06054b50)   // already LE (little-endian host)
-            : UInt32(0x06054b50).byteSwapped
+        // The EOCD signature is stored little-endian on disk
+        // (50 4B 05 06 → UInt32 0x06054b50). `load(fromByteOffset:as:)`
+        // reads in host byte order; on a little-endian host (every
+        // Apple platform) the four bytes interpret directly as
+        // 0x06054b50. On a (hypothetical) big-endian host they would
+        // interpret as the byteSwapped form.
+        let expectedLE: UInt32 = {
+            // `UInt32(1).littleEndian == 1` is true on a LE host.
+            return UInt32(1).littleEndian == 1
+                ? UInt32(0x06054b50)
+                : UInt32(0x06054b50).byteSwapped
+        }()
         XCTAssertEqual(sig, expectedLE,
                        "EOCD signature not found at expected offset in fixture")
 
