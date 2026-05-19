@@ -32,8 +32,12 @@ final class CloudSyncEngine: ObservableObject {
         case error(String)
     }
 
-    private let container: CKContainer
-    private let database: CKDatabase
+    // Lazy: `CKContainer(identifier:)` traps (SIGILL) when the running
+    // bundle is not provisioned with that iCloud container entitlement
+    // — e.g. a Debug / unit-test host. Deferring construction to first
+    // sync keeps `init` (and reading `syncStatus`) safe everywhere.
+    private lazy var container: CKContainer = CKContainer(identifier: Self.containerIdentifier)
+    private lazy var database: CKDatabase = container.privateCloudDatabase
     private weak var library: LibraryStore?
 
     private let changeTokenKey = "cloudSync.changeToken.v1"
@@ -45,8 +49,6 @@ final class CloudSyncEngine: ObservableObject {
     ) {
         self.library = library
         self.defaults = defaults
-        self.container = CKContainer(identifier: Self.containerIdentifier)
-        self.database = container.privateCloudDatabase
     }
 
     // MARK: - Push
