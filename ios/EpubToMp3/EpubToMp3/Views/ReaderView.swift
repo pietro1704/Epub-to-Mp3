@@ -633,6 +633,16 @@ struct ReaderView: View {
                     }
                 }
             }
+            // A font / spacing / margin / column-width change repaginates
+            // the chapter, which leaves `currentPage` pointing at a stale
+            // index. Re-derive it from the saved text offset so the
+            // reading position survives the reflow — the `geo.size`
+            // handler above only covers rotation, not a settings-driven
+            // repagination.
+            .compatOnChange(of: debouncedFontSize) { _ in syncPageToTextOffset(in: pages) }
+            .compatOnChange(of: debouncedLineSpacing) { _ in syncPageToTextOffset(in: pages) }
+            .compatOnChange(of: debouncedMargin) { _ in syncPageToTextOffset(in: pages) }
+            .compatOnChange(of: debouncedColumnWidth) { _ in syncPageToTextOffset(in: pages) }
         }
         .compatHorizontalSafeAreaPadding(0)
         // Floating "resume follow-along" button — visible whenever the
@@ -762,6 +772,15 @@ struct ReaderView: View {
             if cumulative > offset { return i }
         }
         return pages.count - 1
+    }
+
+    /// Re-derive `currentPage` from `textOffsetAtCurrentPage` after a
+    /// settings-driven repagination (font / spacing / margin / column
+    /// width) so the reading position doesn't drift by a page.
+    private func syncPageToTextOffset(in pages: [NSAttributedString]) {
+        guard !pages.isEmpty else { return }
+        let target = findPage(containing: textOffsetAtCurrentPage, in: pages)
+        if target != currentPage { currentPage = target }
     }
 
     /// Build the per-page `NSAttributedString` list. Uses the pre-rendered
