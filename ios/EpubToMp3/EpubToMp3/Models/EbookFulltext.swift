@@ -82,8 +82,18 @@ struct EbookFulltext: Codable, Equatable {
                 with: "$1 $2",
                 options: .regularExpression
             )
-            // Capitalize each word, then uppercase roman numeral tokens
-            result = result.capitalized
+            // Only Title-Case when the source is ALL-lowercase. If the
+            // input is mixed-case ("parte I") or all-uppercase
+            // ("PROLOGUE"), the publisher's casing carries semantic
+            // intent — preserve it. Without this guard we'd lose every
+            // case distinction (PROLOGUE → Prologue, parte I → Parte I).
+            if result == result.lowercased() {
+                result = result.capitalized
+            }
+            // Roman numerals are commonly disguised by `.capitalized`
+            // (I → I, II → Ii). Restore them only when the source was
+            // lowercased and capitalized — otherwise the publisher's
+            // intent already preserved the right form.
             let romans = Set(["I","Ii","Iii","Iv","V","Vi","Vii","Viii","Ix","X",
                               "Xi","Xii","Xiii","Xiv","Xv","Xvi","Xvii","Xviii","Xix","Xx"])
             result = result.split(separator: " ").map { word in
