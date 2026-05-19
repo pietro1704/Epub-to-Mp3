@@ -304,24 +304,11 @@ final class AudioPlayer: ObservableObject {
     private var segmentPlayedCount: Int = 0
 
     private static let maxQueueAhead = 5
-    /// Number of consecutive empty SSE chunks tolerated before
-    /// `lastError = .emptySegmentData` is published. Edge-TTS warmup
-    /// often emits one or two zero-byte preambles; surfacing those as
-    /// toasts would be noisy spam. A real failure produces a steady
-    /// stream of empties — that's what we want to catch.
-    private static let emptySegmentStreakThreshold = 5
-    private var emptySegmentStreak: Int = 0
-    /// Hard cap on the deferred-segments backlog. When the user has the
-    /// app open during conversion but never taps Play, segments can
-    /// accumulate without bound (the queue won't drain because nothing
-    /// plays, and the SSE pipe keeps feeding chunks). Each entry holds
-    /// a file handle in `segmentTempDir` — at typical Edge-TTS output
-    /// (200 chapters × 20 segments = 4000 files) that's a real disk
-    /// pressure problem. Cap drops the OLDEST entry (sentence-aligned
-    /// in `segmentSentenceIds` for the segment-mode case), letting the
-    /// reader keep up.
-    private static let maxPendingSegments = 50
-    private var pendingSegments: [(url: URL, chapterIndex: Int, segmentIndex: Int)] = []
+    /// Deferred-segments backlog with eviction + empty-streak
+    /// detection. Extracted as a value-type so the policy is
+    /// unit-testable without an AVPlayer mock — see
+    /// `Services/SegmentBacklog.swift`.
+    private var backlog = SegmentBacklog()
 
     private var remoteCommandsConfigured = false
 
@@ -817,13 +804,12 @@ final class AudioPlayer: ObservableObject {
             // empties in the same chapter so the alert reflects a
             // real problem (engine misconfigured / network flap), not
             // routine ramp-up.
-            emptySegmentStreak += 1
-            if emptySegmentStreak >= Self.emptySegmentStreakThreshold {
+            if backlog.recordEmpty() {
                 lastError = .emptySegmentData
             }
             return
         }
-        emptySegmentStreak = 0
+        backlog.resetEmptyStreak()
 
         // Ensure a temp directory exists for this session. Bail
         // explicitly when createDirectory fails — without this, every
@@ -905,19 +891,14 @@ final class AudioPlayer: ObservableObject {
                     audioLog.debug("[enqueueSegment] appended to queue, total=\(queue.items().count)")
                 }
             } else {
-                // Evict the oldest entry once we hit the cap so the
-                // file descriptor / disk-space cost stays bounded.
-                // The freed segment's temp file is deleted in
-                // `teardownPlayer()` when the player is rebuilt, but
-                // until then it's harmless: just a stale file on disk
-                // we'll never reference.
-                if pendingSegments.count >= Self.maxPendingSegments {
-                    let evicted = pendingSegments.removeFirst()
-                    try? FileManager.default.removeItem(at: evicted.url)
-                    audioLog.warning("[enqueueSegment] backlog cap hit (\(Self.maxPendingSegments)); evicted ch=\(evicted.chapterIndex) seg=\(evicted.segmentIndex)")
+                // Append + receive the evicted URL (if any). Eviction
+                // policy + cap is owned by SegmentBacklog so it's
+                // unit-testable in isolation.
+                if let evicted = backlog.append(url: segFile, chapterIndex: chapterIndex, segmentIndex: segmentIndex) {
+                    try? FileManager.default.removeItem(at: evicted)
+                    audioLog.warning("[enqueueSegment] backlog cap hit (\(SegmentBacklog.capacity)); evicted oldest entry")
                 }
-                self.pendingSegments.append((url: segFile, chapterIndex: chapterIndex, segmentIndex: segmentIndex))
-                audioLog.debug("[enqueueSegment] deferred ch=\(chapterIndex) seg=\(segmentIndex), pending=\(self.pendingSegments.count)")
+                audioLog.debug("[enqueueSegment] deferred ch=\(chapterIndex) seg=\(segmentIndex), pending=\(self.backlog.count)")
             }
         }
 
@@ -931,13 +912,12 @@ final class AudioPlayer: ObservableObject {
     }
 
     private func drainPendingSegments() {
-        guard let queue = player, !pendingSegments.isEmpty else { return }
-        while queue.items().count < Self.maxQueueAhead, !pendingSegments.isEmpty {
-            let next = pendingSegments.removeFirst()
+        guard let queue = player, !backlog.isEmpty else { return }
+        while queue.items().count < Self.maxQueueAhead, let next = backlog.drainNext() {
             let item = AVPlayerItem(url: next.url)
             if queue.canInsert(item, after: nil) {
                 queue.insert(item, after: nil)
-                audioLog.debug("[drainPending] enqueued ch=\(next.chapterIndex) seg=\(next.segmentIndex), queue=\(queue.items().count) pending=\(self.pendingSegments.count)")
+                audioLog.debug("[drainPending] enqueued ch=\(next.chapterIndex) seg=\(next.segmentIndex), queue=\(queue.items().count) pending=\(self.backlog.count)")
             }
         }
     }
