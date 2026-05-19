@@ -25,16 +25,19 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
     // MARK: - Queue item count
 
     /// Enqueue 3 segments; AVQueuePlayer must hold all 3 items.
+    ///
+    /// Updated contract: incoming SSE segments NO LONGER auto-start
+    /// playback — the user must tap Play explicitly. The first
+    /// segment only flips the "ready" latches so the Play button
+    /// enables in the UI.
     func testThreeSegmentsEnqueuedItemCount() {
         let player = AudioPlayer()
         for i in 0..<3 {
             player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: i)
         }
-        // The internal AVQueuePlayer is not directly accessible from tests,
-        // so we verify the observable contract: after 3 segments the player
-        // is playing and first-segment/chapter flags are set.
-        XCTAssertTrue(player.isPlaying,
-            "Player must start playing after the first segment")
+        XCTAssertFalse(player.isPlaying,
+            "First segment must not auto-start playback — that would " +
+            "claim audio focus from Spotify / Music without user intent")
         XCTAssertTrue(player.firstSegmentReady,
             "firstSegmentReady must be true after 3 segments")
         XCTAssertTrue(player.firstChapterReady,
@@ -53,7 +56,9 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 1, segmentIndex: 1)
 
         XCTAssertTrue(player.firstSegmentReady)
-        XCTAssertTrue(player.isPlaying)
+        // Per the no-auto-play rule, the queue is paused until the
+        // user explicitly resumes.
+        XCTAssertFalse(player.isPlaying)
     }
 
     // MARK: - firstSegmentReady is a session latch
@@ -63,12 +68,17 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
         XCTAssertTrue(player.firstSegmentReady)
 
-        // clearConversionState is called between books; both flags reset.
+        // `clearConversionState` is gated on `!isPlaying && player ==
+        // nil` so it can't blow away latches mid-playback (would
+        // flicker the play/spinner button). Caller must `stop()`
+        // first when switching books — that is the realistic
+        // sequence the BookOpenView.onDisappear flow takes.
+        player.stop()
         player.clearConversionState()
         XCTAssertFalse(player.firstSegmentReady,
-            "clearConversionState must reset firstSegmentReady for the next book session")
+            "clearConversionState (after stop) must reset firstSegmentReady for the next book session")
         XCTAssertFalse(player.firstChapterReady,
-            "clearConversionState must reset firstChapterReady for the next book session")
+            "clearConversionState (after stop) must reset firstChapterReady for the next book session")
     }
 
     // MARK: - isLoading gate
@@ -101,21 +111,27 @@ final class AudioPlayerEnqueueSegmentTests: XCTestCase {
 
     /// Calling enqueueSegment after teardown (via stop()) then re-enqueuing
     /// must create a fresh player, not append to the torn-down one.
+    ///
+    /// Updated contract: no auto-play. We verify a new player was
+    /// created by observing `firstSegmentReady` flipping back to true
+    /// after `clearConversionState()` reset it.
     func testReenqueueAfterStopCreatesNewPlayer() {
         let player = AudioPlayer()
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertTrue(player.isPlaying)
+        XCTAssertTrue(player.firstSegmentReady)
 
         player.stop()
         XCTAssertFalse(player.isPlaying)
 
-        // After stop, clearConversionState is not called automatically,
-        // so firstSegmentReady is still true (latch). A new enqueue
-        // must still start a new player.
+        // clearConversionState resets both ready latches.
         player.clearConversionState()
+        XCTAssertFalse(player.firstSegmentReady)
+        // Re-enqueue: a fresh player is created and the latch flips
+        // back. (The queue stays paused — only an explicit user tap
+        // on Play kicks off playback.)
         player.enqueueSegment(data: fakeMP3(), chapterIndex: 0, segmentIndex: 0)
-        XCTAssertTrue(player.isPlaying,
-            "A new AVQueuePlayer must start after stop+clearConversionState+enqueue")
+        XCTAssertTrue(player.firstSegmentReady,
+            "A new AVQueuePlayer must be set up after stop+clearConversionState+enqueue")
     }
 }
 #endif
