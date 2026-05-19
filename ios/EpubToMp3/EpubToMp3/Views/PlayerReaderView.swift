@@ -45,6 +45,15 @@ struct PlayerReaderView: View {
     /// job tears down and rebuilds the same backend connection for
     /// no behavioural benefit.
     @State private var streamingJobId: String?
+    /// Currently-running cover fetch. Stored as `@State` so
+    /// `onDisappear` can cancel it — otherwise a fast Book A → Book B
+    /// → Book A nav can land Book B's bytes on Book A's player
+    /// (Task.detached doesn't pin the view).
+    @State private var coverFetchTask: Task<Void, Never>?
+    /// JobId the in-flight cover fetch was started for. We bail when
+    /// the active snapshot changed before the bytes finished
+    /// downloading, so the wrong book never gets the wrong cover.
+    @State private var coverFetchJobId: String?
     @State private var downloadTask: Task<Void, Never>?
     @State private var downloadState: DownloadButtonState = .idle
     @State private var downloadProgressText: String?
@@ -587,6 +596,7 @@ struct PlayerReaderView: View {
         sentenceTask?.cancel(); sentenceTask = nil
         fulltextTask?.cancel(); fulltextTask = nil
         streamTask?.cancel(); streamTask = nil; streamingJobId = nil
+        coverFetchTask?.cancel(); coverFetchTask = nil; coverFetchJobId = nil
         downloadTask?.cancel(); downloadTask = nil
     }
 
@@ -644,10 +654,24 @@ struct PlayerReaderView: View {
             url = URL(string: coverPath, relativeTo: baseURL)?.absoluteURL
         }
         guard let resolvedURL = url else { return }
-        Task.detached(priority: .utility) {
+        // Already fetching this same job's cover? Don't double-fire.
+        if coverFetchJobId == snapshot.jobId, coverFetchTask?.isCancelled == false {
+            return
+        }
+        coverFetchTask?.cancel()
+        coverFetchJobId = snapshot.jobId
+        let targetJobId = snapshot.jobId
+        coverFetchTask = Task { [weak player] in
             guard let (data, _) = try? await URLSession.shared.data(from: resolvedURL),
-                  !data.isEmpty else { return }
-            await MainActor.run { player.coverArtData = data }
+                  !data.isEmpty,
+                  !Task.isCancelled else { return }
+            await MainActor.run {
+                // Don't apply the bytes if the user navigated to a
+                // different book while the fetch was in flight — the
+                // active snapshot's jobId is the source of truth.
+                guard player?.snapshot?.jobId == targetJobId else { return }
+                player?.coverArtData = data
+            }
         }
     }
 
