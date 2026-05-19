@@ -43,11 +43,11 @@ struct ConversionStatusSheet: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 12)
             }
-            .navigationTitle("Conversion Status")
+            .navigationTitle(L10n.string("conversionStatus.title"))
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Done") { /* sheet dismissed by parent */ }
+                    Button(L10n.string("general.done")) { /* sheet dismissed by parent */ }
                 }
             }
         }
@@ -77,7 +77,7 @@ struct ConversionStatusSheet: View {
                         .lineLimit(1)
                 }
             } else if status.startedAt != nil {
-                Text("Preparing…")
+                Text(localized: "conversionStatus.preparing")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
             }
@@ -109,11 +109,11 @@ struct ConversionStatusSheet: View {
                             if status.startedAt != nil {
                                 ProgressView()
                                     .controlSize(.small)
-                                Text("Waiting for first audio chunk…")
+                                Text(localized: "conversionStatus.waitingFirstChunk")
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                             } else {
-                                Text("Conversion not started.")
+                                Text(localized: "conversionStatus.notStarted")
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                             }
@@ -173,7 +173,7 @@ struct ConversionStatusSheet: View {
             // Retry — only when there is a pending error.
             if status.lastError != nil {
                 Button(action: onRetry) {
-                    Label("Retry", systemImage: "arrow.clockwise")
+                    Label(L10n.string("common.retry"), systemImage: "arrow.clockwise")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
@@ -185,7 +185,7 @@ struct ConversionStatusSheet: View {
             // Cancel conversion — destructive, HIG role.
             if status.startedAt != nil {
                 Button(role: .destructive, action: onCancel) {
-                    Label("Cancel conversion", systemImage: "stop.circle")
+                    Label(L10n.string("conversionStatus.cancelConversion"), systemImage: "stop.circle")
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.regular)
@@ -203,7 +203,7 @@ struct ConversionStatusSheet: View {
         let total = Int(elapsed)
         let m = total / 60
         let s = total % 60
-        return String(format: "%d:%02d elapsed", m, s)
+        return L10n.string("conversionStatus.elapsed", String(format: "%d:%02d", m, s))
     }
 
     private func formatted(date: Date) -> String {

@@ -13,9 +13,9 @@ struct BookmarksListView: View {
         var id: String { rawValue }
         var label: String {
             switch self {
-            case .all: return "All"
-            case .bookmarks: return "Bookmarks"
-            case .highlights: return "Highlights"
+            case .all: return L10n.string("bookmarks.filter.all")
+            case .bookmarks: return L10n.string("bookmarks.filter.bookmarks")
+            case .highlights: return L10n.string("bookmarks.filter.highlights")
             }
         }
     }
@@ -42,12 +42,12 @@ struct BookmarksListView: View {
                             .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                 Button(role: .destructive) {
                                     bookmarkStore.remove(id: bm.id)
-                                } label: { Label("Delete", systemImage: "trash") }
+                                } label: { Label(L10n.string("common.delete"), systemImage: "trash") }
                             }
                             .swipeActions(edge: .leading) {
                                 Button {
                                     editingBookmark = bm
-                                } label: { Label("Note", systemImage: "pencil") }
+                                } label: { Label(L10n.string("bookmarks.note"), systemImage: "pencil") }
                                     .tint(.blue)
                             }
                     }
@@ -55,10 +55,10 @@ struct BookmarksListView: View {
                 .listStyle(.plain)
             }
         }
-        .navigationTitle("Bookmarks")
+        .navigationTitle(L10n.string("player.bookmarks"))
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
-                Picker("Filter", selection: $filter) {
+                Picker(L10n.string("bookmarks.filter"), selection: $filter) {
                     ForEach(Filter.allCases) { Text($0.label).tag($0) }
                 }
                 .pickerStyle(.segmented)
@@ -77,9 +77,9 @@ struct BookmarksListView: View {
                 .font(.system(size: 48, weight: .light))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            Text("No bookmarks yet")
+            Text(localized: "bookmarks.emptyTitle")
                 .font(.title3)
-            Text("Long-press a paragraph in the reader to add a bookmark or highlight.")
+            Text(localized: "bookmarks.emptyDescription")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -127,8 +127,8 @@ struct BookmarkRow: View {
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(bookmark.isHighlight
-            ? "Highlight in \(bookmark.chapterTitle): \(bookmark.selectedText)"
-            : "Bookmark in \(bookmark.chapterTitle)")
+            ? L10n.string("bookmarks.a11y.highlight", bookmark.chapterTitle, bookmark.selectedText)
+            : L10n.string("bookmarks.a11y.bookmark", bookmark.chapterTitle))
     }
 }
 
@@ -141,16 +141,16 @@ struct NoteEditorSheet: View {
     var body: some View {
         CompatNavigationStack {
             Form {
-                Section("Note") {
+                Section(L10n.string("bookmarks.note")) {
                     TextEditor(text: $noteText)
                         .frame(minHeight: 120)
                 }
                 if bookmark.isHighlight {
-                    Section("Highlighted text") {
+                    Section(L10n.string("bookmarks.highlightedText")) {
                         Text(bookmark.selectedText)
                             .foregroundStyle(.secondary)
                     }
-                    Section("Color") {
+                    Section(L10n.string("bookmarks.color")) {
                         HStack(spacing: 12) {
                             ForEach(HighlightColor.allCases) { c in
                                 Circle()
@@ -167,21 +167,23 @@ struct NoteEditorSheet: View {
                                     .onTapGesture {
                                         bookmarkStore.updateColor(id: bookmark.id, color: c)
                                     }
-                                    .accessibilityLabel(c == bookmark.color ? "\(c.rawValue) color, selected" : "\(c.rawValue) color")
+                                    .accessibilityLabel(c == bookmark.color
+                                        ? L10n.string("bookmarks.colorSelected", c.rawValue)
+                                        : L10n.string("bookmarks.colorOption", c.rawValue))
                                     .accessibilityAddTraits(c == bookmark.color ? [.isButton, .isSelected] : .isButton)
                             }
                         }
                     }
                 }
             }
-            .navigationTitle("Edit Note")
+            .navigationTitle(L10n.string("bookmarks.editNote"))
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(L10n.string("general.cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button(L10n.string("common.save")) {
                         bookmarkStore.updateNote(id: bookmark.id, note: noteText.isEmpty ? nil : noteText)
                         dismiss()
                     }

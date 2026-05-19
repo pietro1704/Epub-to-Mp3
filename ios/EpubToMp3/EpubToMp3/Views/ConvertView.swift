@@ -23,11 +23,11 @@ final class ConvertViewModel: ObservableObject {
             // `PythonBridge.convertEpub` directly (kicked off from
             // `BookOpenView.startAudioBootstrap`), so this form is only
             // surfaced for the explicit "send to remote" workflow.
-            error = "The audio engine is still warming up. Try again in a moment, or set a remote backend URL in Settings."
+            error = L10n.string("convert.error.engineWarmingUp")
             return
         }
         guard let file = selectedFile else {
-            error = "Pick an EPUB or PDF first."
+            error = L10n.string("convert.error.pickFileFirst")
             return
         }
         isSubmitting = true
@@ -80,9 +80,9 @@ struct ConvertView: View {
 
     var body: some View {
         Form {
-            Section("File") {
+            Section(L10n.string("convert.file")) {
                 if let file = viewModel.selectedFile {
-                    CompatLabeledContent("Selected") {
+                    CompatLabeledContent(L10n.string("convert.selected")) {
                         VStack(alignment: .leading) {
                             Text(file.lastPathComponent).font(.body)
                             Text(file.path)
@@ -92,53 +92,55 @@ struct ConvertView: View {
                         }
                     }
                 } else {
-                    Text("No file picked.").foregroundStyle(.secondary)
+                    Text(localized: "convert.noFilePicked").foregroundStyle(.secondary)
                 }
                 Button {
                     showingPicker = true
                 } label: {
-                    Label(viewModel.selectedFile == nil ? "Pick EPUB or PDF" : "Change file",
+                    Label(viewModel.selectedFile == nil
+                            ? L10n.string("convert.pickFile")
+                            : L10n.string("convert.changeFile"),
                           systemImage: "doc.badge.plus")
                 }
             }
 
-            Section("Engine") {
-                Picker("Engine", selection: $viewModel.engine) {
-                    Text("Edge-TTS (cloud)").tag("edge")
-                    Text("Piper (offline)").tag("piper")
-                    Text("Coqui XTTS").tag("coqui")
+            Section(L10n.string("convert.engine")) {
+                Picker(L10n.string("convert.engine"), selection: $viewModel.engine) {
+                    Text(verbatim: "Edge-TTS (\(L10n.string("convert.engine.cloud")))").tag("edge")
+                    Text(verbatim: "Piper (\(L10n.string("convert.engine.offline")))").tag("piper")
+                    Text(verbatim: "Coqui XTTS").tag("coqui")
                 }
                 .pickerStyle(.segmented)
-                TextField("Voice (optional)", text: $viewModel.voice)
-                TextField("Language code (e.g. en, pt) — optional",
+                TextField(L10n.string("convert.voiceOptional"), text: $viewModel.voice)
+                TextField(L10n.string("convert.languageOptional"),
                           text: $viewModel.language)
             }
 
-            Section("Chapters") {
-                TextField("Chapter range (e.g. 3-7) — optional",
+            Section(L10n.string("convert.chapters")) {
+                TextField(L10n.string("convert.chapterRangeOptional"),
                           text: $viewModel.chapters)
-                    .help("Leave empty to convert the whole book.")
+                    .help(L10n.string("convert.chapterRangeHelp"))
             }
 
-            Section("Flags") {
-                Toggle("Clear cache before run", isOn: $viewModel.clearCache)
-                Toggle("Force reprocess", isOn: $viewModel.forceReprocess)
-                Toggle("Max performance", isOn: $viewModel.maxPerformance)
+            Section(L10n.string("convert.flags")) {
+                Toggle(L10n.string("convert.clearCache"), isOn: $viewModel.clearCache)
+                Toggle(L10n.string("convert.forceReprocess"), isOn: $viewModel.forceReprocess)
+                Toggle(L10n.string("convert.maxPerformance"), isOn: $viewModel.maxPerformance)
             }
 
             if let jobId = viewModel.submittedJobId {
                 Section {
-                    Label("Job submitted: \(jobId)", systemImage: "checkmark.seal.fill")
+                    Label(L10n.string("convert.jobSubmitted", jobId), systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
                     if #available(iOS 16, macOS 13, *) {
                         NavigationLink(value: jobId) {
-                            Label("Open progress", systemImage: "arrow.right.circle")
+                            Label(L10n.string("convert.openProgress"), systemImage: "arrow.right.circle")
                         }
                     } else {
                         NavigationLink {
                             JobDetailView(jobId: jobId)
                         } label: {
-                            Label("Open progress", systemImage: "arrow.right.circle")
+                            Label(L10n.string("convert.openProgress"), systemImage: "arrow.right.circle")
                         }
                     }
                 }
@@ -157,13 +159,15 @@ struct ConvertView: View {
                 } label: {
                     HStack {
                         if viewModel.isSubmitting { ProgressView().controlSize(.small) }
-                        Text(viewModel.isSubmitting ? "Submitting…" : "Start conversion")
+                        Text(viewModel.isSubmitting
+                                ? L10n.string("convert.submitting")
+                                : L10n.string("convert.startConversion"))
                     }
                 }
                 .disabled(viewModel.isSubmitting || viewModel.selectedFile == nil)
             }
         }
-        .navigationTitle("Convert")
+        .navigationTitle(L10n.string("convert.title"))
         .compatConvertDestination()
         .background {
             Color.clear.allowsHitTesting(false)

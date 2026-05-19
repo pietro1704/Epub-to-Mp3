@@ -116,7 +116,7 @@ struct PlayerReaderView: View {
                 }
             }
             .modifier(ChromeVisibilityModifier(visible: chromeVisible))
-            .navigationTitle(snapshot.bookTitle ?? "Audiobook")
+            .navigationTitle(snapshot.bookTitle ?? L10n.string("player.audiobookFallback"))
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -222,7 +222,7 @@ struct PlayerReaderView: View {
         if isLoadingFulltext && fulltext == nil {
             VStack(spacing: 16) {
                 ProgressView()
-                Text("Loading book text…")
+                Text(localized: "playerReader.loadingText")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -251,7 +251,7 @@ struct PlayerReaderView: View {
                 Label(err, systemImage: "exclamationmark.triangle")
                     .multilineTextAlignment(.center)
                     .padding()
-                Button("Retry") {
+                Button(L10n.string("common.retry")) {
                     fulltextError = nil
                     isLoadingFulltext = true
                     triggerFulltextLoad()
@@ -259,7 +259,7 @@ struct PlayerReaderView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            Text("No text available for this chapter.")
+            Text(localized: "playerReader.noText")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

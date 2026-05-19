@@ -294,7 +294,7 @@ struct InstantReaderView: View {
                 Image(systemName: "text.book.closed")
                     .font(.largeTitle)
                     .foregroundStyle(.tertiary)
-                Text("No content available")
+                Text(localized: "bookOpen.noContent")
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -504,12 +504,12 @@ struct InstantReaderView: View {
                         Button {
                             onRequestPlay?(0, nil)
                         } label: {
-                            Label("From the beginning", systemImage: "play")
+                            Label(L10n.string("player.divergence.fromBeginning"), systemImage: "play")
                         }
                         Button {
                             onRequestPlay?(currentChapterIndex, nil)
                         } label: {
-                            Label("From current chapter", systemImage: "play.rectangle")
+                            Label(L10n.string("instantReader.fromCurrentChapter"), systemImage: "play.rectangle")
                         }
                     } label: {
                         Image(systemName: "play.circle.fill")
@@ -712,7 +712,7 @@ struct InstantReaderView: View {
 
     @ViewBuilder
     private func rateMenu(player: AudioPlayer) -> some View {
-        Section("Speed") {
+        Section(L10n.string("player.speed")) {
             ForEach(PlaybackRate.allCases) { rate in
                 Button {
                     player.setRate(rate)
@@ -730,13 +730,15 @@ struct InstantReaderView: View {
 
     @ViewBuilder
     private func sleepTimerMenu(player: AudioPlayer) -> some View {
-        Section("Sleep timer") {
+        Section(L10n.string("player.sleepTimer")) {
             ForEach([0, 5, 15, 30, 45, 60], id: \.self) { mins in
                 Button {
                     player.setSleepTimer(seconds: TimeInterval(mins * 60))
                 } label: {
                     HStack {
-                        Text(mins == 0 ? "Off" : "\(mins) min")
+                        Text(mins == 0
+                                ? L10n.string("player.sleepTimerOption.off")
+                                : L10n.string("instantReader.sleepMinutes", mins))
                         if mins == 0, player.sleepTimerRemaining <= 0 {
                             Image(systemName: "checkmark")
                         } else if mins != 0,
@@ -747,7 +749,7 @@ struct InstantReaderView: View {
                 }
             }
             if player.sleepTimerRemaining > 0 {
-                Text("Active: \(format(seconds: player.sleepTimerRemaining)) left")
+                Text(L10n.string("instantReader.sleepActive", format(seconds: player.sleepTimerRemaining)))
                     .foregroundStyle(.secondary)
             }
         }
@@ -789,17 +791,17 @@ struct InstantReaderView: View {
                     .buttonStyle(.plain)
                 }
             }
-            .navigationTitle("Chapters")
+            .navigationTitle(L10n.string("player.chapters"))
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { showingToc = false }
+                    Button(L10n.string("player.close")) { showingToc = false }
                 }
                 ToolbarItem(placement: .compatPrimaryTrailing) {
                     Button {
                         cacheManager.downloadAll()
                     } label: {
-                        Label("Download All", systemImage: "arrow.down.circle")
+                        Label(L10n.string("player.downloadAll"), systemImage: "arrow.down.circle")
                     }
                     .disabled(cacheManager.cachedIndices.count == fulltext.chapters.filter {
                         $0.text.trimmingCharacters(in: .whitespacesAndNewlines).count >= 10
@@ -826,7 +828,7 @@ struct InstantReaderView: View {
             Image(systemName: "arrow.down.circle")
                 .foregroundStyle(.secondary)
                 .font(.caption)
-                .accessibilityLabel("Not downloaded")
+                .accessibilityLabel(L10n.string("instantReader.notDownloaded"))
         }
     }
 

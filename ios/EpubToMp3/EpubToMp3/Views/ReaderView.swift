@@ -1275,7 +1275,7 @@ struct ReaderView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { onJumpToSentence?(span) }
-            .accessibilityHint(onJumpToSentence != nil ? "Double tap to seek audio to this sentence" : "")
+            .accessibilityHint(onJumpToSentence != nil ? L10n.string("reader.seekSentenceHint") : "")
     }
 
     @ViewBuilder

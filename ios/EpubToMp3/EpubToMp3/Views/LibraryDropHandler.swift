@@ -215,7 +215,7 @@ struct DropTargetOverlay: View {
                     )
                     .foregroundStyle(Color.accentColor)
                     .padding(8)
-                Label("Drop EPUB or PDF here", systemImage: "tray.and.arrow.down")
+                Label(L10n.string("libraryDrop.dropHere"), systemImage: "tray.and.arrow.down")
                     .font(.headline)
                     .foregroundStyle(Color.accentColor)
                     .padding(.horizontal, 18)

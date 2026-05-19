@@ -28,7 +28,7 @@ final class LogsViewModel: ObservableObject {
 
     private func fetchOnce(client: APIClient?, jobId: String) async {
         guard let client else {
-            await MainActor.run { self.error = "No backend configured." }
+            await MainActor.run { self.error = L10n.string("logs.error.noBackend") }
             return
         }
         await MainActor.run { self.isLoading = true; self.error = nil }
@@ -61,7 +61,7 @@ struct LogsView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 if viewModel.content.isEmpty && !viewModel.isLoading {
-                    Text("No log output yet.")
+                    Text(localized: "logs.empty")
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding()
@@ -84,7 +84,7 @@ struct LogsView: View {
                 }
             }
         }
-        .navigationTitle("Logs · \(jobId.prefix(8))")
+        .navigationTitle(L10n.string("logs.title", String(jobId.prefix(8))))
         .compatInlineNavigationTitle()
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
@@ -98,7 +98,9 @@ struct LogsView: View {
                     Image(systemName: viewModel.autoRefresh ? "pause.circle" : "play.circle")
                 }
                 .toggleStyle(.button)
-                .accessibilityLabel(viewModel.autoRefresh ? "Pause auto-refresh" : "Resume auto-refresh")
+                .accessibilityLabel(viewModel.autoRefresh
+                    ? L10n.string("logs.pauseAutoRefresh")
+                    : L10n.string("logs.resumeAutoRefresh"))
             }
         }
         .onAppear {

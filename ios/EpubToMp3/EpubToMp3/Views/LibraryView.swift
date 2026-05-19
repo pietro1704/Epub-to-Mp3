@@ -232,7 +232,7 @@ struct LibraryView: View {
                             .modifier(LibraryChipStyle(isSelected: selectedTag == tag))
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel("Tag: \(tag)")
+                        .accessibilityLabel(L10n.string("library.tagLabel", tag))
                         .accessibilityAddTraits(selectedTag == tag ? .isSelected : [])
                     }
                 }

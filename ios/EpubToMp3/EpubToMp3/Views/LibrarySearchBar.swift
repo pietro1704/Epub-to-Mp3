@@ -19,7 +19,7 @@ struct LibrarySearchBar: View {
                         .foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("Clear search")
+                .accessibilityLabel(L10n.string("librarySearch.clear"))
             }
         }
         .padding(10)

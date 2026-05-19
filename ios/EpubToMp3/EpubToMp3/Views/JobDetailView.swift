@@ -17,7 +17,7 @@ final class JobDetailViewModel: ObservableObject {
     func start(client: APIClient?, jobId: String) {
         stop()
         guard let client else {
-            errorMessage = "Configure backend URL in Settings."
+            errorMessage = L10n.string("jobDetail.error.configureBackend")
             return
         }
         errorMessage = nil
@@ -88,28 +88,28 @@ struct JobDetailView: View {
 
     var body: some View {
         Form {
-            Section("Job") {
-                CompatLabeledContent("ID", value: jobId).font(.footnote.monospaced())
+            Section(L10n.string("jobDetail.job")) {
+                CompatLabeledContent(L10n.string("jobDetail.id"), value: jobId).font(.footnote.monospaced())
                 if let snap = viewModel.snapshot {
-                    CompatLabeledContent("State", value: snap.state)
-                    if let title = snap.bookTitle { CompatLabeledContent("Book", value: title) }
+                    CompatLabeledContent(L10n.string("jobDetail.state"), value: snap.state)
+                    if let title = snap.bookTitle { CompatLabeledContent(L10n.string("jobDetail.book"), value: title) }
                     if let pct = snap.progressPercent {
-                        CompatLabeledContent("Progress", value: String(format: "%.0f%%", pct))
+                        CompatLabeledContent(L10n.string("jobDetail.progress"), value: String(format: "%.0f%%", pct))
                     }
                 }
-                CompatLabeledContent("Streaming") {
+                CompatLabeledContent(L10n.string("jobDetail.streaming")) {
                     if viewModel.isStreaming {
-                        Label("Live", systemImage: "dot.radiowaves.left.and.right")
+                        Label(L10n.string("jobDetail.live"), systemImage: "dot.radiowaves.left.and.right")
                             .foregroundStyle(.green)
                     } else {
-                        Text("Idle").foregroundStyle(.secondary)
+                        Text(localized: "jobDetail.idle").foregroundStyle(.secondary)
                     }
                 }
-                CompatLabeledContent("Events received", value: "\(viewModel.receivedCount)")
+                CompatLabeledContent(L10n.string("jobDetail.eventsReceived"), value: "\(viewModel.receivedCount)")
             }
 
             if let chapters = viewModel.snapshot?.playableChapters, !chapters.isEmpty {
-                Section("Chapters") {
+                Section(L10n.string("player.chapters")) {
                     ForEach(chapters) { chapter in
                         HStack {
                             VStack(alignment: .leading) {
@@ -133,17 +133,17 @@ struct JobDetailView: View {
                     Button {
                         showingPlayer = true
                     } label: {
-                        Label("Play", systemImage: "play.circle.fill")
+                        Label(L10n.string("player.play"), systemImage: "play.circle.fill")
                     }
                     Button {
                         viewModel.downloadAll(baseURL: settings.resolvedBaseURL)
                     } label: {
-                        Label("Download all", systemImage: "arrow.down.circle")
+                        Label(L10n.string("jobDetail.downloadAll"), systemImage: "arrow.down.circle")
                     }
                     NavigationLink {
                         LogsView(jobId: jobId)
                     } label: {
-                        Label("Open logs", systemImage: "doc.text.magnifyingglass")
+                        Label(L10n.string("jobDetail.openLogs"), systemImage: "doc.text.magnifyingglass")
                     }
                     if let dlLabel = viewModel.downloadProgressLabel {
                         Text(dlLabel).font(.caption).foregroundStyle(.secondary)
@@ -158,9 +158,9 @@ struct JobDetailView: View {
                 }
             }
 
-            Section("Latest event payload") {
+            Section(L10n.string("jobDetail.latestEventPayload")) {
                 if viewModel.latestPayload.isEmpty {
-                    Text("Waiting for first event…").foregroundStyle(.secondary)
+                    Text(localized: "jobDetail.waitingFirstEvent").foregroundStyle(.secondary)
                 } else {
                     ScrollView(.horizontal) {
                         Text(viewModel.latestPayload)
@@ -170,7 +170,7 @@ struct JobDetailView: View {
                 }
             }
         }
-        .navigationTitle("Job detail")
+        .navigationTitle(L10n.string("jobDetail.title"))
         .compatInlineNavigationTitle()
         .onAppear {
             guard !isSwiftUIPreview else { return }

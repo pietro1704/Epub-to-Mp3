@@ -8,7 +8,7 @@ final class JobsListViewModel: ObservableObject {
 
     func reload(client: APIClient?) async {
         guard let client else {
-            errorMessage = "Configure backend URL in Settings."
+            errorMessage = L10n.string("jobDetail.error.configureBackend")
             return
         }
         isLoading = true
@@ -35,13 +35,13 @@ struct JobsListView: View {
             if viewModel.isLoading && viewModel.sessions.isEmpty {
                 ProgressView().controlSize(.large)
             } else if let error = viewModel.errorMessage, viewModel.sessions.isEmpty {
-                CompatContentUnavailableView("Cannot reach backend",
+                CompatContentUnavailableView(L10n.string("jobs.cannotReachBackend"),
                                              systemImage: "wifi.exclamationmark",
                                              description: Text(error))
             } else if viewModel.sessions.isEmpty {
-                CompatContentUnavailableView("No conversions yet",
+                CompatContentUnavailableView(L10n.string("jobs.noConversions"),
                                              systemImage: "tray",
-                                             description: Text("Run a conversion via the CLI or web app to populate the history."))
+                                             description: Text(localized: "jobs.noConversionsDescription"))
             } else {
                 List(viewModel.sessions) { session in
                     // `NavigationLink(value:)` requires the `.navigationDestination`
@@ -61,7 +61,7 @@ struct JobsListView: View {
                 }
             }
         }
-        .navigationTitle("Jobs")
+        .navigationTitle(L10n.string("jobs.title"))
         .compatJobsDestination()
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
@@ -70,7 +70,7 @@ struct JobsListView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                 }
-                .accessibilityLabel("Refresh jobs")
+                .accessibilityLabel(L10n.string("jobs.refresh"))
                 .disabled(viewModel.isLoading)
             }
         }
@@ -101,7 +101,7 @@ struct SessionRow: View {
                     Text(engine).font(.caption).foregroundStyle(.secondary)
                 }
                 if let chapters = session.chaptersConverted {
-                    Text("\(chapters) ch").font(.caption).foregroundStyle(.secondary)
+                    Text(L10n.string("jobs.chaptersAbbrev", chapters)).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Text(session.timestamp.prefix(19))

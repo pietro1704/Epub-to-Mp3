@@ -10,7 +10,7 @@ final class TelemetryViewModel: ObservableObject {
 
     func reload(client: APIClient?) async {
         guard let client else {
-            error = "No backend configured."
+            error = L10n.string("logs.error.noBackend")
             return
         }
         isLoading = true
@@ -82,11 +82,11 @@ struct TelemetryView: View {
 
     var body: some View {
         Form {
-            Section("Engines") {
+            Section(L10n.string("telemetry.engines")) {
                 if viewModel.isLoading && viewModel.perEngine.isEmpty {
                     ProgressView()
                 } else if viewModel.perEngine.isEmpty {
-                    Text("No telemetry samples yet.").foregroundStyle(.secondary)
+                    Text(localized: "telemetry.noSamples").foregroundStyle(.secondary)
                 } else {
                     ForEach(viewModel.perEngine, id: \.engine) { row in
                         HStack {
@@ -94,13 +94,13 @@ struct TelemetryView: View {
                             Spacer()
                             VStack(alignment: .trailing, spacing: 2) {
                                 if let cps = row.charsPerSecond {
-                                    Text(String(format: "%.0f chars/s", cps))
+                                    Text(L10n.string("telemetry.charsPerSecond", String(format: "%.0f", cps)))
                                         .font(.body.monospacedDigit())
                                 } else {
-                                    Text("—").foregroundStyle(.secondary)
+                                    Text(verbatim: "—").foregroundStyle(.secondary)
                                 }
                                 if let n = row.samples {
-                                    Text("\(n) chapters")
+                                    Text(L10n.string("telemetry.chaptersCount", n))
                                         .font(.caption2)
                                         .foregroundStyle(.secondary)
                                 }
@@ -122,13 +122,13 @@ struct TelemetryView: View {
                     // `Date.formatted(...)` (the FormatStyle API) requires
                     // iOS 15 / macOS 12, so we keep `.formatted` but route
                     // through a thin formatter on macOS 11.
-                    CompatLabeledContent("Last fetched",
+                    CompatLabeledContent(L10n.string("telemetry.lastFetched"),
                                          value: Self.formatTimestamp(when))
                 }
             }
 
             if !viewModel.rawJSON.isEmpty {
-                Section("Raw payload") {
+                Section(L10n.string("telemetry.rawPayload")) {
                     ScrollView(.horizontal) {
                         Text(viewModel.rawJSON)
                             .font(.footnote.monospaced())
@@ -137,13 +137,13 @@ struct TelemetryView: View {
                 }
             }
         }
-        .navigationTitle("Telemetry")
+        .navigationTitle(L10n.string("settings.telemetry"))
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Button {
                     Task { await viewModel.reload(client: client) }
                 } label: { Image(systemName: "arrow.clockwise") }
-                .accessibilityLabel("Refresh telemetry")
+                .accessibilityLabel(L10n.string("telemetry.refresh"))
                 .disabled(viewModel.isLoading)
             }
         }

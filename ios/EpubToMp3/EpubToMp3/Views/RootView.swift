@@ -135,21 +135,21 @@ struct TabRoot: View {
                     onBrowseLibrary: { selectedTab = .library }
                 )
             }
-            .tabItem { Label("Read", systemImage: "text.book.closed") }
+            .tabItem { Label(L10n.string("nav.read"), systemImage: "text.book.closed") }
             .tag(RootTab.reader)
 
             CompatNavigationStack {
                 LibraryView(onOpenBook: { selectedTab = .reader })
             }
             .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
-            .tabItem { Label("Library", systemImage: "books.vertical") }
+            .tabItem { Label(L10n.string("nav.library"), systemImage: "books.vertical") }
             .tag(RootTab.library)
 
             CompatNavigationStack {
                 SettingsView()
             }
             .miniPlayerInset(visible: showMiniPlayer, onTap: { playerPresentation.showFullPlayer() })
-            .tabItem { Label("Settings", systemImage: "gearshape") }
+            .tabItem { Label(L10n.string("nav.settings"), systemImage: "gearshape") }
             .tag(RootTab.settings)
         }
     }

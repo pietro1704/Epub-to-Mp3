@@ -28,11 +28,11 @@ struct PlayerView: View {
             // and transport controls stay clear of the notch in
             // landscape iPhone.
             .compatHorizontalSafeAreaPadding(24)
-            .navigationTitle("Now playing")
+            .navigationTitle(L10n.string("reader.nowPlaying"))
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { player.pause(); dismiss() }
+                    Button(L10n.string("player.close")) { player.pause(); dismiss() }
                 }
             }
             .onAppear {
@@ -57,7 +57,7 @@ struct PlayerView: View {
 
     private var titleBlock: some View {
         VStack(spacing: 4) {
-            Text(snapshot.bookTitle ?? "Audiobook")
+            Text(snapshot.bookTitle ?? L10n.string("player.audiobookFallback"))
                 .font(.headline)
                 .lineLimit(1)
             Text(currentChapterLabel)
@@ -146,7 +146,7 @@ struct PlayerView: View {
     }
 
     private var speedPicker: some View {
-        Picker("Speed", selection: Binding(
+        Picker(L10n.string("player.speed"), selection: Binding(
             get: { player.rate },
             set: { player.setRate($0) }
         )) {

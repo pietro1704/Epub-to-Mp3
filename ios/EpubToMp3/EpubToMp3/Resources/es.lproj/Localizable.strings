@@ -141,6 +141,27 @@
 "chapterList.noAudio" = "%@, sin audio disponible";
 "chapterList.doubleTapToPlay" = "Toca dos veces para reproducir este capítulo";
 
+/* PlayerReaderView toolbar */
+"player.toc" = "Índice";
+"player.more" = "Más";
+"player.search" = "Buscar";
+"player.bookmarks" = "Marcadores";
+"player.addBookmark" = "Añadir marcador";
+"player.removeBookmark" = "Eliminar marcador";
+"player.downloadAll" = "Descargar sin conexión";
+"player.downloading" = "Descargando…";
+"player.downloaded" = "Descargado";
+"player.downloadFailed" = "Falló la descarga";
+"player.sleepTimer" = "Temporizador de sueño";
+"player.sleepTimerOption.off" = "Apagado";
+"player.sleepTimerOption.5" = "5 minutos";
+"player.sleepTimerOption.15" = "15 minutos";
+"player.sleepTimerOption.30" = "30 minutos";
+"player.sleepTimerOption.60" = "1 hora";
+
+/* SplitViewRoot library detail */
+"library.openInReader" = "Abrir en el lector";
+
 /* MiniPlayerBar */
 "miniPlayer.nowPlaying" = "Reproduciendo: %@, %@. Toca para expandir.";
 "miniPlayer.expandHint" = "Desliza hacia arriba o toca para abrir el reproductor completo.";
@@ -201,3 +222,184 @@
 "general.cancel" = "Cancelar";
 "general.ok" = "OK";
 "general.done" = "Listo";
+
+/* === Common (verbos/etiquetas compartidas) === */
+"common.remove" = "Eliminar";
+"common.delete" = "Eliminar";
+"common.retry" = "Reintentar";
+"common.save" = "Guardar";
+
+/* === Navegación (barra lateral / pestañas) === */
+"nav.read" = "Leer";
+"nav.library" = "Biblioteca";
+"nav.conversions" = "Conversiones";
+"nav.settings" = "Ajustes";
+
+/* === ConvertView === */
+"convert.title" = "Convertir";
+"convert.file" = "Archivo";
+"convert.selected" = "Seleccionado";
+"convert.noFilePicked" = "Ningún archivo seleccionado.";
+"convert.pickFile" = "Elegir EPUB o PDF";
+"convert.changeFile" = "Cambiar archivo";
+"convert.engine" = "Motor";
+"convert.engine.cloud" = "nube";
+"convert.engine.offline" = "sin conexión";
+"convert.voiceOptional" = "Voz (opcional)";
+"convert.languageOptional" = "Código de idioma (p. ej. en, pt) — opcional";
+"convert.chapters" = "Capítulos";
+"convert.chapterRangeOptional" = "Rango de capítulos (p. ej. 3-7) — opcional";
+"convert.chapterRangeHelp" = "Déjalo vacío para convertir el libro completo.";
+"convert.flags" = "Opciones";
+"convert.clearCache" = "Limpiar caché antes de ejecutar";
+"convert.forceReprocess" = "Forzar reprocesamiento";
+"convert.maxPerformance" = "Rendimiento máximo";
+"convert.jobSubmitted" = "Trabajo enviado: %@";
+"convert.openProgress" = "Abrir progreso";
+"convert.submitting" = "Enviando…";
+"convert.startConversion" = "Iniciar conversión";
+"convert.error.engineWarmingUp" = "El motor de audio aún se está iniciando. Inténtalo de nuevo en un momento o configura una URL de backend remoto en Ajustes.";
+"convert.error.pickFileFirst" = "Elige primero un EPUB o PDF.";
+
+/* === LibrarySidebar === */
+"librarySidebar.emptyTitle" = "La biblioteca está vacía";
+"librarySidebar.emptyDescription" = "Toca el botón + de arriba para importar un EPUB o PDF.";
+"librarySidebar.importBook" = "Importar Libro";
+
+/* === LibrarySearchBar === */
+"librarySearch.clear" = "Limpiar búsqueda";
+
+/* === LibraryDropHandler === */
+"libraryDrop.dropHere" = "Suelta un EPUB o PDF aquí";
+
+/* === LibraryView === */
+"library.tagLabel" = "Etiqueta: %@";
+
+/* === TagEditorSheet === */
+"tagEditor.tags" = "Etiquetas";
+"tagEditor.removeTag" = "Eliminar etiqueta %@";
+"tagEditor.newTag" = "Nueva etiqueta";
+"tagEditor.add" = "Añadir";
+"tagEditor.existingTags" = "Etiquetas existentes";
+
+/* === BookmarksListView === */
+"bookmarks.filter" = "Filtro";
+"bookmarks.filter.all" = "Todos";
+"bookmarks.filter.bookmarks" = "Marcadores";
+"bookmarks.filter.highlights" = "Destacados";
+"bookmarks.note" = "Nota";
+"bookmarks.emptyTitle" = "Sin marcadores aún";
+"bookmarks.emptyDescription" = "Mantén pulsado un párrafo en el lector para añadir un marcador o destacado.";
+"bookmarks.a11y.highlight" = "Destacado en %@: %@";
+"bookmarks.a11y.bookmark" = "Marcador en %@";
+"bookmarks.highlightedText" = "Texto destacado";
+"bookmarks.color" = "Color";
+"bookmarks.colorSelected" = "Color %@, seleccionado";
+"bookmarks.colorOption" = "Color %@";
+"bookmarks.editNote" = "Editar Nota";
+
+/* === TocDrawer === */
+"toc.charsCount" = "%d caracteres";
+"toc.textOnly" = "solo texto";
+"toc.currentlyPlaying" = "Reproduciendo ahora";
+"toc.currentlyReading" = "Leyendo ahora";
+
+/* === JobDetailView === */
+"jobDetail.title" = "Detalle del trabajo";
+"jobDetail.job" = "Trabajo";
+"jobDetail.id" = "ID";
+"jobDetail.state" = "Estado";
+"jobDetail.book" = "Libro";
+"jobDetail.progress" = "Progreso";
+"jobDetail.streaming" = "Transmisión";
+"jobDetail.live" = "En vivo";
+"jobDetail.idle" = "Inactivo";
+"jobDetail.eventsReceived" = "Eventos recibidos";
+"jobDetail.downloadAll" = "Descargar todo";
+"jobDetail.openLogs" = "Abrir registros";
+"jobDetail.latestEventPayload" = "Último payload de evento";
+"jobDetail.waitingFirstEvent" = "Esperando el primer evento…";
+"jobDetail.error.configureBackend" = "Configura la URL del backend en Ajustes.";
+
+/* === JobsListView === */
+"jobs.title" = "Trabajos";
+"jobs.cannotReachBackend" = "No se puede acceder al backend";
+"jobs.noConversions" = "Sin conversiones aún";
+"jobs.noConversionsDescription" = "Ejecuta una conversión mediante la CLI o la app web para llenar el historial.";
+"jobs.refresh" = "Actualizar trabajos";
+"jobs.chaptersAbbrev" = "%d cap.";
+
+/* === LogsView === */
+"logs.title" = "Registros · %@";
+"logs.empty" = "Aún no hay salida de registro.";
+"logs.error.noBackend" = "No hay backend configurado.";
+"logs.pauseAutoRefresh" = "Pausar actualización automática";
+"logs.resumeAutoRefresh" = "Reanudar actualización automática";
+
+/* === TelemetryView === */
+"telemetry.engines" = "Motores";
+"telemetry.noSamples" = "Aún no hay muestras de telemetría.";
+"telemetry.charsPerSecond" = "%@ caracteres/s";
+"telemetry.chaptersCount" = "%d capítulos";
+"telemetry.lastFetched" = "Última actualización";
+"telemetry.rawPayload" = "Payload sin procesar";
+"telemetry.refresh" = "Actualizar telemetría";
+
+/* === ConversionStatusSheet === */
+"conversionStatus.title" = "Estado de la Conversión";
+"conversionStatus.preparing" = "Preparando…";
+"conversionStatus.waitingFirstChunk" = "Esperando el primer fragmento de audio…";
+"conversionStatus.notStarted" = "Conversión no iniciada.";
+"conversionStatus.cancelConversion" = "Cancelar conversión";
+"conversionStatus.elapsed" = "%@ transcurridos";
+
+/* === ChapterListColumn === */
+"chapterList.loadingChapters" = "Cargando capítulos…";
+"chapterList.noChaptersYet" = "Sin capítulos aún";
+"chapterList.noChaptersYetDescription" = "La conversión aún se está iniciando. Los capítulos aparecen aquí a medida que terminan.";
+"chapterList.noAudioYetDescription" = "Abre el libro para iniciar una conversión. Una vez generado el audio, los capítulos aparecen aquí.";
+"chapterList.completed" = "completado";
+
+/* === InstantReaderView === */
+"instantReader.sleepMinutes" = "%d min";
+"instantReader.sleepActive" = "Activo: %@ restantes";
+"instantReader.notDownloaded" = "No descargado";
+"instantReader.fromCurrentChapter" = "Desde el capítulo actual";
+
+/* === PlayerReaderView === */
+"playerReader.loadingText" = "Cargando texto del libro…";
+"playerReader.noText" = "No hay texto disponible para este capítulo.";
+
+/* === PlayerView === */
+"player.speed" = "Velocidad";
+"player.audiobookFallback" = "Audiolibro";
+
+/* === ReaderSearchOverlay === */
+"search.noResults" = "Sin resultados";
+
+/* === ReaderView === */
+"reader.seekSentenceHint" = "Toca dos veces para llevar el audio a esta frase";
+
+/* === LocalEpubReaderView === */
+"localEpubReader.couldntRead" = "No se pudo leer este libro";
+"localEpubReader.noChapters" = "\"%@\" no expuso ningún capítulo legible. El archivo puede estar protegido con DRM o su contenedor EPUB puede estar dañado.";
+"localEpubReader.fileOnDisk" = "Archivo en disco";
+
+/* === SettingsView === */
+"settings.url" = "URL";
+
+/* === Widget === */
+"widget.nowPlaying" = "Reproduciendo Ahora";
+"widget.paused" = "En pausa";
+"widget.noAudiobookPlaying" = "Ningún audiolibro reproduciéndose";
+"widget.openBookToListen" = "Abre un libro para empezar a escuchar";
+"widget.noBookInProgress" = "Ningún libro en curso";
+"widget.continue" = "Continuar";
+"widget.continueReading" = "Continuar Leyendo";
+"widget.openBookToRead" = "Abre un libro para empezar a leer";
+"widget.percentComplete" = "%d%% completado";
+"widget.libraryEmpty" = "Tu biblioteca está vacía";
+"widget.importEpubToStart" = "Importa un EPUB para empezar";
+"widget.nothingPlaying" = "Nada reproduciéndose";
+"widget.noAudiobook" = "Sin audiolibro";
+"widget.converting" = "Convirtiendo";

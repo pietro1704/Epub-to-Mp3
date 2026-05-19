@@ -154,7 +154,7 @@ struct SettingsView: View {
             // stack vertically so the URL field is not clipped.
             CompatViewThatFitsHV {
                 HStack {
-                    Label("URL", systemImage: "network")
+                    Label(L10n.string("settings.url"), systemImage: "network")
                     Spacer()
                     let field = TextField("http://localhost:8000",
                                           text: $settings.backendURL)
@@ -170,7 +170,7 @@ struct SettingsView: View {
                 }
             } vertical: {
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("URL", systemImage: "network")
+                    Label(L10n.string("settings.url"), systemImage: "network")
                     let field = TextField("http://localhost:8000",
                                           text: $settings.backendURL)
                         .autocorrectionDisabled()
@@ -419,7 +419,7 @@ struct SettingsView: View {
     private var aboutSection: some View {
         Section {
             CompatLabeledContent {
-                Text("com.pietrocode.epubtomp3")
+                Text(verbatim: "com.pietrocode.epubtomp3")
                     .font(.callout.monospaced())
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)

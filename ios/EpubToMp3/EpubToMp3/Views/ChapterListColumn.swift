@@ -27,7 +27,7 @@ struct ChapterListColumn: View {
             if let snapshot {
                 chapterList(snapshot: snapshot)
             } else if isLoading {
-                ProgressView("Loading chapters…")
+                ProgressView(L10n.string("chapterList.loadingChapters"))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let loadError {
                 errorView(message: loadError)
@@ -50,9 +50,9 @@ struct ChapterListColumn: View {
         return Group {
             if chapters.isEmpty {
                 CompatContentUnavailableView(
-                    "No chapters yet",
+                    L10n.string("chapterList.noChaptersYet"),
                     systemImage: "headphones.slash",
-                    description: Text("The conversion is still warming up. Chapters appear here as they finish.")
+                    description: Text(localized: "chapterList.noChaptersYetDescription")
                 )
             } else {
                 List(selection: $selectedChapterIndex) {
@@ -73,9 +73,9 @@ struct ChapterListColumn: View {
     private var noAudioYet: some View {
         VStack(spacing: 12) {
             CompatContentUnavailableView(
-                "No audio yet",
+                L10n.string("nowPlaying.noAudioYet"),
                 systemImage: "waveform.slash",
-                description: Text("Open the book to start a conversion. Once audio is generated, chapters show up here.")
+                description: Text(localized: "chapterList.noAudioYetDescription")
             )
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -90,7 +90,7 @@ struct ChapterListColumn: View {
             Text(message)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
-            Button("Retry") {
+            Button(L10n.string("common.retry")) {
                 Task { await reload() }
             }
             .buttonStyle(.bordered)
@@ -157,7 +157,7 @@ private struct ChapterListRow: View {
                     .font(.subheadline)
                     .lineLimit(2)
                 if let chars = chapter.chars, chars > 0 {
-                    Text("\(chars) chars")
+                    Text(L10n.string("toc.charsCount", chars))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -173,7 +173,7 @@ private struct ChapterListRow: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel({
             var parts = [chapter.displayTitle]
-            if chapter.isCompleted { parts.append("completed") }
+            if chapter.isCompleted { parts.append(L10n.string("chapterList.completed")) }
             if let duration = chapter.durationSeconds, duration > 0 {
                 parts.append(formatDuration(duration))
             }

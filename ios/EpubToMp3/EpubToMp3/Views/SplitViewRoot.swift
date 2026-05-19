@@ -22,10 +22,10 @@ enum SplitNavMode: String, Hashable, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .reader:   return "Read"
-        case .library:  return "Library"
-        case .jobs:     return "Conversions"
-        case .settings: return "Settings"
+        case .reader:   return L10n.string("nav.read")
+        case .library:  return L10n.string("nav.library")
+        case .jobs:     return L10n.string("nav.conversions")
+        case .settings: return L10n.string("nav.settings")
         }
     }
 
@@ -202,7 +202,7 @@ struct SplitViewRoot: View {
         #else
         .listStyle(.insetGrouped)
         #endif
-        .navigationTitle("Epub-to-Mp3")
+        .navigationTitle(Text(verbatim: "Epub-to-Mp3"))
         .accessibilityIdentifier("split.navList")
         // HIG sidebar footer: mini-player docked at the bottom of the
         // sidebar (Sonos / Apple TV / Apple Music pattern). Tap opens

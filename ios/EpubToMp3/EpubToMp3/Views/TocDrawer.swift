@@ -63,11 +63,11 @@ struct TocDrawer: View {
                 }
             }
             .listStyle(.plain)
-            .navigationTitle("Chapters")
+            .navigationTitle(L10n.string("player.chapters"))
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Close") { dismiss() }
+                    Button(L10n.string("player.close")) { dismiss() }
                 }
             }
         }
@@ -99,13 +99,13 @@ struct TocDrawer: View {
                         .lineLimit(2)
                     HStack(spacing: 8) {
                         if let charCount {
-                            Text("\(charCount) chars")
+                            Text(L10n.string("toc.charsCount", charCount))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .accessibilityHidden(true)
                         }
                         if !audioReady {
-                            Label("text only", systemImage: "doc.text")
+                            Label(L10n.string("toc.textOnly"), systemImage: "doc.text")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
@@ -124,8 +124,8 @@ struct TocDrawer: View {
                           : "book.fill")
                         .foregroundStyle(.tint)
                         .accessibilityLabel(onAudio
-                                            ? "Currently playing"
-                                            : "Currently reading")
+                                            ? L10n.string("toc.currentlyPlaying")
+                                            : L10n.string("toc.currentlyReading"))
                 }
             }
             .contentShape(Rectangle())

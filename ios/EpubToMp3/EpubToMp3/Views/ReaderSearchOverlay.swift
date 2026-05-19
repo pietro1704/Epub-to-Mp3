@@ -21,7 +21,7 @@ struct ReaderSearchOverlay: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
-                TextField("Search in book", text: $query)
+                TextField(L10n.string("instantReader.searchInBook"), text: $query)
                     .textFieldStyle(.plain)
                     .autocorrectionDisabled()
                     .onSubmit { search() }
@@ -32,14 +32,14 @@ struct ReaderSearchOverlay: View {
                     }
                     .buttonStyle(.plain)
                 }
-                Button("Done") { isPresented = false }
+                Button(L10n.string("general.done")) { isPresented = false }
                     .font(.callout.weight(.medium))
             }
             .padding(12)
             .background(.thinMaterial)
 
             if results.isEmpty && !query.isEmpty {
-                Text("No results")
+                Text(localized: "search.noResults")
                     .foregroundStyle(.secondary)
                     .padding(.top, 40)
                     .frame(maxWidth: .infinity)
@@ -65,7 +65,7 @@ struct ReaderSearchOverlay: View {
         }
         .background(.regularMaterial)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Search in book")
+        .accessibilityLabel(L10n.string("instantReader.searchInBook"))
     }
 
     private func search() {

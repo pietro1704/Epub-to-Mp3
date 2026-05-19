@@ -71,7 +71,7 @@ struct LibrarySidebar: View {
                                     }
                                     library.remove(id: book.id)
                                 } label: {
-                                    Label("Remove", systemImage: "trash")
+                                    Label(L10n.string("common.remove"), systemImage: "trash")
                                 }
                             }
                     }
@@ -90,11 +90,11 @@ struct LibrarySidebar: View {
             isTargeted: $isDropTargeted,
             perform: handleDrop
         )
-        .navigationTitle("Library")
+        .navigationTitle(L10n.string("library.title"))
         .toolbar {
             ToolbarItem(placement: .compatPrimaryTrailing) {
                 Menu {
-                    Picker("Sort by", selection: $sortMode) {
+                    Picker(L10n.string("library.sortBy"), selection: $sortMode) {
                         ForEach(LibraryView.SortMode.allCases) { Text($0.label).tag($0) }
                     }
                 } label: { Image(systemName: "arrow.up.arrow.down.circle") }
@@ -116,12 +116,12 @@ struct LibrarySidebar: View {
                     handleImport(result)
                 }
         }
-        .alert("Import error",
+        .alert(L10n.string("library.importError"),
                isPresented: Binding(
                 get: { importError != nil },
                 set: { if !$0 { importError = nil } }
                )) {
-            Button("OK") { importError = nil }
+            Button(L10n.string("library.ok")) { importError = nil }
         } message: {
             Text(importError ?? "")
         }
@@ -130,20 +130,20 @@ struct LibrarySidebar: View {
     private var emptyState: some View {
         VStack(spacing: 16) {
             CompatContentUnavailableView(
-                "Library is empty",
+                L10n.string("librarySidebar.emptyTitle"),
                 systemImage: "books.vertical",
-                description: Text("Tap the + button above to import an EPUB or PDF.")
+                description: Text(localized: "librarySidebar.emptyDescription")
             )
             Button {
                 showingPicker = true
             } label: {
-                Label("Import Book", systemImage: "plus.circle.fill")
+                Label(L10n.string("librarySidebar.importBook"), systemImage: "plus.circle.fill")
                     .frame(minHeight: 44)
                     .padding(.horizontal, 8)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .accessibilityLabel("Import Book")
+            .accessibilityLabel(L10n.string("librarySidebar.importBook"))
             .accessibilityIdentifier("library.importButton.empty")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -245,11 +245,11 @@ private struct LibrarySidebarRow: View {
         case .textOnly:
             EmptyView()
         case .caching:
-            Text("Caching")
+            Text(localized: "library.caching")
                 .font(.caption2)
                 .foregroundStyle(.orange)
         case .offlineReady:
-            Text("Offline")
+            Text(localized: "library.offline")
                 .font(.caption2)
                 .foregroundStyle(.green)
         }

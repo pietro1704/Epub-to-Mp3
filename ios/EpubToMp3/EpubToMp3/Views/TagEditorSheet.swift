@@ -9,7 +9,7 @@ struct TagEditorSheet: View {
     var body: some View {
         CompatNavigationStack {
             Form {
-                Section("Tags") {
+                Section(L10n.string("tagEditor.tags")) {
                     ForEach(book.tags, id: \.self) { tag in
                         HStack {
                             Label(tag, systemImage: "tag.fill")
@@ -21,27 +21,27 @@ struct TagEditorSheet: View {
                                     .foregroundStyle(.red)
                             }
                             .buttonStyle(.plain)
-                            .accessibilityLabel("Remove tag \(tag)")
+                            .accessibilityLabel(L10n.string("tagEditor.removeTag", tag))
                         }
                     }
                     HStack {
-                        TextField("New tag", text: $newTag)
+                        TextField(L10n.string("tagEditor.newTag"), text: $newTag)
                             .onSubmit { addCurrentTag() }
-                        Button("Add") { addCurrentTag() }
+                        Button(L10n.string("tagEditor.add")) { addCurrentTag() }
                             .disabled(newTag.trimmingCharacters(in: .whitespaces).isEmpty)
                     }
                 }
                 if !suggestedTags.isEmpty {
-                    Section("Existing tags") {
+                    Section(L10n.string("tagEditor.existingTags")) {
                         suggestedTagsContent
                     }
                 }
             }
-            .navigationTitle("Edit Tags")
+            .navigationTitle(L10n.string("library.editTags"))
             .compatInlineNavigationTitle()
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(L10n.string("general.done")) { dismiss() }
                 }
             }
         }
