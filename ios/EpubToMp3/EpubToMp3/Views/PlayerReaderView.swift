@@ -38,6 +38,13 @@ struct PlayerReaderView: View {
     @State private var sentenceTask: Task<Void, Never>?
     @State private var fulltextTask: Task<Void, Never>?
     @State private var streamTask: Task<Void, Never>?
+    /// JobId currently being streamed by `streamTask`. Used to
+    /// short-circuit re-subscription when `bootstrap()` is called
+    /// again for the same job (state-restoration, scene activation,
+    /// sheet re-present) — re-opening SSE for an already-streaming
+    /// job tears down and rebuilds the same backend connection for
+    /// no behavioural benefit.
+    @State private var streamingJobId: String?
     @State private var downloadTask: Task<Void, Never>?
     @State private var downloadState: DownloadButtonState = .idle
     @State private var downloadProgressText: String?
@@ -579,7 +586,7 @@ struct PlayerReaderView: View {
         positionTask?.cancel(); positionTask = nil
         sentenceTask?.cancel(); sentenceTask = nil
         fulltextTask?.cancel(); fulltextTask = nil
-        streamTask?.cancel(); streamTask = nil
+        streamTask?.cancel(); streamTask = nil; streamingJobId = nil
         downloadTask?.cancel(); downloadTask = nil
     }
 
@@ -590,9 +597,16 @@ struct PlayerReaderView: View {
     /// audiobook is still being synthesised.
     private func subscribeToJobStream() {
         guard let baseURL = backendBaseURL else { return }
-        streamTask?.cancel()
-        let client = APIClient(baseURL: baseURL)
         let jobId = snapshot.jobId
+        // Already streaming this jobId? Bail — re-subscribing would
+        // tear down the live connection just to rebuild the identical
+        // one against the same backend endpoint.
+        if streamingJobId == jobId, let existing = streamTask, !existing.isCancelled {
+            return
+        }
+        streamTask?.cancel()
+        streamingJobId = jobId
+        let client = APIClient(baseURL: baseURL)
         streamTask = Task { @MainActor in
             do {
                 for try await event in client.eventStream(jobId: jobId) {
