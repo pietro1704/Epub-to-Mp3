@@ -109,6 +109,14 @@ struct MiniPlayerBar: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+                    // VoiceOver was synthesising the label from the
+                    // child `Text`s alone — "Book Title. Chapter 3"
+                    // — which sounds identical to tapping the book
+                    // in the library. Explicit label disambiguates
+                    // the gesture: it EXPANDS the player.
+                    .accessibilityLabel(
+                        L10n.string("miniPlayer.expandPlayer", book.resolvedTitle, chapterLabel)
+                    )
                     .accessibilityHint(L10n.string("miniPlayer.expandHint"))
 
                     // Inline transport: play/pause + next chapter. Tap on

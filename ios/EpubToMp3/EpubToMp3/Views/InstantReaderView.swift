@@ -394,7 +394,7 @@ struct InstantReaderView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.tint)
-            .accessibilityLabel("Search in book")
+            .accessibilityLabel(L10n.string("instantReader.searchInBook"))
 
             Button {
                 showingReaderSettings = true
@@ -406,7 +406,7 @@ struct InstantReaderView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.tint)
-            .accessibilityLabel("Reader settings")
+            .accessibilityLabel(L10n.string("instantReader.readerSettings"))
 
             Button {
                 showingToc = true
@@ -418,7 +418,7 @@ struct InstantReaderView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(.tint)
-            .accessibilityLabel("Table of contents")
+            .accessibilityLabel(L10n.string("instantReader.tableOfContents"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -434,7 +434,7 @@ struct InstantReaderView: View {
                 coverArtwork
                     .frame(width: 44, height: 44)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .accessibilityLabel("Book cover")
+                    .accessibilityLabel(L10n.string("instantReader.bookCover"))
                     .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 2) {
@@ -474,7 +474,7 @@ struct InstantReaderView: View {
                             .foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("Conversion status")
+                    .accessibilityLabel(L10n.string("instantReader.conversionStatus"))
                 } else {
                     Menu {
                         Button {
@@ -493,7 +493,7 @@ struct InstantReaderView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .accessibilityLabel("Play audio")
+                    .accessibilityLabel(L10n.string("instantReader.playAudio"))
                 }
             }
         }
@@ -593,7 +593,7 @@ struct InstantReaderView: View {
             }
             .buttonStyle(.plain)
             .disabled(currentChapterIndex + 1 >= fulltext.chapters.count)
-            .accessibilityLabel("Next chapter")
+            .accessibilityLabel(L10n.string("instantReader.nextChapter"))
 
             // "..." popover — speed + sleep + secondary skips. Same
             // contract as the other player surfaces.
@@ -677,7 +677,7 @@ struct InstantReaderView: View {
                     #endif
                 }
             )
-            .accessibilityLabel("Playback position")
+            .accessibilityLabel(L10n.string("instantReader.playbackPosition"))
             Text(format(seconds: player.durationSeconds))
                 .font(.caption2.monospacedDigit())
                 .foregroundStyle(.secondary)
@@ -793,11 +793,11 @@ struct InstantReaderView: View {
             Image(systemName: "checkmark.circle.fill")
                 .foregroundStyle(.green)
                 .font(.caption)
-                .accessibilityLabel("Downloaded")
+                .accessibilityLabel(L10n.string("instantReader.downloaded"))
         case .generating:
             ProgressView()
                 .controlSize(.mini)
-                .accessibilityLabel("Generating")
+                .accessibilityLabel(L10n.string("instantReader.generating"))
         case .notStarted:
             Image(systemName: "arrow.down.circle")
                 .foregroundStyle(.secondary)

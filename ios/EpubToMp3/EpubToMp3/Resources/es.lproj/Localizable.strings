@@ -116,6 +116,19 @@
 
 "player.error.title" = "Problema de reproducción";
 "common.ok" = "OK";
+"miniPlayer.expandPlayer" = "Expandir reproductor — %@, %@";
+
+/* InstantReaderView etiquetas de accesibilidad */
+"instantReader.searchInBook" = "Buscar en el libro";
+"instantReader.readerSettings" = "Ajustes del lector";
+"instantReader.tableOfContents" = "Tabla de contenidos";
+"instantReader.bookCover" = "Portada del libro";
+"instantReader.conversionStatus" = "Estado de la conversión";
+"instantReader.playAudio" = "Reproducir audio";
+"instantReader.nextChapter" = "Siguiente capítulo";
+"instantReader.playbackPosition" = "Posición de reproducción";
+"instantReader.downloaded" = "Descargado";
+"instantReader.generating" = "Generando";
 
 /* AudioPlayer errores expuestos */
 "player.error.noPlayableChapters" = "Este libro aún no tiene capítulos disponibles. Espera a que la conversión genere el primer capítulo o elige otro libro.";

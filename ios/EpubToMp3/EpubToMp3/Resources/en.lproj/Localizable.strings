@@ -116,6 +116,19 @@
 
 "player.error.title" = "Playback issue";
 "common.ok" = "OK";
+"miniPlayer.expandPlayer" = "Expand player — %@, %@";
+
+/* InstantReaderView a11y labels (toolbar + transport row) */
+"instantReader.searchInBook" = "Search in book";
+"instantReader.readerSettings" = "Reader settings";
+"instantReader.tableOfContents" = "Table of contents";
+"instantReader.bookCover" = "Book cover";
+"instantReader.conversionStatus" = "Conversion status";
+"instantReader.playAudio" = "Play audio";
+"instantReader.nextChapter" = "Next chapter";
+"instantReader.playbackPosition" = "Playback position";
+"instantReader.downloaded" = "Downloaded";
+"instantReader.generating" = "Generating";
 
 /* AudioPlayer surfaced errors */
 "player.error.noPlayableChapters" = "This book has no playable chapters yet. Wait for conversion to produce the first chapter, or try a different book.";
