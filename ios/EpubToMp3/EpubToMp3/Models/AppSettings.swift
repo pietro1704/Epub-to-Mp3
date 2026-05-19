@@ -463,12 +463,14 @@ final class AppSettings: ObservableObject {
     ///   - readerLetterSpacing → 0
     ///   - readerWordSpacing → 0
     ///
-    /// Theme is NOT reset because the user may want their dark
-    /// theme even when "show original" is requested — the override
-    /// flag (`readerOverrideColours`) is what gates whether the theme
-    /// actually wins over the EPUB. Same for `readerFontFamily` /
-    /// `readerFontSize`: the values stay but the overrides flip off,
-    /// so the next render falls back to EPUB-native styling.
+    /// Theme is NOT reset — it is a standalone preference (like layout
+    /// and backend URL). `restoreOriginal()` only clears the typography
+    /// *override* fields. Note: the renderer force-overrides EPUB
+    /// colours for every theme except `.light`, so the EPUB's own CSS
+    /// colours only survive `restoreOriginal()` when the active theme
+    /// is `.light`. `readerFontFamily` / `readerFontSize` values stay —
+    /// only their override flags flip off, so the next render falls
+    /// back to EPUB-native styling.
     func restoreOriginal() {
         readerOverrideFontFamily = false
         readerOverrideFontSize = false

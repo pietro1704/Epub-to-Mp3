@@ -106,8 +106,12 @@ final class EpubHtmlRendererTests: XCTestCase {
     func testRestoreOriginalReinstatesCSSColour() {
         let s = makeSettings()
         s.readerOverrideColours = true
-        s.readerTheme = .custom
-        s.readerCustomColors = (background: (1, 1, 1), foreground: (0, 0, 1))
+        // Theme stays `.light`: the renderer force-overrides EPUB
+        // colours for every theme except `.light`, so CSS-colour
+        // survival is only defined under `.light`. This test verifies
+        // the override-flag half — `restoreOriginal()` clearing
+        // `readerOverrideColours` so the EPUB's own CSS wins.
+        s.readerTheme = .light
         let html = "<p><span style=\"color:red\">hello</span></p>"
 
         s.restoreOriginal()
