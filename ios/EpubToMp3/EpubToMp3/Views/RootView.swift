@@ -209,11 +209,18 @@ extension View {
 // MARK: - Full-player rise-from-mini-player transition
 
 /// Visual approximation of "the modal grows out of the mini player at
-/// the bottom of the screen". The mini player sits ~64 pt tall above the
-/// home indicator; this transition starts the sheet anchored to that
-/// strip (scaled down + offset to bottom) and expands it to fullscreen
-/// with a fade. Result: the user perceives the sheet emerging from the
-/// mini-player frame, not slid in from off-screen.
+/// the bottom of the screen". The mini player sits ~64 pt tall above
+/// the home indicator; this transition uses a UNIFORM (isotropic)
+/// scale anchored to the bottom edge so the sheet emerges from that
+/// strip without horizontal squish.
+///
+/// The previous version used a non-uniform `scaleEffect(x: 0.88,
+/// y: 0.10)` which produced a "squished sliver" frame at progress=0
+/// — the cover hero and centred title block visibly stretched on
+/// real-motion runs (audit flagged this as a graphics glitch). Now
+/// the y / x scale match (uniform 0.94 → 1.0) and the upward
+/// translation provides the "rising from the bottom" intent without
+/// distortion.
 private struct RisesFromMiniModifier: ViewModifier {
     /// 0 = collapsed at mini-player position, 1 = full screen.
     let progress: Double
@@ -221,12 +228,13 @@ private struct RisesFromMiniModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .scaleEffect(
-                x: 0.88 + 0.12 * progress,
-                y: 0.10 + 0.90 * progress,
+                0.94 + 0.06 * progress,
                 anchor: .bottom
             )
             .opacity(progress)
-            .offset(y: (1.0 - progress) * 40)
+            // 64 pt mirrors the mini-player height — the sheet starts
+            // visually peeking out from where the mini-player sat.
+            .offset(y: (1.0 - progress) * 64)
     }
 }
 
