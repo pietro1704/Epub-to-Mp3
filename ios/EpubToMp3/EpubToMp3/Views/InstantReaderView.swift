@@ -100,19 +100,19 @@ struct InstantReaderView: View {
                 VStack(spacing: 0) {
                     Divider()
                         .background(readerForeground.opacity(0.15))
-                    idlePlayerBar
-                        .frame(height: showTransport ? 0 : nil)
-                        .opacity(showTransport ? 0 : 1)
-                        .clipped()
-                        .allowsHitTesting(!showTransport)
-                        .padding(.vertical, showTransport ? 0 : 8)
-                    playerBar
-                        .frame(height: showTransport ? nil : 0)
-                        .opacity(showTransport ? 1 : 0)
-                        .clipped()
-                        .allowsHitTesting(showTransport)
-                        .disabled(!showTransport)
-                        .padding(.vertical, showTransport ? 8 : 0)
+                    // Materialise only the bar that's actually
+                    // visible — the previous pattern kept BOTH in the
+                    // hierarchy with `frame(height: 0)` + opacity 0,
+                    // which still cost a SwiftUI layout pass and
+                    // polluted the accessibility tree (VoiceOver was
+                    // landing on hit-testing-disabled controls).
+                    if showTransport {
+                        playerBar
+                            .padding(.vertical, 8)
+                    } else {
+                        idlePlayerBar
+                            .padding(.vertical, 8)
+                    }
                 }
                 .background(readerBackground.opacity(0.96))
                 .transition(.move(edge: .bottom).combined(with: .opacity))

@@ -36,6 +36,13 @@ struct FullPlayerSheet: View {
     @EnvironmentObject private var readerCoordinator: ReaderCoordinator
     private var readerChapterIndex: Int { readerCoordinator.anchor.chapterIndex }
 
+    /// `.tertiary` foreground on `.thinMaterial` over album-art
+    /// backdrop drops below WCAG AA in dark mode. When the user has
+    /// opted into Increase Contrast we bump to `.secondary` so the
+    /// chapter label stays readable.
+    @Environment(\.colorSchemeContrast) private var colorSchemeContrast
+    private var increaseContrast: Bool { colorSchemeContrast == .increased }
+
     @Environment(\.dismiss) private var dismiss
 
     @State private var showChapterList = false
@@ -240,7 +247,7 @@ struct FullPlayerSheet: View {
             }
             Text(chapterLabel)
                 .font(.footnote)
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(increaseContrast ? .secondary : .tertiary)
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
         }
