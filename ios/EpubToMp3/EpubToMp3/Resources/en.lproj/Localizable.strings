@@ -114,6 +114,9 @@
 "bookOpen.locateFile" = "Locate file…";
 "bookOpen.retry" = "Retry";
 
+"player.error.title" = "Playback issue";
+"common.ok" = "OK";
+
 /* AudioPlayer surfaced errors */
 "player.error.noPlayableChapters" = "This book has no playable chapters yet. Wait for conversion to produce the first chapter, or try a different book.";
 "player.error.emptySegmentData" = "A streaming audio segment arrived empty. Playback will continue with the next segment.";

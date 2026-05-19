@@ -272,6 +272,13 @@ final class AudioPlayer: ObservableObject {
     private var segmentPlayedCount: Int = 0
 
     private static let maxQueueAhead = 5
+    /// Number of consecutive empty SSE chunks tolerated before
+    /// `lastError = .emptySegmentData` is published. Edge-TTS warmup
+    /// often emits one or two zero-byte preambles; surfacing those as
+    /// toasts would be noisy spam. A real failure produces a steady
+    /// stream of empties — that's what we want to catch.
+    private static let emptySegmentStreakThreshold = 5
+    private var emptySegmentStreak: Int = 0
     /// Hard cap on the deferred-segments backlog. When the user has the
     /// app open during conversion but never taps Play, segments can
     /// accumulate without bound (the queue won't drain because nothing
@@ -756,12 +763,19 @@ final class AudioPlayer: ObservableObject {
         audioLog.debug("[enqueueSegment] ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(self.player == nil)")
         guard !data.isEmpty else {
             audioLog.warning("[enqueueSegment] empty data ignored ch=\(chapterIndex) seg=\(segmentIndex)")
-            // Soft surface: subsequent segments may still arrive
-            // successfully, so we don't pause playback — but the
-            // host can opt to show a transient toast.
-            lastError = .emptySegmentData
+            // Edge-TTS occasionally emits a zero-byte preamble as the
+            // first chunk; that's a normal warmup hiccup, not a user-
+            // actionable error. Only surface after N consecutive
+            // empties in the same chapter so the alert reflects a
+            // real problem (engine misconfigured / network flap), not
+            // routine ramp-up.
+            emptySegmentStreak += 1
+            if emptySegmentStreak >= Self.emptySegmentStreakThreshold {
+                lastError = .emptySegmentData
+            }
             return
         }
+        emptySegmentStreak = 0
 
         // Ensure a temp directory exists for this session.
         if segmentTempDir == nil {

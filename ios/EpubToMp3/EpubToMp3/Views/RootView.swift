@@ -107,6 +107,29 @@ struct TabRoot: View {
                 : .spring(response: 0.45, dampingFraction: 0.86),
             value: playerPresentation.showingFullPlayer
         )
+        // Single host for player-side error toasts. The AudioPlayer
+        // publishes its `lastError` when a play / segment / write
+        // operation fails silently — `.alert(item:)` is the simplest
+        // surface that works across every view tree the user might be
+        // in (library, reader, settings) and dismisses without
+        // forcing a navigation. Set back to nil after the user
+        // acknowledges so the same error can fire again later if it
+        // genuinely recurs.
+        .alert(
+            isPresented: Binding(
+                get: { player.lastError != nil },
+                set: { if !$0 { player.lastError = nil } }
+            ),
+            content: { playerErrorAlert(player.lastError) }
+        )
+    }
+
+    private func playerErrorAlert(_ error: AudioPlayer.PlayerError?) -> Alert {
+        Alert(
+            title: Text(L10n.string("player.error.title")),
+            message: Text(error?.errorDescription ?? ""),
+            dismissButton: .default(Text(L10n.string("common.ok")))
+        )
     }
 
     private var tabContent: some View {

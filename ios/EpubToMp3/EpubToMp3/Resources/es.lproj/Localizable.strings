@@ -114,6 +114,9 @@
 "bookOpen.locateFile" = "Localizar archivo…";
 "bookOpen.retry" = "Reintentar";
 
+"player.error.title" = "Problema de reproducción";
+"common.ok" = "OK";
+
 /* AudioPlayer errores expuestos */
 "player.error.noPlayableChapters" = "Este libro aún no tiene capítulos disponibles. Espera a que la conversión genere el primer capítulo o elige otro libro.";
 "player.error.emptySegmentData" = "Un fragmento de audio llegó vacío. La reproducción continuará en el siguiente fragmento.";
