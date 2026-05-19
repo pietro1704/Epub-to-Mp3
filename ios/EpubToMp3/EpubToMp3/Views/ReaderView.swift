@@ -38,6 +38,16 @@ struct ReaderView: View {
     /// `true` so legacy call sites that don't manage immersive chrome keep
     /// the toolbar showing.
     var chromeVisible: Bool = true
+    /// Fixed vertical space reserved for the host's top chrome (nav bar,
+    /// custom top bar). Pagination uses a body height that already excludes
+    /// this amount, so the host's chrome — rendered as an overlay — sits
+    /// above the margin without covering any text. Hiding the chrome leaves
+    /// the margin empty; no text reflows. Apple Books uses the same trick.
+    /// Default 0 for legacy call sites that don't participate in this protocol.
+    var chromeTopInset: CGFloat = 0
+    /// Fixed vertical space reserved for the host's bottom chrome (player
+    /// bar, mini player, page footer). Same contract as `chromeTopInset`.
+    var chromeBottomInset: CGFloat = 0
     /// Fired the first time the user advances/retreats a page so the
     /// host can dim its own chrome (nav bar, mini player). The host is
     /// responsible for the actual `withAnimation`. The callback fires on
@@ -88,10 +98,17 @@ struct ReaderView: View {
     /// equivalent page in the new pagination.
     @State private var textOffsetAtCurrentPage: Int = 0
 
-    // (stableBodyHeight removed — pagination now follows the live
-    // GeometryReader height so the page always fills the available
-    // body area instead of leaving an empty strip below the text when
-    // chrome is hidden. Reflow on chrome toggle is intentional.)
+    // Apple Books pattern: page height is FROZEN once, then held constant
+    // regardless of chrome toggle or tab-bar visibility changes. The host
+    // reserves `chromeTopInset` + `chromeBottomInset` as fixed margins;
+    // those margins are always present whether chrome is visible or not.
+    // Hiding the chrome leaves the margins empty — no text reflows.
+    //
+    // `stableBodyHeight` is seeded on first appear and re-seeded only when
+    // the container *width* changes (= rotation). Height-only changes (tab
+    // bar toggle, status bar toggle) are intentionally ignored to preserve
+    // the "zero reflow" invariant.
+    @State private var stableBodyHeight: CGFloat = 0
 
     /// `true` while the reader tracks the audio's `currentSentenceId`
     /// — auto-pages and highlights the active sentence. Flipped to
@@ -205,7 +222,9 @@ struct ReaderView: View {
         onRestoreChrome: (() -> Void)? = nil,
         onLinkTap: ((URL) -> Bool)? = nil,
         onJumpToPlayerPosition: (() -> Void)? = nil,
-        playerChapterLabel: String? = nil
+        playerChapterLabel: String? = nil,
+        chromeTopInset: CGFloat = 0,
+        chromeBottomInset: CGFloat = 0
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -220,6 +239,8 @@ struct ReaderView: View {
         self.onLinkTap = onLinkTap
         self.onJumpToPlayerPosition = onJumpToPlayerPosition
         self.playerChapterLabel = playerChapterLabel
+        self.chromeTopInset = chromeTopInset
+        self.chromeBottomInset = chromeBottomInset
     }
 
     var body: some View {
@@ -480,29 +501,50 @@ struct ReaderView: View {
 
     // MARK: Paginated content
 
+    /// True when the host opted into the Apple Books "fixed margin"
+    /// layout by passing non-zero chrome insets (InstantReaderView).
+    /// Legacy hosts (PlayerReaderView) leave both at 0 and keep the
+    /// live-height layout where chrome is part of the VStack.
+    private var usesFixedMargin: Bool {
+        chromeTopInset > 0 || chromeBottomInset > 0
+    }
+
     private var paginatedContent: some View {
-        // Wrap the page-rendering GeometryReader in a horizontal
-        // safe-area inset so paginated mode never lays out a page
-        // under the notch / Dynamic Island. GeometryReader otherwise
-        // measures the *full* available width, which on iPhone
-        // landscape includes the curved cutout region.
+        // Two layout modes, picked by whether the host passed chrome insets:
+        //
+        // FIXED-MARGIN (InstantReaderView — `usesFixedMargin == true`):
+        //   Apple Books pattern. The host renders chrome as a ZStack
+        //   OVERLAY; `chromeTopInset` / `chromeBottomInset` are its fixed
+        //   heights. Pagination uses a FROZEN `stableBodyHeight` minus
+        //   those insets, so a chrome toggle never repaginates. The page
+        //   ZStack is padded by the insets so text lives in the
+        //   chrome-free corridor; hiding chrome just empties the margin.
+        //
+        // LIVE-HEIGHT (PlayerReaderView — both insets 0):
+        //   Chrome is part of the VStack layout, so the reader pane
+        //   genuinely resizes when the transport pane shows/hides — the
+        //   page budget must follow `geo.size.height` (minus the 76 pt
+        //   footer/margin budget) as before.
+        //
+        // GeometryReader gives the container width always; height comes
+        // from `stableBodyHeight` only in fixed-margin mode.
         GeometryReader { geo in
             let margin = effectiveReaderMargin(for: geo.size)
             let effectiveFontSize: CGFloat = debouncedFontSize > 0 ? debouncedFontSize : settings.readerPointSize
             let effectiveLineSpacing: Double = debouncedLineSpacing > 0 ? debouncedLineSpacing : settings.readerLineSpacing
             let effectiveColumnWidth: CGFloat = debouncedColumnWidth > 0 ? CGFloat(debouncedColumnWidth) : settings.readerColumnWidth
-            // No `headerHeight` now — chapterTitleHeader was dropped
-            // (the EPUB's own heading flows as the first paragraph of
-            // page 0). All pages share the same body budget:
-            //   geo.size.height - 24 top - 24 bottom - 28 footer.
-            // Body budget = full container height minus footer (24 top + 24
-            // bottom + 28 footer ≈ 76 pt). We track the LIVE height so that
-            // when chrome (nav bar / tab bar) toggles, the page re-paginates
-            // to claim the freed vertical space. User spec: "parte de baixo
-            // da tela em modo paginated ainda sem conteudo, e deve adequar
-            // conteudo rapidamente quando aparece/desaparece barra de menus".
-            let liveBodyHeight = max(120, geo.size.height - 76)
-            let pageBodySize = CGSize(width: geo.size.width, height: liveBodyHeight)
+
+            // Body budget. Fixed-margin: frozen height minus chrome insets
+            // — invariant to chrome toggle / tab-bar hide-show. Live-height:
+            // current container height minus the 76 pt footer/margin budget.
+            let textAreaHeight: CGFloat = {
+                if usesFixedMargin {
+                    let bodyH = stableBodyHeight > 0 ? stableBodyHeight : geo.size.height
+                    return max(120, bodyH - chromeTopInset - chromeBottomInset)
+                }
+                return max(120, geo.size.height - 76)
+            }()
+            let pageBodySize = CGSize(width: geo.size.width, height: textAreaHeight)
             let pages = attributedPages(
                 pageSize: pageBodySize,
                 margin: margin,
@@ -525,17 +567,41 @@ struct ReaderView: View {
                         .allowsHitTesting(false)
                 }
             }
+            // Shift the text area downward to sit below the top chrome
+            // margin, and inset the bottom to stay above the bottom
+            // chrome margin. This positions text inside the
+            // chrome-free corridor regardless of whether chrome is shown.
+            .padding(.top, chromeTopInset)
+            .padding(.bottom, chromeBottomInset)
             .compatFocusable()
             .focused($paginatedFocus)
             .modifier(HideFocusRingModifier())
             .onAppear {
                 paginatedFocus = true
+                // Seed the stable height once on first appear. This is
+                // the SCREEN height captured at launch; subsequent
+                // chrome / tab-bar toggles do not change it.
+                if stableBodyHeight == 0 {
+                    stableBodyHeight = geo.size.height
+                }
                 lastContainerSize = geo.size
             }
             .compatOnKeyPressArrowsAndPaging { key in
                 handleCompatKey(key, totalPages: pages.count)
             }
             .compatOnChange(of: geo.size) { newSize in
+                // Re-seed stableBodyHeight on width change (rotation) OR
+                // when the container grows TALLER than the frozen value.
+                // The grow case fires exactly once — when the tab bar is
+                // hidden on reader entry, returning ~49 pt to the
+                // container. Re-seeding then captures the final immersive
+                // height. Height SHRINKS (status-bar toggle, etc.) are
+                // ignored so a chrome toggle never repaginates.
+                let widthChanged = abs(newSize.width - lastContainerSize.width) > 2
+                let grewTaller = newSize.height > stableBodyHeight + 8
+                if widthChanged || grewTaller {
+                    stableBodyHeight = newSize.height
+                }
                 guard sizeChangedMeaningfully(from: lastContainerSize, to: newSize) else { return }
                 lastContainerSize = newSize
                 if !pages.isEmpty {

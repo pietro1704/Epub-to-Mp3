@@ -76,25 +76,39 @@ struct InstantReaderView: View {
         return player
     }
 
+    // MARK: - Chrome height constants
+    //
+    // Apple Books "fixed margin" pattern. These constants are the FIXED
+    // pixel heights of the chrome layers rendered as overlay on top of
+    // the ReaderView content. They are passed as `chromeTopInset` /
+    // `chromeBottomInset` to ReaderView so pagination uses a body budget
+    // that permanently excludes the chrome area.
+    //
+    // When chrome is VISIBLE  → host overlay sits exactly over the margin.
+    // When chrome is HIDDEN   → margin is empty; no text reflows.
+    //
+    // Breakdown:
+    //   chromeTopInset:    customTopBar = buttons(44) + padding.vertical(8×2) = 60 pt
+    //   chromeBottomInset: Divider(1) + playerBar/idlePlayerBar(88) = 89 pt
+    //     playerBar: HStack(44) + scrubber(28) + spacing(8) + padding.vertical(4×2) = 88 pt
+    //
+    // Update these if the chrome layout changes (e.g. player bar height revision).
+    private static let chromeTopInset: CGFloat = 60
+    private static let chromeBottomInset: CGFloat = 89
+
     var body: some View {
-        // Chrome is rendered as OVERLAY (not safeAreaInset) AND the
-        // content ignores the container safe area so the reader's
-        // body always sees the FULL screen height regardless of
-        // chrome visibility.
+        // Apple Books "fixed margin" layout:
         //
-        // The original problem: chrome toggle flipped `statusBarHidden`
-        // and `.toolbar(_:for:.tabBar)`, both of which change the
-        // SwiftUI safe area inset → `GeometryReader` inside ReaderView
-        // saw a different `geo.size.height` → pagination recalculated
-        // with a new height → DIFFERENT PAGE COUNT and visible text
-        // reflow on every tap-to-toggle.
+        // Chrome (customTopBar + playerBar) is a ZStack OVERLAY on top of
+        // the content. The content layer uses `.ignoresSafeArea(.container)`
+        // so `geo.size.height` is the full screen height regardless of
+        // chrome or tab-bar visibility.
         //
-        // Fix: the content layer uses `.ignoresSafeArea(.container)`
-        // so `geo.size.height` is the screen height always; chrome
-        // is overlayed on top in its OWN VStack that respects the
-        // safe area (it sits inside the visible insets). Page count
-        // stays constant; chrome appears/disappears without touching
-        // the reader's geometry. Apple Books uses the same trick.
+        // ReaderView's paginator uses a body height = screenHeight −
+        // chromeTopInset − chromeBottomInset. This value is frozen on first
+        // appear and never changes on chrome toggle → zero reflow. The host
+        // overlays land exactly over the top/bottom margins; hiding them
+        // leaves those margins empty — text never moves.
         ZStack(alignment: .center) {
             // Content layer: ignores the safe area so the inner
             // `GeometryReader` (inside `paginatedContent`) always
@@ -253,7 +267,9 @@ struct InstantReaderView: View {
                 onRestoreChrome: { restoreChromeIfNeeded() },
                 onLinkTap: { url in handleEpubLink(url) },
                 onJumpToPlayerPosition: jumpToPlayerPosition,
-                playerChapterLabel: divergencePlayerChapterLabel
+                playerChapterLabel: divergencePlayerChapterLabel,
+                chromeTopInset: Self.chromeTopInset,
+                chromeBottomInset: Self.chromeBottomInset
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -269,7 +285,9 @@ struct InstantReaderView: View {
                 onRestoreChrome: { restoreChromeIfNeeded() },
                 onLinkTap: { url in handleEpubLink(url) },
                 onJumpToPlayerPosition: jumpToPlayerPosition,
-                playerChapterLabel: divergencePlayerChapterLabel
+                playerChapterLabel: divergencePlayerChapterLabel,
+                chromeTopInset: Self.chromeTopInset,
+                chromeBottomInset: Self.chromeBottomInset
             )
         } else {
             VStack(spacing: 12) {
@@ -1015,10 +1033,23 @@ struct InstantReaderView: View {
 
 // MARK: - Chrome hide/show (Safari-like immersive reading)
 
-/// Hides the nav bar, status bar AND root TabView's tab bar for
-/// immersive reading. Shared between `InstantReaderView` (local EPUB)
-/// and `PlayerReaderView` (server-streamed) so both readers behave
+/// Hides the nav bar and status bar for immersive reading, and hides
+/// the root TabView's tab bar for the WHOLE reading session.
+/// Shared between `InstantReaderView` (local EPUB) and
+/// `PlayerReaderView` (server-streamed) so both readers behave
 /// identically when the user taps to dim chrome.
+///
+/// Tab bar: hidden CONSTANTLY (`.hidden`, not `visible ? … : …`).
+/// `BookOpenView` is pushed onto a NavigationStack that lives inside
+/// the root TabView, so without this the system tab bar
+/// (Read / Library / Settings) would sit at the bottom during reading —
+/// not immersive, not Apple Books. Hiding it *constantly* gives full
+/// immersion AND avoids reflow: a constant `.hidden` never returns the
+/// ~49 pt strip to the container mid-session, so `stableBodyHeight`
+/// stays frozen. (Toggling it per `visible` — the old behaviour — was
+/// what caused the chrome-toggle reflow.) The one-time growth when the
+/// bar disappears on reader entry is absorbed by the grow-only re-seed
+/// in `ReaderView.paginatedContent`.
 struct ChromeVisibilityModifier: ViewModifier {
     let visible: Bool
 
@@ -1029,7 +1060,7 @@ struct ChromeVisibilityModifier: ViewModifier {
             content
                 .navigationBarHidden(true)
                 .statusBarHidden(!visible)
-                .toolbar(visible ? .visible : .hidden, for: .tabBar)
+                .toolbar(.hidden, for: .tabBar)
         } else {
             content
                 .navigationBarHidden(true)
