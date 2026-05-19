@@ -111,11 +111,27 @@ final class AudioPlayer: ObservableObject {
     /// Errors the player can surface back to a SwiftUI view. Kept
     /// minimal — anything more granular belongs in a category-specific
     /// error type owned by the calling site.
-    enum PlayerError: LocalizedError, Equatable {
+    ///
+    /// `Identifiable` so the SwiftUI `.alert(item:)` API can detect a
+    /// new error fired DURING the previous alert's dismiss animation —
+    /// the `isPresented:` variant would silently drop it. Using the
+    /// raw value as id means setting `lastError = .x` twice in a row
+    /// is treated as the same alert (no re-flash); switching to a
+    /// different error re-presents.
+    enum PlayerError: LocalizedError, Equatable, Identifiable {
         case noPlayableChapters
         case emptySegmentData
         case segmentWriteFailed
         case missingSnapshot
+
+        var id: String {
+            switch self {
+            case .noPlayableChapters: return "noPlayableChapters"
+            case .emptySegmentData: return "emptySegmentData"
+            case .segmentWriteFailed: return "segmentWriteFailed"
+            case .missingSnapshot: return "missingSnapshot"
+            }
+        }
 
         var errorDescription: String? {
             switch self {
@@ -532,29 +548,37 @@ final class AudioPlayer: ObservableObject {
         // the filtered subset. Compare in the *playable* space so
         // unplayable chapters between user and player (footnotes,
         // image-only sections) don't spuriously fire the dialog.
+        //
+        // When the reader sits BEFORE any playable chapter (e.g. the
+        // book starts with a non-narratable preface and `playable[0]`
+        // is EPUB index 5 while reader is at EPUB 0), there's no
+        // matching playable for the reader — translation returns nil.
+        // Treat that as divergent so the user gets the dialog instead
+        // of a silent no-op.
         let reader = playableIndex(forEpubZeroBased: readerChapterIndex, in: snapshot)
+        guard let reader else { return .offerStartChoice }
         return reader != currentChapterIndex ? .offerStartChoice : .resume
     }
 
     /// Convert an EPUB zero-based chapter index (what the reader views
     /// publish into UserDefaults) to the matching playable-list index
-    /// (what `currentChapterIndex` lives in). Falls back to the nearest
-    /// playable chapter at or before the reader's position when the
-    /// reader is sitting on a non-playable chapter — so a play tap
-    /// from a footnote chapter starts from the previous playable.
+    /// (what `currentChapterIndex` lives in). Returns `nil` when no
+    /// playable chapter is at or before `epubIndex` (the user is
+    /// reading a preface that has no audio counterpart).
+    ///
+    /// Otherwise falls back to the last playable chapter whose EPUB
+    /// index is ≤ the reader's, so a play tap from an unplayable
+    /// chapter starts from the previous playable.
     private func playableIndex(
         forEpubZeroBased epubIndex: Int,
         in snapshot: JobSnapshot
-    ) -> Int {
+    ) -> Int? {
         let playable = snapshot.playableChapters
+        guard !playable.isEmpty else { return nil }
         if let exact = playable.firstIndex(where: { $0.index == epubIndex }) {
             return exact
         }
-        // No exact playable match — bias toward "where the user was
-        // reading" by picking the LAST playable chapter whose EPUB
-        // index is ≤ the reader's. Empty playable list ⇒ 0 so the
-        // caller's clamp keeps the value safe.
-        var fallback = 0
+        var fallback: Int?
         for (i, ch) in playable.enumerated() where ch.index <= epubIndex {
             fallback = i
         }
@@ -610,11 +634,10 @@ final class AudioPlayer: ObservableObject {
         guard let snapshot else { resume(); return }
         // `readerChapterIndex` is EPUB-zero-based (reader space).
         // Translate to playable-list space — same fallback logic as
-        // `playTapDecision`. Without this, a reader on EPUB index 5
-        // would land the audio on `playableChapters[5]` which is
-        // an entirely different chapter when any earlier chapter
-        // is unplayable.
-        let target = playableIndex(forEpubZeroBased: readerChapterIndex, in: snapshot)
+        // `playTapDecision`. Reader sitting before any playable
+        // chapter (e.g. on an unplayable preface) ⇒ jump to the first
+        // playable so audio actually starts somewhere coherent.
+        let target = playableIndex(forEpubZeroBased: readerChapterIndex, in: snapshot) ?? 0
         play(snapshot: snapshot, startingAt: target)
 
         // Priority 1: sentence-level seek (precise).
@@ -1291,13 +1314,23 @@ final class AudioPlayer: ObservableObject {
     // MARK: Helpers
 
     private var currentChapterValue: JobSnapshot.Chapter? {
-        if let all = snapshot?.chapterProgress,
-           let match = all.first(where: { $0.index == currentChapterIndex }) {
+        // SOURCE OF TRUTH: `currentChapterIndex` lives in playable-list
+        // space. Resolving against `chapterProgress` by `$0.index ==
+        // currentChapterIndex` would match an EPUB-index that happens
+        // to share a numeric value with the playable index — wrong
+        // chapter whenever any earlier chapter is unplayable. The
+        // canonical lookup is `playableChapters[currentChapterIndex]`,
+        // and we cross-reference back into `chapterProgress` by EPUB
+        // index to surface any extra metadata the playable subset
+        // dropped (rare; same struct today).
+        guard let chapters = snapshot?.playableChapters,
+              chapters.indices.contains(currentChapterIndex) else { return nil }
+        let playing = chapters[currentChapterIndex]
+        if let progress = snapshot?.chapterProgress,
+           let match = progress.first(where: { $0.index == playing.index }) {
             return match
         }
-        guard let chapters = snapshot?.playableChapters,
-              currentChapterIndex < chapters.count else { return nil }
-        return chapters[currentChapterIndex]
+        return playing
     }
 
     /// Push the current-chapter value to all open AsyncStream

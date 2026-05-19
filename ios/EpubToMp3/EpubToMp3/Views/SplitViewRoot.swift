@@ -97,6 +97,20 @@ struct SplitViewRoot: View {
                 : .spring(response: 0.45, dampingFraction: 0.86),
             value: playerPresentation.showingFullPlayer
         )
+        // Mirror TabRoot's player-error alert so iPad / macOS users
+        // (useSplit == true) get the same toast surface as iPhone.
+        // `.alert(item:)` so a new error during dismiss animation
+        // re-presents instead of being dropped — same rationale.
+        .alert(item: Binding(
+            get: { player.lastError },
+            set: { player.lastError = $0 }
+        )) { error in
+            Alert(
+                title: Text(L10n.string("player.error.title")),
+                message: Text(error.errorDescription ?? ""),
+                dismissButton: .default(Text(L10n.string("common.ok")))
+            )
+        }
     }
 
     private var splitContent: some View {
