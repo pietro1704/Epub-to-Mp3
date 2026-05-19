@@ -98,6 +98,14 @@
 "player.chapters" = "Capítulos";
 "player.showChapterList" = "Mostrar lista de capítulos";
 
+/* Diálogo de divergencia al pulsar play (lector en un capítulo distinto al audio) */
+"player.divergence.title" = "¿Continuar desde dónde?";
+"player.divergence.message" = "La página que estás leyendo no es donde se detuvo el audio.";
+"player.divergence.fromCurrentPage" = "Desde la página actual";
+"player.divergence.fromWhereStopped" = "Desde donde paré";
+"player.divergence.fromBeginning" = "Desde el principio";
+"common.cancel" = "Cancelar";
+
 /* MiniPlayerBar */
 "miniPlayer.nowPlaying" = "Reproduciendo: %@, %@. Toca para expandir.";
 "miniPlayer.expandHint" = "Desliza hacia arriba o toca para abrir el reproductor completo.";
@@ -121,6 +129,8 @@
 "reader.previousPage" = "Página anterior";
 "reader.nextPage" = "Página siguiente";
 "reader.toggleControls" = "Alternar controles";
+"reader.followAudio" = "Seguir el audio";
+"reader.nowPlaying" = "Reproduciendo";
 
 /* AppSettings — display names */
 "theme.default" = "Predeterminado";

@@ -72,13 +72,31 @@ struct SplitViewRoot: View {
         return library.books.first(where: { $0.id == id })
     }
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
-        splitContent
-            .compatFullScreenCover(isPresented: $playerPresentation.showingFullPlayer) {
+        ZStack {
+            splitContent
+                .zIndex(0)
+
+            // In-tree overlay so the sheet rises from the mini-player
+            // strip rather than sliding in from off-screen. Matches the
+            // iPhone (TabRoot) presentation.
+            if playerPresentation.showingFullPlayer {
                 FullPlayerSheet()
                     .environmentObject(player)
                     .environmentObject(library)
+                    .transition(.risesFromMiniPlayer)
+                    .zIndex(2)
+                    .ignoresSafeArea()
             }
+        }
+        .animation(
+            reduceMotion
+                ? .easeInOut(duration: 0.25)
+                : .spring(response: 0.45, dampingFraction: 0.86),
+            value: playerPresentation.showingFullPlayer
+        )
     }
 
     private var splitContent: some View {

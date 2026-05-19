@@ -32,6 +32,11 @@ struct MiniPlayerBar: View {
     @AppStorage(AudioPlayer.currentChapterIndexDefaultsKey)
     private var currentChapterIndex: Int = 0
 
+    @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+    private var readerChapterIndex: Int = 0
+
+    @State private var showingStartChoice: Bool = false
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: Derived state
@@ -118,7 +123,7 @@ struct MiniPlayerBar: View {
                             .accessibilityLabel(L10n.string("player.generatingAudio"))
                             .accessibilityIdentifier("miniPlayer.loadingSpinner")
                         Button {
-                            player.togglePlayPause()
+                            handlePlayTap()
                         } label: {
                             Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
                                 .font(.system(size: 22))
@@ -226,6 +231,24 @@ struct MiniPlayerBar: View {
                     ? .opacity
                     : .move(edge: .bottom).combined(with: .opacity)
             )
+            .playDivergenceDialog(
+                player: player,
+                readerChapterIndex: readerChapterIndex,
+                isPresented: $showingStartChoice
+            )
+        }
+    }
+
+    // MARK: Play / divergence routing
+    //
+    // Delegates the decision logic and the start-options dialog to
+    // `AudioPlayer` + the `.playDivergenceDialog` view modifier so
+    // every play-button surface in the app shares one implementation.
+
+    private func handlePlayTap() {
+        switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
+        case .pause, .resume: player.togglePlayPause()
+        case .offerStartChoice: showingStartChoice = true
         }
     }
 

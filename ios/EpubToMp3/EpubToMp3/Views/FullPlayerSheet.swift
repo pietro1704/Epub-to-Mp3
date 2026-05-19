@@ -33,10 +33,14 @@ struct FullPlayerSheet: View {
     @AppStorage(AudioPlayer.currentChapterIndexDefaultsKey)
     private var currentChapterIndex: Int = 0
 
+    @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+    private var readerChapterIndex: Int = 0
+
     @Environment(\.dismiss) private var dismiss
 
     @State private var showChapterList = false
     @State private var dragOffset: CGFloat = 0
+    @State private var showingStartChoice: Bool = false
 
     // MARK: Derived state
 
@@ -283,7 +287,7 @@ struct FullPlayerSheet: View {
             .buttonStyle(.plain)
             .accessibilityLabel(L10n.string("player.skipBack15"))
             Spacer()
-            Button { player.togglePlayPause() } label: {
+            Button { handlePlayTap() } label: {
                 ZStack {
                     if player.isLoading {
                         ProgressView()
@@ -300,6 +304,11 @@ struct FullPlayerSheet: View {
             .buttonStyle(.plain)
             .tint(.primary)
             .accessibilityLabel(player.isPlaying ? L10n.string("player.pause") : L10n.string("player.play"))
+            .playDivergenceDialog(
+                player: player,
+                readerChapterIndex: readerChapterIndex,
+                isPresented: $showingStartChoice
+            )
             Spacer()
             Button { player.skipForward(seconds: 15) } label: {
                 Image(systemName: "goforward.15")
@@ -499,6 +508,15 @@ struct FullPlayerSheet: View {
         return String(format: "%d:%02d", m, s)
     }
 
+    // MARK: Play / divergence routing — see AudioPlayer for shared
+    // decision logic and `.playDivergenceDialog` for the dialog UI.
+
+    private func handlePlayTap() {
+        switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
+        case .pause, .resume: player.togglePlayPause()
+        case .offerStartChoice: showingStartChoice = true
+        }
+    }
 }
 
 // MARK: - Sleep timer button
@@ -597,10 +615,29 @@ private struct ChapterListSheet: View {
 
     @ViewBuilder
     private func chapterRow(_ chapter: JobSnapshot.Chapter) -> some View {
-        let isCurrent = chapter.index == player.currentChapterIndex
+        // SOURCE OF TRUTH: `player.currentChapterIndex` is an index into
+        // `playableChapters` (the filtered, playable subset), NOT into
+        // the full `chapterProgress` list we iterate here. Comparing
+        // `chapter.index` (the original EPUB index, sparse) against it
+        // highlighted the wrong row whenever any chapter was skipped /
+        // unplayable. Resolve through the playable subset.
+        let playing = player.snapshot?.playableChapters
+        let playingEpubIndex = playing
+            .flatMap { $0.indices.contains(player.currentChapterIndex) ? $0[player.currentChapterIndex] : nil }
+            .map(\.index)
+        let isCurrent = playingEpubIndex.map { $0 == chapter.index } ?? false
+        // Chapters in `chapterProgress` that have no audio file (no
+        // `downloadUrl`, or never made it into `playableChapters`)
+        // would silently no-op if the user tapped them. Mark those
+        // rows visually disabled so the user knows audio jumps are
+        // unavailable there — they remain visible because the TOC
+        // structure is informational regardless of audio readiness.
+        let playableIndex = player.snapshot?.playableChapters
+            .firstIndex(where: { $0.index == chapter.index })
+        let isPlayable = playableIndex != nil
         Button {
-            if let snapshot = player.snapshot {
-                player.play(snapshot: snapshot, startingAt: chapter.index)
+            if let snapshot = player.snapshot, let playableIndex {
+                player.play(snapshot: snapshot, startingAt: playableIndex)
             }
             dismiss()
         } label: {
@@ -608,13 +645,21 @@ private struct ChapterListSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(chapter.displayTitle)
                         .font(.body)
-                        .foregroundStyle(isCurrent ? Color.accentColor : .primary)
+                        .foregroundStyle(
+                            isCurrent ? Color.accentColor
+                            : (isPlayable ? .primary : .secondary)
+                        )
                 }
                 Spacer()
                 if isCurrent {
                     Image(systemName: "speaker.wave.2.fill")
                         .font(.caption)
                         .foregroundColor(.accentColor)
+                        .accessibilityHidden(true)
+                } else if !isPlayable {
+                    Image(systemName: "speaker.slash")
+                        .font(.caption)
+                        .foregroundStyle(.tertiary)
                         .accessibilityHidden(true)
                 }
             }
@@ -623,8 +668,15 @@ private struct ChapterListSheet: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isCurrent ? "\(chapter.displayTitle), now playing" : chapter.displayTitle)
-        .accessibilityHint("Double tap to play this chapter")
+        .disabled(!isPlayable)
+        .accessibilityLabel(
+            isCurrent
+                ? "\(chapter.displayTitle), now playing"
+                : (isPlayable
+                    ? chapter.displayTitle
+                    : "\(chapter.displayTitle), no audio available")
+        )
+        .accessibilityHint(isPlayable ? "Double tap to play this chapter" : "")
     }
 
     private func formatDuration(_ seconds: Double) -> String {

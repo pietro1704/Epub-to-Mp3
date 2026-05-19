@@ -75,6 +75,8 @@ struct BookOpenView: View {
             case .resolving:
                 ProgressView(L10n.string("bookOpen.opening", book.resolvedTitle))
                     .controlSize(.large)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
             case .ready:

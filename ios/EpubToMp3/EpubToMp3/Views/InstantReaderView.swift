@@ -41,6 +41,7 @@ struct InstantReaderView: View {
     /// instance for `objectWillChange` subscriptions to fire — so we
     /// gate the UI on this flag instead.
     @State private var playerMounted: Bool = false
+    @State private var showingStartChoice: Bool = false
     @State private var sync = SyncEngine()
     @State private var spans: [SentenceSpan] = []
     @State private var currentSentenceId: String?
@@ -156,6 +157,27 @@ struct InstantReaderView: View {
         .compatOnChange(of: currentChapterIndex) { newIndex in
             reloadCurrentChapter(index: newIndex)
             settings.saveChapterIndex(newIndex, for: fulltext.jobId)
+            // Mini player / full player read this to detect when the
+            // reader has drifted off the audio position and surface
+            // the "where to start" divergence dialog on the next play
+            // tap. UserDefaults is the only cross-view channel that
+            // works whether the reader is foreground or backgrounded.
+            UserDefaults.standard.set(
+                newIndex,
+                forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey
+            )
+            // The reading-ratio + sentenceId published by ReaderView
+            // refer to the previous chapter; reset both so a play tap
+            // fired before the new chapter's first page-change won't
+            // seek using the old chapter's offset / anchor. ReaderView
+            // re-publishes on appear.
+            UserDefaults.standard.set(
+                0.0,
+                forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey
+            )
+            UserDefaults.standard.removeObject(
+                forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey
+            )
             WidgetDataSync.updateLastRead(
                 bookId: fulltext.jobId,
                 chapterIndex: newIndex,
@@ -171,6 +193,13 @@ struct InstantReaderView: View {
             } else if currentChapterIndex == 0 {
                 currentChapterIndex = firstReadableChapterIndex
             }
+            // Seed the reader-position channel so a play tap right
+            // after launch can already detect divergence without
+            // waiting for the first compatOnChange to fire.
+            UserDefaults.standard.set(
+                currentChapterIndex,
+                forKey: AudioPlayer.readerCurrentChapterIndexDefaultsKey
+            )
             reloadCurrentChapter(index: currentChapterIndex)
             if hasAudio { mountPlayerIfPossible() }
             cacheManager.refreshCachedIndices()
@@ -205,7 +234,9 @@ struct InstantReaderView: View {
                 chromeVisible: chromeVisible,
                 onAutoHideChrome: { autoHideChromeIfNeeded() },
                 onRestoreChrome: { restoreChromeIfNeeded() },
-                onLinkTap: { url in handleEpubLink(url) }
+                onLinkTap: { url in handleEpubLink(url) },
+                onJumpToPlayerPosition: jumpToPlayerPosition,
+                playerChapterLabel: divergencePlayerChapterLabel
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -219,7 +250,9 @@ struct InstantReaderView: View {
                 chromeVisible: chromeVisible,
                 onAutoHideChrome: { autoHideChromeIfNeeded() },
                 onRestoreChrome: { restoreChromeIfNeeded() },
-                onLinkTap: { url in handleEpubLink(url) }
+                onLinkTap: { url in handleEpubLink(url) },
+                onJumpToPlayerPosition: jumpToPlayerPosition,
+                playerChapterLabel: divergencePlayerChapterLabel
             )
         } else {
             VStack(spacing: 12) {
@@ -525,13 +558,21 @@ struct InstantReaderView: View {
     private func transportControls(player: AudioPlayer) -> some View {
         HStack(spacing: 24) {
             Button {
-                player.togglePlayPause()
+                switch player.playTapDecision(readerChapterIndex: currentChapterIndex) {
+                case .pause, .resume: player.togglePlayPause()
+                case .offerStartChoice: showingStartChoice = true
+                }
             } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 36))
             }
             .buttonStyle(.plain)
             .accessibilityLabel(player.isPlaying ? "Pause" : "Play")
+            .playDivergenceDialog(
+                player: player,
+                readerChapterIndex: currentChapterIndex,
+                isPresented: $showingStartChoice
+            )
 
             Button {
                 if currentChapterIndex + 1 < fulltext.chapters.count {
@@ -860,6 +901,39 @@ struct InstantReaderView: View {
         guard currentChapterIndex > 0 else { return false }
         currentChapterIndex -= 1
         return true
+    }
+
+    /// Drives the "Follow audio" pill. Snaps the reader's visible
+    /// chapter to whatever chapter the AudioPlayer is currently
+    /// narrating. Sentence-level highlight resumes on its own once
+    /// `currentSentenceId` lands on a span in the new chapter.
+    private func jumpToPlayerPosition() {
+        let activePlayer = embeddedAudioReady ? globalPlayer : player
+        let targetIndex = activePlayer.currentChapterIndex
+        guard targetIndex != currentChapterIndex,
+              fulltext.chapters.indices.contains(targetIndex) else { return }
+        currentChapterIndex = targetIndex
+    }
+
+    /// Surfaces the chapter the audio is narrating in the floating
+    /// pill — nil when the audio matches the reader (so the pill
+    /// stays generic / hidden). Used to inform users in passing
+    /// without forcing them to open the TOC / full player.
+    ///
+    /// Visible whenever the player has a snapshot AND a chapter
+    /// different from the reader's — we deliberately do NOT gate on
+    /// `isPlaying` because the most common divergence is cold-launch:
+    /// app opens, queue is paused at last-played chapter 5, user
+    /// scrolls to chapter 0 from the library — they still want to
+    /// know where the queue will resume from when they hit Play.
+    private var divergencePlayerChapterLabel: String? {
+        let activePlayer = embeddedAudioReady ? globalPlayer : player
+        guard activePlayer.snapshot != nil else { return nil }
+        let target = activePlayer.currentChapterIndex
+        guard target != currentChapterIndex,
+              fulltext.chapters.indices.contains(target) else { return nil }
+        let title = fulltext.chapters[target].displayTitle
+        return title.isEmpty ? nil : title
     }
 
     // MARK: - Theme colours (delegated to ReaderTheme)

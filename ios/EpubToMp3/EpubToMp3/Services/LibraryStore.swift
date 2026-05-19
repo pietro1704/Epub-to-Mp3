@@ -74,8 +74,14 @@ final class LibraryStore: ObservableObject {
                     }
                 }
                 let needsPersist = pruned.count != decoded.count || migrated
+                // Rebind to a `let` before crossing the actor boundary
+                // so Swift 6's strict concurrency checker doesn't flag
+                // the captured-var-mutation pattern (`result` is a
+                // `var` we mutated above). The closure now captures
+                // the immutable snapshot by value.
+                let finalBooks = result
                 await MainActor.run {
-                    self.books = result
+                    self.books = finalBooks
                     if needsPersist {
                         self.persist()
                     }

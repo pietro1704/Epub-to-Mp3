@@ -98,6 +98,14 @@
 "player.chapters" = "Chapters";
 "player.showChapterList" = "Show chapter list";
 
+/* Play-tap divergence dialog (reader on a different chapter than the audio) */
+"player.divergence.title" = "Continue from where?";
+"player.divergence.message" = "The page you're reading isn't where the audio left off.";
+"player.divergence.fromCurrentPage" = "From current page";
+"player.divergence.fromWhereStopped" = "From where I stopped";
+"player.divergence.fromBeginning" = "From the beginning";
+"common.cancel" = "Cancel";
+
 /* PlayerReaderView toolbar */
 "player.toc" = "Table of contents";
 "player.more" = "More";
@@ -142,6 +150,8 @@
 "reader.previousPage" = "Previous page";
 "reader.nextPage" = "Next page";
 "reader.toggleControls" = "Toggle controls";
+"reader.followAudio" = "Follow audio";
+"reader.nowPlaying" = "Now playing";
 
 /* AppSettings — display names */
 "theme.default" = "Default";

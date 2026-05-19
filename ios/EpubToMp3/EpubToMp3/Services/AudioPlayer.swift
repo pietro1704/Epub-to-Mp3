@@ -65,6 +65,27 @@ final class AudioPlayer: ObservableObject {
     static let currentBookIDDefaultsKey = "currentlyPlayingBookID"
     /// Companion key — zero-based chapter index of the resumed book.
     static let currentChapterIndexDefaultsKey = "currentlyPlayingChapterIndex"
+    /// Channel where the reader publishes the chapter the USER is
+    /// currently reading (vs the chapter the audio is narrating). The
+    /// mini-player / full-player compare these two indices on a play
+    /// tap and, when they disagree, surface a three-option dialog so
+    /// the user can choose what to start: current page, where they
+    /// stopped, or the beginning.
+    static let readerCurrentChapterIndexDefaultsKey = "readerCurrentChapterIndex"
+    /// Companion channel — fraction (0.0 … 1.0) of how far into the
+    /// current chapter the user has scrolled (paginated mode: page
+    /// start char / total chars; scroll mode: contentOffset / contentSize).
+    /// Read by `startFromReaderPage` so "From the current page"
+    /// actually lands near the user's reading position instead of
+    /// the chapter start. Stored as `Double` (UserDefaults does the
+    /// `NSNumber` boxing).
+    static let readerCurrentPageRatioDefaultsKey = "readerCurrentPageRatio"
+    /// Companion channel — id of the first sentence on the user's
+    /// currently-visible page. When the active chapter has timing
+    /// data injected via `setSentenceTiming`, `startFromReaderPage`
+    /// prefers this precise sentence anchor over the ratio
+    /// approximation. Cleared on chapter change.
+    static let readerCurrentSentenceIdDefaultsKey = "readerCurrentSentenceId"
 
     // MARK: Public observable state
 
@@ -287,7 +308,11 @@ final class AudioPlayer: ObservableObject {
     /// the principle that media should never auto-start without user intent.
     func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0) {
         ensureRemoteCommands()
-        ensureAudioSession()
+        // Audio session is intentionally NOT activated here — `setActive(true)`
+        // on a `.playback` / `.longFormAudio` session interrupts other apps
+        // (Spotify, Apple Music, podcast apps) even when our queue is paused.
+        // We defer activation to `resume()` so silence on the user's side
+        // never costs them their currently-playing audio.
         audioLog.debug("[load] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
         let wasPlaying = isPlaying
         teardownPlayer()
@@ -389,9 +414,146 @@ final class AudioPlayer: ObservableObject {
 
     func resume() {
         guard let player else { return }
+        // Activate the audio session lazily, only when the user actually
+        // starts playback (Play button, lock-screen control, widget toggle).
+        // This is what claims the audio focus from Spotify / Apple Music /
+        // etc. — doing it earlier (e.g. on book open) interrupts other
+        // apps even though we never produce a sound.
+        ensureAudioSession()
         player.rate = rate.rawValue
         isPlaying = true
         updateNowPlayingInfo()
+    }
+
+    // MARK: Play-tap routing (centralised so every UI surface — mini
+    // player, full player, in-line buttons in the reader — uses the
+    // same divergence detection / start-options behaviour. Adding a new
+    // play button anywhere in the app should only require wiring
+    // `playTapDecision(readerChapterIndex:)` + `startFromReaderPage(_:)`
+    // + `startFromBeginning()` — never duplicate the conditional logic.)
+
+    /// What an in-app play-button tap should do, given the chapter the
+    /// reader is currently displaying. UI surfaces consult this and
+    /// then either toggle, resume, or present the divergence dialog.
+    /// Lock-screen / widget / remote-command paths bypass this entirely
+    /// — they cannot show a dialog, so they hit `resume()` directly.
+    enum PlayTapDecision {
+        /// Audio is already playing — flip to pause.
+        case pause
+        /// No divergence (or no snapshot yet) — straight resume.
+        case resume
+        /// Reader sits on a different chapter than the audio. The UI
+        /// surface should show a 3-option confirmation dialog
+        /// (current page / where stopped / beginning).
+        case offerStartChoice
+    }
+
+    func playTapDecision(readerChapterIndex: Int) -> PlayTapDecision {
+        if isPlaying { return .pause }
+        guard snapshot != nil else { return .resume }
+        return readerChapterIndex != currentChapterIndex
+            ? .offerStartChoice
+            : .resume
+    }
+
+    /// Per-chapter sentence-id → audio-ms timing maps. Populated by the
+    /// `SentenceSyncEngine` host (PlayerReaderView) when it loads a
+    /// chapter. Lookup is cheap and only used by `startFromReaderPage`
+    /// when a precise sentence-anchored seek is preferred over the
+    /// char-uniform ratio approximation. Capped at the most-recent ~8
+    /// chapters to keep memory bounded.
+    private var sentenceTimingByChapter: [Int: [String: Int]] = [:]
+    private var sentenceTimingOrder: [Int] = []
+    private static let sentenceTimingCacheSize = 8
+
+    /// Inject a sentence-id → start-ms map for `chapterIndex` (which
+    /// is a playable-chapter index, same space as `currentChapterIndex`).
+    /// Idempotent; pass an empty dictionary to clear.
+    func setSentenceTiming(_ map: [String: Int], forChapterIndex chapterIndex: Int) {
+        if map.isEmpty {
+            sentenceTimingByChapter.removeValue(forKey: chapterIndex)
+            sentenceTimingOrder.removeAll { $0 == chapterIndex }
+            return
+        }
+        sentenceTimingByChapter[chapterIndex] = map
+        sentenceTimingOrder.removeAll { $0 == chapterIndex }
+        sentenceTimingOrder.append(chapterIndex)
+        while sentenceTimingOrder.count > Self.sentenceTimingCacheSize {
+            let evict = sentenceTimingOrder.removeFirst()
+            sentenceTimingByChapter.removeValue(forKey: evict)
+        }
+    }
+
+    /// "From the current page" branch of the divergence dialog. Loads
+    /// the snapshot at the reader's chapter, then seeks (in priority
+    /// order):
+    /// 1. **`sentenceId`** + injected timing → precise per-sentence
+    ///    seek using `SentenceSyncEngine`-grade data.
+    /// 2. **`sentenceOffsetRatio`** + known `durationSeconds` →
+    ///    char-uniform approximation.
+    /// 3. **fallback** → seek to 0 (chapter start).
+    ///
+    /// The seek can be issued *before* `durationSeconds` is published
+    /// (AVPlayer reports it asynchronously after asset preparation).
+    /// For the ratio path we therefore stash a pending seek that fires
+    /// when the duration finally lands — see `applyPendingProportionalSeek`.
+    func startFromReaderPage(
+        _ readerChapterIndex: Int,
+        sentenceId: String? = nil,
+        sentenceOffsetRatio: Double? = nil
+    ) {
+        guard let snapshot else { resume(); return }
+        let target = max(0, min(readerChapterIndex, snapshot.playableChapters.count - 1))
+        play(snapshot: snapshot, startingAt: target)
+
+        // Priority 1: sentence-level seek (precise).
+        if let sentenceId,
+           let map = sentenceTimingByChapter[target],
+           let startMs = map[sentenceId] {
+            seek(to: TimeInterval(startMs) / 1000.0)
+            pendingProportionalSeek = nil
+            resume()
+            return
+        }
+
+        // Priority 2: ratio-based seek, deferred if duration not ready.
+        if let ratio = sentenceOffsetRatio, ratio > 0 {
+            if durationSeconds > 0 {
+                seek(to: max(0, min(1, ratio)) * durationSeconds)
+                pendingProportionalSeek = nil
+            } else {
+                pendingProportionalSeek = ratio
+            }
+            resume()
+            return
+        }
+
+        seek(to: 0)
+        pendingProportionalSeek = nil
+        resume()
+    }
+
+    /// Pending fractional-position seek (0…1) waiting for
+    /// `durationSeconds` to be published by the asset prepare. Applied
+    /// by the time observer the first time `durationSeconds > 0` is
+    /// observed after a `startFromReaderPage` ratio path.
+    private var pendingProportionalSeek: Double?
+
+    /// Called from the periodic time observer when `durationSeconds`
+    /// transitions to a positive value. No-op when no ratio seek is
+    /// pending.
+    func applyPendingProportionalSeek() {
+        guard let ratio = pendingProportionalSeek, durationSeconds > 0 else { return }
+        seek(to: max(0, min(1, ratio)) * durationSeconds)
+        pendingProportionalSeek = nil
+    }
+
+    /// "From the beginning" branch — chapter 0, position 0.
+    func startFromBeginning() {
+        guard let snapshot else { resume(); return }
+        play(snapshot: snapshot, startingAt: 0)
+        seek(to: 0)
+        resume()
     }
 
     func togglePlayPause() { isPlaying ? pause() : resume() }
@@ -466,7 +628,15 @@ final class AudioPlayer: ObservableObject {
     /// AudioPlayer methods).
     func enqueueSegment(data: Data, chapterIndex: Int, segmentIndex: Int, sentenceId: String? = nil) {
         ensureRemoteCommands()
-        ensureAudioSession()
+        // Only activate the audio session if the user is already playing.
+        // While conversion streams in the background, we may receive
+        // dozens of segments before the user even taps Play — claiming
+        // the audio focus on every one of them silently mutes Spotify /
+        // Music. The session is activated by `resume()` the moment the
+        // user does tap Play, and `enqueueSegment` will skip the
+        // activation here on subsequent ticks because
+        // `audioSessionConfigured` is sticky.
+        if isPlaying { ensureAudioSession() }
         audioLog.debug("[enqueueSegment] ch=\(chapterIndex) seg=\(segmentIndex) bytes=\(data.count) playerNil=\(self.player == nil)")
         guard !data.isEmpty else {
             audioLog.warning("[enqueueSegment] empty data ignored ch=\(chapterIndex) seg=\(segmentIndex)")
@@ -677,6 +847,12 @@ final class AudioPlayer: ObservableObject {
                     let dur = item.duration.seconds
                     self.durationSeconds = dur.isFinite ? dur : 0
                 }
+                // Item C — fire a queued proportional seek the first
+                // tick after AVPlayer publishes duration. Without this
+                // a play tap during "From the current page" right after
+                // chapter switch lands at 0 (duration was still NaN at
+                // call time).
+                self.applyPendingProportionalSeek()
                 self.broadcastPosition()
                 self.persistResumePoint(force: false)
                 self.tickSleepTimer()
@@ -728,12 +904,16 @@ final class AudioPlayer: ObservableObject {
         }
         // KVO on `currentItem` catches auto-advance transitions that happen
         // before the `AVPlayerItemDidPlayToEndTime` notification is delivered
-        // (e.g. buffer-ahead promotion on fast devices). This guarantees the
-        // lock-screen Now Playing widget always shows the correct chapter title
-        // and refreshes the scrubber duration immediately on transition.
+        // (e.g. buffer-ahead promotion on fast devices). It MUST reconcile
+        // `currentChapterIndex` to the chapter whose URL backs the new
+        // current item before refreshing Now Playing — otherwise the lock
+        // screen / control center / widget show the previous chapter's
+        // title until the end-of-item notification finally fires.
         currentItemObserver = player.observe(\.currentItem, options: [.new]) { [weak self] _, _ in
             Task { @MainActor in
                 guard let self else { return }
+                self.reconcileChapterIndexFromCurrentItem()
+                self.publishCurrentChapter()
                 self.updateNowPlayingInfo()
             }
         }
@@ -808,6 +988,27 @@ final class AudioPlayer: ObservableObject {
             Task { @MainActor in self?.setRate(rate) }
             return .success
         }
+    }
+
+    /// Map `AVQueuePlayer.currentItem` back to the index of the chapter whose
+    /// `downloadUrl` produced it. KVO fires before the end-of-item
+    /// notification, so this is what keeps the lock-screen title in sync
+    /// during auto-advance.
+    private func reconcileChapterIndexFromCurrentItem() {
+        guard
+            let player,
+            let item = player.currentItem,
+            let urlAsset = item.asset as? AVURLAsset,
+            let snapshot
+        else { return }
+        let chapters = snapshot.playableChapters
+        guard let idx = chapters.firstIndex(where: { chapter in
+            guard let absolute = absoluteURL(forDownloadPath: chapter.downloadUrl) else { return false }
+            return absolute == urlAsset.url
+        }) else { return }
+        guard idx != currentChapterIndex else { return }
+        currentChapterIndex = idx
+        positionSeconds = 0
     }
 
     private func updateNowPlayingInfo() {
@@ -940,4 +1141,24 @@ final class AudioPlayer: ObservableObject {
         guard let baseURL = backendBaseURL else { return nil }
         return URL(string: path, relativeTo: baseURL)?.absoluteURL
     }
+
+    // MARK: - Test hooks
+    //
+    // Direct setters for state that is `@Published private(set)` or
+    // private — used by `AudioPlayerDivergenceTests` to construct the
+    // exact state matrix the decision/seek helpers must handle.
+    // Strictly compiled-in: not referenced from product code.
+    #if DEBUG
+    func testHook_setIsPlaying(_ value: Bool) { self.isPlaying = value }
+    func testHook_setSnapshot(_ snap: JobSnapshot) { self.snapshot = snap }
+    func testHook_setCurrentChapterIndex(_ idx: Int) { self.currentChapterIndex = idx }
+    func testHook_setDurationSeconds(_ value: Double) { self.durationSeconds = value }
+    func testHook_setPendingProportionalSeek(_ ratio: Double?) {
+        self.pendingProportionalSeek = ratio
+    }
+    func testHook_pendingProportionalSeek() -> Double? { pendingProportionalSeek }
+    func testHook_sentenceTimingMap(forChapterIndex idx: Int) -> [String: Int]? {
+        sentenceTimingByChapter[idx]
+    }
+    #endif
 }

@@ -6,6 +6,10 @@ struct PlayerView: View {
     let snapshot: JobSnapshot
     let backendBaseURL: URL?
     @EnvironmentObject var player: AudioPlayer
+
+    @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+    private var readerChapterIndex: Int = 0
+    @State private var showingStartChoice: Bool = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -99,7 +103,7 @@ struct PlayerView: View {
             Button { player.previousChapter() } label: {
                 Image(systemName: "backward.fill").font(.title)
             }
-            Button { player.togglePlayPause() } label: {
+            Button { handlePlayTap() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 64))
             }
@@ -108,6 +112,18 @@ struct PlayerView: View {
             }
         }
         .tint(.primary)
+        .playDivergenceDialog(
+            player: player,
+            readerChapterIndex: readerChapterIndex,
+            isPresented: $showingStartChoice
+        )
+    }
+
+    private func handlePlayTap() {
+        switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
+        case .pause, .resume: player.togglePlayPause()
+        case .offerStartChoice: showingStartChoice = true
+        }
     }
 
     private var speedPicker: some View {

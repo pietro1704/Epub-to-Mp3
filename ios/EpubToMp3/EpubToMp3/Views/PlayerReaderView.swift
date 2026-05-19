@@ -48,6 +48,10 @@ struct PlayerReaderView: View {
     @State private var chromeVisible = true
     @EnvironmentObject private var bookmarkStore: BookmarkStore
 
+    @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
+    private var readerChapterIndex: Int = 0
+    @State private var showingStartChoice: Bool = false
+
     /// Tri-state for the toolbar Download button. `idle` is the default
     /// CTA; `downloading` shows a determinate progress label; `done`
     /// confirms completion until the next mount.
@@ -150,10 +154,23 @@ struct PlayerReaderView: View {
                 .compatPresentationDetents()
             }
             .sheet(isPresented: $showingToc) {
+                // SOURCE OF TRUTH: TocDrawer compares against the EPUB-side
+                // (zero-based, dense over `fulltext.chapters`) chapter
+                // index. `AudioPlayer.currentChapterIndex` is an index into
+                // the FILTERED `playableChapters` list and is wrong to
+                // pass directly when audio skips unplayable chapters
+                // (footnotes, image-only sections). Resolve via the
+                // playable chapter's own `index` field, which carries the
+                // original zero-based EPUB index.
+                let playingEpubIndex: Int = {
+                    let playable = snapshot.playableChapters
+                    guard playable.indices.contains(player.currentChapterIndex) else { return -1 }
+                    return playable[player.currentChapterIndex].index
+                }()
                 TocDrawer(
                     fulltext: fulltext,
                     snapshot: snapshot,
-                    currentChapterIndex: player.currentChapterIndex,
+                    currentChapterIndex: playingEpubIndex,
                     onJump: jumpTo(chapterIndex:)
                 )
                 .compatPresentationDetents()
@@ -189,7 +206,7 @@ struct PlayerReaderView: View {
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let fulltext, let chapter = chapter(in: fulltext, at: player.currentChapterIndex) {
+        } else if let fulltext, let chapter = chapter(in: fulltext, at: playingEpubZeroBasedIndex ?? player.currentChapterIndex) {
             ReaderView(
                 chapter: chapter,
                 spans: spans,
@@ -277,7 +294,7 @@ struct PlayerReaderView: View {
 
     private var transport: some View {
         HStack(spacing: 36) {
-            Button { player.togglePlayPause() } label: {
+            Button { handlePlayTap() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 56))
                     .dynamicTypeSize(...DynamicTypeSize.accessibility2)
@@ -293,6 +310,18 @@ struct PlayerReaderView: View {
         }
         .tint(.primary)
         .frame(maxWidth: .infinity)
+        .playDivergenceDialog(
+            player: player,
+            readerChapterIndex: readerChapterIndex,
+            isPresented: $showingStartChoice
+        )
+    }
+
+    private func handlePlayTap() {
+        switch player.playTapDecision(readerChapterIndex: readerChapterIndex) {
+        case .pause, .resume: player.togglePlayPause()
+        case .offerStartChoice: showingStartChoice = true
+        }
     }
 
     /// "..." menu mirroring FullPlayerSheet — speed, sleep timer,
@@ -625,21 +654,42 @@ struct PlayerReaderView: View {
     }
 
     private func reloadCurrentChapter() {
-        guard let fulltext, let chapter = chapter(in: fulltext, at: player.currentChapterIndex) else {
+        // Use the EPUB index, not the playable index — see
+        // `playingEpubZeroBasedIndex`. Falls back to the playable
+        // index if the snapshot was empty / out of bounds.
+        let epubIdx = playingEpubZeroBasedIndex ?? player.currentChapterIndex
+        guard let fulltext, let chapter = chapter(in: fulltext, at: epubIdx) else {
             spans = []
+            // Wipe any stale per-sentence timing in the player so the
+            // divergence dialog's sentence-precise seek can't land on
+            // a phantom offset from the previous chapter.
+            player.setSentenceTiming([:], forChapterIndex: player.currentChapterIndex)
             return
         }
         let computed = chapter.splitSentences()
         spans = computed
         sync.load(chapter: chapter, chapterDurationSeconds: player.durationSeconds)
+        // Inject the sync-engine's sentence-id → start-ms map into the
+        // player. Keyed by the playable-chapter index because that's
+        // the index space `startFromReaderPage` uses when looking up.
+        let map: [String: Int] = sync.timing.reduce(into: [:]) { acc, entry in
+            acc[entry.id] = entry.startMs
+        }
+        player.setSentenceTiming(map, forChapterIndex: player.currentChapterIndex)
         lastLoadedChapterIndex = player.currentChapterIndex
     }
 
-    private func jumpTo(chapterIndex: Int) {
+    /// `chapterIndex` here is the EPUB zero-based index emitted by
+    /// `TocDrawer` / search overlay — NOT a playable-list index. We
+    /// must translate before handing it to `AudioPlayer.play`.
+    private func jumpTo(chapterIndex epubIndex: Int) {
         // Restore chrome so the user can see the new chapter in context
         // (otherwise an immersive jump looks like the action silently failed).
         withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
-        player.play(snapshot: snapshot, startingAt: chapterIndex)
+        let playable = snapshot.playableChapters
+        let target = playable.firstIndex(where: { $0.index == epubIndex })
+            ?? max(0, min(epubIndex, playable.count - 1))
+        player.play(snapshot: snapshot, startingAt: target)
         reloadCurrentChapter()
     }
 
@@ -662,8 +712,20 @@ struct PlayerReaderView: View {
             ?? (zeroBasedIndex < fulltext.chapters.count ? fulltext.chapters[zeroBasedIndex] : nil)
     }
 
+    /// Translate `AudioPlayer.currentChapterIndex` (which is an index
+    /// into the FILTERED `playableChapters` list) to the corresponding
+    /// EPUB zero-based chapter index. Returns `nil` when the snapshot
+    /// has no playable chapters or the player is out of bounds — both
+    /// of which collapse the highlight back to "no current chapter".
+    /// SOURCE OF TRUTH for any view comparing chapter cursors.
+    private var playingEpubZeroBasedIndex: Int? {
+        let playable = snapshot.playableChapters
+        guard playable.indices.contains(player.currentChapterIndex) else { return nil }
+        return playable[player.currentChapterIndex].index
+    }
+
     private var currentChapterTitle: String {
-        if let fulltext, let ch = chapter(in: fulltext, at: player.currentChapterIndex) {
+        if let fulltext, let ch = chapter(in: fulltext, at: playingEpubZeroBasedIndex ?? player.currentChapterIndex) {
             return ch.displayTitle
         }
         let chapters = snapshot.playableChapters

@@ -53,6 +53,19 @@ struct ReaderView: View {
     /// Return `true` if handled (internal chapter jump, anchor scroll);
     /// `false` to let iOS open the URL externally (Safari / mail).
     var onLinkTap: ((URL) -> Bool)? = nil
+    /// Asked when the user taps the floating "Follow audio" pill that
+    /// surfaces after the reader strays from the audio position. The
+    /// host should swap `chapter`/`spans` to the audio's current chapter
+    /// (and ideally also seek to the sentence underway). Sentence-level
+    /// re-sync is handled internally once `currentSentenceId` lands on a
+    /// span that lives in the newly-loaded chapter.
+    var onJumpToPlayerPosition: (() -> Void)? = nil
+    /// Optional display label of the chapter the audio is currently
+    /// narrating. When non-nil AND different from the reader's chapter,
+    /// the floating pill widens to surface "Tocando: <title>" so the
+    /// user knows where the audio went. Nil ⇒ generic "Acompanhar
+    /// áudio" label (audio is paused, or no divergence to disclose).
+    var playerChapterLabel: String? = nil
 
     @EnvironmentObject private var settings: AppSettings
     @Environment(\.epubFontDirectory) private var epubFontDirectory
@@ -72,14 +85,10 @@ struct ReaderView: View {
     /// equivalent page in the new pagination.
     @State private var textOffsetAtCurrentPage: Int = 0
 
-    /// Body area used for pagination, captured when chrome was visible.
-    /// Toggling chrome shrinks/grows `GeometryReader`'s size because
-    /// `safeAreaInset` / `.toolbar(_:for:)` are layout-altering — using
-    /// that live value to repaginate caused the visible text to
-    /// re-flow every time the tab bar / customTopBar / mini player
-    /// appeared or disappeared. Locking to the chrome-visible size
-    /// keeps pagination stable across chrome toggles.
-    @State private var stableBodyHeight: CGFloat = 0
+    // (stableBodyHeight removed — pagination now follows the live
+    // GeometryReader height so the page always fills the available
+    // body area instead of leaving an empty strip below the text when
+    // chrome is hidden. Reflow on chrome toggle is intentional.)
 
     /// `true` while the reader tracks the audio's `currentSentenceId`
     /// — auto-pages and highlights the active sentence. Flipped to
@@ -135,7 +144,9 @@ struct ReaderView: View {
         chromeVisible: Bool = true,
         onAutoHideChrome: (() -> Void)? = nil,
         onRestoreChrome: (() -> Void)? = nil,
-        onLinkTap: ((URL) -> Bool)? = nil
+        onLinkTap: ((URL) -> Bool)? = nil,
+        onJumpToPlayerPosition: (() -> Void)? = nil,
+        playerChapterLabel: String? = nil
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -148,6 +159,8 @@ struct ReaderView: View {
         self.onAutoHideChrome = onAutoHideChrome
         self.onRestoreChrome = onRestoreChrome
         self.onLinkTap = onLinkTap
+        self.onJumpToPlayerPosition = onJumpToPlayerPosition
+        self.playerChapterLabel = playerChapterLabel
     }
 
     var body: some View {
@@ -206,8 +219,22 @@ struct ReaderView: View {
         // (follows OS). This does NOT affect the navigation bar, tab bar,
         // or any UI outside this view.
         .modifier(ReaderColorSchemeModifier(theme: settings.readerTheme))
-        .compatOnChange(of: chapter.id) { _ in currentPage = 0 }
+        .compatOnChange(of: chapter.id) { _ in
+            currentPage = 0
+            // Nil-out the previous chapter's render so the empty-state
+            // branch shows until `task` populates the new chapter —
+            // avoids a one-frame flash of stale content on chapter swap.
+            renderedAttributed = nil
+        }
         .task(id: renderedAttributedKey) {
+            // `NSAttributedString.html` importer is main-thread-only
+            // (WebKit-backed). Each call costs 50–500 ms for a 30 K-char
+            // chapter, so we ensure exactly ONE parse per identity change.
+            // The previous belt-and-suspenders `compatOnChange(of:
+            // settings.readerTheme/.readerOverrideColours)` doubled the
+            // parse on every theme toggle — removed; if the theme-while-
+            // sheet-open bug resurfaces, fix it via a `renderVersion`
+            // token bumped from the sheet, NOT a parallel re-render path.
             renderedAttributed = renderHtmlForChapter()
         }
         .onAppear {
@@ -385,11 +412,14 @@ struct ReaderView: View {
             // (the EPUB's own heading flows as the first paragraph of
             // page 0). All pages share the same body budget:
             //   geo.size.height - 24 top - 24 bottom - 28 footer.
+            // Body budget = full container height minus footer (24 top + 24
+            // bottom + 28 footer ≈ 76 pt). We track the LIVE height so that
+            // when chrome (nav bar / tab bar) toggles, the page re-paginates
+            // to claim the freed vertical space. User spec: "parte de baixo
+            // da tela em modo paginated ainda sem conteudo, e deve adequar
+            // conteudo rapidamente quando aparece/desaparece barra de menus".
             let liveBodyHeight = max(120, geo.size.height - 76)
-            let usedBodyHeight = chromeVisible || stableBodyHeight == 0
-                ? liveBodyHeight
-                : stableBodyHeight
-            let pageBodySize = CGSize(width: geo.size.width, height: usedBodyHeight)
+            let pageBodySize = CGSize(width: geo.size.width, height: liveBodyHeight)
             let pages = attributedPages(
                 pageSize: pageBodySize,
                 margin: margin,
@@ -418,27 +448,11 @@ struct ReaderView: View {
             .onAppear {
                 paginatedFocus = true
                 lastContainerSize = geo.size
-                // Seed the stable body size on first mount so the very
-                // first pagination uses chrome-visible dimensions.
-                if stableBodyHeight == 0 {
-                    stableBodyHeight = liveBodyHeight
-                }
             }
             .compatOnKeyPressArrowsAndPaging { key in
                 handleCompatKey(key, totalPages: pages.count)
             }
             .compatOnChange(of: geo.size) { newSize in
-                // Track the chrome-visible body size so pagination stays
-                // pinned to the smaller, "all chrome on" layout. When
-                // chrome is hidden the live size *grows* and we ignore
-                // it; when chrome comes back the live size matches the
-                // stable value and we re-confirm. Real layout changes
-                // (rotation / iPad resize) update stableBodyHeight when
-                // chromeVisible == true so subsequent paginations track
-                // the new orientation.
-                if chromeVisible {
-                    stableBodyHeight = max(120, newSize.height - 76)
-                }
                 guard sizeChangedMeaningfully(from: lastContainerSize, to: newSize) else { return }
                 lastContainerSize = newSize
                 if !pages.isEmpty {
@@ -451,7 +465,12 @@ struct ReaderView: View {
             // Keep textOffsetAtCurrentPage in sync whenever the page changes.
             .compatOnChange(of: currentPage) { newPage in
                 textOffsetAtCurrentPage = cumulativeOffset(page: newPage, in: pages)
+                publishReadingRatio(pages: pages)
             }
+            // Seed the reading-ratio channel on first appear so a play
+            // tap during the very first second of reading already has
+            // a hint to land on.
+            .onAppear { publishReadingRatio(pages: pages) }
             // Auto-follow: when the audio's active sentence changes,
             // jump to whichever page contains it — but only if the
             // user hasn't taken control via swipe / tap / arrow.
@@ -467,32 +486,59 @@ struct ReaderView: View {
             }
         }
         .compatHorizontalSafeAreaPadding(0)
-        // Floating "resume follow-along" button — appears in the
-        // bottom-right of the page area when the user has stopped
-        // following the audio (manual page turn / swipe) and audio
-        // is still narrating.
+        // Floating "resume follow-along" button — visible whenever the
+        // reader has wandered off the audio position (manual page turn
+        // / swipe / chapter switch), regardless of whether the engine
+        // emits per-sentence highlights. Tapping it both restores
+        // sentence-level auto-follow AND asks the host to jump back to
+        // the audio's chapter (handled outside this view because the
+        // chapter list lives in the parent).
         .overlay(alignment: .bottomTrailing) {
-            if !isFollowing, currentSentenceId != nil {
+            // Pill is shown when EITHER the reader has wandered off
+            // the audio (`!isFollowing`) OR the audio simply lives on
+            // a different chapter than the reader is viewing
+            // (`playerChapterLabel != nil`). The second arm catches
+            // the cold-launch case: user opens the reader at chapter
+            // 0 while the audio resumed at chapter 5 — `isFollowing`
+            // is still true (no manual page turn yet), but the user
+            // still needs the divergence cue.
+            if !isFollowing || playerChapterLabel != nil {
                 Button {
                     isFollowing = true
-                    if let id = currentSentenceId,
-                       let span = spans.first(where: { $0.id == id }) {
-                        // We need a `pages` reference here, but the
-                        // outer GeometryReader scope provides it.
-                        // Easiest: trigger the .compatOnChange logic
-                        // by nudging a no-op; the next sentenceId
-                        // change will jump. As a fallback the user
-                        // can also tap a TOC entry.
-                        _ = span
-                    }
+                    onJumpToPlayerPosition?()
                 } label: {
-                    Label("Acompanhar", systemImage: "arrow.uturn.down")
-                        .font(.footnote.weight(.semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(.thinMaterial, in: Capsule())
+                    HStack(spacing: 6) {
+                        Image(systemName: playerChapterLabel != nil
+                              ? "speaker.wave.2.fill"
+                              : "arrow.uturn.down")
+                        // Two-line label when the audio is on another
+                        // chapter: top line is the cue, bottom line
+                        // names the chapter. Single line otherwise.
+                        if let label = playerChapterLabel, !label.isEmpty {
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(L10n.string("reader.nowPlaying"))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                Text(label)
+                                    .font(.footnote.weight(.semibold))
+                                    .lineLimit(1)
+                            }
+                        } else {
+                            Text(L10n.string("reader.followAudio"))
+                                .font(.footnote.weight(.semibold))
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.thinMaterial, in: Capsule())
                 }
                 .padding(20)
+                .accessibilityIdentifier("reader.followAudio")
+                .accessibilityLabel(
+                    playerChapterLabel.map {
+                        "\(L10n.string("reader.nowPlaying")): \($0). \(L10n.string("reader.followAudio"))"
+                    } ?? L10n.string("reader.followAudio")
+                )
                 .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
@@ -510,6 +556,31 @@ struct ReaderView: View {
         guard !pages.isEmpty else { return 0 }
         let clamped = max(0, min(pages.count - 1, page))
         return pages[..<clamped].reduce(0) { $0 + $1.length }
+    }
+
+    /// Publishes both reader-position channels:
+    ///  - `readerCurrentPageRatio` (Double, 0…1) — char-uniform
+    ///    approximation; used when no per-sentence timing is available.
+    ///  - `readerCurrentSentenceId` (String) — id of the first
+    ///    sentence span on the user's current page. When
+    ///    `AudioPlayer` has timing for this chapter (injected via
+    ///    `setSentenceTiming`), the divergence dialog prefers this
+    ///    precise anchor over the ratio.
+    private func publishReadingRatio(pages: [NSAttributedString]) {
+        let total = pages.reduce(0) { $0 + $1.length }
+        guard total > 0 else { return }
+        let offset = cumulativeOffset(page: currentPage, in: pages)
+        let ratio = max(0, min(1, Double(offset) / Double(total)))
+        let defaults = UserDefaults.standard
+        defaults.set(ratio, forKey: AudioPlayer.readerCurrentPageRatioDefaultsKey)
+        // First sentence whose `startChar` is AT or AFTER the current
+        // page's first char — the closest narratable anchor the audio
+        // can seek to.
+        if let span = spans.first(where: { $0.startChar >= offset }) {
+            defaults.set(span.id, forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        } else {
+            defaults.removeObject(forKey: AudioPlayer.readerCurrentSentenceIdDefaultsKey)
+        }
     }
 
     /// Find the page that contains the given cumulative character offset.

@@ -117,8 +117,17 @@ enum EpubHtmlRenderer {
 
         let overrideFamily = settings.readerOverrideFontFamily
         let overrideSize = settings.readerOverrideFontSize
+        // Override the EPUB's hardcoded colours for every theme except
+        // `.light`. `.auto` USED to opt out — but the EPUB's CSS almost
+        // always pins `color: #000` (black) on body text and assumes a
+        // white page, so opening the book in system Dark Mode gave
+        // black-on-black: invisible text. We now substitute the
+        // theme's resolved foreground (which is `.label` — the
+        // dynamic system colour that flips with appearance) in
+        // `.auto` so dark mode renders white text on dark, light mode
+        // renders black on white.
         let overrideColours = settings.readerOverrideColours
-            || (settings.readerTheme != .light && settings.readerTheme != .auto)
+            || settings.readerTheme != .light
         let boldAll = settings.readerBoldOverride
         let suppressItalic = settings.readerSuppressItalic
         let letterSpacing = settings.readerLetterSpacing

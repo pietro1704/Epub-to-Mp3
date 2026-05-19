@@ -82,12 +82,31 @@ struct TabRoot: View {
     }
 
     var body: some View {
-        tabContent
-            .compatFullScreenCover(isPresented: $playerPresentation.showingFullPlayer) {
+        ZStack {
+            tabContent
+                .zIndex(0)
+
+            // FullPlayerSheet is presented in-tree (not as a system
+            // .fullScreenCover) so we can run a custom transition that
+            // rises from the mini-player position instead of from the
+            // screen bottom. The user spec: "modal de player expandido
+            // deve subir a partir do player colapsado (= mini player),
+            // nao da base da tela".
+            if playerPresentation.showingFullPlayer {
                 FullPlayerSheet()
                     .environmentObject(player)
                     .environmentObject(library)
+                    .transition(.risesFromMiniPlayer)
+                    .zIndex(2)
+                    .ignoresSafeArea()
             }
+        }
+        .animation(
+            reduceMotion
+                ? .easeInOut(duration: 0.25)
+                : .spring(response: 0.45, dampingFraction: 0.86),
+            value: playerPresentation.showingFullPlayer
+        )
     }
 
     private var tabContent: some View {
@@ -151,6 +170,39 @@ private struct MiniPlayerInsetModifier: ViewModifier {
 extension View {
     func miniPlayerInset(visible: Bool, onTap: @escaping () -> Void) -> some View {
         modifier(MiniPlayerInsetModifier(visible: visible, onTap: onTap))
+    }
+}
+
+// MARK: - Full-player rise-from-mini-player transition
+
+/// Visual approximation of "the modal grows out of the mini player at
+/// the bottom of the screen". The mini player sits ~64 pt tall above the
+/// home indicator; this transition starts the sheet anchored to that
+/// strip (scaled down + offset to bottom) and expands it to fullscreen
+/// with a fade. Result: the user perceives the sheet emerging from the
+/// mini-player frame, not slid in from off-screen.
+private struct RisesFromMiniModifier: ViewModifier {
+    /// 0 = collapsed at mini-player position, 1 = full screen.
+    let progress: Double
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(
+                x: 0.88 + 0.12 * progress,
+                y: 0.10 + 0.90 * progress,
+                anchor: .bottom
+            )
+            .opacity(progress)
+            .offset(y: (1.0 - progress) * 40)
+    }
+}
+
+extension AnyTransition {
+    static var risesFromMiniPlayer: AnyTransition {
+        .modifier(
+            active: RisesFromMiniModifier(progress: 0.0),
+            identity: RisesFromMiniModifier(progress: 1.0)
+        )
     }
 }
 

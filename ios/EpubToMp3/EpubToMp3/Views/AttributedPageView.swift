@@ -5,6 +5,17 @@ import UIKit
 import AppKit
 #endif
 
+/// Zone the user tapped, classified by horizontal position. The reader
+/// uses this for the Apple Books-style tap partition: left = previous
+/// page, center = toggle chrome, right = next page.
+///
+/// Declared at file scope (outside `#if canImport(UIKit)`) so views that
+/// take `(ReaderTapZone) -> Void` callbacks compile on macOS too — the
+/// AppKit `AttributedPageView` variant simply ignores them.
+enum ReaderTapZone { case left, center, right }
+/// Swipe direction reported by the in-view pan recognizer.
+enum ReaderSwipeDirection { case left, right }
+
 /// Renders a single paginated page (`NSAttributedString` slice) using the
 /// same TextKit stack that `Paginator.paginateAttributed` used to compute
 /// the page boundary. This guarantees pixel-perfect alignment between
@@ -60,13 +71,6 @@ struct AttributedPageView: View {
 /// through to the SwiftUI layer below (chrome toggle, page-turn zones,
 /// scroll gesture). User spec: "toque em meio da tela deve seguir
 /// hiperlinks, com maior precedencia. somente se sem hiperlinks ...".
-/// Zone the user tapped, classified by horizontal position. The reader
-/// uses this for the Apple Books-style tap partition: left = previous
-/// page, center = toggle chrome, right = next page.
-enum ReaderTapZone { case left, center, right }
-/// Swipe direction reported by the in-view pan recognizer.
-enum ReaderSwipeDirection { case left, right }
-
 private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate {
     var pinnedWidth: CGFloat = 320
     /// `true` = consume every touch (paginated mode owns the gesture
@@ -240,6 +244,13 @@ struct AttributedPageView: View {
     let attributed: NSAttributedString
     let width: CGFloat
     var scrollable: Bool = false
+    // API parity with the UIKit variant — accepted but ignored on
+    // macOS, where NSTextView routes link/click handling through its
+    // own delegate machinery and there is no Apple-Books-style tap
+    // partition on a mouse-driven surface.
+    var onLinkTap: ((URL) -> Bool)? = nil
+    var onZoneTap: ((ReaderTapZone) -> Void)? = nil
+    var onSwipe: ((ReaderSwipeDirection) -> Void)? = nil
 
     var body: some View {
         GeometryReader { geo in
