@@ -244,7 +244,10 @@ struct FullPlayerSheet: View {
                     #endif
                 }
             )
-            .tint(.primary)
+            // Scrubber follows HIG (Apple Books / Music): accent
+            // tint on the filled portion so the interactive state
+            // reads as "tap-and-drag-able". Forcing `.primary`
+            // (black/white) reads as inert chrome on first glance.
             .accessibilityLabel(L10n.string("player.playbackPosition"))
 
             HStack {

@@ -378,7 +378,7 @@ struct InstantReaderView: View {
             } label: {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 17, weight: .regular))
-                    .frame(width: 36, height: 36)
+                    .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -390,7 +390,7 @@ struct InstantReaderView: View {
             } label: {
                 Image(systemName: "textformat.size")
                     .font(.system(size: 17, weight: .regular))
-                    .frame(width: 36, height: 36)
+                    .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -402,7 +402,7 @@ struct InstantReaderView: View {
             } label: {
                 Image(systemName: "list.bullet.indent")
                     .font(.system(size: 17, weight: .regular))
-                    .frame(width: 36, height: 36)
+                    .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)

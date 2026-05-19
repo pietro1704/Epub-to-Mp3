@@ -141,7 +141,7 @@ struct MiniPlayerBar: View {
                     } label: {
                         Image(systemName: "forward.end.fill")
                             .font(.system(size: 18))
-                            .frame(width: 36, height: 44)
+                            .frame(minWidth: 44, minHeight: 44)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -191,7 +191,7 @@ struct MiniPlayerBar: View {
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 18))
-                            .frame(width: 36, height: 44)
+                            .frame(minWidth: 44, minHeight: 44)
                             .contentShape(Rectangle())
                     }
                     .accessibilityLabel(L10n.string("player.more"))
