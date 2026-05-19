@@ -76,14 +76,17 @@ final class PlatformCompatTests: XCTestCase {
     /// the host view uses `.ignoresSafeArea()` on the background.
     /// Both shims must compile on every supported OS so we exercise
     /// them in tandem here.
+    // NOTE: these construct the modified view but never touch `.body`.
+    // The modifiers return a `ModifiedContent` whose `body` is `Never`
+    // — calling it traps ("body should not be called"), crashing the
+    // test with SIGILL. Construction alone proves the shim compiles and
+    // the `#available` branch resolves, which is what "Compiles" means.
     func testCompatHorizontalSafeAreaPaddingCompiles() {
-        let v = Text("hi").compatHorizontalSafeAreaPadding(16)
-        _ = v.body
+        _ = Text("hi").compatHorizontalSafeAreaPadding(16)
     }
 
     func testCompatVerticalSafeAreaPaddingCompiles() {
-        let v = Text("hi").compatVerticalSafeAreaPadding(8)
-        _ = v.body
+        _ = Text("hi").compatVerticalSafeAreaPadding(8)
     }
 
     /// Default values match the HIG content margin / breathing room
@@ -91,9 +94,7 @@ final class PlatformCompatTests: XCTestCase {
     /// is load-bearing because call sites omit the argument when
     /// they want the system default.
     func testCompatSafeAreaPaddingDefaults() {
-        let h = Text("hi").compatHorizontalSafeAreaPadding()
-        let v = Text("hi").compatVerticalSafeAreaPadding()
-        _ = h.body
-        _ = v.body
+        _ = Text("hi").compatHorizontalSafeAreaPadding()
+        _ = Text("hi").compatVerticalSafeAreaPadding()
     }
 }
