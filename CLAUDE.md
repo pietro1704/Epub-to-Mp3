@@ -11,12 +11,7 @@ project** — this file is the authoritative context.
 
 ## Response Style
 
-- **Zero tokens wasted** — no preamble, no summaries, no "I'll now...", no "Done!"
-- Never restate what the user said or what you just did
-- Answer = action or result only; reasoning only if explicitly asked
-- A diff beats an explanation. A word beats a sentence
-- Speak only for: blockers, decisions needing input, errors
-- Language: pt-BR
+Inherits `~/CLAUDE.md` (Zero tokens wasted, pt-BR, action-only). No re-listing here.
 
 ## Issue Detection & Auto-Fix
 
