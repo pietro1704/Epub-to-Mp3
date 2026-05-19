@@ -905,12 +905,16 @@ struct InstantReaderView: View {
     /// chapter to whatever chapter the AudioPlayer is currently
     /// narrating. Sentence-level highlight resumes on its own once
     /// `currentSentenceId` lands on a span in the new chapter.
+    ///
+    /// `player.currentChapterIndex` is in the playable-chapters space;
+    /// translate to the EPUB-zero-based space the reader's
+    /// `currentChapterIndex` lives in before assigning.
     private func jumpToPlayerPosition() {
         let activePlayer = embeddedAudioReady ? globalPlayer : player
-        let targetIndex = activePlayer.currentChapterIndex
-        guard targetIndex != currentChapterIndex,
-              fulltext.chapters.indices.contains(targetIndex) else { return }
-        currentChapterIndex = targetIndex
+        guard let epubIndex = playerEpubChapterIndex(for: activePlayer),
+              epubIndex != currentChapterIndex,
+              fulltext.chapters.indices.contains(epubIndex) else { return }
+        currentChapterIndex = epubIndex
     }
 
     /// Surfaces the chapter the audio is narrating in the floating
@@ -926,12 +930,24 @@ struct InstantReaderView: View {
     /// know where the queue will resume from when they hit Play.
     private var divergencePlayerChapterLabel: String? {
         let activePlayer = embeddedAudioReady ? globalPlayer : player
-        guard activePlayer.snapshot != nil else { return nil }
-        let target = activePlayer.currentChapterIndex
-        guard target != currentChapterIndex,
-              fulltext.chapters.indices.contains(target) else { return nil }
-        let title = fulltext.chapters[target].displayTitle
+        guard activePlayer.snapshot != nil,
+              let epubIndex = playerEpubChapterIndex(for: activePlayer),
+              epubIndex != currentChapterIndex,
+              fulltext.chapters.indices.contains(epubIndex) else { return nil }
+        let title = fulltext.chapters[epubIndex].displayTitle
         return title.isEmpty ? nil : title
+    }
+
+    /// Translate the player's playable-list index to the EPUB
+    /// zero-based index that the reader (and `fulltext.chapters`) use.
+    /// Returns `nil` when the snapshot is empty or the player is out
+    /// of bounds — both of which collapse the pill back to "no
+    /// divergence to surface".
+    private func playerEpubChapterIndex(for player: AudioPlayer) -> Int? {
+        guard let snapshot = player.snapshot else { return nil }
+        let playable = snapshot.playableChapters
+        guard playable.indices.contains(player.currentChapterIndex) else { return nil }
+        return playable[player.currentChapterIndex].index
     }
 
     // MARK: - Theme colours (delegated to ReaderTheme)

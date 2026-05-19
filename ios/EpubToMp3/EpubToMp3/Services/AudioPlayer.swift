@@ -514,10 +514,40 @@ final class AudioPlayer: ObservableObject {
 
     func playTapDecision(readerChapterIndex: Int) -> PlayTapDecision {
         if isPlaying { return .pause }
-        guard snapshot != nil else { return .resume }
-        return readerChapterIndex != currentChapterIndex
-            ? .offerStartChoice
-            : .resume
+        guard let snapshot else { return .resume }
+        // `readerChapterIndex` is the EPUB-zero-based chapter index
+        // (the same space `fulltext.chapters[i].index - 1` lives in).
+        // `currentChapterIndex` is an index into `playableChapters` —
+        // the filtered subset. Compare in the *playable* space so
+        // unplayable chapters between user and player (footnotes,
+        // image-only sections) don't spuriously fire the dialog.
+        let reader = playableIndex(forEpubZeroBased: readerChapterIndex, in: snapshot)
+        return reader != currentChapterIndex ? .offerStartChoice : .resume
+    }
+
+    /// Convert an EPUB zero-based chapter index (what the reader views
+    /// publish into UserDefaults) to the matching playable-list index
+    /// (what `currentChapterIndex` lives in). Falls back to the nearest
+    /// playable chapter at or before the reader's position when the
+    /// reader is sitting on a non-playable chapter — so a play tap
+    /// from a footnote chapter starts from the previous playable.
+    private func playableIndex(
+        forEpubZeroBased epubIndex: Int,
+        in snapshot: JobSnapshot
+    ) -> Int {
+        let playable = snapshot.playableChapters
+        if let exact = playable.firstIndex(where: { $0.index == epubIndex }) {
+            return exact
+        }
+        // No exact playable match — bias toward "where the user was
+        // reading" by picking the LAST playable chapter whose EPUB
+        // index is ≤ the reader's. Empty playable list ⇒ 0 so the
+        // caller's clamp keeps the value safe.
+        var fallback = 0
+        for (i, ch) in playable.enumerated() where ch.index <= epubIndex {
+            fallback = i
+        }
+        return fallback
     }
 
     /// Per-chapter sentence-id → audio-ms timing maps. Populated by the
@@ -567,7 +597,13 @@ final class AudioPlayer: ObservableObject {
         sentenceOffsetRatio: Double? = nil
     ) {
         guard let snapshot else { resume(); return }
-        let target = max(0, min(readerChapterIndex, snapshot.playableChapters.count - 1))
+        // `readerChapterIndex` is EPUB-zero-based (reader space).
+        // Translate to playable-list space — same fallback logic as
+        // `playTapDecision`. Without this, a reader on EPUB index 5
+        // would land the audio on `playableChapters[5]` which is
+        // an entirely different chapter when any earlier chapter
+        // is unplayable.
+        let target = playableIndex(forEpubZeroBased: readerChapterIndex, in: snapshot)
         play(snapshot: snapshot, startingAt: target)
 
         // Priority 1: sentence-level seek (precise).

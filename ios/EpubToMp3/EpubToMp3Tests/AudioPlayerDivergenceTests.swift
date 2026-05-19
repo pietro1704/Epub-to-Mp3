@@ -85,6 +85,68 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
+    /// `playTapDecision` must translate EPUB index → playable index
+    /// before comparing. Reader at EPUB index 2, audio at playable
+    /// index 1 (which IS EPUB index 2 when index 1 is unplayable)
+    /// — should be `.resume`, NOT `.offerStartChoice`.
+    func testDecisionTranslatesEpubToPlayableSpace() {
+        let player = makePlayer()
+        // Playable chapters: EPUB 0, 2, 3 (EPUB 1 is unplayable, e.g. footnotes).
+        let playable0 = JobSnapshot.Chapter(
+            index: 0, name: "Intro", status: "completed",
+            downloadUrl: "/0.mp3", chars: 1, charsProcessed: 1,
+            progressRatio: 1, durationSeconds: 1, startedAt: nil, completedAt: nil
+        )
+        let unplayable1 = JobSnapshot.Chapter(
+            index: 1, name: "Footnotes", status: "skipped",
+            downloadUrl: nil, chars: 0, charsProcessed: 0,
+            progressRatio: 0, durationSeconds: nil, startedAt: nil, completedAt: nil
+        )
+        let playable2 = JobSnapshot.Chapter(
+            index: 2, name: "Ch 1", status: "completed",
+            downloadUrl: "/2.mp3", chars: 1, charsProcessed: 1,
+            progressRatio: 1, durationSeconds: 1, startedAt: nil, completedAt: nil
+        )
+        let playable3 = JobSnapshot.Chapter(
+            index: 3, name: "Ch 2", status: "completed",
+            downloadUrl: "/3.mp3", chars: 1, charsProcessed: 1,
+            progressRatio: 1, durationSeconds: 1, startedAt: nil, completedAt: nil
+        )
+        let snap = JobSnapshot(
+            jobId: "j", state: "done",
+            bookTitle: "B", bookAuthor: nil,
+            coverUrl: nil, coverMimeType: nil,
+            engine: nil, voice: nil, language: nil,
+            progressPercent: nil, chaptersTotal: 4, chaptersCompleted: 3,
+            chapterProgress: [playable0, unplayable1, playable2, playable3],
+            outputs: nil, logUrl: nil, error: nil, lastActivityAt: nil
+        )
+        player.testHook_setSnapshot(snap)
+        // Audio is on playable index 1 = EPUB chapter 2.
+        player.testHook_setCurrentChapterIndex(1)
+        // Reader at EPUB index 2 — same physical chapter; resume, no dialog.
+        XCTAssertEqual(
+            player.playTapDecision(readerChapterIndex: 2),
+            .resume,
+            "Reader's EPUB index 2 matches audio's playable index 1 → no dialog"
+        )
+        // Reader at EPUB index 0 — different chapter; dialog.
+        XCTAssertEqual(
+            player.playTapDecision(readerChapterIndex: 0),
+            .offerStartChoice,
+            "Reader's EPUB index 0 differs from audio's playable index 1 → dialog"
+        )
+        // Reader sitting on the unplayable EPUB index 1 (footnotes)
+        // — translation must fall back to the nearest playable ≤
+        // that index (EPUB 0 = playable 0). Audio is on playable 1
+        // → divergent → dialog.
+        XCTAssertEqual(
+            player.playTapDecision(readerChapterIndex: 1),
+            .offerStartChoice,
+            "Reader sitting on unplayable chapter falls back to previous playable → still divergent"
+        )
+    }
+
     // MARK: JobSnapshot index translation
 
     /// `playableChapters` strips chapters with no `downloadUrl`. The
