@@ -118,6 +118,16 @@ struct ReaderView: View {
     /// 5-pages-in-2-seconds swipe sequence triggers one write at the
     /// end of the burst, not 10 prefs-daemon round-trips on main.
     @State private var publishRatioTask: Task<Void, Never>?
+    /// Memoised pagination result. `Paginator.paginateAttributed`
+    /// builds a full TextKit stack (`NSTextStorage` + `NSLayoutManager`
+    /// + `NSTextContainer`) and walks the entire chapter — hundreds of
+    /// ms for a 30 K-char payload. Every chrome toggle / slider drag /
+    /// rotation re-evaluates the GeometryReader body, which would
+    /// otherwise re-paginate from scratch each time. Cache keyed on
+    /// the inputs that actually change the layout; cleared on chapter
+    /// change.
+    @State private var paginatedPages: [NSAttributedString] = []
+    @State private var paginatedCacheKey: String?
 
     private enum PageDirection { case forward, backward }
 
@@ -241,6 +251,10 @@ struct ReaderView: View {
             // branch shows until `task` populates the new chapter —
             // avoids a one-frame flash of stale content on chapter swap.
             renderedAttributed = nil
+            // Pagination cache is keyed on the chapter id; clear so
+            // the next render of the new chapter rebuilds from scratch.
+            paginatedPages = []
+            paginatedCacheKey = nil
         }
         .task(id: renderedAttributedKey) {
             // `NSAttributedString.html` importer is main-thread-only
@@ -664,6 +678,25 @@ struct ReaderView: View {
         lineSpacing: Double
     ) -> [NSAttributedString] {
         #if canImport(UIKit) || canImport(AppKit)
+        // Build the cache key from every input that actually affects
+        // the layout. NOTE: includes `renderedAttributed?.hashValue`
+        // so an EpubHtmlRenderer re-render (theme switch, override
+        // toggle) invalidates the cache.
+        let renderedHash = renderedAttributed?.description.hashValue ?? 0
+        let key = [
+            chapter.id,
+            String(format: "%.0fx%.0f", pageSize.width, pageSize.height),
+            String(format: "%.0f", margin),
+            String(format: "%.0f", columnWidth),
+            String(format: "%.0f", headerHeight),
+            String(format: "%.0f", fontSize),
+            String(format: "%.2f", lineSpacing),
+            String(renderedHash),
+        ].joined(separator: "|")
+        if let cached = paginatedCacheKey, cached == key {
+            return paginatedPages
+        }
+
         let base: NSAttributedString
         if let rendered = renderedAttributed {
             base = NSAttributedString(rendered)
@@ -677,13 +710,25 @@ struct ReaderView: View {
                 .paragraphStyle: para,
             ])
         }
-        return Paginator.paginateAttributed(
+        let pages = Paginator.paginateAttributed(
             base,
             pageSize: pageSize,
             columnWidth: columnWidth,
             margin: Double(margin),
             headerHeight: headerHeight
         )
+        // Mutating @State from within a body-evaluated function is
+        // technically a SwiftUI smell, but the assignment short-
+        // circuits if the value is identical, and the key string is
+        // cheap to compare. The alternative — driving this from
+        // `.task(id:)` — would forbid the call from a body-only
+        // computed expression and require restructuring the
+        // GeometryReader's data flow.
+        Task { @MainActor in
+            paginatedPages = pages
+            paginatedCacheKey = key
+        }
+        return pages
         #else
         return []
         #endif
