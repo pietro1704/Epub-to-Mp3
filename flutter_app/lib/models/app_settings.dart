@@ -14,6 +14,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_app/services/offline_cache_eviction.dart';
 
 /// Default backend URL per platform. Android emulator routes host
 /// `localhost` to `10.0.2.2`; all other platforms reach the host
@@ -283,6 +284,20 @@ class MirrorAppSettings {
     ].map(f).join(',');
     return _prefs.setString('readerCustomColors', s);
   }
+
+  // Offline cache budget ------------------------------------------------
+
+  /// Maximum on-device audiobook cache budget (bytes). Default 2 GB.
+  int get offlineCacheBudgetBytes =>
+      _prefs.getInt('offlineCacheBudgetBytes') ?? kDefaultOfflineCacheBudgetBytes;
+  Future<void> setOfflineCacheBudgetBytes(int v) =>
+      _prefs.setInt('offlineCacheBudgetBytes', v);
+
+  /// Maximum age (seconds) before a cached audiobook is evicted. Default 24 h.
+  int get offlineCacheTTLSeconds =>
+      _prefs.getInt('offlineCacheTTLSeconds') ?? kDefaultOfflineCacheTTLSeconds;
+  Future<void> setOfflineCacheTTLSeconds(int v) =>
+      _prefs.setInt('offlineCacheTTLSeconds', v);
 
   // Reading position persistence ----------------------------------------
   int savedChapterIndex(String bookId) =>
