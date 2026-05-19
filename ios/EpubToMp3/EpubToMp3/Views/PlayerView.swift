@@ -10,6 +10,7 @@ struct PlayerView: View {
     @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     private var readerChapterIndex: Int = 0
     @State private var pendingAnchor: PlayDivergenceAnchor?
+    @State private var scrubberDragValue: TimeInterval?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -77,8 +78,8 @@ struct PlayerView: View {
         VStack(spacing: 4) {
             Slider(
                 value: Binding(
-                    get: { player.positionSeconds },
-                    set: { player.seek(to: $0) }
+                    get: { scrubberDragValue ?? player.positionSeconds },
+                    set: { scrubberDragValue = $0 }
                 ),
                 in: 0...max(player.durationSeconds, 1),
                 onEditingChanged: { editing in
@@ -86,6 +87,10 @@ struct PlayerView: View {
                     let generator = UIImpactFeedbackGenerator(style: editing ? .light : .medium)
                     generator.impactOccurred()
                     #endif
+                    if !editing, let target = scrubberDragValue {
+                        player.seek(to: target)
+                        scrubberDragValue = nil
+                    }
                 }
             )
             .accessibilityLabel(L10n.string("player.playbackPosition"))

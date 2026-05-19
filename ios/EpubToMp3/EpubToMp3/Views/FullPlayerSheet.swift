@@ -41,6 +41,11 @@ struct FullPlayerSheet: View {
     @State private var showChapterList = false
     @State private var dragOffset: CGFloat = 0
     @State private var pendingAnchor: PlayDivergenceAnchor?
+    /// Local scrubber position while the user is dragging — decouples
+    /// the visible thumb from `player.positionSeconds` so dragging
+    /// doesn't fire a seek per CMTime tick. Committed back to the
+    /// player on `onEditingChanged: { editing == false }`.
+    @State private var scrubberDragValue: TimeInterval?
 
     // MARK: Derived state
 
@@ -231,10 +236,18 @@ struct FullPlayerSheet: View {
 
     private var scrubberBlock: some View {
         VStack(spacing: 6) {
+            // The scrubber decouples its visible thumb from the
+            // player while the user is dragging — `scrubberDragValue`
+            // owns the local preview, and the seek only fires when
+            // the gesture ends. Without this, every CMTime tick (~60
+            // Hz on a drag) called `AVQueuePlayer.seek(to:)`, which
+            // posts decode work to the asset queue; on older devices
+            // the playhead stuttered or "jumped" back as the system
+            // caught up.
             Slider(
                 value: Binding(
-                    get: { player.positionSeconds },
-                    set: { player.seek(to: $0) }
+                    get: { scrubberDragValue ?? player.positionSeconds },
+                    set: { scrubberDragValue = $0 }
                 ),
                 in: 0...max(player.durationSeconds, 1),
                 onEditingChanged: { editing in
@@ -242,6 +255,10 @@ struct FullPlayerSheet: View {
                     let generator = UIImpactFeedbackGenerator(style: editing ? .light : .medium)
                     generator.impactOccurred()
                     #endif
+                    if !editing, let target = scrubberDragValue {
+                        player.seek(to: target)
+                        scrubberDragValue = nil
+                    }
                 }
             )
             // Scrubber follows HIG (Apple Books / Music): accent
@@ -249,6 +266,7 @@ struct FullPlayerSheet: View {
             // reads as "tap-and-drag-able". Forcing `.primary`
             // (black/white) reads as inert chrome on first glance.
             .accessibilityLabel(L10n.string("player.playbackPosition"))
+            .accessibilityValue(formatTime(scrubberDragValue ?? player.positionSeconds))
 
             HStack {
                 Text(formatTime(player.positionSeconds))

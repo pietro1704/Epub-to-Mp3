@@ -51,6 +51,11 @@ struct PlayerReaderView: View {
     @AppStorage(AudioPlayer.readerCurrentChapterIndexDefaultsKey)
     private var readerChapterIndex: Int = 0
     @State private var pendingAnchor: PlayDivergenceAnchor?
+    /// See `FullPlayerSheet.scrubberDragValue` — decouples the slider
+    /// thumb from `player.positionSeconds` while a drag is in flight
+    /// so each pixel of movement doesn't post a seek to the asset
+    /// playback queue.
+    @State private var scrubberDragValue: TimeInterval?
 
     /// Tri-state for the toolbar Download button. `idle` is the default
     /// CTA; `downloading` shows a determinate progress label; `done`
@@ -271,8 +276,8 @@ struct PlayerReaderView: View {
         VStack(spacing: 4) {
             Slider(
                 value: Binding(
-                    get: { player.positionSeconds },
-                    set: { player.seek(to: $0) }
+                    get: { scrubberDragValue ?? player.positionSeconds },
+                    set: { scrubberDragValue = $0 }
                 ),
                 in: 0...max(player.durationSeconds, 1),
                 onEditingChanged: { editing in
@@ -280,6 +285,10 @@ struct PlayerReaderView: View {
                     let generator = UIImpactFeedbackGenerator(style: editing ? .light : .medium)
                     generator.impactOccurred()
                     #endif
+                    if !editing, let target = scrubberDragValue {
+                        player.seek(to: target)
+                        scrubberDragValue = nil
+                    }
                 }
             )
             HStack {
