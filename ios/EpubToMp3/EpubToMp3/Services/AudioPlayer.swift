@@ -345,7 +345,12 @@ final class AudioPlayer: ObservableObject {
 
     // MARK: Remote commands (lazy — deferred to first playback)
 
-    private func ensureRemoteCommands() {
+    /// Configure the lock-screen / Control Center remote commands once.
+    /// Lazy: triggered on first playback, not in `init`. Idempotent —
+    /// guarded by `remoteCommandsConfigured`. Exposed (not `private`)
+    /// so tests can assert command/​interval registration deterministically
+    /// without a real `play()` call.
+    func ensureRemoteCommands() {
         guard !remoteCommandsConfigured else { return }
         remoteCommandsConfigured = true
         configureRemoteCommands()
@@ -1229,7 +1234,12 @@ final class AudioPlayer: ObservableObject {
         return true
     }
 
-    private func updateNowPlayingInfo() {
+    /// Build the Now Playing metadata dict. Extracted from
+    /// `updateNowPlayingInfo()` so tests can assert on the metadata
+    /// directly: `MPNowPlayingInfoCenter.default().nowPlayingInfo`
+    /// does not round-trip reads in a headless xctest host (macOS or
+    /// iOS simulator), so asserting through the singleton is flaky.
+    func makeNowPlayingInfo() -> [String: Any] {
         var info: [String: Any] = [:]
         info[MPMediaItemPropertyTitle] = currentChapterValue?.displayTitle ?? "Chapter"
         // "Album" maps to the book title; "Artist" maps to the author name.
@@ -1248,7 +1258,11 @@ final class AudioPlayer: ObservableObject {
         if let coverArtData, let artwork = makeArtwork(from: coverArtData) {
             info[MPMediaItemPropertyArtwork] = artwork
         }
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        return info
+    }
+
+    private func updateNowPlayingInfo() {
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = makeNowPlayingInfo()
     }
 
     private func makeArtwork(from data: Data) -> MPMediaItemArtwork? {
