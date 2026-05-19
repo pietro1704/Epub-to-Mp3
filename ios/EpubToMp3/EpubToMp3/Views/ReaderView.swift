@@ -128,6 +128,14 @@ struct ReaderView: View {
     /// change.
     @State private var paginatedPages: [NSAttributedString] = []
     @State private var paginatedCacheKey: String?
+    /// Bumped each time `renderedAttributed` is repopulated by the
+    /// `.task(id: renderedAttributedKey)`. Used as a cheap identity
+    /// for the pagination memo cache — `AttributedString.description`
+    /// (the previous key component) materialised the entire formatted
+    /// debug representation per body eval (~50–200K alloc + String
+    /// hash for a 30K-char chapter) BEFORE the cache lookup happened,
+    /// defeating the memo entirely. An incrementing Int is free.
+    @State private var renderVersion: Int = 0
 
     private enum PageDirection { case forward, backward }
 
@@ -266,6 +274,7 @@ struct ReaderView: View {
             // sheet-open bug resurfaces, fix it via a `renderVersion`
             // token bumped from the sheet, NOT a parallel re-render path.
             renderedAttributed = renderHtmlForChapter()
+            renderVersion &+= 1
         }
         .onAppear {
             debouncedFontSize = settings.readerPointSize
@@ -679,10 +688,12 @@ struct ReaderView: View {
     ) -> [NSAttributedString] {
         #if canImport(UIKit) || canImport(AppKit)
         // Build the cache key from every input that actually affects
-        // the layout. NOTE: includes `renderedAttributed?.hashValue`
-        // so an EpubHtmlRenderer re-render (theme switch, override
-        // toggle) invalidates the cache.
-        let renderedHash = renderedAttributed?.description.hashValue ?? 0
+        // the layout. `renderVersion` is bumped by the `.task(id:)`
+        // every time `renderedAttributed` is repopulated, so it's a
+        // free O(1) identity for the underlying AttributedString —
+        // avoiding the previous `description.hashValue` materialisation
+        // which paid 50-200K alloc + String hash per body eval before
+        // the cache lookup ever happened (defeating the memo).
         let key = [
             chapter.id,
             String(format: "%.0fx%.0f", pageSize.width, pageSize.height),
@@ -691,7 +702,7 @@ struct ReaderView: View {
             String(format: "%.0f", headerHeight),
             String(format: "%.0f", fontSize),
             String(format: "%.2f", lineSpacing),
-            String(renderedHash),
+            String(renderVersion),
         ].joined(separator: "|")
         if let cached = paginatedCacheKey, cached == key {
             return paginatedPages
