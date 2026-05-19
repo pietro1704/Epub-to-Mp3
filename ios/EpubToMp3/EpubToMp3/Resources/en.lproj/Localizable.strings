@@ -106,6 +106,14 @@
 "player.divergence.fromBeginning" = "From the beginning";
 "common.cancel" = "Cancel";
 
+/* BookOpenView — error / empty / preparing states */
+"bookOpen.preparingChapters" = "Preparing chapters…";
+"bookOpen.noContent" = "No content available";
+"bookOpen.noContentDescription" = "This book couldn't be read by the parser. Try re-importing the file or pick a different book.";
+"bookOpen.error" = "Couldn't open this book";
+"bookOpen.locateFile" = "Locate file…";
+"bookOpen.retry" = "Retry";
+
 /* ChapterListSheet accessibility */
 "chapterList.nowPlaying" = "%@, now playing";
 "chapterList.noAudio" = "%@, no audio available";

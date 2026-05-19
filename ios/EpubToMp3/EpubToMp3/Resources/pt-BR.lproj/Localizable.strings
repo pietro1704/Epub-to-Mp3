@@ -106,6 +106,14 @@
 "player.divergence.fromBeginning" = "Do início";
 "common.cancel" = "Cancelar";
 
+/* BookOpenView — estados de erro / vazio / preparando */
+"bookOpen.preparingChapters" = "Preparando capítulos…";
+"bookOpen.noContent" = "Sem conteúdo disponível";
+"bookOpen.noContentDescription" = "Não foi possível ler este livro. Tente reimportar o arquivo ou escolha outro.";
+"bookOpen.error" = "Não foi possível abrir este livro";
+"bookOpen.locateFile" = "Localizar arquivo…";
+"bookOpen.retry" = "Tentar de novo";
+
 /* ChapterListSheet acessibilidade */
 "chapterList.nowPlaying" = "%@, tocando agora";
 "chapterList.noAudio" = "%@, sem áudio disponível";

@@ -108,7 +108,15 @@ struct BookOpenView: View {
                             .onAppear { ensureCacheManager() }
                     }
                 } else {
-                    Text("No content available.")
+                    // HIG empty-state: title + description + system
+                    // illustration, centred. Uses `ContentUnavailableView`
+                    // on iOS 17+ for the native treatment; falls back to
+                    // a hand-laid VStack on iOS 15/16.
+                    EmptyContentView(
+                        title: L10n.string("bookOpen.noContent"),
+                        message: L10n.string("bookOpen.noContentDescription"),
+                        systemImage: "doc.text.magnifyingglass"
+                    )
                 }
 
             case .unreadable(let fileURL):
@@ -1132,30 +1140,49 @@ struct BookOpenView: View {
 
     // MARK: - Error / re-pick UI
 
+    @ViewBuilder
     private func errorView(message: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 40))
-                .foregroundStyle(.orange)
-                .accessibilityLabel("Error")
-            Text(message)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 28)
-                .frame(maxWidth: 480)
-            HStack(spacing: 12) {
-                if needsRePick(message: message) {
-                    Button {
-                        showingPicker = true
-                    } label: {
-                        Label("Locate file…", systemImage: "doc.badge.plus")
-                    }
-                    .buttonStyle(.borderedProminent)
-                }
-                Button("Retry") { Task { await openFlow() } }
-                    .buttonStyle(.bordered)
+        if #available(iOS 17, macOS 14, *) {
+            ContentUnavailableView {
+                Label(
+                    L10n.string("bookOpen.error"),
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+            } description: {
+                Text(message)
+            } actions: {
+                errorActions(message: message)
             }
+        } else {
+            VStack(spacing: 16) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 40))
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel(L10n.string("bookOpen.error"))
+                Text(message)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+                    .frame(maxWidth: 480)
+                HStack(spacing: 12) { errorActions(message: message) }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func errorActions(message: String) -> some View {
+        if needsRePick(message: message) {
+            Button {
+                showingPicker = true
+            } label: {
+                Label(L10n.string("bookOpen.locateFile"), systemImage: "doc.badge.plus")
+            }
+            .buttonStyle(.borderedProminent)
+        }
+        Button(L10n.string("bookOpen.retry")) {
+            Task { await openFlow() }
+        }
+        .buttonStyle(.bordered)
     }
 
     private func needsRePick(message: String) -> Bool {
