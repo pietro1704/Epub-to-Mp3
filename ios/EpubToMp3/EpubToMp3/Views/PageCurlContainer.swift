@@ -11,7 +11,10 @@ import UIKit
 /// the new page. User-initiated curl gestures update the binding on
 /// completion.
 struct PageCurlContainer: UIViewControllerRepresentable {
-    let pages: [AnyView]
+    // `var` (not `let`) so a content-only refresh can swap the page
+    // array on a coordinator's cached `parent` — see
+    // `Coordinator.refreshCachedRootViews()` and its regression test.
+    var pages: [AnyView]
     @Binding var currentPage: Int
     let onAdvanceChapter: (() -> Bool)?
     let onPreviousChapter: (() -> Bool)?
@@ -58,6 +61,18 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             return
         }
 
+        // Page COUNT is unchanged but the page CONTENT may have been
+        // rebuilt — e.g. a theme/colour switch repopulates
+        // `renderedAttributed` without altering the layout, so the
+        // paginator yields the same number of pages with different
+        // attributes. The `cachedControllers` map is keyed by index,
+        // so without this every cached `IndexedHostingController` would
+        // keep rendering the STALE `AnyView` (old theme colours) until
+        // its page was evicted. Push the fresh `AnyView` into every
+        // live cached controller's `rootView` so a theme toggle recolours
+        // pages already built — visible page included.
+        coordinator.refreshCachedRootViews()
+
         // If the current displayed page differs from the binding, animate
         guard let current = pvc.viewControllers?.first as? IndexedHostingController,
               current.pageIndex != target else { return }
@@ -87,6 +102,23 @@ struct PageCurlContainer: UIViewControllerRepresentable {
 
         func clearCache() {
             cachedControllers.removeAll()
+        }
+
+        /// Re-push the latest `AnyView` for every page that already has
+        /// a cached `IndexedHostingController`. Called on a content-only
+        /// update (page count unchanged) so a theme / render-version
+        /// change recolours pages without tearing the page-curl stack
+        /// down. Indices that fall outside the new `pages` range are
+        /// dropped — they can only exist transiently if a count change
+        /// raced this path.
+        func refreshCachedRootViews() {
+            for (index, controller) in cachedControllers {
+                guard parent.pages.indices.contains(index) else {
+                    cachedControllers.removeValue(forKey: index)
+                    continue
+                }
+                controller.rootView = parent.pages[index]
+            }
         }
 
         func hostingController(for index: Int) -> IndexedHostingController {
