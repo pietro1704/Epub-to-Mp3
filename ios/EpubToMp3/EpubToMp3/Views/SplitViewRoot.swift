@@ -61,9 +61,51 @@ struct SplitViewRoot: View {
     private var currentBookID: String?
 
     /// True when the mini-player footer should appear in the sidebar.
+    ///
+    /// Suppressed whenever the detail column already shows a reader
+    /// that carries its own player transport (reader mode, or a
+    /// `PlayerReaderDetail` in library mode) — otherwise two
+    /// mini-players stack on screen (see the "duplicate mini-player"
+    /// bug). Mirrors iPhone `TabRoot`, where the reader tab gets no
+    /// `.miniPlayerInset`.
     private var showMiniPlayer: Bool {
+        Self.shouldShowSidebarMiniPlayer(
+            navMode: navMode,
+            hasPlayableBook: hasPlayableBook,
+            isShowingPlayerReaderDetail: isShowingPlayerReaderDetail
+        )
+    }
+
+    /// A book is loaded in the player AND still present in the library.
+    private var hasPlayableBook: Bool {
         guard let id = currentBookID, !id.isEmpty else { return false }
         return library.books.contains(where: { $0.id == id })
+    }
+
+    /// True when library mode has drilled into a `PlayerReaderDetail`
+    /// (a job snapshot exists and a chapter is selected).
+    private var isShowingPlayerReaderDetail: Bool {
+        guard let book = selectedBook else { return false }
+        return jobSnapshot(for: book) != nil && selectedChapterIndex != nil
+    }
+
+    /// Pure decision for sidebar mini-player visibility. Extracted as a
+    /// `static` so `SplitViewRootTests` exercises the real logic
+    /// directly instead of mirroring it.
+    static func shouldShowSidebarMiniPlayer(
+        navMode: SplitNavMode,
+        hasPlayableBook: Bool,
+        isShowingPlayerReaderDetail: Bool
+    ) -> Bool {
+        guard hasPlayableBook else { return false }
+        switch navMode {
+        case .reader:
+            return false
+        case .library:
+            return !isShowingPlayerReaderDetail
+        case .jobs, .settings:
+            return true
+        }
     }
 
     /// Currently-selected book, resolved through the library store.

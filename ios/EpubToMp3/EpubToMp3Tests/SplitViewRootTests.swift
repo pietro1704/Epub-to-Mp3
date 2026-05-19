@@ -264,6 +264,79 @@ final class SplitViewRootTests: XCTestCase {
         #endif
     }
 
+    // MARK: - Sidebar mini-player visibility (duplicate-player bug)
+
+    /// Reader mode never shows the sidebar mini-player — `MainReaderView`
+    /// already carries its own bottom transport, so showing both stacks
+    /// two mini-players on screen.
+    func testSidebarMiniPlayerHiddenInReaderMode() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        XCTAssertFalse(
+            SplitViewRoot.shouldShowSidebarMiniPlayer(
+                navMode: .reader,
+                hasPlayableBook: true,
+                isShowingPlayerReaderDetail: false
+            ),
+            "Reader mode has its own transport — sidebar mini-player must be suppressed."
+        )
+    }
+
+    /// Library mode shows the sidebar mini-player while browsing the
+    /// chapter/book list (no `PlayerReaderDetail` on screen).
+    func testSidebarMiniPlayerVisibleWhileBrowsingLibrary() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        XCTAssertTrue(
+            SplitViewRoot.shouldShowSidebarMiniPlayer(
+                navMode: .library,
+                hasPlayableBook: true,
+                isShowingPlayerReaderDetail: false
+            )
+        )
+    }
+
+    /// Library mode drilled into a `PlayerReaderDetail` hides the
+    /// sidebar mini-player — that detail carries its own transport.
+    func testSidebarMiniPlayerHiddenInLibraryReaderDetail() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        XCTAssertFalse(
+            SplitViewRoot.shouldShowSidebarMiniPlayer(
+                navMode: .library,
+                hasPlayableBook: true,
+                isShowingPlayerReaderDetail: true
+            )
+        )
+    }
+
+    /// Conversions and Settings keep the sidebar mini-player — those
+    /// destinations have no transport of their own.
+    func testSidebarMiniPlayerVisibleInJobsAndSettings() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        for mode in [SplitNavMode.jobs, .settings] {
+            XCTAssertTrue(
+                SplitViewRoot.shouldShowSidebarMiniPlayer(
+                    navMode: mode,
+                    hasPlayableBook: true,
+                    isShowingPlayerReaderDetail: false
+                ),
+                "\(mode) has no transport — sidebar mini-player should stay."
+            )
+        }
+    }
+
+    /// No playable book → mini-player hidden regardless of mode.
+    func testSidebarMiniPlayerHiddenWithoutPlayableBook() {
+        guard #available(iOS 16, macOS 13, *) else { return }
+        for mode in SplitNavMode.allCases {
+            XCTAssertFalse(
+                SplitViewRoot.shouldShowSidebarMiniPlayer(
+                    navMode: mode,
+                    hasPlayableBook: false,
+                    isShowingPlayerReaderDetail: false
+                )
+            )
+        }
+    }
+
     // MARK: - Helpers
 
     /// Mirror of `SplitViewRoot.defaultColumnVisibility` (private).
