@@ -29,7 +29,7 @@ transformers>=5.8.1
 ebooklib>=0.20
 beautifulsoup4>=4.14.3
 pypdf>=6.11.0  # CVE-2026-33699, GHSA-3crg-w4f6-42mx
-lxml>=6.1.0
+lxml>=6.1.1
 
 # Language Detection
 langdetect>=1.0.9
