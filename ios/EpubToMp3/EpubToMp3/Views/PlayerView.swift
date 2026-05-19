@@ -109,7 +109,7 @@ struct PlayerView: View {
     }
 
     private var transport: some View {
-        HStack(spacing: 36) {
+        HStack(spacing: 32) {
             Button { player.previousChapter() } label: {
                 Image(systemName: "backward.fill")
                     .font(.title)

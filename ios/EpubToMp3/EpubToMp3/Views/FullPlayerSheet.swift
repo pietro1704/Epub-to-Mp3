@@ -381,7 +381,7 @@ struct FullPlayerSheet: View {
             Button { showChapterList = true } label: {
                 Image(systemName: "list.bullet")
                     .font(.system(size: 20))
-                    .frame(width: 44, height: 36)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -412,7 +412,7 @@ struct FullPlayerSheet: View {
             } label: {
                 Image(systemName: player.sleepTimerRemaining > 0 ? "moon.zzz.fill" : "moon.zzz")
                     .font(.system(size: 20))
-                    .frame(width: 44, height: 36)
+                    .frame(width: 44, height: 44)
                     .contentShape(Rectangle())
             }
             .accessibilityLabel(L10n.string("player.sleepTimer"))
@@ -421,7 +421,7 @@ struct FullPlayerSheet: View {
 
             #if os(iOS)
             AirPlayPickerView()
-                .frame(width: 44, height: 36)
+                .frame(width: 44, height: 44)
                 .accessibilityLabel(L10n.string("player.airplay"))
             #endif
         }

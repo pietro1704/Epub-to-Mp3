@@ -302,7 +302,7 @@ struct PlayerReaderView: View {
     }
 
     private var transport: some View {
-        HStack(spacing: 36) {
+        HStack(spacing: 32) {
             Button { handlePlayTap() } label: {
                 Image(systemName: player.isPlaying ? "pause.circle.fill" : "play.circle.fill")
                     .font(.system(size: 56))
