@@ -218,12 +218,14 @@ final class AudioPlayer: ObservableObject {
             // is a latent data race the compiler permits only because
             // the AsyncStream factory is implicitly inherited-isolated.
             // Under Swift 6 strict-concurrency this would warn.
-            Task { @MainActor in
-                self.chapterContinuations[id] = continuation
-                continuation.yield(self.currentChapterValue)
+            Task { @MainActor [weak self] in
+                self?.chapterContinuations[id] = continuation
+                continuation.yield(self?.currentChapterValue)
             }
-            continuation.onTermination = { @Sendable _ in
-                Task { @MainActor in self.chapterContinuations.removeValue(forKey: id) }
+            continuation.onTermination = { @Sendable [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.chapterContinuations.removeValue(forKey: id)
+                }
             }
         }
     }
@@ -233,13 +235,17 @@ final class AudioPlayer: ObservableObject {
     var position: AsyncStream<TimeInterval> {
         AsyncStream { continuation in
             let id = UUID()
-            // See `currentChapter` above — capture inside the Task.
-            Task { @MainActor in
-                self.positionContinuations[id] = continuation
-                continuation.yield(self.positionSeconds)
+            // See `currentChapter` above — capture inside the Task,
+            // weakly so a long-running subscriber doesn't pin the
+            // AudioPlayer past its useful lifetime.
+            Task { @MainActor [weak self] in
+                self?.positionContinuations[id] = continuation
+                continuation.yield(self?.positionSeconds ?? 0)
             }
-            continuation.onTermination = { @Sendable _ in
-                Task { @MainActor in self.positionContinuations.removeValue(forKey: id) }
+            continuation.onTermination = { @Sendable [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.positionContinuations.removeValue(forKey: id)
+                }
             }
         }
     }
