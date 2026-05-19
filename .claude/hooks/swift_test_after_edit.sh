@@ -1,21 +1,25 @@
 #!/bin/bash
-# PostToolUse hook: when a Swift file under ios/EpubToMp3/EpubToMp3 is
-# edited, run the SPM test suite. Async + non-blocking — Claude keeps
-# working; the result is logged so we notice regressions early.
-#
-# Reads the edited file path from stdin JSON and exits 0 if the path
-# is outside the iOS app (no-op).
+# PostToolUse hook: when a Swift file under the iOS target is edited, run
+# `swift test` async. Debounced 60s so consecutive edits don't queue
+# multiple test runs.
 
 set -euo pipefail
 
 PAYLOAD=$(cat)
 FILE=$(printf '%s' "$PAYLOAD" | jq -r '.tool_input.file_path // .tool_response.filePath // empty' 2>/dev/null || true)
 
-# Only act on Swift sources under the iOS target.
 case "$FILE" in
     */ios/EpubToMp3/EpubToMp3/*.swift|*/ios/EpubToMp3/EpubToMp3Tests/*.swift) ;;
     *) exit 0 ;;
 esac
+
+STAMP="/tmp/claude-swift-test.stamp"
+NOW=$(date +%s)
+if [[ -f "$STAMP" ]]; then
+    LAST=$(cat "$STAMP" 2>/dev/null || echo 0)
+    if (( NOW - LAST < 60 )); then exit 0; fi
+fi
+echo "$NOW" > "$STAMP"
 
 LOG="/tmp/claude-swift-test.log"
 cd /Users/pietropugliesi/Developer/Epub-to-Mp3/ios/EpubToMp3 || exit 0
