@@ -272,6 +272,16 @@ final class AudioPlayer: ObservableObject {
     private var segmentPlayedCount: Int = 0
 
     private static let maxQueueAhead = 5
+    /// Hard cap on the deferred-segments backlog. When the user has the
+    /// app open during conversion but never taps Play, segments can
+    /// accumulate without bound (the queue won't drain because nothing
+    /// plays, and the SSE pipe keeps feeding chunks). Each entry holds
+    /// a file handle in `segmentTempDir` — at typical Edge-TTS output
+    /// (200 chapters × 20 segments = 4000 files) that's a real disk
+    /// pressure problem. Cap drops the OLDEST entry (sentence-aligned
+    /// in `segmentSentenceIds` for the segment-mode case), letting the
+    /// reader keep up.
+    private static let maxPendingSegments = 50
     private var pendingSegments: [(url: URL, chapterIndex: Int, segmentIndex: Int)] = []
 
     private var remoteCommandsConfigured = false
@@ -771,6 +781,17 @@ final class AudioPlayer: ObservableObject {
                     audioLog.debug("[enqueueSegment] appended to queue, total=\(queue.items().count)")
                 }
             } else {
+                // Evict the oldest entry once we hit the cap so the
+                // file descriptor / disk-space cost stays bounded.
+                // The freed segment's temp file is deleted in
+                // `teardownPlayer()` when the player is rebuilt, but
+                // until then it's harmless: just a stale file on disk
+                // we'll never reference.
+                if pendingSegments.count >= Self.maxPendingSegments {
+                    let evicted = pendingSegments.removeFirst()
+                    try? FileManager.default.removeItem(at: evicted.url)
+                    audioLog.warning("[enqueueSegment] backlog cap hit (\(Self.maxPendingSegments)); evicted ch=\(evicted.chapterIndex) seg=\(evicted.segmentIndex)")
+                }
                 self.pendingSegments.append((url: segFile, chapterIndex: chapterIndex, segmentIndex: segmentIndex))
                 audioLog.debug("[enqueueSegment] deferred ch=\(chapterIndex) seg=\(segmentIndex), pending=\(self.pendingSegments.count)")
             }
