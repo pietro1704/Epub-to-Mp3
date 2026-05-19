@@ -2,6 +2,121 @@
 
 ## [Unreleased]
 
+## [0.5.7] — 2026-05-19
+
+### Added (iOS)
+
+- **Behavioural divergence test.** `testPlayThenDecideRespectsTranslatedIndex`
+  drives the full `play(snapshot:, startingAt:)` → `playTapDecision`
+  pipeline with a 5-chapter snapshot containing two unplayable
+  gaps. Catches regressions where `currentChapterIndex` would land
+  correctly via the test-hook setters but the EPUB↔playable
+  translation broke at construction time.
+
+### Changed (iOS)
+
+- **Cover hero scales to 70% of parent width** on FullPlayerSheet
+  with a 320pt cap for iPad / macOS — the previous 220pt hard cap
+  dwarfed the cover on iPhone 15 Pro Max (51% width). Uses
+  `containerRelativeFrame` on iOS 17+ with a GeometryReader
+  fallback for earlier targets.
+- **FullPlayerSheet vertical spacing** normalised to the 8/16/24
+  grid (was 8/20/24/28/20/16 — three off-grid values).
+
+### Fixed (iOS)
+
+- **Process-wide cover image cache.** `platformImage(from: Data)`
+  was re-decoding the full cover PNG on every SwiftUI body
+  evaluation. Library grid scroll on iPhone SE captured 50+ covers
+  × 5-15 ms decode = visible frame drops. NSCache keyed on
+  `Data.hashValue` with a 64-cover countLimit.
+- **Pagination memo cache key.** Used to hash
+  `renderedAttributed.description` per body eval — materialising
+  50-200K of formatted-debug representation BEFORE the cache
+  lookup, defeating the memo. Replaced with an O(1) `renderVersion`
+  bumped on each `.task` re-render.
+- **AsyncStream continuation leak.** `currentChapter` / `position`
+  AsyncStream continuations were never `.finish()`'d on
+  AudioPlayer deinit. A subscriber Task holding an unbroken `for
+  await pos in player.position` would hang forever — leaking the
+  Task and anything it captured. Now drained in deinit.
+- **PlayerReaderView cover fetch is cancellable + job-scoped.**
+  `Task.detached` was unbounded and could land Book B's cover
+  bytes on Book A's player if the user navigated mid-fetch. Now
+  stored as `@State`, cancelled in teardown, with a jobId guard
+  before applying the bytes.
+- **Position+sentence subscription consolidation.** The embedded
+  path (`globalPlayer.firstSegmentReady` → `wireEmbeddedPositionObservers`)
+  and the mount path (`mountPlayerIfPossible`) both grabbed the
+  same `positionTask`/`sentenceTask` @State vars. When both fired
+  in the same runloop tick, SwiftUI's batching could leave one
+  stream's loop alive while the other claimed the storage. New
+  `installPositionLoop(on:isEmbedded:)` runs exactly one
+  subscription per active AudioPlayer identity.
+- **Widget IPC debounce.** `WidgetDataSync.updateLastRead` was
+  firing `reloadContinueReadingWidgets()` (cross-process
+  WidgetCenter call, 10-30 ms on cold widgetkitd) plus 3
+  UserDefaults writes per chapter advance — visible main-thread
+  hog during fast pagination. Coalesced to a 800 ms trailing-edge
+  flush; reader teardown calls `flushLastRead()` for instant
+  widget update.
+- **BookOpenView SSE same-jobId guard.** Watchdog retry after a
+  transient disconnect was tearing down a healthy connection and
+  rebuilding the identical one. Mirrors the fix PlayerReaderView
+  got in v0.5.6.
+- **`AudioPlayer.currentChapterValue` translates index** — was
+  comparing `chapterProgress[i].index` (EPUB-zero-based) against
+  `currentChapterIndex` (playable-list ordinal). With any
+  unplayable chapter, Now Playing metadata and AsyncStream
+  subscribers got the wrong chapter — the source-of-truth bug on
+  the OPPOSITE side of v0.5.6's play-tap fix.
+- **`playableIndex(forEpubZeroBased:in:)` returns optional.**
+  Previously clamped to 0 when no playable chapter was at or
+  before the reader's EPUB index, masking divergence (reader
+  sitting on a non-narratable preface silently resolved to
+  playable 0 — and if audio was on playable 0, `playTapDecision`
+  claimed match instead of offering the dialog).
+- **`.alert(item:)` for `lastError`.** Replaces `.alert(isPresented:)`
+  so a new error fired during the previous alert's dismiss
+  animation re-presents instead of being dropped. Hosted on both
+  TabRoot and SplitViewRoot (iPad / macOS users were silently
+  missing the error surface in v0.5.6).
+- **VoiceOver `Differentiate Without Color` guards.** Active
+  sentence in ReaderView gains a 3pt accent border + semibold
+  weight; MiniPlayerBar conversion progress bar adds a soft
+  gradient mask. Both states are now distinguishable without
+  colour.
+- **MiniPlayerBar expand button label.** VoiceOver was
+  synthesising "Book Title. Chapter 3" from the child Texts —
+  indistinguishable from tapping the book in the library.
+  Explicit `accessibilityLabel` now says "Expand player — Book,
+  Chapter".
+- **InstantReaderView a11y labels localised.** 10 hardcoded English
+  `.accessibilityLabel` strings moved to L10n (en / pt-BR / es).
+- **`AudioPlayer` deinit observer cleanup.** Removes
+  `addPeriodicTimeObserver` + `AVPlayerItemDidPlayToEndTime`
+  NotificationCenter observer + `currentItem` KVO. Apple's docs
+  require this; FB7359919 documents the dangling-callback crash.
+- **End-of-item notification filter.** Ignores `AVPlayerItem`s not
+  owned by our queue (share extensions / preview players in the
+  same app used to advance our chapter cursor).
+- **`AVAudioSession` deferred to user intent.** `play(snapshot:)`
+  and `enqueueSegment` no longer activate the session unless the
+  user explicitly resumes. Loading a book or receiving streaming
+  SSE chunks no longer steals audio focus from Spotify / Apple
+  Music.
+- **Scrubber seek defers to drag-end.** All three player surfaces
+  (FullPlayerSheet, PlayerReaderView, PlayerView) now use a
+  local `scrubberDragValue` and only fire `seek(to:)` on
+  `onEditingChanged: false`. Was firing ~60 seeks/s during drag,
+  flooding the AVQueuePlayer asset queue.
+- **Title casing.** Publisher-supplied "PROLOGUE" / "parte I" are
+  now preserved as-is. `.capitalized` only applies when the source
+  is fully lowercased.
+- **EOCD signature test endianness predicate.** `UInt32(1).littleEndian == 1`
+  instead of the previous inverted `.bigEndian == 0x50` check that
+  failed on every Apple platform.
+
 ## [0.5.6] — 2026-05-19
 
 ### Added (iOS)
