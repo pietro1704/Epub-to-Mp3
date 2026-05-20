@@ -49,7 +49,7 @@ argcomplete>=3.6.3
 
 # HF
 huggingface_hub>=1.15.0
-transformers>=5.8.1
+transformers>=5.9.0
 
 # Progress / monitoring
 psutil>=7.2.2
