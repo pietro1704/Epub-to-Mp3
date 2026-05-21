@@ -105,7 +105,15 @@ struct BookOpenView: View {
                             backendBaseURL: settings.useEmbeddedRuntime ? nil : settings.resolvedBaseURL,
                             coverPNG: book.coverPNG,
                             onRequestAudioRetry: { startAudioBootstrap() },
-                            onRequestPlay: { chapterIdx, _ in startAudioBootstrap(startChapterIndex: chapterIdx) },
+                            // `rebuildSegmentQueue: true` — the InstantReaderView's
+                            // play-menu is a deliberate "restart at this chapter"
+                            // gesture (From beginning / From current chapter). In
+                            // embedded mode the existing AVQueuePlayer is torn down
+                            // and the bootstrap arms auto-play so the user hears
+                            // audio without a second tap.
+                            onRequestPlay: { chapterIdx, _ in
+                                startAudioBootstrap(startChapterIndex: chapterIdx, rebuildSegmentQueue: true)
+                            },
                             cacheManager: cacheManager
                         )
                         .environment(\.epubFontDirectory, registeredFontURLs.first?.deletingLastPathComponent())
@@ -328,13 +336,21 @@ struct BookOpenView: View {
     ///   Passed by `InstantReaderView.onRequestPlay` so "Play from here"
     ///   begins TTS at the chapter the user is reading, not always ch 0.
     @MainActor
-    private func startAudioBootstrap(startChapterIndex: Int = 0) {
+    private func startAudioBootstrap(startChapterIndex: Int = 0, rebuildSegmentQueue: Bool = false) {
         audioBootstrapTask?.cancel()
+        // When the caller intends a fresh queue (user tapped
+        // "from the beginning" / "previous chapter" while a segment
+        // queue is alive), tear it down and arm `pendingAutoPlay` so
+        // the new bootstrap's first `enqueueSegment` flips the player
+        // to rate.rawValue without a second user tap.
+        if rebuildSegmentQueue, settings.useEmbeddedRuntime {
+            globalPlayer.prepareSegmentRestart()
+        }
         statusBanner = "Generating audio…"
         conversionStalled = false
         globalPlayer.isConverting = true
         globalPlayer.conversionStatus.beginSession()
-        playerLog.debug("[AudioBootstrap] startAudioBootstrap ch=\(startChapterIndex) — useEmbeddedRuntime=\(settings.useEmbeddedRuntime) hasClient=\(self.client != nil)")
+        playerLog.debug("[AudioBootstrap] startAudioBootstrap ch=\(startChapterIndex) rebuildQueue=\(rebuildSegmentQueue) — useEmbeddedRuntime=\(settings.useEmbeddedRuntime) hasClient=\(self.client != nil)")
 
         // Start Live Activity for this conversion. startConversionActivity is
         // guarded internally by #if canImport(ActivityKit) && os(iOS) so the
@@ -411,6 +427,16 @@ struct BookOpenView: View {
 
         await MainActor.run {
             globalPlayer.coverArtData = book.coverPNG
+            // Wire the restart hook so `previousChapter()` (transport
+            // bar) and "From the beginning" (play menu) can leave the
+            // current segment queue and rebuild from a different
+            // starting chapter. Captures `[weak audioPlayer]` analogue
+            // via the @State closure indirection — `startAudioBootstrap`
+            // is a method on `self`, the View struct value-captures
+            // safely.
+            globalPlayer.restartSegmentQueueHandler = { target in
+                self.startAudioBootstrap(startChapterIndex: target, rebuildSegmentQueue: true)
+            }
         }
 
         guard let fulltext else {

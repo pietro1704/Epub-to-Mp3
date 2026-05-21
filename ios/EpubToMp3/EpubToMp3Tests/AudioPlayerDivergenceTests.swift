@@ -147,6 +147,43 @@ final class AudioPlayerDivergenceTests: XCTestCase {
         )
     }
 
+    /// Regression: in the embedded-runtime path, chapters arrive via
+    /// `enqueueSegment` and the snapshot carries no `downloadUrl`s,
+    /// so `playableChapters` is permanently empty. Pre-fix,
+    /// `playTapDecision` returned `.offerStartChoice` (translation
+    /// returned nil → fall-through to the divergence dialog); picking
+    /// any option called `play(snapshot:)` which then teardown the
+    /// live queue and refused to rebuild it (no URLs). User-visible
+    /// symptom: "diz que baixou todos os caps mas não toca nada (pede
+    /// pra baixar)". Now the decision short-circuits to `.resume` when
+    /// segment mode is live, so the existing queue plays.
+    func testDecisionInSegmentModeWithEmptyPlayableChaptersIsResume() {
+        let player = makePlayer()
+        // Empty snapshot — `playableChapters` is [].
+        let empty = JobSnapshot(
+            jobId: "embedded-job", state: "converting",
+            bookTitle: "B", bookAuthor: nil,
+            coverUrl: nil, coverMimeType: nil,
+            engine: nil, voice: nil, language: nil,
+            progressPercent: nil, chaptersTotal: 5, chaptersCompleted: 0,
+            chapterProgress: nil, outputs: nil, logUrl: nil,
+            error: nil, lastActivityAt: nil
+        )
+        XCTAssertTrue(empty.playableChapters.isEmpty)
+        player.testHook_setSnapshot(empty)
+        player.testHook_simulateSegmentMode()
+        XCTAssertEqual(
+            player.playTapDecision(readerChapterIndex: 0),
+            .resume,
+            "Embedded segment mode has nothing for the divergence dialog to resolve — taps must resume"
+        )
+        XCTAssertEqual(
+            player.playTapDecision(readerChapterIndex: 99),
+            .resume,
+            "Any reader chapter index must still resume — there's no playable list to compare against"
+        )
+    }
+
     // MARK: JobSnapshot index translation
 
     /// `playableChapters` strips chapters with no `downloadUrl`. The

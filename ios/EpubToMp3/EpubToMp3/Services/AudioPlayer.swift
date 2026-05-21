@@ -417,6 +417,21 @@ final class AudioPlayer: ObservableObject {
         audioLog.debug("[load] snapshot jobId=\(snapshot.jobId) chapterIndex=\(chapterIndex) playableChapters=\(snapshot.playableChapters.count)")
         // Touch last-access so LRU eviction knows this audiobook was opened.
         AudiobookCacheEviction.touchLastAccess(jobId: snapshot.jobId)
+        // Embedded-runtime preservation: when the host already streamed
+        // segments into the queue via `enqueueSegment` (the only way
+        // audio reaches the player in embedded mode — chapters carry
+        // no `downloadUrl`), a subsequent `play(snapshot:)` call from
+        // the divergence-dialog path used to teardown the live player
+        // and then refuse to rebuild (no URLs). The user saw "asks to
+        // download, never plays" even though every chapter was on disk
+        // and queued. Keep the live segment queue intact; the caller
+        // (`startFromBeginning` / `startFromReaderPage`) will issue the
+        // appropriate `seek` + `resume` after this returns.
+        if isSegmentMode, player != nil, snapshot.playableChapters.isEmpty {
+            self.snapshot = snapshot
+            updateNowPlayingInfo()
+            return
+        }
         let wasPlaying = isPlaying
         teardownPlayer()
         isSegmentMode = false
@@ -560,6 +575,17 @@ final class AudioPlayer: ObservableObject {
     func playTapDecision(readerChapterIndex: Int) -> PlayTapDecision {
         if isPlaying { return .pause }
         guard let snapshot else { return .resume }
+        // Embedded-runtime path: chapters are fed through `enqueueSegment`
+        // and the snapshot carries no `downloadUrl`s, so
+        // `playableChapters` is permanently empty even though a live
+        // AVQueuePlayer is loaded with audio. Without this short-circuit
+        // every play tap returned `.offerStartChoice`; picking any
+        // option then called `play(snapshot:)` which teardown the live
+        // queue and refused to rebuild it (no URLs to build from) —
+        // visible to the user as "asks to download but never plays".
+        // When we're in segment mode with a live player, the divergence
+        // dialog has nothing to resolve: just resume the existing queue.
+        if isSegmentMode, player != nil { return .resume }
         // `readerChapterIndex` is the EPUB-zero-based chapter index
         // (the same space `fulltext.chapters[i].index - 1` lives in).
         // `currentChapterIndex` is an index into `playableChapters` —
@@ -735,6 +761,34 @@ final class AudioPlayer: ObservableObject {
 
     func nextChapter() {
         guard let player else { return }
+        if isSegmentMode {
+            // Segment-mode: the queue holds many AVPlayerItems per
+            // chapter. `advanceToNextItem()` moves one *segment*
+            // forward; walk it until the underlying URL's chapter
+            // tag changes. Items are written as "ch<N>-seg<M>.mp3"
+            // by `enqueueSegment` so the chapter index is in the
+            // filename. Capped at the items remaining so we never
+            // spin forever.
+            let startChapter = currentChapterIndex
+            var safety = player.items().count
+            while safety > 0 {
+                player.advanceToNextItem()
+                safety -= 1
+                if let nextChapter = chapterIndexFromCurrentItem(of: player),
+                   nextChapter != startChapter {
+                    currentChapterIndex = nextChapter
+                    segmentCumulativeBase = 0
+                    positionSeconds = 0
+                    publishCurrentChapter(auto: false)
+                    updateNowPlayingInfo()
+                    return
+                }
+            }
+            // No further chapter in the queue — leave the player
+            // wherever advancing landed it.
+            updateNowPlayingInfo()
+            return
+        }
         if let snapshot {
             let chapters = snapshot.playableChapters
             guard currentChapterIndex + 1 < chapters.count else { return }
@@ -747,6 +801,23 @@ final class AudioPlayer: ObservableObject {
     }
 
     func previousChapter() {
+        // Segment-mode: AVQueuePlayer can't rewind across items, so
+        // "previous chapter" must rebuild the queue. When the host has
+        // wired `restartSegmentQueueHandler` (BookOpenView's embedded
+        // path), delegate to it. Otherwise fall back to seek-to-0 of
+        // the current item so the tap is at least visible.
+        if isSegmentMode {
+            if positionSeconds - segmentCumulativeBase > 3 {
+                seek(to: 0)
+                return
+            }
+            if let handler = restartSegmentQueueHandler, currentChapterIndex > 0 {
+                handler(currentChapterIndex - 1)
+                return
+            }
+            seek(to: 0)
+            return
+        }
         if positionSeconds > 3 {
             seek(to: 0)
             return
@@ -762,6 +833,33 @@ final class AudioPlayer: ObservableObject {
         }
     }
 
+    /// Parse the chapter index out of an AVQueuePlayer's current item
+    /// URL. `enqueueSegment` writes segments as `ch<N>-seg<M>.mp3` and
+    /// `BookOpenView.synthesizeOneChapter` writes whole-chapter cache
+    /// files as `chapter_<N>.mp3` (used when a segment-callback path
+    /// promotes the entire chapter into the queue). Returns nil for
+    /// URLs that don't match either layout.
+    private func chapterIndexFromCurrentItem(of player: AVQueuePlayer) -> Int? {
+        guard let asset = player.currentItem?.asset as? AVURLAsset else { return nil }
+        let name = asset.url.deletingPathExtension().lastPathComponent
+        if name.hasPrefix("ch"), let dash = name.firstIndex(of: "-") {
+            let digits = name[name.index(after: name.startIndex)..<dash]
+            return Int(digits)
+        }
+        if name.hasPrefix("chapter_") {
+            let digits = name.dropFirst("chapter_".count)
+            return Int(digits)
+        }
+        return nil
+    }
+
+    /// Host-supplied callback that rebuilds the segment queue starting
+    /// at the requested chapter. Wired by `BookOpenView` so
+    /// `previousChapter()` and "From beginning" can leave segment mode
+    /// and re-enter via the cache. Optional: when nil, segment-mode
+    /// rewinds fall back to seek-to-0 of the current item.
+    var restartSegmentQueueHandler: ((Int) -> Void)? = nil
+
     func setRate(_ rate: PlaybackRate) {
         self.rate = rate
         if let player, isPlaying { player.rate = rate.rawValue }
@@ -769,10 +867,31 @@ final class AudioPlayer: ObservableObject {
     }
 
     /// Skip relative to the current playhead. Negative values rewind,
-    /// positive fast-forward. Clamped to [0, duration].
+    /// positive fast-forward. Clamped to the current AVPlayerItem's
+    /// duration.
+    ///
+    /// Segment-mode note: `positionSeconds` is **cumulative across all
+    /// segments of the current chapter** (segmentCumulativeBase +
+    /// item-relative time), but `AVPlayer.seek` always lands within
+    /// the current item. Doing the math against the cumulative value
+    /// silently jumped to an out-of-range CMTime and AVPlayer ignored
+    /// the seek — visible as "+/-15 s buttons do nothing". Compute the
+    /// delta against the current item's own clock instead.
     func skip(by deltaSeconds: TimeInterval) {
-        let target = max(0, min(durationSeconds, positionSeconds + deltaSeconds))
-        seek(to: target)
+        guard let player else { return }
+        let rawTime = player.currentTime().seconds.isFinite
+            ? player.currentTime().seconds
+            : 0
+        let cap = durationSeconds.isFinite && durationSeconds > 0
+            ? durationSeconds
+            : .infinity
+        let target = max(0, min(cap, rawTime + deltaSeconds))
+        player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
+        positionSeconds = isSegmentMode
+            ? segmentCumulativeBase + target
+            : target
+        broadcastPosition()
+        updateNowPlayingInfo()
     }
 
     /// Segment-streaming ingestion point. Called by `PythonBridge` after
@@ -878,11 +997,16 @@ final class AudioPlayer: ObservableObject {
             attachObservers()
             // Only auto-start the first segment if the user had already
             // expressed intent to play (e.g. tapped Play while waiting for
-            // the conversion to produce the first chunk). Otherwise we set
-            // everything up but stay paused — the next user tap on Play /
-            // lock-screen / widget will call `resume()`.
-            if isPlaying {
+            // the conversion to produce the first chunk, or asked for
+            // "From the beginning" / "Previous chapter" which arms
+            // `pendingAutoPlay` via `prepareSegmentRestart`). Otherwise
+            // we set everything up but stay paused — the next user tap
+            // on Play / lock-screen / widget will call `resume()`.
+            if isPlaying || pendingAutoPlay {
+                ensureAudioSession()
                 queue.rate = rate.rawValue
+                isPlaying = true
+                pendingAutoPlay = false
             } else {
                 queue.rate = 0
             }
@@ -1402,6 +1526,34 @@ final class AudioPlayer: ObservableObject {
         return URL(string: path, relativeTo: baseURL)?.absoluteURL
     }
 
+    /// Embedded-runtime restart hook. Teardown the live AVQueuePlayer
+    /// and reset segment-mode bookkeeping so the host can rebuild the
+    /// queue from disk-cache starting at an arbitrary chapter. Keeps
+    /// `firstSegmentReady` true so the transport UI stays mounted
+    /// during the rebuild — flipping it off would briefly swap the
+    /// player bar for the play-menu and jump the layout.
+    /// Arms `pendingAutoPlay` so the very next `enqueueSegment` starts
+    /// playback immediately, matching the user's "from beginning" /
+    /// "previous chapter" intent.
+    func prepareSegmentRestart() {
+        teardownPlayer()
+        isSegmentMode = false
+        segmentCumulativeBase = 0
+        segmentChapterIndex = -1
+        segmentSentenceIds = []
+        segmentPlayedCount = 0
+        activeSentenceId = nil
+        pendingAutoPlay = true
+        positionSeconds = 0
+        isPlaying = false
+    }
+
+    /// Set by `prepareSegmentRestart` (and any future "play tap before
+    /// segments arrive" surface) so the next `enqueueSegment` call
+    /// flips the queue from rate 0 → rate.rawValue automatically,
+    /// without waiting for a second user tap on the transport bar.
+    private var pendingAutoPlay: Bool = false
+
     // MARK: - Test hooks
     //
     // Direct setters for state that is `@Published private(set)` or
@@ -1428,6 +1580,25 @@ final class AudioPlayer: ObservableObject {
     }
     func testHook_sentenceTimingMap(forChapterIndex idx: Int) -> [String: Int]? {
         sentenceTimingByChapter[idx]
+    }
+    /// Simulate the post-`enqueueSegment` state in the embedded-runtime
+    /// path: a live AVQueuePlayer carrying a synthesised MP3 with no
+    /// snapshot-side `downloadUrl`. Used by the regression test for
+    /// `playTapDecision` short-circuiting to `.resume` when there is
+    /// nothing for the divergence dialog to resolve.
+    func testHook_simulateSegmentMode() {
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("epub2mp3-test-\(UUID().uuidString).mp3")
+        // 1 KB of zero bytes is enough to instantiate AVPlayerItem;
+        // we never start playback in tests so an invalid MP3 payload
+        // is fine.
+        try? Data(count: 1024).write(to: tmp)
+        let item = AVPlayerItem(url: tmp)
+        let queue = AVQueuePlayer(items: [item])
+        queue.actionAtItemEnd = .advance
+        queue.rate = 0
+        self.player = queue
+        self.isSegmentMode = true
     }
     #endif
 }
