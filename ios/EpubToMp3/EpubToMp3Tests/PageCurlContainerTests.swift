@@ -61,6 +61,33 @@ final class PageCurlContainerTests: XCTestCase {
         }
     }
 
+    /// Regression: `PageCurlContainer.updateUIViewController` was calling
+    /// `refreshCachedRootViews()` on EVERY parent re-render — including
+    /// the one triggered by `didFinishAnimating` writing back
+    /// `currentPage`. Re-pushing the visible page's `AnyView` immediately
+    /// after a curl completes forces the inner `UITextView` to re-layout,
+    /// visible as a 1-frame flicker. The coordinator now tracks
+    /// `lastSeenContentVersion`; the refresh only fires when the parent
+    /// advances `contentVersion`. This test pins the field's initial
+    /// value to the parent so the very first re-render doesn't spuriously
+    /// match "0 != 0" and re-push.
+    func testCoordinatorAdoptsParentContentVersionOnInit() {
+        var binding = 0
+        let container = PageCurlContainer(
+            pages: [AnyView(Text("only"))],
+            currentPage: Binding(get: { binding }, set: { binding = $0 }),
+            contentVersion: 42,
+            onAdvanceChapter: nil,
+            onPreviousChapter: nil,
+            onCenterTap: nil
+        )
+        let coordinator = PageCurlContainer.Coordinator(container)
+        XCTAssertEqual(
+            coordinator.lastSeenContentVersion, 42,
+            "coordinator must inherit parent contentVersion so first re-render is a no-op"
+        )
+    }
+
     /// A content-only refresh that finds a cached index now out of
     /// range (a count change raced the refresh) must evict it rather
     /// than crash on the out-of-bounds `pages[index]` access.

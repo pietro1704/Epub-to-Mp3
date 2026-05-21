@@ -16,9 +16,28 @@ struct PageCurlContainer: UIViewControllerRepresentable {
     // `Coordinator.refreshCachedRootViews()` and its regression test.
     var pages: [AnyView]
     @Binding var currentPage: Int
+    /// Monotonically increasing identity for the page CONTENT. When this
+    /// value changes (e.g. theme / font / render-version bump) the
+    /// coordinator pushes the fresh `AnyView` into every cached hosting
+    /// controller. When it does NOT change, the cached `AnyView` is kept
+    /// as-is — without this gate every re-render of the parent (e.g.
+    /// `currentPage` write after curl completes) would re-push a brand
+    /// new `AnyView` into the visible hosting controller and force its
+    /// `UITextView` to re-layout, producing a 1-frame flicker at the
+    /// tail of every page flip.
+    var contentVersion: Int = 0
     let onAdvanceChapter: (() -> Bool)?
     let onPreviousChapter: (() -> Bool)?
     let onCenterTap: (() -> Void)?
+    /// Fires the moment a *user-initiated* page change lands — either
+    /// `didFinishAnimating(completed: true)` from a curl gesture or a
+    /// tap on the left/right third zone. The host clears `isFollowing`
+    /// here so the audio's auto-follow modifier doesn't immediately
+    /// revert `currentPage` to the page that contains the active
+    /// sentence (user-visible symptom: "swipe / tap, page snaps back"
+    /// during playback). Programmatic page changes — `setViewControllers`
+    /// driven by `updateUIViewController` — never call this.
+    var onUserPageChange: (() -> Void)? = nil
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -49,6 +68,7 @@ struct PageCurlContainer: UIViewControllerRepresentable {
     func updateUIViewController(_ pvc: UIPageViewController, context: Context) {
         let coordinator = context.coordinator
         let oldPageCount = coordinator.parent.pages.count
+        let oldContentVersion = coordinator.lastSeenContentVersion
         coordinator.parent = self
 
         let target = clampedPage
@@ -56,6 +76,7 @@ struct PageCurlContainer: UIViewControllerRepresentable {
         // If pages array changed (settings change, chapter change), reset
         if pages.count != oldPageCount {
             coordinator.clearCache()
+            coordinator.lastSeenContentVersion = contentVersion
             let vc = coordinator.hostingController(for: target)
             pvc.setViewControllers([vc], direction: .forward, animated: false)
             return
@@ -65,13 +86,16 @@ struct PageCurlContainer: UIViewControllerRepresentable {
         // rebuilt — e.g. a theme/colour switch repopulates
         // `renderedAttributed` without altering the layout, so the
         // paginator yields the same number of pages with different
-        // attributes. The `cachedControllers` map is keyed by index,
-        // so without this every cached `IndexedHostingController` would
-        // keep rendering the STALE `AnyView` (old theme colours) until
-        // its page was evicted. Push the fresh `AnyView` into every
-        // live cached controller's `rootView` so a theme toggle recolours
-        // pages already built — visible page included.
-        coordinator.refreshCachedRootViews()
+        // attributes. Only refresh when `contentVersion` advances; a
+        // bare re-render with the same version means the visible
+        // `AnyView` is structurally identical and re-pushing would
+        // force a needless `UITextView` re-layout (visible as a
+        // 1-frame flicker at the end of every page curl, because
+        // `didFinishAnimating` writes `currentPage`).
+        if contentVersion != oldContentVersion {
+            coordinator.lastSeenContentVersion = contentVersion
+            coordinator.refreshCachedRootViews()
+        }
 
         // If the current displayed page differs from the binding, animate
         guard let current = pvc.viewControllers?.first as? IndexedHostingController,
@@ -94,10 +118,18 @@ struct PageCurlContainer: UIViewControllerRepresentable {
                               UIPageViewControllerDelegate,
                               UIGestureRecognizerDelegate {
         var parent: PageCurlContainer
+        /// Last `contentVersion` the coordinator has reconciled into the
+        /// cached hosting controllers. Compared against the incoming
+        /// `parent.contentVersion` in `updateUIViewController` so a
+        /// no-op re-render (e.g. `currentPage` write at curl completion)
+        /// skips `refreshCachedRootViews()` and the visible UITextView
+        /// does not re-layout.
+        var lastSeenContentVersion: Int = 0
         private var cachedControllers: [Int: IndexedHostingController] = [:]
 
         init(_ parent: PageCurlContainer) {
             self.parent = parent
+            self.lastSeenContentVersion = parent.contentVersion
         }
 
         func clearCache() {
@@ -177,6 +209,11 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             guard completed,
                   let vc = pageViewController.viewControllers?.first as? IndexedHostingController
             else { return }
+            // Clear auto-follow BEFORE writing `currentPage` so the
+            // host's `.onChange(of: currentSentenceId)` handler can't
+            // race the next audio tick and yank the reader back to
+            // the player's page.
+            parent.onUserPageChange?()
             parent.currentPage = vc.pageIndex
         }
 
@@ -197,23 +234,27 @@ struct PageCurlContainer: UIViewControllerRepresentable {
             let thirdWidth = width / 3.0
 
             if location.x < thirdWidth {
-                // Left third — previous page
+                // Left third — previous page (user-initiated, kill follow)
                 let prev = parent.currentPage - 1
                 if prev >= 0 {
+                    parent.onUserPageChange?()
                     parent.currentPage = prev
                 } else {
+                    parent.onUserPageChange?()
                     _ = parent.onPreviousChapter?()
                 }
             } else if location.x > thirdWidth * 2 {
-                // Right third — next page
+                // Right third — next page (user-initiated, kill follow)
                 let next = parent.currentPage + 1
                 if next < parent.pages.count {
+                    parent.onUserPageChange?()
                     parent.currentPage = next
                 } else {
+                    parent.onUserPageChange?()
                     _ = parent.onAdvanceChapter?()
                 }
             } else {
-                // Center third — toggle chrome
+                // Center third — toggle chrome only; not a page change.
                 parent.onCenterTap?()
             }
         }

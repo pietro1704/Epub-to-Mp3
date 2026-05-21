@@ -905,9 +905,11 @@ struct ReaderView: View {
         return PageCurlContainer(
             pages: pageViews,
             currentPage: $currentPage,
+            contentVersion: renderVersion,
             onAdvanceChapter: onAdvanceChapter,
             onPreviousChapter: onPreviousChapter,
-            onCenterTap: onCenterTap
+            onCenterTap: onCenterTap,
+            onUserPageChange: { isFollowing = false }
         )
     }
     #endif
