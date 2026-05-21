@@ -1269,7 +1269,7 @@ struct ReaderView: View {
             .overlay(alignment: .leading) {
                 if isActive && differentiateWithoutColor {
                     Rectangle()
-                        .fill(Color.accentColor)
+                        .fill(Color.primary)
                         .frame(width: 3)
                 }
             }
