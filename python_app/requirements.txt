@@ -15,7 +15,7 @@ soundfile>=0.13.1
 # Ebook processing
 beautifulsoup4>=4.14.3
 ebooklib>=0.20
-pypdf>=6.11.0
+pypdf>=6.12.0
 lxml>=6.1.1
 
 # Language detection
