@@ -73,6 +73,27 @@ void main() {
       await s.setUseEmbeddedSidecar(true);
       expect(s.resolvedBaseURL.toString(), 'http://127.0.0.1:12345');
     });
+
+    test('readerShowPageNumbers defaults to true and persists', () async {
+      final s = await make();
+      expect(s.readerShowPageNumbers, isTrue);
+      await s.setReaderShowPageNumbers(false);
+      expect(s.readerShowPageNumbers, isFalse);
+    });
+
+    test('readerTextAlignment defaults to justified and roundtrips',
+        () async {
+      final s = await make();
+      expect(s.readerTextAlignment, ReaderTextAlignment.justified);
+      await s.setReaderTextAlignment(ReaderTextAlignment.left);
+      expect(s.readerTextAlignment, ReaderTextAlignment.left);
+    });
+
+    test('readerTextAlignment falls back to justified on garbage raw value',
+        () async {
+      final s = await make({'readerTextAlignment': 'martian'});
+      expect(s.readerTextAlignment, ReaderTextAlignment.justified);
+    });
   });
 
   group('MirrorAppSettings legacy migration', () {

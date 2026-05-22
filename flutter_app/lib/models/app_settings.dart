@@ -72,6 +72,26 @@ extension ReaderLayoutX on ReaderLayout {
       .firstWhere((e) => e.rawValue == s, orElse: () => ReaderLayout.scrolling);
 }
 
+/// Horizontal alignment for reader body text. The default `.justified`
+/// matches Apple Books and the typographic norm for printed prose;
+/// `.left` (ragged-right) suits screens / users who dislike the
+/// wide-word-spacing artefacts justification can produce on narrow
+/// columns. Mirror of iOS `ReaderTextAlignment`.
+enum ReaderTextAlignment { justified, left }
+
+extension ReaderTextAlignmentX on ReaderTextAlignment {
+  String get rawValue => name;
+  String get displayName => switch (this) {
+        ReaderTextAlignment.justified => 'Justified',
+        ReaderTextAlignment.left => 'Left',
+      };
+  static ReaderTextAlignment fromRaw(String? s) =>
+      ReaderTextAlignment.values.firstWhere(
+        (e) => e.rawValue == s,
+        orElse: () => ReaderTextAlignment.justified,
+      );
+}
+
 /// RGB triple in 0..1 range.
 class RgbColor {
   final double r;
@@ -233,6 +253,23 @@ class MirrorAppSettings {
       ReaderLayoutX.fromRaw(_prefs.getString('readerLayout'));
   Future<void> setReaderLayout(ReaderLayout v) =>
       _prefs.setString('readerLayout', v.rawValue);
+
+  /// Whether the "n / total" page indicator renders at the bottom of
+  /// each paginated page. Default `true`. When off the indicator is
+  /// hidden AND the paginator's body budget reclaims the footer
+  /// reserved strip so the chapter uses the freed space.
+  bool get readerShowPageNumbers =>
+      _prefs.getBool('readerShowPageNumbers') ?? true;
+  Future<void> setReaderShowPageNumbers(bool v) =>
+      _prefs.setBool('readerShowPageNumbers', v);
+
+  /// Horizontal alignment for reader body text. Default `.justified`
+  /// matches Apple Books and printed-book typography. Forced on every
+  /// paragraph, overriding the EPUB's own CSS alignment declaration.
+  ReaderTextAlignment get readerTextAlignment =>
+      ReaderTextAlignmentX.fromRaw(_prefs.getString('readerTextAlignment'));
+  Future<void> setReaderTextAlignment(ReaderTextAlignment v) =>
+      _prefs.setString('readerTextAlignment', v.rawValue);
 
   double get readerLineSpacing {
     final v = _prefs.getDouble('readerLineSpacing') ?? 6;
