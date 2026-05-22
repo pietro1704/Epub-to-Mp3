@@ -312,31 +312,47 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                   ),
                   Expanded(
                     flex: 2,
-                    child: SingleChildScrollView(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: margin,
-                        vertical: 24,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (pageIndex == 0)
-                            _chapterHeader(headingStyle, fg),
-                          ...page.spans.map((s) => Padding(
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 2),
-                                child: GestureDetector(
-                                  onTap: () =>
-                                      widget.onJumpToSentence?.call(s),
-                                  child: Text(
-                                    s.text,
-                                    style: bodyStyle,
-                                    textAlign: flutterTextAlign(
-                                        settings.readerTextAlignment),
+                    // Middle column owns both per-sentence taps
+                    // (`onJumpToSentence`) AND the Apple-Books-style
+                    // center-tap to toggle chrome. The nested
+                    // `GestureDetector` on each sentence wins for taps
+                    // that land on text glyphs; this outer detector
+                    // catches taps that hit blank space between/around
+                    // sentences and forwards them to `onCenterTap`.
+                    // Without this outer wrap, chrome could only be
+                    // hidden by the left/right page-turn zones — and
+                    // those instead call `retreatPage` / `advancePage`,
+                    // never the chrome toggle. User-reported on
+                    // Android 2026-05-22.
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: widget.onCenterTap,
+                      child: SingleChildScrollView(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: margin,
+                          vertical: 24,
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (pageIndex == 0)
+                              _chapterHeader(headingStyle, fg),
+                            ...page.spans.map((s) => Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 2),
+                                  child: GestureDetector(
+                                    onTap: () =>
+                                        widget.onJumpToSentence?.call(s),
+                                    child: Text(
+                                      s.text,
+                                      style: bodyStyle,
+                                      textAlign: flutterTextAlign(
+                                          settings.readerTextAlignment),
+                                    ),
                                   ),
-                                ),
-                              )),
-                        ],
+                                )),
+                          ],
+                        ),
                       ),
                     ),
                   ),
