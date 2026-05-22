@@ -159,6 +159,18 @@ class AppLocalizationsPt extends AppLocalizations {
   String get marginLabel => 'Margem';
 
   @override
+  String get readerShowPageNumbers => 'Mostrar números de página';
+
+  @override
+  String get readerAlignmentLabel => 'Alinhamento';
+
+  @override
+  String get readerAlignmentJustified => 'Justificado';
+
+  @override
+  String get readerAlignmentLeft => 'Esquerda';
+
+  @override
   String get autoScrollLabel => 'Rolagem automática';
 
   @override

@@ -388,6 +388,30 @@ abstract class AppLocalizations {
   /// **'Margin'**
   String get marginLabel;
 
+  /// No description provided for @readerShowPageNumbers.
+  ///
+  /// In en, this message translates to:
+  /// **'Show page numbers'**
+  String get readerShowPageNumbers;
+
+  /// No description provided for @readerAlignmentLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Alignment'**
+  String get readerAlignmentLabel;
+
+  /// No description provided for @readerAlignmentJustified.
+  ///
+  /// In en, this message translates to:
+  /// **'Justified'**
+  String get readerAlignmentJustified;
+
+  /// No description provided for @readerAlignmentLeft.
+  ///
+  /// In en, this message translates to:
+  /// **'Left'**
+  String get readerAlignmentLeft;
+
   /// No description provided for @autoScrollLabel.
   ///
   /// In en, this message translates to:

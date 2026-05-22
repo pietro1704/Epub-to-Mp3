@@ -158,6 +158,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get marginLabel => 'Margin';
 
   @override
+  String get readerShowPageNumbers => 'Show page numbers';
+
+  @override
+  String get readerAlignmentLabel => 'Alignment';
+
+  @override
+  String get readerAlignmentJustified => 'Justified';
+
+  @override
+  String get readerAlignmentLeft => 'Left';
+
+  @override
   String get autoScrollLabel => 'Auto-scroll';
 
   @override
