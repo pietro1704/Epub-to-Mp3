@@ -137,14 +137,27 @@ enum EpubHtmlRenderer {
         let targetFG = resolvedForeground(for: settings)
         let targetBG = resolvedBackground(for: settings)
 
+        // Cap EPUB CSS font sizes at `targetSize * 1.5` even when the
+        // user has not enabled `readerOverrideFontSize`. Some EPUBs
+        // declare 2x+ heading scales (e.g. `h1 { font-size: 2.5em }`)
+        // which renders as 40-60 pt text and overflows the paginated
+        // page on iPhone — visible to the user as "texto grande" on
+        // app open and on every chapter that begins with a heading.
+        // 1.5x keeps the heading visually distinct from body text
+        // without breaking pagination.
+        let maxHeadingSize = targetSize * 1.5
+
         attr.enumerateAttributes(in: fullRange, options: []) { attrs, range, _ in
             // ---- Font ----------------------------------------------
             let baseFont = (attrs[.font] as? PlatformFont)
                 ?? PlatformFont.systemFont(ofSize: targetSize)
+            let cappedSize: CGFloat? = overrideSize
+                ? targetSize
+                : (baseFont.pointSize > maxHeadingSize ? maxHeadingSize : nil)
             let mutatedFont = mutateFont(
                 baseFont,
                 family: overrideFamily ? targetFamily : nil,
-                size: overrideSize ? targetSize : nil,
+                size: cappedSize,
                 forceBold: boldAll,
                 stripItalic: suppressItalic
             )
@@ -177,23 +190,42 @@ enum EpubHtmlRenderer {
             // half the page. Cap both values so the paginator can
             // fill the page like Apple Books does (it strips most
             // EPUB whitespace and runs its own typography).
-            if let original = attrs[.paragraphStyle] as? NSParagraphStyle,
-               let mutable = original.mutableCopy() as? NSMutableParagraphStyle {
-                let maxSpacing: CGFloat = targetSize * 0.8       // ~80% of a line
-                if mutable.paragraphSpacing > maxSpacing {
-                    mutable.paragraphSpacing = maxSpacing
+            // Build the paragraph style: start from whatever the EPUB
+            // declared (so paragraph-spacing / firstLineHeadIndent /
+            // line-height etc. are preserved), then clamp the abusive
+            // values, then force the user's alignment choice. When the
+            // EPUB declared no paragraph style at all (rare — most
+            // imports synthesise one), create a fresh
+            // `NSMutableParagraphStyle` so the alignment still lands.
+            let mutable: NSMutableParagraphStyle = {
+                if let original = attrs[.paragraphStyle] as? NSParagraphStyle,
+                   let copy = original.mutableCopy() as? NSMutableParagraphStyle {
+                    return copy
                 }
-                if mutable.paragraphSpacingBefore > maxSpacing {
-                    mutable.paragraphSpacingBefore = maxSpacing
-                }
-                // Some EPUBs set firstLineHeadIndent for drop-cap
-                // styling; that interacts badly with paginated
-                // layout. Clamp to 0..targetSize (one em).
-                if mutable.firstLineHeadIndent > targetSize {
-                    mutable.firstLineHeadIndent = targetSize
-                }
-                attr.addAttribute(.paragraphStyle, value: mutable, range: range)
+                return NSMutableParagraphStyle()
+            }()
+            let maxSpacing: CGFloat = targetSize * 0.8       // ~80% of a line
+            if mutable.paragraphSpacing > maxSpacing {
+                mutable.paragraphSpacing = maxSpacing
             }
+            if mutable.paragraphSpacingBefore > maxSpacing {
+                mutable.paragraphSpacingBefore = maxSpacing
+            }
+            // Some EPUBs set firstLineHeadIndent for drop-cap
+            // styling; that interacts badly with paginated
+            // layout. Clamp to 0..targetSize (one em).
+            if mutable.firstLineHeadIndent > targetSize {
+                mutable.firstLineHeadIndent = targetSize
+            }
+            // User alignment ALWAYS wins over the EPUB's own
+            // alignment. Default `.justified` matches Apple Books and
+            // print typography; `.left` is the ragged-right opt-out
+            // for users who dislike wide word-spacing on narrow
+            // columns.
+            mutable.alignment = settings.readerTextAlignment == .justified
+                ? .justified
+                : .left
+            attr.addAttribute(.paragraphStyle, value: mutable, range: range)
         }
     }
 
