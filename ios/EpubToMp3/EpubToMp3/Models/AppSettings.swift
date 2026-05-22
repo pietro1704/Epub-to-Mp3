@@ -124,6 +124,25 @@ enum PageTurnStyle: String, CaseIterable, Identifiable {
     }
 }
 
+/// Horizontal alignment for reader body text. The default `.justified`
+/// matches Apple Books and the typographic norm for printed prose;
+/// `.left` (ragged-right) suits screens / users who dislike the
+/// wide-word-spacing artefacts justification can produce on narrow
+/// columns.
+enum ReaderTextAlignment: String, CaseIterable, Identifiable {
+    case justified
+    case left
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .justified: return L10n.string("readerSettings.alignment.justified")
+        case .left:      return L10n.string("readerSettings.alignment.left")
+        }
+    }
+}
+
 /// Persisted user preferences. The backend URL drives every API call so the
 /// user can flip between localhost (dev), a tunnelled HF Spaces deploy, or
 /// any reachable server hosting the Python backend.
@@ -168,6 +187,10 @@ final class AppSettings: ObservableObject {
             rawValue: defaults.string(forKey: "readerTheme") ?? ""
         ) ?? .auto
         self.readerAutoScroll = defaults.object(forKey: "readerAutoScroll") as? Bool ?? true
+        self.readerShowPageNumbers = defaults.object(forKey: "readerShowPageNumbers") as? Bool ?? true
+        self.readerTextAlignment = ReaderTextAlignment(
+            rawValue: defaults.string(forKey: "readerTextAlignment") ?? ""
+        ) ?? .justified
         self.readerLayout = ReaderLayout(
             rawValue: defaults.string(forKey: "readerLayout") ?? ""
         ) ?? .scrolling
@@ -267,6 +290,23 @@ final class AppSettings: ObservableObject {
 
     @Published var readerAutoScroll: Bool = true {
         didSet { defaults.set(readerAutoScroll, forKey: "readerAutoScroll") }
+    }
+
+    /// Whether the "n / total" page indicator renders at the bottom of
+    /// each paginated page. Toggle exposed in `ReaderSettingsSheet`.
+    /// When false the indicator is hidden AND the paginator's body
+    /// budget reclaims the footer's reserved height so the chapter
+    /// uses the freed space.
+    @Published var readerShowPageNumbers: Bool = true {
+        didSet { defaults.set(readerShowPageNumbers, forKey: "readerShowPageNumbers") }
+    }
+
+    /// Horizontal alignment for reader body text. Default `.justified`
+    /// matches Apple Books and printed-book typography. The renderer
+    /// applies this to every paragraph (EPUB CSS alignment included)
+    /// so the setting wins over the book's own declaration.
+    @Published var readerTextAlignment: ReaderTextAlignment = .justified {
+        didSet { defaults.set(readerTextAlignment.rawValue, forKey: "readerTextAlignment") }
     }
 
     @Published var readerLayout: ReaderLayout = .scrolling {
