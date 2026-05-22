@@ -267,6 +267,16 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
     );
   }
 
+  /// Width of each side tap zone in the paginated layout. Sized at
+  /// 22% of the screen width so on a 360 pt-wide Android phone the
+  /// tap target is ~80 pt — well above the 44 pt HIG minimum — and
+  /// on a 1080 pt-wide tablet it scales to ~240 pt without dwarfing
+  /// the text. Mirrors the iOS three-zone partition where each zone
+  /// is one-third of the screen, but uses overlays instead of
+  /// Expanded children so the text underneath stretches edge-to-edge.
+  double _tapZoneWidth(BuildContext context) =>
+      MediaQuery.of(context).size.width * 0.22;
+
   Widget _paginatedLayout(
     BuildContext context,
     AppSettings settings,
@@ -301,69 +311,73 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
           },
           child: Stack(
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: retreatPage,
-                      child: const SizedBox.expand(),
+              // Text body fills the FULL width of the page area (minus
+              // the user's `readerMargin` horizontal inset). The
+              // page-turn tap zones live as transparent overlays on
+              // the left and right edges so the text silhouette is
+              // as wide as the screen. Prior layout used
+              // `Expanded(flex: 1)` / `Expanded(flex: 2)` /
+              // `Expanded(flex: 1)`, which gave each tap zone 25% of
+              // the screen and the text only 50% — user-reported on
+              // Android 2026-05-22 as "margens laterais muito
+              // grandes". Mirrors the iOS `tapZones` overlay
+              // partition (see ReaderView.swift).
+              Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: widget.onCenterTap,
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.symmetric(
+                      horizontal: margin,
+                      vertical: 24,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (pageIndex == 0)
+                          _chapterHeader(headingStyle, fg),
+                        ...page.spans.map((s) => Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 2),
+                              child: GestureDetector(
+                                onTap: () =>
+                                    widget.onJumpToSentence?.call(s),
+                                child: Text(
+                                  s.text,
+                                  style: bodyStyle,
+                                  textAlign: flutterTextAlign(
+                                      settings.readerTextAlignment),
+                                ),
+                              ),
+                            )),
+                      ],
                     ),
                   ),
-                  Expanded(
-                    flex: 2,
-                    // Middle column owns both per-sentence taps
-                    // (`onJumpToSentence`) AND the Apple-Books-style
-                    // center-tap to toggle chrome. The nested
-                    // `GestureDetector` on each sentence wins for taps
-                    // that land on text glyphs; this outer detector
-                    // catches taps that hit blank space between/around
-                    // sentences and forwards them to `onCenterTap`.
-                    // Without this outer wrap, chrome could only be
-                    // hidden by the left/right page-turn zones — and
-                    // those instead call `retreatPage` / `advancePage`,
-                    // never the chrome toggle. User-reported on
-                    // Android 2026-05-22.
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: widget.onCenterTap,
-                      child: SingleChildScrollView(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: margin,
-                          vertical: 24,
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (pageIndex == 0)
-                              _chapterHeader(headingStyle, fg),
-                            ...page.spans.map((s) => Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      vertical: 2),
-                                  child: GestureDetector(
-                                    onTap: () =>
-                                        widget.onJumpToSentence?.call(s),
-                                    child: Text(
-                                      s.text,
-                                      style: bodyStyle,
-                                      textAlign: flutterTextAlign(
-                                          settings.readerTextAlignment),
-                                    ),
-                                  ),
-                                )),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: advancePage,
-                      child: const SizedBox.expand(),
-                    ),
-                  ),
-                ],
+                ),
+              ),
+              // Left page-turn zone — 22% of width, transparent
+              // overlay. `behavior: opaque` so the tap doesn't bubble
+              // through to the underlying text/centre-tap detector.
+              Positioned(
+                left: 0,
+                top: 0,
+                bottom: 0,
+                width: _tapZoneWidth(context),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: retreatPage,
+                ),
+              ),
+              // Right page-turn zone — mirror image of the left zone.
+              Positioned(
+                right: 0,
+                top: 0,
+                bottom: 0,
+                width: _tapZoneWidth(context),
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: advancePage,
+                ),
               ),
               // Page footer — hidden when the user disables page numbers.
               if (_pages.isNotEmpty && settings.readerShowPageNumbers)

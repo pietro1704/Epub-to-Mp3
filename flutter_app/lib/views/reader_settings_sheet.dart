@@ -145,9 +145,13 @@ class ReaderSettingsSheet extends ConsumerWidget {
                   width: 160,
                   child: Slider(
                     value: settings.readerMargin,
-                    min: 16,
+                    // Floor 8 matches `AppSettings.readerMargin`'s
+                    // clamp range. Lowered from 16 so the default
+                    // 12 pt (iOS parity) is reachable and stale
+                    // persisted values do not assert at build time.
+                    min: 8,
                     max: 80,
-                    divisions: 16,
+                    divisions: 18,
                     onChanged: (v) => notifier.setReaderMargin(v),
                   ),
                 ),

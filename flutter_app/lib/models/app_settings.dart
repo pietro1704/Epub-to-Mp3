@@ -280,7 +280,11 @@ class MirrorAppSettings {
       _prefs.setDouble('readerLineSpacing', v.clamp(0, 16));
 
   double get readerMargin {
-    final v = _prefs.getDouble('readerMargin') ?? 24;
+    // Default 12 pt mirrors the iOS portrait-minimum chosen for the
+    // maximum-text-silhouette layout (`AppSettings.readerMargin`).
+    // Coerce stale persisted 24 pt values from older builds to the
+    // same clamp range as iOS.
+    final v = _prefs.getDouble('readerMargin') ?? 12;
     return v.clamp(8, 80);
   }
 
