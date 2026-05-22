@@ -71,11 +71,27 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   }
 
   void _applySystemChrome() {
-    SystemChrome.setEnabledSystemUIMode(
-      _chromeVisible
-          ? SystemUiMode.edgeToEdge
-          : SystemUiMode.immersive,
-    );
+    // Apple-Books-style chrome toggle mirrors the iOS
+    // `ChromeVisibilityModifier.statusBarHidden(!visible)` behaviour:
+    // the status bar AND the navigation bar both disappear when the
+    // user hides the reader chrome via a centre tap. `manual` mode
+    // with an explicit overlay list is the only way to guarantee
+    // BOTH bars stay hidden on Android — `SystemUiMode.immersive`
+    // re-shows the navigation bar on the first edge swipe and
+    // `edgeToEdge` keeps both bars visible. User-reported on
+    // Android 2026-05-22: "deve esconder top e bottom bar tb, como
+    // no iOS."
+    if (_chromeVisible) {
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: SystemUiOverlay.values,
+      );
+    } else {
+      SystemChrome.setEnabledSystemUIMode(
+        SystemUiMode.manual,
+        overlays: const <SystemUiOverlay>[],
+      );
+    }
   }
 
   void _setChromeVisible(bool visible) {
