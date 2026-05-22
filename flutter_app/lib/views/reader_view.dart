@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/app_settings.dart';
+import 'package:flutter_html/flutter_html.dart';
+
 import '../models/ebook_fulltext.dart';
 import '../services/paginator.dart';
 import '../state/providers.dart';
@@ -213,6 +215,9 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       });
     }
 
+    final html = widget.chapter.html;
+    final hasHtml = html != null && html.trim().isNotEmpty;
+
     return GestureDetector(
       onTap: widget.onCenterTap,
       behavior: HitTestBehavior.translucent,
@@ -226,44 +231,114 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
               horizontal: margin,
               vertical: 16,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _chapterHeader(headingStyle, fg),
-                const SizedBox(height: 12),
-                ...widget.spans.map((s) {
-                  final isActive = s.id == activeId;
-                  return Padding(
-                    key: _spanKeys.putIfAbsent(s.id, () => GlobalKey()),
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    child: GestureDetector(
-                      onTap: () => widget.onJumpToSentence?.call(s),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 4),
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(6),
-                          color: isActive
-                              ? Colors.yellow.withValues(alpha: 0.35)
-                              : Colors.transparent,
-                        ),
-                        child: Text(
-                          s.text,
-                          style: bodyStyle,
-                          textAlign:
-                              flutterTextAlign(settings.readerTextAlignment),
-                        ),
-                      ),
-                    ),
-                  );
-                }),
-              ],
-            ),
+            child: hasHtml
+                ? _htmlBody(html, settings, bg, fg, bodyStyle, headingStyle)
+                : _spanBody(
+                    settings, fg, bodyStyle, headingStyle, activeId),
           ),
         ),
       ),
+    );
+  }
+
+  /// HTML rendering path. Used when the chapter ships with a
+  /// pre-parsed HTML body (most EPUBs). Mirrors the iOS
+  /// `EpubHtmlRenderer` — applies user font / colour / alignment
+  /// overrides on top of the EPUB's own typography, and caps every
+  /// inherited font-size at `bodyFontSize * 1.5` so abusive heading
+  /// declarations cannot blow out the page.
+  ///
+  /// Active-sentence highlighting + tap-to-jump are NOT supported on
+  /// this path — the `Html` widget owns its own InlineSpan tree and
+  /// does not expose per-sentence anchors. Switch to the span-based
+  /// path (set `chapter.html` null) for sync-highlight playback.
+  Widget _htmlBody(
+    String html,
+    AppSettings settings,
+    Color bg,
+    Color fg,
+    TextStyle bodyStyle,
+    TextStyle headingStyle,
+  ) {
+    final bodyFontSize = bodyStyle.fontSize ?? 18.0;
+    final headingCap = cappedHeadingSize(bodyFontSize);
+    final textAlign = flutterTextAlign(settings.readerTextAlignment);
+    final bodyStyleHtml = Style(
+      fontSize: FontSize(bodyFontSize),
+      color: fg,
+      fontFamily: bodyStyle.fontFamily,
+      lineHeight: LineHeight(
+        (bodyStyle.height ?? (bodyFontSize > 0 ? 1.5 : 1.5)),
+      ),
+      textAlign: textAlign,
+      backgroundColor: bg,
+    );
+    final headingStyleHtml = Style(
+      fontSize: FontSize(headingCap),
+      color: fg,
+      fontWeight: FontWeight.w600,
+      fontFamily: headingStyle.fontFamily,
+    );
+    return Html(
+      data: html,
+      style: {
+        'body': bodyStyleHtml,
+        'p': bodyStyleHtml,
+        'div': bodyStyleHtml,
+        'span': bodyStyleHtml,
+        'h1': headingStyleHtml,
+        'h2': headingStyleHtml,
+        'h3': headingStyleHtml,
+        'h4': headingStyleHtml,
+        'h5': headingStyleHtml,
+        'h6': headingStyleHtml,
+      },
+    );
+  }
+
+  /// Plain-text span fallback. Used when the chapter has no HTML
+  /// body or when the user wants sync-highlight playback. Renders
+  /// each `SentenceSpan` as its own `Text` so the active sentence
+  /// can be highlighted and tapped to jump.
+  Widget _spanBody(
+    AppSettings settings,
+    Color fg,
+    TextStyle bodyStyle,
+    TextStyle headingStyle,
+    String? activeId,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _chapterHeader(headingStyle, fg),
+        const SizedBox(height: 12),
+        ...widget.spans.map((s) {
+          final isActive = s.id == activeId;
+          return Padding(
+            key: _spanKeys.putIfAbsent(s.id, () => GlobalKey()),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            child: GestureDetector(
+              onTap: () => widget.onJumpToSentence?.call(s),
+              child: Container(
+                width: double.infinity,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  color: isActive
+                      ? Colors.yellow.withValues(alpha: 0.35)
+                      : Colors.transparent,
+                ),
+                child: Text(
+                  s.text,
+                  style: bodyStyle,
+                  textAlign: flutterTextAlign(settings.readerTextAlignment),
+                ),
+              ),
+            ),
+          );
+        }),
+      ],
     );
   }
 
