@@ -204,6 +204,10 @@
 "pageTurn.slide" = "Slide";
 "pageTurn.none" = "None";
 "readerSettings.pageTurnStyle" = "Page turn";
+"readerSettings.showPageNumbers" = "Show page numbers";
+"readerSettings.alignment" = "Alignment";
+"readerSettings.alignment.justified" = "Justified";
+"readerSettings.alignment.left" = "Left";
 "font.serif" = "Serif";
 "font.sans" = "Sans";
 "font.mono" = "Mono";

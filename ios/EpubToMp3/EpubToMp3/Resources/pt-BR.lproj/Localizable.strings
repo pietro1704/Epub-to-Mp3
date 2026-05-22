@@ -204,6 +204,10 @@
 "pageTurn.slide" = "Deslizar";
 "pageTurn.none" = "Nenhuma";
 "readerSettings.pageTurnStyle" = "Virada de página";
+"readerSettings.showPageNumbers" = "Mostrar números de página";
+"readerSettings.alignment" = "Alinhamento";
+"readerSettings.alignment.justified" = "Justificado";
+"readerSettings.alignment.left" = "Esquerda";
 "font.serif" = "Serifada";
 "font.sans" = "Sem serifa";
 "font.mono" = "Mono";
