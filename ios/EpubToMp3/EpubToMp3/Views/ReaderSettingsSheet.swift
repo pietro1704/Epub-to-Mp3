@@ -39,6 +39,13 @@ struct ReaderSettingsSheet: View {
                         .labelsHidden()
                     }
 
+                    // Form rows treat the entire row as a single tap
+                    // target by default — when two `Button`s share a row,
+                    // SwiftUI collapses them into a row-tap that fires
+                    // the FIRST button (and only when the row is hit
+                    // anywhere). `.buttonStyle(.borderless)` opts each
+                    // button OUT of the row-tap collapse so the
+                    // smaller/larger icons keep independent hit areas.
                     HStack {
                         Text(L10n.string("readerSettings.size"))
                         Spacer()
@@ -47,7 +54,9 @@ struct ReaderSettingsSheet: View {
                         } label: {
                             Image(systemName: "textformat.size.smaller")
                                 .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.borderless)
                         .disabled(settings.readerFontSize <= 0)
                         .accessibilityLabel(L10n.string("readerSettings.decreaseFontSize"))
                         Text("\(Int(settings.readerPointSize))pt")
@@ -58,7 +67,9 @@ struct ReaderSettingsSheet: View {
                         } label: {
                             Image(systemName: "textformat.size.larger")
                                 .frame(width: 44, height: 44)
+                                .contentShape(Rectangle())
                         }
+                        .buttonStyle(.borderless)
                         .disabled(settings.readerFontSize >= 4)
                         .accessibilityLabel(L10n.string("readerSettings.increaseFontSize"))
                     }
@@ -88,6 +99,22 @@ struct ReaderSettingsSheet: View {
                             .pickerStyle(.segmented)
                             .labelsHidden()
                         }
+
+                        Toggle(
+                            L10n.string("readerSettings.showPageNumbers"),
+                            isOn: $settings.readerShowPageNumbers
+                        )
+                    }
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(L10n.string("readerSettings.alignment"))
+                        Picker(L10n.string("readerSettings.alignment"), selection: $settings.readerTextAlignment) {
+                            ForEach(ReaderTextAlignment.allCases) { align in
+                                Text(align.displayName).tag(align)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
 
                     // HIG: a Slider in a Form should fill the row and
