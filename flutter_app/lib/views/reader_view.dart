@@ -10,6 +10,28 @@ import 'reader_theme_colors.dart';
 
 typedef ChapterStepCallback = bool Function();
 
+/// Maximum heading size relative to the user-chosen body font. Mirrors
+/// iOS `EpubHtmlRenderer` (commit 8485ab2). Pure helper so it can be
+/// unit-tested without a Flutter binding.
+double cappedHeadingSize(double bodyFontSize, {double scale = 1.5}) {
+  // Designed heading wants body + 6pt; the cap clamps it to bodyFontSize * scale.
+  final designed = bodyFontSize + 6;
+  final maximum = bodyFontSize * scale;
+  return designed < maximum ? designed : maximum;
+}
+
+/// Convert the persisted `ReaderTextAlignment` enum to Flutter's
+/// `TextAlign`. Default `.justified` matches Apple Books / print
+/// typography.
+TextAlign flutterTextAlign(ReaderTextAlignment a) {
+  switch (a) {
+    case ReaderTextAlignment.justified:
+      return TextAlign.justify;
+    case ReaderTextAlignment.left:
+      return TextAlign.left;
+  }
+}
+
 class ReaderView extends ConsumerStatefulWidget {
   final FulltextChapter chapter;
   final List<SentenceSpan> spans;
@@ -142,8 +164,13 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
       fontFamily: _fontFamily(settings.readerFontFamily),
     );
 
+    // Cap heading size at 1.5x the body font. Mirrors iOS
+    // `EpubHtmlRenderer` (8485ab2): some EPUBs declare `h1` at 2.5em+
+    // which renders as 40-60pt and overflows the paginated page on
+    // mobile. 1.5x keeps the heading visually distinct without
+    // breaking pagination.
     final headingStyle = TextStyle(
-      fontSize: fontSize + 6,
+      fontSize: cappedHeadingSize(fontSize),
       color: fg,
       fontWeight: FontWeight.w600,
       fontFamily: _fontFamily(settings.readerFontFamily),
@@ -222,7 +249,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                               ? Colors.yellow.withValues(alpha: 0.35)
                               : Colors.transparent,
                         ),
-                        child: Text(s.text, style: bodyStyle),
+                        child: Text(
+                          s.text,
+                          style: bodyStyle,
+                          textAlign:
+                              flutterTextAlign(settings.readerTextAlignment),
+                        ),
                       ),
                     ),
                   );
@@ -296,7 +328,12 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                                 child: GestureDetector(
                                   onTap: () =>
                                       widget.onJumpToSentence?.call(s),
-                                  child: Text(s.text, style: bodyStyle),
+                                  child: Text(
+                                    s.text,
+                                    style: bodyStyle,
+                                    textAlign: flutterTextAlign(
+                                        settings.readerTextAlignment),
+                                  ),
                                 ),
                               )),
                         ],
@@ -312,8 +349,8 @@ class _ReaderViewState extends ConsumerState<ReaderView> {
                   ),
                 ],
               ),
-              // Page footer
-              if (_pages.isNotEmpty)
+              // Page footer — hidden when the user disables page numbers.
+              if (_pages.isNotEmpty && settings.readerShowPageNumbers)
                 Positioned(
                   bottom: 8,
                   left: 0,

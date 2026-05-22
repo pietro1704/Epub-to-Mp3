@@ -23,7 +23,8 @@ class ReaderSettingsSheet extends ConsumerWidget {
       ),
       child: SafeArea(
         top: false,
-        child: Column(
+        child: SingleChildScrollView(
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -152,7 +153,39 @@ class ReaderSettingsSheet extends ConsumerWidget {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+
+            // Show page numbers (paginated layout only)
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(t.readerShowPageNumbers),
+              value: settings.readerShowPageNumbers,
+              onChanged: (v) => notifier.setReaderShowPageNumbers(v),
+            ),
+            const SizedBox(height: 8),
+
+            // Text alignment
+            Text(t.readerAlignmentLabel,
+                style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            SegmentedButton<ReaderTextAlignment>(
+              segments: [
+                ButtonSegment(
+                  value: ReaderTextAlignment.justified,
+                  label: Text(t.readerAlignmentJustified),
+                ),
+                ButtonSegment(
+                  value: ReaderTextAlignment.left,
+                  label: Text(t.readerAlignmentLeft),
+                ),
+              ],
+              selected: {settings.readerTextAlignment},
+              onSelectionChanged: (s) =>
+                  notifier.setReaderTextAlignment(s.first),
+              showSelectedIcon: false,
+            ),
           ],
+          ),
         ),
       ),
     );

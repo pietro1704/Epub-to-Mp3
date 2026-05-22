@@ -91,5 +91,41 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('20pt'), findsOneWidget);
     });
+
+    testWidgets('renders Show page numbers switch (on by default)',
+        (t) async {
+      final prefs = await mockPrefs();
+      await t.pumpWidget(wrap(prefs));
+      expect(find.text('Show page numbers'), findsOneWidget);
+      final sw = t.widget<SwitchListTile>(find.byType(SwitchListTile));
+      expect(sw.value, isTrue);
+    });
+
+    testWidgets('toggling Show page numbers persists', (t) async {
+      final prefs = await mockPrefs();
+      await t.pumpWidget(wrap(prefs));
+      await t.ensureVisible(find.byType(SwitchListTile));
+      await t.tap(find.byType(SwitchListTile));
+      await t.pumpAndSettle();
+      expect(prefs.getBool('readerShowPageNumbers'), isFalse);
+    });
+
+    testWidgets('renders Alignment segmented button (justified default)',
+        (t) async {
+      final prefs = await mockPrefs();
+      await t.pumpWidget(wrap(prefs));
+      expect(find.text('Alignment'), findsOneWidget);
+      expect(find.text('Justified'), findsOneWidget);
+      expect(find.text('Left'), findsOneWidget);
+    });
+
+    testWidgets('tapping Left alignment persists', (t) async {
+      final prefs = await mockPrefs();
+      await t.pumpWidget(wrap(prefs));
+      await t.ensureVisible(find.text('Left'));
+      await t.tap(find.text('Left'));
+      await t.pumpAndSettle();
+      expect(prefs.getString('readerTextAlignment'), 'left');
+    });
   });
 }
