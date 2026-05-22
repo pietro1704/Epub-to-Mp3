@@ -131,6 +131,20 @@ private final class FixedWidthTextView: UITextView, UIGestureRecognizerDelegate 
         return .center
     }
 
+    /// Identity of the `NSAttributedString` last assigned to
+    /// `attributedText`. SwiftUI invokes `updateUIView` on EVERY parent
+    /// re-render — including chrome-toggle re-renders that don't change
+    /// the slice at all. Without this guard, `attributedText = attributed`
+    /// runs unconditionally and forces a full TextKit relayout, visible
+    /// to the user as a 1-frame flicker the moment the chrome animation
+    /// starts. The paginator returns the SAME `NSAttributedString`
+    /// instance from its memo cache when the layout key matches, so an
+    /// identity comparison is a true "did the page text change" check.
+    var assignedAttributedIdentity: ObjectIdentifier?
+    /// Last width pushed into the text container. Avoids re-setting the
+    /// container size when nothing changed (same cause as above).
+    var assignedContainerSize: CGSize = .zero
+
     /// Returns the `.link` URL at the given point in this view's
     /// coordinate space, or `nil` if no link sits there.
     func linkURL(at point: CGPoint) -> URL? {
@@ -223,20 +237,30 @@ private struct _AttributedPageRep: UIViewRepresentable {
         context.coordinator.onLinkTap = onLinkTap
         uiView.pinnedWidth = size.width
         uiView.isScrollEnabled = scrollable
-        // Scroll mode needs all touches reach UITextView so the pan
-        // gesture scrolls. Paginated mode keeps the link-only filter
-        // so SwiftUI's overlay tap zones own page navigation. Link
-        // precedence over zone navigation is the next milestone (the
-        // in-view recognizer experiment didn't deliver taps on
-        // iPhone SE 17.2 — UITextView's gesture pipeline absorbed
-        // them silently).
         uiView.consumeAllTouches = scrollable
-        uiView.textContainer.size = CGSize(
+
+        let desiredContainer = CGSize(
             width: size.width,
             height: scrollable ? .greatestFiniteMagnitude : size.height
         )
-        uiView.attributedText = attributed
-        uiView.invalidateIntrinsicContentSize()
+        if uiView.assignedContainerSize != desiredContainer {
+            uiView.textContainer.size = desiredContainer
+            uiView.assignedContainerSize = desiredContainer
+        }
+
+        // Identity-gate the reassignment: the paginator memo returns the
+        // same `NSAttributedString` instance when the layout key
+        // (chapter id × pageSize × margins × font × renderVersion)
+        // matches, so a chrome-toggle re-render hits this branch with
+        // `attributed === uiView.assignedAttributedIdentity`'s
+        // referent and skips the TextKit relayout that was visible as a
+        // 1-frame flicker.
+        let newIdentity = ObjectIdentifier(attributed)
+        if uiView.assignedAttributedIdentity != newIdentity {
+            uiView.attributedText = attributed
+            uiView.assignedAttributedIdentity = newIdentity
+            uiView.invalidateIntrinsicContentSize()
+        }
     }
 }
 #elseif canImport(AppKit)
