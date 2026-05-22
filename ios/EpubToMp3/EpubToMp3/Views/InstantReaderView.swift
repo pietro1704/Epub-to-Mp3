@@ -76,25 +76,20 @@ struct InstantReaderView: View {
         return player
     }
 
-    // MARK: - Chrome height constants
+    // MARK: - Chrome layout
     //
-    // Apple Books "fixed margin" pattern. These constants are the FIXED
-    // pixel heights of the chrome layers rendered as overlay on top of
-    // the ReaderView content. They are passed as `chromeTopInset` /
-    // `chromeBottomInset` to ReaderView so pagination uses a body budget
-    // that permanently excludes the chrome area.
-    //
-    // When chrome is VISIBLE  → host overlay sits exactly over the margin.
-    // When chrome is HIDDEN   → margin is empty; no text reflows.
-    //
-    // Breakdown:
-    //   chromeTopInset:    customTopBar = buttons(44) + padding.vertical(8×2) = 60 pt
-    //   chromeBottomInset: Divider(1) + playerBar/idlePlayerBar(88) = 89 pt
-    //     playerBar: HStack(44) + scrubber(28) + spacing(8) + padding.vertical(4×2) = 88 pt
-    //
-    // Update these if the chrome layout changes (e.g. player bar height revision).
-    private static let chromeTopInset: CGFloat = 60
-    private static let chromeBottomInset: CGFloat = 89
+    // User decision (2026-05-22): "texto nunca deve se ajustar: chrome
+    // somente cobrir ele e é isso." The chrome is a true overlay —
+    // both top toolbar and bottom player float ON TOP of the page text
+    // when visible, and disappear cleanly when hidden. The page text
+    // is laid out edge-to-edge (no reserved corridor) so hiding chrome
+    // never creates empty bands and showing it never repaginates. The
+    // ReaderView is fed `useStableBodyHeight: true` so its paginator
+    // anchors against a frozen body height instead of the live
+    // `geo.size.height` — this keeps the layout invariant across any
+    // safe-area animation iOS may run when statusBarHidden flips.
+    private static let chromeTopInset: CGFloat = 0
+    private static let chromeBottomInset: CGFloat = 0
 
     var body: some View {
         // Apple Books "fixed margin" layout:
@@ -269,7 +264,8 @@ struct InstantReaderView: View {
                 onJumpToPlayerPosition: jumpToPlayerPosition,
                 playerChapterLabel: divergencePlayerChapterLabel,
                 chromeTopInset: Self.chromeTopInset,
-                chromeBottomInset: Self.chromeBottomInset
+                chromeBottomInset: Self.chromeBottomInset,
+                useStableBodyHeight: true
             )
         } else if !fulltext.chapters.isEmpty {
             ReaderView(
@@ -287,7 +283,8 @@ struct InstantReaderView: View {
                 onJumpToPlayerPosition: jumpToPlayerPosition,
                 playerChapterLabel: divergencePlayerChapterLabel,
                 chromeTopInset: Self.chromeTopInset,
-                chromeBottomInset: Self.chromeBottomInset
+                chromeBottomInset: Self.chromeBottomInset,
+                useStableBodyHeight: true
             )
         } else {
             VStack(spacing: 12) {

@@ -48,6 +48,17 @@ struct ReaderView: View {
     /// Fixed vertical space reserved for the host's bottom chrome (player
     /// bar, mini player, page footer). Same contract as `chromeTopInset`.
     var chromeBottomInset: CGFloat = 0
+    /// When true, paginate against a FROZEN `stableBodyHeight` (seeded
+    /// on first appear) instead of the live `geo.size.height`. Combined
+    /// with `chromeTopInset == 0 && chromeBottomInset == 0` this gives
+    /// the "chrome is a true overlay" pattern the user asked for: text
+    /// is laid out edge-to-edge once and stays put forever. Chrome bars
+    /// — opaque OR translucent — cover the text wherever they appear
+    /// without nudging the layout. No reflow on chrome toggle, on
+    /// status-bar toggle, or on any safe-area animation. Default
+    /// `false` so legacy callers (PlayerReaderView) keep the
+    /// `geo.size.height - 76` live-height path they were using.
+    var useStableBodyHeight: Bool = false
     /// Fired the first time the user advances/retreats a page so the
     /// host can dim its own chrome (nav bar, mini player). The host is
     /// responsible for the actual `withAnimation`. The callback fires on
@@ -206,6 +217,7 @@ struct ReaderView: View {
             s.readerSuppressItalic.description,
             String(format: "%.2f", s.readerLetterSpacing),
             String(format: "%.2f", s.readerWordSpacing),
+            s.readerTextAlignment.rawValue,
         ].joined(separator: "|")
     }
 
@@ -224,7 +236,8 @@ struct ReaderView: View {
         onJumpToPlayerPosition: (() -> Void)? = nil,
         playerChapterLabel: String? = nil,
         chromeTopInset: CGFloat = 0,
-        chromeBottomInset: CGFloat = 0
+        chromeBottomInset: CGFloat = 0,
+        useStableBodyHeight: Bool = false
     ) {
         self.chapter = chapter
         self.spans = spans
@@ -241,6 +254,7 @@ struct ReaderView: View {
         self.playerChapterLabel = playerChapterLabel
         self.chromeTopInset = chromeTopInset
         self.chromeBottomInset = chromeBottomInset
+        self.useStableBodyHeight = useStableBodyHeight
     }
 
     var body: some View {
@@ -270,6 +284,8 @@ struct ReaderView: View {
         _ = settings.readerLetterSpacing
         _ = settings.readerWordSpacing
         _ = settings.pageTurnStyle
+        _ = settings.readerTextAlignment
+        _ = settings.readerShowPageNumbers
         return VStack(spacing: 0) {
             // No inline toolbar: the host (InstantReaderView /
             // PlayerReaderView) already exposes search in its nav-bar
@@ -506,7 +522,7 @@ struct ReaderView: View {
     /// Legacy hosts (PlayerReaderView) leave both at 0 and keep the
     /// live-height layout where chrome is part of the VStack.
     private var usesFixedMargin: Bool {
-        chromeTopInset > 0 || chromeBottomInset > 0
+        useStableBodyHeight || chromeTopInset > 0 || chromeBottomInset > 0
     }
 
     private var paginatedContent: some View {
@@ -537,12 +553,35 @@ struct ReaderView: View {
             // Body budget. Fixed-margin: frozen height minus chrome insets
             // — invariant to chrome toggle / tab-bar hide-show. Live-height:
             // current container height minus the 76 pt footer/margin budget.
+            // Footer ("n / total") reserves a fixed strip at the bottom
+            // of the ZStack. The paginator must size each page slice to
+            // END above this strip; otherwise the last line of text is
+            // drawn UNDER the footer and the visible page shows only
+            // the tops of those glyphs. When the user disables page
+            // numbers in `ReaderSettingsSheet`, the strip collapses to
+            // 0 and the paginator reclaims the full body height.
+            let footerStripHeight: CGFloat = settings.readerShowPageNumbers ? 30 : 0
+            // `pageView` wraps every paginated page in
+            // `.padding(.vertical, 24)` (48 pt total) for visual
+            // breathing room around the text rectangle. Without
+            // discounting it from `textAreaHeight`, the paginator
+            // sized slices for the FULL body corridor → TextKit then
+            // drew the slice into the corridor MINUS 48 pt → the last
+            // ~1 line of text bled past the visible region (visible
+            // as a half-cut "Clara" against the footer pill).
+            let pagePaddingV: CGFloat = 48
             let textAreaHeight: CGFloat = {
                 if usesFixedMargin {
+                    // Apple Books invariant: text NEVER reflows on chrome
+                    // toggle. Chrome is a true overlay — the body corridor
+                    // is sized once against the FROZEN `stableBodyHeight`
+                    // minus the constant chrome insets, so hiding chrome
+                    // exposes empty bands (matching the page background)
+                    // instead of repaginating.
                     let bodyH = stableBodyHeight > 0 ? stableBodyHeight : geo.size.height
-                    return max(120, bodyH - chromeTopInset - chromeBottomInset)
+                    return max(120, bodyH - chromeTopInset - chromeBottomInset - footerStripHeight - pagePaddingV)
                 }
-                return max(120, geo.size.height - 76)
+                return max(120, geo.size.height - 76 - footerStripHeight - pagePaddingV)
             }()
             let pageBodySize = CGSize(width: geo.size.width, height: textAreaHeight)
             let pages = attributedPages(
@@ -561,10 +600,12 @@ struct ReaderView: View {
                 } else {
                     paginatedPageContent(pages: pages, containerSize: geo.size)
 
-                    let pageIndex = max(0, min(pages.count - 1, currentPage))
-                    pageFooter(index: pageIndex, total: pages.count)
-                        .padding(.bottom, 8)
-                        .allowsHitTesting(false)
+                    if settings.readerShowPageNumbers {
+                        let pageIndex = max(0, min(pages.count - 1, currentPage))
+                        pageFooter(index: pageIndex, total: pages.count)
+                            .padding(.bottom, 8)
+                            .allowsHitTesting(false)
+                    }
                 }
             }
             // Shift the text area downward to sit below the top chrome
@@ -661,7 +702,12 @@ struct ReaderView: View {
             // 0 while the audio resumed at chapter 5 — `isFollowing`
             // is still true (no manual page turn yet), but the user
             // still needs the divergence cue.
-            if !isFollowing || playerChapterLabel != nil {
+            // The follow-audio pill is part of the reader chrome — it
+            // must disappear together with the top/bottom bars on the
+            // immersive (chrome-hidden) state. Otherwise the pill
+            // floats over the now-fullscreen text and breaks the
+            // "tap-to-hide-chrome" mental model.
+            if chromeVisible && (!isFollowing || playerChapterLabel != nil) {
                 Button {
                     isFollowing = true
                     onJumpToPlayerPosition?()
@@ -825,6 +871,16 @@ struct ReaderView: View {
             let font = bodyPlatformFont(size: fontSize)
             let para = NSMutableParagraphStyle()
             para.lineSpacing = CGFloat(lineSpacing)
+            // Honour the same alignment choice the EPUB renderer
+            // applies (default justified). Without this the
+            // plain-text fallback (rendered while
+            // `renderedAttributed` is still nil — books without
+            // HTML or the brief window before .task fires)
+            // shows ragged-right text, then flips to justified
+            // when the HTML lands.
+            para.alignment = settings.readerTextAlignment == .justified
+                ? .justified
+                : .left
             base = NSAttributedString(string: plain, attributes: [
                 .font: font,
                 .paragraphStyle: para,
