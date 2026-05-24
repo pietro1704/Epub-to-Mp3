@@ -18,7 +18,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
   final int initialChapterIndex;
   final String? statusBanner;
   final VoidCallback? onRequestPlay;
-  final AudioPlayerService? player;
+  final AudioPlayerInterface? player;
   final String? activeSentenceId;
   final Uint8List? coverArt;
   final String? bookId;
@@ -36,8 +36,7 @@ class InstantReaderView extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<InstantReaderView> createState() =>
-      _InstantReaderViewState();
+  ConsumerState<InstantReaderView> createState() => _InstantReaderViewState();
 }
 
 class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
@@ -53,8 +52,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     final bookId = widget.bookId;
     if (bookId != null && widget.initialChapterIndex == 0) {
       final saved = settings.savedChapterIndex(bookId);
-      _currentChapterIndex =
-          saved > 0 ? saved : _firstReadableIndex;
+      _currentChapterIndex = saved > 0 ? saved : _firstReadableIndex;
     } else {
       _currentChapterIndex = widget.initialChapterIndex == 0
           ? _firstReadableIndex
@@ -111,13 +109,13 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
     final chapters = widget.fulltext.chapters;
     final candidates = [
       chapters.cast<Chapter?>().firstWhere(
-            (c) => c!.index == index + 1,
-            orElse: () => null,
-          ),
+        (c) => c!.index == index + 1,
+        orElse: () => null,
+      ),
       chapters.cast<Chapter?>().firstWhere(
-            (c) => c!.index == index,
-            orElse: () => null,
-          ),
+        (c) => c!.index == index,
+        orElse: () => null,
+      ),
       if (index >= 0 && index < chapters.length) chapters[index],
     ];
     for (final c in candidates) {
@@ -190,17 +188,23 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
           children: [
             const Icon(Icons.menu_book, size: 48, color: Colors.grey),
             const SizedBox(height: 12),
-            Text(AppLocalizations.of(context)!.noContentAvailable,
-                style: const TextStyle(color: Colors.grey)),
+            Text(
+              AppLocalizations.of(context)!.noContentAvailable,
+              style: const TextStyle(color: Colors.grey),
+            ),
           ],
         ),
       );
     }
     final spans = chapter.splitSentences();
-    final bg = ReaderThemeColors.background(settings.readerTheme,
-        custom: settings.readerCustomColors);
-    final fg = ReaderThemeColors.foreground(settings.readerTheme,
-        custom: settings.readerCustomColors);
+    final bg = ReaderThemeColors.background(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
+    final fg = ReaderThemeColors.foreground(
+      settings.readerTheme,
+      custom: settings.readerCustomColors,
+    );
 
     return Column(
       children: [
@@ -217,8 +221,10 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                       children: [
                         const Spacer(),
                         IconButton(
-                          icon: Icon(Icons.text_format,
-                              color: fg.withValues(alpha: 0.7)),
+                          icon: Icon(
+                            Icons.text_format,
+                            color: fg.withValues(alpha: 0.7),
+                          ),
                           onPressed: _showReaderSettings,
                           tooltip: 'Reader settings',
                         ),
@@ -260,7 +266,8 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   ) {
     final banner = widget.statusBanner;
     final isConverting = banner != null && banner.isNotEmpty;
-    final isError = isConverting &&
+    final isError =
+        isConverting &&
         (banner.toLowerCase().contains('failed') ||
             banner.toLowerCase().contains('unavailable'));
     final hasPlayer = widget.player != null;
@@ -270,9 +277,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
       child: Container(
         decoration: BoxDecoration(
           color: bg,
-          border: Border(
-            top: BorderSide(color: fg.withValues(alpha: 0.15)),
-          ),
+          border: Border(top: BorderSide(color: fg.withValues(alpha: 0.15))),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
         child: SafeArea(
@@ -298,7 +303,11 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                     borderRadius: BorderRadius.circular(6),
                     color: fg.withValues(alpha: 0.1),
                   ),
-                  child: Icon(Icons.headphones, color: fg.withValues(alpha: 0.6), size: 22),
+                  child: Icon(
+                    Icons.headphones,
+                    color: fg.withValues(alpha: 0.6),
+                    size: 22,
+                  ),
                 ),
               const SizedBox(width: 12),
 
@@ -309,10 +318,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                   children: [
                     Text(
                       chapter.displayTitle,
-                      style: TextStyle(
-                        color: fg,
-                        fontWeight: FontWeight.w500,
-                      ),
+                      style: TextStyle(color: fg, fontWeight: FontWeight.w500),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -320,8 +326,11 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                       Row(
                         children: [
                           if (isError)
-                            Icon(Icons.warning_amber_rounded,
-                                size: 14, color: Colors.orange[700])
+                            Icon(
+                              Icons.warning_amber_rounded,
+                              size: 14,
+                              color: Colors.orange[700],
+                            )
                           else
                             SizedBox(
                               width: 14,
@@ -378,8 +387,7 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
                 )
               else if (!isConverting && widget.onRequestPlay != null)
                 IconButton(
-                  icon: Icon(Icons.play_circle_filled,
-                      size: 36, color: fg),
+                  icon: Icon(Icons.play_circle_filled, size: 36, color: fg),
                   onPressed: widget.onRequestPlay,
                 ),
             ],

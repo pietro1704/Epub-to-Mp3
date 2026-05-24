@@ -11,7 +11,7 @@ import '../state/providers.dart';
 import '../screens/library_screen.dart';
 
 class FullPlayerSheet extends ConsumerStatefulWidget {
-  final AudioPlayerService player;
+  final AudioPlayerInterface player;
   final String? bookTitle;
   final String? author;
   final String? chapterLabel;
@@ -120,9 +120,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                     if (widget.bookTitle != null)
                       Text(
                         widget.bookTitle!,
-                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
+                        style: Theme.of(context).textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
                         textAlign: TextAlign.center,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -132,8 +131,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                       Text(
                         widget.author!,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Theme.of(context).hintColor,
-                            ),
+                          color: Theme.of(context).hintColor,
+                        ),
                         maxLines: 1,
                       ),
                     ],
@@ -147,10 +146,11 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             label,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: Theme.of(context)
-                                      .hintColor
-                                      .withValues(alpha: 0.7),
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: Theme.of(
+                                    context,
+                                  ).hintColor.withValues(alpha: 0.7),
                                 ),
                             textAlign: TextAlign.center,
                             maxLines: 2,
@@ -186,10 +186,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
             aspectRatio: 2.0 / 3.0,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(20),
-              child: Image.memory(
-                widget.coverArt!,
-                fit: BoxFit.cover,
-              ),
+              child: Image.memory(widget.coverArt!, fit: BoxFit.cover),
             ),
           ),
         ),
@@ -204,12 +201,16 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
           child: Container(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.15),
             ),
             child: Icon(
               Icons.headphones,
               size: 80,
-              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.5),
+              color: Theme.of(
+                context,
+              ).colorScheme.primary.withValues(alpha: 0.5),
             ),
           ),
         ),
@@ -232,22 +233,24 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
               child: SliderTheme(
                 data: SliderThemeData(
                   trackHeight: 4,
-                  thumbShape:
-                      const RoundSliderThumbShape(enabledThumbRadius: 6),
-                  overlayShape:
-                      const RoundSliderOverlayShape(overlayRadius: 14),
-                  activeTrackColor:
-                      Theme.of(context).colorScheme.onSurface,
-                  inactiveTrackColor:
-                      Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.2),
-                  thumbColor:
-                      Theme.of(context).colorScheme.onSurface,
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 6,
+                  ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 14,
+                  ),
+                  activeTrackColor: Theme.of(context).colorScheme.onSurface,
+                  inactiveTrackColor: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withValues(alpha: 0.2),
+                  thumbColor: Theme.of(context).colorScheme.onSurface,
                 ),
                 child: Slider(
                   value: pos.clamp(0, safeDur),
                   max: safeDur,
-                  onChanged: (v) =>
-                      widget.player.seek(Duration(milliseconds: (v * 1000).round())),
+                  onChanged: (v) => widget.player.seek(
+                    Duration(milliseconds: (v * 1000).round()),
+                  ),
                 ),
               ),
             ),
@@ -257,13 +260,16 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   ExcludeSemantics(
-                    child: Text(_formatTime(pos),
-                        style: Theme.of(context).textTheme.bodySmall),
+                    child: Text(
+                      _formatTime(pos),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
                   ExcludeSemantics(
                     child: Text(
-                        '-${_formatTime((dur - pos) / widget.player.speed)}',
-                        style: Theme.of(context).textTheme.bodySmall),
+                      '-${_formatTime((dur - pos) / widget.player.speed)}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
                 ],
               ),
@@ -309,13 +315,13 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
             const SizedBox(width: 12),
             // Play/pause
             Semantics(
-              label: isPlaying
-                  ? (t?.pause ?? 'Pause')
-                  : (t?.play ?? 'Play'),
+              label: isPlaying ? (t?.pause ?? 'Pause') : (t?.play ?? 'Play'),
               button: true,
               child: IconButton(
                 icon: Icon(
-                  isPlaying ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                  isPlaying
+                      ? Icons.pause_circle_filled
+                      : Icons.play_circle_filled,
                 ),
                 iconSize: 72,
                 onPressed: widget.player.togglePlayPause,
@@ -362,7 +368,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
       children: [
         // Speed picker
         Semantics(
-          label: '${t?.playbackSpeed ?? 'Playback speed'}: ${widget.player.speed}x',
+          label:
+              '${t?.playbackSpeed ?? 'Playback speed'}: ${widget.player.speed}x',
           button: true,
           child: PopupMenuButton<double>(
             onSelected: (v) => widget.player.setSpeed(v),
@@ -387,11 +394,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
         if (hasChapters)
           GestureDetector(
             onTap: () => _showChapterList(context),
-            child: _pill(
-              context,
-              t?.tocTitle ?? 'Chapters',
-              icon: Icons.list,
-            ),
+            child: _pill(context, t?.tocTitle ?? 'Chapters', icon: Icons.list),
           ),
 
         // Download button
@@ -403,9 +406,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
               _downloading
                   ? _downloadStatus ?? '...'
                   : t?.saveForOffline ?? 'Save',
-              icon: _downloading
-                  ? Icons.downloading
-                  : Icons.download_rounded,
+              icon: _downloading ? Icons.downloading : Icons.download_rounded,
             ),
           ),
 
@@ -420,10 +421,8 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
               child: GestureDetector(
                 onTap: () {
                   final current = widget.player.sleepTimerRemaining;
-                  final next = sleepPresets
-                          .where((p) => p > current)
-                          .firstOrNull ??
-                      0.0;
+                  final next =
+                      sleepPresets.where((p) => p > current).firstOrNull ?? 0.0;
                   widget.player.setSleepTimer(seconds: next);
                 },
                 child: _pill(
@@ -466,15 +465,12 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 16),
-            const SizedBox(width: 4),
-          ],
+          if (icon != null) ...[Icon(icon, size: 16), const SizedBox(width: 4)],
           Text(
             label,
-            style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                  fontWeight: FontWeight.w600,
-                ),
+            style: Theme.of(
+              context,
+            ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -487,7 +483,7 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     if (chapters.isEmpty) {
       return widget.chapterLabel ?? '';
     }
-    final rawIdx = widget.player.raw.currentIndex;
+    final rawIdx = widget.player.currentIndexValue;
     if (rawIdx == null) {
       return widget.chapterLabel ?? '';
     }
@@ -504,7 +500,9 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
     final h = total ~/ 3600;
     final m = (total % 3600) ~/ 60;
     final s = total % 60;
-    if (h > 0) return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    if (h > 0) {
+      return '$h:${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
+    }
     return '$m:${s.toString().padLeft(2, '0')}';
   }
 }
@@ -512,13 +510,10 @@ class _FullPlayerSheetState extends ConsumerState<FullPlayerSheet> {
 /// Sheet presenting chapters from the player queue for in-player navigation.
 /// Mirrors iOS ChapterListSheet.
 class _ChapterListSheet extends StatelessWidget {
-  const _ChapterListSheet({
-    required this.chapters,
-    required this.player,
-  });
+  const _ChapterListSheet({required this.chapters, required this.player});
 
   final List<ChapterProgress> chapters;
-  final AudioPlayerService player;
+  final AudioPlayerInterface player;
 
   @override
   Widget build(BuildContext context) {
@@ -549,8 +544,8 @@ class _ChapterListSheet extends StatelessWidget {
                 Text(
                   t?.tocTitle ?? 'Chapters',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                      ),
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
                 const Spacer(),
                 TextButton(
@@ -572,13 +567,12 @@ class _ChapterListSheet extends StatelessWidget {
 
                 return ListView.separated(
                   itemCount: chapters.length,
-                  separatorBuilder: (_, _) => const Divider(
-                    height: 1,
-                    indent: 16,
-                  ),
+                  separatorBuilder: (_, _) =>
+                      const Divider(height: 1, indent: 16),
                   itemBuilder: (context, i) {
                     final chapter = chapters[i];
-                    final isCurrent = chapter.index == currentChapterIdx ||
+                    final isCurrent =
+                        chapter.index == currentChapterIdx ||
                         i == currentChapterIdx;
                     return Semantics(
                       label: chapter.displayTitle,
@@ -588,13 +582,13 @@ class _ChapterListSheet extends StatelessWidget {
                           chapter.displayTitle,
                           style: TextStyle(
                             color: isCurrent ? cs.primary : null,
-                            fontWeight:
-                                isCurrent ? FontWeight.w600 : FontWeight.normal,
+                            fontWeight: isCurrent
+                                ? FontWeight.w600
+                                : FontWeight.normal,
                           ),
                         ),
                         trailing: isCurrent
-                            ? Icon(Icons.volume_up,
-                                size: 16, color: cs.primary)
+                            ? Icon(Icons.volume_up, size: 16, color: cs.primary)
                             : null,
                         onTap: () {
                           player.seek(Duration.zero, index: i);
