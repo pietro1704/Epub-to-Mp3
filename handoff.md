@@ -415,6 +415,33 @@ commands, or now-playing metadata.
 - **notes:** `/api/outputs` now accepts `HEAD`; output and stream chunk range contracts are pinned. Server/CLI lenient truncation threshold is shared for Edge path.
 - **next for Claude:** focus product goal #2: web reader/progress text flicker and UI clipping. Reproduce/inspect `EbookReaderPanel.tsx` and related tests, then patch with TDD.
 
+### 2026-05-25 Claude — Slice 10 GREEN (DownloadsPanel chapter-name clipping)
+
+- **status:** done, pushed.
+- **product goal addressed:** #1 (no clipped/cut-off content) — same anti-pattern slice 9 fixed in `EbookReaderPanel`, now resolved in `DownloadsPanel` too.
+- **audited:** `StatusPanel.tsx`, `ActiveConversionBanner.tsx`, `DownloadsPanel.tsx`, `ReadyDownloadsList.tsx`.
+  - StatusPanel: `status-panel__cli` truncates the CLI command to a single line but `title=` carries the full text — acceptable for a debug-only chip. No flicker (no reload state hides anything). **Audited, no change.**
+  - ActiveConversionBanner: book title `<h3>` has no overflow constraints and wraps naturally — no clipping. Progress bar/speed display swap smoothly via conditional rendering — no flicker. **Audited, no change.**
+  - ReadyDownloadsList: `<strong title={job.bookTitle}>` has no `nowrap` and the `.ready-downloads__info strong` rule allows natural wrap — no clipping. **Audited, no change.**
+  - DownloadsPanel: `.chapter-item__name` was `white-space: nowrap; overflow: hidden; text-overflow: ellipsis;` — long MP3 filenames clip to a single line. Tooltip carries the full name but visible text is cut. **Fix landed.**
+- **zone:**
+  - Modified: `web/src/components/DownloadsPanel.tsx` — added `chapter-item__name--multiline` modifier class to the chapter name span.
+  - Modified: `web/src/styles/global.css` — `.chapter-item__name--multiline` ships the same 2-line `-webkit-line-clamp` pattern slice 9 used for `.ebook-reader__chapter-name`. Added `word-break: break-word; overflow-wrap: anywhere;` to the base class so unbreakable token runs still wrap.
+  - New: `web/src/test/DownloadsPanel.test.tsx` — 1 test pins the contract (sentinel class + full textContent + title attr + sibling download CTA present).
+- **RED:**
+  ```
+  cd web && npx vitest run src/test/DownloadsPanel.test.tsx
+  Tests  1 failed (1) — sentinel class chapter-item__name--multiline missing
+  ```
+- **GREEN:**
+  ```
+  npx vitest run src/test/DownloadsPanel.test.tsx   # 1/1
+  npx vitest run                                     # 137/137 across 19 files
+  npm run build                                      # tsc + vite build green
+  ```
+- **why this seam:** identical to slice 9 — visual CSS truncation isn't testable in jsdom, so we pin the developer-intent class name as the regression sentinel. Removing the class silently regresses long-chapter visible names back to ellipsis.
+- **next:** Hermes turn. Possible directions: same audit on Hero / TelemetryPanel / RecentJobsPanel for residual clipping, or move on to product goal #1's "consistent chapter indices" sweep.
+
 ### 2026-05-25 Claude — Slice 9 GREEN (reader flicker + chapter title clipping)
 
 - **status:** done, pushed.
