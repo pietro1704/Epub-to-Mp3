@@ -239,6 +239,7 @@ private struct NowPlayingSmallView: View {
 
 // MARK: Now Playing — Medium
 
+@available(iOS 17.0, *)
 private struct NowPlayingMediumView: View {
     let entry: NowPlayingEntry
 
@@ -337,6 +338,7 @@ private struct NowPlayingMediumView: View {
 
 // MARK: Now Playing — Widget
 
+@available(iOS 17.0, *)
 struct NowPlayingWidget: Widget {
     let kind = "NowPlayingWidget"
 
@@ -353,6 +355,7 @@ struct NowPlayingWidget: Widget {
     }
 }
 
+@available(iOS 17.0, *)
 private struct NowPlayingEntryView: View {
     @Environment(\.widgetFamily) private var family
     let entry: NowPlayingEntry
@@ -370,6 +373,7 @@ private struct NowPlayingEntryView: View {
 // MARK: - Widget Intents (trampoline via App Group UserDefaults)
 
 /// Play/Pause: writes a flag the main app reads on foreground.
+@available(iOS 16.0, *)
 struct TogglePlayPauseIntent: AppIntent {
     static let title: LocalizedStringResource = "Play / Pause"
     static let description = IntentDescription("Toggles audio playback.")
@@ -382,6 +386,7 @@ struct TogglePlayPauseIntent: AppIntent {
 }
 
 /// Skip forward 30 seconds.
+@available(iOS 16.0, *)
 struct SkipForward30Intent: AppIntent {
     static let title: LocalizedStringResource = "Skip Forward 30s"
     static let description = IntentDescription("Skips forward 30 seconds in the audiobook.")
@@ -622,6 +627,7 @@ private struct ContinueReadingMediumView: View {
 
 // MARK: Continue Reading — Widget
 
+@available(iOS 17.0, *)
 struct ContinueReadingWidget: Widget {
     let kind = "ContinueReadingWidget"
 
@@ -837,6 +843,7 @@ private struct LibraryLargeView: View {
 
 // MARK: Library — Widget
 
+@available(iOS 17.0, *)
 struct LibraryWidget: Widget {
     let kind = "LibraryWidget"
 
@@ -874,6 +881,7 @@ private struct LibraryEntryView: View {
 /// string. If a user had the old widget on their home screen, this ensures
 /// it keeps working after the update. Identical to `NowPlayingWidget` in
 /// behaviour — the only difference is the `kind` identifier.
+@available(iOS 17.0, *)
 struct EpubToMp3Widget: Widget {
     let kind = "EpubToMp3Widget"
 
@@ -896,18 +904,21 @@ struct EpubToMp3Widget: Widget {
 
 #if os(iOS)
 // Now Playing
+@available(iOS 17.0, *)
 #Preview("Now Playing — small", as: .systemSmall) {
     NowPlayingWidget()
 } timeline: {
     NowPlayingEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Now Playing — medium", as: .systemMedium) {
     NowPlayingWidget()
 } timeline: {
     NowPlayingEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Now Playing — empty", as: .systemSmall) {
     NowPlayingWidget()
 } timeline: {
@@ -915,18 +926,21 @@ struct EpubToMp3Widget: Widget {
 }
 
 // Continue Reading
+@available(iOS 17.0, *)
 #Preview("Continue Reading — small", as: .systemSmall) {
     ContinueReadingWidget()
 } timeline: {
     ContinueReadingEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Continue Reading — medium", as: .systemMedium) {
     ContinueReadingWidget()
 } timeline: {
     ContinueReadingEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Continue Reading — empty", as: .systemSmall) {
     ContinueReadingWidget()
 } timeline: {
@@ -934,18 +948,21 @@ struct EpubToMp3Widget: Widget {
 }
 
 // Library
+@available(iOS 17.0, *)
 #Preview("Library — medium", as: .systemMedium) {
     LibraryWidget()
 } timeline: {
     LibraryEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Library — large", as: .systemLarge) {
     LibraryWidget()
 } timeline: {
     LibraryEntry.placeholder
 }
 
+@available(iOS 17.0, *)
 #Preview("Library — empty", as: .systemMedium) {
     LibraryWidget()
 } timeline: {

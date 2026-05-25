@@ -174,7 +174,7 @@ packages:
   # swift-snapshot-testing — pointfree's view-snapshot harness. Used by
   # the regression suite under EpubToMp3Tests/Snapshots/. Pinned to the
   # 1.17 line which still supports iOS 13 / macOS 10.15 deployment
-  # (we target iOS 15 / macOS 12). Renders SwiftUI to UIKit/AppKit
+  # (the app targets iOS 15 / macOS 12). Renders SwiftUI to UIKit/AppKit
   # hosting and writes/compares PNGs on disk.
   SnapshotTesting:
     url: https://github.com/pointfreeco/swift-snapshot-testing.git
@@ -239,6 +239,7 @@ targets:
         platforms: [iOS]
     settings:
       base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
         ENABLE_HARDENED_RUNTIME: YES
         # PythonKit dlopens libpython at runtime — the embedded
         # xcframework lives under Frameworks/. Default @rpath covers
@@ -264,15 +265,12 @@ targets:
           CODE_SIGN_ENTITLEMENTS: EpubToMp3/Resources/EpubToMp3-Debug.entitlements
           # iOS device builds REQUIRE a valid signature — Apple's launchd
           # refuses to install unsigned IPAs (LaunchExecutableValidationError).
-          # macOS local Debug + iOS Simulator stay unsigned for App-Sandbox
-          # off + faster turnaround; iOS device falls back to Automatic
-          # signing with whatever Development Team is configured in Xcode.
+          # macOS local Debug stays unsigned for App-Sandbox off + faster
+          # turnaround; iOS device falls back to Automatic signing with
+          # whatever Development Team is configured in Xcode.
           "CODE_SIGN_IDENTITY[sdk=macosx*]": "-"
           "CODE_SIGNING_REQUIRED[sdk=macosx*]": NO
           "CODE_SIGNING_ALLOWED[sdk=macosx*]": NO
-          "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
-          "CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]": NO
-          "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": NO
           "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
           "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
           "CODE_SIGNING_ALLOWED[sdk=iphoneos*]": YES
@@ -363,8 +361,21 @@ targets:
         product: SnapshotTesting
     settings:
       base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"
+        PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.tests
         BUNDLE_LOADER: "$(TEST_HOST)"
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EpubToMp3"
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/EpubToMp3"
+        "TEST_HOST[sdk=macosx*]": "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/Contents/MacOS/EpubToMp3"
+        # Hosted tests must point at the host app executable. iOS app
+        # bundles place the executable at the .app root; macOS app
+        # bundles place it under Contents/MacOS.
+        #
+        # macOS hosted tests must point at the host app executable, not
+        # the test bundle's executable folder. Using
+        # $(BUNDLE_EXECUTABLE_FOLDER_PATH) here expands in the test
+        # target context and can make the runner launch a GUI app without
+        # ever establishing the XCTest connection.
+        #
         # xcodegen's per-target `deploymentTarget` does not reliably
         # emit MACOSX_DEPLOYMENT_TARGET on Xcode 26 — it inherits the
         # project root (macOS 12). Set it explicitly so the test bundle
@@ -381,11 +392,13 @@ targets:
 
   EpubToMp3Widget:
     type: app-extension
-    # WidgetKit runs only on iOS 14+ / macOS 11+. We target iOS 17 /
-    # macOS 14 (minimum for `.containerBackground`).
+    # WidgetKit runs on iOS 14+. Keep the extension at the app's iOS 15
+    # floor; individual widgets are gated with @available for their real
+    # API minimums (iOS 16 lock-screen, 16.2 Live Activities, 17 home
+    # widgets using `.containerBackground`).
     supportedDestinations: [iOS]
     deploymentTarget:
-      iOS: "17.0"
+      iOS: "15.0"
     sources:
       - path: EpubToMp3Widget
         excludes:
@@ -396,13 +409,12 @@ targets:
     dependencies: []
     settings:
       base:
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
         # xcodegen's per-target `deploymentTarget` doesn't always emit
-        # `IPHONEOS_DEPLOYMENT_TARGET` per configuration on Xcode 26 —
-        # the value gets inherited from the project root (iOS 15) and
-        # ActivityKit / Lock-Screen widget APIs (iOS 16.1+ / 17) fail
-        # to compile. Force the target's iOS minimum explicitly via
-        # the build setting so it sticks regardless of generator quirks.
-        IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+        # `IPHONEOS_DEPLOYMENT_TARGET` per configuration on Xcode 26.
+        # Force the extension's iOS minimum explicitly; API-specific
+        # widget entry points are guarded with @available in Swift.
+        IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.widget
         INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
         CODE_SIGN_ENTITLEMENTS: EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements
@@ -416,8 +428,6 @@ targets:
           "CODE_SIGN_IDENTITY[sdk=iphoneos*]": "Apple Development"
           "CODE_SIGNING_REQUIRED[sdk=iphoneos*]": YES
           "CODE_SIGN_STYLE[sdk=iphoneos*]": Automatic
-          "CODE_SIGN_IDENTITY[sdk=iphonesimulator*]": "-"
-          "CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]": NO
         Release:
           CODE_SIGN_STYLE: Automatic
           SWIFT_COMPILATION_MODE: wholemodule
