@@ -373,6 +373,8 @@
 /* === PlayerReaderView === */
 "playerReader.loadingText" = "Loading book text…";
 "playerReader.noText" = "No text available for this chapter.";
+"playerReader.fallbackOffer" = "Audio not ready — read with accessibility voice?";
+"playerReader.fallbackOfferButton" = "Read aloud";
 
 /* === PlayerView === */
 "player.speed" = "Speed";

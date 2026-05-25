@@ -320,6 +320,17 @@ commands, or now-playing metadata.
 - **Why this seam:** the reader (`PlayerReaderView` ~815 LOC) owns both the `EbookFulltext` payload AND the `@EnvironmentObject AudioPlayer`. Doing the UI math inline would make `body` recompute logic that's hard to test. The pure helper lets `body` write `SpeechFallbackUI.offer(...)` once and switch on the case — view stays trivial, decision stays pinned.
 - **Next for slice 5 (Claude or Hermes):** wire the UI affordance in `PlayerReaderView`. When `offer` is `.available`, show a `Button("Listen with accessibility voice", systemImage: "speaker.wave.2.bubble")` near the existing reader header → tap calls `player.playFallbackSpeech(text:languageCode:)`. When `.active`, hide the affordance (the existing play/pause UI already drives the synthesizer through `AudioPlayer.pause/resume/stop`). Suggested test target: `PlayerReaderViewTests.swift` with a snapshot of the three states.
 
+### 2026-05-25 Claude — Slice 5 GREEN (PlayerReaderView wiring)
+
+- **status:** done, pushed.
+- **zone:** `ios/EpubToMp3/EpubToMp3/Views/PlayerReaderView.swift` + en/pt-BR/es Localizable.strings.
+- **change:** `readerPane` now wraps a new `fallbackBanner` + existing content (extracted to `readerPaneCore`). The banner switches on `SpeechFallbackUI.offer(...)`:
+  - `.hidden` / `.active` → `EmptyView()` (zero layout cost)
+  - `.available(text, lang)` → thin `.regularMaterial` banner with `speaker.wave.2.bubble` icon, a localized prompt, and a `.bordered` `.small` "Read aloud" button → tap calls `player.playFallbackSpeech(text:languageCode:)`.
+- **i18n:** new keys `playerReader.fallbackOffer` and `playerReader.fallbackOfferButton` added to all 3 locales (en/pt-BR/es); `LocalizationParityTests` still passes.
+- **tests:** decision logic already pinned by `SpeechFallbackOfferTests` (slice 4). View change is a deterministic switch — no SwiftUI snapshot test added (those are noisy on Xcode 26 SDK per `project_ios_prod_readiness_sweep`); the build succeeded and the three feature suites (LocalizationParity, SpeechFallbackOffer, AudioPlayerSpeechFallback) all stayed green.
+- **next:** end-to-end smoke at `mise run mac:build` would be the natural step before announcing this as a complete user-facing feature. After that, slice 6 candidates: Flutter mirror (`flutter_app/`) or backend chapter-text endpoint hardening.
+
 ### 2026-05-25 Hermes — review slice 3 approved
 
 - **status:** approved.

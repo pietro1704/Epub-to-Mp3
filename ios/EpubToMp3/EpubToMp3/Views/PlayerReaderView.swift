@@ -219,6 +219,54 @@ struct PlayerReaderView: View {
 
     @ViewBuilder
     private var readerPane: some View {
+        VStack(spacing: 0) {
+            fallbackBanner
+            readerPaneCore
+        }
+    }
+
+    /// Banner above the reader content offering an accessibility-voice
+    /// readout when the chapter MP3 isn't ready yet but the chapter
+    /// text is on hand. Hidden when MP3 is ready or no text is loaded;
+    /// also hidden once the fallback synthesizer is already speaking
+    /// — the existing transport controls drive it from then on.
+    @ViewBuilder
+    private var fallbackBanner: some View {
+        switch SpeechFallbackUI.offer(
+            isFallbackActive: player.isUsingSpeechFallback,
+            snapshot: player.snapshot ?? snapshot,
+            chapterIndex: playingEpubZeroBasedIndex ?? player.currentChapterIndex,
+            fulltext: fulltext,
+            languageCode: (player.snapshot ?? snapshot).language
+        ) {
+        case .hidden, .active:
+            EmptyView()
+        case let .available(text, languageCode):
+            HStack(spacing: 10) {
+                Image(systemName: "speaker.wave.2.bubble")
+                    .foregroundStyle(.tint)
+                Text(localized: "playerReader.fallbackOffer")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                Spacer(minLength: 8)
+                Button {
+                    player.playFallbackSpeech(text: text, languageCode: languageCode)
+                } label: {
+                    Text(localized: "playerReader.fallbackOfferButton")
+                        .font(.footnote.weight(.semibold))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(.regularMaterial)
+        }
+    }
+
+    @ViewBuilder
+    private var readerPaneCore: some View {
         if isLoadingFulltext && fulltext == nil {
             VStack(spacing: 16) {
                 ProgressView()
