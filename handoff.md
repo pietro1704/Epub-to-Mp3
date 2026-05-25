@@ -131,3 +131,81 @@ Executed 9 tests, with 0 failures (0 unexpected) in 2.705s
 - **result:** 9 tests passed, 0 failures.
 - **review notes:** isolated service/test seam is acceptable; no AudioPlayer wiring yet; session is not activated on init or speak, only category/mode configured.
 - **next for Claude:** slice 2 should wire fallback into `AudioPlayer`/reader flow behind tests. It must trigger only when chapter audio URL is not ready/playable and chapter text is available. Preserve MP3 path as primary.
+
+### 2026-05-25 Claude — claiming slice 2 (decision unit)
+
+- **status:** in_progress
+- **owner:** claude
+- **scope:** ship the *pure decision unit* first; AudioPlayer wiring is slice 3.
+- **rationale:** slice 1 ended with both agents racing the same two files. To avoid a repeat on the 1604-line `AudioPlayer.swift`, isolate the routing logic in a separate seam that can be unit-tested without `AVPlayer` / `JobSnapshot` integration. Slice 3 then has a single concern: call the router at the right place.
+- **zone:** `ios/EpubToMp3/EpubToMp3/Services/PlaybackRouter.swift` (new) + `ios/EpubToMp3/EpubToMp3Tests/PlaybackRouterTests.swift` (new). No edits to `AudioPlayer.swift` or `SpeechFallbackPlayer.swift`.
+- **design:**
+  - `enum PlaybackRoute: Equatable { case audio(URL); case speech(text: String, languageCode: String?); case skip }`
+  - `enum PlaybackRouter { static func route(chapter: JobSnapshot.Chapter, baseURL: URL?, chapterText: String?, languageCode: String?, isAudioPlayable: (URL) -> Bool = { _ in true }) -> PlaybackRoute }`
+  - Decision order: `audio` (downloadUrl non-empty + resolves + playable) → `speech` (chapterText non-empty after trim) → `skip`.
+  - `isAudioPlayable` is injected so tests don't hit the file system; production wiring (slice 3) will plug `FileManager.default.fileExists` for `file://` and `URL.checkResourceIsReachable` for http(s).
+- **tests planned (8):** audio happy path · downloadUrl nil → speech · downloadUrl empty → speech · audio not playable → speech · no url no text → skip · whitespace text + no url → skip · language code preserved into speech route · relative downloadUrl resolves against baseURL.
+
+### 2026-05-25 Claude — Slice 2 GREEN
+
+**Files**
+
+- New: `ios/EpubToMp3/EpubToMp3/Services/PlaybackRouter.swift` (62 LOC)
+- New: `ios/EpubToMp3/EpubToMp3Tests/PlaybackRouterTests.swift` (9 tests)
+- Regenerated: `EpubToMp3.xcodeproj`
+
+**API shipped**
+
+```swift
+enum PlaybackRoute: Equatable {
+    case audio(URL)
+    case speech(text: String, languageCode: String?)
+    case skip
+}
+
+enum PlaybackRouter {
+    static func route(
+        chapter: JobSnapshot.Chapter,
+        baseURL: URL?,
+        chapterText: String?,
+        languageCode: String?,
+        isAudioPlayable: (URL) -> Bool = { _ in true }
+    ) -> PlaybackRoute
+}
+```
+
+Bonus: shipped a 9th test (`keepsAbsoluteDownloadUrl_evenWithBaseURL`)
+to pin that an already-absolute `downloadUrl` ignores `baseURL` — covers
+the CDN case where chapter MP3s live off-host.
+
+**Run**
+
+```
+cd ios/EpubToMp3
+xcodegen generate
+xcodebuild test -project EpubToMp3.xcodeproj -scheme EpubToMp3 \
+  -destination 'platform=macOS,arch=x86_64' \
+  -only-testing:EpubToMp3Tests/PlaybackRouterTests \
+  -derivedDataPath build/tdd \
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+```
+
+```
+Test Suite 'PlaybackRouterTests' passed
+Executed 9 tests, with 0 failures (0 unexpected)
+```
+
+**Next for Hermes:** slice 3 — wire `PlaybackRouter` into `AudioPlayer`.
+Suggested test names (so we don't race the impl):
+
+- `play_routesToMP3_whenChapterHasDownloadUrl`
+- `play_routesToSpeech_whenChapterIsTextOnly`
+- `play_skipsChapter_whenNeitherAvailable`
+- `play_keepsMP3AsPrimary_whenBothAvailable`
+
+Concrete `isAudioPlayable` for slice 3: `FileManager.fileExists` for
+`file://`, `nil` (assume reachable) for http(s) — actual reachability
+check belongs in a 4th slice (network probe with caching) so this stays
+synchronous.
+
+**Status:** awaiting hermes review of slice 2. Not pushed yet — user gates pushes per `feedback_workflow`.

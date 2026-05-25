@@ -101,6 +101,7 @@
 		6346A985F5D91682C996D2FA /* site-packages in Resources */ = {isa = PBXBuildFile; fileRef = 1FE6C333AA22B9E76ECA7A16 /* site-packages */; };
 		63473057121EEC9ECF02DC30 /* LibraryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C2B9129F8B47A483AE0FC9 /* LibraryStore.swift */; };
 		63D31A741B9B58E7AEEE78EA /* Python.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9D8008FB1ACAADBD6398803D /* Python.xcframework */; };
+		63F9263336FE50BF8CDCD257 /* PlaybackRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 261EF4C8D1A805878C808887 /* PlaybackRouterTests.swift */; };
 		642554FF72596942BFB9F4EE /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15Pro-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 49CCC1C5C5B69EBA33D9C240 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15Pro-portrait.png */; };
 		6483FE28E2D93772F99DA594 /* SessionRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = 61F20A2B9AD5F8A401D3C74D /* SessionRecord.swift */; };
 		6498397581BBA9D6ABBFD114 /* BookmarkStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E56E13BBDF7A1DECEAE3CD3C /* BookmarkStoreTests.swift */; };
@@ -183,6 +184,7 @@
 		CE110D5651C813DC2C0350A8 /* testReaderDarkThemePortraitIPhones.Reader-Dark-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = FFB11A8588B29434AE3C7BEA /* testReaderDarkThemePortraitIPhones.Reader-Dark-iPhoneSE-portrait.png */; };
 		D3B994483F2F3463781C20E1 /* EbookFulltextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 520D74161D8E8F2D3C413C30 /* EbookFulltextTests.swift */; };
 		D4560C802E28B53471975A60 /* testReaderMarginClampedTo16ptPortrait.Reader-MarginClamp-16pt-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 5C8B3D8E961A1E9E73561A70 /* testReaderMarginClampedTo16ptPortrait.Reader-MarginClamp-16pt-iPhoneSE-portrait.png */; };
+		D4A0F2BE807A08C4C831A4E2 /* AudioPlayerSpeechFallbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B75CDE96652859DA2E4C0DB /* AudioPlayerSpeechFallbackTests.swift */; };
 		D50AFB5F5525EB194BBF9741 /* DynamicTypeSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CDD3532551E02103A5A73B59 /* DynamicTypeSnapshotTests.swift */; };
 		D5841434DF8B203E029D5525 /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhone8-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 8D9D9A2955AB938BF3ED26AA /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhone8-portrait.png */; };
 		D771B22A86E5393D2E44A481 /* ReaderChapterAdvanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E62DB1DD51DD6F8807845F6F /* ReaderChapterAdvanceTests.swift */; };
@@ -218,6 +220,7 @@
 		FDCCB671B8728F13D99A5A4D /* ReaderThemeContrastTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85ED9CCCE509E26A14EB8D9D /* ReaderThemeContrastTests.swift */; };
 		FDD811DB6AB6A649354C5579 /* LibraryDragDropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26F1EC72C79F1B94F8C1FB8A /* LibraryDragDropTests.swift */; };
 		FDE7A145F4AB0D42B45BC8C7 /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 27E6B1855CD590906337FF81 /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhoneSE-portrait.png */; };
+		FE74FAE2EECE33821DCBFC95 /* PlaybackRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = C86E9E34E9DED92C1F6BD584 /* PlaybackRouter.swift */; };
 		FF532AB9CC17FA67A69EA37C /* testReaderLightXXXL.Reader-Light-accessibility3-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 38E0FC2D72FBB66CAFD1DE9A /* testReaderLightXXXL.Reader-Light-accessibility3-iPhoneSE-portrait.png */; };
 /* End PBXBuildFile section */
 
@@ -282,6 +285,7 @@
 		2559938F3BEC968A1D0523D1 /* ConversionStatusSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionStatusSheet.swift; sourceTree = "<group>"; };
 		25A41A0E6708C1B9C63FE024 /* SegmentBacklog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SegmentBacklog.swift; sourceTree = "<group>"; };
 		261A8190B5258AFE0FB368AA /* PiperBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiperBridgeTests.swift; sourceTree = "<group>"; };
+		261EF4C8D1A805878C808887 /* PlaybackRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackRouterTests.swift; sourceTree = "<group>"; };
 		26C7C2CE51E28EE3D67A6840 /* ToolbarSettingsParityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolbarSettingsParityTests.swift; sourceTree = "<group>"; };
 		26DD58A689A94D3B30FE8583 /* AttributedPageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttributedPageView.swift; sourceTree = "<group>"; };
 		26F1EC72C79F1B94F8C1FB8A /* LibraryDragDropTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryDragDropTests.swift; sourceTree = "<group>"; };
@@ -340,6 +344,7 @@
 		663C2798C19536D7A511650A /* PlatformCompatTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompatTests.swift; sourceTree = "<group>"; };
 		68C0A99C38C36C591FCCAAE8 /* SpeechFallbackPlayerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpeechFallbackPlayerTests.swift; sourceTree = "<group>"; };
 		68C62E4C4DA187D909B847A3 /* AudioPlayerLockScreenTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerLockScreenTests.swift; sourceTree = "<group>"; };
+		6B75CDE96652859DA2E4C0DB /* AudioPlayerSpeechFallbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerSpeechFallbackTests.swift; sourceTree = "<group>"; };
 		6C3DD516FF512E1C8CE8FD9E /* PlatformCompat.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlatformCompat.swift; sourceTree = "<group>"; };
 		6DC49F753FFB776C1AB6539C /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/Localizable.strings; sourceTree = "<group>"; };
 		6F83E32DA0C0355A2417C1BE /* testReaderDarkThemePortraitIPhones.Reader-Dark-iPhone8-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderDarkThemePortraitIPhones.Reader-Dark-iPhone8-portrait.png"; sourceTree = "<group>"; };
@@ -401,6 +406,7 @@
 		C50271883033C2091FAE1A87 /* DownloadManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DownloadManager.swift; sourceTree = "<group>"; };
 		C5515970E1A4D5D76AA8FEF7 /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPadPro12_9-landscape.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderLightThemeAcrossFullMatrix.Reader-Light-iPadPro12_9-landscape.png"; sourceTree = "<group>"; };
 		C831480D8BF8ACE87DC29470 /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPhoneSE-landscape.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderLightThemeAcrossFullMatrix.Reader-Light-iPhoneSE-landscape.png"; sourceTree = "<group>"; };
+		C86E9E34E9DED92C1F6BD584 /* PlaybackRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackRouter.swift; sourceTree = "<group>"; };
 		C8DA10D894D94314299CEAD0 /* InstantReaderSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstantReaderSnapshotTests.swift; sourceTree = "<group>"; };
 		C9DC1980CAB3AF779AECC681 /* AudiobookCacheEviction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudiobookCacheEviction.swift; sourceTree = "<group>"; };
 		CBCE44DCE2EEE3913EFC9A48 /* SnapshotConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnapshotConfig.swift; sourceTree = "<group>"; };
@@ -688,6 +694,7 @@
 				65E8A635388B771EA27BD322 /* PdfMetadataReader.swift */,
 				DF6936999D754DF9B6CDCA8E /* PdfTextExtractor.swift */,
 				DA730B44C472123F203311A2 /* PiperBridge.swift */,
+				C86E9E34E9DED92C1F6BD584 /* PlaybackRouter.swift */,
 				0ED68C3632BCD2C07DE48D8C /* PlayerPresentation.swift */,
 				97E4E8A2DBF1F053870D7665 /* PythonBridge.swift */,
 				F2487CBD22E3F68E9B4D7A4C /* PythonEmbed.swift */,
@@ -792,6 +799,7 @@
 				2B51546147B1E82C4B14E333 /* AudioPlayerEnqueueSegmentTests.swift */,
 				68C62E4C4DA187D909B847A3 /* AudioPlayerLockScreenTests.swift */,
 				7FCB84A94ECEDA9E94239C85 /* AudioPlayerSleepTimerTests.swift */,
+				6B75CDE96652859DA2E4C0DB /* AudioPlayerSpeechFallbackTests.swift */,
 				E4ABEABB66DDA30544EC4C81 /* AudioPlayerStreamingTests.swift */,
 				1A1733C0B01DD0D3941D64D7 /* AudioPlayerUXTests.swift */,
 				94E626F4F74019C448E22450 /* BookEntityTests.swift */,
@@ -826,6 +834,7 @@
 				0E2FD9242729300A82B2E938 /* PdfTextExtractorTests.swift */,
 				261A8190B5258AFE0FB368AA /* PiperBridgeTests.swift */,
 				663C2798C19536D7A511650A /* PlatformCompatTests.swift */,
+				261EF4C8D1A805878C808887 /* PlaybackRouterTests.swift */,
 				E1C4741198A5C634ABDE32F3 /* PlayerReaderToolbarSnapshotTests.swift */,
 				63B5D01A63716EBDC6508F32 /* PlayerSnapshotTests.swift */,
 				CE27FDD8D87574C3B662EDDE /* PythonBridgeTimeoutTests.swift */,
@@ -1140,6 +1149,7 @@
 				08EF1B9B239C8EE8AFBE6E42 /* PiperBridge.swift in Sources */,
 				5D168A9703D976DA8BE5A92A /* PlatformCompat.swift in Sources */,
 				FB621AF318822B628345DAC8 /* PlayDivergenceDialog.swift in Sources */,
+				FE74FAE2EECE33821DCBFC95 /* PlaybackRouter.swift in Sources */,
 				0616264AA738BCBC78B40ECD /* PlayerPresentation.swift in Sources */,
 				4070CE297B20AB4A058CCDF0 /* PlayerReaderView.swift in Sources */,
 				A341FC5BE29B4C25ECF5017E /* PlayerView.swift in Sources */,
@@ -1196,6 +1206,7 @@
 				B20DBBC4A6A87ED570CC5974 /* AudioPlayerEnqueueSegmentTests.swift in Sources */,
 				28C04FA67B9B03385BB1F86C /* AudioPlayerLockScreenTests.swift in Sources */,
 				E9C9FC471A19244945862C65 /* AudioPlayerSleepTimerTests.swift in Sources */,
+				D4A0F2BE807A08C4C831A4E2 /* AudioPlayerSpeechFallbackTests.swift in Sources */,
 				166808D0FF4A28CEF7A5B6FA /* AudioPlayerStreamingTests.swift in Sources */,
 				D8BCD5D13C9ECAEAAFDA00A5 /* AudioPlayerUXTests.swift in Sources */,
 				6242495E944346DF0E08B0A7 /* AudiobookCacheEvictionTests.swift in Sources */,
@@ -1231,6 +1242,7 @@
 				5207CC7953E92E5F63321BDF /* PdfTextExtractorTests.swift in Sources */,
 				3DB2BC0842430D5695E96729 /* PiperBridgeTests.swift in Sources */,
 				2CFBA805498AD837B238204A /* PlatformCompatTests.swift in Sources */,
+				63F9263336FE50BF8CDCD257 /* PlaybackRouterTests.swift in Sources */,
 				AD807A740645D0F18B48E5A7 /* PlayerReaderToolbarSnapshotTests.swift in Sources */,
 				2DB0274C979EA89685DB4092 /* PlayerSnapshotTests.swift in Sources */,
 				039E49CD4E45E39EDED4F5B3 /* PythonBridgeTimeoutTests.swift in Sources */,
