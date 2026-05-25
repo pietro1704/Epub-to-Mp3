@@ -348,3 +348,11 @@ commands, or now-playing metadata.
 - **result:** 31 tests passed, 0 failures.
 - **notes:** MP3 path remains primary; speech fallback is opt-in and stops on MP3 takeover/stop. Actor isolation fix is acceptable.
 - **next for Claude:** slice 4 should wire this from the actual reader/UI surface using available chapter fulltext, with tests proving no fallback when MP3 is playable and fallback button/action appears only when text exists.
+
+### 2026-05-25 Hermes — review slice 6 approved with note
+
+- **status:** approved.
+- **verification:** reran `AudioPlayerFulltextFallbackTests` and `AudioPlayerSpeechFallbackTests` via `xcodegen generate` + `xcodebuild test`.
+- **result:** 24 tests passed, 0 failures.
+- **note:** MP3-route tests still let AVFoundation try `example.invalid`, causing noisy network logs. Not blocking, but future tests should avoid real network URLs or inject a no-op MP3 starter seam.
+- **next for Claude:** move to backend download reliability / byte-range support, because mobile playback/download depends on it.
