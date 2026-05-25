@@ -51,53 +51,64 @@ struct SnapshotDevice {
 /// Device matrix used across the regression suite. Add new devices
 /// here so individual tests stay declarative.
 enum SnapshotDevices {
+    private static func scaled(_ config: ViewImageConfig) -> ViewImageConfig {
+        ViewImageConfig(
+            safeArea: config.safeArea,
+            size: config.size,
+            traits: UITraitCollection(traitsFrom: [
+                config.traits,
+                UITraitCollection(displayScale: 2)
+            ])
+        )
+    }
+
     // ---- iPhones (portrait) ----
 
     /// iPhone SE 3rd gen (4.7"). Smallest screen we still target —
     /// the trait class where the 12pt text margin used to clip.
     static let iPhoneSEPortrait = SnapshotDevice(
-        name: "iPhoneSE-portrait", config: .iPhoneSe
+        name: "iPhoneSE-portrait", config: scaled(.iPhoneSe)
     )
     /// iPhone 8 (4.7"). Pre-notch baseline.
     static let iPhone8Portrait = SnapshotDevice(
-        name: "iPhone8-portrait", config: .iPhone8
+        name: "iPhone8-portrait", config: scaled(.iPhone8)
     )
     /// iPhone 15 Pro stand-in (6.1"). Library uses the iPhone 13 Pro
     /// trait — physically identical for Auto Layout purposes.
     static let iPhone15ProPortrait = SnapshotDevice(
-        name: "iPhone15Pro-portrait", config: .iPhone13Pro
+        name: "iPhone15Pro-portrait", config: scaled(.iPhone13Pro)
     )
     /// iPhone 15 Pro Max stand-in (6.7"). Tallest iPhone.
     static let iPhone15ProMaxPortrait = SnapshotDevice(
-        name: "iPhone15ProMax-portrait", config: .iPhone13ProMax
+        name: "iPhone15ProMax-portrait", config: scaled(.iPhone13ProMax)
     )
 
     // ---- iPhones (landscape) ----
     static let iPhoneSELandscape = SnapshotDevice(
-        name: "iPhoneSE-landscape", config: .iPhoneSe(.landscape)
+        name: "iPhoneSE-landscape", config: scaled(.iPhoneSe(.landscape))
     )
     static let iPhone8Landscape = SnapshotDevice(
-        name: "iPhone8-landscape", config: .iPhone8(.landscape)
+        name: "iPhone8-landscape", config: scaled(.iPhone8(.landscape))
     )
     static let iPhone15ProLandscape = SnapshotDevice(
-        name: "iPhone15Pro-landscape", config: .iPhone13Pro(.landscape)
+        name: "iPhone15Pro-landscape", config: scaled(.iPhone13Pro(.landscape))
     )
     static let iPhone15ProMaxLandscape = SnapshotDevice(
-        name: "iPhone15ProMax-landscape", config: .iPhone13ProMax(.landscape)
+        name: "iPhone15ProMax-landscape", config: scaled(.iPhone13ProMax(.landscape))
     )
 
     // ---- iPads ----
     static let iPadMiniPortrait = SnapshotDevice(
-        name: "iPadMini-portrait", config: .iPadMini
+        name: "iPadMini-portrait", config: scaled(.iPadMini)
     )
     static let iPadMiniLandscape = SnapshotDevice(
-        name: "iPadMini-landscape", config: .iPadMini(.landscape)
+        name: "iPadMini-landscape", config: scaled(.iPadMini(.landscape))
     )
     static let iPadPro12_9Portrait = SnapshotDevice(
-        name: "iPadPro12_9-portrait", config: .iPadPro12_9
+        name: "iPadPro12_9-portrait", config: scaled(.iPadPro12_9)
     )
     static let iPadPro12_9Landscape = SnapshotDevice(
-        name: "iPadPro12_9-landscape", config: .iPadPro12_9(.landscape)
+        name: "iPadPro12_9-landscape", config: scaled(.iPadPro12_9(.landscape))
     )
 
     /// Every iPhone in portrait — the cheap default matrix.
@@ -137,7 +148,8 @@ func assertSnapshots<V: View>(
         assertSnapshot(
             of: view,
             as: .image(precision: SnapshotConfig.precision,
-                       layout: .device(config: device.config)),
+                       layout: .device(config: device.config),
+                       traits: device.config.traits),
             named: "\(baseName)-\(device.name)",
             record: SnapshotConfig.record,
             file: file,
@@ -160,7 +172,8 @@ func assertDeviceSnapshot<V: View>(
     assertSnapshot(
         of: view,
         as: .image(precision: SnapshotConfig.precision,
-                   layout: .device(config: device.config)),
+                   layout: .device(config: device.config),
+                   traits: device.config.traits),
         named: "\(name)-\(device.name)",
         record: SnapshotConfig.record,
         file: file,

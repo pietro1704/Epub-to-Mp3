@@ -42,10 +42,12 @@ struct EpubToMp3App: App {
                     #if os(macOS)
                     await startSidecarIfNeeded()
                     #endif
+                    guard !Self.isRunningUnderXCTest() else { return }
                     // Run LRU+TTL eviction on every app launch (background priority).
                     runCacheEviction()
                 }
                 .task(priority: .utility) {
+                    guard !Self.isRunningUnderXCTest() else { return }
                     #if os(iOS) || targetEnvironment(simulator)
                     do {
                         try await PythonRunner.shared.callAsync {
@@ -58,6 +60,7 @@ struct EpubToMp3App: App {
                 }
                 .compatOnChange(of: scenePhase) { phase in
                     if phase == .active {
+                        guard !Self.isRunningUnderXCTest() else { return }
                         drainSharedInbox()
                         drainPendingIntent()
                         drainWidgetIntents()
@@ -189,6 +192,14 @@ struct EpubToMp3App: App {
         }
     }
 
+    static func isRunningUnderXCTest(
+        environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> Bool {
+        environment["XCTestConfigurationFilePath"] != nil
+            || environment["XCTestSessionIdentifier"] != nil
+            || environment["XCTestBundlePath"] != nil
+    }
+
     #if os(macOS)
     /// Boot the embedded Python sidecar on first window appearance.
     /// Runs once per process — `SidecarManager.start()` is idempotent
@@ -204,7 +215,7 @@ struct EpubToMp3App: App {
         // Skip the sidecar boot under unit tests (xctest hosts the
         // app — without this guard SwiftUI would try to spin up the
         // Python server and hang the test bundle for 30 s).
-        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil {
+        if Self.isRunningUnderXCTest() {
             return
         }
         // Same story for the Xcode preview canvas. Xcode 26 sets

@@ -325,7 +325,10 @@ xcodebuild \\
   SYMROOT=$(pwd)/.build \\
   build | tail -20
 
-APP_OUT="ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app"
+APP_OUT=".build/Release/EpubToMp3.app"
+if [[ ! -d "$APP_OUT" && -d ".build/Build/Products/Release/EpubToMp3.app" ]]; then
+  APP_OUT=".build/Build/Products/Release/EpubToMp3.app"
+fi
 if [[ -d "$APP_OUT" ]]; then
   echo ""
   echo "Built: $APP_OUT"
@@ -340,7 +343,7 @@ fi
 """
 
 [tasks."ios:build"]
-description = "Build SwiftUI iOS app (Simulator) with embedded Python.xcframework"
+description = "Build SwiftUI iOS app on iPhone SE / iOS 17.2 Simulator with embedded Python.xcframework"
 # vendor:python must finish before xcodebuild resolves the framework
 # dependency declared in project.yml.
 depends = ["vendor:python"]
@@ -353,7 +356,7 @@ if ! command -v xcodegen >/dev/null 2>&1; then
   exit 1
 fi
 xcodegen generate
-DEST="${IOS_DEST:-platform=iOS Simulator,name=iPhone 16}"
+DEST="${IOS_DEST:-platform=iOS Simulator,name=iPhone SE,OS=17.2}"
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\

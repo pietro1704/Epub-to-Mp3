@@ -192,6 +192,7 @@
 		DDD179EB6656466575325D06 /* EdgeTTSBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 87F7099160BB6AF9B4D7A028 /* EdgeTTSBridge.swift */; };
 		DFE55F7A427EF1A0D3498F81 /* DownloadManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = C50271883033C2091FAE1A87 /* DownloadManager.swift */; };
 		E08F25EB6FC4C049EF9B5013 /* SidecarManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 483620DAFD852B5FE0C339F3 /* SidecarManagerTests.swift */; };
+		E1E6F1B96D4EF2A434248E15 /* AppLaunchEnvironmentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5DF60EE4CF56F60E52F926E /* AppLaunchEnvironmentTests.swift */; };
 		E3AEA6238B74E021D76D9336 /* ChapterListColumn.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FB03CF2E103ED47183AFE20 /* ChapterListColumn.swift */; };
 		E5894F8FB72174321CE8A455 /* CloudSyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 060FDC47C38B81C5E46A4156 /* CloudSyncEngine.swift */; };
 		E67D3E3A1D2736A1EF7D2A46 /* testSettingsXXXL.Settings-accessibility3-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = F79D02058FDD5C57E80AA1F7 /* testSettingsXXXL.Settings-accessibility3-iPhoneSE-portrait.png */; };
@@ -215,7 +216,6 @@
 		FDCCB671B8728F13D99A5A4D /* ReaderThemeContrastTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85ED9CCCE509E26A14EB8D9D /* ReaderThemeContrastTests.swift */; };
 		FDD811DB6AB6A649354C5579 /* LibraryDragDropTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26F1EC72C79F1B94F8C1FB8A /* LibraryDragDropTests.swift */; };
 		FDE7A145F4AB0D42B45BC8C7 /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 27E6B1855CD590906337FF81 /* testMiniPlayerEmptyStateIPhones.MiniPlayer-Empty-iPhoneSE-portrait.png */; };
-		FE12EE38B8602F637DE1182C /* testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png in Resources */ = {isa = PBXBuildFile; fileRef = 3ABC59DE3656F57977EC1ECF /* testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png */; };
 		FF532AB9CC17FA67A69EA37C /* testReaderLightXXXL.Reader-Light-accessibility3-iPhoneSE-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 38E0FC2D72FBB66CAFD1DE9A /* testReaderLightXXXL.Reader-Light-accessibility3-iPhoneSE-portrait.png */; };
 /* End PBXBuildFile section */
 
@@ -294,7 +294,6 @@
 		3614891F8515EC72140DBF1B /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		38E0FC2D72FBB66CAFD1DE9A /* testReaderLightXXXL.Reader-Light-accessibility3-iPhoneSE-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderLightXXXL.Reader-Light-accessibility3-iPhoneSE-portrait.png"; sourceTree = "<group>"; };
 		3A8B81C165CCB93BAC42E6F3 /* AppSettingsObservationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettingsObservationTests.swift; sourceTree = "<group>"; };
-		3ABC59DE3656F57977EC1ECF /* testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png"; sourceTree = "<group>"; };
 		3B348C028F6EE3F14BB760E0 /* AsyncTimeoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AsyncTimeoutTests.swift; sourceTree = "<group>"; };
 		3E10CF2AA1E0008A9193298C /* EpubHtmlRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EpubHtmlRenderer.swift; sourceTree = "<group>"; };
 		3E7ABB3F4778478D227EF4D2 /* WidgetDataSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetDataSyncTests.swift; sourceTree = "<group>"; };
@@ -431,6 +430,7 @@
 		E4056B68B1ABA6DAC4AFF06A /* Bookmark.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Bookmark.swift; sourceTree = "<group>"; };
 		E4ABEABB66DDA30544EC4C81 /* AudioPlayerStreamingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerStreamingTests.swift; sourceTree = "<group>"; };
 		E56E13BBDF7A1DECEAE3CD3C /* BookmarkStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookmarkStoreTests.swift; sourceTree = "<group>"; };
+		E5DF60EE4CF56F60E52F926E /* AppLaunchEnvironmentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLaunchEnvironmentTests.swift; sourceTree = "<group>"; };
 		E62DB1DD51DD6F8807845F6F /* ReaderChapterAdvanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReaderChapterAdvanceTests.swift; sourceTree = "<group>"; };
 		E71C436376C92AD13C765D70 /* ResumeStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeStoreTests.swift; sourceTree = "<group>"; };
 		E7249128C78850D951C2E50D /* ConversionStatusTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionStatusTests.swift; sourceTree = "<group>"; };
@@ -746,7 +746,6 @@
 		CD4122EFF0028E42B993DE7A /* InstantReaderSnapshotTests */ = {
 			isa = PBXGroup;
 			children = (
-				3ABC59DE3656F57977EC1ECF /* testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png */,
 				EEDA1717325384F08F6434A5 /* testInstantReaderErrorBarPortrait.InstantReader-Error-iPhone8.png */,
 				8945A534A5874F1E21C99CC1 /* testInstantReaderIdleBarPortrait.InstantReader-Idle-iPhone8.png */,
 			);
@@ -778,6 +777,7 @@
 			isa = PBXGroup;
 			children = (
 				24C1D79AF0BBB5221432E971 /* APIClientTests.swift */,
+				E5DF60EE4CF56F60E52F926E /* AppLaunchEnvironmentTests.swift */,
 				3A8B81C165CCB93BAC42E6F3 /* AppSettingsObservationTests.swift */,
 				E2210B0724AD9FD92A6EDD70 /* AppSettingsSecurityTests.swift */,
 				3B348C028F6EE3F14BB760E0 /* AsyncTimeoutTests.swift */,
@@ -972,7 +972,6 @@
 				0DEF76CB8E86B2D5767BADE8 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone15ProMax-portrait.png in Resources */,
 				A1397FA934C61D9273BDF0F5 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhone8-portrait.png in Resources */,
 				D7B8B21D7CABE9FA6E8AD0B7 /* testFullPlayerSheetEmptyIPhones.FullPlayer-Empty-iPhoneSE-portrait.png in Resources */,
-				FE12EE38B8602F637DE1182C /* testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png in Resources */,
 				0DA2F54C81A0E3AACD4FE57B /* testInstantReaderErrorBarPortrait.InstantReader-Error-iPhone8.png in Resources */,
 				285BF4103AF88A0EAE1DC567 /* testInstantReaderIdleBarPortrait.InstantReader-Idle-iPhone8.png in Resources */,
 				B43DF4A14033007A9C2EE6E3 /* testLibraryEmptyStateIPad.Library-Empty-iPadPro-iPadPro12_9-portrait.png in Resources */,
@@ -1181,6 +1180,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4E7DB462D73450FA820FCF53 /* APIClientTests.swift in Sources */,
+				E1E6F1B96D4EF2A434248E15 /* AppLaunchEnvironmentTests.swift in Sources */,
 				72A35D902F413115C4A956A9 /* AppSettingsObservationTests.swift in Sources */,
 				F0E0010555AA94C24FB2CE52 /* AppSettingsSecurityTests.swift in Sources */,
 				4755126BEF0922552624004E /* AsyncTimeoutTests.swift in Sources */,
@@ -1276,15 +1276,12 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				"CODE_SIGNING_ALLOWED[sdk=iphoneos*]" = YES;
-				"CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]" = NO;
 				"CODE_SIGNING_ALLOWED[sdk=macosx*]" = NO;
 				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
-				"CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]" = NO;
 				"CODE_SIGNING_REQUIRED[sdk=macosx*]" = NO;
 				CODE_SIGN_ENTITLEMENTS = "EpubToMp3/Resources/EpubToMp3-Debug.entitlements";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				"CODE_SIGN_IDENTITY[sdk=macosx*]" = "-";
 				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Automatic;
 				ENABLE_HARDENED_RUNTIME = NO;
@@ -1413,7 +1410,7 @@
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1443,13 +1440,15 @@
 					"@loader_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pietrocode.epubtomp3.tests;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EpubToMp3";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/EpubToMp3";
+				"TEST_HOST[sdk=macosx*]" = "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/Contents/MacOS/EpubToMp3";
 			};
 			name = Debug;
 		};
@@ -1457,14 +1456,12 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				"CODE_SIGNING_REQUIRED[sdk=iphoneos*]" = YES;
-				"CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]" = NO;
 				CODE_SIGN_ENTITLEMENTS = EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements;
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
-				"CODE_SIGN_IDENTITY[sdk=iphonesimulator*]" = "-";
 				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1522,13 +1519,15 @@
 					"@loader_path/Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.pietrocode.epubtomp3.tests;
 				SDKROOT = auto;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
 				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/EpubToMp3";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/EpubToMp3";
+				"TEST_HOST[sdk=macosx*]" = "$(BUILT_PRODUCTS_DIR)/EpubToMp3.app/Contents/MacOS/EpubToMp3";
 			};
 			name = Release;
 		};

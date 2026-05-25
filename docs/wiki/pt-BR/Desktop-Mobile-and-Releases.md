@@ -10,7 +10,7 @@ Build headless do macOS:
 
 ```bash
 mise run mac:build
-# → ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app
+# → a tarefa imprime o caminho do .app gerado, normalmente ios/EpubToMp3/.build/Release/EpubToMp3.app
 ```
 
 Build apenas do sidecar (PyInstaller onefile):
