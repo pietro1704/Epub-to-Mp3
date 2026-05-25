@@ -315,9 +315,33 @@ final class AudioPlayer: ObservableObject {
 
     private var remoteCommandsConfigured = false
 
-    init(resumeStore: ResumeStore = ResumeStore(), backendBaseURL: URL? = nil) {
+    // MARK: Speech fallback (slice 2)
+
+    /// Accessibility-grade speech fallback. Used only when MP3 audio is
+    /// not yet ready or not playable AND the chapter text is available.
+    /// The MP3 path remains primary — fallback is opt-in per chapter via
+    /// `playFallbackSpeech(text:languageCode:)`.
+    private let speechFallback: SpeechFallbackPlayer
+
+    /// `true` while the speech fallback owns the transport. Flips to
+    /// `true` on a successful `playFallbackSpeech` and back to `false`
+    /// the moment an MP3 takeover happens (`play(snapshot:)`) or the
+    /// user explicitly stops playback. Drives UI controls so callers
+    /// know which subsystem to drive — without this flag every play /
+    /// pause tap would race the MP3 queue against the synthesizer.
+    @Published private(set) var isUsingSpeechFallback: Bool = false
+
+    init(
+        resumeStore: ResumeStore = ResumeStore(),
+        backendBaseURL: URL? = nil,
+        speechFallback: SpeechFallbackPlayer? = nil
+    ) {
         self.resumeStore = resumeStore
         self.backendBaseURL = backendBaseURL
+        // Default-construct on MainActor (this init's isolation). A
+        // non-nil default expression would be evaluated in the caller's
+        // context, which the compiler cannot prove is MainActor.
+        self.speechFallback = speechFallback ?? SpeechFallbackPlayer()
     }
 
     deinit {
@@ -409,6 +433,14 @@ final class AudioPlayer: ObservableObject {
     /// the principle that media should never auto-start without user intent.
     func play(snapshot: JobSnapshot, startingAt chapterIndex: Int = 0) {
         ensureRemoteCommands()
+        // MP3 takeover: if the speech fallback was holding the place,
+        // shut it down BEFORE we set up the AVQueuePlayer so the user
+        // never hears both transports overlap (synth + MP3 = garbled).
+        // No-op when fallback was idle, so this stays cheap.
+        if isUsingSpeechFallback {
+            speechFallback.stop()
+            isUsingSpeechFallback = false
+        }
         // Audio session is intentionally NOT activated here — `setActive(true)`
         // on a `.playback` / `.longFormAudio` session interrupts other apps
         // (Spotify, Apple Music, podcast apps) even when our queue is paused.
@@ -530,6 +562,15 @@ final class AudioPlayer: ObservableObject {
     }
 
     func pause() {
+        // Slice-2 speech-fallback route: when the synthesizer owns the
+        // transport, pause/resume must drive it instead of the silent
+        // AVQueuePlayer. We do NOT touch the MP3 player here — it stays
+        // torn down until an MP3 takeover (`play(snapshot:)`) happens.
+        if isUsingSpeechFallback {
+            speechFallback.pause()
+            isPlaying = false
+            return
+        }
         player?.pause()
         isPlaying = false
         persistResumePoint(force: true)
@@ -537,6 +578,14 @@ final class AudioPlayer: ObservableObject {
     }
 
     func resume() {
+        if isUsingSpeechFallback {
+            // Speech fallback already configured the audio session for
+            // `.spokenAudio` when `playFallbackSpeech` ran — no extra
+            // session work here. Resume just continues the utterance.
+            speechFallback.resume()
+            isPlaying = true
+            return
+        }
         guard let player else { return }
         // Activate the audio session lazily, only when the user actually
         // starts playback (Play button, lock-screen control, widget toggle).
@@ -547,6 +596,47 @@ final class AudioPlayer: ObservableObject {
         player.rate = rate.rawValue
         isPlaying = true
         updateNowPlayingInfo()
+    }
+
+    // MARK: - Speech fallback (slice 2)
+
+    /// True when the host should drive the speech-fallback path instead
+    /// of the MP3 path for the given chapter. The MP3 path is preferred
+    /// — fallback only fires when no snapshot exists, the snapshot
+    /// carries no playable chapters, or the chapter at the requested
+    /// index has no `downloadUrl` yet.
+    ///
+    /// Pure decision helper — does not mutate state. Callers combine
+    /// this with chapter-text availability (only the reader/view layer
+    /// knows about `EbookFulltext`) before invoking `playFallbackSpeech`.
+    func shouldUseSpeechFallback(for snapshot: JobSnapshot?, chapterIndex: Int) -> Bool {
+        guard let snapshot else { return true }
+        let playable = snapshot.playableChapters
+        if playable.isEmpty { return true }
+        // Requested index lives in the EPUB-zero-based space (same key
+        // `chapter.index` uses in the snapshot). If the snapshot lacks
+        // an entry for it, MP3 is not ready for THIS chapter even if
+        // earlier/later ones are.
+        return !playable.contains { $0.index == chapterIndex }
+    }
+
+    /// Engage the accessibility speech fallback for the given chapter
+    /// text. `text` must be non-empty — empty input is treated as a
+    /// no-op so the fallback flag never silently flips on a degenerate
+    /// call. Configures the system audio session for `.spokenAudio`
+    /// (via `SpeechFallbackPlayer`) and surfaces `isPlaying = true`
+    /// so the existing transport UI (play/pause button, mini-player)
+    /// reflects the correct state without further wiring.
+    ///
+    /// The MP3 path is NOT primed — callers that already loaded a
+    /// snapshot keep it; calling `play(snapshot:)` later cleanly
+    /// switches back to MP3 and stops the synthesizer in the same turn
+    /// so the user never hears both transports.
+    func playFallbackSpeech(text: String, languageCode: String? = nil) {
+        guard !text.isEmpty else { return }
+        speechFallback.speak(text: text, languageCode: languageCode)
+        isUsingSpeechFallback = true
+        isPlaying = true
     }
 
     // MARK: Play-tap routing (centralised so every UI surface — mini
@@ -1094,6 +1184,14 @@ final class AudioPlayer: ObservableObject {
     /// Call this when the reader session ends so the lock screen no
     /// longer shows stale metadata for a book that is no longer active.
     func stop() {
+        // Speech-fallback teardown: when the synthesizer owns playback,
+        // stop it and clear the flag BEFORE the MP3 teardown so a
+        // subsequent `play(snapshot:)` tap drives the primary path
+        // without first having to dismiss a phantom fallback transport.
+        if isUsingSpeechFallback {
+            speechFallback.stop()
+            isUsingSpeechFallback = false
+        }
         teardownPlayer()
         isPlaying = false
         snapshot = nil

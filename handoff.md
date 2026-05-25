@@ -209,3 +209,87 @@ check belongs in a 4th slice (network probe with caching) so this stays
 synchronous.
 
 **Status:** awaiting hermes review of slice 2. Not pushed yet — user gates pushes per `feedback_workflow`.
+
+### 2026-05-25 Hermes — slice 3 review failed build
+
+- **status:** request_changes.
+- **command:** `xcodegen generate && xcodebuild test -project EpubToMp3.xcodeproj -scheme EpubToMp3 -destination 'platform=macOS,arch=x86_64' -only-testing:EpubToMp3Tests/AudioPlayerSpeechFallbackTests -derivedDataPath build/tdd CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO`
+- **failure:** `AudioPlayer.swift:337:48: call to main actor-isolated initializer 'init(synthesizer:sessionConfigurator:)' in a synchronous nonisolated context` from default argument `speechFallback: SpeechFallbackPlayer = SpeechFallbackPlayer()`.
+- **ask:** fix actor isolation cleanly, rerun focused tests, append RED/GREEN, then commit only if green.
+
+### 2026-05-25 Claude — Slice 3 GREEN (actor isolation fix + stop())
+
+**Files**
+
+- Modified: `ios/EpubToMp3/EpubToMp3/Services/AudioPlayer.swift`
+- New: `ios/EpubToMp3/EpubToMp3Tests/AudioPlayerSpeechFallbackTests.swift` (Hermes-authored, untouched)
+
+**Actor-isolation fix**
+
+The default expression `speechFallback: SpeechFallbackPlayer = SpeechFallbackPlayer()`
+was evaluated in the caller's isolation, which the compiler couldn't
+prove was MainActor. Resolved by accepting an `Optional` and
+constructing on the MainActor-isolated init body:
+
+```swift
+init(
+    resumeStore: ResumeStore = ResumeStore(),
+    backendBaseURL: URL? = nil,
+    speechFallback: SpeechFallbackPlayer? = nil
+) {
+    ...
+    self.speechFallback = speechFallback ?? SpeechFallbackPlayer()
+}
+```
+
+Keeps existing call sites (`AudioPlayer()`, `AudioPlayer(backendBaseURL: x)`)
+working unchanged.
+
+**Missing piece patched: `stop()` exits fallback mode**
+
+`stop()` was not in the diff Hermes applied. Added a 4-line guard at
+the top of `stop()` that drives `speechFallback.stop()` and clears
+`isUsingSpeechFallback` BEFORE the existing MP3 teardown so a
+subsequent play tap routes to the primary path cleanly.
+
+**RED → GREEN**
+
+```
+cd ios/EpubToMp3
+xcodegen generate
+xcodebuild test \
+  -project EpubToMp3.xcodeproj -scheme EpubToMp3 \
+  -destination 'platform=macOS,arch=x86_64' \
+  -only-testing:EpubToMp3Tests/AudioPlayerSpeechFallbackTests \
+  -only-testing:EpubToMp3Tests/SpeechFallbackPlayerTests \
+  -only-testing:EpubToMp3Tests/PlaybackRouterTests \
+  -derivedDataPath build/tdd \
+  CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+```
+
+```
+AudioPlayerSpeechFallbackTests  ✅  11 passed, 0 failed
+PlaybackRouterTests             ✅  9  passed, 0 failed
+SpeechFallbackPlayerTests       ✅  9  passed, 0 failed
+                                ───────────────────────
+                                    29 passed, 0 failed
+```
+
+**Regression sweep (no fallback work touched)**
+
+```
+xcodebuild test ... \
+  -only-testing:EpubToMp3Tests/AudioPlayerUXTests \
+  -only-testing:EpubToMp3Tests/AudioPlayerStreamingTests \
+  -only-testing:EpubToMp3Tests/AudioPlayerConversionStateTests \
+  -only-testing:EpubToMp3Tests/AudioPlayerSleepTimerTests \
+  -only-testing:EpubToMp3Tests/AudioPlayerDivergenceTests \
+  -only-testing:EpubToMp3Tests/AudioPlayerEnqueueSegmentTests \
+  -only-testing:EpubToMp3Tests/AudioPlayerLockScreenTests
+```
+
+All 7 AudioPlayer test suites passed. No regression in MP3 transport,
+sleep timer, segment enqueueing, divergence dialog, lock-screen
+commands, or now-playing metadata.
+
+**Status:** awaiting Hermes review of slice 3.
