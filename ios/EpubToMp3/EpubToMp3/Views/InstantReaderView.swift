@@ -339,6 +339,27 @@ struct InstantReaderView: View {
         return false  // give up, let iOS try
     }
 
+    /// Engage `AudioPlayer.playOrFallback` for the chapter the user
+    /// asked to start. Sibling to the existing `onRequestPlay` callback
+    /// (which kicks off the server-side conversion bootstrap) — running
+    /// both in the same tap gives the user immediate accessibility-speech
+    /// audio while the MP3 conversion catches up in the background.
+    /// `play(snapshot:)` already stops the fallback on MP3 takeover, so
+    /// no extra teardown is required when the chapter audio lands.
+    ///
+    /// No-ops when the requested chapter has no usable text — the menu
+    /// then merely fires `onRequestPlay`, mirroring the pre-slice-4
+    /// behaviour exactly.
+    private func startPlayOrFallback(forChapterIndex epubIndex: Int) {
+        guard let chapter = resolveChapter(at: epubIndex) else { return }
+        activePlayer.playOrFallback(
+            snapshot: snapshot,
+            chapterIndex: epubIndex,
+            chapterText: chapter.text,
+            languageCode: snapshot?.language
+        )
+    }
+
     private func resolveChapter(at index: Int) -> EbookFulltext.Chapter? {
         let candidates = [
             fulltext.chapters.first(where: { $0.index == index + 1 }),
@@ -499,17 +520,21 @@ struct InstantReaderView: View {
                 } else {
                     Menu {
                         Button {
+                            startPlayOrFallback(forChapterIndex: 0)
                             onRequestPlay?(0, nil)
                         } label: {
                             Label(L10n.string("player.divergence.fromBeginning"), systemImage: "play")
                         }
                         Button {
+                            startPlayOrFallback(forChapterIndex: currentChapterIndex)
                             onRequestPlay?(currentChapterIndex, nil)
                         } label: {
                             Label(L10n.string("instantReader.fromCurrentChapter"), systemImage: "play.rectangle")
                         }
                     } label: {
-                        Image(systemName: "play.circle.fill")
+                        Image(systemName: activePlayer.isUsingSpeechFallback && activePlayer.isPlaying
+                              ? "pause.circle.fill"
+                              : "play.circle.fill")
                             .font(.system(size: 36))
                     }
                     .menuStyle(.borderlessButton)

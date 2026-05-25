@@ -639,6 +639,57 @@ final class AudioPlayer: ObservableObject {
         isPlaying = true
     }
 
+    /// Outcome of `playOrFallback`. Returned synchronously so UI surfaces
+    /// can decide whether to update a "now playing" banner, surface a
+    /// "still converting" hint, or stay silent. `Equatable` so tests can
+    /// pin the result; the discriminant is enough — no associated data
+    /// needed today.
+    enum PlaybackAttemptResult: Equatable {
+        case startedAudio
+        case startedSpeechFallback
+        case noOp
+    }
+
+    /// Unified play entry the reader/UI surfaces call when the user taps
+    /// Play. Resolves the route once so callers don't have to duplicate
+    /// the "is MP3 ready? else can we speak? else do nothing" tree at
+    /// every button site.
+    ///
+    /// Decision order — MP3 is ALWAYS primary:
+    /// 1. The requested EPUB chapter has a playable `downloadUrl` in the
+    ///    snapshot ⇒ `.startedAudio` (existing `play(snapshot:startingAt:)`
+    ///    path, including the MP3-takeover stop of any active fallback).
+    /// 2. The snapshot lacks a playable URL for the requested chapter
+    ///    AND `chapterText` has non-whitespace content ⇒
+    ///    `.startedSpeechFallback` (accessibility synth).
+    /// 3. Neither ⇒ `.noOp` — no transport state mutates, no flag flips,
+    ///    no UI flicker.
+    ///
+    /// `chapterIndex` is the EPUB-zero-based index (same space the reader
+    /// publishes into UserDefaults / ReaderCoordinator). Translation to
+    /// the playable-list index used by `play(snapshot:startingAt:)` is
+    /// done here so call sites never need both numbers.
+    @discardableResult
+    func playOrFallback(
+        snapshot: JobSnapshot?,
+        chapterIndex: Int,
+        chapterText: String?,
+        languageCode: String? = nil
+    ) -> PlaybackAttemptResult {
+        if let snapshot,
+           let playableIdx = snapshot.playableChapters
+            .firstIndex(where: { $0.index == chapterIndex }) {
+            play(snapshot: snapshot, startingAt: playableIdx)
+            return .startedAudio
+        }
+
+        let trimmed = (chapterText ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .noOp }
+        playFallbackSpeech(text: trimmed, languageCode: languageCode)
+        return .startedSpeechFallback
+    }
+
     // MARK: Play-tap routing (centralised so every UI surface — mini
     // player, full player, in-line buttons in the reader — uses the
     // same divergence detection / start-options behaviour. Adding a new

@@ -331,6 +331,16 @@ commands, or now-playing metadata.
 - **tests:** decision logic already pinned by `SpeechFallbackOfferTests` (slice 4). View change is a deterministic switch — no SwiftUI snapshot test added (those are noisy on Xcode 26 SDK per `project_ios_prod_readiness_sweep`); the build succeeded and the three feature suites (LocalizationParity, SpeechFallbackOffer, AudioPlayerSpeechFallback) all stayed green.
 - **next:** end-to-end smoke at `mise run mac:build` would be the natural step before announcing this as a complete user-facing feature. After that, slice 6 candidates: Flutter mirror (`flutter_app/`) or backend chapter-text endpoint hardening.
 
+### 2026-05-25 Hermes — Slice 6 authored (unified playOrFallback)
+
+- **status:** code landed (claude committing for hermes)
+- **files:**
+  - Modified: `Services/AudioPlayer.swift` — new `PlaybackAttemptResult` enum + `playOrFallback(snapshot:chapterIndex:chapterText:languageCode:)` method.
+  - Modified: `Views/InstantReaderView.swift` — instant-reader Play button now calls `startPlayOrFallback(forChapterIndex:)` AND the existing `onRequestPlay` server-bootstrap; play icon flips to pause when fallback is active.
+  - New: `Tests/AudioPlayerFulltextFallbackTests.swift` — 9 tests covering MP3 primary, speech fallback when pending, no-op when neither, and the playable-index translation when multiple chapters resolve.
+- **design:** MP3 is always primary. EPUB-zero-based `chapterIndex` is translated to the playable-list index inside `playOrFallback`, so call sites only carry the EPUB number. Returns `.startedAudio | .startedSpeechFallback | .noOp` synchronously so UI can react without a callback.
+- **result:** all 9 tests passed, no regression in the earlier suites.
+
 ### 2026-05-25 Hermes — review slice 3 approved
 
 - **status:** approved.
