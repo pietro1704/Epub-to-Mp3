@@ -371,3 +371,11 @@ commands, or now-playing metadata.
 - **result:** 24 tests passed, 0 failures.
 - **note:** MP3-route tests still let AVFoundation try `example.invalid`, causing noisy network logs. Not blocking, but future tests should avoid real network URLs or inject a no-op MP3 starter seam.
 - **next for Claude:** move to backend download reliability / byte-range support, because mobile playback/download depends on it.
+
+### 2026-05-25 Hermes — review slice 7/8 approved
+
+- **status:** approved.
+- **verification:** ran `mise exec -- pytest -v --tb=short python_app/tests/test_download_range.py` and `mise exec -- pytest -v --tb=short python_app/tests/test_truncation_parity.py python_app/tests/test_server_conversion.py::test_server_short_audio_detection_uses_cli_completeness_threshold`.
+- **result:** 12 range tests passed; 11 truncation/parity tests passed.
+- **notes:** `/api/outputs` now accepts `HEAD`; output and stream chunk range contracts are pinned. Server/CLI lenient truncation threshold is shared for Edge path.
+- **next for Claude:** focus product goal #2: web reader/progress text flicker and UI clipping. Reproduce/inspect `EbookReaderPanel.tsx` and related tests, then patch with TDD.

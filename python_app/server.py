@@ -2735,7 +2735,12 @@ async def get_job_log(job_id: str):
     return PlainTextResponse(body)
 
 
-@app.get("/api/outputs/{job_id}/{filename}")
+# GET + HEAD: mobile clients (iOS background URLSession, Flutter
+# offline cache) issue HEAD to learn `Content-Length` + `Accept-Ranges`
+# before scheduling a resumable, ranged background download. Starlette's
+# FileResponse already short-circuits the body on HEAD — we only need
+# the route to accept the verb.
+@app.api_route("/api/outputs/{job_id}/{filename}", methods=["GET", "HEAD"])
 async def download_output(job_id: str, filename: str) -> FileResponse:
     _validate_job_id(job_id)
     job_data = jobs.get(job_id) or job_manager.load_job(job_id)

@@ -205,6 +205,14 @@ TRUNCATION_THRESHOLD_PERCENT = _env_float(
 EXPECTED_WPM = _env_int(
     "EXPECTED_WPM", 200
 )  # Expected words per minute for TTS (Edge-TTS neural voices ~200 WPM)
+# Lenient acceptance floor: audio that misses the strict TRUNCATION
+# threshold but covers ≥ this much of the text is still considered
+# complete. Edge-TTS WPM varies by content type (verse reads slower,
+# dialogue faster), so a strict 90% bar causes repeated re-synthesis
+# of already-adequate audio. Genuine truncations typically show <60%.
+# Both CLI (converter.py) and server (_server_audio_helpers.py) read
+# this constant — keep them in lock-step.
+LENIENT_COVERAGE_THRESHOLD_PERCENT = _env_float("LENIENT_COVERAGE_THRESHOLD_PERCENT", 80.0)
 CHARS_PER_WORD = _env_float("CHARS_PER_WORD", 5.0)  # Average characters per word
 # Chapters larger than this are skipped entirely (0 = disabled).
 # Useful for EPUBs with footnote-container files that hold the entire book text.
@@ -5361,12 +5369,14 @@ class AudioConverter(
                                 is_complete, coverage_percent = validate_audio_completeness(
                                     output_path, chapter_chars
                                 )
-                                # Accept ≥80% coverage to avoid infinite retry loops.
-                                # Edge-TTS WPM varies by content type (verse reads
-                                # slower, dialogue faster), so strict thresholds cause
-                                # repeated re-synthesis of already-adequate audio.
-                                # Genuine truncations typically show <60% coverage.
-                                if not is_complete and coverage_percent >= 80.0:
+                                # Lenient acceptance — shared with the server path
+                                # via LENIENT_COVERAGE_THRESHOLD_PERCENT so a
+                                # given coverage value never disagrees between
+                                # CLI and web on whether the audio is truncated.
+                                if (
+                                    not is_complete
+                                    and coverage_percent >= LENIENT_COVERAGE_THRESHOLD_PERCENT
+                                ):
                                     if self.verbose:
                                         print(
                                             f"   ✅ Accepted {coverage_percent:.1f}% coverage "
