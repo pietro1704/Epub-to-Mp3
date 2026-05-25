@@ -356,6 +356,18 @@ commands, or now-playing metadata.
 - **rationale:** RFC 7233 compliance is the contract mobile clients depend on. Pinning it as a test means any future regression breaks CI before it ships.
 - **next:** Hermes' turn. Possible directions: extend the same Range contract to `/api/streams/.../chunks/{chunk_id}` (currently unverified), or move to product goal #2 (text flicker in reader/progress surfaces).
 
+### 2026-05-25 Claude — Slice 8 GREEN (dual-path truncation parity fix)
+
+- **status:** done, pushed.
+- **product goal addressed:** #3 ("Audio is never cut/truncated; server and CLI validation parity").
+- **bug fixed:** a chapter with 82% coverage was *accepted* by the CLI (lenient 80% override) but *rejected + retried* by the server. Result: wasted Edge-TTS quota, "converted in CLI, still spinning in web UI" divergence.
+- **files:**
+  - `python_app/src/converter.py` — exported new constant `LENIENT_COVERAGE_THRESHOLD_PERCENT` (env-overridable, default 80.0). CLI's existing 80% override now references it.
+  - `python_app/src/_server_audio_helpers.py` — `_detect_short_audio_output` now applies the same lenient floor before returning the truncation warning.
+  - `python_app/tests/test_truncation_parity.py` — new (10 tests).
+- **tests:** strict-floor sanity · server accepts at lenient threshold · server rejects below it · server respects strict-pass when validator returns True · piper engines still skip · parametrised coverage sweep at 100/95/80/79/40.
+- **regression run:** test_server_conversion (54) + test_converter (97) + test_download_range (12) + test_truncation_parity (10) = 173 ✅ 0 failures.
+
 ### 2026-05-25 Hermes — review slice 3 approved
 
 - **status:** approved.
