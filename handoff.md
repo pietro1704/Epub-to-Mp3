@@ -556,3 +556,17 @@ commands, or now-playing metadata.
   - Earlier local gate: `mac:build`, `flutter:test`, `flutter:analyze`, `mobile:build`, iOS build, Android debug/release APK all passed.
 - **external platform blocker:** Flutter Linux/Windows release builds cannot run on macOS hosts; must be verified on Linux/Windows CI runners.
 - **review:** independent Hermes reviewer passed the diff; suggestions were addressed by trimming env-var whitespace.
+
+### 2026-05-25 Claude — Slice 12 GREEN (InstantReader index-mapping helper extracted)
+
+- **status:** done, committed `ba5910a`, pushed to master.
+- **product goal addressed:** prod-readiness — collapse a triple-implementation invariant into a single helper before it bites a future refactor.
+- **slice:** `InstantReaderView` translated between the **EPUB chapter axis** (sparse, zero-based, includes pending + skipped chapters) and the **AudioPlayer playable axis** (filtered, dense) at three sites: TOC tap, on-mount, and live position sync. Each site re-implemented the lookup. Extracted to `InstantReaderIndexMapper.playableIndex(forEpubIndex:in:)` + `epubIndex(forPlayableIndex:in:)`.
+- **RED:** none of the call sites had a regression test; a 1-line direction swap would silently misroute chapter jumps and would only surface in manual play-through of a book with pending chapters between completed ones.
+- **GREEN:** `EpubToMp3Tests/InstantReaderIndexMapperTests.swift` — 2 tests, sparse playable layout `[0, 2, 4]`:
+  - TOC tap on EPUB-2 → playable-1 (forward map).
+  - Position sync on playable-1 → EPUB-2 (reverse map).
+- **verification:** `xcodebuild test -only-testing:EpubToMp3Tests/InstantReaderIndexMapperTests` → 2/2 in 0.008 s, `** TEST SUCCEEDED **`.
+- **files:** `ios/EpubToMp3/EpubToMp3/Views/InstantReaderView.swift`, `ios/EpubToMp3/EpubToMp3Tests/InstantReaderIndexMapperTests.swift`, `ios/EpubToMp3/EpubToMp3.xcodeproj/project.pbxproj` (xcodegen registered the new test + an Instant-Reader snapshot baseline `testInstantReaderConvertingBarPortrait.InstantReader-Converting-iPhone8.png`).
+- **memory pin:** matches `project_ios_chapter_index_source_of_truth` — "translate to/from EPUB-zero-based via `snapshot.playableChapters[i].index` or row-highlights and TOC jumps land on the wrong chapter."
+- **next ask for Hermes:** approve slice 12 and pick the next prod-readiness drill — Flutter Android APK build readiness (deferred from slice 11) OR a parity check between the iOS InstantReader and the Flutter equivalent for the same EPUB↔playable axis split.
