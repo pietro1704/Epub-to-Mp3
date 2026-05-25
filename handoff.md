@@ -469,3 +469,76 @@ commands, or now-playing metadata.
   ```
 - **why this seam:** the loading-only message is a *transition* affordance; making it conditional on `chapters.length === 0` keeps the existing document mounted across reloads. The `is-reloading` class gives CSS a hook for a subtle visual signal (slight opacity dip) without unmounting any rows.
 - **next:** Hermes turn. Suggested directions: progress surfaces (chapter status badges, telemetry chips) may have the same "loading hides everything" pattern; or move to product goal #3 (audio truncation parity audit beyond current Edge path).
+
+### 2026-05-25 Hermes — production-readiness mandate
+
+- **user mandate:** Mac app, iOS app, Flutter Windows/Linux, and Android must be production-ready. Hermes and Claude Code must iterate/correct until both approve.
+- **protocol update:** Do not stop at summaries. For every platform, inspect current build/test path, run what is possible on this Mac, identify blockers, fix regressions with TDD, and record commands/results here.
+- **platform scope:**
+  1. macOS SwiftUI app / desktop packaging.
+  2. iOS SwiftUI app and simulator/device build readiness.
+  3. Flutter desktop Linux/Windows readiness from this repo.
+  4. Flutter Android readiness.
+  5. Shared backend/web contracts needed by the apps.
+- **approval gate:** final state needs explicit Claude approval + Hermes approval, clean git status, pushed branch, and CI green or documented external blocker with exact evidence.
+
+### 2026-05-25 Claude — Slice 11 GREEN (iOS build readiness audit + selector + preflight)
+
+- **status:** done, committing.
+- **product goal addressed:** production-readiness mandate, iOS platform leg.
+- **audit results (this Mac, 2026-05-25):**
+  | Platform | Command | Result |
+  |---|---|---|
+  | Flutter analyze (all targets) | `mise run flutter:analyze` | ✅ `No issues found! (ran in 10.9s)` |
+  | Flutter unit/widget tests | `mise run flutter:test` | ✅ 218/218 passing |
+  | iOS build | `mise run ios:build` (was hard-coded `iPhone SE,OS=17.2`) | ❌ Two blockers — fixed first, second is external/documented |
+  | macOS build | `mise run mac:build` | (running in parallel; result appended below) |
+  | Flutter Linux build | `mise run flutter:build-linux` | ⚠️ Requires Linux host, cannot run on macOS. Documented; CI runs it. |
+  | Flutter Windows build | `mise run flutter:build-windows` | ⚠️ Requires Windows host, cannot run on macOS. Documented; CI runs it. |
+  | Flutter Android APK | `mise run flutter:build-apk` | (deferred, queued; requires running after this slice) |
+
+- **iOS blocker #1 — fixed in this slice (TDD):**
+  - **Symptom:** `xcodebuild: error: Unable to find a device matching the provided destination specifier: { platform:iOS Simulator, OS:17.2, name:iPhone SE }`. The mise `ios:build` task hard-coded the simulator device name as `iPhone SE`, but the locally installed device is named `iPhone SE (2nd generation)`.
+  - **Fix:** new `scripts/select_ios_simulator.py` parses `xcrun simctl list -j devices available` and picks the best destination, preferring booted → iPhone SE → any iPhone → any iOS device, all on the newest installed iOS runtime. Override via `IOS_DEST` env var stays supported for CI.
+  - **TDD:** `python_app/tests/test_select_ios_simulator.py` — 8 tests covering all preference layers, runtime version sort, unavailable-device filter, and the failure path.
+  - **RED:** script missing → 7/8 fail with `No such file or directory`. **GREEN:** 8/8 in 0.91s.
+
+- **iOS blocker #2 — external, documented + guarded:**
+  - **Symptom:** even after the destination fix, `xcodebuild -showdestinations` lists ZERO `iOS Simulator` destinations as "Available". The only `Ineligible` entry says `error: iOS 26.2 is not installed`.
+  - **Evidence:**
+    ```
+    $ xcodebuild -project ios/EpubToMp3/EpubToMp3.xcodeproj -scheme EpubToMp3 -showdestinations
+    Available destinations for the "EpubToMp3" scheme:
+        { platform:macOS, arch:x86_64, id:..., name:My Mac }
+        { platform:macOS, name:Any Mac }
+    Ineligible destinations for the "EpubToMp3" scheme:
+        { platform:iOS, id:dvtdevice-DVTiPhonePlaceholder-iphoneos:placeholder, name:Any iOS Device, error:iOS 26.2 is not installed. Please download and install the platform from Xcode > Settings > Components. }
+    ```
+  - **Root cause:** Xcode 26.3 is installed; the local iOS Simulator runtime is iOS 17.2 (legacy volume at `/Library/Developer/CoreSimulator/Volumes/iOS_21C62/`). Xcode 26.x ships ONLY iOS Simulator SDK 26.2, which is ABI-incompatible with the iOS 17.2 runtime. Nothing aligns → no iOS destination.
+  - **Fix in this slice:** preflight in `mise.toml` `ios:build` — fast `xcodebuild -showdestinations | grep -q "platform:iOS Simulator,"` check that aborts in <30 s with an actionable message (`xcodebuild -downloadPlatform iOS` or Xcode → Settings → Components) and exit code 2, instead of the prior silent 73-s xcodebuild failure with a generic message.
+  - **Resolution for production:** CI workflow `release-desktop.yml` already installs the iOS runtime before building, so this guard only fires for local developer machines. User must download an iOS Simulator runtime (~6 GiB) once.
+
+- **Files committed:**
+  - `scripts/select_ios_simulator.py` (new, 130 LOC)
+  - `python_app/tests/test_select_ios_simulator.py` (new, 8 tests)
+  - `mise.toml` (`ios:build` task: dynamic destination + preflight)
+  - `handoff.md` (this entry)
+
+- **Validation:**
+  ```
+  $ .venv/bin/python -m pytest python_app/tests/test_select_ios_simulator.py
+  8 passed in 0.91s
+  $ scripts/select_ios_simulator.py
+  platform=iOS Simulator,id=D7F274CA-4456-4416-8721-6477F659453D
+  $ mise run ios:build   # exits 2 with the new preflight message in 29 s
+  ```
+
+- **Next ask for Hermes:** approve slice 11 + decide whether to (a) instruct the user to download the iOS 26.x Simulator runtime so local iOS builds work, OR (b) accept that local iOS-build readiness on this Mac is gated on that one-shot download and move on. Either way, please pick the next platform to drill: macOS build result (this run's parallel task) or Flutter Android APK build readiness.
+
+### 2026-05-25 Hermes — review slice 10 approved
+
+- **status:** approved by Hermes; Claude implementation was interrupted after writing the fix, so Hermes verified and committed it.
+- **scope:** dynamic iOS Simulator destination selection for `mise run ios:build`.
+- **files:** `scripts/select_ios_simulator.py`, `python_app/tests/test_select_ios_simulator.py`, `mise.toml`.
+- **verification:** `mise exec -- pytest -q python_app/tests/test_select_ios_simulator.py` → 8 passed; live selector prints `platform=iOS Simulator,id=D7F274CA-4456-4416-8721-6477F659453D`.
+- **remaining iOS blocker:** Xcode still needs the current iOS Simulator runtime. Hermes started `xcodebuild -downloadPlatform iOS` in background; log: `/tmp/xcode_download_ios_platform.log`.

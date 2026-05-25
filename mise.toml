@@ -343,7 +343,7 @@ fi
 """
 
 [tasks."ios:build"]
-description = "Build SwiftUI iOS app on iPhone SE / iOS 17.2 Simulator with embedded Python.xcframework"
+description = "Build SwiftUI iOS app on the best installed iOS Simulator with embedded Python.xcframework"
 # vendor:python must finish before xcodebuild resolves the framework
 # dependency declared in project.yml.
 depends = ["vendor:python"]
@@ -356,7 +356,50 @@ if ! command -v xcodegen >/dev/null 2>&1; then
   exit 1
 fi
 xcodegen generate
-DEST="${IOS_DEST:-platform=iOS Simulator,name=iPhone SE,OS=17.2}"
+
+# Preflight: confirm the scheme actually has an iOS Simulator
+# destination. Xcode 26.x ships the iOS Simulator SDK but the
+# matching iOS runtime must be downloaded separately. Without it,
+# xcodebuild fails with a generic "Unable to find a destination
+# matching..." 50 seconds into the run — surface the real cause now
+# instead.
+if ! xcodebuild \\
+       -project EpubToMp3.xcodeproj \\
+       -scheme EpubToMp3 \\
+       -showdestinations 2>&1 \\
+     | grep -q "platform:iOS Simulator,"; then
+  cat >&2 <<'EOF'
+ios:build error: no iOS Simulator destination is eligible for the scheme.
+
+Likely cause: the iOS Simulator runtime matching the installed iOS
+Simulator SDK is missing. Xcode 26.x ships SDK iOS 26.x but no runtime
+by default. The pre-existing iOS 17.2 simulator volume (if any) is
+ABI-incompatible with the 26.x SDK and is therefore listed as
+"Ineligible".
+
+Fix on this Mac:
+  xcodebuild -downloadPlatform iOS         # ~6 GiB, one-time
+  # or: Xcode → Settings → Components → iOS <version> Simulator
+
+CI (release-desktop.yml) installs the runtime before building, so this
+guard only fires for local builds on developer machines without it.
+EOF
+  exit 2
+fi
+
+# Pick the simulator destination dynamically — the previous hard-coded
+# `name=iPhone SE,OS=17.2` broke silently when the installed runtime was
+# named, e.g., `iPhone SE (2nd generation),OS=17.2`. The Python selector
+# is unit-tested (`test_select_ios_simulator.py`) and reads
+# `xcrun simctl list -j devices available`. Override with `IOS_DEST` to
+# pin a specific target in CI.
+if [ -n "${IOS_DEST:-}" ]; then
+  DEST="${IOS_DEST}"
+else
+  DEST=$(python3 ../../scripts/select_ios_simulator.py)
+fi
+echo "ios:build → destination: ${DEST}"
+
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
