@@ -542,3 +542,17 @@ commands, or now-playing metadata.
 - **files:** `scripts/select_ios_simulator.py`, `python_app/tests/test_select_ios_simulator.py`, `mise.toml`.
 - **verification:** `mise exec -- pytest -q python_app/tests/test_select_ios_simulator.py` → 8 passed; live selector prints `platform=iOS Simulator,id=D7F274CA-4456-4416-8721-6477F659453D`.
 - **remaining iOS blocker:** Xcode still needs the current iOS Simulator runtime. Hermes started `xcodebuild -downloadPlatform iOS` in background; log: `/tmp/xcode_download_ios_platform.log`.
+
+### 2026-05-25 Hermes — production verification follow-up
+
+- **status:** local production gate mostly green; iOS runtime installed and local iOS tests now pass.
+- **fixes after full iOS test:**
+  - `PythonEmbedTests`: network/embedded-Python conversion tests are opt-in via `RUN_IOS_NETWORK_TTS_TESTS=1` / `RUN_IOS_EMBEDDED_PIPELINE_TESTS=1`; default suite keeps bootstrap coverage and skips the flaky network/full-pipeline cases instead of hanging/crashing the simulator.
+  - `InstantReaderSnapshotTests`: injected the same environment objects required by the app root, disabled `record`, and refreshed snapshot baselines.
+- **verification:**
+  - `mise run test` → 1779 Python unit tests passed, 28 integration tests passed, 137 web tests passed, web build passed.
+  - `xcodebuild ... test` full iOS simulator → 569 tests, 3 skipped, 0 failures, `** TEST SUCCEEDED **`.
+  - `PythonEmbedTests` focused → 4 tests, 3 skipped, 0 failures.
+  - Earlier local gate: `mac:build`, `flutter:test`, `flutter:analyze`, `mobile:build`, iOS build, Android debug/release APK all passed.
+- **external platform blocker:** Flutter Linux/Windows release builds cannot run on macOS hosts; must be verified on Linux/Windows CI runners.
+- **review:** independent Hermes reviewer passed the diff; suggestions were addressed by trimming env-var whitespace.

@@ -9,11 +9,34 @@ import XCTest
 @testable import EpubToMp3
 
 final class PythonEmbedTests: XCTestCase {
+    private func requireNetworkTTS(_ testName: String = #function) throws {
+        let value = (ProcessInfo.processInfo.environment["RUN_IOS_NETWORK_TTS_TESTS"] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ["1", "true", "yes"].contains(value.lowercased()) else {
+            throw XCTSkip(
+                "\(testName) reaches Edge-TTS over the network; set "
+                + "RUN_IOS_NETWORK_TTS_TESTS=1 to run it explicitly."
+            )
+        }
+    }
+
+    private func requireEmbeddedPipeline(_ testName: String = #function) throws {
+        let value = (ProcessInfo.processInfo.environment["RUN_IOS_EMBEDDED_PIPELINE_TESTS"] ?? "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard ["1", "true", "yes"].contains(value.lowercased()) else {
+            throw XCTSkip(
+                "\(testName) exercises the embedded Python conversion pipeline; set "
+                + "RUN_IOS_EMBEDDED_PIPELINE_TESTS=1 to run it explicitly."
+            )
+        }
+    }
 
     /// Synthesizes a short pt-BR utterance with Edge-TTS in-process
     /// and asserts the MP3 was written. Network-dependent: Edge-TTS
     /// hits Microsoft's cloud endpoint.
     func testEdgeTTSConvertsHelloWorld() async throws {
+        try requireNetworkTTS()
+
         let tmp = FileManager.default.temporaryDirectory
             .appendingPathComponent("python-embed-spike", isDirectory: true)
         try? FileManager.default.createDirectory(at: tmp,
@@ -58,6 +81,9 @@ final class PythonEmbedTests: XCTestCase {
     /// if bootstrap or synthesis fails — mirrors
     /// ``testEdgeTTSConvertsHelloWorld``.
     func testConvertEpubFixtureProducesMp3() async throws {
+        try requireEmbeddedPipeline()
+        try requireNetworkTTS()
+
         let epub: URL
         do {
             epub = try EpubFixture.createWithChapter(
@@ -132,6 +158,8 @@ final class PythonEmbedTests: XCTestCase {
     /// `test_convert_epub_invalid_engine_raises` in pytest so both
     /// sides of the bridge agree on the contract.
     func testConvertEpubRejectsPiperEngine() async throws {
+        try requireEmbeddedPipeline()
+
         let epub: URL
         do {
             epub = try EpubFixture.createWithChapter()
