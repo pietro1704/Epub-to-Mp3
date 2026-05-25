@@ -1,5 +1,17 @@
 import SwiftUI
 
+enum InstantReaderIndexMapper {
+    static func playableIndex(forEpubIndex epubIndex: Int, in snapshot: JobSnapshot) -> Int? {
+        snapshot.playableChapters.firstIndex { $0.index == epubIndex }
+    }
+
+    static func epubIndex(forPlayableIndex playableIndex: Int, in snapshot: JobSnapshot) -> Int? {
+        let playable = snapshot.playableChapters
+        guard playable.indices.contains(playableIndex) else { return nil }
+        return playable[playableIndex].index
+    }
+}
+
 /// Reader-first surface. The text is *always* visible — even before
 /// any audio exists. When the backend produces chapter MP3s the
 /// player block lights up at the bottom; until then the reader looks
@@ -790,8 +802,10 @@ struct InstantReaderView: View {
                         let target = max(0, chapter.index - 1)
                         currentChapterIndex = target
                         if playerMounted {
-                            player.play(snapshot: snapshot ?? JobSnapshot.empty,
-                                         startingAt: target)
+                            let snap = snapshot ?? JobSnapshot.empty
+                            let playableTarget = InstantReaderIndexMapper
+                                .playableIndex(forEpubIndex: target, in: snap) ?? 0
+                            player.play(snapshot: snap, startingAt: playableTarget)
                         }
                         // Same Apple Books pattern as PlayerReader — jumping
                         // to a new chapter restores chrome so the user can
@@ -867,7 +881,9 @@ struct InstantReaderView: View {
         // already tears down the underlying AVQueuePlayer.
         player.backendBaseURL = backendBaseURL
         player.coverArtData = coverPNG     // surface to MPNowPlayingInfoCenter
-        player.play(snapshot: snap, startingAt: currentChapterIndex)
+        let playableIndex = InstantReaderIndexMapper
+            .playableIndex(forEpubIndex: currentChapterIndex, in: snap) ?? 0
+        player.play(snapshot: snap, startingAt: playableIndex)
         playerMounted = true
         installPositionLoop(on: player, isEmbedded: false)
     }
@@ -896,8 +912,9 @@ struct InstantReaderView: View {
                 } else {
                     _ = sync.update(positionSeconds: pos)
                 }
-                if activePlayer.currentChapterIndex != currentChapterIndex {
-                    currentChapterIndex = activePlayer.currentChapterIndex
+                if let epubIndex = playerEpubChapterIndex(for: activePlayer),
+                   epubIndex != currentChapterIndex {
+                    currentChapterIndex = epubIndex
                 }
             }
         }
@@ -1013,9 +1030,8 @@ struct InstantReaderView: View {
     /// divergence to surface".
     private func playerEpubChapterIndex(for player: AudioPlayer) -> Int? {
         guard let snapshot = player.snapshot else { return nil }
-        let playable = snapshot.playableChapters
-        guard playable.indices.contains(player.currentChapterIndex) else { return nil }
-        return playable[player.currentChapterIndex].index
+        return InstantReaderIndexMapper
+            .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot)
     }
 
     // MARK: - Theme colours (delegated to ReaderTheme)
