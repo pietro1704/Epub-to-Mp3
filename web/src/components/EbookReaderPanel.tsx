@@ -628,10 +628,10 @@ export default function EbookReaderPanel({
             <h4>{t.status.readerChaptersTitle}</h4>
             <span>{chapters.length}</span>
           </div>
-          {loading && (
+          {loading && chapters.length === 0 && (
             <div className="ebook-reader__state">{t.status.readerLoading}</div>
           )}
-          {!loading && loadError && (
+          {!loading && loadError && chapters.length === 0 && (
             <div className="ebook-reader__state ebook-reader__state--error">
               <div className="ebook-reader__state-copy">{loadError}</div>
               <button
@@ -643,8 +643,11 @@ export default function EbookReaderPanel({
               </button>
             </div>
           )}
-          {!loading && !loadError && (
-            <div className="ebook-reader__chapter-list">
+          {chapters.length > 0 && (
+            <div
+              className={`ebook-reader__chapter-list${loading ? " is-reloading" : ""}`}
+              aria-busy={loading || undefined}
+            >
               {chapters.map((chapter) => {
                 const status = chapterStatusMap.get(chapter.index);
                 const isSelected = selectedChapterIndex === chapter.index;
@@ -673,7 +676,12 @@ export default function EbookReaderPanel({
                       {chapter.index}
                     </span>
                     <span className="ebook-reader__chapter-copy">
-                      <strong>{chapter.name}</strong>
+                      <strong
+                        className="ebook-reader__chapter-name"
+                        title={chapter.name}
+                      >
+                        {chapter.name}
+                      </strong>
                       <small>
                         {chapter.charCount.toLocaleString(
                           locale === "pt" ? "pt-BR" : "en-US",

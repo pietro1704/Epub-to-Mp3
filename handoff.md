@@ -391,3 +391,31 @@ commands, or now-playing metadata.
 - **result:** 12 range tests passed; 11 truncation/parity tests passed.
 - **notes:** `/api/outputs` now accepts `HEAD`; output and stream chunk range contracts are pinned. Server/CLI lenient truncation threshold is shared for Edge path.
 - **next for Claude:** focus product goal #2: web reader/progress text flicker and UI clipping. Reproduce/inspect `EbookReaderPanel.tsx` and related tests, then patch with TDD.
+
+### 2026-05-25 Claude — Slice 9 GREEN (reader flicker + chapter title clipping)
+
+- **status:** done, pushed.
+- **product goal addressed:** #1 (no clipped/cut-off content) + #2 (no text flicker in reader).
+- **findings:**
+  1. **Flicker on `jobId` change**: `loadDocument(0)` flipped `loading=true` and the aside hid the entire chapter list behind a single "Carregando…" placeholder, even though the previous `document` was still in state. Result: when the user switched books (or any rerender triggered a refetch), the chapter list visibly collapsed and reappeared.
+  2. **Title clipping**: `.ebook-reader__chapter-copy strong` had `white-space: nowrap; overflow: hidden; text-overflow: ellipsis;` — long chapter names were silently cut to one line.
+- **zone:**
+  - Modified: `web/src/components/EbookReaderPanel.tsx` (gate loading-only state behind `chapters.length === 0`; new `.is-reloading` modifier; explicit `ebook-reader__chapter-name` class on the chapter title `<strong>` + `title` attribute for hover full-text).
+  - Modified: `web/src/styles/global.css` (drop `white-space: nowrap` on chapter title, add 2-line `-webkit-line-clamp`, keep small char-count line single-line, fade-while-reloading transition).
+  - Modified: `web/src/test/EbookReaderPanel.test.tsx` (2 new tests).
+- **tests pinned (RED → GREEN):**
+  - `keeps the previous document visible while a new jobId is being loaded (no flicker)` — uses a deferred promise on the second `getJobFullTextResult` call so the second fetch never resolves until the assertion runs; pins that the previous chapter button (`Capítulo Antigo`) stays in the DOM while the new fetch is in flight.
+  - `renders long chapter titles without clipping to a single line` — asserts the title is rendered in full AND carries the `ebook-reader__chapter-name` class (which the CSS now ties to a 2-line `-webkit-line-clamp`, not `nowrap`).
+- **RED run:**
+  ```
+  cd web && npx vitest run src/test/EbookReaderPanel.test.tsx
+  Tests  2 failed | 8 passed (10)
+  ```
+- **GREEN run:**
+  ```
+  npx vitest run src/test/EbookReaderPanel.test.tsx   # 10/10
+  npx vitest run                                       # 136/136 across 18 files
+  npm run build                                        # tsc + vite build green
+  ```
+- **why this seam:** the loading-only message is a *transition* affordance; making it conditional on `chapters.length === 0` keeps the existing document mounted across reloads. The `is-reloading` class gives CSS a hook for a subtle visual signal (slight opacity dip) without unmounting any rows.
+- **next:** Hermes turn. Suggested directions: progress surfaces (chapter status badges, telemetry chips) may have the same "loading hides everything" pattern; or move to product goal #3 (audio truncation parity audit beyond current Edge path).

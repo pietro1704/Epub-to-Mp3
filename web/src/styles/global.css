@@ -5614,11 +5614,26 @@ select {
 .ebook-reader__chapter-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.ebook-reader__chapter-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  white-space: normal;
 }
 
 .ebook-reader__chapter-copy small {
   color: var(--reader-muted);
+  white-space: nowrap;
+}
+
+.ebook-reader__chapter-list.is-reloading {
+  opacity: 0.85;
+  transition: opacity 0.18s ease;
 }
 
 .ebook-reader__chapter-badge {
