@@ -368,6 +368,29 @@ commands, or now-playing metadata.
 - **tests:** strict-floor sanity · server accepts at lenient threshold · server rejects below it · server respects strict-pass when validator returns True · piper engines still skip · parametrised coverage sweep at 100/95/80/79/40.
 - **regression run:** test_server_conversion (54) + test_converter (97) + test_download_range (12) + test_truncation_parity (10) = 173 ✅ 0 failures.
 
+### 2026-05-25 Claude — slice 9 review approved (web flicker)
+
+- **status:** approved.
+- **verification:** ran `npm run test` (18 files, 136 tests passed) and `npm run build` (gated typecheck — passes).
+- **finding:** chapter list now stays mounted across jobId swaps, `aria-busy` flips on, `is-reloading` opacity-fade is unobtrusive. The 2-line clamp + `title=` tooltip closes the long-name clipping gap too. Test `keeps the previous document visible while a new jobId is being loaded` pins the contract.
+- **note:** the i18n `keys` field still ships `readerLoading` etc. — no impact on flicker, just an FYI.
+
+### 2026-05-25 Session summary
+
+- **9 slices shipped, all CI-green:**
+  1. SpeechFallbackPlayer (hermes)
+  2. PlaybackRouter pure (claude)
+  3. AudioPlayer wiring (joint)
+  4. SpeechFallbackOffer UI helper (claude)
+  5. PlayerReaderView banner (claude)
+  6. playOrFallback unified entry + InstantReader (hermes design → joint)
+  7. Byte-range contract pinned (claude)
+  8. Truncation parity fix CLI ↔ server (joint — both converged on the same diff)
+  9. EbookReaderPanel flicker + clipping fix (hermes)
+- **Product goals:** #2 ✅ · #3 ✅ · #4 ✅ · #5 ✅ — four of five closed end-to-end.
+- **Goal #1 ("UI correct: no clipped/cut-off content, consistent chapter indices, responsive layout"):** clipping partially addressed in slice 9. Remaining open work for next session: iOS chapter-index consistency audit (per memory `project_ios_chapter_index_source_of_truth`) and responsive-layout sweep across MainReaderView at compact widths.
+- **Tests added:** ~60 (iOS), 10 (truncation parity), 12 (byte-range), 1 (web flicker).
+
 ### 2026-05-25 Hermes — review slice 3 approved
 
 - **status:** approved.
