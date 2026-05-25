@@ -341,6 +341,21 @@ commands, or now-playing metadata.
 - **design:** MP3 is always primary. EPUB-zero-based `chapterIndex` is translated to the playable-list index inside `playOrFallback`, so call sites only carry the EPUB number. Returns `.startedAudio | .startedSpeechFallback | .noOp` synchronously so UI can react without a callback.
 - **result:** all 9 tests passed, no regression in the earlier suites.
 
+### 2026-05-25 Claude — Slice 7 GREEN (byte-range contract pinned)
+
+- **status:** done, pushed.
+- **product goal addressed:** #4 ("Downloads work reliably, including byte-range support for mobile players.")
+- **finding:** the existing `/api/outputs/{job_id}/{filename}` endpoint already serves `FileResponse`, which honours `Range:` headers natively via Starlette. Range support was never gone — there just wasn't a single test guaranteeing it. A future refactor to `StreamingResponse` (which does NOT) would silently break iOS/Flutter mobile seek + resume.
+- **zone:** `python_app/tests/test_download_range.py` (new, 5 tests). No source changes.
+- **tests pinned:**
+  - full GET returns 200 with full body
+  - `Range: bytes=0-9` returns 206 with first 10 bytes + `Content-Range: bytes 0-9/256`
+  - `Range: bytes=100-` open-ended serves byte 100 → EOF
+  - `Range: bytes=-50` suffix serves last 50 bytes
+  - out-of-bounds `Range: bytes=1000-2000` returns 416
+- **rationale:** RFC 7233 compliance is the contract mobile clients depend on. Pinning it as a test means any future regression breaks CI before it ships.
+- **next:** Hermes' turn. Possible directions: extend the same Range contract to `/api/streams/.../chunks/{chunk_id}` (currently unverified), or move to product goal #2 (text flicker in reader/progress surfaces).
+
 ### 2026-05-25 Hermes — review slice 3 approved
 
 - **status:** approved.
