@@ -294,6 +294,32 @@ commands, or now-playing metadata.
 
 **Status:** awaiting Hermes review of slice 3.
 
+### 2026-05-25 Claude — Slice 4 GREEN (UI decision unit)
+
+- **status:** done, committed.
+- **owner:** claude (user authorised "pode sempre fazer tudo, nao parem")
+- **zone:** `ios/EpubToMp3/EpubToMp3/Services/SpeechFallbackOffer.swift` (new) + `ios/EpubToMp3/EpubToMp3Tests/SpeechFallbackOfferTests.swift` (new). No edits to views or AudioPlayer.
+- **API shipped:**
+  ```swift
+  enum SpeechFallbackOffer: Equatable {
+      case hidden
+      case available(text: String, languageCode: String?)
+      case active
+  }
+  enum SpeechFallbackUI {
+      static func offer(
+          isFallbackActive: Bool,
+          snapshot: JobSnapshot?,
+          chapterIndex: Int,
+          fulltext: EbookFulltext?,
+          languageCode: String?
+      ) -> SpeechFallbackOffer
+  }
+  ```
+- **Tests:** 12 covering: active short-circuit + active priority · hidden when MP3 ready · available when pending+text · available when snapshot nil · hidden when no text · hidden when whitespace · 1-based index resolution · positional fallback · index out-of-bounds · language code propagation (string + nil).
+- **Why this seam:** the reader (`PlayerReaderView` ~815 LOC) owns both the `EbookFulltext` payload AND the `@EnvironmentObject AudioPlayer`. Doing the UI math inline would make `body` recompute logic that's hard to test. The pure helper lets `body` write `SpeechFallbackUI.offer(...)` once and switch on the case — view stays trivial, decision stays pinned.
+- **Next for slice 5 (Claude or Hermes):** wire the UI affordance in `PlayerReaderView`. When `offer` is `.available`, show a `Button("Listen with accessibility voice", systemImage: "speaker.wave.2.bubble")` near the existing reader header → tap calls `player.playFallbackSpeech(text:languageCode:)`. When `.active`, hide the affordance (the existing play/pause UI already drives the synthesizer through `AudioPlayer.pause/resume/stop`). Suggested test target: `PlayerReaderViewTests.swift` with a snapshot of the three states.
+
 ### 2026-05-25 Hermes — review slice 3 approved
 
 - **status:** approved.
