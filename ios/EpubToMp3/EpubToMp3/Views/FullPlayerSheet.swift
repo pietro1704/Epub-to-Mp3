@@ -2,6 +2,28 @@ import SwiftUI
 import AVFoundation
 import MediaPlayer
 
+struct ChapterListRowState: Equatable {
+    let isCurrent: Bool
+    let playableIndex: Int?
+
+    var isPlayable: Bool { playableIndex != nil }
+
+    static func resolve(
+        chapter: JobSnapshot.Chapter,
+        snapshot: JobSnapshot,
+        currentPlayableIndex: Int
+    ) -> ChapterListRowState {
+        let playingEpubIndex = InstantReaderIndexMapper
+            .epubIndex(forPlayableIndex: currentPlayableIndex, in: snapshot)
+        let playableIndex = InstantReaderIndexMapper
+            .playableIndex(forEpubIndex: chapter.index, in: snapshot)
+        return ChapterListRowState(
+            isCurrent: playingEpubIndex.map { $0 == chapter.index } ?? false,
+            playableIndex: playableIndex
+        )
+    }
+}
+
 /// Full-screen audiobook player presented via `.fullScreenCover`.
 /// Mirrors the Apple Music / Spotify full-player pattern:
 ///
@@ -661,20 +683,22 @@ private struct ChapterListSheet: View {
         // `chapter.index` (the original EPUB index, sparse) against it
         // highlighted the wrong row whenever any chapter was skipped /
         // unplayable. Resolve through the playable subset.
-        let playing = player.snapshot?.playableChapters
-        let playingEpubIndex = playing
-            .flatMap { $0.indices.contains(player.currentChapterIndex) ? $0[player.currentChapterIndex] : nil }
-            .map(\.index)
-        let isCurrent = playingEpubIndex.map { $0 == chapter.index } ?? false
+        let state = player.snapshot.map {
+            ChapterListRowState.resolve(
+                chapter: chapter,
+                snapshot: $0,
+                currentPlayableIndex: player.currentChapterIndex
+            )
+        }
+        let isCurrent = state?.isCurrent ?? false
         // Chapters in `chapterProgress` that have no audio file (no
         // `downloadUrl`, or never made it into `playableChapters`)
         // would silently no-op if the user tapped them. Mark those
         // rows visually disabled so the user knows audio jumps are
         // unavailable there — they remain visible because the TOC
         // structure is informational regardless of audio readiness.
-        let playableIndex = player.snapshot?.playableChapters
-            .firstIndex(where: { $0.index == chapter.index })
-        let isPlayable = playableIndex != nil
+        let playableIndex = state?.playableIndex
+        let isPlayable = state?.isPlayable ?? false
         Button {
             if let snapshot = player.snapshot, let playableIndex {
                 player.play(snapshot: snapshot, startingAt: playableIndex)
