@@ -6,6 +6,7 @@ One-line guide: **name** — when to invoke.
 
 | Agent | When to invoke |
 |---|---|
+| `android-emulator-manager` | Android SDK/AVD cleanup and smallest x86_64 Flutter emulator setup on Intel Mac. |
 | `architecture-mapper` | Understand where a feature lives, how modules connect, or trace a data-flow path. |
 | `audio-player-engineer` | Playback issues on iOS (`AVQueuePlayer`, streaming) or Flutter (`just_audio`). |
 | `audio-validator` | Reported truncation, silence, or wrong-engine audio artefacts. |
@@ -34,6 +35,7 @@ One-line guide: **name** — when to invoke.
 | `security-auditor` | CVE sweep (pip-audit + npm audit), CodeQL alerts, supply-chain hardening. |
 | `speed-benchmarker` | Reproducible chars/s benchmarks per engine, parallel vs serial comparisons. |
 | **`swiftui-performance-profiler`** | Profile excessive view redraws, layout thrash, Instruments traces in the iOS/macOS app. |
+| `xcode-toolchain-manager` | Xcode/iOS Simulator runtimes, CoreSimulator cleanup, destinations, and smallest compatible iPhone setup. |
 | `sync-engine` | Time-based text ↔ audio sync on mobile: word highlighting, scroll tracking. |
 | `telemetry-analyst` | Mine `conversions.jsonl` and `telemetry/*.jsonl` for patterns, regressions. |
 | `test-engineer` | Expand test coverage, fixture extraction, parametrised tests, coverage gaps. |
