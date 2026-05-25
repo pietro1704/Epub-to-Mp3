@@ -34,6 +34,20 @@ final class InstantReaderIndexMapperTests: XCTestCase {
         )
     }
 
+    func testTocJumpCanClampMissingEpubIndexToNearestPlayableSlot() {
+        let snapshot = Self.snapshot(chapters: [
+            Self.playableChapter(index: 0),
+            Self.pendingChapter(index: 1),
+            Self.playableChapter(index: 2),
+        ])
+
+        XCTAssertEqual(
+            InstantReaderIndexMapper.playableIndexOrClamped(forEpubIndex: 1, in: snapshot),
+            1,
+            "PlayerReaderView preserves its legacy fallback: skipped EPUB chapter 1 clamps into playable slot 1, not raw EPUB index"
+        )
+    }
+
     private static func snapshot(chapters: [JobSnapshot.Chapter]) -> JobSnapshot {
         JobSnapshot(
             jobId: "instant-reader-index-map",

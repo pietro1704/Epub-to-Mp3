@@ -183,11 +183,8 @@ struct PlayerReaderView: View {
                 // (footnotes, image-only sections). Resolve via the
                 // playable chapter's own `index` field, which carries the
                 // original zero-based EPUB index.
-                let playingEpubIndex: Int = {
-                    let playable = snapshot.playableChapters
-                    guard playable.indices.contains(player.currentChapterIndex) else { return -1 }
-                    return playable[player.currentChapterIndex].index
-                }()
+                let playingEpubIndex = InstantReaderIndexMapper
+                    .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot) ?? -1
                 TocDrawer(
                     fulltext: fulltext,
                     snapshot: snapshot,
@@ -787,9 +784,8 @@ struct PlayerReaderView: View {
         // Restore chrome so the user can see the new chapter in context
         // (otherwise an immersive jump looks like the action silently failed).
         withAnimation(.easeInOut(duration: 0.25)) { chromeVisible = true }
-        let playable = snapshot.playableChapters
-        let target = playable.firstIndex(where: { $0.index == epubIndex })
-            ?? max(0, min(epubIndex, playable.count - 1))
+        let target = InstantReaderIndexMapper
+            .playableIndexOrClamped(forEpubIndex: epubIndex, in: snapshot)
         player.play(snapshot: snapshot, startingAt: target)
         reloadCurrentChapter()
     }
@@ -820,9 +816,8 @@ struct PlayerReaderView: View {
     /// of which collapse the highlight back to "no current chapter".
     /// SOURCE OF TRUTH for any view comparing chapter cursors.
     private var playingEpubZeroBasedIndex: Int? {
-        let playable = snapshot.playableChapters
-        guard playable.indices.contains(player.currentChapterIndex) else { return nil }
-        return playable[player.currentChapterIndex].index
+        InstantReaderIndexMapper
+            .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot)
     }
 
     private var currentChapterTitle: String {

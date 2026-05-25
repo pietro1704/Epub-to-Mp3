@@ -5,6 +5,12 @@ enum InstantReaderIndexMapper {
         snapshot.playableChapters.firstIndex { $0.index == epubIndex }
     }
 
+    static func playableIndexOrClamped(forEpubIndex epubIndex: Int, in snapshot: JobSnapshot) -> Int {
+        let playable = snapshot.playableChapters
+        return playable.firstIndex { $0.index == epubIndex }
+            ?? max(0, min(epubIndex, playable.count - 1))
+    }
+
     static func epubIndex(forPlayableIndex playableIndex: Int, in snapshot: JobSnapshot) -> Int? {
         let playable = snapshot.playableChapters
         guard playable.indices.contains(playableIndex) else { return nil }
