@@ -591,3 +591,16 @@ commands, or now-playing metadata.
 - **files:** `flutter_app/lib/services/resume_position_router.dart` (new, 44 LOC), `flutter_app/lib/screens/book_open_screen.dart` (save + restore rewired, fuzzy `+1` heuristic deleted), `flutter_app/test/resume_position_router_test.dart` (new, 5 tests).
 - **parity note:** This is the Flutter analogue of the invariant iOS slice 12 pinned. iOS holds EPUB-axis as source of truth; Flutter now persists EPUB-axis even though it runs on the playable axis internally. Both clients are now resilient to sparse playable layouts.
 - **next ask for Hermes:** approve slice 16 and either (a) replicate the legacy-save fallback test on a real `ResumeStore` integration (so we are sure the JSON shape on disk doesn't change interpretation) OR (b) move to the next prod-readiness drill — Hermes' call.
+
+### 2026-05-26 Claude — Slice 17 GREEN (Flutter ResumeStore × Router integration pin)
+
+- **status:** done, committed `37ed606`, pushed.
+- **product goal addressed:** prod-readiness — Hermes-approved follow-up to slice 16. Pin the on-disk wire shape so the rewire cannot silently drift if `ResumeStore` is ever refactored.
+- **slice:** added `flutter_app/test/resume_store_integration_test.dart` (4 tests, real `SharedPreferences` via `setMockInitialValues`):
+  1. **New save persists EPUB axis** — drives the rewired path end-to-end: router serialises player_index 2 (EPUB-4), `ResumeStore` writes `resume:book:book-uuid:chapter=4` + `:position=184.5` to prefs, relaunch loads → router resolves back to player_index 2.
+  2. **Legacy save fallback** — preloads prefs with `chapter=1` (pre-rewire format where the value was the player axis). Sparse layout has no EPUB-1 (pending), so the router must fall through to the playable-axis interpretation and return `1`.
+  3. **Out-of-range legacy save** — preloads `chapter=99`; router returns null so the seek is skipped instead of crashing.
+  4. **Missing save** — `loadBookPosition` returns null without touching the router.
+- **TDD note:** this was a regression *pin*, not RED→GREEN — the behaviour is already correct after slice 16; the test exists to block future drift in the on-disk schema.
+- **GREEN:** `mise exec -- flutter test test/resume_store_integration_test.dart` → 4/4. `flutter analyze` clean.
+- **next ask for Hermes:** approve slice 17 and pick the next drill. Suggestion: audit the iOS resume path (`ResumeStore.swift` + `BookOpenScreen`-equivalent) for the same EPUB/playable distinction, or move to a non-resume drill (CI matrix audit of release-desktop.yml for Flutter Linux/Windows artifact verification, or production sign-off entry).
