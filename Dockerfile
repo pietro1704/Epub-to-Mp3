@@ -24,8 +24,11 @@ RUN apt-get update && apt-get install -y \
 
 # Copy requirements first for caching
 COPY requirements.txt .
-# Upgrade pip first to fix CVE-2025-8869, CVE-2026-1703
-RUN pip install --upgrade pip
+# Upgrade pip to a version that closes the four pip-audit CVEs the
+# repo previously shipped against (CVE-2025-8869, CVE-2026-1703,
+# CVE-2026-3219, CVE-2026-6357). Floor at 26.1 — the lowest version
+# that ships fixes for all four.
+RUN pip install --upgrade 'pip>=26.1'
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code

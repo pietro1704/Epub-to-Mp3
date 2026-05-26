@@ -189,16 +189,17 @@ run = """
 #!/bin/bash
 set -euo pipefail
 
-echo "🔍 Python CVE scan (OSV service — installed env)..."
+echo "🔍 Python CVE scan (PyPI service — installed env)..."
 if ! .venv/bin/python -m pip show pip-audit &>/dev/null; then
     echo "Installing pip-audit..."
     .venv/bin/python -m pip install pip-audit --quiet
 fi
-# OSV service avoids pip-audit's broken venv-creation path on local
-# macOS installs (subprocess SIGABRT on ensurepip). Scans the *installed*
-# environment, which catches stale local pins requirements.txt has
-# already addressed but which pip install --upgrade would clear.
-.venv/bin/python -m pip_audit -s osv || {
+# Scans the *installed* environment, which catches stale local pins
+# requirements.txt has already addressed but which pip install
+# --upgrade would clear. PyPI service replaced OSV because OSV
+# advisories without a `ranges` field crash pip-audit 2.10
+# (KeyError 'ranges' on certain malicious-package alerts).
+.venv/bin/python -m pip_audit -s pypi || {
     echo ""
     echo "⚠️  CVEs surfaced. Common cause: local venv is stale relative to requirements.txt."
     echo "💡 Try: source .venv/bin/activate && pip install --upgrade -r requirements.txt"
