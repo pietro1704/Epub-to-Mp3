@@ -75,6 +75,7 @@
 			<array>
 				<string>org.idpf.epub-container</string>
 				<string>com.apple.ibooks.epub</string>
+				<string>public.epub</string>
 			</array>
 		</dict>
 		<dict>
@@ -87,6 +88,7 @@
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>com.adobe.pdf</string>
+				<string>public.pdf</string>
 			</array>
 		</dict>
 	</array>
