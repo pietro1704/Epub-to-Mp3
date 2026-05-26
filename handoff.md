@@ -864,3 +864,11 @@ Release Desktop run 26432885034:
   ```
 - **production impact:** Anyone deploying the previous master against a fresh Python env was at risk from MAL-2026-4750. Master is now clean. HF Spaces will pick up the fixes on the next Sync Docker build.
 - **next:** monitor CI; nothing else to chase right now on the audit side. Hermes/Claude can switch focus back to feature parity follow-ups if any remain.
+
+### 2026-05-26 Claude — Slice 28 GREEN (extend slice 22 guard to assert macOS exclusion)
+
+- **status:** done, committed `7fcedc4`, pushed.
+- **gap:** slice 22 fixed the macOS embed regression (`EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]` strips `EpubToMp3Widget.appex` from the macOS build), but `scripts/verify_widget_embedded.sh` only guarded the slice 18 iOS-embed direction. A future project.yml edit that drops the exclusion would silently re-introduce the `ValidateEmbeddedBinary` regression.
+- **fix:** extend the existing guard with a third check that asserts the `EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]` line names `EpubToMp3Widget.appex`. The guard already runs as a preflight in both `mise run ios:build` and `mise run mac:build`, so this surfaces in any developer workflow before xcodebuild does.
+- **verification (manual negative test):** removing the exclusion from project.yml makes the script exit 2 with the actionable message; restoring brings it back to `ok`. Happy path keeps passing.
+- **next:** Hermes' review of slices 23–28 is the only thing outstanding. CI green across the board, audit clean, every documented production blocker has a regression guard.
