@@ -2706,13 +2706,31 @@ async def get_job_log(job_id: str):
     if not job_data:
         raise HTTPException(status_code=404, detail="Job not found")
 
-    base_dir = _job_output_dir(job_id, job_data).resolve()
+    # Re-anchor the resolved output dir inside `output_dir` at the sink
+    # site so CodeQL's data-flow recognises the containment check that
+    # `_job_output_dir` already performs internally. Without this the
+    # `.resolve()` below trips py/path-injection alert #80.
+    try:
+        base_dir = _resolve_path_within_root(
+            output_dir, _job_output_dir(job_id, job_data), must_exist=False
+        )
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job id")
     legacy_base = _resolve_relative_path_within_root(output_dir, job_id, must_exist=False)
     for candidate_root in (base_dir, legacy_base):
-        root = candidate_root.resolve()
         log_path = candidate_root / "conversion.log"
-        resolved_log = log_path.resolve()
-        if resolved_log.is_relative_to(root) and log_path.exists() and log_path.is_file():
+        if not (log_path.exists() and log_path.is_file()):
+            continue
+        try:
+            resolved_log = _resolve_path_within_root(
+                candidate_root, "conversion.log", must_exist=False
+            )
+        except ValueError:
+            # Symlink resolves outside the candidate root — skip and
+            # fall back to the raw log path. Matches the original
+            # `is_relative_to(root)` guard.
+            continue
+        if resolved_log == log_path.resolve():
             return FileResponse(
                 path=log_path,
                 media_type="text/plain; charset=utf-8",

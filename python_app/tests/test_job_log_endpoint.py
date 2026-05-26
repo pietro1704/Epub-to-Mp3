@@ -111,3 +111,27 @@ def test_job_log_endpoint_returns_404_for_unknown_job(client: TestClient):
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Job not found"
+
+
+def test_job_log_endpoint_rejects_outputdir_escaping_root(client: TestClient, tmp_path: Path):
+    """CodeQL alert #80 hardening: even if a job persisted an `outputDir`
+    that resolves outside `output_dir`, the endpoint must refuse to serve
+    the log instead of leaking files via path-traversal.
+    """
+    job_id = "job-escape-outputdir"
+    outside_dir = tmp_path / "outside_root"
+    outside_dir.mkdir(parents=True)
+    (outside_dir / "conversion.log").write_text("secret\n", encoding="utf-8")
+    server_mod.jobs[job_id] = {
+        "jobId": job_id,
+        "state": "finished",
+        "bookTitle": "Test Book",
+        "outputDir": str(outside_dir),
+    }
+
+    response = client.get(f"/api/jobs/{job_id}/log")
+
+    # Either the endpoint returns 200 with non-leaked content (raw/events
+    # fallback) or it explicitly errors. The only thing it must NOT do
+    # is leak the outside file.
+    assert "secret" not in response.text
