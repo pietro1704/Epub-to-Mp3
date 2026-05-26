@@ -9,6 +9,7 @@ import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../services/api_client.dart';
 import '../services/reader_chapter_resolver.dart';
+import '../services/toc_navigation_coordinator.dart';
 import '../state/providers.dart';
 import '../views/full_player_sheet.dart';
 import '../views/reader_search_overlay.dart';
@@ -279,8 +280,20 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
       drawer: TocDrawer(
         fulltext: fulltext.valueOrNull,
         snapshot: snapshot,
-        currentIndex: _currentChapterIndex,
-        onJump: (idx) => setState(() => _currentChapterIndex = idx),
+        currentIndex: TocNavigationCoordinator.highlightEpubIndex(
+          currentPlayableIndex: _currentChapterIndex,
+          playableChapters: snapshot?.playableChapters ?? const [],
+        ),
+        onJump: (epubIdx) {
+          final playable =
+              TocNavigationCoordinator.targetPlayableIndexForTocTap(
+            tappedEpubIndex: epubIdx,
+            playableChapters: snapshot?.playableChapters ?? const [],
+          );
+          if (playable != null) {
+            setState(() => _currentChapterIndex = playable);
+          }
+        },
       ),
       body: Stack(
         children: [
@@ -320,9 +333,18 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
           if (_searchVisible)
             ReaderSearchOverlay(
               chapters: fulltext.valueOrNull?.chapters ?? const [],
-              onJumpToChapter: (idx) {
+              onJumpToChapter: (epubIdx) {
+                // Search overlay emits FulltextChapter.index (EPUB axis).
+                // Translate to the playable axis the rest of the screen
+                // tracks. Non-playable matches leave the audio position
+                // unchanged.
+                final playable =
+                    TocNavigationCoordinator.targetPlayableIndexForTocTap(
+                  tappedEpubIndex: epubIdx,
+                  playableChapters: snapshot?.playableChapters ?? const [],
+                );
                 setState(() {
-                  _currentChapterIndex = idx;
+                  if (playable != null) _currentChapterIndex = playable;
                   _searchVisible = false;
                 });
               },
