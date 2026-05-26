@@ -233,10 +233,14 @@ targets:
         codeSign: true
       - package: PythonKit
       # Widget extension — embedded in the main app bundle so iOS can
-      # offer it in the widget gallery. iOS-only.
+      # offer it in the widget gallery. iOS-only (the widget target's
+      # own `supportedDestinations: [iOS]` keeps it out of the macOS
+      # archive; xcodegen 2.42 silently drops the dependency when a
+      # `platforms:` filter is set on a multi-platform parent, so we
+      # rely on the child target's destination filter instead).
       - target: EpubToMp3Widget
         embed: true
-        platforms: [iOS]
+        codeSign: true
     settings:
       base:
         SUPPORTED_PLATFORMS: "iphoneos iphonesimulator macosx"

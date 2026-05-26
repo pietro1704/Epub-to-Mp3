@@ -316,6 +316,8 @@ if ! command -v xcodegen >/dev/null 2>&1; then
   exit 1
 fi
 xcodegen generate
+# Slice 18 preflight: widget must be embedded in the app bundle.
+"${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
 xcodebuild \\
   -project EpubToMp3.xcodeproj \\
   -scheme EpubToMp3 \\
@@ -356,6 +358,12 @@ if ! command -v xcodegen >/dev/null 2>&1; then
   exit 1
 fi
 xcodegen generate
+
+# Slice 18 preflight: confirm the widget extension is wired into the
+# app bundle. xcodegen has silently dropped this dependency in the past,
+# producing a release .app with no PlugIns/EpubToMp3Widget.appex and
+# zero widgets in the gallery.
+"${MISE_PROJECT_ROOT:-../..}/scripts/verify_widget_embedded.sh"
 
 # Preflight: confirm the scheme actually has an iOS Simulator
 # destination. Xcode 26.x ships the iOS Simulator SDK but the

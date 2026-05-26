@@ -79,6 +79,7 @@
 		45412354C71C6667A964EC88 /* testReaderDarkThemePortraitIPhones.Reader-Dark-iPhone15ProMax-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 9CD64DF15EBBFB3FCEAAE4F0 /* testReaderDarkThemePortraitIPhones.Reader-Dark-iPhone15ProMax-portrait.png */; };
 		4616A9A5A80CA31408440249 /* LibraryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE2A333E62CE7FC4405CC3A6 /* LibraryStoreTests.swift */; };
 		462E45E4D95D819A90DA08E9 /* SpeechFallbackPlayerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68C0A99C38C36C591FCCAAE8 /* SpeechFallbackPlayerTests.swift */; };
+		4737D043EF2C3DC532AB637E /* EpubToMp3Widget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5B90551067C7513E1788EFF4 /* EpubToMp3Widget.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		4755126BEF0922552624004E /* AsyncTimeoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B348C028F6EE3F14BB760E0 /* AsyncTimeoutTests.swift */; };
 		4974E616E0660D7D63590616 /* testReaderDarkXXXL.Reader-Dark-accessibility3-iPhone15Pro-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = A185372E0FCFF497C0819E0D /* testReaderDarkXXXL.Reader-Dark-accessibility3-iPhone15Pro-portrait.png */; };
 		4C3181BD298AEEA7BD2430EA /* testSettingsXXXL.Settings-accessibility3-iPhone15Pro-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = EBA5EDBD2D685B9C9C3B66FA /* testSettingsXXXL.Settings-accessibility3-iPhone15Pro-portrait.png */; };
@@ -238,6 +239,13 @@
 			remoteGlobalIDString = CD8ED7F73C55278E3E34A04F;
 			remoteInfo = EpubToMp3;
 		};
+		410A84F2C4C2D3339E95F075 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 0EE810F927903C1C6B15F87F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1AF56003A65297ABF483D3DC;
+			remoteInfo = EpubToMp3Widget;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -250,6 +258,17 @@
 				36049AB5227F21020317F400 /* Python.xcframework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E9ECE2CC8A0F2B32E8299BB6 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				4737D043EF2C3DC532AB637E /* EpubToMp3Widget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -929,12 +948,14 @@
 				403E2756DF75D48BDF98D836 /* Sources */,
 				DED9AF85AD491E20BB728B46 /* Resources */,
 				02DAC99D31894F26B850490F /* Frameworks */,
+				E9ECE2CC8A0F2B32E8299BB6 /* Embed Foundation Extensions */,
 				A64253EE2C316EAA7E669224 /* Embed Frameworks */,
 				08B34C7EEAD6F3761E9992B3 /* Embed Python sidecar (macOS only) */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				1623581BDE60E6949E718F1C /* PBXTargetDependency */,
 			);
 			name = EpubToMp3;
 			packageProductDependencies = (
@@ -1294,6 +1315,11 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		1623581BDE60E6949E718F1C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1AF56003A65297ABF483D3DC /* EpubToMp3Widget */;
+			targetProxy = 410A84F2C4C2D3339E95F075 /* PBXContainerItemProxy */;
+		};
 		6B197166F70A9FBB71B9353F /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = CD8ED7F73C55278E3E34A04F /* EpubToMp3 */;
