@@ -641,3 +641,29 @@ commands, or now-playing metadata.
 - Flutter `AudioPlayerService.chapterIndexForPlayerIndex` returns playable-axis labelled as chapter index but no caller misinterprets it; refactor optional.
 
 **Ask:** Hermes — please review slice 12, 15, 16, 17 + this audit + this sign-off; if you concur, append your co-approval entry and we are done. If you find a remaining blocker, name it and I'll pick it up.
+
+### 2026-05-26 Claude — Slice 18 GREEN (iOS Widget embed regression closed)
+
+- **status:** done, committed `bcd16cd`, pushed. **Production blocker fixed.**
+- **product goal addressed:** prod-readiness — the user's explicit ask "teste o widget tb" exposed a silent regression: the **production .app bundle was shipping without the Widget extension inside `PlugIns/`**. Users would see zero widgets in the iOS widget gallery.
+- **root cause:** `project.yml` declared the App→Widget dependency with `platforms: [iOS]`. xcodegen 2.42 (in pinned `mise.toml`) silently drops that filter on a parent target whose `supportedDestinations` lists multiple platforms. Result: the generated pbxproj had **NO** PBXTargetDependency entry pointing at `EpubToMp3Widget`, **NO** `Embed App Extensions` copy phase, and `xcodebuild build -scheme EpubToMp3` produced an `EpubToMp3.app` whose `PlugIns/` folder only contained `EpubToMp3Tests.xctest`.
+- **evidence (before):**
+  ```
+  $ xcodebuild build -scheme EpubToMp3 -configuration Debug
+  ** BUILD SUCCEEDED **
+  $ ls $DD/Build/Products/Debug-iphonesimulator/EpubToMp3.app/PlugIns/
+  EpubToMp3Tests.xctest
+  $ find $DD/Build/Products/Debug-iphonesimulator -name '*.appex'
+  (nothing)
+  ```
+- **fix:** drop the `platforms: [iOS]` filter from the dependency in `project.yml`; rely on the widget target's own `supportedDestinations: [iOS]` to keep it out of macOS archives. `xcodegen generate` then produces the missing PBXTargetDependency + `Embed Foundation Extensions` copy phase.
+- **evidence (after):**
+  ```
+  $ xcodebuild build -scheme EpubToMp3 -configuration Debug
+  ** BUILD SUCCEEDED **
+  $ ls $DD/Build/Products/Debug-iphonesimulator/EpubToMp3.app/PlugIns/
+  EpubToMp3Widget.appex
+  ```
+- **regression guard:** new `scripts/verify_widget_embedded.sh` asserts (1) `project.yml` has the App→Widget `embed: true` dependency, (2) pbxproj has the `PBXTargetDependency` on `EpubToMp3Widget`, (3) pbxproj has the `Embed Foundation Extensions` copy phase with `EpubToMp3Widget.appex in Embed Foundation Extensions`. Wired as a preflight before `xcodebuild` in **both** `mise run ios:build` and `mise run mac:build`. Verified manually: happy path passes; deleting the dep from project.yml exits 2 with the actionable error message.
+- **files:** `ios/EpubToMp3/project.yml`, `ios/EpubToMp3/EpubToMp3.xcodeproj/project.pbxproj` (regen output), `mise.toml` (preflight wiring), `scripts/verify_widget_embedded.sh` (new, 55 LOC).
+- **next ask for Hermes:** approve slice 18. This is the load-bearing finding from the production-readiness audit — without it the widget was on paper only. Now also pinned by a deterministic shell guard. Once approved, final production sign-off has all evidence in place.
