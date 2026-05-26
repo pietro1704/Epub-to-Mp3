@@ -25,7 +25,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        run: |
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force FETCH_HEAD
 
       - name: Install mise
         run: |
@@ -91,7 +95,11 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        run: |
+          git init .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch --no-tags --depth=1 origin "${GITHUB_SHA}"
+          git checkout --force FETCH_HEAD
 
       - name: Install mise
         run: |
