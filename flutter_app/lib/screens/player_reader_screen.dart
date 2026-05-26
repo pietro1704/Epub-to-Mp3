@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../services/api_client.dart';
+import '../services/bookmark_axis_router.dart';
 import '../services/reader_chapter_resolver.dart';
 import '../services/toc_navigation_coordinator.dart';
 import '../state/providers.dart';
@@ -131,21 +132,32 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         ? chapters[_currentChapterIndex].displayTitle
         : 'Chapter ${_currentChapterIndex + 1}';
 
-    if (store.hasBookmark(widget.jobId, _currentChapterIndex)) {
-      final existing = store
-          .bookmarksForChapter(widget.jobId, _currentChapterIndex)
-          .where((b) => !b.isHighlight)
-          .firstOrNull;
-      if (existing != null) {
-        store.remove(existing.id);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.bookmarkRemoved)),
-        );
-      }
+    // Bookmarks are bookId-scoped (stable across re-conversions), so
+    // the persisted chapterIndex must be on the EPUB axis. Pre-slice-23
+    // we were saving the playable-axis player_index which orphaned
+    // bookmarks whenever the book was reconverted with a different
+    // playable layout.
+    final router = BookmarkAxisRouter(playableChapters: chapters);
+    final existing = store
+        .bookmarksForBook(widget.jobId)
+        .where((b) =>
+            !b.isHighlight &&
+            router.matchesCurrentPosition(
+              bookmark: b,
+              currentPlayerIndex: _currentChapterIndex,
+            ))
+        .firstOrNull;
+    if (existing != null) {
+      store.remove(existing.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.bookmarkRemoved)),
+      );
     } else {
+      final epubIdx = router.saveValueForPlayerIndex(_currentChapterIndex);
+      if (epubIdx == null) return;
       store.addBookmark(
         bookId: widget.jobId,
-        chapterIndex: _currentChapterIndex,
+        chapterIndex: epubIdx,
         chapterTitle: chTitle,
       );
       ScaffoldMessenger.of(context).showSnackBar(
@@ -165,8 +177,22 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         expand: false,
         builder: (_, controller) => BookmarksListScreen(
           bookId: widget.jobId,
-          onJumpToChapter: (idx) {
-            setState(() => _currentChapterIndex = idx);
+          onJumpToChapter: (storedValue) {
+            // Bookmarks persist the EPUB axis (slice 23); legacy
+            // entries may still be on the playable axis. The router
+            // tries EPUB first, then falls back, returning the
+            // playable-axis position the audio queue should land on.
+            final snap = ref
+                    .read(jobStreamProvider(widget.jobId))
+                    .valueOrNull ??
+                ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
+            final router = BookmarkAxisRouter(
+                playableChapters: snap?.playableChapters ?? const []);
+            final playable =
+                router.targetPlayerIndexForStoredValue(storedValue);
+            if (playable != null) {
+              setState(() => _currentChapterIndex = playable);
+            }
             Navigator.pop(context);
           },
         ),
@@ -254,8 +280,20 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                 Consumer(
                   builder: (context, ref, _) {
                     final store = ref.watch(bookmarkStoreProvider);
-                    final hasIt = store.hasBookmark(
-                        widget.jobId, _currentChapterIndex);
+                    // Mirror the dual-axis check used by `_toggleBookmark`
+                    // so the bookmark icon stays accurate for both modern
+                    // EPUB-axis saves and legacy playable-axis entries.
+                    final router = BookmarkAxisRouter(
+                        playableChapters:
+                            snapshot?.playableChapters ?? const []);
+                    final hasIt = store
+                        .bookmarksForBook(widget.jobId)
+                        .any((b) =>
+                            !b.isHighlight &&
+                            router.matchesCurrentPosition(
+                              bookmark: b,
+                              currentPlayerIndex: _currentChapterIndex,
+                            ));
                     return IconButton(
                       icon: Icon(
                           hasIt ? Icons.bookmark : Icons.bookmark_border),
