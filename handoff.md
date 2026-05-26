@@ -805,3 +805,17 @@ Release Desktop run 26432885034:
 - **files:** `flutter_app/lib/services/bookmark_axis_router.dart` (new, 63 LOC), `flutter_app/lib/screens/player_reader_screen.dart` (3 sites rewired), `flutter_app/test/bookmark_axis_router_test.dart` (new, 9 tests).
 - **parity scoreboard (updated):** Flutter EPUB↔playable invariant pinned at **6 surfaces** now — chapter list (slice 15), resume (16), wire shape (17), reader (19), TOC + search nav (20), bookmarks (23). `ChapterIndexMapper` is the single mapper underneath all of them.
 - **next blockers to consider:** (a) wire `SyncEngine.load(chapter, duration)` + `.update(positionSeconds)` from `player_reader_screen` position stream so the Flutter reader gets sentence-level highlight parity with iOS — this is a feature, not a bug, and is the only known UX gap between the clients. (b) Hermes-side reviews of slices 12/15/16/17/18/19/20/21/22/23 for final co-approval.
+
+### 2026-05-26 Claude — Slice 24 GREEN (Flutter sentence highlight feature parity with iOS)
+
+- **status:** done, committed `08497ef`, pushed. Closes the silent feature gap I documented in slice 23's audit.
+- **gap:** `syncEngineProvider` existed since the original Dart port from iOS but **nothing ever called `engine.load()` or `engine.update()`**. `currentSentenceProvider` emitted only its initial `null`. Flutter's read-along surface shipped without sentence-level highlight while iOS has driven this loop since v0.3.x via `InstantReaderView.installPositionLoop`.
+- **fix:** new `SentenceSyncCoordinator` pairs the engine with `ReaderChapterResolver` (slice 19), so the chapter passed to `engine.load(...)` is the EPUB chapter that matches the current playable position — sparse-book safe by construction. `PlayerReaderScreen`:
+  - Owns a `SentenceSyncCoordinator?` field, instantiated lazily.
+  - In `build()`, calls `coordinator.loadIfChanged(fulltext, playable, _currentChapterIndex)` whenever fulltext + cursor change. `loadIfChanged` is idempotent on identical inputs (uses `identical()` + last-index memo).
+  - Subscribes to `player.position` in `_subscribeToPlayer()` and calls `coordinator.updatePosition(seconds)` on every tick. Subscription cancelled in `dispose()`.
+- **RED:** `test/sentence_sync_coordinator_test.dart` (5 tests) — fails to compile until the coordinator lands. Covers sparse-book load (verifies engine.spans is from EPUB-2 text, not the pending placeholder chapters[1]), idempotence on identical inputs, reload on index change, position passthrough, skip-on-unresolvable-chapter.
+- **GREEN:** 5/5 coordinator tests in <1 s; full Flutter suite → 256/256 (was 251/251 before slice 24, +5). `flutter analyze` clean on all touched files.
+- **files:** `flutter_app/lib/services/sentence_sync_coordinator.dart` (new, 50 LOC), `flutter_app/lib/screens/player_reader_screen.dart` (subscription + build hook), `flutter_app/test/sentence_sync_coordinator_test.dart` (new, 5 tests).
+- **production status:** With this in place, **Flutter has feature parity with iOS for every audited surface** — chapter list, resume, wire shape, reader chapter sync, TOC + search nav, bookmarks, AND sentence-level highlight. Combined session score: 7 production blockers + 1 cross-client feature gap closed across 13 slices.
+- **next ask for Hermes:** review slice 23 + 24 and (if you concur) extend the FINAL co-approval to cover both. The original sign-off at `0f752dd` covered slices 12–22; 23 + 24 land on top.
