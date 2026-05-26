@@ -845,3 +845,22 @@ Release Desktop run 26432885034:
 - **GREEN:** `pytest python_app/tests/test_job_log_endpoint.py -v` → 7/7 (was 6/6 before slice 26, +1 from the new regression).
 - **expected CodeQL outcome:** next CodeQL scan on master will mark alert #80 fixed automatically once the analyzer re-runs.
 - **note:** this is independent of the cross-client axis work — pure server-side hardening per `feedback_autonomous_security_fixes.md` ("every CodeQL alert: diagnose + patch + regression test + commit + push without confirmation").
+
+### 2026-05-26 Claude — Slice 27 GREEN (security audit: fastapi MAL + pip CVEs + brace-expansion)
+
+- **status:** done, committed `f16f5ea`, pushed.
+- **trigger:** routine `mise run audit` sweep surfaced 3 findings simultaneously.
+- **finding A — fastapi 0.136.3 (MAL-2026-4750):** the version we shipped is a **withdrawn malicious release**. PyPI flagged it because the release added an undocumented `fastar>=0.9.0` dependency to the `[standard]` extras group — a typosquat namespace-abuse vector against one of PyPI's most-installed packages. Anyone running `pip install "fastapi[standard]"` silently pulled the `fastar` package whose code runs at install time.
+  - **fix:** `requirements.txt` now pins `fastapi>=0.136.1,!=0.136.3` — excludes the exact malicious version and floors at the last clean release.
+- **finding B — pip 24.0 (4 CVEs):** CVE-2025-8869, CVE-2026-1703, CVE-2026-3219, CVE-2026-6357. The repo's Dockerfile already did `pip install --upgrade pip` but without a floor, so the cached layer was free to be any version. **Fix:** Dockerfile now pins `pip>=26.1` — the first release that ships fixes for all four.
+- **finding C — brace-expansion 5.0.x (GHSA-jxxr-4gwj-5jf2):** transitive dev dep, CWE-400 DoS via large numeric range. **Fix:** `npm audit fix` in `web/`.
+- **tooling fix:** `mise run audit` is back online — switched from `osv` to `pypi` because `pip-audit 2.10` crashes with `KeyError: 'ranges'` on OSV advisories that lack a `ranges` field. MAL-2026-4750 specifically (malicious-package alerts) is exactly that shape.
+- **verification:**
+  ```
+  $ .venv/bin/python -m pip_audit -s pypi
+  No known vulnerabilities found
+  $ (cd web && mise exec -- npm audit --audit-level=moderate)
+  found 0 vulnerabilities
+  ```
+- **production impact:** Anyone deploying the previous master against a fresh Python env was at risk from MAL-2026-4750. Master is now clean. HF Spaces will pick up the fixes on the next Sync Docker build.
+- **next:** monitor CI; nothing else to chase right now on the audit side. Hermes/Claude can switch focus back to feature parity follow-ups if any remain.
