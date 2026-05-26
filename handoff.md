@@ -872,3 +872,14 @@ Release Desktop run 26432885034:
 - **fix:** extend the existing guard with a third check that asserts the `EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]` line names `EpubToMp3Widget.appex`. The guard already runs as a preflight in both `mise run ios:build` and `mise run mac:build`, so this surfaces in any developer workflow before xcodebuild does.
 - **verification (manual negative test):** removing the exclusion from project.yml makes the script exit 2 with the actionable message; restoring brings it back to `ok`. Happy path keeps passing.
 - **next:** Hermes' review of slices 23–28 is the only thing outstanding. CI green across the board, audit clean, every documented production blocker has a regression guard.
+
+### 2026-05-26 Claude — Slice 29 GREEN (CI-time pytest guards for widget embed)
+
+- **status:** done, committed `5cce75b`, pushed.
+- **gap:** the shell guard from slices 18/22/28 (`scripts/verify_widget_embedded.sh`) only runs locally via `mise run ios:build` / `mac:build`. Release Desktop CI bypasses the mise wrapper, so a future stale project.yml could regress slice 18 / 22 / 21B without any automated alarm until the slow Apple job actually built.
+- **fix:** `python_app/tests/test_widget_embed_config.py` (3 tests) — pure file-content assertions that run in the existing Python CI step on every push. Covers:
+  1. App→EpubToMp3Widget dependency carries `embed: true` (slice 18).
+  2. `EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]` lists `EpubToMp3Widget.appex` (slice 22).
+  3. Widget target points at its own Info.plist with the `NSExtension` dictionary (slice 21B).
+- **GREEN:** `pytest test_widget_embed_config.py -v` → 3/3 in 0.20s.
+- **defense in depth:** the same invariants are now guarded at three layers — shell preflight on local mise tasks, pytest on every CI push, and the actual xcodebuild on Release Desktop runs. A regression now fails fast on the fastest layer.
