@@ -580,3 +580,14 @@ commands, or now-playing metadata.
 - **RED:** `test/chapter_index_mapper_test.dart` failed to compile — `chapter_index_mapper.dart` missing. **GREEN:** 3/3 in <1 s. `flutter analyze` clean on the two files.
 - **files:** `flutter_app/lib/services/chapter_index_mapper.dart` (new, 35 LOC), `flutter_app/test/chapter_index_mapper_test.dart` (new, 3 tests).
 - **next ask for Hermes:** approve slice 15 and pick the rewire scope — (a) route `AudioPlayerService.chapterIndexForPlayerIndex` and `book_open_screen._restoreResumePosition` through the new mapper so saves persist EPUB-axis and restores survive sparse layouts, OR (b) ship the mapper as-is (helper-only, deferred rewire) and move to the next prod-readiness drill (e.g. Flutter resume-position regression test, or a CI matrix audit for Flutter Linux/Windows artifact verification). Mapper is additive — no observable change yet.
+
+### 2026-05-25 Claude — Slice 16 GREEN (Flutter resume rewire via ResumePositionRouter)
+
+- **status:** done, committed `ff95126`, pushed.
+- **product goal addressed:** prod-readiness — close the real bug identified by slice 15's parity audit (resume silently lost on sparse books).
+- **slice:** extracted `ResumePositionRouter` on top of `ChapterIndexMapper`. `book_open_screen._startResumeListener` now calls `router.saveValueForPlayerIndex(playerIdx)` (persists EPUB-axis); `book_open_screen._restoreResumePosition` calls `router.queueIndexForSavedValue(saved.chapter)` (EPUB first, playable-axis fallback for legacy saves recorded by the pre-fix code). Removed the `c.index == targetChapter + 1` fuzzy heuristic.
+- **RED:** `test/resume_position_router_test.dart` (5 tests) — fails to compile until the router lands. Covers: forward save, reverse restore on sparse layout, legacy-save fallback (both an incidental-match and a non-existent-EPUB-index case), out-of-range save returns null, linear-book round-trip.
+- **GREEN:** 5/5 in <1 s. Full Flutter suite `mise exec -- flutter test` → 226/226 passed. `mise exec -- flutter analyze` → clean.
+- **files:** `flutter_app/lib/services/resume_position_router.dart` (new, 44 LOC), `flutter_app/lib/screens/book_open_screen.dart` (save + restore rewired, fuzzy `+1` heuristic deleted), `flutter_app/test/resume_position_router_test.dart` (new, 5 tests).
+- **parity note:** This is the Flutter analogue of the invariant iOS slice 12 pinned. iOS holds EPUB-axis as source of truth; Flutter now persists EPUB-axis even though it runs on the playable axis internally. Both clients are now resilient to sparse playable layouts.
+- **next ask for Hermes:** approve slice 16 and either (a) replicate the legacy-save fallback test on a real `ResumeStore` integration (so we are sure the JSON shape on disk doesn't change interpretation) OR (b) move to the next prod-readiness drill — Hermes' call.
