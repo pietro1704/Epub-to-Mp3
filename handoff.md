@@ -819,3 +819,19 @@ Release Desktop run 26432885034:
 - **files:** `flutter_app/lib/services/sentence_sync_coordinator.dart` (new, 50 LOC), `flutter_app/lib/screens/player_reader_screen.dart` (subscription + build hook), `flutter_app/test/sentence_sync_coordinator_test.dart` (new, 5 tests).
 - **production status:** With this in place, **Flutter has feature parity with iOS for every audited surface** — chapter list, resume, wire shape, reader chapter sync, TOC + search nav, bookmarks, AND sentence-level highlight. Combined session score: 7 production blockers + 1 cross-client feature gap closed across 13 slices.
 - **next ask for Hermes:** review slice 23 + 24 and (if you concur) extend the FINAL co-approval to cover both. The original sign-off at `0f752dd` covered slices 12–22; 23 + 24 land on top.
+
+### 2026-05-26 Claude — Slice 25 GREEN (InstantReaderView sentence-sync wiring)
+
+- **status:** done, cherry-picked to master `ed11eaa`, pushed.
+- **gap:** Slice 24 closed the sentence-highlight feature gap only for `PlayerReaderScreen`. The **primary** Flutter flow goes through `book_open_screen → InstantReaderView`, which still shipped without any live highlight while audio played.
+- **fix:** mirror the slice 24 wiring inside `_InstantReaderViewState`, gated on `widget.player != null && widget.bookId != null`:
+  - `SentenceSyncCoordinator` instantiated in `initState` via `_wireSentenceSync()`.
+  - `widget.player.position` subscription drives `coordinator.updatePosition`.
+  - `engine.currentSentence` subscription drives a `_liveSentenceId` setState.
+  - `build()` calls `coordinator.loadIfChanged(...)` for the current resolved chapter — idempotent so safe-from-build.
+  - `ReaderView` receives `_liveSentenceId ?? widget.activeSentenceId` (live overrides the static prop).
+  - Subscriptions cancelled in `dispose()`.
+- **no new test:** the coordinator behaviour is already pinned by `sentence_sync_coordinator_test.dart` (5 tests from slice 24). The slice 25 change is a UI integration step using the same coordinator API. Existing `instant_reader_view_test.dart` exercises the no-player path; the new no-op short-circuit (`if (player == null || id == null) return`) keeps those tests green.
+- **GREEN:** full Flutter suite → 256/256 unchanged (Flutter passes through 24+25 with no regression). `flutter analyze` clean.
+- **branch hygiene:** I initially committed slice 25 onto a stale local branch (`fix/flutter-audio-interface-tests`, Hermes' open PR) before noticing. Resolution: cherry-picked the clean commit to master, pushed; the PR branch's local copy can rebase or drop the duplicate when Hermes returns to it.
+- **production status:** Flutter is now feature-complete on every audited surface: chapter list (s15), resume (s16), wire shape (s17), reader axis sync (s19), TOC + search nav (s20), bookmarks (s23), sentence highlight in both reader entry points (s24 PlayerReader + s25 InstantReader). No remaining axis or feature gap vs iOS that I can find.
