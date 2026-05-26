@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../services/audio_player_service.dart';
+import '../services/sentence_sync_coordinator.dart';
 import '../state/providers.dart';
 import 'full_player_sheet.dart';
 import 'reader_settings_sheet.dart';
@@ -43,6 +46,10 @@ class InstantReaderView extends ConsumerStatefulWidget {
 class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   late int _currentChapterIndex;
   bool _chromeVisible = true;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<String?>? _sentenceSub;
+  SentenceSyncCoordinator? _sentenceSync;
+  String? _liveSentenceId;
 
   static const _minReadableChars = 10;
 
@@ -60,10 +67,35 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
           ? _firstReadableIndex
           : widget.initialChapterIndex;
     }
+    // Slice 25: wire the SyncEngine so the read-along surface shipped
+    // through book_open_screen → InstantReaderView gets the same
+    // sentence-level highlight that PlayerReaderScreen got in slice 24.
+    _wireSentenceSync();
+  }
+
+  void _wireSentenceSync() {
+    final player = widget.player;
+    final id = widget.bookId;
+    if (player == null || id == null) return;
+    final engine = ref.read(syncEngineProvider(id));
+    final coordinator = SentenceSyncCoordinator(engine);
+    _sentenceSync = coordinator;
+    _positionSub = player.position.listen((pos) {
+      if (!mounted) return;
+      coordinator.updatePosition(pos.inMilliseconds / 1000.0);
+    });
+    _sentenceSub = engine.currentSentence.listen((id) {
+      if (!mounted) return;
+      if (id != _liveSentenceId) {
+        setState(() => _liveSentenceId = id);
+      }
+    });
   }
 
   @override
   void dispose() {
+    _positionSub?.cancel();
+    _sentenceSub?.cancel();
     // Always restore the system chrome when leaving the reader so other
     // screens are not left in immersive mode.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -183,6 +215,16 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
   Widget build(BuildContext context) {
     final settings = ref.watch(settingsProvider);
     final chapter = _resolveChapter(_currentChapterIndex);
+    // Slice 25: re-prime the sentence-sync engine for the resolved
+    // chapter whenever it changes. loadIfChanged is idempotent on
+    // identical inputs so calling it from build is safe.
+    if (_sentenceSync != null && chapter != null) {
+      _sentenceSync!.loadIfChanged(
+        fulltext: widget.fulltext,
+        playableChapters: widget.player?.chapters ?? const [],
+        playableIndex: _currentChapterIndex,
+      );
+    }
     if (chapter == null) {
       return Center(
         child: Column(
@@ -233,7 +275,9 @@ class _InstantReaderViewState extends ConsumerState<InstantReaderView> {
           child: ReaderView(
             chapter: chapter,
             spans: spans,
-            currentSentenceId: widget.activeSentenceId,
+            // Live sentence id (driven by SyncEngine + position stream
+            // through slice 25) takes precedence over the static prop.
+            currentSentenceId: _liveSentenceId ?? widget.activeSentenceId,
             onAdvanceChapter: advanceToNextChapter,
             onPreviousChapter: returnToPreviousChapter,
             onCenterTap: () => _setChromeVisible(!_chromeVisible),
