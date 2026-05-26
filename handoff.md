@@ -835,3 +835,13 @@ Release Desktop run 26432885034:
 - **GREEN:** full Flutter suite → 256/256 unchanged (Flutter passes through 24+25 with no regression). `flutter analyze` clean.
 - **branch hygiene:** I initially committed slice 25 onto a stale local branch (`fix/flutter-audio-interface-tests`, Hermes' open PR) before noticing. Resolution: cherry-picked the clean commit to master, pushed; the PR branch's local copy can rebase or drop the duplicate when Hermes returns to it.
 - **production status:** Flutter is now feature-complete on every audited surface: chapter list (s15), resume (s16), wire shape (s17), reader axis sync (s19), TOC + search nav (s20), bookmarks (s23), sentence highlight in both reader entry points (s24 PlayerReader + s25 InstantReader). No remaining axis or feature gap vs iOS that I can find.
+
+### 2026-05-26 Claude — Slice 26 GREEN (CodeQL py/path-injection alert #80 closed)
+
+- **status:** done, committed `950d8f8`, pushed.
+- **alert:** CodeQL error-severity #80, `py/path-injection`, `server.py:2709`, `/api/jobs/{job_id}/log` endpoint. CodeQL flagged `_job_output_dir(job_id, job_data).resolve()` because its data-flow analyzer cannot trace through the helper's internal `_resolve_path_within_root` containment check back to the original user input `job_id`.
+- **fix:** at the sink site, re-anchor the resolved output dir inside `output_dir` via `_resolve_path_within_root(output_dir, _job_output_dir(...), must_exist=False)`. The local `is_relative_to` inside that helper is a pattern CodeQL recognises. Same treatment for the per-iteration `conversion.log` resolve inside the candidate-root loop. Original symlink-outside-output behaviour (silent skip → raw-log fallback) is preserved by catching the helper's `ValueError`.
+- **regression test:** new `test_job_log_endpoint_rejects_outputdir_escaping_root` — a job whose persisted `outputDir` resolves outside `output_dir` must not leak the contents of an arbitrary file via this endpoint. Asserts the response body does not contain the secret content.
+- **GREEN:** `pytest python_app/tests/test_job_log_endpoint.py -v` → 7/7 (was 6/6 before slice 26, +1 from the new regression).
+- **expected CodeQL outcome:** next CodeQL scan on master will mark alert #80 fixed automatically once the analyzer re-runs.
+- **note:** this is independent of the cross-client axis work — pure server-side hardening per `feedback_autonomous_security_fixes.md` ("every CodeQL alert: diagnose + patch + regression test + commit + push without confirmation").
