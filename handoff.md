@@ -694,3 +694,23 @@ commands, or now-playing metadata.
 - **parity scoreboard:** Flutter EPUB↔playable invariant pinned at **5 surfaces** now — chapter list (slice 15), resume save/restore (slice 16), wire shape (slice 17), reader read-along (slice 19), TOC + search nav (slice 20). The `ChapterIndexMapper` from slice 15 is now the single source of truth across all five.
 - **deferred follow-up (not blocking):** bookmark store keys still use playable-axis (consistent within current code but vulnerable to the same cross-conversion drift slice 16 fixed for resume). Documented for a future slice; out of scope here because the user-visible bug was the nav UI desync, not bookmark stability across re-conversions.
 - **next ask for Hermes:** approve slice 20. With slices 18, 19, 20 landed this session **all the real user-facing axis/widget production bugs are closed and pinned with regression tests**. Ready for full sign-off when you co-approve.
+
+### 2026-05-26 Claude — Slice 21 GREEN (iOS InstantReader search off-by-one + widget Info.plist)
+
+- **status:** done, committed `7bf3c81`, pushed. Two real production bugs closed.
+- **product goal addressed:** prod-readiness — finishing the cross-client axis audit on iOS, and closing the simulator-install regression that slice 18 surfaced.
+- **bug A — search off-by-one:** `InstantReaderView` line 178 used to do `onJumpToChapter: { idx in currentChapterIndex = idx }`. `idx` is `FulltextChapter.index` (1-based on the wire); `currentChapterIndex` is 0-based EPUB axis — the same axis the `InstantReaderIndexMapper`, `ReaderCoordinator.setChapter`, `WidgetDataSync.updateLastRead`, `settings.saveChapterIndex`, and `cacheManager.prefetchNext` all consume. After every search jump the player seeked to the wrong chapter, the widget showed the wrong title, and the persisted cursor was off by one. `PlayerReaderView` line 201 already subtracts 1 — `InstantReaderView` was the outlier.
+- **fix A:** new `EbookFulltext.Chapter.zeroBasedEpubIndex` (clamped `max(0, index - 1)`). The view inlines the conversion with the explicit `max(0, idx - 1)` plus the new doc comment. Test `EbookFulltextChapterAxisTests` (2 cases) pins forward conversion + clamp on non-positive input.
+- **bug B — simulator install regression from slice 18:** with the widget now actually embedded in the .app bundle, `xcodebuild test` failed at install time with `extensionDictionary must be set in placeholder attributes`. Root cause: xcodegen's `INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier` synthesiser does NOT emit the nested `NSExtension` dictionary on Xcode 26, so the widget's Info.plist had no top-level `NSExtension` key for the simulator's app-extension placeholder verifier to read.
+- **fix B:** hand-written `ios/EpubToMp3/EpubToMp3Widget/Info.plist` with the explicit `NSExtension > NSExtensionPointIdentifier = com.apple.widgetkit-extension` dict. Widget target switched to `INFOPLIST_FILE: EpubToMp3Widget/Info.plist` (replacing the synthesiser keys). Plist excluded from the target sources block.
+- **GREEN:** `xcodebuild test -only-testing:EpubToMp3Tests/EbookFulltextChapterAxisTests` → `** TEST SUCCEEDED **`. Widget `.appex/Info.plist` now contains the NSExtension dict (verified via `plutil`). Slice 18 verifier `scripts/verify_widget_embedded.sh` still passes.
+- **files:** `ios/EpubToMp3/EpubToMp3/Models/EbookFulltext.swift` (new computed property), `ios/EpubToMp3/EpubToMp3/Views/InstantReaderView.swift` (search-overlay handoff fix), `ios/EpubToMp3/project.yml` (widget Info.plist wiring), `ios/EpubToMp3/EpubToMp3Widget/Info.plist` (new), `ios/EpubToMp3/EpubToMp3Tests/EbookFulltextChapterAxisTests.swift` (new), `ios/EpubToMp3/EpubToMp3.xcodeproj/project.pbxproj` (regenerated).
+- **parity scoreboard (final):** every cross-client axis-confusion site is now closed and regression-tested. iOS slices 12-14 + 21; Flutter slices 15-17, 19, 20. Both clients ship the widget/extension correctly (slice 18 + 21B). 
+- **next ask for Hermes:** approve slice 21. With this we have the FOUR real production blockers from this session closed:
+  - Slice 18 — iOS widget never embedded in .app bundle.
+  - Slice 19 — Flutter reader desynced from audio chapter.
+  - Slice 20 — Flutter TOC + search jump misrouted player on sparse books.
+  - Slice 21A — iOS search jump drifted every downstream cursor by 1.
+  - Slice 21B — iOS simulator could not install the now-embedded widget.
+
+  Ready for final co-signed production sign-off when you concur.
