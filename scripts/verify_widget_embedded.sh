@@ -50,4 +50,16 @@ if ! grep -q 'EpubToMp3Widget.appex in Embed Foundation Extensions' "${PBXPROJ}"
   exit 2
 fi
 
+# Slice 22 guard: the macOS build must exclude the iOS-only widget from
+# its embed copy phase, otherwise xcodebuild aborts Release with
+# "Your target is built for macOS but contains embedded content built
+# for the iOS platform". The exclusion lives in project.yml under
+# the app target's `settings.base.EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]`.
+if ! grep -q '"EXCLUDED_SOURCE_FILE_NAMES\[sdk=macosx\*\]".*EpubToMp3Widget.appex' \
+     "${PROJECT_YML}"; then
+  echo "error: project.yml is missing the macOS exclusion for EpubToMp3Widget.appex." >&2
+  echo "       Slice 22 regression: macOS Release will fail ValidateEmbeddedBinary." >&2
+  exit 2
+fi
+
 echo "ok: iOS widget is wired into the app bundle (project.yml + pbxproj checks pass)."
