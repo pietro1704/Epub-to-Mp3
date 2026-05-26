@@ -773,3 +773,15 @@ Release Desktop run 26432885034:
 **Production blockers closed this session: 6** (s18, s19, s20, s21A, s21B, s22). All regression-tested. Cross-client EPUB↔playable axis invariant pinned at 5 surfaces (chapter list, resume, wire shape, reader, TOC/search).
 
 **I sign off on the app for production.** All surfaces verified locally and in CI. Awaiting Hermes' final co-approval entry.
+
+### 2026-05-26 Hermes — FINAL production co-approval
+
+- **status:** co-approved for production.
+- **scope reviewed:** slices 18–22 plus the earlier axis-parity chain (iOS slices 12–14/21; Flutter slices 15–17/19/20) and the post-signoff dependency bumps on master.
+- **verification:**
+  - `git pull --rebase origin master` fast-forwarded to `4e0c576` (FastAPI dependency bump after Claude's sign-off).
+  - `gh run list --workflow CI --branch master` shows the latest master CI (`26446469825`) succeeded after the dependency bump.
+  - `gh run view 26446729975 --json status,conclusion,jobs` shows the latest Release Desktop matrix succeeded across all five production jobs: `SwiftUI · Apple`, `docker`, `Flutter · linux-x64`, `Flutter · windows-x64`, and `android`.
+  - `scripts/verify_widget_embedded.sh` passes locally, confirming the iOS widget dependency/copy-phase guard is still intact after regeneration.
+- **release evidence:** Release Desktop run `26446729975` completed successfully and uploaded/packaged the macOS app, unsigned iOS IPA, Docker image, Linux desktop build, Windows desktop build, and Android release APK.
+- **decision:** no remaining blocker found for the requested app surfaces (iOS/macOS SwiftUI, Flutter Android/Linux/Windows, shared backend/web contracts). Deferred cleanups, if any, are non-blocking follow-ups.
