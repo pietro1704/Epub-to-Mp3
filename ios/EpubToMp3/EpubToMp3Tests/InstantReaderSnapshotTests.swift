@@ -21,6 +21,11 @@ final class InstantReaderSnapshotTests: XCTestCase {
         let settings: AppSettings
         @State private var snap: JobSnapshot? = nil
         @StateObject private var cacheManager: ChapterCacheManager
+        @StateObject private var audioPlayer = AudioPlayer()
+        @StateObject private var playerPresentation = PlayerPresentation()
+        @StateObject private var library = LibraryStore()
+        @StateObject private var bookmarkStore = BookmarkStore()
+        @StateObject private var readerCoordinator = ReaderCoordinator()
 
         init(fulltext: EbookFulltext, banner: String?, hasAudio: Bool, settings: AppSettings) {
             self.fulltext = fulltext
@@ -43,7 +48,12 @@ final class InstantReaderSnapshotTests: XCTestCase {
                 onRequestAudioRetry: {},
                 cacheManager: cacheManager
             )
+            .environmentObject(audioPlayer)
+            .environmentObject(playerPresentation)
+            .environmentObject(library)
             .environmentObject(settings)
+            .environmentObject(bookmarkStore)
+            .environmentObject(readerCoordinator)
         }
     }
 
@@ -59,7 +69,7 @@ final class InstantReaderSnapshotTests: XCTestCase {
             as: .image(precision: 0.95,
                        layout: .device(config: .iPhone8)),
             named: "InstantReader-Idle-iPhone8",
-            record: true
+            record: false
         )
     }
 
@@ -75,7 +85,7 @@ final class InstantReaderSnapshotTests: XCTestCase {
             as: .image(precision: 0.95,
                        layout: .device(config: .iPhone8)),
             named: "InstantReader-Converting-iPhone8",
-            record: true
+            record: false
         )
     }
 
@@ -91,7 +101,7 @@ final class InstantReaderSnapshotTests: XCTestCase {
             as: .image(precision: 0.95,
                        layout: .device(config: .iPhone8)),
             named: "InstantReader-Error-iPhone8",
-            record: true
+            record: false
         )
     }
 }

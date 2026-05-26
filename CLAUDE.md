@@ -541,7 +541,7 @@ These features exist specifically to improve the audiobook listening experience:
 - Adding a new task: add it to `mise.toml` under `[tasks."name"]`, not as a standalone script
 
 ### Native macOS build (SwiftUI)
-- Local: `mise run mac:build` — runs `sidecar:build` then `xcodebuild` headlessly, producing `ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app`
+- Local: `mise run mac:build` — runs `sidecar:build` then `xcodebuild` headlessly, reporting the produced `.app` path (usually `ios/EpubToMp3/.build/Release/EpubToMp3.app` with the current `SYMROOT` layout)
 - Sidecar only: `mise run sidecar:build` — produces `dist/epub-to-mp3-server` (PyInstaller onefile)
 - Requires `xcodegen` (brew install xcodegen). Xcode is optional — `mac:build` is fully headless
 

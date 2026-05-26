@@ -14,7 +14,7 @@ xcodegen generate           # regenerate .xcodeproj from project.yml
 open EpubToMp3.xcodeproj
 ```
 
-`mise run mac:build` chains `sidecar:build` then `xcodebuild -scheme EpubToMp3 -configuration Release`. The resulting `.app` is at `ios/EpubToMp3/.build/Build/Products/Release/EpubToMp3.app`.
+`mise run mac:build` chains `sidecar:build` then `xcodebuild -scheme EpubToMp3 -configuration Release`. The resulting `.app` is reported by the task after build; with the current `SYMROOT` layout it is usually at `ios/EpubToMp3/.build/Release/EpubToMp3.app`.
 
 ## Targets
 

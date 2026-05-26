@@ -1,5 +1,23 @@
 import SwiftUI
 
+enum InstantReaderIndexMapper {
+    static func playableIndex(forEpubIndex epubIndex: Int, in snapshot: JobSnapshot) -> Int? {
+        snapshot.playableChapters.firstIndex { $0.index == epubIndex }
+    }
+
+    static func playableIndexOrClamped(forEpubIndex epubIndex: Int, in snapshot: JobSnapshot) -> Int {
+        let playable = snapshot.playableChapters
+        return playable.firstIndex { $0.index == epubIndex }
+            ?? max(0, min(epubIndex, playable.count - 1))
+    }
+
+    static func epubIndex(forPlayableIndex playableIndex: Int, in snapshot: JobSnapshot) -> Int? {
+        let playable = snapshot.playableChapters
+        guard playable.indices.contains(playableIndex) else { return nil }
+        return playable[playableIndex].index
+    }
+}
+
 /// Reader-first surface. The text is *always* visible — even before
 /// any audio exists. When the backend produces chapter MP3s the
 /// player block lights up at the bottom; until then the reader looks
@@ -157,7 +175,16 @@ struct InstantReaderView: View {
         .sheet(isPresented: $showingSearch) {
             ReaderSearchOverlay(
                 chapters: fulltext.chapters,
-                onJumpToChapter: { idx in currentChapterIndex = idx },
+                onJumpToChapter: { idx in
+                    // ReaderSearchOverlay emits FulltextChapter.index
+                    // (1-based on the wire). `currentChapterIndex` is
+                    // 0-based EPUB axis — the same axis the player
+                    // mapper, ReaderCoordinator, WidgetDataSync, and
+                    // cacheManager all expect. Skipping `- 1` here
+                    // drifted every downstream cursor by one chapter
+                    // after a search jump.
+                    currentChapterIndex = max(0, idx - 1)
+                },
                 isPresented: $showingSearch
             )
         }
@@ -339,6 +366,27 @@ struct InstantReaderView: View {
         return false  // give up, let iOS try
     }
 
+    /// Engage `AudioPlayer.playOrFallback` for the chapter the user
+    /// asked to start. Sibling to the existing `onRequestPlay` callback
+    /// (which kicks off the server-side conversion bootstrap) — running
+    /// both in the same tap gives the user immediate accessibility-speech
+    /// audio while the MP3 conversion catches up in the background.
+    /// `play(snapshot:)` already stops the fallback on MP3 takeover, so
+    /// no extra teardown is required when the chapter audio lands.
+    ///
+    /// No-ops when the requested chapter has no usable text — the menu
+    /// then merely fires `onRequestPlay`, mirroring the pre-slice-4
+    /// behaviour exactly.
+    private func startPlayOrFallback(forChapterIndex epubIndex: Int) {
+        guard let chapter = resolveChapter(at: epubIndex) else { return }
+        activePlayer.playOrFallback(
+            snapshot: snapshot,
+            chapterIndex: epubIndex,
+            chapterText: chapter.text,
+            languageCode: snapshot?.language
+        )
+    }
+
     private func resolveChapter(at index: Int) -> EbookFulltext.Chapter? {
         let candidates = [
             fulltext.chapters.first(where: { $0.index == index + 1 }),
@@ -499,17 +547,21 @@ struct InstantReaderView: View {
                 } else {
                     Menu {
                         Button {
+                            startPlayOrFallback(forChapterIndex: 0)
                             onRequestPlay?(0, nil)
                         } label: {
                             Label(L10n.string("player.divergence.fromBeginning"), systemImage: "play")
                         }
                         Button {
+                            startPlayOrFallback(forChapterIndex: currentChapterIndex)
                             onRequestPlay?(currentChapterIndex, nil)
                         } label: {
                             Label(L10n.string("instantReader.fromCurrentChapter"), systemImage: "play.rectangle")
                         }
                     } label: {
-                        Image(systemName: "play.circle.fill")
+                        Image(systemName: activePlayer.isUsingSpeechFallback && activePlayer.isPlaying
+                              ? "pause.circle.fill"
+                              : "play.circle.fill")
                             .font(.system(size: 36))
                     }
                     .menuStyle(.borderlessButton)
@@ -765,8 +817,10 @@ struct InstantReaderView: View {
                         let target = max(0, chapter.index - 1)
                         currentChapterIndex = target
                         if playerMounted {
-                            player.play(snapshot: snapshot ?? JobSnapshot.empty,
-                                         startingAt: target)
+                            let snap = snapshot ?? JobSnapshot.empty
+                            let playableTarget = InstantReaderIndexMapper
+                                .playableIndex(forEpubIndex: target, in: snap) ?? 0
+                            player.play(snapshot: snap, startingAt: playableTarget)
                         }
                         // Same Apple Books pattern as PlayerReader — jumping
                         // to a new chapter restores chrome so the user can
@@ -842,7 +896,9 @@ struct InstantReaderView: View {
         // already tears down the underlying AVQueuePlayer.
         player.backendBaseURL = backendBaseURL
         player.coverArtData = coverPNG     // surface to MPNowPlayingInfoCenter
-        player.play(snapshot: snap, startingAt: currentChapterIndex)
+        let playableIndex = InstantReaderIndexMapper
+            .playableIndex(forEpubIndex: currentChapterIndex, in: snap) ?? 0
+        player.play(snapshot: snap, startingAt: playableIndex)
         playerMounted = true
         installPositionLoop(on: player, isEmbedded: false)
     }
@@ -871,8 +927,9 @@ struct InstantReaderView: View {
                 } else {
                     _ = sync.update(positionSeconds: pos)
                 }
-                if activePlayer.currentChapterIndex != currentChapterIndex {
-                    currentChapterIndex = activePlayer.currentChapterIndex
+                if let epubIndex = playerEpubChapterIndex(for: activePlayer),
+                   epubIndex != currentChapterIndex {
+                    currentChapterIndex = epubIndex
                 }
             }
         }
@@ -988,9 +1045,8 @@ struct InstantReaderView: View {
     /// divergence to surface".
     private func playerEpubChapterIndex(for player: AudioPlayer) -> Int? {
         guard let snapshot = player.snapshot else { return nil }
-        let playable = snapshot.playableChapters
-        guard playable.indices.contains(player.currentChapterIndex) else { return nil }
-        return playable[player.currentChapterIndex].index
+        return InstantReaderIndexMapper
+            .epubIndex(forPlayableIndex: player.currentChapterIndex, in: snapshot)
     }
 
     // MARK: - Theme colours (delegated to ReaderTheme)

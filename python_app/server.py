@@ -39,7 +39,7 @@ from typing import Dict, List, Optional
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, PlainTextResponse, StreamingResponse
 from main import ConverterApplication
 from pydantic import BaseModel
 from src._health_watchdog_mixin import (
@@ -2689,7 +2689,58 @@ async def delete_job(job_id: str) -> dict:
     return {"status": "deleted"}
 
 
-@app.get("/api/outputs/{job_id}/{filename}")
+@app.get("/api/jobs/{job_id}/log")
+async def get_job_log(job_id: str):
+    """Return the persistent conversion log for a job.
+
+    The SwiftUI macOS client calls this endpoint from LogsView. Prefer the
+    on-disk conversion.log so completed jobs remain inspectable after memory
+    trimming, then fall back to the in-memory raw log/events for active jobs
+    that have not flushed a log file yet.
+    """
+    try:
+        _validate_job_id(job_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid job id")
+    job_data = jobs.get(job_id) or job_manager.load_job(job_id)
+    if not job_data:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    base_dir = _job_output_dir(job_id, job_data).resolve()
+    legacy_base = _resolve_relative_path_within_root(output_dir, job_id, must_exist=False)
+    for candidate_root in (base_dir, legacy_base):
+        root = candidate_root.resolve()
+        log_path = candidate_root / "conversion.log"
+        resolved_log = log_path.resolve()
+        if resolved_log.is_relative_to(root) and log_path.exists() and log_path.is_file():
+            return FileResponse(
+                path=log_path,
+                media_type="text/plain; charset=utf-8",
+                filename="conversion.log",
+            )
+
+    raw_log = job_data.get("_raw_log")
+    if isinstance(raw_log, list) and raw_log:
+        lines = [str(line) for line in raw_log]
+    else:
+        events = job_data.get("events")
+        lines = (
+            [_sanitize_event_message(str(event)) for event in events]
+            if isinstance(events, list)
+            else []
+        )
+    body = "\n".join(lines)
+    if body:
+        body += "\n"
+    return PlainTextResponse(body)
+
+
+# GET + HEAD: mobile clients (iOS background URLSession, Flutter
+# offline cache) issue HEAD to learn `Content-Length` + `Accept-Ranges`
+# before scheduling a resumable, ranged background download. Starlette's
+# FileResponse already short-circuits the body on HEAD — we only need
+# the route to accept the verb.
+@app.api_route("/api/outputs/{job_id}/{filename}", methods=["GET", "HEAD"])
 async def download_output(job_id: str, filename: str) -> FileResponse:
     _validate_job_id(job_id)
     job_data = jobs.get(job_id) or job_manager.load_job(job_id)

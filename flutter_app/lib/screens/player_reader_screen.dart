@@ -8,6 +8,10 @@ import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../services/api_client.dart';
+import '../services/bookmark_axis_router.dart';
+import '../services/reader_chapter_resolver.dart';
+import '../services/sentence_sync_coordinator.dart';
+import '../services/toc_navigation_coordinator.dart';
 import '../state/providers.dart';
 import '../views/full_player_sheet.dart';
 import '../views/reader_search_overlay.dart';
@@ -34,6 +38,8 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   StreamSubscription<int?>? _chapterIndexSub;
   bool _isPlaying = false;
   StreamSubscription<bool>? _playingSub;
+  StreamSubscription<Duration>? _positionSub;
+  SentenceSyncCoordinator? _sentenceSync;
 
   @override
   void initState() {
@@ -61,12 +67,24 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         setState(() => _currentChapterIndex = chapterIdx);
       }
     });
+
+    // Drive the sentence-highlight engine from the position stream so
+    // ReaderView's active-sentence underline tracks the audio. Slice
+    // 24 closes the silent feature gap vs iOS where this loop has
+    // been live since v0.3.x.
+    _sentenceSync ??=
+        SentenceSyncCoordinator(ref.read(syncEngineProvider(widget.jobId)));
+    _positionSub = player.position.listen((pos) {
+      if (!mounted) return;
+      _sentenceSync?.updatePosition(pos.inMilliseconds / 1000.0);
+    });
   }
 
   @override
   void dispose() {
     _chapterIndexSub?.cancel();
     _playingSub?.cancel();
+    _positionSub?.cancel();
     // Always restore the system chrome when leaving the reader so
     // other screens are not left in immersive mode.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -129,21 +147,32 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         ? chapters[_currentChapterIndex].displayTitle
         : 'Chapter ${_currentChapterIndex + 1}';
 
-    if (store.hasBookmark(widget.jobId, _currentChapterIndex)) {
-      final existing = store
-          .bookmarksForChapter(widget.jobId, _currentChapterIndex)
-          .where((b) => !b.isHighlight)
-          .firstOrNull;
-      if (existing != null) {
-        store.remove(existing.id);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(t.bookmarkRemoved)),
-        );
-      }
+    // Bookmarks are bookId-scoped (stable across re-conversions), so
+    // the persisted chapterIndex must be on the EPUB axis. Pre-slice-23
+    // we were saving the playable-axis player_index which orphaned
+    // bookmarks whenever the book was reconverted with a different
+    // playable layout.
+    final router = BookmarkAxisRouter(playableChapters: chapters);
+    final existing = store
+        .bookmarksForBook(widget.jobId)
+        .where((b) =>
+            !b.isHighlight &&
+            router.matchesCurrentPosition(
+              bookmark: b,
+              currentPlayerIndex: _currentChapterIndex,
+            ))
+        .firstOrNull;
+    if (existing != null) {
+      store.remove(existing.id);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(t.bookmarkRemoved)),
+      );
     } else {
+      final epubIdx = router.saveValueForPlayerIndex(_currentChapterIndex);
+      if (epubIdx == null) return;
       store.addBookmark(
         bookId: widget.jobId,
-        chapterIndex: _currentChapterIndex,
+        chapterIndex: epubIdx,
         chapterTitle: chTitle,
       );
       ScaffoldMessenger.of(context).showSnackBar(
@@ -163,8 +192,22 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         expand: false,
         builder: (_, controller) => BookmarksListScreen(
           bookId: widget.jobId,
-          onJumpToChapter: (idx) {
-            setState(() => _currentChapterIndex = idx);
+          onJumpToChapter: (storedValue) {
+            // Bookmarks persist the EPUB axis (slice 23); legacy
+            // entries may still be on the playable axis. The router
+            // tries EPUB first, then falls back, returning the
+            // playable-axis position the audio queue should land on.
+            final snap = ref
+                    .read(jobStreamProvider(widget.jobId))
+                    .valueOrNull ??
+                ref.read(jobSnapshotProvider(widget.jobId)).valueOrNull;
+            final router = BookmarkAxisRouter(
+                playableChapters: snap?.playableChapters ?? const []);
+            final playable =
+                router.targetPlayerIndexForStoredValue(storedValue);
+            if (playable != null) {
+              setState(() => _currentChapterIndex = playable);
+            }
             Navigator.pop(context);
           },
         ),
@@ -218,6 +261,20 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
     final snapshot = job.valueOrNull;
     final hasZip = snapshot?.outputs?.any((o) => o.isZip) ?? false;
 
+    // Re-prime the sentence-sync engine whenever the EPUB text or the
+    // playable cursor changes. `loadIfChanged` is idempotent on
+    // identical inputs, so calling it from build is safe.
+    final ft = fulltext.valueOrNull;
+    if (ft != null) {
+      _sentenceSync ??=
+          SentenceSyncCoordinator(ref.read(syncEngineProvider(widget.jobId)));
+      _sentenceSync!.loadIfChanged(
+        fulltext: ft,
+        playableChapters: snapshot?.playableChapters ?? const [],
+        playableIndex: _currentChapterIndex,
+      );
+    }
+
     return Scaffold(
       backgroundColor: bg,
       appBar: _chromeVisible
@@ -252,8 +309,20 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
                 Consumer(
                   builder: (context, ref, _) {
                     final store = ref.watch(bookmarkStoreProvider);
-                    final hasIt = store.hasBookmark(
-                        widget.jobId, _currentChapterIndex);
+                    // Mirror the dual-axis check used by `_toggleBookmark`
+                    // so the bookmark icon stays accurate for both modern
+                    // EPUB-axis saves and legacy playable-axis entries.
+                    final router = BookmarkAxisRouter(
+                        playableChapters:
+                            snapshot?.playableChapters ?? const []);
+                    final hasIt = store
+                        .bookmarksForBook(widget.jobId)
+                        .any((b) =>
+                            !b.isHighlight &&
+                            router.matchesCurrentPosition(
+                              bookmark: b,
+                              currentPlayerIndex: _currentChapterIndex,
+                            ));
                     return IconButton(
                       icon: Icon(
                           hasIt ? Icons.bookmark : Icons.bookmark_border),
@@ -278,8 +347,20 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
       drawer: TocDrawer(
         fulltext: fulltext.valueOrNull,
         snapshot: snapshot,
-        currentIndex: _currentChapterIndex,
-        onJump: (idx) => setState(() => _currentChapterIndex = idx),
+        currentIndex: TocNavigationCoordinator.highlightEpubIndex(
+          currentPlayableIndex: _currentChapterIndex,
+          playableChapters: snapshot?.playableChapters ?? const [],
+        ),
+        onJump: (epubIdx) {
+          final playable =
+              TocNavigationCoordinator.targetPlayableIndexForTocTap(
+            tappedEpubIndex: epubIdx,
+            playableChapters: snapshot?.playableChapters ?? const [],
+          );
+          if (playable != null) {
+            setState(() => _currentChapterIndex = playable);
+          }
+        },
       ),
       body: Stack(
         children: [
@@ -289,6 +370,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
               final reader = _Reader(
                 fulltext: fulltext,
                 chapterIndex: _currentChapterIndex,
+                playableChapters: snapshot?.playableChapters ?? const [],
                 jobId: widget.jobId,
                 t: t,
                 onCenterTap: () => _setChromeVisible(!_chromeVisible),
@@ -318,9 +400,18 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
           if (_searchVisible)
             ReaderSearchOverlay(
               chapters: fulltext.valueOrNull?.chapters ?? const [],
-              onJumpToChapter: (idx) {
+              onJumpToChapter: (epubIdx) {
+                // Search overlay emits FulltextChapter.index (EPUB axis).
+                // Translate to the playable axis the rest of the screen
+                // tracks. Non-playable matches leave the audio position
+                // unchanged.
+                final playable =
+                    TocNavigationCoordinator.targetPlayableIndexForTocTap(
+                  tappedEpubIndex: epubIdx,
+                  playableChapters: snapshot?.playableChapters ?? const [],
+                );
                 setState(() {
-                  _currentChapterIndex = idx;
+                  if (playable != null) _currentChapterIndex = playable;
                   _searchVisible = false;
                 });
               },
@@ -336,6 +427,7 @@ class _Reader extends StatelessWidget {
   const _Reader({
     required this.fulltext,
     required this.chapterIndex,
+    required this.playableChapters,
     required this.jobId,
     required this.t,
     this.onCenterTap,
@@ -343,6 +435,7 @@ class _Reader extends StatelessWidget {
 
   final AsyncValue<EbookFulltext> fulltext;
   final int chapterIndex;
+  final List<ChapterProgress> playableChapters;
   final String jobId;
   final AppLocalizations t;
   final VoidCallback? onCenterTap;
@@ -364,10 +457,16 @@ class _Reader extends StatelessWidget {
         if (data.chapters.isEmpty) {
           return Center(child: Text(t.fulltextEmpty));
         }
-        final idx = chapterIndex.clamp(0, data.chapters.length - 1);
+        final resolved = ReaderChapterResolver.resolveFulltextChapter(
+          fulltext: data,
+          playableChapters: playableChapters,
+          playableIndex: chapterIndex,
+        );
+        final chapter = resolved ??
+            data.chapters[chapterIndex.clamp(0, data.chapters.length - 1)];
         return scroll_reader.ReaderView(
           jobId: jobId,
-          chapter: data.chapters[idx],
+          chapter: chapter,
           onCenterTap: onCenterTap,
         );
       },

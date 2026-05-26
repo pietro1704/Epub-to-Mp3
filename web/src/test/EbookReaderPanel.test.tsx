@@ -304,6 +304,109 @@ describe("EbookReaderPanel", () => {
     );
   });
 
+  it("keeps the previous document visible while a new jobId is being loaded (no flicker)", async () => {
+    let resolveSecond: ((value: unknown) => void) | undefined;
+    vi.spyOn(conversionClient, "getJobFullTextResult")
+      .mockResolvedValueOnce({
+        kind: "ok",
+        document: {
+          jobId: "job-A",
+          bookTitle: "Livro A",
+          bookAuthor: "Autora A",
+          chapters: [
+            {
+              index: 1,
+              name: "Capítulo Antigo",
+              text: "Alpha.",
+              html: "<p>Alpha.</p>",
+              charCount: 6,
+            },
+          ],
+        },
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((res) => {
+            resolveSecond = res as (value: unknown) => void;
+          }),
+      );
+
+    const { rerender } = renderWithProviders(
+      <EbookReaderPanel jobId="job-A" />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Capítulo Antigo/i }),
+      ).toBeInTheDocument(),
+    );
+
+    rerender(<EbookReaderPanel jobId="job-B" />);
+
+    // Critical: previous chapter list MUST remain visible during the pending
+    // fetch — replacing it with a "loading…" placeholder is the flicker we
+    // are trying to avoid.
+    expect(
+      screen.getByRole("button", { name: /Capítulo Antigo/i }),
+    ).toBeInTheDocument();
+
+    resolveSecond?.({
+      kind: "ok",
+      document: {
+        jobId: "job-B",
+        chapters: [
+          {
+            index: 2,
+            name: "Capítulo Novo",
+            text: "Beta.",
+            html: "<p>Beta.</p>",
+            charCount: 5,
+          },
+        ],
+      },
+    });
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Capítulo Novo/i }),
+      ).toBeInTheDocument(),
+    );
+  });
+
+  it("renders long chapter titles without clipping to a single line", async () => {
+    const longTitle =
+      "Capítulo extraordinariamente longo com subtítulo descritivo que jamais cabe em uma linha";
+    vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
+      kind: "ok",
+      document: {
+        jobId: "job-reader",
+        chapters: [
+          {
+            index: 1,
+            name: longTitle,
+            text: "Texto.",
+            html: "<p>Texto.</p>",
+            charCount: 6,
+          },
+        ],
+      },
+    });
+
+    const { container } = renderWithProviders(
+      <EbookReaderPanel jobId="job-reader" />,
+    );
+
+    const strong = await waitFor(() => {
+      const el = container.querySelector(".ebook-reader__chapter-copy strong");
+      if (!el) {
+        throw new Error("strong not yet rendered");
+      }
+      return el;
+    });
+    expect(strong.textContent).toBe(longTitle);
+    expect(strong.classList.contains("ebook-reader__chapter-name")).toBe(true);
+  });
+
   it("surfaces the permanent extraction-failed message after a 422", async () => {
     vi.spyOn(conversionClient, "getJobFullTextResult").mockResolvedValue({
       kind: "unprocessable",

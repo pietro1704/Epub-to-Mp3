@@ -124,7 +124,7 @@ CLI (Apple Silicon host):
 xcodebuild test \
   -project ios/EpubToMp3/EpubToMp3.xcodeproj \
   -scheme EpubToMp3 \
-  -destination 'platform=iOS Simulator,name=iPhone 15' \
+  -destination 'platform=iOS Simulator,name=iPhone SE,OS=17.2' \
   -only-testing:EpubToMp3Tests/PythonEmbedTests
 ```
 

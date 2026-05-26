@@ -63,6 +63,16 @@ struct EbookFulltext: Codable, Equatable {
 
         var id: String { String(index) }
 
+        /// Convert the backend's 1-based chapter index into the
+        /// 0-based EPUB axis that `InstantReaderIndexMapper`,
+        /// `ReaderCoordinator`, `WidgetDataSync`, and
+        /// `cacheManager` all expect. Pre-slice-21 the search
+        /// overlay handoff in `InstantReaderView` skipped this
+        /// conversion, so jumping to a search result wrote a
+        /// 1-based value into a 0-based field and the player /
+        /// widget / saved cursor all drifted by one chapter.
+        var zeroBasedEpubIndex: Int { max(0, index - 1) }
+
         var displayTitle: String {
             guard let name, !name.isEmpty else { return "Chapter \(index)" }
             return Self.cleanTitle(name)

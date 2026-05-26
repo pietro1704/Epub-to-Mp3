@@ -40,6 +40,7 @@ Same backend surface as the SwiftUI companion. Define Dart classes via `freezed`
 3. Generate freezed/json_serializable model classes via `dart run build_runner build`.
 4. Build vertical slice: settings → upload picker → job progress (SSE) → playback.
 5. Run `flutter test` + `flutter analyze` before reporting.
+6. Use `android-emulator-manager` before installing/removing Android system images or AVDs; default to one `small_phone` x86_64 AVD on this Intel Mac.
 
 ## Output format
 

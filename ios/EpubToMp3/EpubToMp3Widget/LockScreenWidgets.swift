@@ -172,6 +172,7 @@ private struct InlineView: View {
 
 // MARK: - NowPlayingLockScreenWidget
 
+@available(iOS 16.1, *)
 struct NowPlayingLockScreenWidget: Widget {
     let kind = "NowPlayingLockScreenWidget"
 
@@ -211,6 +212,7 @@ private struct NowPlayingLockScreenView: View {
 // MARK: - Previews
 
 #if os(iOS)
+@available(iOS 17.0, *)
 #Preview("Lock Circular", as: .accessoryCircular) {
     NowPlayingLockScreenWidget()
 } timeline: {
@@ -218,6 +220,7 @@ private struct NowPlayingLockScreenView: View {
     LockScreenEntry.empty
 }
 
+@available(iOS 17.0, *)
 #Preview("Lock Rectangular", as: .accessoryRectangular) {
     NowPlayingLockScreenWidget()
 } timeline: {
@@ -225,6 +228,7 @@ private struct NowPlayingLockScreenView: View {
     LockScreenEntry.empty
 }
 
+@available(iOS 17.0, *)
 #Preview("Lock Inline", as: .accessoryInline) {
     NowPlayingLockScreenWidget()
 } timeline: {

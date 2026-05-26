@@ -24,6 +24,7 @@ import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../services/audio_player_service.dart';
 import '../services/python_bridge.dart';
+import '../services/resume_position_router.dart';
 import '../state/providers.dart';
 import '../views/instant_reader_view.dart';
 import 'library_screen.dart';
@@ -371,10 +372,14 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     _resumeSaveTimer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted) return;
       final resume = ref.read(resumeStoreProvider);
-      final idx = player.currentIndexValue ?? 0;
-      final chapterIdx = player.chapterIndexForPlayerIndex(idx);
+      final playerIdx = player.currentIndexValue ?? 0;
+      final router = ResumePositionRouter(
+        playableChapters: List.of(_playableChapters),
+      );
+      final epubIdx = router.saveValueForPlayerIndex(playerIdx);
+      if (epubIdx == null) return;
       final pos = player.positionSeconds;
-      resume.saveBookPosition(widget.bookId, chapterIdx, pos);
+      resume.saveBookPosition(widget.bookId, epubIdx, pos);
     });
   }
 
@@ -386,10 +391,11 @@ class _BookOpenScreenState extends ConsumerState<BookOpenScreen> {
     final targetChapter = saved.chapter;
     final targetPos = saved.seconds;
 
-    final queueIdx = _playableChapters.indexWhere(
-      (c) => c.index == targetChapter || c.index == targetChapter + 1,
+    final router = ResumePositionRouter(
+      playableChapters: List.of(_playableChapters),
     );
-    if (queueIdx >= 0) {
+    final queueIdx = router.queueIndexForSavedValue(targetChapter);
+    if (queueIdx != null) {
       await player.seek(
         Duration(milliseconds: (targetPos * 1000).round()),
         index: queueIdx,

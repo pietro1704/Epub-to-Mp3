@@ -37,7 +37,7 @@ You consume the same `/api/jobs`, `/api/uploads`, `/api/sessions`, `/api/telemet
 1. Survey what already exists at `ios/` (scaffold if absent).
 2. Read the relevant TypeScript service to understand the API shape exactly.
 3. Build a minimal vertical slice (e.g., job list → SSE progress → chapter playback) before adding polish.
-4. Test on simulator (`xcrun simctl`) — your default check is `xcodebuild test -scheme EpubToMp3 -destination "platform=iOS Simulator,name=iPhone 16"`.
+4. Use the smallest Xcode-compatible iPhone simulator/device profile on the smallest compatible iOS runtime. Ask `xcode-toolchain-manager` to verify runtimes first when destinations fail; do not default to latest/large simulators.
 
 ## Output format
 
