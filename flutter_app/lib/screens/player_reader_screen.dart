@@ -10,6 +10,7 @@ import '../models/job_snapshot.dart';
 import '../services/api_client.dart';
 import '../services/bookmark_axis_router.dart';
 import '../services/reader_chapter_resolver.dart';
+import '../services/sentence_sync_coordinator.dart';
 import '../services/toc_navigation_coordinator.dart';
 import '../state/providers.dart';
 import '../views/full_player_sheet.dart';
@@ -37,6 +38,8 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
   StreamSubscription<int?>? _chapterIndexSub;
   bool _isPlaying = false;
   StreamSubscription<bool>? _playingSub;
+  StreamSubscription<Duration>? _positionSub;
+  SentenceSyncCoordinator? _sentenceSync;
 
   @override
   void initState() {
@@ -64,12 +67,24 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
         setState(() => _currentChapterIndex = chapterIdx);
       }
     });
+
+    // Drive the sentence-highlight engine from the position stream so
+    // ReaderView's active-sentence underline tracks the audio. Slice
+    // 24 closes the silent feature gap vs iOS where this loop has
+    // been live since v0.3.x.
+    _sentenceSync ??=
+        SentenceSyncCoordinator(ref.read(syncEngineProvider(widget.jobId)));
+    _positionSub = player.position.listen((pos) {
+      if (!mounted) return;
+      _sentenceSync?.updatePosition(pos.inMilliseconds / 1000.0);
+    });
   }
 
   @override
   void dispose() {
     _chapterIndexSub?.cancel();
     _playingSub?.cancel();
+    _positionSub?.cancel();
     // Always restore the system chrome when leaving the reader so
     // other screens are not left in immersive mode.
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -245,6 +260,20 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
 
     final snapshot = job.valueOrNull;
     final hasZip = snapshot?.outputs?.any((o) => o.isZip) ?? false;
+
+    // Re-prime the sentence-sync engine whenever the EPUB text or the
+    // playable cursor changes. `loadIfChanged` is idempotent on
+    // identical inputs, so calling it from build is safe.
+    final ft = fulltext.valueOrNull;
+    if (ft != null) {
+      _sentenceSync ??=
+          SentenceSyncCoordinator(ref.read(syncEngineProvider(widget.jobId)));
+      _sentenceSync!.loadIfChanged(
+        fulltext: ft,
+        playableChapters: snapshot?.playableChapters ?? const [],
+        playableIndex: _currentChapterIndex,
+      );
+    }
 
     return Scaffold(
       backgroundColor: bg,
