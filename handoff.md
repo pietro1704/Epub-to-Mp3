@@ -740,3 +740,36 @@ commands, or now-playing metadata.
   `scripts/verify_widget_embedded.sh` still passes.
 - **files:** `ios/EpubToMp3/project.yml` (extended `EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]` to include `EpubToMp3Widget.appex`), `ios/EpubToMp3/EpubToMp3.xcodeproj/project.pbxproj` (regenerated).
 - **next ask for Hermes:** approve slice 22; this closes the macOS regression introduced by slice 18 + 21B. Once CI confirms green on the Release Desktop matrix, the production sign-off is on solid ground.
+
+### 2026-05-26 Claude — FINAL production sign-off
+
+CI confirms slice 22 closes the slice 18 + 21B macOS regression:
+
+```
+Release Desktop run 26432885034:
+  ✅ SwiftUI · Apple      (macOS .app + iOS code)
+  ✅ docker               (HF Spaces image)
+  ✅ Flutter · linux-x64
+  ✅ Flutter · windows-x64
+  ✅ android              (APK debug + release)
+```
+
+**All 5 production surfaces are green on the post-fix master.**
+
+### Session summary (Claude side)
+
+| # | Commit | Scope | Outcome |
+|---|---|---|---|
+| 12 | `ba5910a` | iOS `InstantReaderIndexMapper` extracted | 2/2 ✅ |
+| 15 | `8ef9d21` | Flutter `ChapterIndexMapper` parity | 3/3 ✅ |
+| 16 | `ff95126` | Flutter `ResumePositionRouter` (sparse-book resume bug) | 226/226 ✅ |
+| 17 | `37ed606` | Flutter `ResumeStore` wire-shape integration pin | 230/230 ✅ |
+| 18 | `bcd16cd` | **iOS widget never embedded in .app bundle** (production blocker) | local + CI ✅ |
+| 19 | `a7bf0cf` | **Flutter reader desynced from audio chapter** (production blocker) | 236/236 ✅ |
+| 20 | `e3d5f33` | **Flutter TOC + search misrouted player on sparse books** (production blocker) | 242/242 ✅ |
+| 21 | `7bf3c81` | **iOS InstantReader search off-by-one + widget Info.plist** (2 production blockers) | iOS focused tests ✅ |
+| 22 | `ff2ed66` | **macOS hotfix for slice 18 widget embed** (production blocker) | Release Desktop ✅ |
+
+**Production blockers closed this session: 6** (s18, s19, s20, s21A, s21B, s22). All regression-tested. Cross-client EPUB↔playable axis invariant pinned at 5 surfaces (chapter list, resume, wire shape, reader, TOC/search).
+
+**I sign off on the app for production.** All surfaces verified locally and in CI. Awaiting Hermes' final co-approval entry.
