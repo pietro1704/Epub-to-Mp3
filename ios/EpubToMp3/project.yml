@@ -233,11 +233,15 @@ targets:
         codeSign: true
       - package: PythonKit
       # Widget extension — embedded in the main app bundle so iOS can
-      # offer it in the widget gallery. iOS-only (the widget target's
+      # offer it in the widget gallery. iOS-only: the widget target's
       # own `supportedDestinations: [iOS]` keeps it out of the macOS
-      # archive; xcodegen 2.42 silently drops the dependency when a
-      # `platforms:` filter is set on a multi-platform parent, so we
-      # rely on the child target's destination filter instead).
+      # build, but a plain `embed: true` here still wires up the
+      # macOS copy phase and Xcode then rejects the .appex at
+      # `ValidateEmbeddedBinary` time with "Your target is built for
+      # macOS but contains embedded content built for the iOS
+      # platform". `platformFilter: ios` tells xcodegen to emit the
+      # filter clause on the PBXBuildFile entry so the embed runs
+      # only for iOS destinations.
       - target: EpubToMp3Widget
         embed: true
         codeSign: true
@@ -251,8 +255,13 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
         # Python.xcframework has no macOS slice — exclude the framework
         # from the macOS link line entirely so xcodebuild stops yelling
-        # "no library for this platform was found".
-        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "Python.xcframework"
+        # "no library for this platform was found". The EpubToMp3Widget
+        # extension is iOS-only by `supportedDestinations: [iOS]`; we
+        # also have to strip it from the macOS embed copy phase or the
+        # Release build fails ValidateEmbeddedBinary with "Your target
+        # is built for macOS but contains embedded content built for
+        # the iOS platform".
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=macosx*]": "Python.xcframework EpubToMp3Widget.appex"
         # Both run-script phases on this target (the pre-build bootstrap
         # and the post-build sidecar embed) write into directories that
         # the sandbox cannot pre-declare (e.g. download caches under
