@@ -86,6 +86,7 @@
 		4C86B61FA617F5961B39059E /* BookOpenView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FC89EA1035E63F39DA76CD4 /* BookOpenView.swift */; };
 		4DB6069373198C4EAC513863 /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPadPro12_9-portrait.png in Resources */ = {isa = PBXBuildFile; fileRef = 20359794C84562A0A866DA9D /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPadPro12_9-portrait.png */; };
 		4E7DB462D73450FA820FCF53 /* APIClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24C1D79AF0BBB5221432E971 /* APIClientTests.swift */; };
+		4F07FE97BD6CFC906D66963F /* EbookFulltextChapterAxisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F020EA3EDB9849F7B417B11 /* EbookFulltextChapterAxisTests.swift */; };
 		5024E99830533B4FC23F94E4 /* SyncEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4802DEE5DF8A0A893B82A3E9 /* SyncEngineTests.swift */; };
 		51D4F0979C379CCD4F29DC0A /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPhone15ProMax-landscape.png in Resources */ = {isa = PBXBuildFile; fileRef = 7508B1CC9E978B4CEEADE262 /* testReaderLightThemeAcrossFullMatrix.Reader-Light-iPhone15ProMax-landscape.png */; };
 		5207CC7953E92E5F63321BDF /* PdfTextExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E2FD9242729300A82B2E938 /* PdfTextExtractorTests.swift */; };
@@ -382,6 +383,7 @@
 		770C2DEA8AF3F51945219ED3 /* Paginator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Paginator.swift; sourceTree = "<group>"; };
 		7A8AD3F4BB80B97303748FBB /* testReaderLightXXXL.Reader-Light-accessibility3-iPhone15Pro-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderLightXXXL.Reader-Light-accessibility3-iPhone15Pro-portrait.png"; sourceTree = "<group>"; };
 		7BE1C9A9173AEA9F2AA4622C /* testReaderSepiaThemeIPads.Reader-Sepia-iPadPro12_9-portrait.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "testReaderSepiaThemeIPads.Reader-Sepia-iPadPro12_9-portrait.png"; sourceTree = "<group>"; };
+		7F020EA3EDB9849F7B417B11 /* EbookFulltextChapterAxisTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EbookFulltextChapterAxisTests.swift; sourceTree = "<group>"; };
 		7F82BDF26B7356AD52928329 /* ConversionWatchdogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConversionWatchdogTests.swift; sourceTree = "<group>"; };
 		7FC89EA1035E63F39DA76CD4 /* BookOpenView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BookOpenView.swift; sourceTree = "<group>"; };
 		7FCB84A94ECEDA9E94239C85 /* AudioPlayerSleepTimerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioPlayerSleepTimerTests.swift; sourceTree = "<group>"; };
@@ -844,6 +846,7 @@
 				E7249128C78850D951C2E50D /* ConversionStatusTests.swift */,
 				7F82BDF26B7356AD52928329 /* ConversionWatchdogTests.swift */,
 				CDD3532551E02103A5A73B59 /* DynamicTypeSnapshotTests.swift */,
+				7F020EA3EDB9849F7B417B11 /* EbookFulltextChapterAxisTests.swift */,
 				520D74161D8E8F2D3C413C30 /* EbookFulltextTests.swift */,
 				20016FDD1CF6F0B579A7F0C7 /* EpubFallbackParserTests.swift */,
 				3FCBA7BF5BB22C295BC4364C /* EpubFixture.swift */,
@@ -1260,6 +1263,7 @@
 				06E5C3F7053903823E1DA04B /* ConversionStatusTests.swift in Sources */,
 				003F885BDD8D1572CF1C407E /* ConversionWatchdogTests.swift in Sources */,
 				D50AFB5F5525EB194BBF9741 /* DynamicTypeSnapshotTests.swift in Sources */,
+				4F07FE97BD6CFC906D66963F /* EbookFulltextChapterAxisTests.swift in Sources */,
 				D3B994483F2F3463781C20E1 /* EbookFulltextTests.swift in Sources */,
 				7B1702F2230D82BB9A1AA7E4 /* EpubFallbackParserTests.swift in Sources */,
 				D815F4991EC71B3145418D24 /* EpubFixture.swift in Sources */,
@@ -1479,7 +1483,7 @@
 				CODE_SIGN_ENTITLEMENTS = EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_FILE = EpubToMp3Widget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -1530,7 +1534,7 @@
 				"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "Apple Development";
 				"CODE_SIGN_STYLE[sdk=iphoneos*]" = Automatic;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier = "com.apple.widgetkit-extension";
+				INFOPLIST_FILE = EpubToMp3Widget/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

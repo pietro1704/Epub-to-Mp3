@@ -175,7 +175,16 @@ struct InstantReaderView: View {
         .sheet(isPresented: $showingSearch) {
             ReaderSearchOverlay(
                 chapters: fulltext.chapters,
-                onJumpToChapter: { idx in currentChapterIndex = idx },
+                onJumpToChapter: { idx in
+                    // ReaderSearchOverlay emits FulltextChapter.index
+                    // (1-based on the wire). `currentChapterIndex` is
+                    // 0-based EPUB axis — the same axis the player
+                    // mapper, ReaderCoordinator, WidgetDataSync, and
+                    // cacheManager all expect. Skipping `- 1` here
+                    // drifted every downstream cursor by one chapter
+                    // after a search jump.
+                    currentChapterIndex = max(0, idx - 1)
+                },
                 isPresented: $showingSearch
             )
         }

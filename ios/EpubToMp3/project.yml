@@ -407,6 +407,7 @@ targets:
       - path: EpubToMp3Widget
         excludes:
           - "Resources/EpubToMp3Widget.entitlements"
+          - "Info.plist"
       # Shared with the main app target. Same Codable shape on both ends —
       # ActivityKit serialises by name + Codable, not nominal cross-module.
       - path: EpubToMp3/Models/ConversionActivityAttributes.swift
@@ -420,7 +421,14 @@ targets:
         # widget entry points are guarded with @available in Swift.
         IPHONEOS_DEPLOYMENT_TARGET: "15.0"
         PRODUCT_BUNDLE_IDENTIFIER: com.pietrocode.epubtomp3.widget
-        INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier: com.apple.widgetkit-extension
+        # Hand-written Info.plist with the full NSExtension dict.
+        # xcodegen's `INFOPLIST_KEY_NSExtension_NSExtensionPointIdentifier`
+        # synthesiser does NOT emit the nested `NSExtension` dictionary
+        # on Xcode 26, which the iOS simulator's app-extension
+        # placeholder verifier requires — installing the host app fails
+        # with "extensionDictionary must be set in placeholder
+        # attributes". The plist is small; explicit beats clever here.
+        INFOPLIST_FILE: EpubToMp3Widget/Info.plist
         CODE_SIGN_ENTITLEMENTS: EpubToMp3Widget/Resources/EpubToMp3Widget.entitlements
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_VERSION: "5.9"
