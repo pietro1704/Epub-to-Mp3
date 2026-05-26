@@ -785,3 +785,23 @@ Release Desktop run 26432885034:
   - `scripts/verify_widget_embedded.sh` passes locally, confirming the iOS widget dependency/copy-phase guard is still intact after regeneration.
 - **release evidence:** Release Desktop run `26446729975` completed successfully and uploaded/packaged the macOS app, unsigned iOS IPA, Docker image, Linux desktop build, Windows desktop build, and Android release APK.
 - **decision:** no remaining blocker found for the requested app surfaces (iOS/macOS SwiftUI, Flutter Android/Linux/Windows, shared backend/web contracts). Deferred cleanups, if any, are non-blocking follow-ups.
+
+### 2026-05-26 Claude — Slice 23 GREEN (Flutter bookmark cross-conversion drift fixed)
+
+- **status:** done, committed `e24617b`, pushed.
+- **trigger:** Hermes' slice 19 follow-up ask — audit `player_reader_screen.dart` + `sync_engine.dart` for EPUB↔playable drift.
+- **audit findings:**
+  - `player_reader_screen.dart` — all 14 sites that touch `_currentChapterIndex` are now consistent (playable axis), thanks to slices 19+20. **Sole remaining drift: bookmarks.**
+  - `sync_engine.dart` — pure-Dart sentence/time mapper, operates on a single `FulltextChapter` passed by the caller. Axis-agnostic. **No axis bug; separate issue documented below.**
+  - `currentSentenceProvider` in `state/providers.dart` is dead code — no screen calls `SyncEngine.load(...)` or `.update(...)`. The Flutter app has no sentence-level highlight wiring. Out of scope here; flagged as a deferred feature gap (sentence highlight during audio playback in Flutter is silently disabled).
+- **drift fixed:** `BookmarkStore` is keyed by `bookId` (SHA-256 of file content → stable across re-conversions), but pre-slice-23 `player_reader_screen._toggleBookmark` saved `_currentChapterIndex` (playable-axis). On re-conversion with a different sparse layout the bookmark's stored value pointed nowhere. Same class as the resume bug slice 16 closed.
+- **fix:** new `BookmarkAxisRouter` mirrors `ResumePositionRouter` / `TocNavigationCoordinator`:
+  - `saveValueForPlayerIndex` → EPUB axis (returns null when no playable chapters loaded)
+  - `matchesCurrentPosition` → dual-axis lookup so **legacy playable-axis entries still match** while we transition
+  - `targetPlayerIndexForStoredValue` → reverse map for the bookmarks-list jump callback; EPUB-first with playable fallback
+- **call sites rewired:** 3 in `player_reader_screen.dart` — the bookmark icon Consumer, `_toggleBookmark`, and the bookmark-list jump callback in `_showBookmarksList`.
+- **RED:** `test/bookmark_axis_router_test.dart` (9 tests) fails to compile until the router lands. Covers forward EPUB write, dual-axis match, modern vs legacy match preference, out-of-range rejection, reverse mapping, legacy fallback, linear identity, empty playable.
+- **GREEN:** 9/9 router tests in <1 s; full Flutter suite → 251/251 (was 242/242, +9). `flutter analyze` clean.
+- **files:** `flutter_app/lib/services/bookmark_axis_router.dart` (new, 63 LOC), `flutter_app/lib/screens/player_reader_screen.dart` (3 sites rewired), `flutter_app/test/bookmark_axis_router_test.dart` (new, 9 tests).
+- **parity scoreboard (updated):** Flutter EPUB↔playable invariant pinned at **6 surfaces** now — chapter list (slice 15), resume (16), wire shape (17), reader (19), TOC + search nav (20), bookmarks (23). `ChapterIndexMapper` is the single mapper underneath all of them.
+- **next blockers to consider:** (a) wire `SyncEngine.load(chapter, duration)` + `.update(positionSeconds)` from `player_reader_screen` position stream so the Flutter reader gets sentence-level highlight parity with iOS — this is a feature, not a bug, and is the only known UX gap between the clients. (b) Hermes-side reviews of slices 12/15/16/17/18/19/20/21/22/23 for final co-approval.
