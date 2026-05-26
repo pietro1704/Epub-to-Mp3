@@ -8,6 +8,7 @@ import '../l10n/app_localizations.dart';
 import '../models/ebook_fulltext.dart';
 import '../models/job_snapshot.dart';
 import '../services/api_client.dart';
+import '../services/reader_chapter_resolver.dart';
 import '../state/providers.dart';
 import '../views/full_player_sheet.dart';
 import '../views/reader_search_overlay.dart';
@@ -289,6 +290,7 @@ class _PlayerReaderScreenState extends ConsumerState<PlayerReaderScreen> {
               final reader = _Reader(
                 fulltext: fulltext,
                 chapterIndex: _currentChapterIndex,
+                playableChapters: snapshot?.playableChapters ?? const [],
                 jobId: widget.jobId,
                 t: t,
                 onCenterTap: () => _setChromeVisible(!_chromeVisible),
@@ -336,6 +338,7 @@ class _Reader extends StatelessWidget {
   const _Reader({
     required this.fulltext,
     required this.chapterIndex,
+    required this.playableChapters,
     required this.jobId,
     required this.t,
     this.onCenterTap,
@@ -343,6 +346,7 @@ class _Reader extends StatelessWidget {
 
   final AsyncValue<EbookFulltext> fulltext;
   final int chapterIndex;
+  final List<ChapterProgress> playableChapters;
   final String jobId;
   final AppLocalizations t;
   final VoidCallback? onCenterTap;
@@ -364,10 +368,16 @@ class _Reader extends StatelessWidget {
         if (data.chapters.isEmpty) {
           return Center(child: Text(t.fulltextEmpty));
         }
-        final idx = chapterIndex.clamp(0, data.chapters.length - 1);
+        final resolved = ReaderChapterResolver.resolveFulltextChapter(
+          fulltext: data,
+          playableChapters: playableChapters,
+          playableIndex: chapterIndex,
+        );
+        final chapter = resolved ??
+            data.chapters[chapterIndex.clamp(0, data.chapters.length - 1)];
         return scroll_reader.ReaderView(
           jobId: jobId,
-          chapter: data.chapters[idx],
+          chapter: chapter,
           onCenterTap: onCenterTap,
         );
       },
